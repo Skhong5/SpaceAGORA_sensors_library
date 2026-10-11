@@ -328,6 +328,13 @@ end
 # rungs only repeat it; the two ends still bracket the phase for drift.
 _ppb_serial_at_ends_only()::Bool = lowercase(strip(get(ENV, "SPACEAGORA_PPB_SERIAL_RUNGS", "all"))) == "ends"
 
+# SPACEAGORA_PPB_SERIAL_FIRST_RUNG_PHASES=P6ps,... times serial only at the first
+# rung of the listed phases. For a grid whose rungs differ only in the parallel
+# routes' split (P6ps: (32, 32) and (32, 1)), every later serial point repeats the
+# same single-threaded run.
+_ppb_serial_first_rung_only(phase::PPBPhase)::Bool =
+    phase.id in strip.(split(get(ENV, "SPACEAGORA_PPB_SERIAL_FIRST_RUNG_PHASES", ""), ","))
+
 function _ppb_run_phase(
     phase::PPBPhase, ppb::PPBConfig, phase_dir::String;
     on_run_complete::Union{Nothing, Function}=nothing,
@@ -362,10 +369,11 @@ function _ppb_run_phase(
         full_modes = _ppb_full_budget_modes(phase)
         runs = (isempty(split_phase.modes) ? 0 : length(grid)) + (isempty(full_modes) ? 0 : 1)
         serial_ends = _ppb_serial_at_ends_only()
+        serial_first = _ppb_serial_first_rung_only(phase)
         for (i, (w, t)) in enumerate(grid)
             isempty(split_phase.modes) && break
             rung_phase = split_phase
-            if serial_ends && 1 < i < length(grid)
+            if (serial_ends && 1 < i < length(grid)) || (serial_first && i > 1)
                 rung_phase = _ppb_phase_with(split_phase; modes = filter(!=("serial"), split_phase.modes))
                 isempty(rung_phase.modes) && continue
             end

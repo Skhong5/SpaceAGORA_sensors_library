@@ -252,8 +252,18 @@ function _create_spin_barrier_pool(workers::Int)::_SpinBarrierPool
     # thread free for the coordinator; more spinners than that would deadlock.
     workers = max(1, min(workers, Threads.nthreads() - 1))
     pool = _SpinBarrierPool(workers)
+    # One spinner per thread, none on the creating (coordinator's) thread. Left
+    # to the scheduler, spinners could start out sharing a thread and stay that
+    # way for a whole solve, since each only yields every 1024 polls: measured
+    # at 256 spacecraft on 12 threads, 300 us per RHS call instead of 80.
+    tids = filter(!=(Threads.threadid()), collect(Threads.threadpooltids(:default)))
     @inbounds for worker_id in 1:workers
-        Threads.@spawn _spin_barrier_worker_loop_w(worker_id, pool)
+        task = Task(() -> _spin_barrier_worker_loop_w(worker_id, pool))
+        task.sticky = true
+        if worker_id <= length(tids)
+            ccall(:jl_set_task_tid, Cint, (Any, Cint), task, tids[worker_id] - 1)
+        end
+        schedule(task)
     end
     return pool
 end
@@ -272,6 +282,8 @@ function _spin_barrier_dispatch!(
     chunk      = inner_dynamic_chunk_size()
     next_index = Threads.Atomic{Int}(1)
     lock(pool.run_lock) do
+        # Released while this caller waited for the lock: no workers left.
+        pool.stop[] && return false
         pool.request[] = (
             num_items      = num_items,
             active_workers = workers,
@@ -321,8 +333,8 @@ function _spin_barrier_dispatch!(
         if coordinator_error !== nothing
             throw(coordinator_error)
         end
+        return true
     end
-    return nothing
 end
 
 function _shutdown_spin_barrier_pool!(pool::_SpinBarrierPool)::Nothing

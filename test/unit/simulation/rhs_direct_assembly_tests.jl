@@ -453,3 +453,169 @@ end
         Threads.nthreads() > 1 && @test length(widths) > 1
     end
 end
+
+# SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER: 1/0 force the barrier, `auto` (the
+# default) probes both arms during the solve and keeps the faster.
+@testset "Spin barrier env modes" begin
+    PP = SpaceAGORA.SimulationModel.ParallelPolicy
+    for (raw, mode) in ((nothing, :auto), ("auto", :auto), (" AUTO ", :auto), ("1", :on), ("on", :on),
+                        ("true", :on), ("0", :off), ("off", :off), ("false", :off))
+        withenv("SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER" => raw) do
+            @test PP.harmonics_batch_spin_barrier_mode() === mode
+            # Only a forced `on` counts as enabled for the pre-solve paths.
+            @test PP.harmonics_batch_spin_barrier_enabled() == (mode === :on)
+            @test RHSDA_SE._snapshot_rhs_plan_env_config().harmonics_batch_spin_barrier === mode
+        end
+    end
+    withenv("SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER" => "sometimes") do
+        @test_throws ArgumentError PP.harmonics_batch_spin_barrier_mode()
+    end
+    # Resolution per call: forced modes ignore the tuner; auto follows its arm,
+    # and is off where there is no tuner.
+    T = SpaceAGORA.SimulationModel.SpinBarrierTuner
+    env_for(raw) = withenv(() -> RHSDA_SE._snapshot_rhs_plan_env_config(),
+        "SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER" => raw)
+    for on in (false, true)
+        t = T(); t.on = on
+        p = (; shared_buffers=(; spin_barrier_tuner=t))
+        @test RHSDA_SE._spin_barrier_active(p, env_for("1"))
+        @test !RHSDA_SE._spin_barrier_active(p, env_for("0"))
+        @test RHSDA_SE._spin_barrier_active(p, env_for("auto")) == on
+    end
+    @test !RHSDA_SE._spin_barrier_active(nothing, env_for("auto"))
+    # The barrier lifts the flat route's floor; without it the floor applies.
+    env = env_for("auto")
+    @test RHSDA_SE._rhs_flat_default_admits(env, 64, 32, true)
+    @test !RHSDA_SE._rhs_flat_default_admits(env, 64, 32, false)
+end
+
+@testset "Spin barrier auto: decision logic" begin
+    T = SpaceAGORA.SimulationModel.SpinBarrierTuner
+    fake() = (; shared_buffers=(; rhs_plan_step_cache=Ref{Any}(:cached)))
+    observe!(p, t, ns) = RHSDA_SE._spin_barrier_observe!(p, t, Int64(ns))
+    # Run calls costing cost(t) until the current probe decides; returns the call count.
+    probe!(p, t, cost) = (n = 0; while t.probing; observe!(p, t, cost(t)); n += 1; end; n)
+    arm(on_ns, off_ns) = t -> t.on ? on_ns : off_ns
+    fresh() = (t = T(); RHSDA_SE._spin_barrier_tuner_reset!(t, true); t)
+
+    # Starts off; the barrier faster by more than the margin takes over after one probe.
+    p = fake(); t = fresh()
+    @test !t.on && !t.incumbent && t.probing
+    for _ in 1:(RHSDA_SE._SPIN_SETTLE + RHSDA_SE._SPIN_SAMPLES)
+        observe!(p, t, 1000)
+    end
+    @test t.on && t.probing                                    # now timing the challenger
+    @test p.shared_buffers.rhs_plan_step_cache[] === nothing   # cached plan dropped
+    probe!(p, t, arm(500, 1000))
+    @test t.on && t.incumbent
+    @test t.switches == 1 && t.probes == 1 && t.period == RHSDA_SE._SPIN_REPROBE
+
+    # It reprobes after the period; if the barrier now loses, the solve goes back.
+    for _ in 1:t.period
+        observe!(p, t, 500)
+    end
+    @test t.probing
+    probe!(p, t, arm(2000, 1000))
+    @test !t.on && !t.incumbent && t.switches == 2 && t.period == RHSDA_SE._SPIN_REPROBE
+
+    # The barrier slower: kept off after two windows (no improvement), and the
+    # period doubles while the choice holds.
+    p = fake(); t = fresh()
+    n = probe!(p, t, arm(9000, 1000))
+    @test n == 2 * RHSDA_SE._SPIN_SETTLE + 3 * RHSDA_SE._SPIN_SAMPLES
+    @test !t.on && !t.incumbent && t.switches == 0
+    @test t.period == 2 * RHSDA_SE._SPIN_REPROBE
+    @test p.shared_buffers.rhs_plan_step_cache[] === nothing
+    for k in 2:10
+        for _ in 1:t.period
+            observe!(p, t, 1000)
+        end
+        probe!(p, t, arm(9000, 1000))
+    end
+    @test t.period == RHSDA_SE._SPIN_REPROBE_MAX && !t.on
+
+    # Faster by less than the margin: the incumbent stays.
+    p = fake(); t = fresh()
+    probe!(p, t, arm(980, 1000))
+    @test !t.incumbent && !t.on
+
+    # A new spin pool runs slow for its first calls; the challenger keeps being
+    # timed while it improves, and takes over once it is faster.
+    p = fake(); t = fresh()
+    on_calls = Ref(0)
+    probe!(p, t, t -> t.on ? (on_calls[] += 1; max(500, 3000 - 200 * on_calls[])) : 1000)
+    @test t.incumbent && t.on
+    # ...but not forever: a challenger that keeps improving yet never wins stops
+    # after the window budget.
+    p = fake(); t = fresh()
+    on_calls[] = 0
+    probe!(p, t, t -> t.on ? (on_calls[] += 1; 1100 + round(Int, 1e6 * 0.8^(on_calls[] / 5))) : 1000)
+    @test !t.incumbent && t.windows == RHSDA_SE._SPIN_WINDOWS
+
+    # Medians, not means: one outlier per window does not flip the choice.
+    p = fake(); t = fresh()
+    k = Ref(0)
+    probe!(p, t, t -> t.on ? (k[] += 1; k[] % 5 == 0 ? 1 : 1500) : 1000)
+    @test !t.incumbent
+end
+
+@testset "Spin barrier auto: observations labelled by arm" begin
+    T = SpaceAGORA.SimulationModel.SpinBarrierTuner
+    R = SpaceAGORA.SimulationModel.RhsRegionTuner
+    t = T(); RHSDA_SE._spin_barrier_tuner_reset!(t, true)
+    p = (; shared_buffers=(; spin_barrier_tuner=t, rhs_region_tuning=Ref(false),
+        rhs_region_tuners=Dict{Symbol, R}(), rhs_plan_step_cache=Ref{Any}(nothing)))
+    @test RHSDA_SE._rhs_region_ran_full(p, :rhs_harmonics_batch)        # incumbent arm
+    t.on = true                                                           # challenger arm
+    @test !RHSDA_SE._rhs_region_ran_full(p, :rhs_harmonics_batch)
+    @test !RHSDA_SE._rhs_region_ran_full(p, :rhs_flat_queue)
+    t.incumbent = true                                                    # settled on
+    @test RHSDA_SE._rhs_region_ran_full(p, :rhs_harmonics_batch_spin)
+    t.enabled = false; t.incumbent = false                                # forced modes: no probe
+    @test RHSDA_SE._rhs_region_ran_full(p, :rhs_harmonics_batch_spin)
+end
+
+# The arm (dispatch, and with it the default route's floors) changes from call
+# to call under auto; the derivative and the solve must not.
+@testset "Spin barrier on/off/auto leave the RHS and the solve bit-identical" begin
+    PP = SpaceAGORA.SimulationModel.ParallelPolicy
+    planet = Earth()
+    gravity_file = joinpath(normpath(joinpath(@__DIR__, "..", "..", "..")),
+        "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+    model = GravitationalHarmonicsModel(20, 20, gravity_file, planet)
+    n = 37
+    args = _rhs_direct_assembly_config(n_sats=n, effectors=(model,))
+    u = RHSDA_SE.build_initial_conditions(args)
+    fresh_p(raw) = begin
+        p = ODEParams(n_sats=n, args=args)
+        p.is_active .= true
+        p.shared_buffers.rhs_env_config[] = withenv(() -> RHSDA_SE._snapshot_rhs_plan_env_config(),
+            "SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER" => raw)
+        p
+    end
+    rhs(p) = (du = fill!(zero(u), 99.0); RHSDA_SE.spacecraft_dynamics!(du, u, p, 30.0); ComponentArrays.getdata(du))
+    ref = rhs(fresh_p("0"))
+    @test !any(==(99.0), ref)
+    @test isequal(rhs(fresh_p("1")), ref)
+    p = fresh_p("auto")
+    RHSDA_SE._spin_barrier_tuner_reset!(p.shared_buffers.spin_barrier_tuner, true)
+    arms = Set{Bool}()
+    for k in 1:120
+        push!(arms, p.shared_buffers.spin_barrier_tuner.on)
+        @test isequal(rhs(p), ref)
+    end
+    @test arms == Set([false, true])
+    PP._destroy_persistent_foreach_scope!(PP._active_policy_scope_id())
+
+    finals = Dict{String, Vector{Float64}}()
+    for raw in ("0", "1", "auto")
+        sol = withenv("SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER" => raw) do
+            SpaceAGORA.run_simulation(_rhs_direct_assembly_config(n_sats=n, effectors=(model,));
+                return_solution=true)
+        end
+        s = sol isa Tuple ? last(sol) : sol
+        finals[raw] = copy(ComponentArrays.getdata(s.u[end]))
+    end
+    @test isequal(finals["1"], finals["0"])
+    @test isequal(finals["auto"], finals["0"])
+end

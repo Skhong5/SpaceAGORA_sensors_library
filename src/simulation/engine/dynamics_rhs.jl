@@ -960,9 +960,114 @@ end
 # so a call the search ran narrower must not be recorded as one at full width.
 @inline function _rhs_region_ran_full(p, source::Symbol)::Bool
     sb = p.shared_buffers
+    # Nor as the solve's configuration while the spin-barrier probe runs the
+    # other arm: that call measured a dispatch (and route) the solve is not using.
+    if hasproperty(sb, :spin_barrier_tuner)
+        sbt = sb.spin_barrier_tuner
+        sbt.enabled && sbt.on != sbt.incumbent && return false
+    end
     sb.rhs_region_tuning[] || return true
     t = get(sb.rhs_region_tuners, source, nothing)
     return t === nothing || t.last_width >= t.allotment
+end
+
+# ── Spin barrier, auto ──────────────────────────────────────────────────────
+#
+# The spin-barrier pool (SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER) cuts the fused
+# harmonics region's wake and join to tens of nanoseconds, but its spinners hold
+# every thread between calls, and with the barrier on the default plan also
+# drops the flat route's satellites-per-worker floors. Whether that pays depends
+# on the work per worker per call: on TRX50 at 32 threads, P1's static routes ran
+# 64 spacecraft in 27.5 s with it and 3.0 s without, and 1024 spacecraft in
+# 1.64 s with it and 1.83-1.99 s without.
+#
+# Under `auto` each solve measures it in place, as _rhs_region does widths. It
+# starts on the barrier off. A probe times SAMPLES whole RHS calls on the
+# incumbent arm, then the other in windows of SAMPLES (see below), each a
+# median after discarding the first SETTLE calls past a switch; the challenger
+# takes over only if faster by MARGIN. The next probe comes REPROBE calls later,
+# doubling up to REPROBE_MAX while the choice holds, so a settled solve spends
+# almost nothing on the losing arm. Turning the barrier off releases the pool,
+# so its spinners stop competing with the regions that remain.
+#
+# Every arm computes the same derivative bit for bit: the barrier changes only
+# which threads run which spacecraft slices, and the route the floors select is
+# itself bit-identical to the others.
+const _SPIN_SAMPLES = 5
+const _SPIN_SETTLE = 3
+const _SPIN_WINDOWS = 8
+const _SPIN_MARGIN = 0.05
+const _SPIN_REPROBE = 1024
+const _SPIN_REPROBE_MAX = 65536
+
+function _spin_barrier_tuner_reset!(t::SimulationModel.SpinBarrierTuner, enabled::Bool)::Nothing
+    t.enabled = enabled
+    t.on = false; t.incumbent = false
+    t.probing = true; t.phase = 1; t.skip = _SPIN_SETTLE
+    empty!(t.samples); t.incumbent_ns = Inf
+    t.calls = 0; t.period = _SPIN_REPROBE
+    t.probes = 0; t.switches = 0
+    return nothing
+end
+
+function _spin_barrier_set_arm!(p, t::SimulationModel.SpinBarrierTuner, on::Bool)::Nothing
+    t.on == on && return nothing
+    t.on = on
+    t.skip = _SPIN_SETTLE
+    # The default plan reads the arm, so a per-step cached plan is stale.
+    p.shared_buffers.rhs_plan_step_cache[] = nothing
+    on || SimulationModel.ParallelPolicy.release_spin_barrier_pool!(:rhs_harmonics_batch)
+    return nothing
+end
+
+# Advance the tuner by one timed RHS call.
+function _spin_barrier_observe!(p, t::SimulationModel.SpinBarrierTuner, elapsed_ns::Int64)::Nothing
+    if !t.probing
+        t.calls += 1
+        if t.calls >= t.period
+            t.probing = true; t.phase = 1; t.skip = 0
+        end
+        return nothing
+    end
+    if t.skip > 0
+        t.skip -= 1
+        return nothing
+    end
+    push!(t.samples, elapsed_ns)
+    length(t.samples) < _SPIN_SAMPLES && return nothing
+    ns = Float64(sort!(t.samples)[(_SPIN_SAMPLES + 1) ÷ 2])
+    empty!(t.samples)
+    if t.phase == 1
+        t.incumbent_ns = ns
+        t.challenger_ns = Inf
+        t.windows = 0
+        t.phase = 2
+        _spin_barrier_set_arm!(p, t, !t.incumbent)
+        return nothing
+    end
+    # The challenger is timed in windows of SAMPLES calls until it wins by the
+    # margin, stops improving, or runs out of windows: a freshly created spin
+    # pool runs slow for its first 10-30 calls while the scheduler spreads its
+    # spinners over the threads (seen at 256 spacecraft, 12 threads: 280 us per
+    # call settling to 80 us, against 170 us with the barrier off).
+    t.windows += 1
+    wins = ns < (1.0 - _SPIN_MARGIN) * t.incumbent_ns
+    improving = ns < (1.0 - _SPIN_MARGIN) * t.challenger_ns
+    t.challenger_ns = ns
+    !wins && improving && t.windows < _SPIN_WINDOWS && return nothing
+    t.probes += 1
+    keep = wins ? !t.incumbent : t.incumbent
+    if keep == t.incumbent
+        t.period = min(2 * t.period, _SPIN_REPROBE_MAX)
+    else
+        t.period = _SPIN_REPROBE
+        t.switches += 1
+        t.incumbent = keep
+    end
+    _spin_barrier_set_arm!(p, t, keep)
+    t.probing = false
+    t.calls = 0
+    return nothing
 end
 
 @inline _batchable_effector(::Any)::Bool = false
@@ -1241,8 +1346,10 @@ function _accumulate_harmonics_flat_batch!(
     active_sats = count(identity, p.is_active)
     active_sats <= 0 && return nothing
     rhs_env = _rhs_env_config(p)
-    min_sats = rhs_env.harmonics_batch_spin_barrier ?
-        1 : rhs_env.harmonics_batch_min_sats_per_worker
+    spin = _spin_barrier_active(p, rhs_env)
+    min_sats = spin ? 1 : rhs_env.harmonics_batch_min_sats_per_worker
+    # Each dispatch keeps its own width search, so one's timings never steer the other's.
+    region = spin ? :rhs_harmonics_batch_spin : :rhs_harmonics_batch
     capped_allotment = max(1, min(plan.allotment, fld(active_sats, max(1, min_sats))))
     slots = p.shared_buffers.rhs_flat_effector_partials[]
     work_items = p.shared_buffers.rhs_flat_work_items[]
@@ -1265,7 +1372,7 @@ function _accumulate_harmonics_flat_batch!(
     started_ns = needs_timing ? time_ns() : UInt64(0)
 
     pert = SimulationModel.DynamicEffectors.PerturbationEffectors
-    _rhs_region(p, :rhs_harmonics_batch, capped_allotment) do allotment
+    _rhs_region(p, region, capped_allotment) do allotment
         workers = SimulationModel.ParallelPolicy.thread_worker_count(active_sats, allotment)
         n_workers = min(workers, n_items)
         batch_size = cld(n_items, max(1, n_workers))
@@ -1292,7 +1399,7 @@ function _accumulate_harmonics_flat_batch!(
         if n_workers <= 1
             run_slice!(1, n_items, 1)
         else
-            dispatch_fn = rhs_env.harmonics_batch_spin_barrier ?
+            dispatch_fn = spin ?
                 SimulationModel.ParallelPolicy.threaded_foreach_worker_spin :
                 SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent
             dispatch_fn(
@@ -1308,7 +1415,7 @@ function _accumulate_harmonics_flat_batch!(
             end
         end
     end
-    if needs_timing && _rhs_region_ran_full(p, :rhs_harmonics_batch)
+    if needs_timing && _rhs_region_ran_full(p, region)
         elapsed_ns = Int64(time_ns() - started_ns)
         _update_effector_cost_model!(p.shared_buffers, max(1, active_sats), elapsed_ns, plan.allotment)
         SimulationModel.ParallelPolicy.record_policy_observation!(
@@ -2700,7 +2807,14 @@ end
 function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Float64)
     trial = p.shared_buffers.rhs_width_trial[]
     if trial === nothing
-        _spacecraft_dynamics_dispatch!(du, u, p, t)
+        sbt = p.shared_buffers.spin_barrier_tuner
+        if sbt.enabled
+            started = time_ns()
+            _spacecraft_dynamics_dispatch!(du, u, p, t)
+            _spin_barrier_observe!(p, sbt, Int64(time_ns() - started))
+        else
+            _spacecraft_dynamics_dispatch!(du, u, p, t)
+        end
     else
         rhs_width_trial_step!(du, u, p, t, trial, _spacecraft_dynamics_dispatch!)
     end
