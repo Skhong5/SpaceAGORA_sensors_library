@@ -302,6 +302,24 @@ function _ppc_mode_with_backend(mode::PPCModeSpec, backend::String)::PPCModeSpec
     )
 end
 
+# SPACEAGORA_PPB_WARMUP_SPAN=<fraction in (0, 1]> (default 1): warm-ups after the
+# first run that fraction of the case's mission. Only the coordinator warm-ups of
+# the pinned modes (policy_adaptive=false) are shortened:
+#   * the first warm-up stays full length, so every path the timed run reaches
+#     (atmosphere entry, events, drag passes) is compiled before the clock as now;
+#   * pinned modes run with SPACEAGORA_RHS_CALIBRATE=off and their profiles
+#     (R0-R3) persist no policy state, so their warm-ups feed nothing the timed
+#     repeats read except compiled code and the heap;
+#   * adaptive modes keep full-length warm-ups: their warm-ups record solve times,
+#     honoured time and votes in the RHS calibration store, persistent hints and
+#     the outer-route state, and the timed repeats act on those;
+#   * pool workers still run one full sample each, and adaptive campaigns their
+#     full warm-up campaigns (ppc_run_adaptive_batch is untouched).
+function _ppc_warmup_span()::Float64
+    v = something(tryparse(Float64, strip(get(ENV, "SPACEAGORA_PPB_WARMUP_SPAN", "1"))), 1.0)
+    return (isfinite(v) && 0.0 < v < 1.0) ? v : 1.0
+end
+
 function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSpec, sample_count::Int)
     sample_indices = collect(1:sample_count)
     sample_seeds = [cfg.worker_seed + i - 1 for i in sample_indices]
@@ -331,12 +349,19 @@ function ppc_run_sample_batch(case::PPCCaseSpec, cfg::PPCConfig, mode::PPCModeSp
     end
     withenv(ppc_mode_env_pairs(mode, cfg; outer_tasks=outer_tasks)...) do
         for warmup_idx in 1:cfg.warmup
-            warmup_args = ppc_single_config(
-                case.name,
-                cfg;
-                seed=cfg.worker_seed - warmup_idx,
-                mc_index=warmup_idx
-            )
+            # Short warm-ups (SPACEAGORA_PPB_WARMUP_SPAN): see _ppc_warmup_span.
+            span = (warmup_idx > 1 && !mode.policy_adaptive) ? _ppc_warmup_span() : 1.0
+            _PPC_MISSION_SCALE[] = span
+            warmup_args = try
+                ppc_single_config(
+                    case.name,
+                    cfg;
+                    seed=cfg.worker_seed - warmup_idx,
+                    mc_index=warmup_idx
+                )
+            finally
+                _PPC_MISSION_SCALE[] = 1.0
+            end
             try
                 ppc_solve_once(warmup_args, cfg)
             catch
@@ -1198,6 +1223,63 @@ function ppc_validate_resume_budget(root::String, condition::String)::Nothing
     return nothing
 end
 
+# ── Shared worker process (SPACEAGORA_PPB_SHARED_PROCESS=1, default off) ──────
+#
+# Off, every (case, mode, threads, mc) point is its own Julia process, which
+# then compiles everything it runs, and so does each of its pool workers. On,
+# the points of one controller run that would be launched with the same
+# command-line flags and the same environment (same --threads, same pool cap,
+# same per-point env such as the equal-core-budget pair) run in ONE process,
+# in a seeded random order, sharing its compiled code and its Distributed pool.
+# Each point still runs its own warm-ups before its own timed repeats and writes
+# the same rows to the same file.
+#
+# A point keeps a process of its own when
+#   * its mode is adaptive (policy_adaptive): its warm-ups and repeats read and
+#     write the RHS calibration store, persistent hints and route state, which a
+#     process caches once loaded, so it stays exactly as before;
+#   * its case is a native-GRAM case (PPC_GRAM_LIVE_CASES): cases.jl sets
+#     process-wide GRAM env and loads GRAMSuite from the --case on the command
+#     line, and GRAM models are cached per process.
+_ppc_shared_process()::Bool = _ppc_bool(get(ENV, "SPACEAGORA_PPB_SHARED_PROCESS", "0"))
+
+function _ppc_shared_key(case::String, mode::PPCModeSpec, threads::Int, cmd::Cmd)
+    _ppc_shared_process() || return nothing
+    (mode.policy_adaptive || ppc_workload_skips_case(case)) && return nothing
+    return (threads, cmd.env)
+end
+
+function _ppc_run_shared!(points::Vector{Any}, scratch::String, cfg::PPCConfig)
+    first_pt = first(points)
+    if length(points) == 1
+        println("[run] $(first_pt.case) mode=$(first_pt.mode) repeats=$(cfg.repeats) mc=$(first_pt.mc_count)")
+        run(first_pt.cmd)
+        return nothing
+    end
+    path = joinpath(scratch, "shared_points_$(basename(first_pt.outfile)).tsv")
+    write(path, join(("$(p.case)\t$(p.mode)\t$(p.mc_count)\t$(p.outfile)\n" for p in points)))
+    println("[run-shared] $(length(points)) points in one process: " *
+            join(("$(p.case)/$(p.mode)/mc$(p.mc_count)" for p in points), ", "))
+    run(addenv(first_pt.cmd, "SPACEAGORA_PPC_POINTS_FILE" => path))
+    return nothing
+end
+
+# Worker side of the shared process: the points file's points, shuffled.
+function ppc_run_worker_points(cfg::PPCConfig, path::String)
+    points = [split(l, '\t') for l in eachline(path) if !isempty(strip(l))]
+    shuffle!(MersenneTwister(cfg.worker_seed), points)
+    for (case, mode, mc, outfile) in points
+        println("[shared] $(case) mode=$(mode) mc=$(mc) threads=$(cfg.worker_threads)")
+        flush(stdout)
+        # Per-point harness state, as a fresh process would have it.
+        _PPC_ADAPTIVE_ROUTE_STATE[] = nothing
+        _PPC_SAMPLE_FN_CACHE[] = nothing
+        ppc_run_worker_performance(_ppc_with(cfg; worker_case=String(case), worker_mode=String(mode),
+            worker_mc_samples=parse(Int, mc), worker_outfile=String(outfile)))
+    end
+    return nothing
+end
+
 function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Function}=nothing)
     stamp = Dates.format(now(UTC), dateformat"yyyymmdd_HHMMSS")
     outdir = cfg.outdir == PPC_DEFAULT_OUTDIR ? joinpath(PPC_DEFAULT_OUTDIR, stamp) : cfg.outdir
@@ -1235,6 +1317,8 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
     println("[parallelization-performance] precompile_workload=$(workload_env === nothing ? "off" : workload_env)")
 
     perf_paths = String[]
+    shared = Dict{Any, Vector{Any}}()
+    shared_order = Any[]
     for case in cases
         case_meta = ppc_case_catalog()[case]
         is_mc = case_meta.montecarlo
@@ -1279,12 +1363,22 @@ function ppc_run_controller(cfg::PPCConfig; on_run_complete::Union{Nothing, Func
                     parity=false,
                     workload_env=workload_env
                 )
-                println("[run] $(case) mode=$(mode) threads=$(thread_count) repeats=$(cfg.repeats) mc=$(mc_count)")
-                run(cmd)
-                on_run_complete === nothing || on_run_complete()
+                key = _ppc_shared_key(case, modes[mode], thread_count, cmd)
+                if key === nothing
+                    println("[run] $(case) mode=$(mode) threads=$(thread_count) repeats=$(cfg.repeats) mc=$(mc_count)")
+                    run(cmd)
+                    on_run_complete === nothing || on_run_complete()
+                else
+                    haskey(shared, key) || push!(shared_order, key)
+                    push!(get!(Vector{Any}, shared, key), (; case, mode, mc_count, outfile, cmd))
+                end
             end
             push!(perf_paths, outfile)
         end
+    end
+    for key in shared_order
+        _ppc_run_shared!(shared[key], scratch, cfg)
+        on_run_complete === nothing || on_run_complete()
     end
 
     parity_paths = String[]
@@ -1349,7 +1443,10 @@ function main_parallelization_performance()
         if isempty(cfg.worker_outfile) || isempty(cfg.worker_case) || isempty(cfg.worker_mode)
             throw(ArgumentError("--worker requires --case, --mode, and --outfile."))
         end
-        if cfg.worker_parity
+        points_file = pop!(ENV, "SPACEAGORA_PPC_POINTS_FILE", "")
+        if !isempty(points_file)
+            ppc_run_worker_points(cfg, points_file)
+        elseif cfg.worker_parity
             ppc_run_worker_parity(cfg)
         else
             ppc_run_worker_performance(cfg)
