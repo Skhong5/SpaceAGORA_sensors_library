@@ -28,7 +28,7 @@ export Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams
 export SaveCache, SaveData
 export SRPSunEphemerisCache, NBodyEphemerisCache, PlanetFrameEphemerisCache, SpiceRuntimeCounters, SpiceRhsMemo
 export GramTrackCache, VacuumPredictedGRAMCache, GramDensityPerturbationState, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace
-export PolicyDecisionEnvConfig, GramTrackCacheConfig, CallbackEnvConfig, RhsPlanEnvConfig, RhsRegionTuner
+export PolicyDecisionEnvConfig, GramTrackCacheConfig, CallbackEnvConfig, RhsPlanEnvConfig, RhsRegionTuner, SpinBarrierTuner
 export AbstractPolicyContext
 export RhsEffectorDecision, RhsExecutionPlan
     @kwdef struct Mission
@@ -757,7 +757,9 @@ export RhsEffectorDecision, RhsExecutionPlan
         # Routing only: satellites per worker before the default plan opens a
         # flat worker team (setup.jl, _rhs_harmonics_flat_min_sats_per_worker).
         harmonics_flat_min_sats_per_worker::Int
-        harmonics_batch_spin_barrier::Bool
+        # :on, :off or :auto (SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER); resolve
+        # per call with SimulationEngine._spin_barrier_active.
+        harmonics_batch_spin_barrier::Symbol
         harmonics_batch_allow_with_outer::Bool
         rhs_effector_cost_min_samples::Int
         flat_packet_target_min_ns::Float64
@@ -806,6 +808,26 @@ export RhsEffectorDecision, RhsExecutionPlan
         last_width::Int
     end
     RhsRegionTuner(allotment::Int) = RhsRegionTuner(allotment, allotment, allotment, Inf, Inf, Int64[], true, 0, allotment)
+
+    # Spin-barrier choice under SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER=auto (see
+    # _spin_barrier_observe! in dynamics_rhs.jl): the arm the next RHS call runs,
+    # the settled choice, and the probe that compares the two in place.
+    mutable struct SpinBarrierTuner
+        enabled::Bool        # auto mode and more than one thread, set per solve
+        on::Bool             # arm of the current call
+        incumbent::Bool      # settled choice
+        probing::Bool
+        phase::Int           # 1: timing the incumbent, 2: timing the challenger
+        skip::Int            # calls to discard after an arm switch
+        samples::Vector{Int64}
+        incumbent_ns::Float64
+        calls::Int
+        period::Int          # calls between probes; doubles while the choice holds
+        probes::Int
+        switches::Int
+        last_start::UInt64   # time_ns() at the previous RHS call; 0 before the first
+    end
+    SpinBarrierTuner() = SpinBarrierTuner(false, false, false, true, 1, 1, Int64[], Inf, 0, 0, 0, 0, UInt64(0))
 
     # A struct to hold the data shared between the callback and the integrator.
     # n_sats is a plain runtime field (not a type parameter): none of these
@@ -889,6 +911,7 @@ export RhsEffectorDecision, RhsExecutionPlan
         # once the pre-solve calibration is done (execution.jl).
         rhs_region_tuning::Base.RefValue{Bool} = Ref(false)
         rhs_region_tuners::Dict{Symbol, RhsRegionTuner} = Dict{Symbol, RhsRegionTuner}()
+        spin_barrier_tuner::SpinBarrierTuner = SpinBarrierTuner()
         # Per-satellite atmosphere presence flag, maintained by get_drag_state_callback.
         # The timestamp is NaN until the callback has staged a value for a known
         # integrator time, so RHS code can distinguish current state from defaults.

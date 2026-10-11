@@ -510,7 +510,9 @@ The probe ranks `:satellite_batch` fastest and the full-solve evidence agrees.
   be keyed by machine.
 - **Known traps.** `SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER=1`, documented as
   enabling scaling to 32–128 threads, measured **2× slower** (2.67 → 5.31 s @12t)
-  — spinning workers starve the other parallel regions.
+  — spinning workers starve the other parallel regions. (2026-10-11: the switch
+  now defaults to `auto`, which times both arms inside each solve and keeps the
+  faster; `1`/`0` still force it.)
   `SPACEAGORA_HARMONICS_BATCH_MIN_SATS_PER_WORKER` 4→256: no effect. Persistent
   pool vs plain `@spawn`: 56 vs 25 µs/dispatch in isolation, a wash end-to-end.
 

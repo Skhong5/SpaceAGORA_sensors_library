@@ -45,3 +45,26 @@ const PP_SBY = SpaceAGORA.SimulationModel.ParallelPolicy
         end
     end
 end
+
+# Under SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER=auto a solve that turns the
+# barrier off releases its pool, so the spinners stop holding threads; the next
+# dispatch creates a fresh one, and a caller holding the released pool is
+# refused rather than left waiting on workers that have exited.
+@testset "Released spin pool stops, and the next dispatch gets a new one" begin
+    n = max(2, Threads.nthreads())
+    key = PP_SBY._persistent_pool_key(:spin_release)
+    seen = zeros(Int, n)
+    PP_SBY.threaded_foreach_worker_spin((_w, i) -> (seen[i] += 1), :spin_release, n, n)
+    Threads.nthreads() > 1 && @test haskey(PP_SBY._spin_barrier_pools, key)
+    old = get(PP_SBY._spin_barrier_pools, key, nothing)
+    PP_SBY.release_spin_barrier_pool!(:spin_release)
+    @test !haskey(PP_SBY._spin_barrier_pools, key)
+    PP_SBY.release_spin_barrier_pool!(:spin_release)          # no pool: a no-op
+    if old !== nothing
+        @test old.stop[]
+        @test PP_SBY._spin_barrier_dispatch!(old, n, n, (_w, _i) -> error("never")) == false
+    end
+    PP_SBY.threaded_foreach_worker_spin((_w, i) -> (seen[i] += 1), :spin_release, n, n)
+    @test all(==(2), seen)
+    PP_SBY._destroy_persistent_foreach_scope!(PP_SBY._active_policy_scope_id())
+end

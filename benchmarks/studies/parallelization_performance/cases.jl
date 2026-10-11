@@ -402,6 +402,11 @@ function ppc_harmonics_model(planet, degree::Int)
     return InverseSquaredJ2GravityModel()
 end
 
+# Mission-time multiplier for configs built while it is set; 1.0 except around a
+# short warm-up (SPACEAGORA_PPB_WARMUP_SPAN, see ppc_run_sample_batch). x * 1.0 is
+# exact, so every other config is bit-for-bit what it was.
+const _PPC_MISSION_SCALE = Ref(1.0)
+
 function ppc_build_config(;
     planet,
     spacecraft,
@@ -449,7 +454,7 @@ function ppc_build_config(;
             mission_type=MissionTime,
             keplerian=true,
             number_of_orbits=1,
-            mission_time=mission_time_s,
+            mission_time=mission_time_s * _PPC_MISSION_SCALE[],
             orientation_sim=orientation_sim,
             num_steps_to_save=num_steps_to_save,
             data_rate=data_rate
