@@ -821,14 +821,13 @@ export RhsEffectorDecision, RhsExecutionPlan
         skip::Int            # calls to discard after an arm switch
         samples::Vector{Int64}
         incumbent_ns::Float64
-        challenger_ns::Float64   # latest challenger window
-        windows::Int             # challenger windows timed this probe
         calls::Int
         period::Int          # calls between probes; doubles while the choice holds
         probes::Int
         switches::Int
+        last_start::UInt64   # time_ns() at the previous RHS call; 0 before the first
     end
-    SpinBarrierTuner() = SpinBarrierTuner(false, false, false, true, 1, 1, Int64[], Inf, Inf, 0, 0, 0, 0, 0)
+    SpinBarrierTuner() = SpinBarrierTuner(false, false, false, true, 1, 1, Int64[], Inf, 0, 0, 0, 0, UInt64(0))
 
     # A struct to hold the data shared between the callback and the integrator.
     # n_sats is a plain runtime field (not a type parameter): none of these

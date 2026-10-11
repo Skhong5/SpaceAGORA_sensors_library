@@ -982,10 +982,11 @@ end
 # 1.64 s with it and 1.83-1.99 s without.
 #
 # Under `auto` each solve measures it in place, as _rhs_region does widths. It
-# starts on the barrier off. A probe times SAMPLES whole RHS calls on the
-# incumbent arm, then the other in windows of SAMPLES (see below), each a
-# median after discarding the first SETTLE calls past a switch; the challenger
-# takes over only if faster by MARGIN. The next probe comes REPROBE calls later,
+# starts on the barrier off. A probe times RHS call intervals (start to next
+# start, so work between calls counts) on the incumbent arm, then on the other,
+# after discarding the first SETTLE calls past a switch (pool start-up, route
+# change); see _spin_barrier_observe! for the windows. The challenger takes
+# over only if faster by MARGIN. The next probe comes REPROBE calls later,
 # doubling up to REPROBE_MAX while the choice holds, so a settled solve spends
 # almost nothing on the losing arm. Turning the barrier off releases the pool,
 # so its spinners stop competing with the regions that remain.
@@ -993,8 +994,8 @@ end
 # Every arm computes the same derivative bit for bit: the barrier changes only
 # which threads run which spacecraft slices, and the route the floors select is
 # itself bit-identical to the others.
-const _SPIN_SAMPLES = 5
-const _SPIN_SETTLE = 3
+const _SPIN_SAMPLES = 32
+const _SPIN_SETTLE = 8
 const _SPIN_WINDOWS = 8
 const _SPIN_MARGIN = 0.05
 const _SPIN_REPROBE = 1024
@@ -1006,7 +1007,7 @@ function _spin_barrier_tuner_reset!(t::SimulationModel.SpinBarrierTuner, enabled
     t.probing = true; t.phase = 1; t.skip = _SPIN_SETTLE
     empty!(t.samples); t.incumbent_ns = Inf
     t.calls = 0; t.period = _SPIN_REPROBE
-    t.probes = 0; t.switches = 0
+    t.probes = 0; t.switches = 0; t.last_start = 0
     return nothing
 end
 
@@ -1034,27 +1035,27 @@ function _spin_barrier_observe!(p, t::SimulationModel.SpinBarrierTuner, elapsed_
         return nothing
     end
     push!(t.samples, elapsed_ns)
-    length(t.samples) < _SPIN_SAMPLES && return nothing
-    ns = Float64(sort!(t.samples)[(_SPIN_SAMPLES + 1) ÷ 2])
-    empty!(t.samples)
+    n = length(t.samples)
+    n % _SPIN_SAMPLES == 0 || return nothing
+    # Means, not medians: what the barrier costs at small constellations
+    # arrives partly as rare long stalls (at 64 spacecraft on 12 threads it won
+    # on 5-call medians and lost the solve by 35%), so each arm is judged over
+    # WINDOWS * SAMPLES calls. The challenger is cut short as soon as its
+    # running mean is behind by the margin, so a clearly worse arm costs SAMPLES
+    # calls; it takes over only after the full span, ahead by the margin.
+    mean_ns = sum(t.samples) / n
     if t.phase == 1
-        t.incumbent_ns = ns
-        t.challenger_ns = Inf
-        t.windows = 0
+        n < _SPIN_WINDOWS * _SPIN_SAMPLES && return nothing
+        empty!(t.samples)
+        t.incumbent_ns = mean_ns
         t.phase = 2
         _spin_barrier_set_arm!(p, t, !t.incumbent)
         return nothing
     end
-    # The challenger is timed in windows of SAMPLES calls until it wins by the
-    # margin, stops improving, or runs out of windows: a freshly created spin
-    # pool runs slow for its first 10-30 calls while the scheduler spreads its
-    # spinners over the threads (seen at 256 spacecraft, 12 threads: 280 us per
-    # call settling to 80 us, against 170 us with the barrier off).
-    t.windows += 1
-    wins = ns < (1.0 - _SPIN_MARGIN) * t.incumbent_ns
-    improving = ns < (1.0 - _SPIN_MARGIN) * t.challenger_ns
-    t.challenger_ns = ns
-    !wins && improving && t.windows < _SPIN_WINDOWS && return nothing
+    behind = mean_ns > (1.0 + _SPIN_MARGIN) * t.incumbent_ns
+    !behind && n < _SPIN_WINDOWS * _SPIN_SAMPLES && return nothing
+    empty!(t.samples)
+    wins = !behind && mean_ns < (1.0 - _SPIN_MARGIN) * t.incumbent_ns
     t.probes += 1
     keep = wins ? !t.incumbent : t.incumbent
     if keep == t.incumbent
@@ -2809,9 +2810,13 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
     if trial === nothing
         sbt = p.shared_buffers.spin_barrier_tuner
         if sbt.enabled
-            started = time_ns()
+            # Timed start to start: the spinners' cost falls partly outside the
+            # RHS (integrator and callback work on the threads they hold), so a
+            # call's own duration understates it.
+            now = time_ns()
+            sbt.last_start == 0 || _spin_barrier_observe!(p, sbt, Int64(now - sbt.last_start))
+            sbt.last_start = now
             _spacecraft_dynamics_dispatch!(du, u, p, t)
-            _spin_barrier_observe!(p, sbt, Int64(time_ns() - started))
         else
             _spacecraft_dynamics_dispatch!(du, u, p, t)
         end
