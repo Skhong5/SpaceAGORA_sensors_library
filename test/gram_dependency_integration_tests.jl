@@ -116,8 +116,9 @@ end
             @test p.shared_buffers.winds[1] == sample.wind_pp
         end
 
-        # The dependency API upgrade does not add a new named preset or widen
-        # the existing format-1 catalog contract. No artifact is downloaded.
+        # Published presets retain their format-1 contract. An explicitly
+        # supplied format-2 catalog must declare its stored winds consistently.
+        # Catalog validation does not download an artifact.
         catalog = TOML.parsefile(EM._SURROGATE_CATALOG)
         entry = deepcopy(first(filter(p -> get(p,"kind","gram_grid") == "gram_near_surface_scalars", catalog["presets"])))
         @test entry["required_metadata"]["format"] == "spaceagora_mars_near_surface_scalars_v1"
@@ -128,7 +129,14 @@ end
         open(io -> TOML.print(io,catalog),file,"w")
         error = try SpaceAGORA.available_surrogate_presets(; catalog_file=file); nothing catch ex; ex end
         @test error isa ArgumentError
-        @test occursin("Near-surface presets require payload format", sprint(showerror,error))
+        @test occursin("returns its stored winds", sprint(showerror,error))
+        atmosphere = entry["atmosphere"]
+        atmosphere["wind_returned"] = "stored_components"
+        atmosphere["wind_convention"] = "stored_nominal_local_ENU"
+        atmosphere["wind_boolean_suppresses_stored_components"] = false
+        append!(atmosphere["fields"], ["wind_ew_ms", "wind_ns_ms", "wind_up_ms"])
+        open(io -> TOML.print(io,catalog),file,"w")
+        @test length(SpaceAGORA.available_surrogate_presets(; catalog_file=file)) == 1
     end
     @test GRAMSuite._GRAM_WRAPPER[] === nothing
     @test !any(path -> occursin("libgram",lowercase(path)), Libdl.dllist())
