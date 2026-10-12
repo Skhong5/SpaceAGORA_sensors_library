@@ -42,8 +42,9 @@ exported symbols. That surface currently includes:
 - CLI and asset-report entrypoints
 
 Documented versioned facades rooted at `SpaceAGORA` are also supported integration
-boundaries: `HYPRServices` and `ExternalPropagationServices`. They expose only
-their explicit binding inventories and are used by qualified name. Their
+boundaries: `HYPRServices` and `ExternalPropagationServices`. Their documented
+metadata, lifecycle operations and explicit binding inventories define the
+supported boundary; use them by qualified name. Their
 [adapter contract](maintainer/adapter_contract.md) controls compatibility
 separately from package versions. Other symbols absent from the documented root
 API or a facade inventory should be treated as internal.
