@@ -301,10 +301,10 @@ function _ppb_run_full_budget!(
         cfg = _ppb_build_ppc_config(phase, ppb, sub_dir; process_workers=workers,
                                     threads=[budget], preview_worker_cap=false)
         withenv("SPACEAGORA_CAMPAIGN_DISPATCH_TRACE" => (isempty(trace) ? "1" : trace)) do
-            ppc_run_controller(cfg; on_run_complete)
+            _ppb_run_controller!(errors, "full budget workers=$(workers) threads=$(budget): ", cfg, on_run_complete)
         end
     catch err
-        push!(errors, "full budget workers=$(workers) threads=$(budget): $(sprint(showerror, err))")
+        push!(errors, "full budget workers=$(workers) threads=$(budget): $(_ppb_err_text(err))")
     end
     return nothing
 end
@@ -389,9 +389,9 @@ function _ppb_run_phase(
                         rung_phase, ppb, sub_dir; process_workers=w, threads=[t],
                         preview_worker_cap=worker_cap,
                     )
-                    ppc_run_controller(cfg; on_run_complete)
+                    _ppb_run_controller!(errors, "workers=$(w) threads=$(t): ", cfg, on_run_complete)
                 catch err
-                    push!(errors, "workers=$(w) threads=$(t): $(sprint(showerror, err))")
+                    push!(errors, "workers=$(w) threads=$(t): $(_ppb_err_text(err))")
                 end
             end
         end
@@ -407,9 +407,9 @@ function _ppb_run_phase(
         else
             try
                 mkpath(phase_dir)
-                ppc_run_controller(_ppb_build_ppc_config(phase, ppb, phase_dir); on_run_complete)
+                _ppb_run_controller!(errors, "", _ppb_build_ppc_config(phase, ppb, phase_dir), on_run_complete)
             catch err
-                push!(errors, sprint(showerror, err))
+                push!(errors, _ppb_err_text(err))
             end
         end
         runs = 1
@@ -425,9 +425,9 @@ function _ppb_run_phase(
                 try
                     mkpath(sub_dir)
                     cfg = _ppb_build_ppc_config(phase, ppb, sub_dir; process_workers=w)
-                    ppc_run_controller(cfg; on_run_complete)
+                    _ppb_run_controller!(errors, "workers=$(w): ", cfg, on_run_complete)
                 catch err
-                    push!(errors, "workers=$(w): $(sprint(showerror, err))")
+                    push!(errors, "workers=$(w): $(_ppb_err_text(err))")
                 end
             end
         end
@@ -462,6 +462,20 @@ function _ppb_snapshot_csvs!(root::String, stamp::String)
         CSV.write(joinpath(root, "paper_benchmarks_aggregated_$(stamp).csv"), agg)
     catch err
         @warn "Incremental CSV snapshot failed; will retry after the next run" exception=(err, catch_backtrace())
+    end
+    return nothing
+end
+
+# Status first: a ProcessFailedException's own text opens with the command line.
+_ppb_err_text(err) = err isa ProcessFailedException ? ppc_child_status(err).text : sprint(showerror, err)
+
+# ppc_run_controller no longer throws when a child dies; it returns the failed
+# points, which become phase errors here so the summary still reports them.
+function _ppb_run_controller!(errors::Vector{String}, tag::AbstractString, cfg, on_run_complete)
+    failures = ppc_run_controller(cfg; on_run_complete)
+    failures isa AbstractVector || return nothing
+    for f in failures
+        push!(errors, "$(tag)$(f.case) $(f.mode) t$(f.threads) mc$(f.mc) (attempts=$(f.attempts)): $(f.text)")
     end
     return nothing
 end

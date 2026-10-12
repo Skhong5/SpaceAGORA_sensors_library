@@ -320,8 +320,22 @@ export SPACEAGORA_PPB_WORKLOAD=0
 EOF
   fi
   cat >> "$run_sh" <<EOF
+# Build SpaceAGORA's pkgimage and the GRAM extension's here, once, then record
+# the images. A child that finds either stale rebuilds it in place under every
+# process that has it mapped (the 2026-10-11 Part B job: 32 pool workers rebuilt
+# SpaceAGORA mid-run, see ppc_ensure_process_workers!), and nothing in the output
+# said so. The images must be byte-for-byte the same after the command.
+julia --project=. -e 'using SpaceAGORA; d = joinpath(pwd(), "data", "GRAMSuite.jl"); if isfile(joinpath(d, "Project.toml")); pushfirst!(LOAD_PATH, d); import GRAMSuite; end' > "$job_dir/warm.log" 2>&1
+pkgimage_snap() { ls -l --time-style=full-iso "$REMOTE_BASE"/shared_depot/compiled/v*/SpaceAGORA*/*.so 2>/dev/null; }
+pkgimage_snap > "$job_dir/pkgimages_before.txt"
 $cmd_str > "$job_dir/job.log" 2>&1
 EXIT_CODE=\$?
+pkgimage_snap > "$job_dir/pkgimages_after.txt"
+if cmp -s "$job_dir/pkgimages_before.txt" "$job_dir/pkgimages_after.txt"; then
+  echo "PKGIMAGES_REWRITTEN_DURING_RUN=no" >> "$job_dir/job.meta"
+else
+  echo "PKGIMAGES_REWRITTEN_DURING_RUN=YES (diff pkgimages_before.txt pkgimages_after.txt)" >> "$job_dir/job.meta"
+fi
 echo "END=\$(date -Iseconds)" >> "$job_dir/job.meta"
 echo "EXIT_CODE=\$EXIT_CODE" >> "$job_dir/job.meta"
 exit \$EXIT_CODE
