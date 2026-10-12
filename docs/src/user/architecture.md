@@ -327,11 +327,24 @@ description of the current code.
   It preserves the explicit DP8 solver, fresh tolerance settings, and mission
   and dynamics overrides.
 
-**Confirmed cleanup targets:**
+**Benchmark entry point:**
 
-- `benchmarks/studies/performance_static_vs_parallel.jl` includes a
-  nonexistent sibling; the owner is `benchmarks/scripts/performance_paper_pipeline.jl`.
-  Broken include, to be repaired with the parallelization owner.
+- `benchmarks/studies/performance_static_vs_parallel.jl` loads its maintained
+  owner, `benchmarks/scripts/performance_paper_pipeline.jl`, relative to the
+  launcher directory. The include route is tested without executing the pipeline;
+  benchmark workloads and performance validation remain separate.
+- Saved static-versus-parallel runs require the core, per-orbit, entry-duration,
+  report and stage-timing files from the selected raw file's run stamp. Missing
+  legacy files or required stage measurements produce an explicit incomplete-input
+  error; files from another run and estimated zero costs cannot fill those gaps.
+  Hardware metadata remains optional, and split-gate artifacts retain their
+  independently generated timestamps. A run with no selected entry cases still
+  supplies empty entry CSVs and its measured entry-stage time.
+- Aggregation preserves entry reference/measured roles, failed attempts, per-pass
+  reference values and errors, and uses the existing success-only summary rules.
+  It reports the mean recorded entry-stage time and mean recorded runtime total
+  across passes. That total includes other enabled stages, such as the multirate
+  gate; it does not measure child startup or complete campaign wall time.
 
 **Intentional similarities (keep):**
 
@@ -347,10 +360,12 @@ description of the current code.
   which definitions can share an owner. Their current duplication is not yet
   established as intentional or necessary.
 
-- `scripts/plotting/plot_data.jl` still reads old dictionary and solution
-  structures and is listed as a runnable owner. Check the replacement coverage for its
-  costate and switching diagnostics with the legacy capability owner before
-  retiring the entrypoint; similar modern plots are not sufficient evidence.
+- `scripts/plotting/plot_data.jl` is retained legacy plotting code using older
+  dictionary and nested-solution interfaces; current workflow support has not
+  been established. Check replacement coverage for its costate/switching,
+  closed-form, per-link, attitude, reaction-wheel and torque/inertia diagnostics
+  with the legacy capability owner before any port or retirement. Similar modern
+  plots or available saved fields alone do not establish equivalent coverage.
 - The direct `Tables` dependency and the redundant `output/calibration/` ignore
   entry are cleanup candidates. A direct-dependency change needs manifest
   validation; transitive users of `Tables` must continue to resolve it.

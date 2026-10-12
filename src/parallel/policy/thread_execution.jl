@@ -204,9 +204,23 @@ end
 # Spin-barrier variant: workers spin-poll an atomic generation counter instead of
 # sleeping on a Channel. Dispatch overhead is ~10-50 ns vs ~1-5 µs for channels,
 # allowing the harmonics pre-pass to scale to 32-128+ threads.
-# Opt-in via SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER=1.
+#
+# SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER: `1`/`on` forces it on, `0`/`off`
+# forces it off, `auto` (the default) lets each solve measure both and keep the
+# faster (SpinBarrierTuner, dynamics_rhs.jl). The spinners occupy every thread
+# between calls, so the barrier pays only when each call has enough work per
+# worker; measured on TRX50 at 32 threads it made 64 spacecraft 9x slower and
+# 1024 spacecraft 10-21% faster.
+function harmonics_batch_spin_barrier_mode()::Symbol
+    raw = lowercase(strip(get(ENV, "SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER", "auto")))
+    raw == "auto" && return :auto
+    return parse_bool_env("SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER", false) ? :on : :off
+end
+
+# Forced on only. Under `auto` the pre-solve paths (calibration candidates)
+# run with the barrier off, which is the arm every auto solve starts in.
 @inline harmonics_batch_spin_barrier_enabled()::Bool =
-    parse_bool_env("SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER", false)
+    harmonics_batch_spin_barrier_mode() === :on
 
 # `scheduler`/`chunk` are accepted and ignored: the spin barrier partitions its
 # range statically by construction, so there is no dynamic variant to select.
@@ -228,8 +242,29 @@ function threaded_foreach_worker_spin(
         end
         return nothing
     end
-    pool = _spin_barrier_pool_for(source)
-    return _spin_barrier_dispatch!(pool, num_items, workers, f)
+    # A pool released between the lookup and the dispatch (release_spin_barrier_pool!)
+    # refuses the round; take the fresh one.
+    while true
+        pool = _spin_barrier_pool_for(source)
+        _spin_barrier_dispatch!(pool, num_items, workers, f) && return nothing
+    end
+end
+
+# Stop and drop the current scope's spin pool for `source`, so its spinners stop
+# occupying threads once a solve has chosen not to use it. The next dispatch
+# creates a new pool.
+function release_spin_barrier_pool!(source::Symbol)::Nothing
+    key = _persistent_pool_key(source)
+    pool = lock(_spin_barrier_lock) do
+        p = get(_spin_barrier_pools, key, nothing)
+        p === nothing || delete!(_spin_barrier_pools, key)
+        p
+    end
+    pool === nothing && return nothing
+    lock(pool.run_lock) do
+        _shutdown_spin_barrier_pool!(pool)
+    end
+    return nothing
 end
 
 function threaded_foreach_worker_spin(
