@@ -42,8 +42,8 @@ No floor or extra tolerance is applied.
 
 ## Integrator finding: `integrator=:rk4` is not RK4
 
-The runner accepts `integrator=:rk4`, but it advances with `mj_step1`/`mj_step2`, and MuJoCo's `mj_step2` does not
-support RK4 (it falls back to Euler). A Case A run with `:rk4` is bit-identical to one with `:euler` (checked with
+The initial runner accepted `integrator=:rk4`, but it advances with `mj_step1`/`mj_step2`, and MuJoCo's `mj_step2` does not
+support RK4 (it falls back to Euler). Stage 1 now refuses `:rk4`. Before that fix, a Case A run with `:rk4` was bit-identical to one with `:euler` (checked with
 `cmp` on the CSV outputs, dt = 0.02 s, 30 s). So no higher-order SpaceAGORA integrator is available without changing the
 package. `implicitfast` gave the same Case B summary as `:euler` to the digits shown (these models have no damping or armature, so the implicit velocity derivative has nothing to act on), so
 neither is an independent check. Instead `compare.py` adds second-order Richardson extrapolation over the three finest
@@ -82,6 +82,12 @@ Then (sf3 must be idle; harness synced with `rsync -a --exclude results ./ sf3:x
     sh run_case.sh caseC 12  /tmp/claude-1000/mjxval_env
 
 Results land in `results/<hostname>/<case>_T<s>/` (gitignored). Wall times are not performance results.
+
+The wrapper prints the remote log after the command finishes and stops on a nonzero remote status before copying
+results or running the local side. The comparator requires finite, matching sample times within and across ladders
+(absolute tolerance 1e-9 s). Bounded guard regressions, without native or remote workloads:
+
+    python3 -m unittest discover -s benchmarks/studies/basilisk_mujoco_xval -p test_harness.py
 
 ## Reading the results
 

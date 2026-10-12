@@ -32,7 +32,8 @@ def load_ladder(d, tool):
         sys.exit(f"{tool}: need at least 3 levels in {d}, found {len(runs)}")
     t0 = runs[0][1]["t"]
     for h, dat in runs:
-        if dat["t"].shape != t0.shape or np.max(np.abs(dat["t"] - t0)) > 1e-9:
+        if (not np.all(np.isfinite(dat["t"])) or dat["t"].shape != t0.shape
+                or not np.allclose(dat["t"], t0, rtol=0.0, atol=1e-9)):
             sys.exit(f"{tool}: sample times differ at level {h}")
     return runs
 
@@ -83,6 +84,9 @@ def main():
     a = ap.parse_args()
     cfg = tomllib.load(open(a.case, "rb"))
     S, Bk = load_ladder(a.sagora, "sagora"), load_ladder(a.bsk, "bsk")
+    ts, tb = S[0][1]["t"], Bk[0][1]["t"]
+    if ts.shape != tb.shape or not np.allclose(ts, tb, rtol=0.0, atol=1e-9):
+        sys.exit("SpaceAGORA and Basilisk sample times differ")
     qs = [quantities(d, cfg) for _, d in S]
     qb = [quantities(d, cfg) for _, d in Bk]
     t = S[0][1]["t"]
