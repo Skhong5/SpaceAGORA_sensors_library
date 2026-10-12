@@ -68,10 +68,35 @@ foundation. The current folder name retains its historical cloth terminology. `s
 with mass and inertia, compliant connections with translational and rotational
 stiffness and damping, and topology builders. The coupled robot-arm path in
 `cloth_robot_arm_dynamics.jl` supplies internal-state initialization and
-derivatives to the engine. This supports specified articulated and compliant
+derivatives to the engine. Each arm link feels gravity at its own inertial
+position, from the run's position-only gravity effectors, so the joint springs
+carry only the loads that differ from the bus's own free fall. This supports specified articulated and compliant
 models; it is not a claim that every arbitrary flexible surface or contact
 interaction is already coupled and validated. A mesh describes surface
 geometry, while a multibody model describes motion and loads.
+
+Articulated spacecraft use a second multibody path that is not tied to the
+cloth arm. A `Joint` with `joint_type` `:hinge`, `:slide` or `:ball` makes its
+spacecraft articulated: `src/dynamics/coupled/articulated_body.jl` builds a tree
+of rigid bodies (links joined by `:fixed` joints are merged) and solves the
+forward dynamics in joint coordinates, with the root as a free-floating base.
+The engine integrates the joint coordinates beside the root state
+(`joint_q`, `joint_qd`) and applies the existing loads to the root body;
+only gravity is evaluated per body. With
+`SimulationSettings(articulated_live_pose_loads=true)` aerodynamics and facet
+SRP are instead evaluated per link at the live link poses, through the opt-in
+`link_wrench` kernel, and the gravity gradient becomes per body. Spacecraft without a non-fixed joint
+never touch this path. See [Joint types](simulation_configuration.md#Joint-types-and-articulated-spacecraft).
+The compliant model above remains the route for compliant (spring-connected)
+bodies. It is no longer arm-only: a `CompliantAttachment` mounts a
+`CompliantMultibodyModel` on any spacecraft link (the root, a fixed-merged link
+or a moving articulated link), integrates its bodies beside the spacecraft
+(`att_r`, `att_q`, `att_v`, `att_ω`) and exchanges forces and torques with the
+link in both directions: through the bus equations for a rigid spacecraft and
+through per-body wrenches into the articulated backbone otherwise
+(`src/dynamics/multibody_cloth/compliant_attachment_dynamics.jl`). The
+robot-arm coupling keeps its own path for now. See
+[Compliant attachments](simulation_configuration.md#Compliant-attachments).
 
 For example, an arm attached to a station belongs to the station's assembly.
 A free-flying inspector is another spacecraft. Their task assignment and
@@ -205,7 +230,7 @@ than copy it.
 | `src/core/` | Abstract types, shared state and runtime types, reference frames, geodesy, quaternions | frames: `core/interfaces/reference_system.jl`; quaternions: `core/numerics/quaternion_utils.jl`; model composition: `core/simulation_model.jl` |
 | `src/environment/` | Planets and ephemerides, atmosphere models and presets, gravity fields, terrain grids | density sampling: `environment/atmosphere/density_models.jl`; terrain queries: `environment/terrain/terrain_models.jl` |
 | `src/vehicle/` | Spacecraft components and assembly, structure and mass properties, mesh readers, thrusters, thermal models, kinematics, robotics | vehicle boundary per the [topology contract](../generated/contracts/architecture/canonical_topology_contract.md): `spacecraft/` composes, `structure/` computes mass, inertia and geometry, `actuators/thruster/thruster_hooks.jl` owns thruster hooks |
-| `src/dynamics/` | Translational and rotational equations, the coupled force/torque wrapper and its models, compliant multibody dynamics (currently under `multibody_cloth/`) | effector evaluation: `dynamics/coupled/force_torque_models.jl` |
+| `src/dynamics/` | Translational and rotational equations, the coupled force/torque wrapper and its models, compliant multibody dynamics (currently under `multibody_cloth/`), articulated-body dynamics (`coupled/articulated_body.jl`) | effector evaluation: `dynamics/coupled/force_torque_models.jl` |
 | `src/gnc/` | Guidance, navigation and control hooks, planner contracts and lifecycle, shared calculations, baseline algorithms and HYPR compatibility types | the three hook files named above; planner contracts: `gnc/interfaces/`; lifecycle: `gnc/guidance/rpo/`; shared calculations: `gnc/shared/`; RRT kernels: `gnc/rrt/`; aerobraking bridge helpers: `gnc/internal/` |
 | `src/mission/` | Aerobraking policy types and strategy selection | `mission/operations/aerobraking_policy/` |
 | `src/simulation/` | One-run configuration, the engine (execution settings, setup, RHS, solver policy, execution, checkpoints, persistence), callbacks, campaigns, runtime locks | configuration assembly and copying: `simulation/config/`; setup and solve: `simulation/engine/`; callbacks: `simulation/callbacks/`; Monte Carlo and ensembles: `simulation/campaigns/`; shared locks: `simulation/runtime_services.jl` |

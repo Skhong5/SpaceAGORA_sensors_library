@@ -42,6 +42,8 @@ function _validate_orientation_inertia!(args)
         return nothing
     end
     for (i, sc) in enumerate(args.dynamics_model.spacecraft)
+        # Articulated spacecraft use the link inertias; `inertia_tensor` is ignored.
+        SimulationModel.articulated_has_moving_joints(sc) && continue
         inertia_tensor = sc.inertia_tensor
         inertia_matrix = Matrix(inertia_tensor)
         if !all(isfinite, inertia_matrix)
@@ -1294,13 +1296,13 @@ end
     if p !== nothing && hasproperty(p, :shared_buffers) && _rhs_plan_step_cache_enabled()
         cached = p.shared_buffers.rhs_plan_step_cache[]
         cached === nothing || return cached
-        plan = _clamp_plan_to_lock_ceiling(
-            _rhs_execution_plan_uncached(args, p, dynamic_effectors, num_sats), p)
+        plan = _articulated_plan_guard(_clamp_plan_to_lock_ceiling(
+            _rhs_execution_plan_uncached(args, p, dynamic_effectors, num_sats), p), p)
         p.shared_buffers.rhs_plan_step_cache[] = plan
         return plan
     end
-    return _clamp_plan_to_lock_ceiling(
-        _rhs_execution_plan_uncached(args, p, dynamic_effectors, num_sats), p)
+    return _articulated_plan_guard(_clamp_plan_to_lock_ceiling(
+        _rhs_execution_plan_uncached(args, p, dynamic_effectors, num_sats), p), p)
 end
 
 @inline function _rhs_execution_plan_uncached(
@@ -2380,6 +2382,271 @@ function _initialize_planet_frame_ephemeris_cache!(p, et_start::Float64, mission
         println(
             "Initialized planet frame cache: samples=$(n_samples), dt=$(round(dt_s; digits=3)) s, span=$(round(mission_end_s; digits=3)) s."
         )
+    end
+    return nothing
+end
+
+# ---------------------------------------------------------------------------
+# Articulated spacecraft (any non-fixed `Joint`)
+# ---------------------------------------------------------------------------
+#
+# A spacecraft is articulated if and only if at least one of its joints is not `:fixed`.
+# Everything below is skipped for every other spacecraft, so rigid runs are unchanged.
+
+@inline _spacecraft_articulated(sc)::Bool = SimulationModel.articulated_has_moving_joints(sc)
+
+@inline function _any_articulated_spacecraft(args)::Bool
+    @inbounds for sc in args.dynamics_model.spacecraft
+        _spacecraft_articulated(sc) && return true
+    end
+    return false
+end
+
+# Link indices an effector drives kinematically (`controlled_panel_links`), looking one level into
+# its fields (the energy-depletion controller holds its panel effector as a field).
+function _effector_controlled_panel_links(effector)::Vector{Int}
+    out = Int[]
+    _collect_controlled_panel_links!(out, effector, 0)
+    return out
+end
+
+function _collect_controlled_panel_links!(out::Vector{Int}, effector, depth::Int)
+    if hasproperty(effector, :controlled_panel_links)
+        append!(out, Int.(collect(getproperty(effector, :controlled_panel_links))))
+    end
+    depth >= 1 && return nothing
+    isstructtype(typeof(effector)) || return nothing
+    for name in propertynames(effector)
+        value = getproperty(effector, name)
+        (value isa Number || value isa AbstractString || value isa Symbol || value isa AbstractArray ||
+            value isa Tuple || value === nothing) && continue
+        isstructtype(typeof(value)) || continue
+        _collect_controlled_panel_links!(out, value, depth + 1)
+    end
+    return nothing
+end
+
+function _all_gnc_effectors(args)
+    return Iterators.flatten((
+        args.guidance_model.guidance_effectors,
+        args.control_model.control_effectors,
+        args.dynamics_model.dynamic_effectors,
+    ))
+end
+
+"""
+    _validate_articulated_spacecraft!(args, solver_mode)
+
+Setup-time guards for articulated spacecraft (each throws an `ArgumentError`). A no-op when no spacecraft has a non-fixed
+joint. Builds each tree once so tree and attachment-point errors surface here.
+"""
+function _validate_articulated_spacecraft!(args, solver_mode::Symbol)
+    _any_articulated_spacecraft(args) || return nothing
+    if !args.mission_configuration.orientation_sim
+        throw(ArgumentError(
+            "Articulated spacecraft (non-fixed Joint) require MissionConfiguration orientation_sim=true: the joint dynamics couple to the bus attitude."
+        ))
+    end
+    if !(solver_mode in (:tsit5, :auto_stiff, :rodas5p, :dp8))
+        throw(ArgumentError(
+            "Articulated spacecraft support the first-order single-RHS solver modes :tsit5, :auto_stiff, :rodas5p and :dp8; " *
+            "solver mode $(repr(solver_mode)) (split, multirate, symplectic and gravity-backbone routes) is not supported."
+        ))
+    end
+    # The state is a ComponentVector with one equally sized block per spacecraft, so a constellation
+    # holding an articulated spacecraft must be all articulated with the same link and joint counts.
+    shapes = Tuple{Bool, Int, Int, Int}[]
+    for sc in args.dynamics_model.spacecraft
+        art = _spacecraft_articulated(sc)
+        tree = art ? SimulationModel.build_articulated_tree(sc; prop_mass=sc.prop_mass) : nothing
+        push!(shapes, (art, length(sc.links), art ? tree.nq : 0, art ? tree.nv : 0))
+    end
+    if !all(==(first(shapes)), shapes)
+        throw(ArgumentError(
+            "A run containing an articulated spacecraft requires every spacecraft to be articulated with the same number of links and " *
+            "joint coordinates (the state holds one equally sized block per spacecraft); got (articulated, links, nq, nv) = $(shapes)."
+        ))
+    end
+    for (i, sc) in enumerate(args.dynamics_model.spacecraft)
+        _spacecraft_articulated(sc) || continue
+        if sc.root.rw_assembly.n_wheels > 0
+            throw(ArgumentError("Spacecraft $i is articulated and carries reaction wheels; reaction wheels on articulated spacecraft are not supported."))
+        end
+        if _robot_arm_coupling(args, i, 0.0) !== nothing
+            throw(ArgumentError("Spacecraft $i is articulated and also has a robot-arm effector; the two multibody paths cannot be combined."))
+        end
+        if args.simulation_settings.articulated_live_pose_loads
+            for effector in args.dynamics_model.dynamic_effectors
+                if effector isa SimulationModel.AerodynamicCoefficientMeshSurrogate && effector.root_only
+                    throw(ArgumentError(
+                        "Spacecraft $i is articulated with articulated_live_pose_loads=true and the dynamic effectors include a whole-vehicle " *
+                        "(root_only) AerodynamicCoefficientMeshSurrogate: a whole-vehicle fit bakes in the configured geometry and is wrong once " *
+                        "a joint moves. Use per-link surrogates, a link-based aero model, or turn articulated_live_pose_loads off."
+                    ))
+                end
+            end
+        end
+        if !args.simulation_settings.articulated_live_pose_loads
+            for effector in args.dynamics_model.dynamic_effectors
+                if SimulationModel.DynamicEffectors.GravityEffectors.gravity_gradient_requested(effector)
+                    throw(ArgumentError(
+                        "Spacecraft $i is articulated and $(nameof(typeof(effector))) requests a gravity-gradient torque, which the default articulated " *
+                        "mode cannot apply (a gravity effector's flag is dropped, and GravityGradientTorqueModel would use the configured inertia_tensor " *
+                        "on the root and count the inter-body part twice). Set SimulationSettings(articulated_live_pose_loads=true), which applies " *
+                        "per-body gravity gradient from the link inertias, or remove the gravity-gradient request."
+                    ))
+                end
+            end
+        end
+        link_sum = sum(l.m for l in sc.links)
+        if !isapprox(sc.dry_mass, link_sum; rtol=1.0e-9)
+            throw(ArgumentError(
+                "Spacecraft $i is articulated and its dry_mass ($(sc.dry_mass) kg) differs from the sum of its link masses ($(link_sum) kg); " *
+                "the articulated model uses the link masses, so dry_mass must equal their sum."
+            ))
+        end
+        tree = SimulationModel.build_articulated_tree(sc; prop_mass=sc.prop_mass)
+        offset = any(l -> l === sc.root, sc.links) ? 0 : 1
+        for effector in _all_gnc_effectors(args)
+            if hasproperty(effector, :spacecraft_idx) && getproperty(effector, :spacecraft_idx) isa Integer &&
+               getproperty(effector, :spacecraft_idx) != i
+                continue
+            end
+            for idx in _effector_controlled_panel_links(effector)
+                1 <= idx <= length(sc.links) || continue
+                if tree.body_of_link[idx + offset] != 1
+                    throw(ArgumentError(
+                        "Spacecraft $i: effector $(nameof(typeof(effector))) drives link $idx kinematically (panel angle control), but that link belongs to a moving " *
+                        "body of the articulated tree. Kinematic panel control works on :fixed links of the root body only; joint motors are not implemented yet."
+                    ))
+                end
+            end
+        end
+    end
+    return nothing
+end
+
+function _initialize_articulated_runtimes!(p)
+    args = p.args
+    n_sats = length(args.dynamics_model.spacecraft)
+    runtimes = p.shared_buffers.articulated_runtimes
+    resize!(runtimes, n_sats)
+    fill!(runtimes, nothing)
+    any_art = false
+    for (i, sc) in enumerate(args.dynamics_model.spacecraft)
+        _spacecraft_articulated(sc) || continue
+        runtimes[i] = SimulationModel.ArticulatedRuntime(SimulationModel.build_articulated_tree(sc; prop_mass=sc.prop_mass))
+        any_art = true
+    end
+    p.shared_buffers.articulated_present[] = any_art
+    p.shared_buffers.articulated_live_loads[] = any_art && args.simulation_settings.articulated_live_pose_loads
+    if any_art && _rhs_env_config(p).execution_mode == :flat_constellation_effector_queue
+        throw(ArgumentError(
+            "SPACEAGORA_RHS_EXECUTION_MODE=flat is not supported with articulated spacecraft; use auto, serial or satellite."
+        ))
+    end
+    return nothing
+end
+
+# The flat constellation queue accumulates and assembles loads outside the per-satellite loop
+# the articulated path hooks into, so articulated runs reroute it to the per-satellite batch route.
+@inline function _articulated_plan_guard(plan::SimulationModel.RhsExecutionPlan, p)::SimulationModel.RhsExecutionPlan
+    plan.mode == :flat_constellation_effector_queue || return plan
+    (p !== nothing && hasproperty(p, :shared_buffers) &&
+        (p.shared_buffers.articulated_present[] || p.shared_buffers.attachments_present[])) || return plan
+    return (
+        mode=:satellite_batch,
+        allotment=1,
+        scheduler=:static,
+        dominant_axis=:satellite,
+        policy_applied=true,
+        effector_decision=_with_serial_effector_decision(plan.effector_decision),
+    )
+end
+
+# ---------------------------------------------------------------------------
+# Compliant attachments (`SpacecraftModel.attachments`)
+# ---------------------------------------------------------------------------
+#
+# A spacecraft carries attachments if and only if its `attachments` list is not empty. Everything
+# below is skipped for every other spacecraft, so runs without attachments are unchanged.
+
+@inline _spacecraft_has_attachments(sc)::Bool = !isempty(sc.attachments)
+
+@inline function _any_attachments(args)::Bool
+    @inbounds for sc in args.dynamics_model.spacecraft
+        _spacecraft_has_attachments(sc) && return true
+    end
+    return false
+end
+
+"""
+    _validate_attachments!(args, solver_mode)
+
+Setup-time guards for spacecraft with compliant attachments (each throws an `ArgumentError`). A no-op
+when no spacecraft has attachments. Supported: `orientation_sim=true`, the first-order single-RHS solver
+modes `:tsit5`, `:auto_stiff`, `:rodas5p` and `:dp8`, rigid or articulated spacecraft, and constellations
+in which every spacecraft has the same attachment body count (equal state blocks). Refused: a robot-arm
+effector on the same spacecraft, an attachment whose link is not in the spacecraft, and a model without a
+joint to the mount (parent 0).
+"""
+function _validate_attachments!(args, solver_mode::Symbol)
+    _any_attachments(args) || return nothing
+    if !args.mission_configuration.orientation_sim
+        throw(ArgumentError(
+            "Compliant attachments require MissionConfiguration orientation_sim=true: the mount frame follows the spacecraft attitude."
+        ))
+    end
+    if !(solver_mode in (:tsit5, :auto_stiff, :rodas5p, :dp8))
+        throw(ArgumentError(
+            "Compliant attachments support the first-order single-RHS solver modes :tsit5, :auto_stiff, :rodas5p and :dp8; " *
+            "solver mode $(repr(solver_mode)) (split, multirate, symplectic and gravity-backbone routes) is not supported. " *
+            "Cloth meshes are stiff: prefer :auto_stiff or :rodas5p when the joint stiffness makes the fastest attachment mode " *
+            "much faster than the orbit and attitude dynamics."
+        ))
+    end
+    counts = [SimulationModel.attachment_total_body_count(sc) for sc in args.dynamics_model.spacecraft]
+    if !all(==(first(counts)), counts)
+        throw(ArgumentError(
+            "A run containing a spacecraft with compliant attachments requires every spacecraft to carry the same number of attachment bodies " *
+            "(the state holds one equally sized block per spacecraft); got attachment body counts $(counts)."
+        ))
+    end
+    for (i, sc) in enumerate(args.dynamics_model.spacecraft)
+        _spacecraft_has_attachments(sc) || continue
+        if _robot_arm_coupling(args, i, 0.0) !== nothing
+            throw(ArgumentError("Spacecraft $i has compliant attachments and also a robot-arm effector; the two compliant-body paths cannot be combined."))
+        end
+        for (k, a) in pairs(sc.attachments)
+            if !(a.link === sc.root || any(l -> l === a.link, sc.links))
+                throw(ArgumentError("Spacecraft $i attachment $k is mounted on a link that is not one of the spacecraft's links."))
+            end
+            if !any(j -> j.parent == 0, a.model.joints)
+                throw(ArgumentError("Spacecraft $i attachment $k has no joint with parent == 0: nothing attaches it to the mount."))
+            end
+        end
+    end
+    return nothing
+end
+
+function _initialize_attachment_runtimes!(p)
+    args = p.args
+    n_sats = length(args.dynamics_model.spacecraft)
+    runtimes = p.shared_buffers.attachment_runtimes
+    resize!(runtimes, n_sats)
+    fill!(runtimes, nothing)
+    any_att = false
+    for (i, sc) in enumerate(args.dynamics_model.spacecraft)
+        _spacecraft_has_attachments(sc) || continue
+        tree = _spacecraft_articulated(sc) ? SimulationModel.build_articulated_tree(sc; prop_mass=sc.prop_mass) : nothing
+        runtimes[i] = SimulationModel.build_attachment_runtime(sc, tree)
+        any_att = true
+    end
+    p.shared_buffers.attachments_present[] = any_att
+    if any_att && _rhs_env_config(p).execution_mode == :flat_constellation_effector_queue
+        throw(ArgumentError(
+            "SPACEAGORA_RHS_EXECUTION_MODE=flat is not supported with compliant attachments; use auto, serial or satellite."
+        ))
     end
     return nothing
 end

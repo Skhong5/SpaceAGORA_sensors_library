@@ -2772,6 +2772,15 @@ function _robot_arm_coupling(args, sat_idx::Int, t::Float64)
     return nothing
 end
 
+"""Link-gravity callable handed to the coupled arm RHS: `r_ii -> acceleration`."""
+struct _ArmLinkGravity{P}
+    p::P
+    t::Float64
+    sat_idx::Int
+end
+@inline (g::_ArmLinkGravity)(r_ii) =
+    _gravity_only_acceleration_ii(g.p, SVector{3, Float64}(r_ii), g.t; sat_idx=g.sat_idx)
+
 """Apply coupled cloth robot-arm state derivatives to one spacecraft RHS view."""
 @inline function _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, sat_idx::Int, t::Float64, forces, torques)
     # Fast path: skip the per-satellite effector-tuple scan when the run has no
@@ -2791,7 +2800,351 @@ end
         k_rotation_n_m_rad=coupling.k_rotation_n_m_rad,
         c_rotation_n_m_s_rad=coupling.c_rotation_n_m_s_rad,
         joint_actuators=coupling.joint_actuators,
+        link_gravity_ii=_ArmLinkGravity(p, t, sat_idx),
     )
+    return nothing
+end
+
+# ---------------------------------------------------------------------------
+# Compliant attachments on a rigid spacecraft
+# ---------------------------------------------------------------------------
+#
+# Attachment bodies carry their own state (`att_r`, `att_q`, `att_v`, `att_ω`). Their derivatives are
+# written here; the reaction on the mount (force at the mount point plus torque) is added to the bus
+# `forces` (inertial) and `torques` (body frame, about the bus position) before the bus equations of
+# motion. Gravity acts on each attachment body at its own position; no other effector does.
+# One Bool load per call when the run has no attachments.
+
+@inline function _apply_attachments_rigid!(du_view, sc_view, p, sat_idx::Int, t::Float64, forces, torques, dynamic_effectors::Tuple)
+    p.shared_buffers.attachments_present[] || return nothing
+    rt = p.shared_buffers.attachment_runtimes[sat_idx]
+    rt === nothing && return nothing
+    gravity = _ArticulatedGravity(
+        p, t, _planet_lpi_at_engine(p, t),
+        p.args.dynamics_model.spacecraft[sat_idx],
+        dynamic_effectors,
+    )
+    SimulationModel.apply_attachments_rigid!(du_view, sc_view, rt, t, forces, torques, gravity)
+    return nothing
+end
+
+# Stage 2: the bus acceleration (reactions included) is in `du_view.vel`; attachment derivatives come last.
+@inline function _finish_attachments_rigid!(du_view, p, sat_idx::Int)
+    p.shared_buffers.attachments_present[] || return nothing
+    rt = p.shared_buffers.attachment_runtimes[sat_idx]
+    rt === nothing && return nothing
+    SimulationModel.finish_attachments!(du_view, rt, du_view.vel)
+    return nothing
+end
+
+# ---------------------------------------------------------------------------
+# Articulated spacecraft RHS (any non-fixed `Joint`)
+# ---------------------------------------------------------------------------
+#
+# State per articulated spacecraft: the rigid components plus `joint_q` and `joint_qd`. `pos`/`vel`
+# are the root composite COM (root link, fixed-merged links); `mass` stays the total spacecraft
+# mass, so the root body mass is `mass - moving mass` at runtime. Every non-gravity load is
+# applied to the root body from the configured rigid geometry; gravity is evaluated per body at
+# its own COM from the position-only gravity effectors.
+
+@inline _is_position_gravity_effector(effector)::Bool =
+    SimulationModel.gravity_backbone_structure(effector) === :position_only_static_gravity
+
+# Effector tuple without the position-only gravity effectors, peeled at compile time so the
+# result is a concretely typed tuple (the articulated path takes gravity per body instead).
+@inline _nongravity_effectors(::Tuple{}) = ()
+@inline function _nongravity_effectors(effectors::Tuple)
+    rest = _nongravity_effectors(Base.tail(effectors))
+    return _is_position_gravity_effector(first(effectors)) ? rest : (first(effectors), rest...)
+end
+
+@inline _gravity_needs_planet_frame(::Tuple{})::Bool = false
+@inline function _gravity_needs_planet_frame(effectors::Tuple)::Bool
+    first_effector = first(effectors)
+    needs = _is_position_gravity_effector(first_effector) &&
+        SimulationModel.environment_requirements(first_effector).planet_frame
+    return needs || _gravity_needs_planet_frame(Base.tail(effectors))
+end
+
+@inline _sum_position_gravity(::Tuple{}, x, env, t::Float64) = SVector{3, Float64}(0.0, 0.0, 0.0)
+@inline function _sum_position_gravity(effectors::Tuple, x, env, t::Float64)
+    effector = first(effectors)
+    rest = _sum_position_gravity(Base.tail(effectors), x, env, t)
+    _is_position_gravity_effector(effector) || return rest
+    return SimulationModel.gravity_backbone_acceleration_ii(effector, x, env, t) + rest
+end
+
+"""
+    _gravity_only_acceleration_ii(p, r_ii, t; sat_idx=1) -> SVector{3}
+
+Inertial gravitational acceleration at `r_ii`: the sum of `gravity_backbone_acceleration_ii` over
+the run's position-only static gravity effectors (point mass, J2, harmonics). Allocation-free for
+point-mass and J2; the generic harmonics hook allocates a scratch workspace per call.
+"""
+@inline function _gravity_only_acceleration_ii(p, r_ii::SVector{3, Float64}, t::Float64; sat_idx::Int=1)::SVector{3, Float64}
+    return _ArticulatedGravity(
+        p, t, _planet_lpi_at_engine(p, t),
+        p.args.dynamics_model.spacecraft[sat_idx],
+        p.args.dynamics_model.dynamic_effectors,
+    )(r_ii)
+end
+
+"""Gravitational acceleration at a body COM, the callable handed to `articulated_dynamics!`."""
+struct _ArticulatedGravity{P, S, E}
+    p::P
+    t::Float64
+    l_pi::SMatrix{3, 3, Float64, 9}
+    spacecraft::S
+    effectors::E
+end
+
+@inline function (g::_ArticulatedGravity)(r::SVector{3, Float64})::SVector{3, Float64}
+    planet = g.p.args.environment_model.planet
+    v0 = SVector{3, Float64}(0.0, 0.0, 0.0)
+    x = StateSample(r, v0, 1.0; spacecraft=g.spacecraft)
+    frame = _gravity_needs_planet_frame(g.effectors) ?
+        sample_planet_frame_with_lpi((pos_ii=r, vel_ii=v0), planet, g.l_pi) : nothing
+    return _sum_position_gravity(g.effectors, x, EnvironmentSample(planet; planet_frame=frame), g.t)
+end
+
+# Relative gravity g(r + ρ) - g(r) for the attachment and articulated paths: each position-only gravity
+# effector differences its point-mass part analytically (Encke); unknown effectors fall back to two evaluations.
+@inline _sum_relative_gravity(::Tuple{}, xb, xf, eb, ef, ρ, t::Float64) = SVector{3, Float64}(0.0, 0.0, 0.0)
+@inline function _sum_relative_gravity(effectors::Tuple, xb, xf, eb, ef, ρ, t::Float64)
+    effector = first(effectors)
+    rest = _sum_relative_gravity(Base.tail(effectors), xb, xf, eb, ef, ρ, t)
+    _is_position_gravity_effector(effector) || return rest
+    return SimulationModel.gravity_backbone_relative_acceleration_ii(effector, xb, ρ, xf, eb, ef, t) + rest
+end
+
+@inline function SimulationModel.CompliantAttachmentDynamics.relative_gravity(
+    g::_ArticulatedGravity, r_base::SVector{3, Float64}, ρ::SVector{3, Float64}, g_base::SVector{3, Float64},
+)::SVector{3, Float64}
+    planet = g.p.args.environment_model.planet
+    v0 = SVector{3, Float64}(0.0, 0.0, 0.0)
+    r_far = r_base + ρ
+    xb = StateSample(r_base, v0, 1.0; spacecraft=g.spacecraft)
+    xf = StateSample(r_far, v0, 1.0; spacecraft=g.spacecraft)
+    needs_frame = _gravity_needs_planet_frame(g.effectors)
+    fb = needs_frame ? sample_planet_frame_with_lpi((pos_ii=r_base, vel_ii=v0), planet, g.l_pi) : nothing
+    ff = needs_frame ? sample_planet_frame_with_lpi((pos_ii=r_far, vel_ii=v0), planet, g.l_pi) : nothing
+    return _sum_relative_gravity(
+        g.effectors, xb, xf, EnvironmentSample(planet; planet_frame=fb), EnvironmentSample(planet; planet_frame=ff), ρ, g.t)
+end
+
+"""Callable `ρ -> g(r_root + ρ) - g(r_root)` handed to `articulated_dynamics!` (a struct, so nothing is boxed)."""
+struct _RootRelativeGravity{G}
+    gravity::G
+    r_root::SVector{3, Float64}
+    g_root::SVector{3, Float64}
+end
+
+@inline (h::_RootRelativeGravity)(ρ::SVector{3, Float64}) =
+    SimulationModel.CompliantAttachmentDynamics.relative_gravity(h.gravity, h.r_root, ρ, h.g_root)
+
+# ---------------------------------------------------------------------------
+# Live-pose loads (SimulationSettings.articulated_live_pose_loads)
+# ---------------------------------------------------------------------------
+#
+# Effectors with `link_wrench_capable` (aero, facet SRP) are evaluated once per link at the link's live
+# pose from one root-relative `articulated_kinematics!` call; the wrench goes to the link's dynamic body
+# (force at the link COM, torque about the body COM) through `ws.ext_force`/`ws.ext_torque`. Gravity
+# gradient becomes per-body from `tree.inertia`; the configured-inertia versions are dropped. Everything
+# else keeps the base application.
+
+@inline _live_base_effectors(::Tuple{}) = ()
+@inline function _live_base_effectors(effectors::Tuple)
+    rest = _live_base_effectors(Base.tail(effectors))
+    e = first(effectors)
+    (_is_position_gravity_effector(e) || SimulationModel.link_wrench_capable(e) ||
+        SimulationModel.DynamicEffectors.GravityEffectors.is_gravity_gradient_torque_effector(e)) && return rest
+    return (e, rest...)
+end
+
+@inline _live_link_effectors(::Tuple{}) = ()
+@inline function _live_link_effectors(effectors::Tuple)
+    rest = _live_link_effectors(Base.tail(effectors))
+    return SimulationModel.link_wrench_capable(first(effectors)) ? (first(effectors), rest...) : rest
+end
+
+@inline _any_gravity_gradient_requested(::Tuple{}) = false
+@inline _any_gravity_gradient_requested(effectors::Tuple) =
+    SimulationModel.DynamicEffectors.GravityEffectors.gravity_gradient_requested(first(effectors)) ||
+    _any_gravity_gradient_requested(Base.tail(effectors))
+
+@inline function _live_link_sample(ws, tree, link, l::Int, lt::Int, base_pos, base_vel)
+    AB = SimulationModel.ArticulatedBody
+    b = tree.body_of_link[lt]
+    qb = ws.kquat[b]
+    d = AB._rotmat(qb) * tree.link_com_in_body[lt]
+    # Link attitude in the carrying body's frame: frozen at build, except on the root body, where
+    # panel-angle control rewrites `link.q` (moving bodies refuse panel control at setup).
+    qlb = if b == 1 && !link.root
+        q = SVector{4, Float64}(link.q[1], link.q[2], link.q[3], link.q[4])
+        q / norm(q)
+    else
+        tree.link_q_in_body[lt]
+    end
+    q_l = AB._qnormalize(AB._qmul(qb, qlb))
+    ww = ws.kww[b]
+    xl = SimulationModel.LinkStateSample(
+        l, b, base_pos + ws.kpos[b] + d, base_vel + ws.kvel[b] + cross(ww, d), q_l, AB._rotmat(q_l)' * ww,
+    )
+    return xl, d
+end
+
+@inline _add_live_link_loads!(ws, tree, sc, sc_view, p, sat_idx::Int, t::Float64, l_pi, base_pos, base_vel, ::Tuple{}) = nothing
+@inline function _add_live_link_loads!(ws, tree, sc, sc_view, p, sat_idx::Int, t::Float64, l_pi, base_pos, base_vel, effectors::Tuple)
+    effector = first(effectors)
+    planet = p.args.environment_model.planet
+    req = SimulationModel.environment_requirements(effector)
+    env_root = sample_environment_with_reusable_buffers(req, effector, sc_view, p, sat_idx, t)
+    offset = length(tree.body_of_link) - length(sc.links)
+    d_sum = SVector{3, Float64}(0.0, 0.0, 0.0)
+    l_sum = d_sum
+    c_sum = d_sum
+    for l in eachindex(sc.links)
+        link = sc.links[l]
+        xl, d = _live_link_sample(ws, tree, link, l, l + offset, base_pos, base_vel)
+        frame = req.planet_frame ? sample_planet_frame_with_lpi((pos_ii=xl.pos_ii, vel_ii=xl.vel_ii), planet, l_pi) : nothing
+        env_l = EnvironmentSample(planet; planet_frame=frame, atmosphere=env_root.atmosphere, solar=env_root.solar)
+        F, τ, drag, lift, cross_f = SimulationModel.link_wrench(effector, link, xl, env_l, t, p, sat_idx)
+        b = xl.body
+        ws.ext_force[b] += F
+        ws.ext_torque[b] += τ + cross(d, F)
+        d_sum += drag
+        l_sum += lift
+        c_sum += cross_f
+    end
+    SimulationModel.link_wrench_store!(effector, p, sat_idx, d_sum, l_sum, c_sum)
+    return _add_live_link_loads!(ws, tree, sc, sc_view, p, sat_idx, t, l_pi, base_pos, base_vel, Base.tail(effectors))
+end
+
+# Adds the live-pose loads to `ws.ext_force`/`ws.ext_torque` (already zeroed or holding attachment reactions);
+# the body kinematics in `ws` must be relative to the root COM.
+@inline function _add_live_pose_loads!(
+    ws, art::SimulationModel.ArticulatedRuntime, sc_view, p, sat_idx::Int, t::Float64, base, dynamic_effectors::Tuple,
+)
+    tree = art.tree
+    sc = p.args.dynamics_model.spacecraft[sat_idx]
+    l_pi = _planet_lpi_at_engine(p, t)
+    _add_live_link_loads!(ws, tree, sc, sc_view, p, sat_idx, t, l_pi, base.pos, base.vel, _live_link_effectors(dynamic_effectors))
+    if _any_gravity_gradient_requested(dynamic_effectors)
+        μ = Float64(p.args.environment_model.planet.μ)
+        AB = SimulationModel.ArticulatedBody
+        for b in 1:tree.nb
+            ws.ext_torque[b] += SimulationModel.DynamicEffectors.GravityEffectors.body_gravity_gradient_torque_ii(
+                AB._rotmat(ws.kquat[b]), tree.inertia[b], base.pos + ws.kpos[b], μ,
+            )
+        end
+    end
+    return nothing
+end
+
+"""
+Assign the full RHS of one articulated spacecraft: loads on the root, then the articulated
+forward dynamics for the root accelerations and the joint accelerations.
+"""
+@inline function _assign_articulated_spacecraft_rhs!(
+    du_view, sc_view, art::SimulationModel.ArticulatedRuntime, p, sat_idx::Int, t::Float64,
+    dynamic_effectors::Tuple, effector_decision, debug_control::Bool,
+)
+    forces = MVector{3, Float64}(0.0, 0.0, 0.0)
+    torques = MVector{3, Float64}(0.0, 0.0, 0.0)
+    if p.shared_buffers.articulated_live_loads[]
+        base_effectors = _live_base_effectors(dynamic_effectors)
+        isempty(base_effectors) ||
+            _accumulate_dynamic_effectors!(forces, torques, sc_view, p, sat_idx, t, base_effectors, effector_decision)
+    else
+        nongravity = _nongravity_effectors(dynamic_effectors)
+        isempty(nongravity) ||
+            _accumulate_dynamic_effectors!(forces, torques, sc_view, p, sat_idx, t, nongravity, effector_decision)
+    end
+    rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
+    mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, sat_idx, t, debug_control)
+    heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
+        p, sc_view, sat_idx, t; use_buffered_density=false,
+    )
+    _assign_articulated_rhs!(du_view, sc_view, art, p, sat_idx, t, forces, torques, mass_rate, dynamic_effectors)
+    _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
+    return nothing
+end
+
+@inline function _assign_articulated_rhs!(
+    du_view, sc_view, art::SimulationModel.ArticulatedRuntime, p, sat_idx::Int, t::Float64,
+    forces, torques, mass_rate::Float64, dynamic_effectors::Tuple,
+)
+    tree = art.tree
+    omega_body = SimulationModel.DynamicsRotational.body_angular_velocity(sc_view.ω)
+    base = SimulationModel.ArticulatedBaseState{Float64}(
+        SVector{3, Float64}(sc_view.pos[1], sc_view.pos[2], sc_view.pos[3]),
+        SVector{3, Float64}(sc_view.vel[1], sc_view.vel[2], sc_view.vel[3]),
+        SVector{4, Float64}(sc_view.q[1], sc_view.q[2], sc_view.q[3], sc_view.q[4]),
+        omega_body,
+    )
+    gravity = _ArticulatedGravity(
+        p, t, _planet_lpi_at_engine(p, t),
+        p.args.dynamics_model.spacecraft[sat_idx],
+        dynamic_effectors,
+    )
+    # Effector torques are about the bus origin (root link COM); the base is the root composite
+    # COM at `tree.root_com_bus`, so move the torque there: tau_com = tau_origin - c x F_body.
+    force_body = SimulationModel.ArticulatedBody._rotmat(base.q)' * SVector{3, Float64}(forces[1], forces[2], forces[3])
+    torque_com = SVector{3, Float64}(torques[1], torques[2], torques[3]) - cross(tree.root_com_bus, force_body)
+    rt = p.shared_buffers.attachments_present[] ? p.shared_buffers.attachment_runtimes[sat_idx] : nothing
+    live = p.shared_buffers.articulated_live_loads[]
+    # Encke form: the backbone sees only each body's gravity relative to the root, the root's own gravity
+    # is added to the root acceleration afterwards (exact for a uniform field, see `articulated_dynamics!`).
+    base_pos = base.pos
+    if rt === nothing && !live
+        g_root = gravity(base_pos)
+        a, alpha, qdd = SimulationModel.articulated_dynamics!(
+            art.ws, tree, base, sc_view.joint_q, sc_view.joint_qd,
+            forces, SimulationModel.DynamicsRotational.body_torque(torque_com), gravity;
+            root_mass=sc_view.mass - art.moving_mass,
+            relative_gravity=_RootRelativeGravity(gravity, base_pos, g_root),
+            root_gravity=g_root,
+        )
+    else
+        # Body kinematics first (attachment mount frames, live link poses), then the per-body loads: attachment
+        # reactions and live-pose link loads enter the backbone as per-body wrenches (generalized forces J'[F; tau]).
+        ws = art.ws
+        # Kinematics RELATIVE to the root COM (the attachment state is base-relative).
+        rel_base = SimulationModel.ArticulatedBaseState{Float64}(
+            SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0), base.q, base.ω)
+        SimulationModel.articulated_kinematics!(
+            (pos=ws.kpos, quat=ws.kquat, vel=ws.kvel, ω=ws.kwb, ω_world=ws.kww),
+            tree, rel_base, sc_view.joint_q, sc_view.joint_qd,
+        )
+        if rt === nothing
+            z3 = SVector{3, Float64}(0.0, 0.0, 0.0)
+            @inbounds for b in eachindex(ws.ext_force)
+                ws.ext_force[b] = z3
+                ws.ext_torque[b] = z3
+            end
+            g_root = gravity(base_pos)
+        else
+            SimulationModel.apply_attachments_articulated!(du_view, sc_view, rt, ws, t, gravity)
+            g_root = rt.base_gravity[1]
+        end
+        live && _add_live_pose_loads!(ws, art, sc_view, p, sat_idx, t, base, dynamic_effectors)
+        a, alpha, qdd = SimulationModel.articulated_dynamics!(
+            ws, tree, base, sc_view.joint_q, sc_view.joint_qd,
+            forces, SimulationModel.DynamicsRotational.body_torque(torque_com), gravity;
+            root_mass=sc_view.mass - art.moving_mass,
+            body_force_world=ws.ext_force, body_torque_world=ws.ext_torque,
+            relative_gravity=_RootRelativeGravity(gravity, base_pos, g_root),
+            root_gravity=g_root,
+        )
+        rt === nothing || SimulationModel.finish_attachments!(du_view, rt, a)
+    end
+    du_view.pos .= SimulationModel.DynamicsTranslational.position_derivative(sc_view.vel)
+    du_view.vel .= a
+    du_view.mass = SimulationModel.DynamicsTranslational.mass_derivative(mass_rate)
+    du_view.q .= SimulationModel.DynamicsRotational.quaternion_derivative(omega_body, sc_view.q)
+    du_view.ω .= alpha
+    SimulationModel.articulated_joint_qdot!(du_view.joint_q, tree, sc_view.joint_q, sc_view.joint_qd)
+    du_view.joint_qd .= qdd
     return nothing
 end
 
@@ -2854,11 +3207,19 @@ function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector,
             @views begin
                 sc_view = sc_state[i]
                 du_view = sc_du[i]
+                if p.shared_buffers.articulated_present[]
+                    art = p.shared_buffers.articulated_runtimes[i]
+                    if art !== nothing
+                        _assign_articulated_spacecraft_rhs!(du_view, sc_view, art, p, i, t, dynamic_effectors, effector_decision, debug_control)
+                        continue
+                    end
+                end
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
                 mass_rate, rw_torque_body = _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
                 _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
+                _apply_attachments_rigid!(du_view, sc_view, p, i, t, forces, torques, dynamic_effectors)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
@@ -2873,6 +3234,7 @@ function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector,
                     forces,
                     mass_rate,
                 )
+                _finish_attachments_rigid!(du_view, p, i)
 
                 if p.args.mission_configuration.orientation_sim
                     inertia_tensor = spacecraft[i].inertia_tensor
@@ -2900,11 +3262,19 @@ function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector,
             @views begin
                 sc_view = sc_state[i]
                 du_view = sc_du[i]
+                if p.shared_buffers.articulated_present[]
+                    art = p.shared_buffers.articulated_runtimes[i]
+                    if art !== nothing
+                        _assign_articulated_spacecraft_rhs!(du_view, sc_view, art, p, i, t, dynamic_effectors, effector_decision, debug_control)
+                        continue
+                    end
+                end
                 forces = MVector{3, Float64}(0.0, 0.0, 0.0)
                 torques = MVector{3, Float64}(0.0, 0.0, 0.0)
                 _accumulate_dynamic_effectors!(forces, torques, sc_view, p, i, t, dynamic_effectors, effector_decision)
                 mass_rate, rw_torque_body = _control_effectors_with_wheels!(forces, torques, sc_view, p, i, t, debug_control)
                 _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, i, t, forces, torques)
+                _apply_attachments_rigid!(du_view, sc_view, p, i, t, forces, torques, dynamic_effectors)
                 heat_rates = SimulationModel.SimulationCallbacks._compute_stage_heat_rates!(
                     p,
                     sc_view,
@@ -2919,6 +3289,7 @@ function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector,
                     forces,
                     mass_rate,
                 )
+                _finish_attachments_rigid!(du_view, p, i)
 
                 if p.args.mission_configuration.orientation_sim
                     inertia_tensor = spacecraft[i].inertia_tensor
@@ -3425,6 +3796,13 @@ function build_initial_conditions(args)::ComponentVector
         end
         n_rw = args.mission_configuration.orientation_sim ? sc.root.rw_assembly.n_wheels : 0
         base_shape = n_rw > 0 ? merge(base_shape, (h_wheels = zeros(n_rw),)) : base_shape
+        if SimulationModel.articulated_has_moving_joints(sc)
+            tree = SimulationModel.build_articulated_tree(sc; prop_mass=sc.prop_mass)
+            base_shape = merge(base_shape, (joint_q = zeros(tree.nq), joint_qd = zeros(tree.nv)))
+        end
+        if !isempty(sc.attachments)
+            base_shape = merge(base_shape, SimulationModel.attachment_state_shape(sc))
+        end
         coupling = _robot_arm_coupling(args, i, 0.0)
         coupling === nothing && return base_shape
         return merge(base_shape, SimulationModel.coupled_cloth_robot_arm_state_shape(coupling.plan))
@@ -3453,6 +3831,15 @@ function build_initial_conditions(args)::ComponentVector
             if spacecraft.root.rw_assembly.n_wheels > 0
                 sc_view.h_wheels .= spacecraft.root.rw_assembly.h_wheels
             end
+        end
+        init_tree = nothing
+        if SimulationModel.articulated_has_moving_joints(spacecraft)
+            init_tree = SimulationModel.build_articulated_tree(spacecraft; prop_mass=spacecraft.prop_mass)
+            sc_view.joint_q .= init_tree.q0
+            sc_view.joint_qd .= init_tree.qd0
+        end
+        if !isempty(spacecraft.attachments)
+            SimulationModel.initialize_attachment_state!(sc_view, spacecraft, init_tree)
         end
         coupling = _robot_arm_coupling(args, i, 0.0)
         if coupling !== nothing
