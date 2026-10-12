@@ -7,11 +7,15 @@ would run; it deviates only when the model predicts a gain larger than a
 margin; and a guard after the first round of samples re-plans the remainder if
 the observation contradicts the prediction.
 
-R7 changes nothing inside a sample. The engine-level inner policy (the RHS
-calibration sweep, the callback width rules) is exactly what R6 has. R7 decides
-the campaign-level plan in `_run_campaign_adaptive` -- including, when the
-calibration store has measured it, how many threads each sample gets -- and
-nothing else.
+R7 chooses the campaign-level plan in `_run_campaign_adaptive`, including,
+when the calibration store has measured it, how many threads each sample gets.
+For a plan with one consumer and at most one effective inner thread, dispatch
+also selects the static serial sample environment: adaptive policy and the
+pre-solve RHS calibration sweep are disabled, and density, control and thermal
+callbacks are not threaded. The environment is restored after dispatch. Plans
+with a larger effective budget retain the existing engine-level inner policy.
+An explicit inner budget remains a ceiling; an undeclared budget is not made
+explicit by this suppression.
 
 ## Why
 
@@ -136,9 +140,34 @@ one slot when the previous plan was at another budget.
 ## The cost model
 
 Plans are ranked by predicted makespan in units of one uncontended sample time
-`t_1`. `t_1` is unknown a priori and cancels out of the ranking, which is why
-the planner never needs to know how long a sample takes -- only how the
-campaign's time scales with how the samples are spread.
+`t_1`. The common time scale cancels out of the core schedule comparison.
+Costs expressed in seconds, however, need a positive measured sample time to
+convert them to these units. When no estimate is available, the corresponding
+seconds-valued cost is omitted.
+
+### Fixed cost of a short process campaign
+
+`PREDICTIVE_POOL_FIXED_S` adds a 25 ms process-dispatch cost, converted to sample
+units, only when the sample count fits in one pool round and the cost is at
+least `PREDICTIVE_POOL_FIXED_MIN_SHARE` (5%) of the plan's predicted makespan
+before this addition. Multi-round campaigns and longer single-round campaigns
+are unchanged by this term. This heuristic is distinct from the cold-pool
+`pool_startup_s` cost described below; it can apply to an already warm pool.
+
+The conversion uses `sample_time_s` from the corrections when available.
+Otherwise it uses the last valid pool-worker sample mean recorded for that
+workload signature in this process. The fallback remains active with
+`SPACEAGORA_CAMPAIGN_CORRECTIONS=off`, is protected by a lock, and neither
+modifies nor persists corrections. With no prior observation the fixed term
+is zero, so an untimed warmup can affect the route of later timed repeats.
+Forced process measurements also populate this transient observation.
+
+The 25 ms value and 5% cutoff are assumptions informed by the cited TRX50
+measurements. Unit tests establish the selection rules, including unchanged
+P4-like long single rounds and P3-like multiple rounds; they do not establish
+a wall-time gain. PR265's target-hardware performance acceptance remains open.
+
+### Sample schedule
 
 The schedule is a deterministic greedy list schedule: every consumer takes the
 next queued sample the moment it is free, ties to the lower index. That is
@@ -691,7 +720,7 @@ those measurements bear on, and the next campaign is priced with them:
 |---|---|---|
 | `heap_scale` (machine-wide; multiplies the heap term wherever the heap model charges one) | 1 | a guarded mixed plan whose heap model charged a term: the scale that would have predicted the guard's observed local-over-worker slowdown |
 | `round_tail` (machine-wide) | `[campaign] round_tail` in the constants file; not corrected, and zero, when the file has none | a pure process campaign on a warm pool with no failures: `(wall / sample - R) / (H_k - 1)` |
-| `sample_time_s` (per workload signature) | none | the pool workers' mean sample work; used only to turn `pool_startup_s` into sample units |
+| `sample_time_s` (per workload signature) | none | the pool workers' mean sample work; converts `pool_startup_s` and the short-campaign fixed cost into sample units |
 
 Rules, all enforced in `predictive_planner.jl` and all ASSUMED values (named
 fields, environment-configurable, see the constants table):
@@ -761,9 +790,11 @@ campaigns do not write one as they go. A run that wants the corrections sets
 
 ### The dynamics are untouched
 
-The corrections, the tail and the leash change only which plan runs. A plan
-decides which consumer runs which sample and nothing inside the sample, so it
-cannot move a bit of any trajectory. Measured rather than asserted:
+The corrections, the tail and the leash change which plan runs. The
+single-consumer serial environment described above additionally disables inner
+adaptive machinery; it does not change the configured physical models or
+solver settings. The following existing experiment establishes bitwise parity
+for its listed plans and configuration, rather than for every execution path:
 `benchmarks/studies/predictive_cost_terms/plan_parity.jl` runs one
 `mcgrid_8sat_16mc` campaign (16 samples of 8 spacecraft, 1 h, the harness's
 predictive-mode environment) through the planner's own dispatch under several
