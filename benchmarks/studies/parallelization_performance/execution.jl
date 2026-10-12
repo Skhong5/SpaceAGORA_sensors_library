@@ -1260,12 +1260,17 @@ _ppc_shared_process()::Bool = _ppc_bool(get(ENV, "SPACEAGORA_PPB_SHARED_PROCESS"
 # now goes through ppc_run_child, which
 #   * reduces the failure to a short status ("killed by signal 11 (SIGSEGV)",
 #     "exit code 1") that leads every log line and error_message cell;
-#   * retries once when the child was killed by a signal (a crash, not a result),
-#     discarding the first attempt's rows so only the successful attempt counts;
+#   * retries once when the child was killed by a CRASH signal (SIGSEGV, SIGBUS,
+#     SIGILL, SIGABRT, SIGFPE), discarding the first attempt's rows so only the
+#     successful attempt counts. Any other signal (SIGKILL, SIGTERM, SIGINT,
+#     SIGHUP: what job watchdogs and `systemctl --user stop` send) is a plain
+#     failure, not retried, or a watchdog-killed point would run twice as long.
+#     A retried shared process reruns all of its points;
 #   * appends one line per attempt to child_attempts.csv beside worker_rows/, so
 #     a retried point stays visible after it succeeded;
 #   * returns instead of throwing, so the controller records the point as a
 #     failure row and carries on with the rest of the rung.
+const PPC_CRASH_SIGNALS = (4, 6, 7, 8, 11)  # SIGILL SIGABRT SIGBUS SIGFPE SIGSEGV
 const PPC_SIGNAMES = Dict(4 => "SIGILL", 6 => "SIGABRT", 7 => "SIGBUS", 8 => "SIGFPE",
                           9 => "SIGKILL", 11 => "SIGSEGV", 15 => "SIGTERM")
 
@@ -1283,14 +1288,15 @@ function ppc_child_status(err)
 end
 
 # Test-only fault injection, off unless SPACEAGORA_PPC_TEST_FAULT is set:
-# "<signal_once|signal_always|exit_always>:<substring of the child's label>".
+# "<signal_once|signal_always|sigterm_once|exit_always>:<substring of the child's label>".
 function _ppc_test_fault_cmd(cmd::Cmd, label::String, attempt::Int)::Cmd
     spec = get(ENV, "SPACEAGORA_PPC_TEST_FAULT", "")
     isempty(spec) && return cmd
     kind, match = String.(split(spec, ':'; limit=2))
     occursin(match, label) || return cmd
-    kind == "signal_once" && attempt > 1 && return cmd
+    kind in ("signal_once", "sigterm_once") && attempt > 1 && return cmd
     kind in ("signal_once", "signal_always") && return `bash -c 'kill -SEGV $$'`
+    kind == "sigterm_once" && return `bash -c 'kill -TERM $$'`
     kind == "exit_always" && return `bash -c 'exit 7'`
     return cmd
 end
@@ -1318,8 +1324,8 @@ function ppc_run_child(cmd::Cmd, label::String; outfiles::Vector{String}=String[
             st = ppc_child_status(err)
             println("[child-failed] $(label) attempt=$(attempt): $(st.text)")
             _ppc_record_attempt(events, label, attempt, st, time() - t0)
-            if st.kind == "signal" && attempt == 1
-                println("[retry] $(label): killed by a signal, rerunning once; attempt 1 rows are discarded")
+            if st.kind == "signal" && st.code in PPC_CRASH_SIGNALS && attempt == 1
+                println("[retry] $(label): crash signal, rerunning once; attempt 1 rows are discarded")
                 foreach(f -> rm(f; force=true), outfiles)
                 continue
             end
