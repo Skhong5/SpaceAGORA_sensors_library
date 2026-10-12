@@ -45,6 +45,13 @@ SpaceAGORA.ExternalPropagationServices.external_acceleration
 
 ## Core services
 
+`sample_planet_frame_with_lpi` accepts either a `StateSample` or a named tuple
+`(pos_ii=..., vel_ii=...)` with `SVector{3,Float64}` values: inertial position in
+metres and inertial velocity in metres per second. The named-tuple form is part of
+this service contract and requires no mass or attitude fields. In both forms, the
+supplied `l_pi` maps inertial components to planet-fixed components, and the
+returned velocity includes the planet-rotation transport term.
+
 ```@docs
 SpaceAGORA.ExternalPropagationServices.with_external_propagators
 SpaceAGORA.ExternalPropagationServices.validate_external_propagators
