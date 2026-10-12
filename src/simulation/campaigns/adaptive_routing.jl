@@ -1063,6 +1063,26 @@ function _predictive_mark_pool_warm!()::Nothing
     return nothing
 end
 
+# The last mean pool-worker sample time seen in this process, per workload
+# signature, kept whatever SPACEAGORA_CAMPAIGN_CORRECTIONS says. It is read only
+# to turn the fixed pool cost from seconds into sample units; nothing is
+# corrected from it. Absent until a pool campaign of that signature has run.
+const _LAST_SAMPLE_TIME_S = Dict{String, Float64}()
+const _LAST_SAMPLE_TIME_LOCK = ReentrantLock()
+
+function _predictive_record_sample_time!(signature::AbstractString, seconds::Real)::Nothing
+    (isfinite(seconds) && seconds > 0.0) || return nothing
+    lock(_LAST_SAMPLE_TIME_LOCK) do
+        _LAST_SAMPLE_TIME_S[String(signature)] = Float64(seconds)
+    end
+    return nothing
+end
+
+_predictive_last_sample_time(signature::AbstractString)::Union{Nothing, Float64} =
+    lock(_LAST_SAMPLE_TIME_LOCK) do
+        get(_LAST_SAMPLE_TIME_S, String(signature), nothing)
+    end
+
 function _predictive_mean_work(samples)::Float64
     total = 0.0
     k = 0
@@ -1241,7 +1261,8 @@ function _run_campaign_predictive(
     shape_key = "$(signature)|n=$(n)|threads=$(threads)|pool=$(pool_workers)"
     pool_cold = pool_workers >= 2 && _predictive_pool_cold(pool_workers)
     priced = predictive_cost_terms(corrections, campaign_constants, rules;
-                                   signature=signature, pool_cold=pool_cold)
+                                   signature=signature, pool_cold=pool_cold,
+                                   fallback_sample_time_s=_predictive_last_sample_time(signature))
     terms = priced.terms
     inner_curve = _predictive_inner_curve(features; outer=true)
     inner_curve_unsplit = _predictive_inner_curve(features; outer=false)
@@ -1305,6 +1326,7 @@ function _run_campaign_predictive(
                          "n=$(length(result.samples)) failures=$(length(result.failed)) unguarded")
         on_pool = plan.route === :process
         on_pool && _predictive_mark_pool_warm!()
+        on_pool && _predictive_record_sample_time!(signature, _predictive_mean_work(result.samples))
         if fold
             worker_s = on_pool ? _predictive_mean_work(result.samples) : NaN
             tail = (on_pool && !pool_cold && isempty(result.failed)) ?
@@ -1385,6 +1407,8 @@ function _run_campaign_predictive(
     final_consumers = max(1, open_workers + open_locals)
     final_slots = open_workers > 0 ? open_locals : 0
     _predictive_mark_pool_warm!()
+    open_workers > 0 && _predictive_record_sample_time!(
+        signature, _predictive_guard_mean(guard.worker_work_s, guard.worker_n))
     if fold
         verdict = guard.verdict
         # The heap scale that would have predicted what the guard saw. Only a

@@ -1564,7 +1564,8 @@ constants file's priors and this machine's corrections.
 function predictive_cost_terms(corrections::Union{Nothing, CampaignCorrections},
                                campaign_constants::PredictiveCampaignConstants,
                                rules::CampaignCorrectionRules;
-                               signature::AbstractString, pool_cold::Bool)
+                               signature::AbstractString, pool_cold::Bool,
+                               fallback_sample_time_s::Union{Nothing, Real} = nothing)
     k = corrections === nothing ? 0 : corrections.campaigns
     heap = corrections === nothing ? 1.0 : correction_value(corrections.heap_scale, 1.0, k, rules)
     tail_prior = campaign_constants.round_tail
@@ -1580,9 +1581,12 @@ function predictive_cost_terms(corrections::Union{Nothing, CampaignCorrections},
     startup_s = campaign_constants.pool_startup_s
     startup = (pool_cold && t1 !== nothing && startup_s !== nothing) ? startup_s / t1 : 0.0
     slope = campaign_constants.local_heap_slope === nothing ? NaN : campaign_constants.local_heap_slope
-    # Needs the sample time to turn seconds into sample units; without one
-    # (corrections off, or a first campaign) no fixed cost is charged.
-    pool_fixed = t1 === nothing ? 0.0 : PREDICTIVE_POOL_FIXED_S / t1
+    # Needs a sample time to turn seconds into sample units; without one (the
+    # process's first campaign of this signature) no fixed cost is charged.
+    # With corrections off there is no t1; the process's last measured sample
+    # time stands in for this conversion only (no correction is applied).
+    t_pool = t1 === nothing ? fallback_sample_time_s : t1
+    pool_fixed = (t_pool === nothing || !(t_pool > 0)) ? 0.0 : PREDICTIVE_POOL_FIXED_S / t_pool
     return (terms = PredictiveCostTerms(heap, max(0.0, tail), startup, slope, pool_fixed),
             sample_time_s = t1)
 end
