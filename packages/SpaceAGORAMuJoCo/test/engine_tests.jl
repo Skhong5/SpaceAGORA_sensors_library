@@ -286,7 +286,7 @@ loose_tol() = SM.IntegrationTolerances(reltol_orbit=1e-6, abstol_orbit=1e-3, rel
     d_two = (maxdiff(alone, two, "pos"), maxdiff(alone, two, "vel"))
     d_mixed = (maxdiff(alone, mixed, "pos"), maxdiff(alone, mixed, "vel"))
     @info "ordinary spacecraft 1: difference from running alone" with_second_ordinary_spacecraft = d_two with_scene = d_mixed
-    @test nrow(mixed) == nrow(alone)
+    @test size(mixed, 1) == size(alone, 1)
     # Measured: 1.49e-8 m and 1.0e-11 m/s with the scene; 8.4e-9 m and 2.9e-11 m/s with a second ordinary spacecraft.
     @test d_mixed[1] < 5e-8 && d_mixed[2] < 3e-11
     @test d_mixed[1] < 10 * max(d_two[1], 1e-9)
@@ -347,7 +347,7 @@ const ARM_XML = replace(TWO_BODIES, "</body>\n    <body name=\"target\">" => "<b
     end
     @test ok
     # the link is 1 m from the chaser along y (its frame offset), at the chaser's attitude (identity here)
-    last = nrow(tbl)
+    last = size(tbl, 1)
     @test norm(SVector(tbl[last, "scene_pose_link_1"], tbl[last, "scene_pose_link_2"], tbl[last, "scene_pose_link_3"]) -
                SVector(tbl[last, "sc1_pos_1"], tbl[last, "sc1_pos_2"], tbl[last, "sc1_pos_3"])) ≈ 1.0 atol = 1e-3
     @test_throws ArgumentError SpaceAGORA.run_simulation(cfg; return_results=true, save_fields=[scene_body_pose_save_field("missing")])

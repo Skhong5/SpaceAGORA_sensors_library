@@ -2,7 +2,6 @@
 using LinearAlgebra
 using SpaceAGORAMuJoCo: Binding
 using StaticArrays
-using DataFrames
 import SpaceAGORA
 using SpaceAGORA.TelemetryVerification: make_example_config
 
@@ -109,4 +108,3 @@ function scene_samples(effectors, dt, tend, every)
     end
     return out
 end
-

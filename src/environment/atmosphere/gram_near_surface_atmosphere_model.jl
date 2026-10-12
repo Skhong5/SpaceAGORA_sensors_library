@@ -24,6 +24,9 @@ struct GRAMNearSurfaceAtmosphereModel{C} <: AbstractDensityModel
     core::C
 end
 
+# Whether a near-surface model's payload has a wind layer. The GRAMSuite extension answers for real cores.
+_near_surface_model_has_winds(model) = false
+
 # Native-free snapshots that must see every current coordinate (their domain checks and spatial variation make a
 # trajectory spline or a per-step frozen sample unsafe): fixed grids and near-surface payloads. `CombinedAtmosphereModel`
 # joins two of them; `_NativeFreeSnapshotModel` (defined with it) covers the components and their combinations.
