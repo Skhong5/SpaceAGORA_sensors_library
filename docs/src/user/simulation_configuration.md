@@ -369,7 +369,10 @@ feature. Links whose joint is `:fixed` move rigidly with their parent body.
 - Quaternions are scalar-last and are the body-to-inertial rotation, like the bus `q`.
 - `joint_q` and `joint_qd` are appended to the spacecraft's state, listing the non-fixed
   joints in `spacecraft.joints` order. A ball joint has four coordinates and three rates, and
-  its rate is the angular velocity of the child relative to its parent in the parent frame.
+  its rate is the angular velocity of the child relative to its parent in the parent link
+  (`Joint.link1`) frame. Ball coordinates, rates, rest and joint-space gains keep this frame
+  even when fixed joints merge the parent link into a body whose head has a different attitude;
+  output `joint_q` and `joint_qd` are not converted to the composite body frame.
 - Saved outputs: `joint_q`, `joint_qd`, `articulated_link_pose` (every link's inertial COM and
   attitude from the joint kinematics) and `system_com`; see [Simulation Outputs](outputs.md).
 - Checkpoint and resume work: the joint state is part of the checkpointed state.

@@ -383,8 +383,7 @@ Connection between a parent `link1` and a child `link2`. `p1ᵇ` is the joint po
 `link1` body frame and `p2ᵇ` the same point in the `link2` body frame. Joint coordinate 0 is the
 configured geometry (the links' configured `r`/`q`).
 
-Joint-type keywords (articulated-body library, `build_articulated_tree`; engine integration is a
-later stage and the existing engine ignores them):
+Joint-type keywords used by `build_articulated_tree` and the simulation engine:
 
 - `joint_type`: `:fixed` (default, rigid, merged into the parent body), `:hinge` (rotation about
   `axis`), `:slide` (translation along `axis`) or `:ball` (three rotations).
@@ -395,11 +394,15 @@ later stage and the existing engine ignores them):
 - `rest`: joint coordinate at which the spring is unloaded. Scalar for hinge/slide (default 0),
   scalar-last quaternion for `:ball` (default identity).
 - `initial_q`, `initial_qd`: initial joint coordinate and rate used by the simulation engine
-  (scalars; for `:ball` a scalar-last quaternion and a 3-vector of parent-frame angular velocity).
+  (scalars; for `:ball` a scalar-last quaternion and a 3-vector of parent-link angular velocity).
   Default 0 / identity and 0.
 - `options`: reserved for future motor and limit settings; unused.
 
 The legacy `Kx/Kt/Cx/Ct` fields stay unused by the articulated-body library.
+
+Ball-joint coordinates, rates and joint-space gains use the parent `link1` frame, even when
+`link1` is merged into another body through fixed joints. Output `joint_q` and `joint_qd`
+retain that frame; merging does not re-express the public state in the composite body's frame.
 """
 mutable struct Joint
     link1::Link
