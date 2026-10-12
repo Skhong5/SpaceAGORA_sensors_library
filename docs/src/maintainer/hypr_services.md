@@ -5,6 +5,7 @@ SpaceAGORA.HYPRServices
 ```
 
 `SpaceAGORA.HYPRServices` is the supported boundary for HYPR's optional extension.
+It follows the shared [optional adapter standard](adapter_contract.md).
 SpaceAGORA **0.2.0** provides contract **1.0.0**, supporting HYPR **0.1.0** and **0.1.1** and the
 `SpaceAGORAHYPR` **0.2.0** compatibility package. The setup helper pins the exact
 HYPR source revision. A release requires both hosted checks and installation

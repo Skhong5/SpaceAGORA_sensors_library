@@ -14,6 +14,7 @@ julia --project=. docs/make.jl
 
 What to read next:
 
+- [Optional Adapter Standard](adapter_contract.md)
 - [Documentation Policy](../documentation_policy.md)
 - [API Policy](../public_api_policy.md)
 - [Contracts](../contracts.md)

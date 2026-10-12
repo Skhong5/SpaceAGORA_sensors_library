@@ -41,8 +41,12 @@ exported symbols. That surface currently includes:
 - verification entrypoints
 - CLI and asset-report entrypoints
 
-If a symbol is not re-exported from `SpaceAGORA` and documented in the generated
-API reference, it should be treated as internal.
+Documented versioned facades rooted at `SpaceAGORA` are also supported integration
+boundaries: `HYPRServices` and `ExternalPropagationServices`. They expose only
+their explicit binding inventories and are used by qualified name. Their
+[adapter contract](maintainer/adapter_contract.md) controls compatibility
+separately from package versions. Other symbols absent from the documented root
+API or a facade inventory should be treated as internal.
 
 ## Internal modules
 
