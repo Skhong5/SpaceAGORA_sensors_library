@@ -80,6 +80,12 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "Optional Adapter Services",
+        items = [
+            (owner = :SpaceAGORA, symbol = :ExternalPropagationServices, rendered = "SpaceAGORA.ExternalPropagationServices")
+        ]
+    ),
+    (
         title = "Runtime Configuration",
         items = [
             (owner = :SpaceAGORA, symbol = :SimulationSettings, rendered = "SpaceAGORA.SimulationSettings"),

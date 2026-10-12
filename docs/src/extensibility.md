@@ -29,6 +29,13 @@ The rule is simple:
 Do not build new extensions by importing internal modules directly unless you
 are intentionally working on SpaceAGORA internals.
 
+Optional packages with a broader integration use a named, versioned facade.
+See the [Optional Adapter Standard](maintainer/adapter_contract.md) for shared
+ownership, compatibility, installation and conformance requirements, and
+[External Propagation Services](maintainer/external_propagation_services.md) for
+external spacecraft integrators. HYPR uses its existing
+[versioned planning services](maintainer/hypr_services.md).
+
 ## Add a force or torque model
 
 Stable interface:

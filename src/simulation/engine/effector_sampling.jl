@@ -50,6 +50,15 @@ end
 
 # Variant that accepts a pre-computed l_pi so the caller avoids acquiring harmonics_lpi_lock.
 # Used in the parallel atmosphere pre-sample phase where l_pi is computed once before @batch.
+"""
+    sample_planet_frame_with_lpi(x::StateSample, planet, l_pi::SMatrix{3,3,Float64,9}) -> PlanetFrameSample
+
+Sample planet-fixed position, velocity, altitude [m], latitude [rad], and
+longitude [rad] from inertial state `x` and an inertial-to-planet rotation
+`l_pi`. Velocity includes the rotating-frame transport term from `planet.ω`.
+The caller supplies the rotation at the desired epoch; this function performs
+no ephemeris lookup and does not mutate the state, planet, or rotation.
+"""
 @inline function sample_planet_frame_with_lpi(x, planet, l_pi::SMatrix{3, 3, Float64, 9})::PlanetFrameSample
     pos_ii, vel_ii = _extract_sample_pos_vel(x)
     pos_pp, vel_pp = SimulationModel.SimulationCallbacks._planet_relative_state(pos_ii, vel_ii, planet, l_pi)
