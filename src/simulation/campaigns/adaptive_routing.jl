@@ -881,6 +881,16 @@ end
 # lower, so this leaves the bandit's own use of that function untouched. A
 # plan's budget never exceeds its share (`W * b <= T`, `L * b <= T - 1`), which
 # is the same cap the split applies.
+# The environment a sample sees on the static serial route (the harness's R0-R3
+# modes): no adaptive policy, no pre-solve RHS sweep, callbacks never threaded.
+const _SERIAL_SAMPLE_ENV = (
+    "SPACEAGORA_PARALLEL_POLICY_ADAPTIVE" => "0",
+    "SPACEAGORA_RHS_CALIBRATE" => "off",
+    "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "off",
+    "SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "off",
+    "SPACEAGORA_THERMAL_CALLBACK_PARALLEL" => "off",
+)
+
 function _predictive_dispatch(f, batch::Vector, plan::PredictivePlan, tuning::OuterRouteTuning;
                               fail_fast::Bool, class_sink::Union{Nothing, Vector{Symbol}}=nothing,
                               take_sink::Union{Nothing, Vector{Float64}}=nothing,
@@ -897,14 +907,24 @@ function _predictive_dispatch(f, batch::Vector, plan::PredictivePlan, tuning::Ou
     # A serial plan with no declared budget retains the caller's environment.
     # An explicit budget (including an off-list forced serial plan) is still a
     # ceiling, even though the serial dispatcher returns before route setup.
-    plan.consumers <= 1 && plan.inner_thread_budget <= 0 &&
-        return _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink,
-                                            take_sink=take_sink, admission=admission,
-                                            on_complete=on_complete)
+    undeclared = plan.consumers <= 1 && plan.inner_thread_budget <= 0
     budget = _predictive_declared_budget(plan)
     # A serial ceiling may narrow an inherited budget, never widen it.
     plan.consumers <= 1 && (budget = min(budget, ParallelPolicy.effective_inner_thread_budget()))
-    return withenv("SPACEAGORA_INNER_THREAD_BUDGET" => string(budget)) do
+    # One consumer with one thread can parallelise nothing, so the R7 inner
+    # machinery (adaptive policy, region search, RHS sweep, callback threading
+    # decisions) could only cost: measured +2.7% (P3 rung 1) to +6.5% (P6p, one
+    # worker) over the serial path. Run the sample as the static serial route does.
+    effective = undeclared ? ParallelPolicy.effective_inner_thread_budget() : budget
+    inert = plan.consumers <= 1 && effective <= 1 ? _SERIAL_SAMPLE_ENV : ()
+    if undeclared
+        return withenv(inert...) do
+            _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink,
+                                         take_sink=take_sink, admission=admission,
+                                         on_complete=on_complete)
+        end
+    end
+    return withenv("SPACEAGORA_INNER_THREAD_BUDGET" => string(budget), inert...) do
         _run_campaign_with_route_env(f, spec, dispatch_plan; class_sink=class_sink,
                                      take_sink=take_sink, admission=admission,
                                      on_complete=on_complete)
