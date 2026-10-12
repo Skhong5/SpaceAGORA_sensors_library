@@ -218,8 +218,9 @@ df = DataFrame(Arrow.Table("output/simulation_results.feather"))
 ## CSV column reference
 
 All per-spacecraft columns use the prefix `sc{N}_` where `N` is the
-spacecraft `id` field (1-based). A single-spacecraft run produces `sc1_*`
-columns.
+one-based position in the spacecraft list passed to `DynamicsModel`.
+`SpacecraftModel.id` does not set this prefix. A single-spacecraft run
+produces `sc1_*` columns even when its spacecraft has a different `id`.
 
 ### Time
 
