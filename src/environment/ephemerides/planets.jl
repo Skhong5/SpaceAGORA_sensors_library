@@ -24,6 +24,11 @@ module Planets
     # Track furnished paths here so repeat construction is a cheap no-op instead of
     # a repeat furnsh call.
     const _FURNISHED_KERNELS = Set{String}()
+    # Ephemeris consumers must discard cached values after any managed kernel
+    # change, even when their body and epoch are unchanged. For example, the
+    # Mars system SPK also changes Earth's position relative to the Sun.
+    # Reads and writes are protected by the shared SPICE lock.
+    const _SPICE_KERNEL_POOL_GENERATION = Ref{UInt}(0)
     const _PCK_OVERRIDE_PATHS = Ref{Union{Nothing, Vector{String}}}(nothing)
     const _PCK_APPLIED_KERNEL_COUNT = Ref(-1)
 
@@ -55,6 +60,7 @@ module Planets
             empty!(_VENUS_CACHE)
             empty!(_TITAN_CACHE)
             empty!(_MOON_CACHE)
+            _SPICE_KERNEL_POOL_GENERATION[] += UInt(1)
         end
         return nothing
     end
@@ -64,6 +70,7 @@ module Planets
         lock(_SPICE_BODY_LOCK) do
             resolved in _FURNISHED_KERNELS && return nothing
             furnsh(resolved)
+            _SPICE_KERNEL_POOL_GENERATION[] += UInt(1)
             push!(_FURNISHED_KERNELS, resolved)
             return nothing
         end
@@ -342,6 +349,7 @@ module Planets
         for path in reverse(paths)
             if path in _FURNISHED_KERNELS
                 unload(path)
+                _SPICE_KERNEL_POOL_GENERATION[] += UInt(1)
                 delete!(_FURNISHED_KERNELS, path)
             end
         end
