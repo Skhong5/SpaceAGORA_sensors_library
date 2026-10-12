@@ -387,7 +387,9 @@ _declares_gnc(sc) = !(isempty(sc.guidance.guidance_effectors) &&
 # Spacecraft copy without its per-spacecraft GNC (links, joints and the rest are shared).
 _without_gnc(sc::SimulationModel.SpacecraftModel) = SimulationModel.SpacecraftModel(
     sc.joints, sc.links, sc.root, sc.instant_actuation, sc.dry_mass, sc.prop_mass, sc.inertia_tensor,
-    sc.n_reaction_wheels, sc.n_thrusters, sc.initial_condition, sc.id)
+    sc.n_reaction_wheels, sc.n_thrusters, sc.initial_condition, sc.id,
+    SimulationModel.GuidanceModel((), Float64[]), SimulationModel.NavigationModel((), Float64[]),
+    SimulationModel.ControlModel((), Float64[]), sc.attachments)
 
 """
 Fold per-spacecraft GNC declarations (`SpacecraftModel` `guidance`/`navigation`/`control`) into the
@@ -514,6 +516,9 @@ function run_simulation(
     # Typed pipeline is SI-native (meters, seconds, kilograms). The
     # `simulation_settings.normalize` field is legacy-only and rejected by default.
     _enforce_typed_normalize_policy!(args)
+    _validate_articulated_spacecraft!(args, solver_mode)
+    _validate_attachments!(args, solver_mode)
+    _validate_external_propagators!(args, solver_mode)
     _validate_orientation_inertia!(args)
     _validate_thermal_model_support!(args)
     _validate_ephemerides_support!(args)
@@ -548,6 +553,9 @@ function run_simulation(
     _initialize_harmonics_workspace_buffers!(p)
     _initialize_nbody_workspace_buffers!(p)
     _initialize_aero_workspace_buffers!(p)
+    _initialize_articulated_runtimes!(p)
+    _initialize_attachment_runtimes!(p)
+    _initialize_external_runtimes!(p, initial_conditions)
     _initialize_nbody_ephemeris_cache_buffer!(p)
     _initialize_srp_sun_cache_buffer!(p)
     _initialize_planet_frame_cache_buffer!(p)
@@ -753,8 +761,19 @@ function run_simulation(
     # Per-solve refresh of the multibody parallel mode the per-satellite
     # decision reads (see _multibody_parallel_mode).
     SimulationModel.DynamicEffectors.AerodynamicEffectors.refresh_multibody_parallel_mode!()
+    # The sweep times whole plans with the barrier off; no probe may switch it.
+    _spin_barrier_tuner_reset!(p.shared_buffers.spin_barrier_tuner, false)
     _calibrate_rhs_plan_if_needed!(p, u_start, args)
     _calibrate_density_callback_width!(p, u_start, args)
+    # Per-region widths are searched during the solve, never during the sweep
+    # above, which times whole plans and would read a search in progress.
+    empty!(p.shared_buffers.rhs_region_tuners)
+    p.shared_buffers.rhs_region_tuning[] = _rhs_region_width_enabled()
+    # Spin-barrier probe (auto): fresh per solve, after the sweep for the same
+    # reason, and only where there is more than one thread to dispatch to.
+    _spin_barrier_tuner_reset!(p.shared_buffers.spin_barrier_tuner,
+        _rhs_env_config(p).harmonics_batch_spin_barrier === :auto &&
+        SimulationModel.ParallelPolicy.effective_inner_thread_budget() > 1)
 
     # In-run width identification, AFTER the sweep and only where the sweep
     # produced no plan.
@@ -951,6 +970,19 @@ function run_simulation(
     # ~0.1 s sweep is worth paying. Placed here rather than at the end of the
     # function so results/telemetry work is not counted as solve cost.
     _rhs_calib_record_solve_time!()
+    if !isempty(p.shared_buffers.rhs_region_tuners) &&
+       lowercase(strip(_engine_env_get("SPACEAGORA_RHS_REGION_WIDTH_TRACE", "0"))) in ("1", "true", "yes", "on")
+        println("[SpaceAGORA] RHS region widths: " * join(
+            ("$(k)=$(t.width)/$(t.allotment)(best $(t.best_width) $(round(t.best_ns / 1e3; digits=1))us, " *
+             "full $(round(t.full_ns / 1e3; digits=1))us$(t.searching ? ", searching" : ""))"
+             for (k, t) in sort!(collect(p.shared_buffers.rhs_region_tuners); by=first)), " "))
+    end
+    sbt = p.shared_buffers.spin_barrier_tuner
+    if sbt.enabled &&
+       lowercase(strip(_engine_env_get("SPACEAGORA_RHS_REGION_WIDTH_TRACE", "0"))) in ("1", "true", "yes", "on")
+        println("[SpaceAGORA] spin barrier auto: $(sbt.incumbent ? "on" : "off") " *
+                "(probes $(sbt.probes), switches $(sbt.switches))")
+    end
 
     # Process and save results
     saved_results = _save_simulation_results_if_enabled!(

@@ -27,7 +27,8 @@ function _ensemble_member_settings(settings::SimulationSettings, member_tag::Str
         checkpoint_interval_s=settings.checkpoint_interval_s,
         checkpoint_directory=needs_checkpoint_split ?
             joinpath(settings.checkpoint_directory, member_tag) : settings.checkpoint_directory,
-        resume_from_checkpoint=settings.resume_from_checkpoint
+        resume_from_checkpoint=settings.resume_from_checkpoint,
+        articulated_live_pose_loads=settings.articulated_live_pose_loads
     )
 end
 
@@ -129,6 +130,9 @@ function run_constellation_ensemble(
     route_tuning::Union{Nothing, OuterRouteTuning}=nothing,
     run_kwargs...
 )
+    isempty(args.external_propagators) || throw(ArgumentError(
+        "run_constellation_ensemble does not support externally propagated spacecraft (args.external_propagators): " *
+        "the owned spacecraft are coupled bodies of one scene and cannot be split into independent members."))
     spacecraft = args.dynamics_model.spacecraft
     isempty(spacecraft) && throw(ArgumentError(
         "run_constellation_ensemble requires at least one spacecraft in args.dynamics_model.spacecraft."

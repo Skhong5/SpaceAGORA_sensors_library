@@ -9,12 +9,17 @@ export StateSample,
     ThirdBodyEphemerisSample,
     EnvironmentSample,
     EffectorEnvironmentRequirements,
+    LinkStateSample,
+    link_wrench_capable,
+    link_wrench,
+    link_wrench_store!,
     wrench,
     wrench_caching!,
     environment_requirements,
     solver_partition,
     gravity_backbone_structure,
     gravity_backbone_acceleration_ii,
+    gravity_backbone_relative_acceleration_ii,
     gravity_backbone_kick_structure,
     gravity_backbone_kick_acceleration_ii
 
@@ -173,6 +178,53 @@ function wrench_caching! end
 @inline wrench_caching!(model, x, env, t, p, sat_idx) = wrench(model, x, env, t)
 
 """
+    LinkStateSample
+
+Live pose of one spacecraft link for the opt-in per-link kernel [`link_wrench`](@ref) (articulated
+spacecraft with `SimulationSettings.articulated_live_pose_loads`). `link` indexes `spacecraft.links`
+and `body` is the dynamic body of the articulated tree that carries the link. `pos_ii` and `vel_ii` are
+the link COM position and velocity (inertial, the velocity includes the `ω × r` term of the carrying
+body), `q_ib` is the link attitude in the same convention as `StateSample.q_ib`, and `ω_body` the link's
+angular velocity in the link frame. Built from the articulated kinematics; never written back to the
+`Link`.
+"""
+struct LinkStateSample
+    link::Int
+    body::Int
+    pos_ii::SVector{3, Float64}
+    vel_ii::SVector{3, Float64}
+    q_ib::SVector{4, Float64}
+    ω_body::SVector{3, Float64}
+end
+
+"""
+    link_wrench_capable(model) -> Bool
+
+Opt-in trait: `true` when `model` implements [`link_wrench`](@ref). Effectors that do not opt in keep
+their ordinary base-body application on articulated spacecraft. The default is `false`.
+"""
+@inline link_wrench_capable(::Any) = false
+
+"""
+    link_wrench(model, link, xl::LinkStateSample, env::EnvironmentSample, t, p, sat_idx)
+        -> (force_ii, torque_ii, drag_ii, lift_ii, cross_ii)
+
+Per-link kernel for effectors with `link_wrench_capable(model) == true`. Evaluates the load on one link at
+its live pose `xl`. `force_ii` acts at the link COM and `torque_ii` is about the link COM, both inertial;
+the drag, lift and cross vectors are diagnostics (zero when the model has none). `env` is sampled at the
+link COM. `p` and `sat_idx` may be `nothing` and `0` outside a run. Must be allocation-free.
+"""
+function link_wrench end
+
+"""
+    link_wrench_store!(model, p, sat_idx, drag_ii, lift_ii, cross_ii)
+
+Called once per RHS evaluation with the per-link diagnostics summed over the links, so models that keep
+output caches (aerodynamic drag, lift, cross) keep their meaning. The default does nothing.
+"""
+@inline link_wrench_store!(model, p, sat_idx, drag_ii, lift_ii, cross_ii) = nothing
+
+"""
     solver_partition(model) -> Symbol
 
 Optional additive declaration hook for `split_imex` solver partitioning of
@@ -206,6 +258,17 @@ units for effectors that declare
 [`gravity_backbone_structure`](@ref) == `:position_only_static_gravity`.
 """
 function gravity_backbone_acceleration_ii end
+
+"""
+    gravity_backbone_relative_acceleration_ii(model, x_base, ρ, x_far, env_base, env_far, t) -> Δg_ii
+
+Acceleration difference `g(x_base + ρ) - g(x_base)` of one position-only gravity effector, where
+`x_far` and `env_far` are the samples at `x_base.pos_ii + ρ`. The fallback subtracts two evaluations of
+[`gravity_backbone_acceleration_ii`](@ref); models override it to difference their point-mass part
+analytically (Encke), so a small `ρ` does not lose the difference to cancellation.
+"""
+@inline gravity_backbone_relative_acceleration_ii(model, x_base, ρ, x_far, env_base, env_far, t) =
+    gravity_backbone_acceleration_ii(model, x_far, env_far, t) - gravity_backbone_acceleration_ii(model, x_base, env_base, t)
 
 """
     gravity_backbone_kick_structure(model) -> Symbol

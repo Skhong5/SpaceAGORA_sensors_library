@@ -443,6 +443,14 @@ function _get_harmonics_batch_pool(
     lock(_HARMONICS_BATCH_POOL_LOCK) do
         pool = get(_HARMONICS_BATCH_POOL, key, nothing)
         if pool === nothing || length(pool) < n_workers || size(pool[1].A, 1) < batch_size
+            # Grow, never shrink either dimension: the per-region width search
+            # alternates widths, and rebuilding on every switch would allocate
+            # the whole pool each time. ponytail: keeps the widest x tallest
+            # pool for the model's lifetime; a per-width cache if memory matters.
+            if pool !== nothing
+                n_workers = max(n_workers, length(pool))
+                batch_size = max(batch_size, size(pool[1].A, 1))
+            end
             _HARMONICS_BATCH_POOL[key] = [_make_harmonics_batch_workspace(model, batch_size) for _ in 1:n_workers]
         end
     end
@@ -1654,6 +1662,48 @@ FacetSolarRadiationPressureModel(; AU_m::Real=149_597_870_700.0, p_srp_1au::Real
     return force_ii, torque_body
 end
 
+# Per-link kernel at a live link pose (articulated spacecraft, opt-in; see `link_wrench`): the facets of ONE
+# link, with the link's own COM position (eclipse and distance to the Sun) and attitude. Force at the link
+# COM and torque about it, both inertial. Link `r`/`q` are never read.
+@inline link_wrench_capable(::FacetSolarRadiationPressureModel) = true
+
+function link_wrench(
+    model::FacetSolarRadiationPressureModel,
+    link,
+    xl::LinkStateSample,
+    env::EnvironmentSample,
+    t::Float64,
+    p,
+    sat_idx::Int,
+)::NTuple{5, SVector{3, Float64}}
+    zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
+    zero5 = (zero3, zero3, zero3, zero3, zero3)
+    isempty(link.SRP_facets) && return zero5
+    solar = env.solar
+    solar === nothing && throw(ArgumentError("FacetSolarRadiationPressureModel link wrench requires env.solar."))
+    sun_pos_ii = solar.sun_pos_ii
+    r_sc_sun = sun_pos_ii - xl.pos_ii
+    d_sun = norm(r_sc_sun)
+    (isfinite(d_sun) && d_sun > 0.0) || return zero5
+    shadow = eclipse_area_calc(xl.pos_ii, sun_pos_ii, env.planet.Rp_e)
+    shadow == 0.0 && return zero5
+    s_hat = r_sc_sun / d_sun
+    P = model.p_srp_1au * (model.AU_m / d_sun)^2 * shadow
+    R_link = rot(xl.q_ib)'                                 # link frame -> inertial
+    force_ii = zero3
+    torque_ii = zero3
+    @inbounds for facet in link.SRP_facets
+        n_link = rot(SVector{4, Float64}(facet.attitude))' * SVector{3, Float64}(facet.normal_vector)
+        n_ii = normalize(R_link * n_link)
+        cosθ = dot(n_ii, s_hat)
+        cosθ > 0.0 || continue
+        F_ii = -P * facet.area * cosθ * ((1.0 - facet.δ) * s_hat + 2.0 * (facet.ρ / 3.0 + facet.δ * cosθ) * n_ii)
+        force_ii += F_ii
+        torque_ii += cross(R_link * SVector{3, Float64}(facet.cp), F_ii)
+    end
+    return force_ii, torque_ii, zero3, zero3, zero3
+end
+
 @inline function _srp_sun_position_from_spice_j2000_m(
     et::Float64,
     primary_body_name::String,
@@ -1817,7 +1867,8 @@ function _harmonics_scalar_force_ii(
     workspace::HarmonicsScratchWorkspace,
     pos_ii::SVector{3, Float64},
     mass::Float64,
-    L_PI::SMatrix{3, 3, Float64, 9},
+    L_PI::SMatrix{3, 3, Float64, 9};
+    include_central::Bool=model.include_central,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     rVec_cart, inv_r, s, t, u = _harmonics_frame_terms(L_PI, pos_ii)
     A = workspace.A
@@ -1915,7 +1966,7 @@ function _harmonics_scalar_force_ii(
 
     return _harmonics_back_transform(
         a1, a2, a3, a4, s, t, u, inv_r, mass, rVec_cart,
-        L_PI, model.gm_m3s2, model.include_central,
+        L_PI, model.gm_m3s2, include_central,
     )
 end
 
@@ -1994,6 +2045,24 @@ end
 )::SVector{3, Float64}
     force_ii, _ = wrench(model, x, env, t)
     return force_ii / x.mass_kg
+end
+
+# Relative gravity: the central term by Encke, the non-central part (J2 and higher harmonics) differenced
+# plainly. Without `include_central` the model has no point-mass term and the whole difference is plain.
+@inline function gravity_backbone_relative_acceleration_ii(
+    model::GravitationalHarmonicsModel,
+    x_base::StateSample, ρ, x_far::StateSample, env_base::EnvironmentSample, env_far::EnvironmentSample,
+    t::Float64,
+)::SVector{3, Float64}
+    pb = env_base.planet_frame
+    pf = env_far.planet_frame
+    (pb === nothing || pf === nothing) && throw(ArgumentError("GravitationalHarmonicsModel relative gravity requires env.planet_frame."))
+    workspace = _make_harmonics_scratch_workspace(model)
+    f_far, _ = _harmonics_scalar_force_ii(model, workspace, x_far.pos_ii, 1.0, pf.l_pi; include_central=false)
+    f_base, _ = _harmonics_scalar_force_ii(model, workspace, x_base.pos_ii, 1.0, pb.l_pi; include_central=false)
+    noncentral = f_far - f_base
+    model.include_central || return noncentral
+    return encke_point_mass_difference(model.gm_m3s2, x_base.pos_ii, ρ) + noncentral
 end
 
 """

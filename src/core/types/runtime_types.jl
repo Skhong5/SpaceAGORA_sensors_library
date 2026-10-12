@@ -3,6 +3,8 @@ module ConfigTypes
 # import .SpacecraftModel
 # include("core/simulation_model.jl")
 using ..SpacecraftModels: SpacecraftModel
+using ..ArticulatedBody: ArticulatedRuntime
+using ..CompliantAttachmentDynamics: AttachmentRuntime
 using ..SimConfig: SimulationConfiguration
 using ..EnvironmentModels: GRAMAtmosphereModel, GRAMAtmosphereModelSurrogate
 using ..LegacyModelCodes:
@@ -28,7 +30,7 @@ export Initial_condition, Aerodynamics, Engines, Model, Cnf, Solution, ODEParams
 export SaveCache, SaveData
 export SRPSunEphemerisCache, NBodyEphemerisCache, PlanetFrameEphemerisCache, SpiceRuntimeCounters, SpiceRhsMemo
 export GramTrackCache, VacuumPredictedGRAMCache, GramDensityPerturbationState, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace
-export PolicyDecisionEnvConfig, GramTrackCacheConfig, CallbackEnvConfig, RhsPlanEnvConfig
+export PolicyDecisionEnvConfig, GramTrackCacheConfig, CallbackEnvConfig, RhsPlanEnvConfig, RhsRegionTuner, SpinBarrierTuner
 export AbstractPolicyContext
 export RhsEffectorDecision, RhsExecutionPlan
     @kwdef struct Mission
@@ -757,7 +759,9 @@ export RhsEffectorDecision, RhsExecutionPlan
         # Routing only: satellites per worker before the default plan opens a
         # flat worker team (setup.jl, _rhs_harmonics_flat_min_sats_per_worker).
         harmonics_flat_min_sats_per_worker::Int
-        harmonics_batch_spin_barrier::Bool
+        # :on, :off or :auto (SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER); resolve
+        # per call with SimulationEngine._spin_barrier_active.
+        harmonics_batch_spin_barrier::Symbol
         harmonics_batch_allow_with_outer::Bool
         rhs_effector_cost_min_samples::Int
         flat_packet_target_min_ns::Float64
@@ -790,6 +794,42 @@ export RhsEffectorDecision, RhsExecutionPlan
         fill!(out, nothing)
         return out
     end
+
+    # Width chosen for one parallel region of the RHS (see _rhs_region in
+    # dynamics_rhs.jl): the widths tried so far, the fastest, how many calls
+    # have run since the last search, and the width the latest call ran at.
+    mutable struct RhsRegionTuner
+        allotment::Int
+        width::Int
+        best_width::Int
+        best_ns::Float64
+        full_ns::Float64
+        samples::Vector{Int64}
+        searching::Bool
+        calls::Int
+        last_width::Int
+    end
+    RhsRegionTuner(allotment::Int) = RhsRegionTuner(allotment, allotment, allotment, Inf, Inf, Int64[], true, 0, allotment)
+
+    # Spin-barrier choice under SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER=auto (see
+    # _spin_barrier_observe! in dynamics_rhs.jl): the arm the next RHS call runs,
+    # the settled choice, and the probe that compares the two in place.
+    mutable struct SpinBarrierTuner
+        enabled::Bool        # auto mode and more than one thread, set per solve
+        on::Bool             # arm of the current call
+        incumbent::Bool      # settled choice
+        probing::Bool
+        phase::Int           # 1: timing the incumbent, 2: timing the challenger
+        skip::Int            # calls to discard after an arm switch
+        samples::Vector{Int64}
+        incumbent_ns::Float64
+        calls::Int
+        period::Int          # calls between probes; doubles while the choice holds
+        probes::Int
+        switches::Int
+        last_start::UInt64   # time_ns() at the previous RHS call; 0 before the first
+    end
+    SpinBarrierTuner() = SpinBarrierTuner(false, false, false, true, 1, 1, Int64[], Inf, 0, 0, 0, 0, UInt64(0))
 
     # A struct to hold the data shared between the callback and the integrator.
     # n_sats is a plain runtime field (not a type parameter): none of these
@@ -869,6 +909,11 @@ export RhsEffectorDecision, RhsExecutionPlan
         rhs_atmosphere_prefilled::Base.RefValue{Bool} = Ref(false)
         rhs_solar_prefilled::Base.RefValue{Bool} = Ref(false)
         rhs_harmonics_batch_pool::Base.RefValue{Any} = Ref{Any}(nothing)
+        # Per-region width search, on only under the adaptive policy and only
+        # once the pre-solve calibration is done (execution.jl).
+        rhs_region_tuning::Base.RefValue{Bool} = Ref(false)
+        rhs_region_tuners::Dict{Symbol, RhsRegionTuner} = Dict{Symbol, RhsRegionTuner}()
+        spin_barrier_tuner::SpinBarrierTuner = SpinBarrierTuner()
         # Per-satellite atmosphere presence flag, maintained by get_drag_state_callback.
         # The timestamp is NaN until the callback has staged a value for a known
         # integrator time, so RHS code can distinguish current state from defaults.
@@ -932,6 +977,32 @@ export RhsEffectorDecision, RhsExecutionPlan
         # satellite is pure waste in the (overwhelmingly common) no-robot-arm
         # case. Effector tuples are fixed for a run, so no invalidation needed.
         robot_arm_present::Base.RefValue{Union{Nothing, Bool}} = Ref{Union{Nothing, Bool}}(nothing)
+        # Articulated spacecraft (any non-fixed `Joint`): per-satellite tree + Float64 workspace,
+        # built once per run by `_initialize_articulated_runtimes!` (`nothing` for rigid
+        # spacecraft). `articulated_present` is the run-constant flag the RHS tests first, so a
+        # run without articulated spacecraft pays one Bool load per RHS call. Each satellite's
+        # workspace is only touched while that satellite is being evaluated, i.e. by one thread
+        # at a time (the `@batch` and serial loops partition by satellite).
+        articulated_runtimes::Vector{Union{Nothing, ArticulatedRuntime}} = _typed_nothing_vector(ArticulatedRuntime, n_sats)
+        articulated_present::Base.RefValue{Bool} = Ref(false)
+        # `SimulationSettings.articulated_live_pose_loads` for runs with articulated spacecraft, read once at
+        # setup (`_initialize_articulated_runtimes!`); one Bool load per articulated RHS call.
+        articulated_live_loads::Base.RefValue{Bool} = Ref(false)
+        # Compliant attachments (cloth meshes, flexible appendages mounted on links): per-satellite
+        # runtime built once per run by `_initialize_attachment_runtimes!` (`nothing` for spacecraft
+        # without attachments). `attachments_present` is the run-constant flag the RHS tests first
+        # (one Bool load per RHS call without attachments). A satellite's runtime buffers are touched
+        # by one thread at a time, like the articulated workspaces.
+        attachment_runtimes::Vector{Union{Nothing, AttachmentRuntime}} = _typed_nothing_vector(AttachmentRuntime, n_sats)
+        attachments_present::Base.RefValue{Bool} = Ref(false)
+        # Externally propagated spacecraft (shadow entries; see SimulationModel.ExternalPropagation): the run's
+        # runtimes (one per propagator, built by `_initialize_external_runtimes!`), and for each satellite the
+        # runtime index (0 = ordinary) and its position among that propagator's owned spacecraft.
+        # `external_present` is the run-constant flag the RHS tests first.
+        external_runtimes::Vector{Any} = Any[]
+        external_owner::Vector{Int} = zeros(Int, n_sats)
+        external_local::Vector{Int} = zeros(Int, n_sats)
+        external_present::Base.RefValue{Bool} = Ref(false)
         policy_env_config::Base.RefValue{Union{Nothing, PolicyDecisionEnvConfig}} = Ref{Union{Nothing, PolicyDecisionEnvConfig}}(nothing)
         # The run's scoped ParallelPolicy.PolicyContext, captured at setup in the
         # task that owns the solve (SPACEAGORA_PARALLEL_POLICY_V2 only; `nothing`
@@ -997,7 +1068,15 @@ export RhsEffectorDecision, RhsExecutionPlan
     # constructor below (with defaults/validation) is the only public API and
     # has a genuinely different signature (0 positional args vs. 6), so the
     # two coexist without conflict.
-    struct ODEParams{A <: SimulationConfiguration}
+    #
+    # Mutable with every field `const`, so it lives on the heap and is passed
+    # by reference. As an immutable it was stored inline, about 2.4 KB with the
+    # whole SimulationConfiguration, and every runtime-dispatched call or
+    # closure that took `p` copied it to the heap: once per spacecraft per RHS
+    # evaluation at the control-effector barrier, about 40% of a coupled solve's
+    # allocation. `const` keeps the fields as fixed as before, so the compiler
+    # may still hoist their loads.
+    mutable struct ODEParams{A <: SimulationConfiguration}
         # m::Model = Model()                      # Model struct
         # cnf::Cnf = Cnf()            # Configuration parameters
         # solution::Solution = Solution() # Solution struct
@@ -1012,12 +1091,12 @@ export RhsEffectorDecision, RhsExecutionPlan
         # gram::Any = nothing              # GRAM object
         # numberofpassage::Int64 = 0       # Current passage number
         # orientation_sim::Bool = false    # Flag for orientation simulation
-        n_sats::Int
-        args::A # Arguments dictionary
-        shared_buffers::SharedBuffers # Shared buffers for callback and integrator
-        is_active::Vector{Bool} # Vector to track which satellites are still active in the simulation
-        orbit_counter::Vector{Int64} # Counter for the number of orbits completed
-        save_cache::SaveCache # Cache for saving results
+        const n_sats::Int
+        const args::A # Arguments dictionary
+        const shared_buffers::SharedBuffers # Shared buffers for callback and integrator
+        const is_active::Vector{Bool} # Vector to track which satellites are still active in the simulation
+        const orbit_counter::Vector{Int64} # Counter for the number of orbits completed
+        const save_cache::SaveCache # Cache for saving results
     end
 
     function ODEParams(;

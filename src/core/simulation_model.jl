@@ -69,6 +69,19 @@ include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "model.jl"))
 include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "assembly.jl"))
 @reexport using .Assembly
 
+# Articulated-body dynamics library (needs only the spacecraft model types; the runtime
+# types below hold its per-spacecraft run data).
+include(joinpath(@__DIR__, "..", "dynamics", "coupled", "articulated_body.jl"))
+@reexport using .ArticulatedBody
+
+# Compliant multibody attachments mounted on spacecraft links (the type itself lives in
+# SpacecraftModels; this is its runtime and dynamics).
+include(joinpath(@__DIR__, "..", "dynamics", "multibody_cloth", "compliant_attachment_dynamics.jl"))
+@reexport using .CompliantAttachmentDynamics
+
+# Generic hooks for spacecraft an external integrator owns for a run (internal name space, not re-exported).
+include(joinpath(@__DIR__, "..", "dynamics", "coupled", "external_propagation.jl"))
+
 # Private owner for shared coordinate transforms; preserve legacy qualified bindings.
 module FrameTransforms
 using ..EphemeridesModels: ephemerides_requires_spice, planet_frame_lpi
@@ -149,9 +162,13 @@ include(joinpath(@__DIR__, "..", "mission", "operations", "aerobraking_policy", 
 # --- Navigation Effectors ---
 include(joinpath(@__DIR__, "..", "gnc", "navigation", "navigation_hooks.jl"))
 @reexport using .NavigationHooks
+# --- Typed EDG platform services ---
+include(joinpath(@__DIR__, "..", "gnc", "guidance", "aerobraking", "typed_edg", "services.jl"))
 # --- Guidance Effectors ---
 include(joinpath(@__DIR__, "..", "gnc", "guidance", "guidance_hooks.jl"))
 @reexport using .GuidanceHooks
+# --- Typed EDG prediction and decisions ---
+include(joinpath(@__DIR__, "..", "gnc", "guidance", "aerobraking", "typed_edg", "algorithms.jl"))
 # --- Control Effectors ---
 include(joinpath(@__DIR__, "..", "gnc", "control", "control_hooks.jl"))
 @reexport using .ControlHooks

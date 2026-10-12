@@ -105,8 +105,8 @@ skipping points with a `done` marker.
 
 An identity report is affirmative only when every expected timed solve has a
 `state_*.bin` file and each point has exactly one distinct state digest. The
-expected count is the sum of `mc_samples` across the raw timed rows; missing,
-empty, extra or inconsistent dumps cannot establish identity. `summary.csv`
+expected count is the sum of `mc_samples` across the raw timed rows; missing
+or extra dump files, empty dump collections and inconsistent states cannot establish identity. `summary.csv`
 includes `expected_solves` and `state_dumps_complete` alongside the dump count.
 
 The optional `profile_allocations.jl` saving-off control rebuilds the original

@@ -158,6 +158,22 @@ the [CSV column reference](#Visualization-fields) below:
   a cloth robot-arm plan, `[rx, ry, rz, qx, qy, qz, qw]` per arm link: the
   link centre of mass relative to the spacecraft position, in inertial metres,
   and the link's inertial attitude quaternion.
+- Articulated spacecraft (any non-fixed `Joint`) add four fields to the default
+  set: `joint_q` (`sc{N}_joint_q_1` ..) and `joint_qd` (`sc{N}_joint_qd_1` ..)
+  list the non-fixed joints in `spacecraft.joints` order (a ball joint takes four
+  and three columns); `articulated_link_pose` (`sc{N}_articulated_link_pose_1` ..
+  `7n`) is `[rx, ry, rz, qx, qy, qz, qw]` per link in `spacecraft.links` order:
+  the link's COM in inertial metres and its scalar-last body-to-inertial
+  attitude, from the joint kinematics (links merged through `:fixed` joints
+  included); `system_com` (`sc{N}_system_com_1..3`) is the inertial center of
+  mass of the whole spacecraft. The `link_pose` viewer field still holds the
+  configured rigid geometry.
+- Spacecraft with compliant attachments add `attachment_pose`
+  (`sc{N}_attachment_pose_1` .. `7N`): `[rx, ry, rz, qx, qy, qz, qw]` per attachment body in
+  attachment order, the body COM in inertial metres (`pos + att_r`) and its scalar-last body-to-inertial
+  attitude. `system_com` (`sc{N}_system_com_1..3`) includes the attachment bodies (rigid
+  spacecraft get the column from the attachment fields; articulated ones from the articulated
+  fields). Spacecraft without attachments save neither.
 - `density`: `sc{N}_density`, the atmospheric density along the trajectory in
   kg/m³, for a run with an atmosphere model.
 
@@ -218,8 +234,9 @@ df = DataFrame(Arrow.Table("output/simulation_results.feather"))
 ## CSV column reference
 
 All per-spacecraft columns use the prefix `sc{N}_` where `N` is the
-spacecraft `id` field (1-based). A single-spacecraft run produces `sc1_*`
-columns.
+one-based position in the spacecraft list passed to `DynamicsModel`.
+`SpacecraftModel.id` does not set this prefix. A single-spacecraft run
+produces `sc1_*` columns even when its spacecraft has a different `id`.
 
 ### Time
 
@@ -308,6 +325,44 @@ These columns are present only when `mission_configuration.orientation_sim = tru
 | `sc1_q_3` | — | Attitude quaternion component `z` |
 | `sc1_q_4` | — | Attitude quaternion scalar component `w`; `[0, 0, 0, 1]` is the identity attitude |
 
+#### Plot saved raw quaternion history
+
+From the repository root, load the existing example helpers and explicitly
+choose the spacecraft and destination:
+
+```julia
+include("examples/common.jl")
+include("examples/aerobraking_mission_plot_utils.jl")
+quaternion_history = _save_quaternion_history_plot(
+    "results/my_run/simulation_results.csv";
+    spacecraft_index=1,
+    output_path="results/my_run/raw_quaternion.png",
+)
+```
+
+`spacecraft_index` is the positive, one-based position in the spacecraft list,
+not `SpacecraftModel.id`. The helper requires `time` (seconds) and all four
+`scN_q_1` through `scN_q_4` columns for that spacecraft. Missing columns, empty
+tables, and missing, nonnumeric or nonfinite selected values produce an error;
+columns for other spacecraft are not inspected. Default quaternion save fields
+are available only with `orientation_sim=true`.
+
+The four traces retain the saved signs, component values and row order,
+including non-unit and zero quaternions. Time is shown in minutes (`time / 60`);
+single rows, repeated times and nonmonotone times are accepted. No normalization,
+sign adjustment, interpolation or attitude conversion is applied. The component
+labels are `q1`–`q4`, colored red, green, blue and orange. The result contains
+`time_min`, `components`, `labels`, `colors`, `spacecraft_index`, `plot` and
+`output_path`, so the prepared data can be inspected without inferring values
+from the image. For an existing `DataFrame`,
+`_quaternion_history_samples(df; spacecraft_index=1)` prepares the same data
+without plotting or writing a file.
+
+The call saves only the explicitly requested image and does not open a plot
+window. Supply a supported filename extension (for example `.png` or `.pdf`)
+and an existing destination directory; the input CSV cannot be the destination.
+This opt-in helper does not run a simulation or change any existing example plots.
+
 ### Visualization fields
 
 These columns are added automatically when `simulation_settings.save_visualization_scene = true`
@@ -346,8 +401,8 @@ the plume page; they are not a calibrated flight reconstruction.
 
 When multiple spacecraft are passed to `DynamicsModel`, each spacecraft
 contributes its own column set. Spacecraft 1 produces `sc1_*` columns,
-spacecraft 2 produces `sc2_*`, and so on. The `id` field on each
-`SpacecraftModel` sets the numeric suffix.
+spacecraft 2 produces `sc2_*`, and so on. The spacecraft position in the
+configuration sets the numeric suffix; `SpacecraftModel.id` does not.
 
 ## Output rate
 
