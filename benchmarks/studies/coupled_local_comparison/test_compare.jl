@@ -49,7 +49,7 @@ end
                 @test all(==(sum(samples)), summary.expected_solves)
                 @test all(==(complete), summary.state_dumps_complete)
                 @test count("one state across routes/threads: $identical", output) == 2
-                @test occursin("pre and post produce the same state set: $identical", output)
+                @test occursin("one identical state across pre/post routes/threads: $identical", output)
                 @test !identical || all(==(1), summary.distinct_states)
             end
         end
@@ -59,13 +59,26 @@ end
             output, summary = comparison_fixture(dir; payloads=(code, _) -> fill(code, 2))
             @test all(summary.state_dumps_complete)
             @test count("one state across routes/threads: true", output) == 2
-            @test occursin("pre and post produce the same state set: false", output)
+            @test occursin("one identical state across pre/post routes/threads: false", output)
+        end
+    end
+    @testset "matching multivalued sets cannot establish cross-code identity" begin
+        for swapped in (false, true)
+            mktempdir() do dir
+                payloads = (code, mode) -> fill(swapped && code == "post" ?
+                    (mode == "serial" ? "predictive" : "serial") : mode, 2)
+                output, summary = comparison_fixture(dir; payloads)
+                @test all(summary.state_dumps_complete)
+                @test all(==(1), summary.distinct_states)  # each point is internally consistent
+                @test count("one state across routes/threads: false", output) == 2
+                @test occursin("one identical state across pre/post routes/threads: false", output)
+            end
         end
     end
     @testset "unrelated tags are not a pre/post comparison" begin
         mktempdir() do dir
             output, _ = comparison_fixture(dir; payloads=(_, _) -> ["A", "A"], codes=("alpha", "beta"))
-            @test !occursin("pre and post produce the same state set", output)
+            @test !occursin("one identical state across pre/post routes/threads", output)
         end
     end
 end
