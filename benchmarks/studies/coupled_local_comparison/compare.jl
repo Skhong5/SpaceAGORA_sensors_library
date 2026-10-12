@@ -12,18 +12,26 @@ for tag in sort(filter(d -> isdir(joinpath(out, d)), readdir(out))), point in so
     isfile(joinpath(dir, "done")) || continue
     raw_file = only(filter(f -> startswith(f, "parallelization_performance_raw_"), readdir(dir)))
     raw = CSV.read(joinpath(dir, raw_file), DataFrame)
+    isempty(raw) && error("no timed repeats in $dir")
     all(raw.success) || error("failed repeat in $dir")
     # Every timed solve of the point dumps its step times and final state (the
     # warm-up solves do not); one distinct digest means all of them agree bit for bit.
     states = joinpath(dir, "states")
-    digests = unique(bytes2hex(sha256(read(joinpath(states, f)))) for f in readdir(states))
+    "mc_samples" in names(raw) || error("missing mc_samples dump count in $raw_file")
+    all(n -> n isa Integer && n > 0, raw.mc_samples) || error("invalid mc_samples in $raw_file")
+    expected_solves = sum(raw.mc_samples)
+    dumps = isdir(states) ? filter(f -> startswith(f, "state_") && endswith(f, ".bin") &&
+        isfile(joinpath(states, f)), readdir(states)) : String[]
+    complete = length(dumps) == expected_solves
+    digests = unique(bytes2hex(sha256(read(joinpath(states, f)))) for f in dumps)
     plan = "rhs_plan_mode" in names(raw) ? join(unique(string.(raw.rhs_plan_mode)), "|") : ""
     push!(rows, (
         code=tag, case=raw.case[1], mode=raw.mode[1], threads=raw.thread_count[1],
         repeats=nrow(raw), median_s=median(raw.wall_time_s),
         min_s=minimum(raw.wall_time_s), max_s=maximum(raw.wall_time_s),
         alloc_mib=median(raw.sample_alloc_mb_sum), gc_s=median(raw.sample_gc_time_sum_s),
-        solves_dumped=length(readdir(states)), distinct_states=length(digests),
+        solves_dumped=length(dumps), expected_solves=expected_solves, state_dumps_complete=complete,
+        distinct_states=length(digests),
         state_digest=length(digests) == 1 ? digests[1] : "MIXED", plan=plan,
         git_commit=string(raw.git_commit[1])[1:min(9, end)],
     ))
@@ -67,12 +75,15 @@ end
 
 println("\n== Bit identity of step times and final state, per case and code")
 for g in groupby(df, [:case, :code])
-    @printf("%-28s %-4s points=%-3d all repeats identical within points: %-5s  one state across routes/threads: %s\n",
-            g.case[1], g.code[1], nrow(g), all(==(1), g.distinct_states), length(unique(g.state_digest)) == 1)
+    complete = all(g.state_dumps_complete)
+    consistent = complete && all(==(1), g.distinct_states)
+    @printf("%-28s %-4s points=%-3d all timed solves dumped: %-5s  all repeats identical within points: %-5s  one state across routes/threads: %s\n",
+            g.case[1], g.code[1], nrow(g), complete, consistent, consistent && length(unique(g.state_digest)) == 1)
 end
 for g in groupby(df, :case)
     codes = unique(g.code)
-    length(codes) == 2 || continue
-    same = Set(g.state_digest[g.code .== "pre"]) == Set(g.state_digest[g.code .== "post"])
+    Set(codes) == Set(("pre", "post")) || continue
+    same = all(g.state_dumps_complete) && all(==(1), g.distinct_states) &&
+        Set(g.state_digest[g.code .== "pre"]) == Set(g.state_digest[g.code .== "post"])
     @printf("%-28s pre and post produce the same state set: %s\n", g.case[1], same)
 end

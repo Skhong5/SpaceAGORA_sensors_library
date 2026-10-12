@@ -82,6 +82,9 @@ lock, or if `MemAvailable` is under `MIN_AVAILABLE_GB` (24 GB), since swapping
 would distort the timings. A refused point releases the locks, waits `QUIET_RETRY_S` (120 s) and
 retries for up to `QUIET_WAIT_S` (8 h). The guard sees only Julia processes;
 the harness's own load-average check (50% headroom) covers the rest coarsely.
+Failed or timed-out points do not stop later points, but make the stage exit
+with a nonzero status. Rerunning the stage retries unfinished points and keeps
+skipping points with a `done` marker.
 
 ## Output
 
@@ -99,3 +102,26 @@ the harness's own load-average check (50% headroom) covers the rest coarsely.
   and thread counts of one code, and the two codes produce the same bytes.
   Saved force fields are not in the dump; the initial-force correction is
   covered by `test/unit/simulation/initial_force_output_tests.jl`.
+
+An identity report is affirmative only when every expected timed solve has a
+`state_*.bin` file and each point has exactly one distinct state digest. The
+expected count is the sum of `mc_samples` across the raw timed rows; missing,
+empty, extra or inconsistent dumps cannot establish identity. `summary.csv`
+includes `expected_solves` and `state_dumps_complete` alongside the dump count.
+
+The optional `profile_allocations.jl` saving-off control rebuilds the original
+case with only `simulation_settings.results=false`, preserving mission duration
+and other configuration fields even where the separately named unsaved case
+uses a longer mission.
+
+## Bounded harness checks
+
+These checks use synthetic CSV/state files, mock runner commands and synthetic
+configurations; they do not run simulations or reproduce the historical timings.
+Run them from the repository root with existing dependencies:
+
+```bash
+julia --project=. benchmarks/studies/coupled_local_comparison/test_compare.jl
+julia benchmarks/studies/coupled_local_comparison/test_profile.jl
+python3 -B benchmarks/studies/coupled_local_comparison/test_run.py
+```

@@ -5,8 +5,8 @@
 #
 # Runs the harness's serial mode environment, warms up twice, then reports:
 #   - total allocation and GC time of one solve, for the case and for the same
-#     case with trajectory output off (the case name without `_saved`), which
-#     separates saving from dynamics;
+#     case with trajectory output off, preserving its mission duration and all
+#     other settings, which separates saving from dynamics;
 #   - a sampled allocation profile (Profile.Allocs) of one solve, aggregated by
 #     the innermost SpaceAGORA source line on each sampled stack, by the
 #     innermost line in any package, and by allocated type. Sampled bytes are
@@ -52,7 +52,19 @@ function report(title, rows, total_sampled)
 end
 
 withenv(ppc_mode_env_pairs(ppc_mode_specs()["serial"], cfg; outer_tasks=1)...) do
-    solve(name) = ppc_solve_once(ppc_single_config(name, cfg; seed=cfg.seed), cfg)
+    function solve(name)
+        # Build the original case on every call. The standalone unsaved case has
+        # a longer mission at N >= 128 and is not a matched saving-off control.
+        args = ppc_single_config(case, cfg; seed=cfg.seed)
+        if name != case
+            settings = args.simulation_settings
+            fields = fieldnames(typeof(settings))
+            values = NamedTuple{fields}(map(field -> getfield(settings, field), fields))
+            no_saving = typeof(settings)(; merge(values, (; results=false))...)
+            args = SpaceAGORA.SimulationModel.SimConfig._with_configuration(args; simulation_settings=no_saving)
+        end
+        return ppc_solve_once(args, cfg)
+    end
     names = endswith(case, "_saved") ? [case, replace(case, r"_saved$" => "")] : [case]
     println("== Totals for one solve after two warm-ups (profile=$profile, serial)")
     for name in names

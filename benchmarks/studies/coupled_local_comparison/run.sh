@@ -111,6 +111,7 @@ for tree in "$PRE_TREE" "$POST_TREE"; do
     done
 done
 
+failed_points=0
 point() {  # tree tag case mode threads
     local tree=$1 tag=$2 case=$3 mode=$4 t=$5
     local dir="$OUT/$tag/${case}_${mode}_t${t}"
@@ -124,6 +125,7 @@ point() {  # tree tag case mode threads
         [[ $rc -ne 75 ]] && break
         if (( SECONDS - start >= QUIET_WAIT_S )); then
             echo "[fail] $tag $case $mode t=$t: machine not quiet for ${QUIET_WAIT_S} s (see $dir/run.log)"
+            failed_points=$((failed_points + 1))
             return 0
         fi
         echo "[wait] $tag $case $mode t=$t: $(sed -n 2p "$dir/run.log" | cut -c1-120)"
@@ -133,6 +135,7 @@ point() {  # tree tag case mode threads
         touch "$dir/done"
     else
         echo "[fail] $tag $case $mode t=$t exit=$rc (see $dir/run.log)"
+        failed_points=$((failed_points + 1))
     fi
 }
 
@@ -158,4 +161,8 @@ case "$STAGE" in
         ;;
     *) echo "unknown stage $STAGE" >&2; exit 2 ;;
 esac
+if (( failed_points > 0 )); then
+    echo "[failed] $STAGE: $failed_points selected point(s) failed"
+    exit 1
+fi
 echo "[done] $STAGE $(date -Is)"
