@@ -21,6 +21,8 @@ include(joinpath(@__DIR__, "assets", "rpo_station_assets.jl"))
 include(joinpath(@__DIR__, "assets", "odyssey_surrogate_assets.jl"))
 include(joinpath(@__DIR__, "analysis", "visualization", "rpo", "rpo_visualization.jl"))
 include(joinpath(@__DIR__, "cli", "spaceagora_cli.jl"))
+include(joinpath(@__DIR__, "simulation", "external_propagation_services.jl"))
+public ExternalPropagationServices
 
 
 

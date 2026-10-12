@@ -7,10 +7,10 @@ spacecraft in the state vector as a *shadow entry*: between syncs its right-hand
 acceleration (translation) and plain attitude kinematics, and after every accepted solver step the engine
 calls [`external_sync!`](@ref) and overwrites the shadow entries from the owner's absolute state.
 
-This module is MuJoCo-agnostic. It is an internal `SimulationModel` name space (not exported from the root
-package); an implementation subtypes [`AbstractExternalPropagator`](@ref) and is passed in
-`SimulationConfiguration.external_propagators`. Nothing here defines behavior for any concrete owner, so every
-generic below throws `Not implemented` until a method is added.
+This implementation module is engine-agnostic. Optional packages use its hook identities through the
+versioned `SpaceAGORA.ExternalPropagationServices` facade, subtype [`AbstractExternalPropagator`](@ref),
+and attach owners with that facade's `with_external_propagators`. Defaults throw `Not implemented` until a
+method is added, except for [`external_preflight`](@ref), whose default accepts.
 
 Contract, per run:
 
@@ -38,7 +38,27 @@ export AbstractExternalPropagator
 export external_spacecraft, external_step, external_preflight, external_prepare
 export external_sync!, external_time, external_state, external_acceleration
 
-"""Supertype of externally propagated spacecraft owners; see [`ExternalPropagation`](@ref)."""
+"""
+    AbstractExternalPropagator
+
+Supertype for a template that owns selected spacecraft throughout a simulation.
+Use the versioned `SpaceAGORA.ExternalPropagationServices` facade to implement
+the eight `external_*` hooks. The engine keeps owned spacecraft as shadow entries
+for ordinary output and guidance, with owner-supplied translational acceleration
+and attitude kinematics between synchronization points.
+
+Templates may be shared by concurrent runs. `external_prepare` must construct a
+separate mutable runtime from the supplied initial state; neither preparation
+nor stepping may mutate the template or another run's runtime. After every
+accepted solver step, `external_sync!` advances whole owner steps without passing
+the solver time, before other discrete callbacks run. `external_state` supplies
+the state at solver time, including any remainder shorter than one owner step,
+using a model consistent with `external_acceleration` and attitude kinematics.
+
+Ownership, solver, callback-rate and event limits are checked by the facade's
+`validate_external_propagators` and by run setup. No optional engine is loaded
+merely by loading SpaceAGORA or this interface.
+"""
 abstract type AbstractExternalPropagator end
 
 _unimplemented(f, T) = throw(ErrorException("Not implemented: $(f) for $(T); implement it for the AbstractExternalPropagator subtype."))
@@ -52,16 +72,31 @@ external_step(ep::AbstractExternalPropagator) = _unimplemented("external_step", 
 """`external_preflight(ep, args)`: owner-specific setup checks (throw `ArgumentError`); the default accepts."""
 external_preflight(::AbstractExternalPropagator, args) = nothing
 
-"""`external_prepare(ep, args, u0) -> runtime`: build the run's own mutable runtime from the initial state."""
+"""
+    external_prepare(ep, args, u0) -> runtime
+
+Build the run's own mutable runtime from its initial state. Read spacecraft
+initial conditions through `ExternalPropagationServices.external_initial_state`;
+the engine's storage layout is not part of the adapter contract. The result must
+not alias mutable state in the owner template or another run.
+"""
 external_prepare(ep::AbstractExternalPropagator, args, u0) = _unimplemented("external_prepare", typeof(ep))
 
-"""`external_sync!(rt, t) -> Int`: advance the owner to time `t` (elapsed seconds); returns the owner steps taken."""
+"""`external_sync!(rt, t) -> Int`: advance by whole owner steps to the last step at or before elapsed time `t` [s]; return the number of steps taken."""
 external_sync!(rt, t::Float64) = _unimplemented("external_sync!", typeof(rt))
 
 """`external_time(rt) -> Float64`: the owner's current time [s], an integer number of steps from its epoch."""
 external_time(rt) = _unimplemented("external_time", typeof(rt))
 
-"""`external_state(rt, k, t) -> (pos, vel, q, ω)`: absolute state of the `k`-th owned spacecraft at engine time `t`, SpaceAGORA conventions."""
+"""
+    external_state(rt, k, t) -> (pos, vel, q, ω)
+
+Return the absolute state of the `k`-th owned spacecraft at elapsed engine time
+`t` [s]: inertial position [m], inertial velocity [m/s], scalar-last
+body-to-inertial quaternion, and body angular velocity [rad/s]. `k` is local to
+the owner's ordered spacecraft list. Account for any lag after the last whole
+owner step with the model used by the shadow acceleration and attitude kinematics.
+"""
 external_state(rt, k::Int, t::Float64) = _unimplemented("external_state", typeof(rt))
 
 """`external_acceleration(rt, k, t) -> SVector{3,Float64}`: shadow-entry translational acceleration at engine time `t`."""
