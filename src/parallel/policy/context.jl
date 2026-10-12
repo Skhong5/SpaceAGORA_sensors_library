@@ -181,13 +181,34 @@ end
 # Spin-barrier pool: worker loop, creation, dispatch, teardown.
 # ---------------------------------------------------------------------------
 
+# One poll of a spin loop. Mostly a GC safepoint; every 1024th poll a yield().
+#
+# The pool's workers spin for the life of the pool, between dispatches too. Polling
+# with GC.safepoint() alone never gives the thread up, so a task pinned to that
+# thread could never run: Polyester's `@batch` workers are pinned, and the RHS
+# calibration sweep (predictive / R7 profiles) times a satellite_batch candidate
+# after a flat harmonics one on this pool. That hung for good (TRX50 job
+# 20261008-115111-1480699; test/unit/parallel/spin_barrier_yield_tests.jl). A
+# periodic yield lets such a task run; the 1023 polls in between keep the wake
+# latency of the spin barrier.
+@inline function _spin_poll!(polls::Int)::Int
+    polls += 1
+    if polls & 1023 == 0
+        yield()
+    else
+        GC.safepoint()
+    end
+    return polls
+end
+
 function _spin_barrier_worker_loop_w(worker_id::Int, pool::_SpinBarrierPool)::Nothing
     my_gen = 0
+    polls = 0
     while true
         # Spin-poll until the coordinator bumps our generation counter.
         while pool.worker_gen[worker_id][] == my_gen
             pool.stop[] && return nothing
-            GC.safepoint()
+            polls = _spin_poll!(polls)
         end
         my_gen += 1
         pool.stop[] && return nothing
@@ -231,8 +252,18 @@ function _create_spin_barrier_pool(workers::Int)::_SpinBarrierPool
     # thread free for the coordinator; more spinners than that would deadlock.
     workers = max(1, min(workers, Threads.nthreads() - 1))
     pool = _SpinBarrierPool(workers)
+    # One spinner per thread, none on the creating (coordinator's) thread. Left
+    # to the scheduler, spinners could start out sharing a thread and stay that
+    # way for a whole solve, since each only yields every 1024 polls: measured
+    # at 256 spacecraft on 12 threads, 300 us per RHS call instead of 80.
+    tids = filter(!=(Threads.threadid()), collect(Threads.threadpooltids(:default)))
     @inbounds for worker_id in 1:workers
-        Threads.@spawn _spin_barrier_worker_loop_w(worker_id, pool)
+        task = Task(() -> _spin_barrier_worker_loop_w(worker_id, pool))
+        task.sticky = true
+        if worker_id <= length(tids)
+            ccall(:jl_set_task_tid, Cint, (Any, Cint), task, tids[worker_id] - 1)
+        end
+        schedule(task)
     end
     return pool
 end
@@ -251,6 +282,8 @@ function _spin_barrier_dispatch!(
     chunk      = inner_dynamic_chunk_size()
     next_index = Threads.Atomic{Int}(1)
     lock(pool.run_lock) do
+        # Released while this caller waited for the lock: no workers left.
+        pool.stop[] && return false
         pool.request[] = (
             num_items      = num_items,
             active_workers = workers,
@@ -283,9 +316,10 @@ function _spin_barrier_dispatch!(
         catch err
             coordinator_error = err
         end
-        # Spin-wait for pool workers to finish.
+        # Spin-wait for pool workers to finish (yielding now and then; see _spin_poll!).
+        polls = 0
         while pool.done_count[] < pool_workers
-            GC.safepoint()
+            polls = _spin_poll!(polls)
         end
         Threads.atomic_sub!(pool.done_count, pool_workers)
         # Propagate the first pool-worker error (by worker index), then any
@@ -299,8 +333,8 @@ function _spin_barrier_dispatch!(
         if coordinator_error !== nothing
             throw(coordinator_error)
         end
+        return true
     end
-    return nothing
 end
 
 function _shutdown_spin_barrier_pool!(pool::_SpinBarrierPool)::Nothing
