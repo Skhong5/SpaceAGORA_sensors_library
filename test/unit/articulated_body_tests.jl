@@ -417,4 +417,72 @@ end
     @test alloc == 0 skip=!_ALLOC_CHECKS
 end
 
+@testset "Ball coordinates retain a rotated fixed parent link frame" begin
+    z = SVector(0.0, 0.0, 0.0)
+    qjoint = rotq([1, 0, 0], 0.4)
+    qrest = rotq([1, 0, 0], 0.1)
+    rate = SVector(0.2, -0.1, 0.4)
+    K = SMatrix{3, 3}(2.0, 0.3, -0.1, 0.3, 5.0, 0.2, -0.1, 0.2, 9.0)
+    C = SMatrix{3, 3}(0.4, 0.02, -0.01, 0.02, 0.8, 0.03, -0.01, 0.03, 1.2)
+    base = AB.ArticulatedBaseState(z, z, rotq([2, -1, 3], 0.6), SVector(0.3, -0.2, 0.1))
+    Rbase = Rmat(base.q)
+    gravity = r -> SVector(0.0, 0.0, 0.0)
+
+    for parent_q in (rotq([0, 0, 1], π / 2), rotq([1, 2, -1], 0.7))
+        # Co-located COMs isolate the angular equations: each body's world
+        # acceleration follows directly from its inertia and the joint torque.
+        bus = mklink(root=true, m=5.0, dims=(2.0, 3.0, 4.0))
+        parent = mklink(m=1.0, dims=(0.2, 0.4, 0.8), q=parent_q)
+        child = mklink(m=2.0, dims=(0.5, 0.7, 0.9), q=rotq([1, -2, 3], 0.2))
+        ball = mkjoint(parent, child, z; joint_type=:ball, stiffness=K, damping=C,
+            rest=qrest, initial_q=qjoint, initial_qd=rate)
+        sc = SM.SpacecraftModel(; root=bus, links=[bus, parent, child],
+            joints=[mkjoint(bus, parent, z), ball])
+        tree = AB.build_articulated_tree(sc)
+        @test tree.body_of_link == [1, 1, 2]
+        @test tree.q0 == collect(qjoint)
+        @test tree.qd0 == collect(rate)
+        @test tree.restq[2] == qrest
+        @test tree.kmat[2] == K && tree.cmat[2] == C
+
+        B = Rmat(parent_q)
+        Rjoint = Rbase * B
+        Rchild = Rjoint * Rmat(qjoint) * B' * Rmat(child.q)
+        wp = Rbase * base.ω
+        wrel = Rjoint * rate
+        wc = wp + wrel
+        kin = AB.articulated_kinematics(tree, base, tree.q0, tree.qd0)
+        @test Rmat(kin.quat[2]) ≈ Rchild atol=2e-14
+        @test Rmat(kin.quat[2]) * kin.ω[2] ≈ wc atol=2e-14
+        @test kin.pos[2] == z && kin.vel[2] == z
+        # Public qdot remains in link1 coordinates, independent of the fixed merge.
+        s, c = sin(0.2), cos(0.2)
+        expected_qdot = SVector(rate[1] * c, rate[2] * c + rate[3] * s,
+            rate[3] * c - rate[2] * s, -rate[1] * s) / 2
+        @test AB.articulated_joint_qdot(tree, tree.q0, tree.qd0) ≈ expected_qdot
+
+        # The rest and current rotations share local X, so the spring error is
+        # exactly 0.3 rad along X. Off-diagonal gains make a wrong frame visible.
+        Q = -Rmat(qrest) * (K * SVector(0.3, 0.0, 0.0)) - C * rate
+        torque_world = Rjoint * Q
+        Ip = Rbase * (bus.inertia + B * parent.inertia * B') * Rbase'
+        Ic = Rchild * child.inertia * Rchild'
+        αp = Ip \ (-torque_world - cross(wp, Ip * wp))
+        αc = Ic \ (torque_world - cross(wc, Ic * wc))
+        expected_qdd = Rjoint' * (αc - αp - cross(wp, wrel))
+        ws = AB.ArticulatedWorkspace(tree)
+        a, α, qdd = AB.articulated_dynamics!(ws, tree, base, tree.q0, tree.qd0, z, z, gravity)
+        @test a ≈ z atol=1e-14
+        @test Rbase * α ≈ αp atol=2e-13
+        @test qdd ≈ expected_qdd atol=2e-13
+        @test ws.R[2] ≈ Rchild atol=2e-14
+        @test ws.w[2] ≈ wc atol=2e-14
+        @test ws.alb[2] ≈ cross(wp, wrel) atol=2e-14
+        @test ws.Jw[:, 7:9, 2] ≈ Rjoint atol=2e-14
+        @test AB.articulated_potential_energy(tree, tree.q0) ≈ 0.5 * 0.3^2 * K[1, 1]
+        alloc = alloc_probe(ws, tree, base, tree.q0, tree.qd0, z, z, gravity)
+        @test alloc == 0 skip=!_ALLOC_CHECKS
+    end
+end
+
 end # module
