@@ -34,3 +34,35 @@ end
 function _simulation_velocity_samples(args::SimulationConfiguration)
     return _simulation_vector_samples(args, (:sc1_vel_1, :sc1_vel_2, :sc1_vel_3))
 end
+
+"""
+    _quaternion_history_samples(df::DataFrame; spacecraft_index)
+
+Prepare the saved raw quaternion columns for the one-based spacecraft position
+in the output table. Preserve component values and row order, including signed,
+non-unit and zero quaternions; convert only time from seconds to minutes.
+"""
+function _quaternion_history_samples(df::DataFrame; spacecraft_index)
+    spacecraft_index isa Integer && !(spacecraft_index isa Bool) && spacecraft_index > 0 ||
+        throw(ArgumentError("spacecraft_index must be a positive one-based integer (the spacecraft position, not model.id)."))
+    columns = ntuple(i -> Symbol("sc$(spacecraft_index)_q_$(i)"), 4)
+    for column in (:time, columns...)
+        column in propertynames(df) || throw(ArgumentError(
+            "Quaternion history requires column $(column). Save all four attitude components for the selected spacecraft (orientation_sim=true with default save fields)."))
+    end
+    nrow(df) > 0 || throw(ArgumentError("Quaternion history requires at least one saved row."))
+    for column in (:time, columns...)
+        for (row, value) in enumerate(df[!, column])
+            value isa Real && !(value isa Bool) && isfinite(value) || throw(ArgumentError(
+                "Quaternion history column $(column), row $(row) must contain a finite real number; got $(repr(value))."))
+        end
+    end
+    # Copy without Float64 conversion: preparation must retain the saved raw
+    # values, including signed zero and integer values above Float64 precision.
+    components = ntuple(i -> copy(df[!, columns[i]]), 4)
+    return (time_min=copy(df[!, :time]) ./ 60,
+            components=components,
+            labels=("q1", "q2", "q3", "q4"),
+            colors=(:red, :green, :blue, :orange),
+            spacecraft_index=spacecraft_index)
+end

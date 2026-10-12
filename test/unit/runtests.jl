@@ -6,6 +6,7 @@ using Test
 end
 
 include(joinpath(@__DIR__, "example_imports_tests.jl"))
+include(joinpath(@__DIR__, "quaternion_history_plot_tests.jl"))
 include(joinpath(@__DIR__, "environment", "gram_loading_contract_tests.jl"))
 include(joinpath(@__DIR__, "environment", "gram_reset_binding_tests.jl"))
 include(joinpath(@__DIR__, "xval_fullarc_provenance_tests.jl"))
@@ -20,6 +21,7 @@ include("rpo_port_tests.jl")
 include("articulated_body_tests.jl")
 include("articulated_engine_tests.jl")
 include("compliant_attachment_tests.jl")
+include("live_pose_loads_tests.jl")
 include("encke_gravity_tests.jl")
 include("spacecraft_gnc_tests.jl")
 include("config_defaults_tests.jl")
