@@ -83,7 +83,9 @@ end
 for g in groupby(df, :case)
     codes = unique(g.code)
     Set(codes) == Set(("pre", "post")) || continue
+    # Matching multivalued sets can hide route-dependent results (or swapped
+    # route associations). Identity needs one shared digest across both codes.
     same = all(g.state_dumps_complete) && all(==(1), g.distinct_states) &&
-        Set(g.state_digest[g.code .== "pre"]) == Set(g.state_digest[g.code .== "post"])
-    @printf("%-28s pre and post produce the same state set: %s\n", g.case[1], same)
+        length(unique(g.state_digest)) == 1
+    @printf("%-28s one identical state across pre/post routes/threads: %s\n", g.case[1], same)
 end

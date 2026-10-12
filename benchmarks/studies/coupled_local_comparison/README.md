@@ -84,7 +84,12 @@ retries for up to `QUIET_WAIT_S` (8 h). The guard sees only Julia processes;
 the harness's own load-average check (50% headroom) covers the rest coarsely.
 Failed or timed-out points do not stop later points, but make the stage exit
 with a nonzero status. Rerunning the stage retries unfinished points and keeps
-skipping points with a `done` marker.
+skipping points with a `done` marker. Before retrying an unfinished point, the
+script moves its entire previous directory into a unique directory under
+`<outdir>/.incomplete/` and starts with an empty point directory. Failed logs,
+state dumps and controller files remain available there; they cannot mix with
+new raw files or reused state-dump counters. Ambiguous symlink or non-directory
+point and archive paths are refused. Run one stage controller per output directory.
 
 ## Output
 
@@ -105,9 +110,13 @@ skipping points with a `done` marker.
 
 An identity report is affirmative only when every expected timed solve has a
 `state_*.bin` file and each point has exactly one distinct state digest. The
-expected count is the sum of `mc_samples` across the raw timed rows; missing
-or extra dump files, empty dump collections and inconsistent states cannot establish identity. `summary.csv`
-includes `expected_solves` and `state_dumps_complete` alongside the dump count.
+cross-code report, `one identical state across pre/post routes/threads`, also
+requires one shared digest across every route and thread count in both codes;
+equal multivalued digest sets do not establish identity. The expected count is
+the sum of `mc_samples` across the raw timed rows; missing or extra dump files,
+empty dump collections and inconsistent states cannot establish identity.
+`summary.csv` includes `expected_solves` and `state_dumps_complete` alongside the
+dump count.
 
 The optional `profile_allocations.jl` saving-off control rebuilds the original
 case with only `simulation_settings.results=false`, preserving mission duration

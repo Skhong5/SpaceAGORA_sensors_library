@@ -115,7 +115,30 @@ failed_points=0
 point() {  # tree tag case mode threads
     local tree=$1 tag=$2 case=$3 mode=$4 t=$5
     local dir="$OUT/$tag/${case}_${mode}_t${t}"
+    local path archive_root archive_dir
+    for path in "$OUT/$tag" "$dir"; do
+        if [[ -L "$path" || ( -e "$path" && ! -d "$path" ) ]]; then
+            echo "[fail] refusing ambiguous point path: $path" >&2
+            failed_points=$((failed_points + 1))
+            return 0
+        fi
+    done
     [[ -f "$dir/done" ]] && { echo "[skip] $tag $case $mode t=$t"; return 0; }
+    if [[ -d "$dir" ]]; then
+        # A new controller resets its dump counters and writes timestamped raw
+        # files. Keep failed diagnostics outside the completed-point layout so
+        # neither kind of artifact can contaminate this attempt.
+        archive_root="$OUT/.incomplete"
+        if [[ -L "$archive_root" || ( -e "$archive_root" && ! -d "$archive_root" ) ]]; then
+            echo "[fail] refusing ambiguous archive path: $archive_root" >&2
+            failed_points=$((failed_points + 1))
+            return 0
+        fi
+        mkdir -p "$archive_root"
+        archive_dir=$(mktemp -d "$archive_root/${tag}_${case}_${mode}_t${t}.XXXXXX")
+        mv -- "$dir" "$archive_dir/point"
+        echo "[retry] previous incomplete output: $archive_dir/point"
+    fi
     mkdir -p "$dir"
     echo "[run]  $tag $case $mode t=$t  $(date -Is)"
     local start=$SECONDS rc
