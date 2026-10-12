@@ -941,7 +941,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: Space-FALCON-Lab/SpaceAGORAMuJoCo.jl
-          ref: 953a4ebd61158cc996b01fa3015717ec2a58b03e
+          ref: 3f2845b05e45a6521344e1d31383079454318759
           path: optional/SpaceAGORAMuJoCo
           persist-credentials: false
       - uses: ./.github/actions/setup
