@@ -203,6 +203,9 @@ end
             symlink_path = joinpath(directory, "symlink.png")
             symlink(csv_path, symlink_path)
             push!(alias_paths, symlink_path)
+            # Plots expands a leading `~` before writing. The alias guard must
+            # inspect the same destination even when its literal path is absent.
+            push!(alias_paths, joinpath("~", relpath(symlink_path, homedir())))
         end
         for alias_path in alias_paths
             err = caught_error(() -> Base.invokelatest(() -> RenderBoundary._save_quaternion_history_plot(

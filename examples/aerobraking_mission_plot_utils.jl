@@ -23,8 +23,11 @@ or run a simulation. The destination directory must already exist.
 function _save_quaternion_history_plot(csv_path::String; spacecraft_index, output_path::String)
     isempty(strip(output_path)) && throw(ArgumentError("output_path must name a quaternion plot file."))
     isempty(splitext(output_path)[2]) && throw(ArgumentError("output_path must include a plot file extension, such as .png or .pdf."))
-    (abspath(csv_path) == abspath(output_path) ||
-     (ispath(output_path) && Base.samefile(csv_path, output_path))) &&
+    # Match savefig's path expansion before checking aliases, so a leading `~`
+    # cannot hide a symlink or hard link to the input CSV from this guard.
+    resolved_output_path = abspath(expanduser(output_path))
+    (abspath(csv_path) == resolved_output_path ||
+     (ispath(resolved_output_path) && Base.samefile(csv_path, resolved_output_path))) &&
         throw(ArgumentError("output_path must differ from the input CSV path, including filesystem aliases."))
     samples = _quaternion_history_samples(_read_simulation_results(csv_path); spacecraft_index)
     p = plot(; xlabel="Time [min]", ylabel="Quaternion", legend=:best, grid=true)
@@ -32,7 +35,7 @@ function _save_quaternion_history_plot(csv_path::String; spacecraft_index, outpu
         plot!(p, samples.time_min, samples.components[i];
               label=samples.labels[i], color=samples.colors[i], linewidth=2.0)
     end
-    savefig(p, output_path)
+    savefig(p, resolved_output_path)
     return (; samples..., plot=p, output_path=output_path)
 end
 
