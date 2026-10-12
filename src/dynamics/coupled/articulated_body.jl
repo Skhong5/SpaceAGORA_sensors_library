@@ -1,7 +1,7 @@
 """
 Articulated-body dynamics for a free-floating root body with joint-space children.
 
-Stage A (standalone library, no engine integration): `build_articulated_tree` turns a
+`build_articulated_tree` turns a
 `SpacecraftModel` whose `Joint`s carry `joint_type` into an immutable `ArticulatedTree`;
 `articulated_dynamics!` returns the root accelerations and the joint accelerations.
 
@@ -19,7 +19,8 @@ Conventions
 - Joint coordinates: `:hinge`/`:slide` one scalar each (rad, m) about/along `axis` (parent frame),
   `:ball` a scalar-last quaternion (4 entries in `joint_q`, 3 angular-velocity entries in
   `joint_qd`). Joint rates and accelerations of a ball joint are the relative angular velocity
-  and acceleration expressed in the PARENT body frame. Coordinate 0 is the configured geometry.
+  and acceleration expressed in the parent LINK (`Joint.link1`) frame, including when that link
+  is fixed-merged into a body with a different frame. Coordinate 0 is the configured geometry.
 - Algorithm: the equations of motion are assembled from per-body Jacobians (`M = Σ Jᵀ 𝕄 J`,
   bias from zero-acceleration kinematics) and solved by a hand-written Cholesky factorization.
   For the target size (<= ~20 dof) this is O(n^3) with tiny n, much simpler than Featherstone's ABA,
@@ -131,13 +132,16 @@ end
 
 Immutable description of the dynamic tree built by [`build_articulated_tree`](@ref). Dynamic bodies
 are numbered `1:nb`, body 1 is the root, and every parent index is smaller than its child's. Fields
-indexed per body (`parent`, `jtype`, `axis`, `d1`, `d2`, `C0`, `qC0`, `mass`, `inertia`, `k`, `c`,
+indexed per body (`parent`, `jtype`, `axis`, `d1`, `d2`, `C0`, `qC0`, `joint_basis`, `qjoint_basis`, `mass`, `inertia`, `k`, `c`,
 `rest`, `kmat`, `cmat`, `restq`, `qoff`, `voff`) hold the root at index 1 with placeholder values.
 
 - `parent[b]`: parent body (0 for the root); `jtype[b]`: `:root`, `:hinge`, `:slide` or `:ball`.
 - `axis[b]`: hinge/slide axis, unit, in the parent body frame.
 - `d1[b]`: parent COM to joint point, parent frame, at coordinate 0. `d2[b]`: child COM to joint
   point, child frame. `C0[b]`/`qC0[b]`: child-to-parent rotation at coordinate 0.
+- `joint_basis[b]`/`qjoint_basis[b]`: constant rotation from the joint's parent link (`link1`)
+  frame to the parent composite body frame. Ball coordinates, rates, rest and gains retain
+  their joint-frame meaning; this basis maps their kinematics into the composite frame.
 - `mass`, `inertia`: composite mass and inertia about the composite COM in the body frame (the frame
   of the body's head link).
 - `qoff[b]`/`voff[b]`: 1-based start of the body's entries in `joint_q`/`joint_qd` (0 for the root).
@@ -161,6 +165,8 @@ struct ArticulatedTree
     d2::Vector{SVector{3, Float64}}
     C0::Vector{SMatrix{3, 3, Float64, 9}}
     qC0::Vector{SVector{4, Float64}}
+    joint_basis::Vector{SMatrix{3, 3, Float64, 9}}
+    qjoint_basis::Vector{SVector{4, Float64}}
     mass::Vector{Float64}
     inertia::Vector{SMatrix{3, 3, Float64, 9}}
     k::Vector{Float64}
@@ -361,6 +367,7 @@ function build_articulated_tree(sc::SpacecraftModel; prop_mass::Real=sc.prop_mas
     axis = fill(zero(SVector{3, Float64}), nb)
     d1 = fill(zero(SVector{3, Float64}), nb); d2 = fill(zero(SVector{3, Float64}), nb)
     C0 = fill(_I3, nb); qC0 = fill(_Q_ID, nb)
+    joint_basis = fill(_I3, nb); qjoint_basis = fill(_Q_ID, nb)
     k = zeros(nb); c = zeros(nb); rest = zeros(nb)
     kmat = fill(zero(SMatrix{3, 3, Float64, 9}), nb); cmat = fill(zero(SMatrix{3, 3, Float64, 9}), nb)
     restq = fill(_Q_ID, nb)
@@ -397,6 +404,10 @@ function build_articulated_tree(sc::SpacecraftModel; prop_mass::Real=sc.prop_mas
         axis[b] = (Rbus[hA]' * Rbus[pl]) * SVector{3, Float64}(jt.axis)
         C0[b] = Rbus[hA]' * Rbus[h]
         qC0[b] = _qmul(_qconj(qbus[hA]), qbus[h])
+        if pl != hA
+            joint_basis[b] = Rbus[hA]' * Rbus[pl]
+            qjoint_basis[b] = _qmul(_qconj(qbus[hA]), qbus[pl])
+        end
         if jt.joint_type === :ball
             kmat[b] = SMatrix{3, 3, Float64, 9}(jt.stiffness)
             cmat[b] = SMatrix{3, 3, Float64, 9}(jt.damping)
@@ -405,7 +416,7 @@ function build_articulated_tree(sc::SpacecraftModel; prop_mass::Real=sc.prop_mas
             k[b] = jt.stiffness; c[b] = jt.damping; rest[b] = jt.rest
         end
     end
-    return ArticulatedTree(nb, nq, nv, parent, jtype, axis, d1, d2, C0, qC0, mass, inertia, k, c, rest, kmat, cmat,
+    return ArticulatedTree(nb, nq, nv, parent, jtype, axis, d1, d2, C0, qC0, joint_basis, qjoint_basis, mass, inertia, k, c, rest, kmat, cmat,
         restq, qoff, voff, body_of_link, link_com, link_q, comb[1], q0, qd0, joint_of_body)
 end
 
@@ -427,7 +438,9 @@ end
         return tree.C0[b], tree.qC0[b], tree.d1[b] + s * tree.axis[b]
     else # :ball
         qb = _qnormalize(SVector(jq[qo], jq[qo + 1], jq[qo + 2], jq[qo + 3]))
-        return _rotmat(qb) * tree.C0[b], _qmul(qb, tree.qC0[b]), tree.d1[b]
+        basis = tree.qjoint_basis[b]
+        qb_parent = _qmul(_qmul(basis, qb), _qconj(basis))
+        return _rotmat(qb_parent) * tree.C0[b], _qmul(qb_parent, tree.qC0[b]), tree.d1[b]
     end
 end
 
@@ -435,7 +448,7 @@ end
     articulated_joint_qdot(tree, joint_q, joint_qd) -> Vector
 
 Time derivative of `joint_q` for integration: the rate itself for hinge/slide, and
-`q̇ = ½ [ω_rel, 0] ⊗ q` for ball joints (`ω_rel` in the parent frame, scalar-last).
+`q̇ = ½ [ω_rel, 0] ⊗ q` for ball joints (`ω_rel` in the parent link frame, scalar-last).
 """
 function articulated_joint_qdot(tree::ArticulatedTree, joint_q::AbstractVector, joint_qd::AbstractVector)
     T = promote_type(eltype(joint_q), eltype(joint_qd))
@@ -589,7 +602,7 @@ function articulated_kinematics!(buf, tree::ArticulatedTree, base_state, joint_q
         if tree.jtype[b] === :hinge
             wrel = tree.axis[b] * joint_qd[vo]
         elseif tree.jtype[b] === :ball
-            wrel = SVector(joint_qd[vo], joint_qd[vo + 1], joint_qd[vo + 2])
+            wrel = tree.joint_basis[b] * SVector(joint_qd[vo], joint_qd[vo + 1], joint_qd[vo + 2])
         else
             sd = joint_qd[vo]
         end
@@ -733,11 +746,12 @@ function articulated_dynamics!(ws::ArticulatedWorkspace{T}, tree::ArticulatedTre
         vo = tree.voff[b]
         col = 6 + vo
         ax = Rp * tree.axis[b]                      # world axis (hinge/slide)
+        Rjoint = Rp * tree.joint_basis[b]           # parent link axes in world coordinates
         wrel = zero(SVector{3, T}); sd = zero(T)
         if jt === :hinge
             wrel = ax * joint_qd[vo]
         elseif jt === :ball
-            wrel = Rp * SVector{3, T}(joint_qd[vo], joint_qd[vo + 1], joint_qd[vo + 2])
+            wrel = Rjoint * SVector{3, T}(joint_qd[vo], joint_qd[vo + 1], joint_qd[vo + 2])
         else
             sd = joint_qd[vo]
         end
@@ -761,7 +775,7 @@ function articulated_dynamics!(ws::ArticulatedWorkspace{T}, tree::ArticulatedTre
             elseif jt === :ball
                 if col <= j <= col + 2
                     kk = j - col + 1
-                    dw = SVector{3, T}(Rp[1, kk], Rp[2, kk], Rp[3, kk])
+                    dw = SVector{3, T}(Rjoint[1, kk], Rjoint[2, kk], Rjoint[3, kk])
                 end
             end
             jwb = jwp + dw
