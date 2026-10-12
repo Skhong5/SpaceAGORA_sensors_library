@@ -536,18 +536,18 @@ end
 @inline _dynamic_effector_threadsafe(::SimulationModel.AerodynamicCoefficientfM)::Bool = true
 @inline _dynamic_effector_threadsafe(::SimulationModel.AerodynamicCoefficientMeshSurrogate)::Bool = true
 
+# Box and mesh aerodynamic effectors write the same per-satellite drag/lift/
+# cross slots. Only one writer may run in an effector queue.
+@inline _writes_aero_cache(effector)::Bool =
+    effector isa SimulationModel.AerodynamicCoefficientfM ||
+    effector isa SimulationModel.AerodynamicCoefficientMeshSurrogate
+
+# Tuple-specialized `all` and `count` rather than a `for` loop: iterating a
+# heterogeneous tuple in a loop does not infer and boxed the tuple per call.
+# (Past 32 effectors Base stops specializing on tuples, as the loop did.)
 @inline function _dynamic_effectors_parallel_supported(dynamic_effectors::Tuple)::Bool
-    aero_cache_writers = 0
-    @inbounds for effector in dynamic_effectors
-        # Box and mesh aerodynamic effectors write the same per-satellite
-        # drag/lift/cross slots. Only one writer may run in an effector queue.
-        if effector isa SimulationModel.AerodynamicCoefficientfM ||
-           effector isa SimulationModel.AerodynamicCoefficientMeshSurrogate
-            aero_cache_writers += 1
-        end
-        _dynamic_effector_threadsafe(effector) || return false
-    end
-    return aero_cache_writers <= 1
+    all(_dynamic_effector_threadsafe, dynamic_effectors) || return false
+    return count(_writes_aero_cache, dynamic_effectors) <= 1
 end
 
 @inline function _mission_is_long_for_effector_threads(args)::Bool
@@ -972,13 +972,27 @@ end
 # The default's route test: does the constellation give every worker of a
 # full-budget flat team at least the floor's worth of satellites.
 #
-# The spin-barrier dispatch (SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER, opt-in)
-# exists to make exactly this per-call charge small, so the floor is not
-# applied under it and that path keeps its previous behavior. ASSUMED, not
-# measured here: the ladder above ran the default channel dispatch only.
-@inline function _rhs_flat_default_admits(env::SimulationModel.RhsPlanEnvConfig, active_sats::Int, budget::Int)::Bool
-    env.harmonics_batch_spin_barrier && return true
+# The spin-barrier dispatch exists to make exactly this per-call charge small,
+# so the floor is not applied while the barrier is on (`spin`, from
+# _spin_barrier_active) and that path keeps its previous behavior. ASSUMED, not
+# measured here: the ladder above ran the default channel dispatch only. Under
+# SPACEAGORA_HARMONICS_BATCH_SPIN_BARRIER=auto the solve times both arms, this
+# routing included, and keeps the faster.
+@inline function _rhs_flat_default_admits(env::SimulationModel.RhsPlanEnvConfig, active_sats::Int, budget::Int, spin::Bool)::Bool
+    spin && return true
     return active_sats >= max(1, env.harmonics_flat_min_sats_per_worker) * max(1, budget)
+end
+
+# Whether this call runs with the spin barrier: forced by the env switch, or
+# under `auto` the arm the solve's SpinBarrierTuner has this call on. Outside a
+# solve (no tuner) `auto` is off, the arm every auto solve starts in.
+@inline function _spin_barrier_active(p, env::SimulationModel.RhsPlanEnvConfig)::Bool
+    mode = env.harmonics_batch_spin_barrier
+    mode === :on && return true
+    mode === :auto || return false
+    sb = _effector_shared_buffers(p)
+    (sb !== nothing && hasproperty(sb, :spin_barrier_tuner)) || return false
+    return sb.spin_barrier_tuner.on
 end
 
 # Unlike _dynamic_effector_thread_decision and the density/control/thermal
@@ -1032,7 +1046,7 @@ function _snapshot_rhs_plan_env_config()::SimulationModel.RhsPlanEnvConfig
         _rhs_harmonics_batch_enabled(),
         _rhs_harmonics_batch_min_sats_per_worker(),
         _rhs_harmonics_flat_min_sats_per_worker(),
-        SimulationModel.ParallelPolicy.harmonics_batch_spin_barrier_enabled(),
+        SimulationModel.ParallelPolicy.harmonics_batch_spin_barrier_mode(),
         _harmonics_batch_allow_with_outer(),
         _rhs_effector_cost_min_samples(),
         _rhs_flat_packet_target_min_ns(),
@@ -1427,8 +1441,8 @@ end
         # at all), that penalty landed on every non-serial constellation
         # measurement whose thread budget did not trigger RHS calibration.
         outer_serialized = outer_active && !env.harmonics_batch_allow_with_outer
-        min_sats_floor = env.harmonics_batch_spin_barrier ?
-            1 : env.harmonics_batch_min_sats_per_worker
+        spin = _spin_barrier_active(p, env)
+        min_sats_floor = spin ? 1 : env.harmonics_batch_min_sats_per_worker
         viable_workers = fld(active_sats, max(1, min_sats_floor))
         if outer_serialized
             return (
@@ -1442,7 +1456,7 @@ end
         end
         # At a budget of one the flat route spawns no tasks, so the width floor
         # has nothing to gate; it is taken for the batched coefficient sweep.
-        if budget <= 1 || (viable_workers >= 2 && _rhs_flat_default_admits(env, active_sats, budget))
+        if budget <= 1 || (viable_workers >= 2 && _rhs_flat_default_admits(env, active_sats, budget, spin))
             return (
                 mode=:flat_constellation_effector_queue,
                 allotment=min(max(1, budget), viable_workers),
@@ -1595,7 +1609,7 @@ end
     # applied there either, and campaign routing is unchanged.
     flat_floor_ok = (outer_active && !env.harmonics_batch_allow_with_outer) ||
         _has_any_batchable_effector(dynamic_effectors) ||
-        _rhs_flat_default_admits(env, active_sats, budget)
+        _rhs_flat_default_admits(env, active_sats, budget, _spin_barrier_active(p, env))
     if active_sats >= env.flat_min_sats &&
        (n_effectors >= env.flat_min_effectors || _rhs_flat_has_batch_privileged_effector(dynamic_effectors)) &&
        many_heavy_effectors && flat_floor_ok

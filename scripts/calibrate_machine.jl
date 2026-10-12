@@ -60,12 +60,14 @@ if repeats > 1
     println("Diagnostics, not an acceptance gate -- see the header comment:")
     spread(v) = isempty(v) || minimum(v) <= 0 ? NaN :
         (maximum(v) - minimum(v)) / minimum(v) * 100
-    report(name, f) = println("  ", rpad(name, 24),
+    report(name, f) = println("  ", rpad(name, 30),
         isnan(spread(map(f, results))) ? "n/a" : string(round(spread(map(f, results)), digits=2), "%"))
     report("ns_per_scalar_item", m -> m.ns_per_scalar_item)
     report("ns_per_queue_node", m -> m.ns_per_queue_node)
-    report("dispatch_ns_base", m -> m.dispatch_ns_base)
-    report("dispatch_ns_per_worker", m -> m.dispatch_ns_per_worker)
+    report("dispatch_pool_ns_base", m -> m.dispatch_pool_ns_base)
+    report("dispatch_pool_ns_per_worker", m -> m.dispatch_pool_ns_per_worker)
+    report("dispatch_batch_ns_base", m -> m.dispatch_batch_ns_base)
+    report("dispatch_batch_ns_per_worker", m -> m.dispatch_batch_ns_per_worker)
     report("ns_per_atomic", m -> m.ns_per_atomic)
     report("reference_fma_ns", m -> m.reference_fma_ns)
     report("reference_mem_ns", m -> m.reference_mem_ns)
