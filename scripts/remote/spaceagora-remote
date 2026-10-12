@@ -395,15 +395,18 @@ cmd_run() {
   resolve_remote "$remote"
   ensure_remote_dirs || { echo "state: unreachable ($REMOTE_NAME: ssh failed)" >&2; exit 255; }
 
-  local job_id session job_dir cmd_str run_sh
+  local job_id session job_dir cmd_str run_sh cwd_arg
   job_id="$(new_job_id)"
   session="spaceagora-$job_id"
   job_dir="$REMOTE_BASE/jobs/$job_id"
   cmd_str="$(printf '%q ' "$@")"
+  # Treat --cwd as a literal path, while expanding the default home remotely.
+  cwd_arg='"$HOME"'
+  [[ -z "$cwd" ]] || cwd_arg="$(printf '%q' "$cwd")"
   run_sh="$(mktemp)"
   cat > "$run_sh" <<EOF
 #!/usr/bin/env bash
-cd ${cwd:-\$HOME} || { echo "EXIT_CODE=cd-failed" >> "$job_dir/job.meta"; exit 1; }
+cd -- $cwd_arg || { echo "EXIT_CODE=cd-failed" >> "$job_dir/job.meta"; exit 1; }
 echo "PID=\$\$" >> "$job_dir/job.meta"
 echo "START=\$(date -Iseconds)" >> "$job_dir/job.meta"
 $cmd_str > "$job_dir/job.log" 2>&1
