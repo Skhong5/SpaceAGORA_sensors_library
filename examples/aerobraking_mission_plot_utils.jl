@@ -12,6 +12,30 @@ using Dates
 include(joinpath(@__DIR__, "support", "aerobraking_result_tables.jl"))
 include(joinpath(@__DIR__, "support", "aerobraking_plot_errors.jl"))
 
+"""
+    _save_quaternion_history_plot(csv_path::String; spacecraft_index, output_path::String)
+
+Save four raw quaternion component traces from an existing simulation-results
+CSV. Both the one-based spacecraft position and output filename (with extension)
+are explicit. Return the prepared samples, plot and output path; do not display
+or run a simulation. The destination directory must already exist.
+"""
+function _save_quaternion_history_plot(csv_path::String; spacecraft_index, output_path::String)
+    isempty(strip(output_path)) && throw(ArgumentError("output_path must name a quaternion plot file."))
+    isempty(splitext(output_path)[2]) && throw(ArgumentError("output_path must include a plot file extension, such as .png or .pdf."))
+    (abspath(csv_path) == abspath(output_path) ||
+     (ispath(output_path) && Base.samefile(csv_path, output_path))) &&
+        throw(ArgumentError("output_path must differ from the input CSV path, including filesystem aliases."))
+    samples = _quaternion_history_samples(_read_simulation_results(csv_path); spacecraft_index)
+    p = plot(; xlabel="Time [min]", ylabel="Quaternion", legend=:best, grid=true)
+    for i in 1:4
+        plot!(p, samples.time_min, samples.components[i];
+              label=samples.labels[i], color=samples.colors[i], linewidth=2.0)
+    end
+    savefig(p, output_path)
+    return (; samples..., plot=p, output_path=output_path)
+end
+
 Base.@kwdef struct AerobrakingMissionSpiceConfig
     mission_name::String
     target::String
