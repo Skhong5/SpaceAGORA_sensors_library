@@ -36,9 +36,10 @@ Every facade provides:
 Inventory entries are a `Symbol` for a direct binding or a tuple of symbols for
 a path through facade namespaces. Supplemental inventories must be named and
 documented; HYPR's `CLOTH_SERVICES` is relative to its `Cloth` namespace. Aliases
-preserve the original type and function identities. An adapter imports explicit
-bindings through the facade; whole internal modules and raw engine storage are
-outside the contract.
+preserve the original type and function identities. Adapter-specific core access
+uses explicit facade bindings; the documented root public API remains available
+for ordinary configuration and simulation operations. Whole internal modules and
+raw engine storage are outside the contract.
 
 Check compatibility before defining adapter methods or loading native libraries,
 then again in runtime initialization. A rejected version must leave the adapter
