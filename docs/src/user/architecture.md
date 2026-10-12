@@ -5,17 +5,18 @@ configuration to saved outputs, which folder and file owns each shared
 operation, and where your own code belongs.
 
 This page is for students and new contributors who can already run an example
-and now need to find their way around the repository. It describes the code as
-it is at commit
+and now need to find their way around the repository. The original source-owner
+audit used commit
 [`5e9a9df9`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/commit/5e9a9df97efbbb69fb2a730b085b75cc5fd83a64)
-of `main` (browse that tree at
+(browse that historical tree at
 [github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/5e9a9df9](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/5e9a9df97efbbb69fb2a730b085b75cc5fd83a64));
-every path below is relative to the repository root at that commit. This is a
-map of existing code, not an approved target layout. Suggested cleanup is
-labelled separately. One-run configuration now lives under `src/simulation/config/`,
+this page also records later configuration and optional-adapter packaging
+changes. Paths are relative to the repository named for each owner. Suggested
+cleanup is labelled separately. One-run configuration lives under `src/simulation/config/`,
 and HYPR is maintained in its own repository with an optional SpaceAGORA adapter.
 The compatibility package in this tree loads that adapter; it contains no search
-implementation.
+implementation. MuJoCo scene code and its adapter live in the independent
+[SpaceAGORAMuJoCo.jl repository](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl).
 
 Shortest successful command:
 
@@ -219,7 +220,16 @@ package under `packages/SpaceAGORAHYPR/` loads and checks that adapter. The
 GRAMSuite extension activates when both SpaceAGORA and GRAMSuite are loaded;
 installation alone does not load it. For HYPR, the supported setup installs the
 pinned external package and compatibility package, then the user explicitly
-loads `SpaceAGORAHYPR`. The two integrations are independent.
+loads `SpaceAGORAHYPR`. MuJoCo scenes live in the separate
+[SpaceAGORAMuJoCo.jl repository](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl).
+That companion owns its native binding, scene implementation, native tests and
+Basilisk comparison harness. Users explicitly install and load it through the
+[optional companion setup](installation_environment.md#Optional-MuJoCo-companion).
+Its adapter consumes the versioned
+[`ExternalPropagationServices`](../maintainer/external_propagation_services.md)
+facade; core retains shared gravity, configuration and run lifecycle. These
+integrations follow the [optional adapter standard](../maintainer/adapter_contract.md)
+with separate domain protocols and state ownership.
 The other folders hold tooling, data, examples and documentation. "Owner" below is the
 file or module that defines the behaviour; other code should call it rather
 than copy it.
@@ -233,7 +243,7 @@ than copy it.
 | `src/dynamics/` | Translational and rotational equations, the coupled force/torque wrapper and its models, compliant multibody dynamics (currently under `multibody_cloth/`), articulated-body dynamics (`coupled/articulated_body.jl`) | effector evaluation: `dynamics/coupled/force_torque_models.jl` |
 | `src/gnc/` | Guidance, navigation and control hooks, planner contracts and lifecycle, shared calculations, baseline algorithms and HYPR compatibility types | the three hook files named above; planner contracts: `gnc/interfaces/`; lifecycle: `gnc/guidance/rpo/`; shared calculations: `gnc/shared/`; RRT kernels: `gnc/rrt/`; aerobraking bridge helpers: `gnc/internal/` |
 | `src/mission/` | Aerobraking policy types and strategy selection | `mission/operations/aerobraking_policy/` |
-| `src/simulation/` | One-run configuration, the engine (execution settings, setup, RHS, solver policy, execution, checkpoints, persistence), callbacks, campaigns, runtime locks | configuration assembly and copying: `simulation/config/`; setup and solve: `simulation/engine/`; callbacks: `simulation/callbacks/`; Monte Carlo and ensembles: `simulation/campaigns/`; shared locks: `simulation/runtime_services.jl` |
+| `src/simulation/` | One-run configuration, the engine (execution settings, setup, RHS, solver policy, execution, checkpoints, persistence), callbacks, campaigns, runtime locks and external-propagation services | configuration assembly and copying: `simulation/config/`; setup and solve: `simulation/engine/`; callbacks: `simulation/callbacks/`; Monte Carlo and ensembles: `simulation/campaigns/`; shared locks: `simulation/runtime_services.jl`; optional dynamics adapter boundary: `simulation/external_propagation_services.jl` |
 | `src/parallel/` | Parallel profiles and routing, cost models, worker process pools, in-process policy | route selection and process pools; owned by the parallelization work |
 | `src/io/` | Configuration file loading, serialization helpers, output tables | output recording: `io/outputs/io_outputs.jl` |
 | `src/analysis/` | Telemetry verification studies and example helpers, visualization scene and RPO plots | example helper builders: `analysis/verification/telemetry_verification/example_support.jl` |

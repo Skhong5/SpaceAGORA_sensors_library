@@ -16,7 +16,7 @@ share the rules below, not a universal callback or provider registry.
 | Integration | Implementation owner | Supported core boundary | Lifecycle |
 |---|---|---|---|
 | HYPR planning | `HYPR.jl` extension; `SpaceAGORAHYPR` is a compatibility shim | [`SpaceAGORA.HYPRServices`](hypr_services.md) | Explicit provider activation; per-request planner state |
-| External propagation, including MuJoCo | Optional adapter package | [`SpaceAGORA.ExternalPropagationServices`](external_propagation_services.md) | Configured owners; separate mutable runtime for every simulation |
+| External propagation, including MuJoCo | Independent [SpaceAGORAMuJoCo.jl companion](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl) for MuJoCo scenes; each other adapter owns its domain implementation | [`SpaceAGORA.ExternalPropagationServices`](external_propagation_services.md) | Configured owners; separate mutable runtime for every simulation |
 | Future EDG/guidance integration | Its domain repository | Must define and qualify a facade before extraction | Must document request, state and failure ownership |
 
 The EDG row is an adoption requirement, not a claim that an EDG facade is already

@@ -57,6 +57,20 @@ julia --project=. src/cli/main.jl assets setup-open
 `assets setup-open` summarizes the baseline repo-only path and which licensed
 external assets remain user-provided.
 
+## Optional MuJoCo scenes
+
+MuJoCo proximity scenes are provided by the independent
+[SpaceAGORAMuJoCo.jl companion](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl).
+It owns the native binding, scene dynamics, adapter tests and Basilisk comparison
+harness. Native scenes support Linux x86_64 with MuJoCo 3.11.0.
+
+Install the companion in a separate environment and explicitly load it when
+needed; see [installation and environment](docs/src/user/installation_environment.md#optional-mujoco-companion).
+Its connection to SpaceAGORA follows the same
+[versioned adapter standard](docs/src/maintainer/adapter_contract.md) as other
+optional integrations. Loading SpaceAGORA alone does not load the companion or
+download MuJoCo.
+
 ## Guidance and control with a surrogate atmosphere
 
 The bounded Mars Odyssey P20 preset supplies a reproducible frozen atmosphere
