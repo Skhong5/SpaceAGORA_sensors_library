@@ -2602,7 +2602,7 @@ function _validate_attachments!(args, solver_mode::Symbol)
         throw(ArgumentError(
             "Compliant attachments support the first-order single-RHS solver modes :tsit5, :auto_stiff, :rodas5p and :dp8; " *
             "solver mode $(repr(solver_mode)) (split, multirate, symplectic and gravity-backbone routes) is not supported. " *
-            "Cloth meshes are stiff: prefer :auto_stiff or :rodas5p when the joint stiffness makes the fastest attachment mode " *
+            "Compliant meshes are stiff: prefer :auto_stiff or :rodas5p when the joint stiffness makes the fastest attachment mode " *
             "much faster than the orbit and attitude dynamics."
         ))
     end

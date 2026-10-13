@@ -87,7 +87,7 @@ function _validate_external_propagators!(args, solver_mode::Symbol)
         _spacecraft_has_attachments(sc) && throw(ArgumentError(
             "Spacecraft $i is owned by an external propagator and has compliant attachments; the two cannot be combined."))
         _robot_arm_coupling(args, i, 0.0) !== nothing && throw(ArgumentError(
-            "Spacecraft $i is owned by an external propagator and has a cloth robot-arm effector; the two cannot be combined."))
+            "Spacecraft $i is owned by an external propagator and has a compliant robot-arm effector; the two cannot be combined."))
     end
     for effector in args.control_model.control_effectors
         _control_effector_targets_owned(effector, owned) && throw(ArgumentError(

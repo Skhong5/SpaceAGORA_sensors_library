@@ -1,4 +1,4 @@
-"""Coupled cloth robot-arm dynamics module for compliant arm realization and simulation."""
+"""Compliant robot-arm dynamics, joint loads, and coupling to spacecraft motion."""
 module ClothRobotArmDynamics
 
 using LinearAlgebra
@@ -20,21 +20,21 @@ export simulate_cloth_robot_arm_plan
 
 const ClothRobotArmDynamicsMode = Symbol
 
-"""Reference joint, velocity, and acceleration sample for cloth-arm coupling."""
+"""Reference joint, velocity, and acceleration sample for compliant robot-arm coupling."""
 struct ClothRobotArmReferenceState
     t_s::Float64
     state::ClothArmState
     end_effector_position::SVector{3, Float64}
 end
 
-"""Sample a robot-arm plan into the reference state used by cloth coupling."""
+"""Sample a robot-arm plan into the reference state used by compliant multibody coupling."""
 function cloth_reference_state(plan::RobotArmPlan, t_s::Real)::ClothRobotArmReferenceState
     sample = robot_arm_plan_sample(plan, t_s)
     state = cloth_fk_state(plan.model, plan.base_pose, sample.q; dq=sample.dq)
     return ClothRobotArmReferenceState(Float64(t_s), state, sample.ee)
 end
 
-"""Trajectory output from simulating a cloth-coupled robot arm."""
+"""Trajectory output from simulating a compliant robot arm."""
 struct ClothRobotArmSimulation
     multibody_model::CompliantMultibodyModel
     trajectory::CompliantMultibodyTrajectory
@@ -114,7 +114,7 @@ function cloth_robot_arm_rest_quaternions(plan::RobotArmPlan, t_s::Real)
     return rests
 end
 
-"""Pack the initial cloth-coupled robot-arm multibody state from a plan."""
+"""Pack the initial compliant robot-arm multibody state from a plan."""
 function cloth_robot_arm_initial_state(plan::RobotArmPlan; t_s::Real=0.0)
     sample = robot_arm_plan_sample(plan, t_s)
     pose = cloth_fk(plan.model, plan.base_pose, sample.q)
@@ -126,7 +126,7 @@ function cloth_robot_arm_initial_state(plan::RobotArmPlan; t_s::Real=0.0)
     )
 end
 
-"""Return body and state dimensions for a coupled cloth robot-arm plan."""
+"""Return body and state dimensions for a coupled compliant robot-arm plan."""
 function coupled_cloth_robot_arm_state_shape(plan::RobotArmPlan)
     n = length(plan.model.links)
     return (
@@ -137,7 +137,7 @@ function coupled_cloth_robot_arm_state_shape(plan::RobotArmPlan)
     )
 end
 
-"""Write the cloth-coupled robot-arm initial state into a spacecraft view."""
+"""Write the compliant robot-arm initial state into a spacecraft view."""
 function initialize_coupled_cloth_robot_arm_state!(sc_view, plan::RobotArmPlan; t_s::Real=0.0)
     hasproperty(sc_view, :arm_r) || return nothing
     sample = robot_arm_plan_sample(plan, t_s)
@@ -272,7 +272,7 @@ function _coupled_parent_kinematics(sc_view, parent::Int, p_body)
     )
 end
 
-"""Write coupled cloth robot-arm derivatives into the simulation RHS vector.
+"""Write coupled compliant robot-arm derivatives into the simulation RHS vector.
 
 `link_gravity_ii` is an optional callable `r_ii -> acceleration` evaluated at each link's own
 inertial position; `nothing` (default) applies no gravity to the links."""
@@ -378,7 +378,7 @@ function cloth_robot_arm_end_effector(plan::RobotArmPlan, x::AbstractVector)
     return state.r + _rot(state.q) * tip_body
 end
 
-"""Simulate a robot-arm plan with compliant cloth-style multibody dynamics."""
+"""Simulate a robot-arm plan with compliant multibody dynamics."""
 function simulate_cloth_robot_arm_plan(
     plan::RobotArmPlan;
     dt_s::Real=(length(plan.t_ref_s) >= 2 ? plan.t_ref_s[2] - plan.t_ref_s[1] : 0.1),
@@ -424,7 +424,7 @@ function simulate_cloth_robot_arm_plan(
         elseif integrator === :rk4
             step_compliant_multibody_rk4
         else
-            throw(ArgumentError("Unsupported Cloth robot arm integrator $(repr(integrator)); expected :implicit_midpoint or :rk4."))
+            throw(ArgumentError("Unsupported compliant robot-arm integrator $(repr(integrator)); expected :implicit_midpoint or :rk4."))
         end
         states[k] = stepper(
             model,
@@ -469,5 +469,48 @@ function simulate_cloth_robot_arm_plan(
         total_torque,
     )
 end
+
+
+# Preferred terminology. Preserve the original objects for saved data and downstream methods.
+export CompliantRobotArmDynamicsMode, CompliantRobotArmReferenceState, CompliantRobotArmSimulation, compliant_robot_arm_reference_state, compliant_robot_arm_multibody, compliant_robot_arm_initial_state, compliant_robot_arm_rest_quaternions, compliant_robot_arm_end_effector, compliant_robot_arm_actuators, coupled_compliant_robot_arm_state_shape, initialize_coupled_compliant_robot_arm_state!, assign_coupled_compliant_robot_arm_rhs!, simulate_compliant_robot_arm_plan
+
+"""Preferred name for `ClothRobotArmDynamicsMode`; both names refer to the same object."""
+const CompliantRobotArmDynamicsMode = ClothRobotArmDynamicsMode
+
+"""Preferred name for `ClothRobotArmReferenceState`; both names refer to the same object."""
+const CompliantRobotArmReferenceState = ClothRobotArmReferenceState
+
+"""Preferred name for `ClothRobotArmSimulation`; both names refer to the same object."""
+const CompliantRobotArmSimulation = ClothRobotArmSimulation
+
+"""Preferred name for `cloth_reference_state`; both names refer to the same object."""
+const compliant_robot_arm_reference_state = cloth_reference_state
+
+"""Preferred name for `cloth_robot_arm_multibody`; both names refer to the same object."""
+const compliant_robot_arm_multibody = cloth_robot_arm_multibody
+
+"""Preferred name for `cloth_robot_arm_initial_state`; both names refer to the same object."""
+const compliant_robot_arm_initial_state = cloth_robot_arm_initial_state
+
+"""Preferred name for `cloth_robot_arm_rest_quaternions`; both names refer to the same object."""
+const compliant_robot_arm_rest_quaternions = cloth_robot_arm_rest_quaternions
+
+"""Preferred name for `cloth_robot_arm_end_effector`; both names refer to the same object."""
+const compliant_robot_arm_end_effector = cloth_robot_arm_end_effector
+
+"""Preferred name for `cloth_robot_arm_actuators`; both names refer to the same object."""
+const compliant_robot_arm_actuators = cloth_robot_arm_actuators
+
+"""Preferred name for `coupled_cloth_robot_arm_state_shape`; both names refer to the same object."""
+const coupled_compliant_robot_arm_state_shape = coupled_cloth_robot_arm_state_shape
+
+"""Preferred name for `initialize_coupled_cloth_robot_arm_state!`; both names refer to the same object."""
+const initialize_coupled_compliant_robot_arm_state! = initialize_coupled_cloth_robot_arm_state!
+
+"""Preferred name for `assign_coupled_cloth_robot_arm_rhs!`; both names refer to the same object."""
+const assign_coupled_compliant_robot_arm_rhs! = assign_coupled_cloth_robot_arm_rhs!
+
+"""Preferred name for `simulate_cloth_robot_arm_plan`; both names refer to the same object."""
+const simulate_compliant_robot_arm_plan = simulate_cloth_robot_arm_plan
 
 end # module ClothRobotArmDynamics

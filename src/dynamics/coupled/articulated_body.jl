@@ -9,7 +9,7 @@ Conventions
 - Quaternions are scalar-last `[x, y, z, w]`. A state quaternion `q` is the ACTIVE body-to-inertial
   rotation: `v_inertial = R_a(q) * v_body`, composition `q_child_inertial = q_parent ⊗ q_rel`, and the
   engine's `rot(q)` (`QuaternionMath.rot`) is the transpose `R_a(q)'` (inertial-to-body). The
-  standalone cloth model's `_rot(q)` is `R_a(q)`.
+  standalone compliant multibody model's `_rot(q)` is `R_a(q)`.
 - Root state: `pos`/`vel` are the inertial position and velocity of the ROOT BODY COM, `q` the root
   attitude, `ω` the root body-frame angular velocity. The root body is the root link plus any links
   attached through `:fixed` joints plus the propellant (a point mass AT the composite COM of the
