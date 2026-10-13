@@ -175,7 +175,7 @@ density_model = NRLMSISE00AtmosphereModel(index_provider=my_provider)
 
 For a named, automatically retrieved atmosphere, start with the [Odyssey surrogate workflow](../tutorials/odyssey_surrogate.md). Use `surrogate_preset_model("odyssey_p20_frozen_v1"; version="1.0.0")` after loading `GRAMSuite`; retrieval and verification occur once before the solver.
 
-Three named presets are published. All are frozen at the Odyssey P20 instant, 2001-11-07T11:51:04.794789Z:
+Four named presets are published. All are frozen at the Odyssey P20 instant, 2001-11-07T11:51:04.794789Z:
 
 | Preset | Domain | Validated use |
 | --- | --- | --- |
@@ -184,6 +184,7 @@ Three named presets are published. All are frozen at the Odyssey P20 instant, 20
 | `mars_global_near_surface_p20_frozen_v1` 1.0.0 | 5 m above the local surface to 75 km areoid height, planetocentric latitudes within 85 degrees, surface below 9 km; density, temperature and pressure, no winds | Pointwise at the frozen instant |
 | `mars_global_near_surface_p20_frozen_v1` 1.1.0 | As 1.0.0, up to 81 km areoid height, above the global upper preset's floor everywhere | Pointwise at the frozen instant |
 | `mars_global_near_surface_p20_frozen_v1` 1.2.0 | As 1.1.0, with stored east, north and vertical winds; refused where a stored wind it needs is unavailable | Pointwise, on fixed descent paths and in propagated descents at the frozen instant; ballistic entries in the engine, with the global upper preset above 80 km |
+| `mars_global_descent_p20_frozen_v1` 1.0.0 | A composite with no data of its own: near-surface 1.2.0 below 80 km above the ellipsoid, the global upper preset 1.0.0 at and above it, up to 365 km | Ballistic descents from 125 km to 100 m above the terrain, within the tested envelope (see [Mars descent preset](#Mars-descent-preset)) |
 
 The global preset was validated against native Mars-GRAM under the lab's release
 limits for pointwise density and wind error and per-pass drag and heating; its
@@ -276,7 +277,7 @@ The archive's support map lists the cells.
 
 **Other limits.**
 - **1.0.0 gap.** In 1.0.0, the 75 to 80 km interval lies between this preset and the upper one, and neither covers it.
-- **1.1.0 and 1.2.0 overlap.** These versions reach 81 km areoid height, above the upper preset's 80 km ellipsoidal floor everywhere, so both presets are defined between that floor and 81 km. `CombinedAtmosphereModel` hands over between them; see [Height-based composition of two frozen atmospheres](#Height-based-composition-of-two-frozen-atmospheres).
+- **1.1.0 and 1.2.0 overlap.** These versions reach 81 km areoid height, above the upper preset's 80 km ellipsoidal floor everywhere, so both presets are defined between that floor and 81 km. `CombinedAtmosphereModel` hands over between them; see [Height-based composition of two frozen atmospheres](#Height-based-composition-of-two-frozen-atmospheres) and the [Mars descent preset](#Mars-descent-preset).
 - **1.2.0 scope.** Its validation does not establish real-world landing accuracy, the engine's use of the preset's speed of sound (the engine's Mach number uses its own gas constants), or other vehicles, epochs and entries.
 - The payload's terrain component holds Mars-GRAM's MOLA terrain values at its lattice nodes. Credit NASA MOLA as the archive README states.
 
@@ -350,10 +351,13 @@ presets it serves a descent from the upper atmosphere into the lower atmosphere:
 ```julia
 using SpaceAGORA
 import GRAMSuite
-lower = surrogate_preset_model("mars_global_near_surface_p20_frozen_v1"; version="1.1.0")
+lower = surrogate_preset_model("mars_global_near_surface_p20_frozen_v1"; version="1.2.0")
 upper = surrogate_preset_model("mars_global_upper_p20_frozen_v1"; version="1.0.0")
 density_model = CombinedAtmosphereModel(lower, upper; handover_height_m=80e3)
 ```
+
+This pairing is also available as a named preset, which carries its validated use; see the
+[Mars descent preset](#Mars-descent-preset).
 
 - **Handover.** Hand over at 80 km above the ellipsoid, the upper preset's floor. Near-surface versions 1.1.0 and
   1.2.0 reach 81 km areoid height, above that floor everywhere. Version 1.0.0 stops at 75 km and leaves a gap below
@@ -368,8 +372,9 @@ density_model = CombinedAtmosphereModel(lower, upper; handover_height_m=80e3)
   - Version 1.2.0, a format 2 payload, returns its stored winds below the handover; the two components' winds still
     differ at the handover.
   Density and temperature can also step by the difference between the presets.
-- **Frozen state.** Both presets are frozen at the same instant. The composition adds no time evolution and has no
-  validated accuracy claim of its own; each preset's documented validation applies on its side of the handover.
+- **Frozen state.** Both presets are frozen at the same instant. A composition built with `CombinedAtmosphereModel`
+  adds no time evolution and has no validated accuracy claim of its own; each preset's documented validation applies on
+  its side of the handover.
 - **Compatibility checks.** The constructor rejects components whose recorded planet, frozen instant or reference
   ellipsoid differ, and a grid component whose height range does not contain the handover. It cannot check that a
   near-surface lower component reaches the handover, because that component's top is an areoid height. That, and
@@ -382,6 +387,40 @@ density_model = CombinedAtmosphereModel(lower, upper; handover_height_m=80e3)
   surface before it locates the crossing, and a state below that clearance fails with the component's `DomainError`.
 - **Provenance.** `atmosphere_provenance(density_model)` records the handover rule and both presets' provenance.
 - **Components.** Only `GRAMNearSurfaceAtmosphereModel` and `GRAMGridAtmosphereModel` can be composed.
+
+### Mars descent preset
+
+`mars_global_descent_p20_frozen_v1` 1.0.0 names the composition validated for descents: near-surface 1.2.0 below 80 km
+above the ellipsoid and the global upper preset 1.0.0 at and above it, frozen at the Odyssey P20 instant. It has no data
+of its own. `surrogate_preset_model` installs and verifies each component through its own catalog entry, exactly as
+when that preset is selected alone, and composes them as above:
+
+```julia
+using SpaceAGORA
+import GRAMSuite
+density_model = surrogate_preset_model("mars_global_descent_p20_frozen_v1"; version="1.0.0")
+```
+
+- **Domain.** From 365 km down to 80 km above the ellipsoid, the upper preset's: all latitudes and longitudes. Below
+  80 km, the near-surface preset's: planetocentric latitudes within 85 degrees, surface below 9 km, at least 5 m above
+  the surface, and where its stored winds are available. A descent that drops below 80 km over a polar cap or a volcano
+  flank fails there with the near-surface preset's `DomainError`.
+- **Handover.** At 80 km above the ellipsoid, density, temperature and winds change abruptly from one preset's values
+  to the other's; nothing is blended.
+- **Validated use.** The composition was validated against native Mars-GRAM at the frozen instant, under the lab's
+  release limits: on 48 fixed descent paths and in 24 propagated descents in a reference integrator, and in 23 ballistic
+  entries in SpaceAGORA's engine with native Mars-GRAM in the same engine loop. The descents started 125 km above the
+  ellipsoid at 5.5 km/s relative to the planet, with a ballistic coefficient of 100 kg/m² and flight-path angles from
+  −10 to −20 degrees, and ended 100 m above the terrain. Elsewhere, each preset's own validation applies on its side of
+  the handover.
+- **Not established.** Passes that skim or recross the handover, as in aerobraking; other entry speeds, ballistic
+  coefficients and vehicles; lifting or guided entries; real-world landing accuracy; the engine's use of the
+  near-surface speed of sound; other epochs.
+- **Provenance.** `atmosphere_provenance(density_model)` names the composite, its version, its components and the
+  catalog, with both presets' own provenance; the results-bundle manifest records it.
+- **No payload of its own.** The composite takes no `file`, and `resolve_surrogate_preset` refuses it. To compose local
+  payload files, build each preset from its file and use `CombinedAtmosphereModel`; that composition carries no named
+  contract.
 
 ---
 

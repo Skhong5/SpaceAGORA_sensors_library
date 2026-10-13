@@ -18,32 +18,41 @@ reference-ellipsoid radii must agree, and a grid component's height range must c
 ensure that the lower component serves heights up to the handover (a near-surface component's top is an areoid
 height and is not checked here) and that each component's documented validation suits the intended use.
 
-The composition has no validated accuracy claim of its own and adds no time evolution. `atmosphere_provenance`
-records the rule and both components' provenance. The engine treats the composition like its components: every
-current coordinate reaches the evaluator, and concurrent queries share the read-only snapshots. A propagation that
-descends below 50 km needs a touchdown specification; otherwise the engine's default 50 km impact stop applies.
+A composition built with this constructor has no validated accuracy claim of its own and adds no time evolution.
+`atmosphere_provenance` records the rule and both components' provenance. The engine treats the composition like its
+components: every current coordinate reaches the evaluator, and concurrent queries share the read-only snapshots. A
+propagation that descends below 50 km needs a touchdown specification; otherwise the engine's default 50 km impact
+stop applies.
 
-For the published Mars presets:
+For the published Mars presets, the named preset `mars_global_descent_p20_frozen_v1` 1.0.0 is this composition with
+near-surface 1.2.0 below 80 km above the ellipsoid and upper 1.0.0 at and above. `surrogate_preset_model` builds it,
+and `atmosphere_provenance` records it with the validated use its catalog entry states. The same pairing built with
+this constructor carries no named contract:
 
 ```julia
-lower = surrogate_preset_model("mars_global_near_surface_p20_frozen_v1"; version="1.1.0")
+density_model = surrogate_preset_model("mars_global_descent_p20_frozen_v1"; version="1.0.0")
+
+lower = surrogate_preset_model("mars_global_near_surface_p20_frozen_v1"; version="1.2.0")
 upper = surrogate_preset_model("mars_global_upper_p20_frozen_v1"; version="1.0.0")
 density_model = CombinedAtmosphereModel(lower, upper; handover_height_m=80e3)
 ```
 
-Near-surface version 1.1.0 reaches 81 km areoid height, above the upper preset's 80 km ellipsoidal floor everywhere.
+Near-surface versions 1.1.0 and 1.2.0 reach 81 km areoid height, above the upper preset's 80 km ellipsoidal floor
+everywhere.
 """
 struct CombinedAtmosphereModel{L<:_NativeFreeSnapshotComponent, U<:_NativeFreeSnapshotComponent} <: AbstractDensityModel
     lower::L
     upper::U
     handover_height_m::Float64
+    # The record a named composite preset adds (`surrogate_preset_model`); empty for a composition built here.
+    metadata::Dict{String, Any}
     function CombinedAtmosphereModel(lower::L, upper::U; handover_height_m::Real) where {
             L<:_NativeFreeSnapshotComponent, U<:_NativeFreeSnapshotComponent}
         handover_height_m isa Bool && throw(ArgumentError("handover_height_m must be a finite height in metres."))
         h = Float64(handover_height_m)
         isfinite(h) || throw(ArgumentError("handover_height_m must be a finite height in metres; got $handover_height_m."))
         _check_combined_components(_component_facts(lower), _component_facts(upper), h)
-        return new{L, U}(lower, upper, h)
+        return new{L, U}(lower, upper, h, Dict{String, Any}())
     end
 end
 
