@@ -12,6 +12,7 @@ using LinearAlgebra
 using Dates
 using JSON
 using TOML
+using SHA
 using Base64
 using Random
 using Arrow
