@@ -139,7 +139,10 @@ function _preset_composite_entry(entry, entries)
         side[c["role"]] = component
     end
     lower, upper = side["lower"], side["upper"]
-    _preset_kind(upper) == "gram_grid" || _preset_error("$name needs a grid preset as its upper component; $(_preset_label(upper)) is not one.")
+    # The validated shape: terrain-following data below the handover and a fixed grid above it.
+    _preset_kind(lower) == "gram_near_surface_scalars" && _preset_kind(upper) == "gram_grid" ||
+        _preset_error("$name needs a near-surface preset as its lower component and a grid preset as its upper one, " *
+            "not $(_preset_kind(lower)) $(_preset_label(lower)) and $(_preset_kind(upper)) $(_preset_label(upper)).")
     atmosphere = entry["atmosphere"]
     get(atmosphere, "query_elapsed_time_applied", nothing) === false || _preset_error("Only explicitly frozen atmospheric presets are supported.")
     get(atmosphere, "latitude", nothing) == "geodetic" && get(atmosphere, "height", nothing) == "ellipsoidal" ||
@@ -168,15 +171,9 @@ function _preset_composite_entry(entry, entries)
     floor_m, ceiling_m = upper["domain"]["height_m"]
     floor_m <= h < ceiling_m || _preset_error("$name hands over at $h m, outside its upper component $(_preset_label(upper))'s " *
         "range from $floor_m m (inclusive) to $ceiling_m m.")
-    if _preset_kind(lower) == "gram_grid"
-        bottom_m, top_m = lower["domain"]["height_m"]
-        bottom_m < h <= top_m || _preset_error("$name hands over at $h m, outside its lower component $(_preset_label(lower))'s " *
-            "range from $bottom_m m to $top_m m (inclusive).")
-    else
-        # Necessary only: the top is an areoid height, which the catalog cannot compare with an ellipsoidal one everywhere.
-        h < lower["domain"]["top_areoid_height_m"] || _preset_error("$name hands over at $h m above the ellipsoid, not below its lower " *
-            "component $(_preset_label(lower))'s top of $(lower["domain"]["top_areoid_height_m"]) m areoid height.")
-    end
+    # Necessary only: the lower top is an areoid height, which the catalog cannot compare with an ellipsoidal one everywhere.
+    h < lower["domain"]["top_areoid_height_m"] || _preset_error("$name hands over at $h m above the ellipsoid, not below its lower " *
+        "component $(_preset_label(lower))'s top of $(lower["domain"]["top_areoid_height_m"]) m areoid height.")
     domain = entry["domain"]
     get(domain, "outside", nothing) == "error" && get(domain, "longitude_period_deg", nothing) == 360 ||
         _preset_error("Named presets require errors outside their supported domain.")
@@ -432,15 +429,19 @@ _composite_file_error(id, version) = _preset_error("Preset '$id@$version' is a c
     "explicit file cannot select it. To use local payload files, build each component from its own preset and file and " *
     "compose them with CombinedAtmosphereModel; that composition carries no named composite contract.")
 
-# The components of a released composite preset as (role, id, version), lower first, or `nothing` for any other entry
-# (an unknown id or version included, which resolution reports).
+# The components of a released composite entry as (role, id, version), lower first; an unreleased composite is refused.
+function _composite_entry_components(entry)
+    entry["release_enabled"] || _preset_error("Preset $(_preset_label(entry)) is not published. A composite preset has no " *
+        "local-development path: build its components and compose them with CombinedAtmosphereModel.")
+    return [(role = c["role"], id = c["id"], version = c["version"]) for c in _composite_components(entry)]
+end
+# The same for a preset named by id and version, or `nothing` for any other entry (an unknown id or version included,
+# which resolution reports).
 function _composite_preset_components(id, version; catalog_file::AbstractString=_SURROGATE_CATALOG)
     catalog, _ = _preset_catalog(catalog_file)
     for entry in catalog["presets"]
-        entry["id"] == id && entry["version"] == version && _preset_kind(entry) == _COMPOSITE_KIND || continue
-        entry["release_enabled"] || _preset_error("Preset '$id@$version' is not published. A composite preset has no " *
-            "local-development path: build its components and compose them with CombinedAtmosphereModel.")
-        return [(role = c["role"], id = c["id"], version = c["version"]) for c in _composite_components(entry)]
+        entry["id"] == id && entry["version"] == version && _preset_kind(entry) == _COMPOSITE_KIND &&
+            return _composite_entry_components(entry)
     end
     return nothing
 end
@@ -454,9 +455,9 @@ function _composite_preset_model(id; version::AbstractString, planet::AbstractSt
     entry = only(filter(p -> p["id"] == id && p["version"] == version, catalog["presets"]))
     key = _preset_planet(planet)
     key == _preset_planet(entry["planet"]) || _preset_error("Preset '$id@$version' is for $(entry["planet"]), not $planet.")
-    components = _composite_preset_components(id, version; catalog_file)
-    kinds = Dict((p["id"], p["version"]) => _preset_kind(p) for p in catalog["presets"])
-    foreach(c -> _require_preset_constructor(kinds[(c.id, c.version)] == "gram_near_surface_scalars"), components)
+    components = _composite_entry_components(entry)
+    # The catalog fixes the kinds: a near-surface lower component and a grid upper one.
+    _require_preset_constructor(true); _require_preset_constructor(false)
     lower, upper = (surrogate_preset_model(c.id; version=c.version, planet, offline, catalog_file, artifacts_file) for c in components)
     model = CombinedAtmosphereModel(lower, upper; handover_height_m=entry["handover"]["height_m"])
     model.metadata[_PRESET_METADATA_KEY] = Dict{String,Any}(

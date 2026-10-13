@@ -805,7 +805,8 @@ end
                     "composites do not nest"=>c->(c["presets"][1]["components"][1]=Dict("role"=>"lower","id"=>"synthetic_descent","version"=>"1.0.0")),
                     "is released, but its component"=>c->(c["presets"][2]["release_enabled"]=false),
                     "is for earth, but its component"=>c->(c["presets"][1]["planet"]="earth"),
-                    "needs a grid preset as its upper component"=>c->(c["presets"][1]["components"][1]["role"]="upper"; c["presets"][1]["components"][2]["role"]="lower"),
+                    "needs a near-surface preset as its lower component and a grid preset as its upper one"=>
+                        c->(c["presets"][1]["components"][1]["role"]="upper"; c["presets"][1]["components"][2]["role"]="lower"),
                     "declares the frozen instant"=>c->(c["presets"][1]["atmosphere"]["epoch_utc"]="2001-11-07T11:52:04.794789Z"),
                     "reference-ellipsoid radii"=>c->(c["presets"][1]["atmosphere"]["polar_radius_m"]=3376000.0),
                     "needs stored winds on both sides"=>c->delete!(c["presets"][3]["atmosphere"],"wind_convention"),
