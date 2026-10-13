@@ -154,8 +154,10 @@ the page size; no texture changes the recorded trajectory. Export defaults to
 textures: opt in with `texture_resolution="8k"` or select the largest available
 tier with `:best`. Venus and Titan fall back to 4k. An 8k image has four times
 the decoded pixels of 4k, and its embedded JPEG also makes the HTML larger.
-The standalone builder likewise defaults to 4k; use `--textures 8k` for
-a page containing the higher tiers.
+The companion standalone builder defaults to `--textures none`. To embed local
+textures, pass `--textures 4k` or `--textures 8k` with
+`--textures-dir /path/to/catalog`. That directory must contain `manifest.toml`
+and the selected image files; the builder does not download textures.
 
 STL, OBJ and uncompressed GLB models can replace link boxes:
 
@@ -401,9 +403,7 @@ a host that refuses embedded `data:` scripts, `SpaceAGORAVisualizer.jl/viewer/bu
 rewrites an exported page to load the pinned three.js and mp4-muxer from
 `cdn.jsdelivr.net` with the renderer modules inlined; the built page lists
 its network hosts and third-party notices in its footer, and adds fonts
-from Google Fonts only with `--fonts`. See [the companion renderer guide](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl/blob/codex/extract-visualizer/viewer/README.md).
-
-See [the companion renderer guide](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl/blob/codex/extract-visualizer/viewer/README.md) for renderer development, module layout and
+from Google Fonts only with `--fonts`. See [the companion renderer guide](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl/blob/codex/extract-visualizer/viewer/README.md) for renderer development, module layout and
 licensing. Landing dynamics and plume-surface physics are separate from the
 viewer: the page only draws what the run saved.
 
