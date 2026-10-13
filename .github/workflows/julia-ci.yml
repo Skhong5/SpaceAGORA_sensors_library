@@ -341,6 +341,7 @@ jobs:
         run: python3 .github/scripts/ci_shard_verify.py tests shard-reports
 
       - name: Download optional installation coverage
+        if: always()
         uses: actions/download-artifact@v8
         with:
           name: hypr-installation-coverage

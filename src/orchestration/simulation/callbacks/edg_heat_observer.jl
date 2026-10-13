@@ -209,7 +209,10 @@ function _edg_observe_heat_callbacks(callbacks::CallbackSet, num_sats::Int)
             first_callback && initialize_observer!(u,t,i)
             callback.condition isa EDGGeodeticBoundaryCondition &&
                 _edg_validate_boundary_condition(callback.condition, i.p, num_sats)
-            result = callback.initialize(cb,u,t,i)
+            # Lifecycle hooks belong to the original callback. SavingCallback and
+            # user-defined hooks inspect or mutate fields of their own affect
+            # object; the observer's effect closure is not that object.
+            result = callback.initialize(callback,u,t,i)
             # Initializers can mutate u or invoke their callback's effect.
             # All such changes still define the initial side, not a passage.
             record_initial_side!(i.u,t,i)
@@ -218,26 +221,27 @@ function _edg_observe_heat_callbacks(callbacks::CallbackSet, num_sats::Int)
             return result
         end
     end
+    wrap_finalize(callback) = (cb,u,t,i) -> callback.finalize(callback,u,t,i)
     function wrap_callback(callback::ContinuousCallback, first_callback)
         options = (; (name => getfield(callback, name) for name in fieldnames(typeof(callback))
-            if name ∉ (:condition, :affect!, :affect_neg!, :initialize))...)
+            if name ∉ (:condition, :affect!, :affect_neg!, :initialize, :finalize))...)
         initialize = wrap_initialize(callback, first_callback)
         marker = callback.condition isa EDGGeodeticBoundaryCondition ? callback.condition : nothing
         return ContinuousCallback(callback.condition, wrap_effect(callback.affect!, marker),
-            wrap_effect(callback.affect_neg!, marker); initialize=initialize, options...)
+            wrap_effect(callback.affect_neg!, marker); initialize=initialize, finalize=wrap_finalize(callback), options...)
     end
     function wrap_callback(callback::VectorContinuousCallback, first_callback)
         options = (; (name => getfield(callback, name) for name in fieldnames(typeof(callback))
-            if name ∉ (:condition, :affect!, :len, :initialize))...)
+            if name ∉ (:condition, :affect!, :len, :initialize, :finalize))...)
         initialize = wrap_initialize(callback, first_callback)
         return VectorContinuousCallback(callback.condition, wrap_effect(callback.affect!),
-            callback.len; initialize=initialize, options...)
+            callback.len; initialize=initialize, finalize=wrap_finalize(callback), options...)
     end
     function wrap_callback(callback::DiscreteCallback, first_callback)
         options = (; (name => getfield(callback, name) for name in fieldnames(typeof(callback))
-            if name ∉ (:condition, :affect!, :initialize))...)
+            if name ∉ (:condition, :affect!, :initialize, :finalize))...)
         return DiscreteCallback(callback.condition, wrap_effect(callback.affect!);
-            initialize=wrap_initialize(callback, first_callback), options...)
+            initialize=wrap_initialize(callback, first_callback), finalize=wrap_finalize(callback), options...)
     end
     continuous = map(enumerate(callbacks.continuous_callbacks)) do (idx, callback)
         wrap_callback(callback, idx == 1)

@@ -1,5 +1,5 @@
 module EDGHeatObserverRegression
-using SpaceAGORA, Test, ComponentArrays, StaticArrays, LinearAlgebra, OrdinaryDiffEq
+using SpaceAGORA, Test, ComponentArrays, StaticArrays, LinearAlgebra, OrdinaryDiffEq, DiffEqCallbacks
 const REPO_ROOT=normpath(joinpath(@__DIR__,"..","..",".."))
 const SimulationModel=SpaceAGORA.SimulationModel
 const SimulationEngine=SpaceAGORA.SimulationEngine
@@ -76,7 +76,7 @@ end
    raw=CallbackSet(recorder,CallbackSet(ext))
    wrapped=_edg_observe_heat_callbacks(raw,1)
    for name in fieldnames(typeof(ext))
-    name in (:affect!,:initialize) && continue
+    name in (:affect!,:initialize,:finalize) && continue
     @test isequal(getfield(ext,name),getfield(wrapped.continuous_callbacks[1],name))
    end
    @test wrapped.discrete_callbacks[2].condition===recorder.condition
@@ -87,6 +87,47 @@ end
    @test init_count[]==final_count[]==1
    @test isapprox(inbound ? c.state.heat_load_entry_j_cm2[1] : c.state.heat_load_exit_j_cm2[1],[0.,20.,40.];atol=1e-8)
   end
+ end
+ @testset "SavingCallback and lifecycle hooks retain their original callback" begin
+  outputs=[]
+  for enabled in (false,true)
+   c=linear_context()
+   saved=SavedValues(Float64,Float64)
+   saving=SavingCallback((u,t,i)->u.sc[1].heat_loads[2],saved;saveat=0.:2.:40.,save_start=true)
+   periodic_times=Float64[]
+   periodic=PeriodicCallback(i->push!(periodic_times,i.t),1/3;initial_affect=true)
+   lifecycle_calls=Symbol[]
+   owner=Ref{Any}()
+   init_hook=(cb,u,t,i)->begin
+    @test cb===owner[]
+    push!(lifecycle_calls,:initialize)
+   end
+   final_hook=(cb,u,t,i)->begin
+    @test cb===owner[]
+    push!(lifecycle_calls,:finalize)
+   end
+   owner[]=DiscreteCallback((u,t,i)->false,i->nothing;initialize=init_hook,finalize=final_hook,save_positions=(false,false))
+   raw=CallbackSet(periodic,saving,owner[])
+   callbacks=enabled ? _edg_observe_heat_callbacks(raw,1) : raw
+   integrator=init(ODEProblem(linear_rhs!,copy(c.u),(0.,40.),c.p),Tsit5();callback=callbacks,dtmax=.17,reltol=1e-10,abstol=1e-10)
+   attempt_results=[]
+   for attempt in 1:2
+    if attempt==2
+     empty!(periodic_times)
+     CH._edg_initialize_heat_accounting!(c.args,c.u,0.)
+     reinit!(integrator,copy(c.u);t0=0.,tf=40.,reinit_callbacks=true,reset_dt=true)
+    end
+    sol=solve!(integrator)
+    @test saved.t==collect(0.:2.:40.)
+    @test saved.saveval≈saved.t
+    @test periodic_times[1]==0.
+    @test all(isapprox.(diff(periodic_times),1/3;atol=1e-12))
+    push!(attempt_results,(times=copy(saved.t),values=copy(saved.saveval),periodic=copy(periodic_times),u=Array(sol.u[end]),retcode=sol.retcode))
+   end
+   @test lifecycle_calls==[:initialize,:finalize,:initialize,:finalize]
+   push!(outputs,attempt_results)
+  end
+  @test outputs[1]==outputs[2]
  end
  @testset "Reinitialization resets observer cursor" begin
   for has_continuous in (false,true)
