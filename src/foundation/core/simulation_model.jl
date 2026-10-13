@@ -41,10 +41,13 @@ include(joinpath(@__DIR__, "..", "..", "models", "vehicle", "robotics", "robotic
 @reexport using .Robotics
 include(joinpath(@__DIR__, "..", "..", "models", "gnc", "robotics", "robot_arm_planning.jl"))
 @reexport using .RobotArmPlanning
-include(joinpath(@__DIR__, "..", "..", "models", "dynamics", "multibody_cloth", "cloth_multibody.jl"))
-@reexport using .ClothMultibody
-include(joinpath(@__DIR__, "..", "..", "models", "dynamics", "multibody_cloth", "cloth_robot_arm_dynamics.jl"))
-@reexport using .ClothRobotArmDynamics
+include(joinpath(@__DIR__, "..", "..", "models", "dynamics", "compliant_multibody", "compliant_multibody.jl"))
+# Keep the defining module identity for existing serialized objects and HYPR.
+const CompliantMultibody = ClothMultibody
+@reexport using .CompliantMultibody
+include(joinpath(@__DIR__, "..", "..", "models", "dynamics", "compliant_multibody", "compliant_robot_arm_dynamics.jl"))
+const CompliantRobotArmDynamics = ClothRobotArmDynamics
+@reexport using .CompliantRobotArmDynamics
 
 include(joinpath(@__DIR__, "..", "..", "models", "vehicle", "actuators", "thruster", "thruster_models_module.jl"))
 @reexport using .ThrusterModels
@@ -78,7 +81,7 @@ include(joinpath(@__DIR__, "..", "..", "models", "dynamics", "coupled", "articul
 
 # Compliant multibody attachments mounted on spacecraft links (the type itself lives in
 # SpacecraftModels; this is its runtime and dynamics).
-include(joinpath(@__DIR__, "..", "..", "models", "dynamics", "multibody_cloth", "compliant_attachment_dynamics.jl"))
+include(joinpath(@__DIR__, "..", "..", "models", "dynamics", "compliant_multibody", "compliant_attachment_dynamics.jl"))
 @reexport using .CompliantAttachmentDynamics
 
 # Generic hooks for spacecraft an external integrator owns for a run (internal name space, not re-exported).

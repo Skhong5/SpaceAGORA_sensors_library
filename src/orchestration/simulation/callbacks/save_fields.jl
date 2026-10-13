@@ -254,7 +254,7 @@ end
     return direction === nothing ? SVector{3, Float64}(NaN, NaN, NaN) : direction
 end
 
-# Cloth robot-arm chain: the integrated arm state (`arm_r`, `arm_q` per arm
+# Compliant robot-arm chain: the integrated arm state (`arm_r`, `arm_q` per arm
 # link) relative to the spacecraft position, 7 floats per link.
 @inline function _save_arm_poses(num_sats::Int, u, t, integrator)
     poses = Vector{Vector{Float64}}(undef, num_sats)
@@ -587,7 +587,7 @@ end
 """
     arm_pose_save_field(args) -> SaveField
 
-The `arm_pose` field: per spacecraft, every cloth robot-arm link's COM
+The `arm_pose` field: per spacecraft, every compliant robot-arm link's COM
 position relative to the spacecraft (inertial, metres) and inertial
 quaternion.
 """

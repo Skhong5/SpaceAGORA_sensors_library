@@ -1,6 +1,6 @@
 # Included inside `SpacecraftModels` (src/models/vehicle/spacecraft/model.jl) after `Link`, so that
 # `SpacecraftModel` can hold attachments. The dynamics live in
-# src/models/dynamics/multibody_cloth/compliant_attachment_dynamics.jl.
+# src/models/dynamics/compliant_multibody/compliant_attachment_dynamics.jl.
 
 using ..ClothMultibody: CompliantMultibodyModel, CompliantTopologyBuild, CompliantJointActuator
 using ..ClothMultibody: compliant_rest_state, compliant_state_in_mount_frame
@@ -9,7 +9,7 @@ using ..ClothMultibody: compliant_rest_state, compliant_state_in_mount_frame
     CompliantAttachment(; model, link, mount_point=(0,0,0), mount_quaternion=(0,0,0,1),
                         initial_state=nothing, joint_actuators=[], rest_schedule=nothing)
 
-A [`CompliantMultibodyModel`](@ref) mounted on a spacecraft `Link`. The attachment bodies (a cloth
+A [`CompliantMultibodyModel`](@ref) mounted on a spacecraft `Link`. The attachment bodies (a compliant
 panel mesh, a flexible appendage) move under their own compliant joint springs, dampers and actuators
 and exchange forces and torques with the link they are mounted on, in both directions. `link` may be the
 root, a link merged through a `:fixed` joint, or a link of a moving (articulated) body; the reaction

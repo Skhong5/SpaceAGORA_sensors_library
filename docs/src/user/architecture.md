@@ -97,20 +97,25 @@ This physical collection
 can represent a single vehicle, a servicing pair or a constellation; it
 does not by itself allocate tasks or provide a communication network.
 
-The compliant multibody capability describes motion within a spacecraft
-assembly. The current folder name retains its historical cloth terminology. `src/models/dynamics/multibody_cloth/cloth_multibody.jl` defines bodies
-with mass and inertia, compliant connections with translational and rotational
-stiffness and damping, and topology builders. The coupled robot-arm path in
-`cloth_robot_arm_dynamics.jl` supplies internal-state initialization and
+Compliant multibody dynamics describes motion within a spacecraft assembly.
+Its compliant lumped-body model represents flexibility with discrete bodies joined
+by springs and dampers. `src/models/dynamics/compliant_multibody/compliant_multibody.jl`
+defines their mass and inertia, the translational and rotational stiffness and
+damping of their connections, and topology builders. The coupled robot-arm path in
+`compliant_robot_arm_dynamics.jl` supplies internal-state initialization and
 derivatives to the engine. Each arm link feels gravity at its own inertial
 position, from the run's position-only gravity effectors, so the joint springs
 carry only the loads that differ from the bus's own free fall. This supports specified articulated and compliant
 models; it is not a claim that every arbitrary flexible surface or contact
 interaction is already coupled and validated. A mesh describes surface
-geometry, while a multibody model describes motion and loads.
+geometry, while a multibody model describes motion and loads. The preferred
+module aliases are `CompliantMultibody` and `CompliantRobotArmDynamics`; their
+historical defining modules are retained for compatibility. This naming change
+does not add MuJoCo contact coupling. See the [API migration note](../public_api_policy.md#Compliant-multibody-and-robot-arm-names)
+for the corresponding type and function names.
 
 Articulated spacecraft use a second multibody path that is not tied to the
-cloth arm. A `Joint` with `joint_type` `:hinge`, `:slide` or `:ball` makes its
+compliant robot arm. A `Joint` with `joint_type` `:hinge`, `:slide` or `:ball` makes its
 spacecraft articulated: `src/models/dynamics/coupled/articulated_body.jl` builds a tree
 of rigid bodies (links joined by `:fixed` joints are merged) and solves the
 forward dynamics in joint coordinates, with the root as a free-floating base.
@@ -128,7 +133,7 @@ or a moving articulated link), integrates its bodies beside the spacecraft
 (`att_r`, `att_q`, `att_v`, `att_ω`) and exchanges forces and torques with the
 link in both directions: through the bus equations for a rigid spacecraft and
 through per-body wrenches into the articulated backbone otherwise
-(`src/models/dynamics/multibody_cloth/compliant_attachment_dynamics.jl`). The
+(`src/models/dynamics/compliant_multibody/compliant_attachment_dynamics.jl`). The
 robot-arm coupling keeps its own path for now. See
 [Compliant attachments](simulation_configuration.md#Compliant-attachments).
 
@@ -137,7 +142,7 @@ A free-flying inspector is another spacecraft. Their task assignment and
 coordination belong at the mission level, above individual vehicle construction.
 The source-owner table below distinguishes vehicle construction from dynamics.
 Robot hardware, compliant equations, planning and control are currently spread
-across `src/models/vehicle/robotics/`, `src/models/dynamics/multibody_cloth/`,
+across `src/models/vehicle/robotics/`, `src/models/dynamics/compliant_multibody/`,
 `src/models/gnc/robotics/` and `src/models/gnc/control/robot_arm_control.jl`. HYPR robot-arm
 search is implemented in the separate [HYPR.jl repository](https://github.com/Space-FALCON-Lab/HYPR.jl),
 under its `ext/robot/` adapter files. SpaceAGORA retains configuration types,
@@ -279,7 +284,7 @@ are relative to the directory in the first column.
 | `src/orchestration/parallel/` | Parallel profiles and routing, cost models, worker process pools and in-process policy | route selection and process pools; owned by the parallelization work |
 | `src/models/vehicle/` | Spacecraft components and assembly, structure and mass properties, mesh readers, thrusters, thermal models, kinematics and robotics | vehicle boundary per the [topology contract](../generated/contracts/architecture/canonical_topology_contract.md): `spacecraft/` composes, `structure/` computes mass, inertia and geometry, `actuators/thruster/thruster_hooks.jl` owns thruster hooks |
 | `src/models/environment/` | Planets and ephemerides, atmosphere models and presets, gravity fields and terrain grids | density sampling: `atmosphere/density_models.jl`; terrain queries: `terrain/terrain_models.jl` |
-| `src/models/dynamics/` | Translational and rotational equations, coupled force/torque models, compliant multibody dynamics under `multibody_cloth/`, and articulated-body dynamics | effector evaluation: `coupled/force_torque_models.jl`; articulated solver: `coupled/articulated_body.jl` |
+| `src/models/dynamics/` | Translational and rotational equations, coupled force/torque models, compliant multibody dynamics under `compliant_multibody/`, and articulated-body dynamics | effector evaluation: `coupled/force_torque_models.jl`; articulated solver: `coupled/articulated_body.jl` |
 | `src/models/gnc/` | Guidance, navigation and control hooks, planner contracts and lifecycle, shared calculations, baseline algorithms and HYPR compatibility types | the three hook files named above; planner contracts: `interfaces/`; lifecycle: `guidance/rpo/`; shared calculations: `shared/`; RRT kernels: `rrt/`; aerobraking bridge helpers: `internal/` |
 | `src/foundation/core/` | Abstract types, shared state and runtime types, reference frames, geodesy, quaternions and the model-composition loader | frames: `interfaces/reference_system.jl`; quaternions: `numerics/quaternion_utils.jl`; composition loader: `simulation_model.jl` |
 | `src/foundation/assets/` | Asset lookup for RPO stations and the Odyssey surrogate | asset resolution and provenance; see [Assets & Modes](../assets.md) |

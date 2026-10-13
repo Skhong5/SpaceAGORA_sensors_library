@@ -363,7 +363,7 @@ call it, keeping missing-support errors ahead of run output creation. Third-part
 planners retain their existing behavior. Do not add a silent fallback planner.
 
 Pure robot-arm path sampling, length, smoothness, segment distance and clearance
-remain core-owned in `gnc/shared/robot_arm_geometry.jl`. The HYPR extension's cloth-wrench
+remain core-owned in `gnc/shared/robot_arm_geometry.jl`. The HYPR extension's compliant-arm wrench
 bridge explicitly addresses `SpaceAGORA.SimulationModel`, preserving the dynamics
 owner that the historical parent-module lookup reached. The mixed replanning file
 stays in its original location. The seven general retiming helpers stay shared.

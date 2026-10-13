@@ -472,10 +472,10 @@ coordinates use the quaternion and angular-rate tolerances.
 
 ## Compliant attachments
 
-A `CompliantAttachment` mounts a `CompliantMultibodyModel` (a cloth panel mesh, a
-flexible appendage) on a spacecraft link. The attachment bodies move under their own
+A `CompliantAttachment` mounts a `CompliantMultibodyModel` (a panel mesh or another
+flexible appendage represented by discrete bodies) on a spacecraft link. The attachment bodies move under their own
 compliant joint springs, dampers and actuators and exchange forces and torques with the
-link in both directions. `examples/Cloth_Panel_Attachment_Demo.jl` runs the four-panel cloth
+link in both directions. `examples/Cloth_Panel_Attachment_Demo.jl` runs the four-panel compliant
 deployment of `Solar_Panel_Cloth_Deployment_Demo.jl` inside `run_simulation` this way.
 
 ```julia
@@ -553,7 +553,7 @@ Thrust, mass flow and every other effector see the spacecraft mass only.
 | Attachment link not in the spacecraft, model without a joint to the mount | refused |
 | Mixing spacecraft with different attachment body counts (or with and without attachments) in one run | refused (equal-sized state blocks) |
 
-Cloth meshes are stiff in general. Use `:auto_stiff` or `:rodas5p` when the fastest attachment
+Compliant multibody meshes can be stiff. Use `:auto_stiff` or `:rodas5p` when the fastest attachment
 mode (about `sqrt(k/m)` for the translational springs and `sqrt(k_rot/I)` for the rotational ones,
 plus the damping rate `c/m`) is much faster than the orbit and attitude dynamics of interest; the
 explicit modes are fine for mild meshes such as the demo (about 30 rad/s). The attitude and

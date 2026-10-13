@@ -116,6 +116,41 @@ using .SimulationModel.AbstractTypes: AbstractControlEffectorModel, AbstractEphe
 using .SimulationModel.AbstractTypes: AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
 using .SimulationModel: StateSample, PlanetFrameSample, AtmosphereSample, SolarEphemerisSample
 using .SimulationModel: ThirdBodyEphemerisSample, EnvironmentSample, EffectorEnvironmentRequirements
+# Compliant multibody dynamics and robot kinematics. Historical Cloth names below
+# remain aliases to the same objects for script, HYPR, and serialization compatibility.
+using .SimulationModel: CompliantMultibody, CompliantRobotArmDynamics
+public CompliantMultibody, CompliantRobotArmDynamics
+@doc "Compliant lumped-body dynamics for bodies connected by joints with stiffness and damping. The historical module alias remains available as `SimulationModel.ClothMultibody`." CompliantMultibody
+@doc "Compliant robot-arm realization, simulation, and spacecraft coupling. The historical module alias remains available as `SimulationModel.ClothRobotArmDynamics`." CompliantRobotArmDynamics
+using .SimulationModel: RobotArmBasePose, RobotArmLink, RobotArmJoint, RobotArmModel, RobotArmPose, RobotArmState, default_robot_arm_model, robot_arm_fk, robot_arm_fk_state, robot_arm_end_effector_pose, robot_arm_ik, robot_arm_total_reach
+export RobotArmBasePose, RobotArmLink, RobotArmJoint, RobotArmModel, RobotArmPose, RobotArmState, default_robot_arm_model, robot_arm_fk, robot_arm_fk_state, robot_arm_end_effector_pose, robot_arm_ik, robot_arm_total_reach
+@doc (@doc SimulationModel.RobotArmBasePose) RobotArmBasePose
+@doc (@doc SimulationModel.RobotArmLink) RobotArmLink
+@doc (@doc SimulationModel.RobotArmJoint) RobotArmJoint
+@doc (@doc SimulationModel.RobotArmModel) RobotArmModel
+@doc (@doc SimulationModel.RobotArmPose) RobotArmPose
+@doc (@doc SimulationModel.RobotArmState) RobotArmState
+@doc (@doc SimulationModel.default_robot_arm_model) default_robot_arm_model
+@doc (@doc SimulationModel.robot_arm_fk) robot_arm_fk
+@doc (@doc SimulationModel.robot_arm_fk_state) robot_arm_fk_state
+@doc (@doc SimulationModel.robot_arm_end_effector_pose) robot_arm_end_effector_pose
+@doc (@doc SimulationModel.robot_arm_ik) robot_arm_ik
+@doc (@doc SimulationModel.robot_arm_total_reach) robot_arm_total_reach
+using .SimulationModel: CompliantRobotArmReferenceState, CompliantRobotArmSimulation, compliant_robot_arm_reference_state, compliant_robot_arm_multibody, compliant_robot_arm_initial_state, compliant_robot_arm_rest_quaternions, compliant_robot_arm_end_effector, compliant_robot_arm_actuators, coupled_compliant_robot_arm_state_shape, initialize_coupled_compliant_robot_arm_state!, assign_coupled_compliant_robot_arm_rhs!, simulate_compliant_robot_arm_plan
+export CompliantRobotArmReferenceState, CompliantRobotArmSimulation, compliant_robot_arm_reference_state, compliant_robot_arm_multibody, compliant_robot_arm_initial_state, compliant_robot_arm_rest_quaternions, compliant_robot_arm_end_effector, compliant_robot_arm_actuators, coupled_compliant_robot_arm_state_shape, initialize_coupled_compliant_robot_arm_state!, assign_coupled_compliant_robot_arm_rhs!, simulate_compliant_robot_arm_plan
+@doc (@doc SimulationModel.CompliantRobotArmReferenceState) CompliantRobotArmReferenceState
+@doc (@doc SimulationModel.CompliantRobotArmSimulation) CompliantRobotArmSimulation
+@doc (@doc SimulationModel.compliant_robot_arm_reference_state) compliant_robot_arm_reference_state
+@doc (@doc SimulationModel.compliant_robot_arm_multibody) compliant_robot_arm_multibody
+@doc (@doc SimulationModel.compliant_robot_arm_initial_state) compliant_robot_arm_initial_state
+@doc (@doc SimulationModel.compliant_robot_arm_rest_quaternions) compliant_robot_arm_rest_quaternions
+@doc (@doc SimulationModel.compliant_robot_arm_end_effector) compliant_robot_arm_end_effector
+@doc (@doc SimulationModel.compliant_robot_arm_actuators) compliant_robot_arm_actuators
+@doc (@doc SimulationModel.coupled_compliant_robot_arm_state_shape) coupled_compliant_robot_arm_state_shape
+@doc (@doc SimulationModel.initialize_coupled_compliant_robot_arm_state!) initialize_coupled_compliant_robot_arm_state!
+@doc (@doc SimulationModel.assign_coupled_compliant_robot_arm_rhs!) assign_coupled_compliant_robot_arm_rhs!
+@doc (@doc SimulationModel.simulate_compliant_robot_arm_plan) simulate_compliant_robot_arm_plan
+
 using .SimulationModel: ClothArmBasePose, ClothArmLink, ClothArmJoint, ClothArmModel, ClothArmPose, ClothArmState
 using .SimulationModel: default_cloth_arm_model, cloth_fk, cloth_fk_state, cloth_end_effector_pose
 using .SimulationModel: cloth_ik, cloth_total_reach, closest_surface_target

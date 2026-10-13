@@ -188,7 +188,7 @@ controller dependency. Package separation changes installation, not the validate
 physical limits, planning reserve or numerical policies.
 
 The `examples/rpo_planner_env/setup.jl` command above installs both components
-explicitly for the two-planner demonstration. The RPO/Cloth HYPR examples and ISS viewer demo also run from that project and
+explicitly for the two-planner demonstration. The RPO and compliant robot-arm HYPR examples and ISS viewer demo also run from that project and
 load the companion before their common helper activates the root project. See
 [Examples Catalog](examples_catalog.md) for the exact commands. Baseline examples
 keep `--project=.` and do not preload HYPR. Do not add the companion as a required

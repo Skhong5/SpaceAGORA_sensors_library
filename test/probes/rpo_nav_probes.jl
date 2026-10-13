@@ -546,7 +546,7 @@ end
     end
 
     # ---------------------------------------------------------------
-    # cloth_robot_arm_dynamics.jl
+    # compliant_robot_arm_dynamics.jl
     # ---------------------------------------------------------------
     cloth_plan = SM.plan_robot_arm_motion(
         arm,

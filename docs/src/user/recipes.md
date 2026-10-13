@@ -73,11 +73,16 @@ the root project. Baseline examples continue to use `--project=.`.
 SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl --runs 1
 ```
 
-## Run the robot-arm and Cloth dynamics smoke batch
+## Run the robot-arm and compliant multibody dynamics smoke batch
 
 ```text
 SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Robot_Arm_Planner_Cloth_Demo.jl
 ```
+
+The example filename and output identifiers keep their historical spelling for
+compatibility. The model uses compliant multibody dynamics. See the
+[API migration note](../public_api_policy.md#Compliant-multibody-and-robot-arm-names)
+when updating application code.
 
 ## Attach guidance, navigation or control to one spacecraft
 

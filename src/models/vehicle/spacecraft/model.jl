@@ -542,7 +542,7 @@ Tuple of control effectors and the rate (s) at which each is called. `ControlMod
 end
 
 # Compliant multibody models mounted on links (needs `Link`, needed by `SpacecraftModel`).
-include(joinpath(@__DIR__, "..", "..", "dynamics", "multibody_cloth", "compliant_attachment.jl"))
+include(joinpath(@__DIR__, "..", "..", "dynamics", "compliant_multibody", "compliant_attachment.jl"))
 
 mutable struct SpacecraftModel
     joints::Vector{Joint} # List of joints
@@ -561,7 +561,7 @@ mutable struct SpacecraftModel
     guidance::GuidanceModel
     navigation::NavigationModel
     control::ControlModel
-    # Compliant multibody models mounted on links (cloth panels, flexible appendages). Empty by default;
+    # Compliant multibody models mounted on links (compliant panels, flexible appendages). Empty by default;
     # their bodies are not links and not part of `dry_mass`/`mass`.
     attachments::Vector{CompliantAttachment}
 end

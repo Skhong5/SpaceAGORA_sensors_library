@@ -54,7 +54,7 @@ const SCENE_SCHEMA_VERSION = 1
 const LINK_POSE_FIELD = :link_pose
 const LINK_POSE_STRIDE = 7
 const LINK_POSE_LAYOUT = ("rx", "ry", "rz", "qx", "qy", "qz", "qw")
-# Save field for the integrated cloth robot-arm chain: per arm link the COM
+# Save field for the integrated compliant robot-arm chain: per arm link the COM
 # position relative to the spacecraft (inertial, meters) and its inertial
 # quaternion, same 7-float layout.
 const ARM_POSE_FIELD = :arm_pose
@@ -100,7 +100,7 @@ end
 """
     ArmLinkGeometry
 
-One link of a cloth robot arm: the link vector and center-of-mass offset in
+One link of a compliant robot arm: the link vector and center-of-mass offset in
 the link's own frame (meters), its radius and mass. Drawn as a cylinder from
 the joint along `vector_m`.
 """
