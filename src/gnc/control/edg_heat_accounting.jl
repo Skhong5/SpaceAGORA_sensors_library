@@ -54,7 +54,12 @@ function _edg_heat_boundary_vertical_speed(u, p::ODEParams, t::Float64, i::Int)
     env = p.args.environment_model
     pos_pp, vel_pp = r_intor_p!(pos, vel, env.planet, _edg_ephemeris_time(p, t), env.ephemerides_model)
     down, _, _ = latlongtoNED(rtolatlong(pos_pp, env.planet))
-    return -dot(down, vel_pp)
+    vertical_speed = -dot(down, vel_pp)
+    # Rotation and transport cancellation leave machine-level residue for a
+    # stationary body-fixed state. Preserve the tangent-inside convention;
+    # this tolerance scales only with floating-point transform roundoff.
+    roundoff = 64eps(Float64) * max(1.0, norm(vel), norm(vel_pp))
+    return abs(vertical_speed) <= roundoff ? 0.0 : vertical_speed
 end
 
 function _edg_capture_entry_heat!(args, u, i::Int; deduplicate::Bool=false)

@@ -370,6 +370,22 @@ end
         cb.affect!(mask_integrator(x;t=t),mask)
         @test isequal(snapshot(x.state,2),second_state) # Late explicit duplicate.
     end
+    # Body-fixed stationarity can leave tiny positive transform residue.
+    # Distinguish that tangent from physically resolved very slow crossings.
+    for latitude in (-pi/4,pi/4), t in (0.,1e4), vertical in (-1e-8,0.,1e-8)
+        x=context();seed!(x.state)
+        S.ControlHooks._edg_initialize_heat_accounting!(x.a,x.u,0.)
+        place_geodetic!(x,1,latitude,1e3*x.a.environment_model.EI,vertical,0.,t)
+        physical=copy(x.u)
+        rate=S.ControlHooks._edg_heat_boundary_vertical_speed(x.u,x.p,t,1)
+        @test vertical==0. ? rate==0. : sign(rate)==sign(vertical)
+        cb=CB.get_edg_heat_callback(1;drag_callback=CB.get_drag_state_callback(1))
+        cb.initialize(cb,x.u,t,mask_integrator(x;t=t))
+        @test x.state.heat_boundary_inside[1]==(vertical<=0.)
+        @test x.state.targeting_switch_s[1]==42.
+        @test x.state.heat_load_entry_j_cm2==[zeros(3)]
+        @test x.u==physical
+    end
     # Initialize outside the geodetic boundary while inside the spherical one.
     # The first omitted entry must capture each panel's current physical heat.
     x=context(n=2);initialize!(x)
