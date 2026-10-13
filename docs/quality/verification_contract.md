@@ -31,6 +31,7 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
    - `test/gates/ci_docs_contract_gate.jl`
    - `test/gates/ci_public_api_surface_gate.jl`
    - `test/gates/ci_hpc_extensibility_docs_gate.jl`
+   - `test/gates/ci_ppb_workload_coverage_gate.jl` (the paper harness precompile workload names every case and mode the paper phases run; reads the harness definitions only)
 
 Additional required smoke checks for this migration track:
 1. `test/smoke/ci_clean_depot_smoke.jl`
