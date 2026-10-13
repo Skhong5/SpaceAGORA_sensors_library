@@ -15,13 +15,13 @@ geometry(sc) = [(r=Tuple(l.r), q=Tuple(l.q), alpha=l.α, a=Tuple(l.aᵇ), b=Tupl
 decision(x, t=0.0, i=1; links=x.control.aoa_effector.controlled_panel_links) =
     A.control_decision!(x.config, x.state, links, x.u, x.p, t, i)
 
-# Retained pre-extraction public hook sequence. Its numerical callees are also
-# checked against the matched-parent fingerprint and verbatim move inventory.
+# Public hook composition reference. The mathematical policy is supplied by
+# the independently reviewed published algorithms, with one canonical owner.
 function reference_control!(model, u, p, t, i)
     state = model.state
     1 <= i <= length(state.selected_mode) || return nothing
     config = model.config
-    if state.selected_mode[i] == :inactive
+    if state.selected_mode[i] == :inactive && !(:targeting in config.guidance_modes)
         state.selected_mode[i] = (:max_energy_depletion in config.guidance_modes) ? :max_energy_depletion : :safe_low_drag
     end
     sc = C._edg_control_sat_state(u, i)
@@ -29,10 +29,12 @@ function reference_control!(model, u, p, t, i)
     spacecraft = p.args.dynamics_model.spacecraft[i]
     pos, vel, mass = C._edg_control_pos_vel_mass(sc)
     heat_load = C._edg_max_heat_load_for_links(sc, model.aoa_effector.controlled_panel_links)
-    C._edg_recompute_switches!(model, p, env, spacecraft, pos, vel, mass, heat_load, Float64(t), i)
+    pass_heat = A._edg_pass_heat_load_for_links(sc, model.aoa_effector.controlled_panel_links, state, i)
+    C._edg_recompute_switches!(model, p, env, spacecraft, pos, vel, mass, pass_heat, Float64(t), i)
+    A._edg_update_heat_load_security!(config, state, p, env, spacecraft, pos, vel, mass, pass_heat, Float64(t), i)
     heat_load_low_drag_active = C._edg_heat_load_low_drag_active(model, Float64(t), i)
     base_alpha = C._edg_base_alpha(model, Float64(t), i)
-    alpha = C._edg_command_alpha!(model, p, u, env, spacecraft, base_alpha, heat_load, heat_load_low_drag_active, i)
+    alpha = C._edg_command_alpha!(model, p, u, env, spacecraft, base_alpha, heat_load, heat_load_low_drag_active, i; pass_heat_load_j_cm2=pass_heat)
     C._apply_solar_panel_aoa!(model.aoa_effector, spacecraft, alpha)
     return nothing
 end
@@ -107,8 +109,8 @@ end
 end
 
 @testset "Public hooks preserve measured links, fallback and cached precedence" begin
-    for (links, measured, expected_alpha) in (((2,), 3.0, pi/2), ((3,), 12.0, 1e-4))
-        x = _edg_test_context(max_energy_submodes=(:heat_load,), heat_load_limit_j_cm2=10.0)
+    for (links, measured, expected_alpha) in (((2,), 3.0, pi/2), ((3,), 12.0, pi/2))
+        x = _edg_test_context(max_energy_submodes=(:heat_load,), heat_load_limit_j_cm2=10.0, heat_load_security_mode=false)
         x.u.sc[1].heat_loads .= [0.0, 3.0, 12.0]
         x.state.selected_mode[1] = :max_energy_depletion
         x.state.heat_load_switch_solved[1] = true
@@ -131,8 +133,8 @@ end
         x.u.sc[1].pos .= (x.args.environment_model.planet.Rp_e + 300e3, 0.0, 0.0)
         before = geometry(x.spacecraft)
         @test S.calcGuidanceEffect!(x.guidance, x.u, x.p, 0.0, 1) === nothing
-        @test x.state.selected_mode[1] == (length(modes) == 2 ? :max_energy_depletion : :safe_low_drag)
-        @test x.state.safe_low_drag[1] == (length(modes) == 1)
+        @test x.state.selected_mode[1] == :inactive # No passage plan outside the EDG surface.
+        @test !x.state.safe_low_drag[1]
         @test !x.state.targeting_active[1]
         @test !x.state.energy_bracketing_evaluated[1]
         @test x.state.energy_bracketing_count[1] == 0
@@ -147,44 +149,12 @@ end
     @test x.state.targeting_switch_s[1] == 10.0
 end
 
-@testset "Targeting solve retains heat accumulated after entry bracketing" begin
-    # Bounded scenario from the independent S10c differential. Start with zero
-    # heat, establish a reachable target, then accumulate heat before control.
-    options = (guidance_modes=(:targeting, :max_energy_depletion),
-        max_energy_submodes=(:heat_rate, :structural_load, :heat_load),
-        heat_rate_limit_w_cm2=Inf, structural_load_limit_pa=Inf,
-        heat_load_limit_j_cm2=30.0,
-        density_model=S.ExponentialAtmosphereModel(1e-8, 100e3, 20e3; temperature_k=150.0),
-        planning_horizon_s=400.0)
-    base = _edg_test_context(; options...)
-    sc = base.u.sc[1]
-    r0, v0 = SVector{3,Float64}(sc.pos), SVector{3,Float64}(sc.vel)
-    duration = A._edg_drag_passage_duration(base.config, base.p, r0, v0, Float64(sc.mass))
-    target = A._edg_targeting_outcome_with_heat_load(base.config, base.p, base.spacecraft,
-        r0, v0, Float64(sc.mass), 0.0, 0.373 * (duration + 1.0), 0.0;
-        heat_rate_control=true, structural_control=true)
-    @test 10.0 < target.heat_load_j_cm2 < 20.0
-    for accumulated in (0.0, 20.0)
-        x = _edg_test_context(; options..., target_apoapsis_radius_m=target.apoapsis_radius_m)
-        S.calcControlEffect!(x.control, x.u, x.p, 0.0, 1)
-        S.calcGuidanceEffect!(x.guidance, x.u, x.p, 0.0, 1)
-        @test x.state.targeting_active[1]
-        @test x.state.selected_mode[1] == :targeting
-        @test x.state.energy_bracketing_evaluated[1]
-        @test !isfinite(x.state.targeting_switch_s[1])
-        x.u.sc[1].heat_loads .= [0.0, accumulated, 0.0]
-        @test S.calcControlEffect!(x.control, x.u, x.p, 1.0, 1) === nothing
-        @test x.state.last_heat_load_j_cm2[1] == accumulated
-        @test x.state.last_switch_solve_t[1] == 1.0
-        @test x.state.targeting_active[1] == (accumulated == 0.0)
-        @test x.state.selected_mode[1] == (accumulated == 0.0 ? :targeting : :max_energy_depletion)
-        @test isfinite(x.state.targeting_switch_s[1]) == (accumulated == 0.0)
-        @test x.u.sc[1].heat_loads == [0.0, accumulated, 0.0]
-    end
-end
+# The old control-owned replan test is superseded by the physical assembled
+# callback heat-budget witness in edg_replan_callback_tests.jl. Control must not
+# perform an alternative fixed-energy solve or advance the guidance clock.
 
 @testset "Switch endpoints, sentinels and panel selection" begin
-    x = _edg_test_context(max_energy_submodes=(:heat_load,), heat_load_limit_j_cm2=30.0)
+    x = _edg_test_context(max_energy_submodes=(:heat_load,), heat_load_limit_j_cm2=30.0, heat_load_security_mode=false)
     x.state.selected_mode[1] = :max_energy_depletion
     x.state.heat_load_switch_solved[1] = true
     x.state.heat_load_switches_s[1] = (10.,20.)
@@ -193,7 +163,8 @@ end
         @test A._edg_base_alpha(x.config,x.state,t,1) == (active ? x.config.min_alpha_rad : x.config.max_alpha_rad)
     end
     x.state.selected_mode[1] = :targeting; x.state.targeting_active[1] = true; x.state.targeting_switch_s[1] = 10.
-    @test A._edg_base_alpha(x.config,x.state,prevfloat(10.),1) == x.config.max_alpha_rad
+    @test A._edg_base_alpha(x.config,x.state,10.0-1e-8,1) == x.config.max_alpha_rad
+    @test A._edg_base_alpha(x.config,x.state,prevfloat(10.),1) == x.config.min_alpha_rad # Clock roundoff tolerance.
     @test A._edg_base_alpha(x.config,x.state,10.,1) == x.config.min_alpha_rad
     x.state.selected_mode[1] = :max_energy_depletion
     x.state.heat_load_switches_s[1] = (Inf,Inf)
@@ -207,13 +178,14 @@ end
     C._apply_solar_panel_aoa!(S.SolarPanelAngleOfAttackControlModel((2,)),x.spacecraft,result.command.alpha_command)
     @test geometry(x.spacecraft)[3] == before[3]
     @test A._edg_max_heat_load_for_links(x.u.sc[1],x.config.controlled_panel_links) == 90.
-    @test decision(x,0.;links=(2,3)).command.alpha_command == x.config.min_alpha_rad
+    @test decision(x,0.;links=(2,3)).command.alpha_command == x.config.max_alpha_rad
+    @test x.state.last_heat_budget_status[1] == :exhausted # Report; no new hard clipping policy.
     @test A._edg_max_heat_load_for_links((heat_loads=[NaN,-1.,2.],),(1,2,3,8)) == 2.
     @test A._edg_max_heat_load_for_links((pos=zeros(3),),(2,)) == 0.
     x.state.selected_mode[1]=:targeting; x.state.targeting_active[1]=true; x.state.targeting_switch_s[1]=Inf
     x.state.target_energy_jkg[1]=NaN
-    @test decision(x,5.).switch_action == :solved
-    @test x.state.targeting_switch_s[1] == 5. + 0.5*x.config.planning_horizon_s
+    @test decision(x,5.).switch_action == :cached
+    @test x.state.targeting_switch_s[1] == Inf # Control cannot invent an uncertified midpoint switch.
 end
 
 mutable struct QueryDensity <: S.AbstractDensityModel
@@ -291,7 +263,7 @@ end
     empty!(x.events);x.density.fail=false
     x.state.selected_mode[1]=:targeting;x.state.targeting_active[1]=true;x.state.targeting_switch_s[1]=Inf
     x.u.sc[1].pos .= (x.args.environment_model.planet.Rp_e+300e3,0.,0.)
-    @test decision(x,8.).switch_action==:outside_pass
+    @test decision(x,8.).switch_action==:cached
     @test x.state.targeting_switch_s[1]==Inf
     @test length(x.events)==2
 end

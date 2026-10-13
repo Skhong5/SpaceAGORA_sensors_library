@@ -180,6 +180,12 @@ end
 @inline _append_callbacks(callbacks::Tuple, extra::Tuple) = (callbacks..., extra...)
 @inline _append_callbacks(callbacks::Tuple, extra::AbstractVector) = (callbacks..., extra...)
 
+# Keep existing ordering for depletion-only EDG and all other guidance models.
+@inline function _guidance_precedes_control(model)::Bool
+    return model isa _simulation_model_module.AerobrakingEnergyDepletionGuidanceModel &&
+        :targeting in model.config.guidance_modes
+end
+
 function get_callbacks(
     num_sats::Int,
     effectors::Tuple,
@@ -235,14 +241,32 @@ function get_callbacks(
         callbacks = _append_callback(callbacks, get_entry_end_callback(num_sats, args))
     end
 
-    if !backbone_mode && _requires_drag_state_callback(effectors, args)
-        callbacks = _append_callback(callbacks, get_drag_state_callback(num_sats))
+    if !backbone_mode
+        drag_callback = _requires_drag_state_callback(effectors, args) ? get_drag_state_callback(num_sats) : nothing
+        # Pair simultaneous roots, without installing drag side effects when
+        # phase tolerances would not otherwise require them.
+        boundary_callback = isempty(_edg_heat_states(args)) ? drag_callback :
+            get_edg_heat_callback(num_sats; drag_callback=drag_callback)
+        callbacks = _append_callback(callbacks, boundary_callback)
     end
 
     if !backbone_mode
         callbacks = _append_callbacks(callbacks, get_navigation_callbacks(num_sats, args))
+        guidance_callbacks = get_guidance_callbacks(num_sats, args)
+        guidance_models = args.guidance_model.guidance_effectors
+        # EDG targeting must publish its plan before the same tick's panel
+        # command. Each callback keeps its own period and solve-start phase.
+        for i in eachindex(guidance_callbacks)
+            if _guidance_precedes_control(guidance_models[i])
+                callbacks = _append_callback(callbacks, guidance_callbacks[i])
+            end
+        end
         callbacks = _append_callbacks(callbacks, get_control_callbacks(num_sats, args))
-        callbacks = _append_callbacks(callbacks, get_guidance_callbacks(num_sats, args))
+        for i in eachindex(guidance_callbacks)
+            if !_guidance_precedes_control(guidance_models[i])
+                callbacks = _append_callback(callbacks, guidance_callbacks[i])
+            end
+        end
     end
     if !backbone_mode && _requires_quaternion_projection_callback(args)
         callbacks = _append_callback(callbacks, get_quaternion_projection_callback(num_sats, args))

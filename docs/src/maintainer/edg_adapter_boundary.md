@@ -16,6 +16,29 @@ core revision. These are source observations, not an accepted combined tree.
 Refresh this comparison against the scientifically accepted revision before
 implementing the interface.
 
+## Reconciled implementation candidate
+
+The integration of reviewed PR251 head `cd7a3fb84551eb09515ef24ee79a820f41925424`
+selects the journal planner and its diagnostics as the bounded experimental
+baseline. It preserves main's public type identities, typed algorithm ownership,
+actuator implementation and spacecraft-minus-wind convention. The typed owner
+now has eight files, adding candidate-family planning and passage heat.
+
+The candidate resolves the policy differences below as follows: geodetic EDG
+entry/exit owns cache invalidation and per-panel heat baselines; spherical solver
+phase events remain separate. Signed simultaneous event masks retain per-member
+and duplicate-delivery handling. Physical heat and actuator geometry stay in core.
+Guidance owns targeting replans, including renewed heat checks, while control
+consumes plans. Checkpoint writing/resume remains refused. This current-main
+candidate still needs independent integration review and numerical qualification.
+
+The scientific owner approved delivery within bounded experimental limits:
+3 Hz and all limits are preserved; observed constraint violations stay violations;
+exact journal reproduction remains open. That scope approval is not an acceptance
+of an unreviewed integration or an external package. The interface and extraction
+stages below still apply, including scoped value services instead of exposing
+mutable `ODEParams` or re-exporting private modules.
+
 ## Existing ownership to preserve
 
 Paths in this table are relative to core. The existing `EDGServices` module is

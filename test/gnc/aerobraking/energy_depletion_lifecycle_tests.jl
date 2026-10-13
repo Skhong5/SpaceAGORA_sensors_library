@@ -52,7 +52,7 @@ function seed!(s, i=1)
     s.last_dynamic_pressure_pa[i] = 0.8
     return s
 end
-snapshot(s, i) = Tuple(getfield(s,f)[i] for f in fieldnames(typeof(s)))
+snapshot(s, i) = Tuple(deepcopy(getfield(s,f) isa AbstractVector ? getfield(s,f)[i] : getfield(s,f)) for f in fieldnames(typeof(s)))
 function initialize!(x)
     for g in x.a.guidance_model.guidance_effectors; L.initialize_guidance!(g,x.u,x.p,0.0); end
     for c in x.a.control_model.control_effectors; L.initialize_control!(c,x.u,x.p,0.0); end
@@ -73,7 +73,8 @@ function apply_mask!(x, events)
         x.u.sc[i].pos .= (boundary + (events[i]>0 ? -1e-6 : events[i]<0 ? 1e-6 : -100.0),0,0)
         x.u.sc[i].vel .= (events[i]<0 ? -100.0 : 100.0,0,0)
     end
-    CB.get_drag_state_callback(length(events)).affect!(mask_integrator(x),Int8.(events))
+    CB.get_edg_heat_callback(length(events); drag_callback=CB.get_drag_state_callback(length(events))).affect!(
+        mask_integrator(x),vcat(Int8.(events),Int8.(events)))
 end
 
 @testset "EDG fresh initialization and spacecraft-owned pass resets" begin
@@ -94,6 +95,7 @@ end
         x=context(n=3;control_only)
         for i in 1:3; seed!(x.state,i); end
         x.p.shared_buffers.in_atmosphere .= [true,false,true]
+        x.state.heat_boundary_inside .= [true,false,true]
         untouched=snapshot(x.state,3)
         physical=copy(x.u.sc[1].heat_loads)
         apply_mask!(x,[1,-1,0])
@@ -109,18 +111,19 @@ end
             @test x.state.energy_bracketing_count[i] == 7
             @test x.state.last_alpha_rad[i] == 0.3 && x.state.last_heat_load_j_cm2[i] == 0.7
         end
-        @test snapshot(x.state,3) == untouched
+        @test isequal(snapshot(x.state,3),untouched)
         @test x.u.sc[1].heat_loads == physical
         # A newly solved plan survives duplicate delivery of the same mask.
         seed!(x.state,1); seed!(x.state,2)
         before=[snapshot(x.state,i) for i in 1:3]
         apply_mask!(x,[1,-1,0])
-        @test [snapshot(x.state,i) for i in 1:3] == before
+        @test isequal([snapshot(x.state,i) for i in 1:3],before)
         # Reverse the simultaneous directions; both changed members reset.
         apply_mask!(x,[-1,1,0])
         @test x.state.targeting_switch_s == [Inf,Inf,42.0]
         # An omitted simultaneous member is still reconciled by geometry.
         x.p.shared_buffers.in_atmosphere[3]=false
+        x.state.heat_boundary_inside[3]=false
         apply_mask!(x,[-1,1,0])
         @test x.state.targeting_switch_s[3] == Inf
     end
@@ -168,6 +171,7 @@ end
     alone=context(control_only=true)
     @test isnothing(L.preflight_control(alone.c,alone.a;isolate_state=true))
     for field in fieldnames(typeof(x.state))
+        getfield(x.state,field) isa AbstractVector || continue
         y=deepcopy(x); pop!(getfield(y.state,field))
         @test_throws ArgumentError L.preflight_guidance(y.g,y.a;isolate_state=true)
         @test_throws ArgumentError L.preflight_control(y.c,y.a;isolate_state=true)
@@ -226,7 +230,7 @@ end
         fresh=run_simulation(context(;control_only).a;return_solution=true)
         @test first.u == second.u == fresh.u
         @test first.t == second.t == fresh.t
-        @test snapshot(x.state,1) == original # Default isolation leaves caller state intact.
+        @test isequal(snapshot(x.state,1),original) # Default isolation leaves caller state intact.
         owned=only(first.prob.p.args.control_model.control_effectors).state
         @test owned !== x.state && owned.energy_bracketing_count == [0]
         @test owned.targeting_switch_s == [Inf]
@@ -241,12 +245,17 @@ end
     end
 end
 
-@testset "EDG real scheduled callbacks across a manufactured exit and reentry" begin
-    x=context(targeting=true)
-    seed!(x.state); x.state.energy_bracketing_count[1]=1
+# These manufactured trajectories test callback/lifecycle ownership only. Their
+# radial velocities are not physical targeting inputs. Physical targeting and
+# repeated guidance-owned replanning are covered by edg_replan_callback_tests.jl.
+@testset "EDG scheduled cache invalidation across manufactured exit and reentry" begin
+    x=context()
+    seed!(x.state); x.state.targeting_active[1]=false
+    x.state.energy_bracketing_count[1]=1
     boundary=x.a.environment_model.planet.Rp_e+x.a.environment_model.EI*1e3
     x.u.sc[1].pos .= (boundary-100,0,0)
     x.u.sc[1].vel .= (0,0,0)
+    x.state.heat_boundary_inside[1]=true
     E._initialize_in_atmosphere_flags!(x.p,x.u)
     function radial!(du,u,p,t)
         du .= 0
@@ -254,33 +263,37 @@ end
         du.sc[1].vel[1]=pi^2*cos(pi*t/10)
     end
     records=NamedTuple[]
-    record=PeriodicCallback(i->push!(records,(t=i.t,inside=i.p.shared_buffers.in_atmosphere[1],
-        count=x.state.energy_bracketing_count[1],switch=x.state.targeting_switch_s[1])),0.5)
-    callbacks=CallbackSet(CB.get_drag_state_callback(1),CB.get_control_callbacks(1,x.a)...,
+    record=PeriodicCallback(i->begin
+        # Insert a distinguishable stale coast cache. Reentry must clear it.
+        if 9.9 < i.t < 10.1
+            x.state.targeting_switch_s[1]=84.0
+        end
+        push!(records,(t=i.t,inside=i.p.shared_buffers.in_atmosphere[1],
+            count=x.state.energy_bracketing_count[1],switch=x.state.targeting_switch_s[1]))
+    end,0.5)
+    crossing=CB.get_edg_heat_callback(1;drag_callback=CB.get_drag_state_callback(1))
+    callbacks=CallbackSet(crossing,CB.get_control_callbacks(1,x.a)...,
         CB.get_guidance_callbacks(1,x.a)...,record)
     sol=solve(ODEProblem(radial!,x.u,(0.,19.),x.p),Tsit5();callback=callbacks,
         dtmax=0.25,abstol=1e-8,reltol=1e-10)
     @test string(sol.retcode)=="Success" && last(sol.t)==19.0
     @test any(!r.inside for r in records) && any(r.t>15 && r.inside for r in records)
     @test all(r->r.switch==42.0 && r.count==1,filter(r->r.t<4.5,records))
-    # Counts measure evaluations, not passes. A guidance tick exactly at exit
-    # can still satisfy the existing <= EI predictor predicate. Entry must
-    # invalidate even that boundary solve, then cache one new bracket.
-    before_reentry=last(filter(r->r.t<15,records)).count
-    after_reentry=filter(r->r.t>=16,records)
-    @test x.state.energy_bracketing_count==[before_reentry+1]
-    @test all(r->r.count==before_reentry+1,after_reentry)
-    @test x.state.targeting_switch_s==[Inf]
+    @test all(r->r.switch==Inf,filter(r->6<=r.t<=9,records))
+    @test all(r->r.switch==84.0,filter(r->10.5<=r.t<=14.5,records))
+    @test all(r->r.switch==Inf,filter(r->r.t>=16,records))
+    @test x.state.energy_bracketing_count==[1]
+    @test isempty(only(x.state.heat_load_exit_j_cm2)) # Cleared on the new entry.
+    @test x.state.heat_load_entry_j_cm2==[fill(7.0,3)]
     @test x.u.sc[1].heat_loads==fill(7.0,3)
-    println("EDG_SCHEDULED_REENTRY ",records)
 end
 
-@testset "EDG outbound boundary start invalidates t0 plan on reentry" begin
-    x=context(targeting=true)
+@testset "EDG outbound start and real t0 guidance preserve reentry invalidation" begin
+    x=context()
+    seed!(x.state); x.state.targeting_active[1]=false
     boundary=x.a.environment_model.planet.Rp_e+x.a.environment_model.EI*1e3
     x.u.sc[1].pos .= (boundary,0,0)
     x.u.sc[1].vel .= (100pi/10.6,0,0)
-    # A real thruster initialization invokes guidance at t0. No burn is requested.
     thruster=S.BaseThrusterModel(thrust=[0.0],direction=[0.0],Δv=[0.0],
         start_burn_time=[Inf],stop_burn_time=[Inf],Isp=[300.0])
     a=SC._with_configuration(x.a;control_model=S.ControlModel((x.c,thruster),[0.5,1.0]))
@@ -288,6 +301,7 @@ end
     p.shared_buffers.et_start[]=x.p.shared_buffers.et_start[]
     E._initialize_in_atmosphere_flags!(p,x.u)
     @test p.shared_buffers.in_atmosphere == [false]
+    x.state.heat_boundary_inside[1]=false
     function radial!(du,u,p,t)
         du .= 0
         du.sc[1].pos[1]=u.sc[1].vel[1]
@@ -295,20 +309,21 @@ end
     end
     records=NamedTuple[]
     record=PeriodicCallback(i->push!(records,(t=i.t,inside=i.p.shared_buffers.in_atmosphere[1],
-        count=x.state.energy_bracketing_count[1])),0.5)
-    callbacks=CallbackSet(CB.get_drag_state_callback(1),CB.get_control_callbacks(1,a)...,
+        switch=x.state.targeting_switch_s[1])),0.5)
+    crossing=CB.get_edg_heat_callback(1;drag_callback=CB.get_drag_state_callback(1))
+    callbacks=CallbackSet(crossing,CB.get_control_callbacks(1,a)...,
         CB.get_guidance_callbacks(1,a)...,record)
     integrator=init(ODEProblem(radial!,x.u,(0.,19.),p),Tsit5();callback=callbacks,
         dtmax=0.25,abstol=1e-8,reltol=1e-10)
-    @test x.state.energy_bracketing_count == [1] # The production t0 trigger actually ran.
+    @test x.state.selected_mode == [:max_energy_depletion] # Real thruster t0 guidance ran.
+    x.state.targeting_switch_s[1]=42.0
     solve!(integrator)
     @test string(integrator.sol.retcode)=="Success" && integrator.t==19.0
     coast=filter(r->r.t<10.5,records)
     nextpass=filter(r->r.t>=11,records)
-    @test !isempty(coast) && all(r->!r.inside && r.count==1,coast)
-    @test !isempty(nextpass) && all(r->r.inside && r.count==2,nextpass)
-    @test x.state.energy_bracketing_count == [2]
+    @test !isempty(coast) && all(r->!r.inside && r.switch==42.0,coast)
+    @test !isempty(nextpass) && all(r->r.inside && r.switch==Inf,nextpass)
+    @test x.state.heat_load_entry_j_cm2==[fill(7.0,3)]
     @test x.u.sc[1].heat_loads==fill(7.0,3)
-    println("EDG_BOUNDARY_REENTRY ",records)
 end
 end

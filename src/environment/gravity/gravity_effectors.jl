@@ -8,4 +8,6 @@ export ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2Gravity
 export GravityGradientTorqueModel
 export aerobraking_gravity_force_ii, j2_secular_rates
 
+    using ..DynamicEffectors.GravityEffectors: _inverse_squared_gravity_accel, _inverse_squared_j2_gravity_accel
+    using ..DynamicEffectors.PerturbationEffectors: NBodyGravityModel, nbody_acceleration_ii_at_epoch
 end # module GravityEffectors

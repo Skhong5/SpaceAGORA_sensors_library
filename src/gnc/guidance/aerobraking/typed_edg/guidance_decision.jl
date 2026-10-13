@@ -41,87 +41,48 @@ function _edg_set_targeting_fallback!(
 end
 
 function _edg_run_target_energy_bracketing!(
-    config::AerobrakingEnergyDepletionConfig,
-    state::AerobrakingEnergyDepletionState,
+    config::AerobrakingEnergyDepletionConfig, state::AerobrakingEnergyDepletionState,
     u,
     p::ODEParams,
     t::Float64,
     i::Int,
 )
     if state.energy_bracketing_evaluated[i]
-        return nothing
+        # Journal VI.D: replan only before the applied switch, at 0.5 Hz by default.
+        state.targeting_active[i] || return nothing
+        _edg_switch_due(t, state.targeting_switch_s[i]) && return nothing
+        _edg_replan_due(t, state.last_switch_solve_t[i], config.switch_recompute_interval_s) || return nothing
     end
-
     env = _edg_environment_state(u, p, t, i)
-    if !_edg_in_drag_passage(p, env)
-        _edg_set_targeting_fallback!(config, state, i)
-        return nothing
-    end
-
+    _edg_in_drag_passage(p, env) || return nothing
     sc = _edg_control_sat_state(u, i)
     pos, vel, mass = _edg_control_pos_vel_mass(sc)
-    spacecraft = p.args.dynamics_model.spacecraft[i]
-    planet = p.args.environment_model.planet
-    heat_load = _edg_max_heat_load_for_links(sc, config.controlled_panel_links)
-
-    low_drag, max_energy_depletion = _edg_targeting_bracket_outcomes(
-        config,
-        p,
-        spacecraft,
-        pos,
-        vel,
-        mass,
-        t;
-        heat_load_j_cm2=heat_load,
-        heat_rate_control=(:heat_rate in config.max_energy_submodes),
-        structural_control=(:structural_load in config.max_energy_submodes),
-    )
-
-    endpoints = (low_drag, max_energy_depletion)
-    energy_values = (low_drag.energy_jkg, max_energy_depletion.energy_jkg)
-    energy_min, energy_max = extrema(energy_values)
-    min_idx = energy_values[1] <= energy_values[2] ? 1 : 2
-    max_idx = min_idx == 1 ? 2 : 1
-    periapsis_at_min = endpoints[min_idx].periapsis_radius_m
-    periapsis_at_max = endpoints[max_idx].periapsis_radius_m
-    apoapsis_min, apoapsis_max = extrema((low_drag.apoapsis_radius_m, max_energy_depletion.apoapsis_radius_m))
-
-    target_energy = _edg_target_energy_from_reachable_bracket(
-        planet,
-        config.target_apoapsis_radius_m,
-        energy_min,
-        energy_max,
-        periapsis_at_min,
-        periapsis_at_max,
-    )
-
-    energy_tol = 1e-6 * max(abs(energy_min), abs(energy_max), 1.0)
-    apo_tol = 1e-6 * max(abs(apoapsis_min), abs(apoapsis_max), abs(config.target_apoapsis_radius_m), 1.0)
-    reachable = isfinite(target_energy) &&
-        energy_min - energy_tol <= target_energy <= energy_max + energy_tol &&
-        apoapsis_min - apo_tol <= config.target_apoapsis_radius_m <= apoapsis_max + apo_tol
-
+    heat_load = _edg_pass_heat_load_for_links(sc, config.controlled_panel_links, state, i)
+    plan = _edg_journal_targeting_plan(config, p, p.args.dynamics_model.spacecraft[i],
+        pos, vel, mass, t; heat_load_j_cm2=heat_load)
     state.energy_bracketing_evaluated[i] = true
     state.energy_bracketing_count[i] += 1
-    state.target_energy_jkg[i] = target_energy
-    state.bracket_min_energy_jkg[i] = energy_min
-    state.bracket_max_energy_jkg[i] = energy_max
-    state.targeting_active[i] = reachable
-    state.safe_low_drag[i] = !reachable && !(:max_energy_depletion in config.guidance_modes)
-    state.selected_mode[i] = reachable ? :targeting :
-        ((:max_energy_depletion in config.guidance_modes) ? :max_energy_depletion : :safe_low_drag)
+    state.target_energy_jkg[i] = plan.target_energy_jkg
+    state.target_perturbation_energy_change_jkg[i] = plan.coast_energy_change_jkg
+    state.bracket_min_energy_jkg[i] = plan.lower_energy_jkg
+    state.bracket_max_energy_jkg[i] = plan.upper_energy_jkg
+    state.targeting_active[i] = plan.mode == :targeting
+    state.safe_low_drag[i] = plan.mode == :safe_low_drag
+    state.selected_mode[i] = plan.mode
+    state.targeting_switch_s[i] = plan.switch_s
+    state.last_switch_solve_t[i] = t
+    state.targeting_diagnostics[i] = plan
     return nothing
 end
 
 function guidance_decision!(
-    config::AerobrakingEnergyDepletionConfig,
-    state::AerobrakingEnergyDepletionState,
+    config::AerobrakingEnergyDepletionConfig, state::AerobrakingEnergyDepletionState,
     u,
     p::ODEParams,
     t::Float64,
     i::Int64,
 )
-    (1 <= i <= length(state.selected_mode)) || return nothing
+    1 <= i <= length(state.selected_mode) || return nothing
 
     if :targeting in config.guidance_modes
         _edg_run_target_energy_bracketing!(config, state, u, p, Float64(t), i)

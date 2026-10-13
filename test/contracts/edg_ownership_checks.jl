@@ -68,6 +68,19 @@ const EXPECTED = Dict(
     "_edg_run_target_energy_bracketing!" => "src/gnc/guidance/aerobraking/typed_edg/guidance_decision.jl",
 )
 
+# Newly published policy and predictor helpers retain one mathematical owner.
+for (file, names) in (
+    "targeting_plan.jl" => ("_edg_replan_due", "_edg_candidate_constraint_sample", "_edg_targeting_candidate_certificate", "_edg_ordered_feasible_prefix", "_edg_candidate_energy_mapping", "_edg_select_mapped_candidate", "_edg_journal_targeting_plan"),
+    "pass_heat.jl" => ("_edg_pass_heat_load_for_links",),
+    "structural_load.jl" => ("_edg_journal_plate_coefficients", "_edg_journal_spacecraft_aero_coefficients", "_edg_dynamic_spacecraft_aero_coefficients"),
+    "heat_load.jl" => ("_edg_update_heat_load_security!",),
+    "targeting.jl" => ("_edg_prediction_gravity_acceleration", "_edg_vacuum_apoapsis_correction", "_edg_vacuum_drag_passage_exit", "_edg_switch_due"),
+)
+    for name in names
+        EXPECTED[name] = OWNER * file
+    end
+end
+
 # Decision entry points have the same ownership rules as the retained kernels.
 EXPECTED["control_decision!"] = OWNER * "angle_decision.jl"
 EXPECTED["guidance_decision!"] = OWNER * "guidance_decision.jl"
@@ -75,7 +88,7 @@ EXPECTED["guidance_decision!"] = OWNER * "guidance_decision.jl"
 const FORWARD_CALLS = Dict(
     "_edg_recompute_switches!" => :(EDGAlgorithms._edg_recompute_switches!(model.config, model.state, p, env, spacecraft, pos, vel, mass, heat_load_j_cm2, t, i)),
     "_edg_base_alpha" => :(EDGAlgorithms._edg_base_alpha(model.config, model.state, t, i)),
-    "_edg_command_alpha!" => :(EDGAlgorithms._edg_command_alpha!(model.config, model.state, p, model.aoa_effector.controlled_panel_links, env, spacecraft, base_alpha, heat_load_j_cm2, heat_load_low_drag_active, i)),
+    "_edg_command_alpha!" => :(EDGAlgorithms._edg_command_alpha!(model.config, model.state, p, model.aoa_effector.controlled_panel_links, env, spacecraft, base_alpha, heat_load_j_cm2, heat_load_low_drag_active, i; pass_heat_load_j_cm2=pass_heat_load_j_cm2)),
     "_edg_heat_load_low_drag_active" => :(EDGAlgorithms._edg_heat_load_low_drag_active(model.config, model.state, t, i)),
     "_edg_interpolate_bracket_value" => :(_edg_algorithms()._edg_interpolate_bracket_value(exit_energy, energy_min, energy_max, value_at_min, value_at_max)),
     "_edg_target_energy_from_reachable_bracket" => :(_edg_algorithms()._edg_target_energy_from_reachable_bracket(planet, target_apoapsis_radius_m, energy_min, energy_max, periapsis_at_min, periapsis_at_max)),
@@ -167,12 +180,12 @@ _syntax(ex) = ex isa Expr ?
 
 function aggregator_violations(source)
     siblings = ("heat_rate.jl", "heat_load.jl", "structural_load.jl",
-                "targeting.jl", "guidance_decision.jl", "angle_decision.jl")
+                "targeting.jl", "targeting_plan.jl", "pass_heat.jl", "guidance_decision.jl", "angle_decision.jl")
     expected = [_syntax(Meta.parse("include(joinpath(@__DIR__, $(repr(file))))"))
                 for file in siblings]
     actual = map(_syntax, _include_calls(source))
     return actual == expected ? String[] :
-        ["$(OWNER)algorithms.jl: expected exactly the six ordered sibling includes"]
+        ["$(OWNER)algorithms.jl: expected exactly the eight ordered sibling includes"]
 end
 
 # Runtime checks complement the source inventory: aliases share the same
@@ -241,7 +254,8 @@ function violations(sources)
         append!(errors, aggregator_violations(sources[aggregator])) :
         push!(errors, "$aggregator: missing aggregator")
     for (name, count) in counts
-        count == 1 || push!(errors, "$(EXPECTED[name]): expected one $name definition, found $count")
+        expected_count = name == "_edg_targeting_aero_acceleration" ? 2 : 1
+        count == expected_count || push!(errors, "$(EXPECTED[name]): expected $expected_count $name definitions, found $count")
     end
     return sort!(errors)
 end

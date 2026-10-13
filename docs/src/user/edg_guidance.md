@@ -46,23 +46,26 @@ a low-drag interval within the passage. The name describes the objective of
 this policy; it is not a claim that every propagated case is a globally
 optimal trajectory.
 
-In `:targeting` mode, guidance first predicts a range of exit energies and
-apoapsides using low-drag and maximum-depletion trajectories. A target within
-that range can proceed to a switch-time calculation: the controller applies
-the admissible high-drag command before the switch and the minimum angle
-after it. The switch times stored in the state are elapsed simulation times
-in seconds, rather than durations measured from the latest callback.
+In `:targeting` mode, guidance evaluates executable one-switch candidates on
+the controller's actual command grid. Each candidate propagates its own
+atmospheric passage, evaluates the remaining heat budget and minimum-angle
+admissibility, and coasts its exit state to apoapsis for the target-energy
+mapping. The admissible family is a contiguous, ordered prefix of that grid.
+This sampled certificate is not a continuous-family optimality proof.
 
-Targeting also checks a sampled sequence of candidate switches for finite
-predictions, heat-load feasibility, and the expected energy ordering. It uses
-a contiguous acceptable portion of that sequence; at least two acceptable
-samples are required. A failed check can therefore mean that the sampled
-prediction did not establish an admissible bracket. It does not prove that
-no physically feasible trajectory exists. If targeting cannot proceed, the
-model falls back to maximum depletion when that mode is also enabled, or to
-`:safe_low_drag` when targeting is the only configured mode. The latter name
-means that the minimum panel angle is commanded; it does not certify that
-all physical limits can be met.
+Guidance owns the complete plan and its replanning clock. Before the accepted
+switch it replans every two seconds by default, on a due guidance callback.
+When targeting guidance and control are due together, guidance runs first;
+control consumes the resulting plan without solving again or advancing that
+clock. After the switch, the accepted plan remains cached for the passage.
+Switch times are elapsed simulation seconds, not durations from the last update.
+
+An upper-energy target beyond the sampled family selects minimum drag. A target
+requiring greater depletion selects maximum depletion when that mode is enabled;
+otherwise it selects `:safe_low_drag`. The latter name means the minimum angle,
+not proof of constraint satisfaction. A failed candidate certificate remains
+visible even if a fallback command is applied. A failed sampled bracket does not
+prove that every physical trajectory is infeasible.
 
 ## Energy, heating, and loading
 
@@ -78,10 +81,9 @@ where position and velocity are expressed in the inertial frame and the
 result is in J/kg. For a bound Keplerian ellipse,
 ``\varepsilon=-\mu/(r_a+r_p)``. Consequently,
 `target_apoapsis_radius_m` is an apoapsis **radius from the planet's centre**,
-in metres, rather than an altitude. The current target mapping uses the
-predicted periapsis variation across the reachable bracket; a fixed
-periapsis should not be assumed when translating a desired apoapsis into
-energy. With additional perturbations enabled, this two-body energy remains
+in metres, rather than an altitude. The target mapping uses each candidate's predicted periapsis and
+its configured-gravity coast energy change. A fixed periapsis or a shared
+correction for all candidates must not be assumed. With additional perturbations enabled, this two-body energy remains
 a useful diagnostic, but its change should not automatically be attributed
 entirely to atmospheric drag.
 
@@ -104,14 +106,18 @@ rates can therefore differ from `last_heat_rate_w_cm2`, which records the
 controller's estimate. Assess a thermal constraint using the propagated
 panel quantities as well as the guidance diagnostics.
 
-**In the current implementation, the heat-load input is cumulative.** The
-controller reads the largest accumulated heat load among its controlled
-links. If heat-load control is enabled and that value reaches
-`heat_load_limit_j_cm2`, the command is reduced to the minimum angle. Passage
-resets do not subtract an entry heat-load baseline or clear the propagated
-heat state. A finite limit in a multiple-passage run must therefore be
-interpreted with this cumulative behaviour in mind; it is not automatically
-a renewed budget for each passage.
+The planning budget is passage heat: the maximum of the individual controlled
+panel increments since the geodetic entry event. The controller copies each
+panel's entry heat integral and subtracts that panel's own baseline. It never
+subtracts the largest baseline from the largest current integral and never
+resets physical heat. Starts inside the atmosphere use a zero baseline.
+`last_heat_load_j_cm2` remains cumulative telemetry;
+`last_pass_heat_load_j_cm2` records the passage quantity used by planning.
+
+Heat-load control follows the reviewed two-switch plan, second-switch updates
+and predictive heat-security rule. A cumulative threshold crossing does not
+introduce a separate unreviewed hard-clipping law. Heat-budget status reports
+exhaustion explicitly.
 
 The structural setting also needs a precise interpretation. The controller
 forms a drag area from the sum of each link's reference area multiplied by
@@ -163,11 +169,11 @@ edg_control = AerobrakingEnergyDepletionControlModel(edg_config, edg_state)
 
 guidance_model = GuidanceModel(
     guidance_effectors = (edg_guidance,),
-    guidance_rates = [3.0],
+    guidance_rates = [1 / 3],
 )
 control_model = ControlModel(
     control_effectors = (edg_control,),
-    control_rates = [0.1],
+    control_rates = [1 / 3],
 )
 ```
 
@@ -183,8 +189,8 @@ belonging to the root body. A panel on a moving joint body is refused;
 EDG does not provide a joint motor for that body.
 
 Despite their names, `guidance_rates` and `control_rates` contain callback
-**periods in seconds**. The example runs guidance every 3 seconds and
-control every 0.1 seconds. Choose these periods together with the integration
+**periods in seconds**. The example runs both guidance and control at 3 Hz, every
+1/3 second. This is the qualified EDG comparison cadence. Choose these periods together with the integration
 and output resolution needed to resolve the passage. A smaller period is
 not, by itself, evidence of a more accurate prediction or an accepted
 constraint margin.
@@ -207,22 +213,25 @@ The principal settings are:
 | `max_energy_submodes` | A nonempty selection from `:heat_rate`, `:structural_load`, and `:heat_load`. These select the restrictions considered by the EDG calculations. |
 | `min_alpha_rad`, `max_alpha_rad` | Command bounds in radians. Both must be finite, with `0 ≤ min_alpha_rad ≤ max_alpha_rad`. |
 | `heat_rate_limit_w_cm2` | Internal heat-rate threshold in W/cm². Use a physically justified positive value when heat-rate protection is intended. |
-| `heat_load_limit_j_cm2` | Cumulative heat-load threshold in J/cm² under the current implementation. |
+| `heat_load_limit_j_cm2` | Passage heat-load threshold in J/cm², using per-panel entry baselines. |
 | `structural_load_limit_pa` | Pressure-valued parameter defining the drag-based force bound described above. |
 | `target_apoapsis_radius_m` | Desired apoapsis radius in metres. Supply a finite positive radius when enabling targeting. |
 | `heat_load_switch_solver` | `:closed_form` or `:tpbvp_integration` for the heat-load switching calculation. Selecting a solver does not establish physical validity for a new atmosphere or vehicle. |
 | `planning_horizon_s` | Horizon used by the prediction machinery, not the mission duration. |
-| `targeting_certification_samples` | Number of candidate switch samples, at least two; the default is nine. |
-| `targeting_energy_order_tolerance_jkg` | Tolerance for the candidate energy-ordering check, in J/kg. |
-| `targeting_heat_load_tolerance_j_cm2` | Tolerance for the candidate heat-load check, in J/cm². |
+| `targeting_certification_samples` | Retained compatibility utility setting, at least two; the default is nine. The supported journal planner samples the executable control grid instead. |
+| `targeting_energy_order_tolerance_jkg` | Retained compatibility utility tolerance in J/kg; the supported journal family uses strict sampled ordering. |
+| `targeting_heat_load_tolerance_j_cm2` | Retained compatibility utility tolerance; the journal certificate compares directly with the configured limit. |
+| `switch_recompute_interval_s` | Guidance-owned targeting replan interval, default 2 seconds, before the applied switch. |
+| `second_switch_reevaluation` | Enable the reviewed closed-form second-switch updates, default `true`. |
+| `heat_load_security_mode` | Enable the reviewed predictive remaining-heat safeguard, default `true`. |
 
 The physical limits default to `Inf`. A selected submode with an infinite
 limit does not impose a finite protection threshold. Heat-rate and
 structural restrictions require positive finite limits; zero does not
 request zero heating or zero loading. Configure limits from
 the vehicle and mission requirements, and validate them against the
-propagated quantities. The stored `switch_recompute_interval_s` field is
-currently inactive: changing it does not introduce periodic replanning.
+propagated quantities. The replanning interval does not replace the 3 Hz command period. Commands
+remain held between updates, and excursions between updates remain violations.
 
 For a first complete run, use the
 [Odyssey surrogate aerobraking tutorial](../tutorials/odyssey_surrogate.md).
@@ -305,7 +314,7 @@ configuration. With `isolate_state=false`, EDG still initializes its state,
 but the caller retains responsibility for the configuration's other
 mutable objects.
 
-Atmospheric entry and exit invalidate the affected spacecraft's cached
+Geodetic EDG entry and exit invalidate the affected spacecraft's cached
 bracket, mode flags, and switch times. Repeated notification of the same
 crossing does not erase a newly established plan, and ordinary callbacks
 within a passage retain their cache. Bracketing counts accumulate across
@@ -314,14 +323,12 @@ neither physical heat loads nor panel geometry are cleared by the cache
 reset. The next control callback can change the between-passage command
 according to the configured mode's default.
 
-Passage classification deserves care near the entry interface. The engine's
-crossing events use a spherical radius, while the EDG in-passage query uses
-geodetic altitude. At an exact-boundary start, the engine classifies outward
-motion as outside and inward or tangential motion as inside, within its
-floating-point boundary band. A known tangential-start case that subsequently
-rises can retain its inside flag and cached plan through the coast. The
-[Odyssey lifecycle discussion](../tutorials/odyssey_surrogate.md#EDG-state-between-runs-and-passes)
-records this limit and the associated solver-phase behaviour.
+The engine's solver-phase events use a spherical radius; EDG uses its own
+geodetic heat/prediction surface. The combined event callback handles both
+surfaces, including coincident roots and simultaneous spacecraft masks. Only
+the geodetic EDG transition resets its plan and records passage heat. A spherical
+phase transition alone must not reset it. Duplicate unchanged EDG transitions
+do not clear a newly established plan.
 
 Maximum-depletion control can run without a paired guidance model, but
 targeting requires guidance to establish its bracket. A configuration may
@@ -348,14 +355,22 @@ helper. Select an atmosphere whose domain and meaning cover the prediction
 path being exercised, and compare the predicted passage with the propagated
 one before interpreting its margins.
 
-Experimental changes to passage heat accounting, targeting, terminal events,
-and constraint treatment are being evaluated separately. The ongoing GRAM
-comparison and the experimental EDG work in PR #251 are not presented here
-as scientifically accepted results. This guide reports the current software
-contract and published methodological background. A publication or mission
-study should additionally retain the exact source revision, atmosphere and
-vehicle data, callback periods, solver settings, constraint definitions,
-and predicted-versus-propagated diagnostics used for its conclusions.
+The supported release scope is bounded and experimental. The reviewed native
+cases cover active targeting, depletion and a two-pass lifecycle. They do not
+establish arbitrary-target accuracy, near-budget performance, real-time
+throughput, universal constraint satisfaction or exact journal reproduction.
+At 3 Hz the depletion and two-pass cases have between-update heat-rate
+excursions. These remain reported violations. If even minimum angle exceeds
+the structural limit, the original minimum-drag policy remains in effect with
+explicit infeasibility; no new abort, limit relaxation or orbit change is added.
+
+The original calibration inputs, fit settings and plotted journal run identity
+remain unverified. Mars epoch placement, Earth fit normalization and Titan
+interface/domain differences remain provenance limits. Current runs must retain
+explicit initialization, exact source/data identities, callback periods, solver
+settings and predicted-versus-propagated diagnostics. The numerical shooting
+route is experimental compatibility/reference work; reduced sensitivity checks
+do not establish a full Cartesian moving-event adjoint.
 
 ## References
 

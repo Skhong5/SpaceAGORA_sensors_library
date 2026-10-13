@@ -625,6 +625,7 @@ function run_simulation(
         end
     end
 
+
     # println("Initial conditions:")
     # println(initial_conditions)
     # println("ODE parameters:")
@@ -636,6 +637,7 @@ function run_simulation(
     for control in args.control_model.control_effectors
         SimulationLifecycle.initialize_control!(control, u_start, p, t_start)
     end
+    SimulationModel.ControlHooks._edg_initialize_heat_accounting!(args, u_start, Float64(t_start))
     p.shared_buffers.solve_segment_end_time[] = mission_end
     # prob_debug exists only to feed the NaN-probe below, which itself only
     # runs when SPACEAGORA_DEBUG_INITIAL_DERIVATIVE is set. Building it
