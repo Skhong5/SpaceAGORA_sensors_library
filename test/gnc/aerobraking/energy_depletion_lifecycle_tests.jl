@@ -354,14 +354,16 @@ end
         x.u.sc[i].vel .= rotation'*(vertical*up+northward*north+LinearAlgebra.cross(planet.ω,position))
     end
     # At mid-latitude, ellipsoid-normal and radial motion have opposite signs.
-    # Geometric reconciliation must reset only the crossing members.
+    # Raw-side reconciliation is sampled after a resolved crossing, outside
+    # transform roundoff. Exact registered roots are covered separately.
+    # Reset only the crossing members.
     for latitude in (-pi/4,pi/4), direction in (-1,1), t in (0.,1e4)
         x=context(n=3)
         for i in 1:3;seed!(x.state,i);end
         x.state.heat_boundary_inside .= direction>0
         ei=1e3*x.a.environment_model.EI
-        place_geodetic!(x,1,0.,ei,direction*5.,0.,t)
-        place_geodetic!(x,2,latitude,ei,direction*5.,sign(latitude)*direction*5000.,t)
+        place_geodetic!(x,1,0.,ei+direction*0.01,direction*5.,0.,t)
+        place_geodetic!(x,2,latitude,ei+direction*0.01,direction*5.,sign(latitude)*direction*5000.,t)
         place_geodetic!(x,3,latitude,ei+(direction>0 ? -100. : 100.),0.,0.,t)
         second=x.u.sc[2]
         @test sign(LinearAlgebra.dot(second.pos,second.vel))==-direction
@@ -371,6 +373,7 @@ end
         rate=(S.ControlHooks._edg_heat_boundary_distance(after,x.p,t+dt,2)-S.ControlHooks._edg_heat_boundary_distance(before,x.p,t-dt,2))/(2dt)
         @test isapprox(rate,direction*5.;atol=1e-5,rtol=0.)
         physical=copy(x.u);third=snapshot(x.state,3)
+        @test all(idx -> direction * CB._edg_observer_distance(x.u,x.p,t,idx) > 0.001, 1:2)
         observe_members!(x;t=t)
         @test x.state.targeting_switch_s[1:2]==[Inf,Inf]
         @test x.state.heat_boundary_inside[1:2]==fill(direction<0,2)
@@ -410,10 +413,11 @@ end
     @test x.state.heat_load_entry_j_cm2==[zeros(3),zeros(3)]
     @test x.u==physical
     for (i,lat) in enumerate((0.,pi/4))
-        place_geodetic!(x,i,lat,ei,-5.,0.,0.2)
+        place_geodetic!(x,i,lat,ei-0.01,-5.,0.,0.2)
         x.u.sc[i].heat_loads .= [7.2,8.2,9.2]
     end
     physical=copy(x.u)
+    @test all(idx -> CB._edg_observer_distance(x.u,x.p,0.2,idx) < -0.001, 1:2)
     observe_members!(x;t=0.2)
     @test x.state.heat_load_entry_j_cm2==[[7.2,8.2,9.2],[7.2,8.2,9.2]]
     @test x.state.heat_boundary_inside==[true,true]
