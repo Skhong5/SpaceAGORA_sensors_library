@@ -18,6 +18,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -31,6 +32,24 @@ def plan():
     out = subprocess.run([sys.executable, str(HERE / "ci_shard_plan.py")], capture_output=True,
                          text=True, check=True, env={k: v for k, v in os.environ.items() if k != "GITHUB_OUTPUT"})
     return {k: json.loads(v) for k, v in (line.split("=", 1) for line in out.stdout.splitlines())}
+
+
+def job_env_runner_references(workflow):
+    """Find runner expressions in this repository's job-level env blocks.
+
+    GitHub permits runner in step contexts, but not jobs.<job_id>.env.
+    Keep this bounded check stdlib-only, like the other workflow wiring tests;
+    it supplements YAML parsing rather than claiming full Actions validation.
+    """
+    invalid = []
+    for job in re.finditer(r"^  ([\w-]+):\n(.*?)(?=^  [\w-]+:|\Z)", workflow, re.M | re.S):
+        for block in re.finditer(r"^    env:([^\n]*(?:\n(?: {6,}[^\n]*|[ \t]*))*)", job.group(2), re.M):
+            value = "\n".join(line for line in block.group(1).splitlines()
+                              if not line.lstrip().startswith("#"))
+            for expression in re.findall(r"\$\{\{(.*?)\}\}", value, re.S):
+                if re.search(r"\brunner\s*(?:\.|\[)", expression):
+                    invalid.append(job.group(1))
+    return invalid
 
 
 class PlanTests(unittest.TestCase):
@@ -77,6 +96,54 @@ class PlanTests(unittest.TestCase):
             self.assertIsNotNone(needs, aggregator)
             self.assertEqual([x.strip() for x in needs.group(1).split(",")], expected_needs)
             self.assertIn(f"SHARD_MATRIX: ${{{{ needs.plan.outputs.{output} }}}}", agg.group(1), aggregator)
+
+    def test_job_environment_rejects_runner_context(self):
+        valid = """jobs:
+  sample:
+    env:
+      ROOT: ${{ github.workspace }}
+    steps:
+      - run: echo '${{ runner.temp }}'
+        env:
+          STEP_ROOT: ${{ runner.temp }}
+        with:
+          path: ${{ runner.temp }}
+"""
+        self.assertEqual(job_env_runner_references(valid), [])
+        for value in ("${{ runner.temp }}", "${{ runner['temp'] }}", "|\n        ${{ runner.temp }}"):
+            invalid = valid.replace("ROOT: ${{ github.workspace }}", "ROOT: " + value)
+            self.assertEqual(job_env_runner_references(invalid), ["sample"])
+        inline = valid.replace("env:\n      ROOT: ${{ github.workspace }}", "env: {ROOT: '${{ runner.temp }}'}")
+        self.assertEqual(job_env_runner_references(inline), ["sample"])
+        for workflow in sorted((ROOT / ".github/workflows").glob("*.yml")):
+            self.assertEqual(job_env_runner_references(workflow.read_text()), [], workflow.name)
+
+    def test_visualizer_preparation_exports_only_a_successful_environment(self):
+        wf = (ROOT / ".github/workflows/julia-ci.yml").read_text()
+        job = re.search(r"^  optional-visualizer-installation:\n(.*?)(?=^  \S|\Z)", wf, re.S | re.M).group(1)
+        preparation = re.search(r"^      - name: Prepare independent core and pinned renderer projects\n"
+                                r"        run: \|\n((?:          [^\n]*\n)+)", job, re.M)
+        self.assertIsNotNone(preparation)
+        script = textwrap.dedent(preparation.group(1))
+        with tempfile.TemporaryDirectory(prefix="visualizer workflow ") as temporary:
+            root = Path(temporary)
+            executable = root / "julia"
+            executable.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$STUB_JULIA_ARGS"\nexit "$STUB_JULIA_STATUS"\n')
+            executable.chmod(0o755)
+            exported, arguments = root / "GitHub environment", root / "Julia arguments"
+            env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ["PATH"],
+                       RUNNER_TEMP=str(root), GITHUB_ENV=str(exported), STUB_JULIA_ARGS=str(arguments))
+            for status in (0, 23):
+                exported.write_text("PREVIOUS=value\n")
+                result = subprocess.run(["bash", "-c", script], env=dict(env, STUB_JULIA_STATUS=str(status)),
+                                        text=True, capture_output=True)
+                self.assertEqual(result.returncode, status, result.stderr)
+                self.assertEqual(arguments.read_text().splitlines(), ["--startup-file=no", "--project=.",
+                                 "test/optional_visualizer/setup.jl", str(root / "visualizer-installations")])
+                expected = "PREVIOUS=value\n"
+                if status == 0:
+                    expected += f"SPACEAGORA_VISUALIZER_TEST_ENV={root / 'visualizer-installations/visualizer'}\n"
+                self.assertEqual(exported.read_text(), expected)
 
     def test_external_mujoco_companion_is_mandatory(self):
         wf = (ROOT / ".github/workflows/julia-ci.yml").read_text()

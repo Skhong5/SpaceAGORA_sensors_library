@@ -991,7 +991,6 @@ jobs:
       JULIA_NUM_THREADS: "2"
       JULIA_PKG_PRECOMPILE_AUTO: "0"
       SPACEAGORA_VISUALIZER_PATH: ""
-      SPACEAGORA_VISUALIZER_TEST_ENV: ${{ runner.temp }}/visualizer-installations/visualizer
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1004,7 +1003,10 @@ jobs:
       - name: Check immutable visualizer installation inputs
         run: julia --startup-file=no test/optional_visualizer/installation_plan_tests.jl
       - name: Prepare independent core and pinned renderer projects
-        run: julia --startup-file=no --project=. test/optional_visualizer/setup.jl "$RUNNER_TEMP/visualizer-installations"
+        run: |
+          set -euo pipefail
+          julia --startup-file=no --project=. test/optional_visualizer/setup.jl "$RUNNER_TEMP/visualizer-installations"
+          printf 'SPACEAGORA_VISUALIZER_TEST_ENV=%s\n' "$RUNNER_TEMP/visualizer-installations/visualizer" >> "$GITHUB_ENV"
       - name: Core installation without a renderer
         run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/visualizer-installations/core" test/optional_visualizer/core.jl
       - name: Core-first renderer integration
