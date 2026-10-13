@@ -45,6 +45,18 @@ function _edg_heat_boundary_distance(u, p::ODEParams, t::Float64, i::Int)
     return Float64(rtolatlong(pos_pp, env.planet)[1]) - 1e3 * Float64(env.EI)
 end
 
+# Crossing direction follows the same ellipsoid and time-dependent frame as
+# the heat boundary. Radial inertial velocity can have the opposite sign at
+# mid-latitudes and must not decide an omitted simultaneous geodetic event.
+function _edg_heat_boundary_vertical_speed(u, p::ODEParams, t::Float64, i::Int)
+    sc = _edg_control_sat_state(u, i)
+    pos, vel, _ = _edg_control_pos_vel_mass(sc)
+    env = p.args.environment_model
+    pos_pp, vel_pp = r_intor_p!(pos, vel, env.planet, _edg_ephemeris_time(p, t), env.ephemerides_model)
+    down, _, _ = latlongtoNED(rtolatlong(pos_pp, env.planet))
+    return -dot(down, vel_pp)
+end
+
 function _edg_capture_entry_heat!(args, u, i::Int; deduplicate::Bool=false)
     sc = _edg_control_sat_state(u, i)
     for state in _edg_heat_states(args)

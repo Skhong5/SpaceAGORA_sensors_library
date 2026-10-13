@@ -120,8 +120,10 @@ introduce a separate unreviewed hard-clipping law. Heat-budget status reports
 exhaustion explicitly.
 
 The structural setting also needs a precise interpretation. The controller
-forms a drag area from the sum of each link's reference area multiplied by
-its internal free-molecular drag coefficient. Let that sum at a candidate angle be
+uses the journal plate-coefficient proxy: controlled-panel reference areas are
+summed at the candidate angle, while all remaining reference area is grouped as
+bus area at `π/2`. Both groups use the root link's reflection coefficient. Let
+the resulting drag area at a candidate angle be
 ``A_D(\alpha)``. The pressure-valued setting defines the modeled force bound
 
 ```math
@@ -130,8 +132,8 @@ D(\alpha) = q_{\mathrm{dyn}} A_D(\alpha)
 D_{\mathrm{limit}} = p_{\mathrm{limit}} A_D(\alpha_{\max}).
 ```
 
-Controlled panels use the candidate angle in this calculation; other links
-retain their modeled angles within the configured bounds. Thus
+This structural proxy is separate from the trajectory predictor's per-link
+core aerodynamic-coefficient evaluation. Thus
 `structural_load_limit_pa` is a drag-based load proxy normalized by a
 reference drag area. It is neither a finite-element stress limit nor a
 direct upper bound on ambient dynamic pressure. Its connection to a

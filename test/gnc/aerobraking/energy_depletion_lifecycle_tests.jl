@@ -1,5 +1,5 @@
 module EnergyDepletionLifecycleTests
-using Test, SpaceAGORA, OrdinaryDiffEq, DiffEqCallbacks, ComponentArrays
+using Test, SpaceAGORA, OrdinaryDiffEq, DiffEqCallbacks, ComponentArrays, StaticArrays, LinearAlgebra
 import .._edg_test_context
 const S = SpaceAGORA.SimulationModel
 const E = SpaceAGORA.SimulationEngine
@@ -325,5 +325,89 @@ end
     @test !isempty(nextpass) && all(r->r.inside && r.switch==Inf,nextpass)
     @test x.state.heat_load_entry_j_cm2==[fill(7.0,3)]
     @test x.u.sc[1].heat_loads==fill(7.0,3)
+end
+
+@testset "Geodetic simultaneous crossing direction and first-entry baseline" begin
+    function place_geodetic!(x, i, latitude, height, vertical, northward, t)
+        planet=x.a.environment_model.planet
+        e2=1-(planet.Rp_p/planet.Rp_e)^2
+        n=planet.Rp_e/sqrt(1-e2*sin(latitude)^2)
+        position=SVector((n+height)*cos(latitude),0.,(n*(1-e2)+height)*sin(latitude))
+        up=SVector(cos(latitude),0.,sin(latitude))
+        north=SVector(-sin(latitude),0.,cos(latitude))
+        rotation=S.EDGServices._edg_planet_frame_lpi(x.p,t)
+        x.u.sc[i].pos .= rotation'*position
+        x.u.sc[i].vel .= rotation'*(vertical*up+northward*north+LinearAlgebra.cross(planet.ω,position))
+    end
+    # At mid-latitude, ellipsoid-normal and radial motion have opposite signs.
+    # Both signed mask layouts must reset only the crossing members.
+    for latitude in (-pi/4,pi/4), direction in (-1,1), with_drag in (false,true), t in (0.,1e4)
+        x=context(n=3)
+        for i in 1:3;seed!(x.state,i);end
+        x.state.heat_boundary_inside .= direction>0
+        ei=1e3*x.a.environment_model.EI
+        place_geodetic!(x,1,0.,ei,direction*5.,0.,t)
+        place_geodetic!(x,2,latitude,ei,direction*5.,sign(latitude)*direction*5000.,t)
+        place_geodetic!(x,3,latitude,ei+(direction>0 ? -100. : 100.),0.,0.,t)
+        second=x.u.sc[2]
+        @test sign(LinearAlgebra.dot(second.pos,second.vel))==-direction
+        # Central difference of the actual root independently verifies direction.
+        before=deepcopy(x.u);after=deepcopy(x.u);dt=0.001
+        before.sc[2].pos .-= dt*second.vel;after.sc[2].pos .+= dt*second.vel
+        rate=(S.ControlHooks._edg_heat_boundary_distance(after,x.p,t+dt,2)-S.ControlHooks._edg_heat_boundary_distance(before,x.p,t-dt,2))/(2dt)
+        @test isapprox(rate,direction*5.;atol=1e-5,rtol=0.)
+        physical=copy(x.u);third=snapshot(x.state,3)
+        cb=CB.get_edg_heat_callback(3;drag_callback=with_drag ? CB.get_drag_state_callback(3) : nothing)
+        mask=with_drag ? Int8[0,0,0,direction,0,0] : Int8[direction,0,0]
+        cb.affect!(mask_integrator(x;t=t),mask)
+        @test x.state.targeting_switch_s[1:2]==[Inf,Inf]
+        @test x.state.heat_boundary_inside[1:2]==fill(direction<0,2)
+        @test isequal(snapshot(x.state,3),third)
+        @test x.u==physical
+        seed!(x.state,2)
+        second_state=snapshot(x.state,2)
+        mask=with_drag ? Int8[0,0,0,0,direction,0] : Int8[0,direction,0]
+        cb.affect!(mask_integrator(x;t=t),mask)
+        @test isequal(snapshot(x.state,2),second_state) # Late explicit duplicate.
+    end
+    # Initialize outside the geodetic boundary while inside the spherical one.
+    # The first omitted entry must capture each panel's current physical heat.
+    x=context(n=2);initialize!(x)
+    S.ControlHooks._edg_initialize_heat_accounting!(x.a,x.u,0.)
+    ei=1e3*x.a.environment_model.EI
+    for (i,lat) in enumerate((0.,pi/4));place_geodetic!(x,i,lat,ei+1.,-5.,0.,0.);end
+    E._initialize_in_atmosphere_flags!(x.p,x.u)
+    @test x.p.shared_buffers.in_atmosphere[2]
+    cb=CB.get_edg_heat_callback(2;drag_callback=CB.get_drag_state_callback(2))
+    physical=copy(x.u)
+    cb.initialize(cb,x.u,0.,mask_integrator(x;t=0.))
+    @test x.state.heat_boundary_inside==[false,false]
+    @test x.state.heat_load_entry_j_cm2==[zeros(3),zeros(3)]
+    @test x.u==physical
+    for (i,lat) in enumerate((0.,pi/4))
+        place_geodetic!(x,i,lat,ei,-5.,0.,0.2)
+        x.u.sc[i].heat_loads .= [7.2,8.2,9.2]
+    end
+    physical=copy(x.u)
+    cb.affect!(mask_integrator(x;t=0.2),Int8[-1,0,-1,0])
+    @test x.state.heat_load_entry_j_cm2==[[7.2,8.2,9.2],[7.2,8.2,9.2]]
+    @test x.state.heat_boundary_inside==[true,true]
+    @test x.u==physical
+    cb.affect!(mask_integrator(x;t=0.2),Int8[0,0,0,-1])
+    @test x.state.heat_load_entry_j_cm2==[[7.2,8.2,9.2],[7.2,8.2,9.2]]
+    # Initialization records side without treating a fresh in-pass start as entry
+    # or discarding an already computed t0 guidance plan.
+    for (height_offset,vertical,inside) in ((-100.,-5.,true),(0.,5.,false),(100.,-5.,false))
+        x=context();seed!(x.state)
+        S.ControlHooks._edg_initialize_heat_accounting!(x.a,x.u,0.)
+        place_geodetic!(x,1,pi/4,1e3*x.a.environment_model.EI+height_offset,vertical,0.,0.)
+        physical=copy(x.u)
+        cb=CB.get_edg_heat_callback(1)
+        cb.initialize(cb,x.u,0.,mask_integrator(x;t=0.))
+        @test x.state.heat_boundary_inside[1]===inside
+        @test x.state.targeting_switch_s[1]==42.
+        @test x.state.heat_load_entry_j_cm2==[zeros(3)]
+        @test x.u==physical
+    end
 end
 end

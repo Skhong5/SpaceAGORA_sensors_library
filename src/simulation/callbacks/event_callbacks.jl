@@ -329,9 +329,10 @@ function get_edg_heat_callback(num_sats::Int; drag_callback=nothing)
             geodetic_distance = _edg_heat_boundary_distance(integrator.u,p,Float64(integrator.t),idx)
             coincident = abs(geodetic_distance - spherical_distance) <= root_roundoff
             heat_direction == 0 && coincident && (heat_direction = drag_direction)
-            velocity = _simulation_engine_module()._state_velocity_ii(integrator.u, idx)
             inside = heat_direction != 0 ? heat_direction < 0 :
-                (abs(geodetic_distance) <= root_roundoff ? dot(position, velocity) <= 0.0 : geodetic_distance < 0.0)
+                (abs(geodetic_distance) <= root_roundoff ?
+                    _edg_heat_boundary_vertical_speed(integrator.u,p,Float64(integrator.t),idx) <= 0.0 :
+                    geodetic_distance < 0.0)
             _edg_reconcile_heat_boundary!(p.args, integrator.u, idx, inside; event=heat_direction != 0)
             if offset != 0 && drag_direction == 0 && coincident
                 drag_events[idx] = heat_direction
@@ -341,9 +342,28 @@ function get_edg_heat_callback(num_sats::Int; drag_callback=nothing)
         drag_callback === nothing || drag_callback.affect!(integrator, drag_events)
         return nothing
     end
+    function initialize_heat_side!(callback, u, t, integrator)
+        p = integrator.p
+        for idx in 1:num_sats
+            position = _simulation_engine_module()._state_position_ii(u, idx)
+            radius = p.args.environment_model.planet.Rp_e
+            roundoff = 64eps(Float64) * max(1.0, norm(position), abs(radius))
+            distance = _edg_heat_boundary_distance(u,p,Float64(t),idx)
+            inside = abs(distance) <= roundoff ?
+                _edg_heat_boundary_vertical_speed(u,p,Float64(t),idx) <= 0.0 : distance < 0.0
+            for state in _edg_heat_states(p.args)
+                # Record the initial side before any omitted first crossing.
+                # Starting within a passage is not a new entry event and must
+                # preserve both cumulative heat and any t0 guidance plan.
+                state.heat_boundary_inside[idx] === nothing &&
+                    (state.heat_boundary_inside[idx] = inside)
+            end
+        end
+        return nothing
+    end
     saves = drag_callback === nothing ? (false, false) : drag_callback.save_positions
     return VectorContinuousCallback(condition!, affect_events!, num_sats+offset;
-        save_positions=saves)
+        save_positions=saves, initialize=initialize_heat_side!)
 end
 
 function get_drag_state_callback(num_sats::Int)

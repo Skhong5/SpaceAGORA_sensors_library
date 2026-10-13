@@ -28,7 +28,7 @@ import ..ConfigTypes: GramTrackCache, VacuumPredictedGRAMCache, GramDensityPertu
 import ..ConfigTypes: GramTrackCacheConfig, CallbackEnvConfig, PolicyDecisionEnvConfig
 using ..ControlHooks: calcControlEffect!, control_thruster_levels, touchdown_spec
 using ..TerrainModels: AbstractTerrainModel, DEMTerrainModel, terrain_radius
-using ..ControlHooks: _edg_heat_states, _edg_heat_boundary_distance, _edg_capture_entry_heat!, _edg_capture_exit_heat!, _edg_reconcile_heat_boundary!
+using ..ControlHooks: _edg_heat_states, _edg_heat_boundary_distance, _edg_heat_boundary_vertical_speed, _edg_capture_entry_heat!, _edg_capture_exit_heat!, _edg_reconcile_heat_boundary!
 using ..GuidanceHooks: calcGuidanceEffect!
 using ..NavigationHooks: calcNavigationEffect!
 using ..SimConfig: SimulationConfiguration, MissionOrbits
