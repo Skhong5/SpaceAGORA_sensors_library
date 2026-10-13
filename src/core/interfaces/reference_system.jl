@@ -5,14 +5,9 @@ using AstroTime
 using StaticArrays
 using SPICE
 
-# The canonical owner supplies this binding. Legacy raw-include sandboxes use
-# the same numeric source locally, without requiring a package import.
-if !isdefined(@__MODULE__, :Geodesy)
-    include(joinpath(@__DIR__, "..", "numerics", "geodesy.jl"))
-end
-if !isdefined(@__MODULE__, :OrbitalGeometry)
-    include(joinpath(@__DIR__, "..", "numerics", "orbital_geometry.jl"))
-end
+# The enclosing aggregator supplies Geodesy and OrbitalGeometry. This leaf
+# owns frame operations, not dependency loading; standalone test sandboxes
+# use test/helpers/reference_system_sandbox.jl to supply the same source owners.
 
 const _EARTH_HIGH_PREC_BODY_FIXED_FRAME = "ITRF93"
 const _EARTH_FALLBACK_BODY_FIXED_FRAME = "IAU_EARTH"

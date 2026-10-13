@@ -15,7 +15,7 @@ const RS = SpaceAGORA.RuntimeServices
 module RawFrameSandbox
 using SpaceAGORA.SimulationModel.EphemeridesModels: ephemerides_requires_spice, planet_frame_lpi
 const args = :legacy_includer
-include(joinpath(@__DIR__, "..", "..", "src", "core", "interfaces", "reference_system.jl"))
+include(joinpath(@__DIR__, "..", "helpers", "reference_system_sandbox.jl"))
 end
 
 module QuaternionSandbox

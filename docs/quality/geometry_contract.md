@@ -27,10 +27,13 @@ not intercepted. The overload accepting an ephemerides model still delegates to
 the default ellipsoidal path; `rtolatlongrad` remains a separate geocentric-radius
 and latitude calculation. No sphere/ellipsoid/topography policy is substituted.
 
-Production imports the one Geodesy module. Legacy raw inclusion of
-`reference_system.jl` loads the same canonical numeric source into its local
-sandbox only when that binding was not supplied; it does not import SpaceAGORA
-or duplicate the formulas in the frame file.
+Production imports the one Geodesy module. The internal `reference_system.jl`
+leaf expects its enclosing aggregator to supply `Geodesy` and `OrbitalGeometry`;
+it does not orchestrate source loading. Standalone test sandboxes raw-include
+`test/helpers/reference_system_sandbox.jl`, which loads the same canonical numeric
+sources and then the frame leaf into the includer. It imports neither SpaceAGORA
+nor RuntimeServices, preserving local `args` and the early missing-lock probe.
+The frame file contains no duplicate formulas or test-specific loading policy.
 
 Focused tests use kernel-free CSPICE `recgeo`, analytic spherical cases and actual
 topography callbacks. Bowring latitude is approximate at finite height: the
@@ -61,8 +64,8 @@ unit orbital radius or inherit an orbit's speed. Initial-condition degree/radian
 conversion, frame precedence and altitude validation remain caller-owned.
 
 The matrix owner is loaded before the spacecraft model; FrameTransforms imports
-the same module. Raw reference-system inclusion uses that owner's source in a
-local module if no binding was supplied. No new root export or public API is added.
+the same module. The standalone test helper loads that owner's exact source in
+its sandbox before the frame leaf. No new root export or public API is added.
 The legacy plotting matrix and example-specific element interpretations remain
 separate: their expression order and data contracts have not been declared
 interchangeable. Tests discriminate transpose direction with elementary rotations

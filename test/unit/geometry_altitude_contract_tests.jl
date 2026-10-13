@@ -12,7 +12,7 @@ const REPO = normpath(joinpath(@__DIR__, "..", ".."))
 
 module RawGeometry
 const args = :geometry_contract_includer
-include(joinpath(@__DIR__, "..", "..", "src", "core", "interfaces", "reference_system.jl"))
+include(joinpath(@__DIR__, "..", "helpers", "reference_system_sandbox.jl"))
 end
 
 @testset "Shared Bowring expressions retain caller contracts" begin

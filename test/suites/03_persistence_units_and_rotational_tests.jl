@@ -991,7 +991,7 @@ end
         using LinearAlgebra
         using StaticArrays
         args = :legacy_topography_args
-        include(joinpath(Main.REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
+        include(joinpath(Main.REPO_ROOT, "test", "helpers", "reference_system_sandbox.jl"))
     end))
     topo_sandbox = getfield(Main, topo_module_name)
     lla_topo = topo_sandbox.rtolatlong(rp_topo, planet_topo, true)
