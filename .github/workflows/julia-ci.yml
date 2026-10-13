@@ -869,6 +869,8 @@ jobs:
           gram: none
           gramsuite-smoke: "false"
           token: ${{ github.token }}
+      - name: Check optional package checkout and setup safeguards
+        run: julia --startup-file=no test/optional_packages_tests.jl
       - name: Prepare independent core and companion projects
         env:
           JULIA_PKG_PRECOMPILE_AUTO: "0"
@@ -929,12 +931,18 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Read the pinned MuJoCo gitlink
+        id: mujoco-source
+        run: |
+          revision="$(git rev-parse HEAD:packages/robotics/SpaceAGORAMuJoCo.jl)"
+          [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
       - name: Checkout the pinned MuJoCo companion
         uses: actions/checkout@v7
         with:
           repository: Space-FALCON-Lab/SpaceAGORAMuJoCo.jl
-          ref: 3f2845b05e45a6521344e1d31383079454318759
-          path: optional/SpaceAGORAMuJoCo
+          ref: ${{ steps.mujoco-source.outputs.revision }}
+          path: packages/robotics/SpaceAGORAMuJoCo.jl
           persist-credentials: false
       - uses: ./.github/actions/setup
         with:
@@ -945,30 +953,32 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.julia/artifacts/6a34a368d528ad0332f9da97de3d2f105977bac8
-          key: mujoco-artifact-${{ runner.os }}-${{ hashFiles('optional/SpaceAGORAMuJoCo/Artifacts.toml') }}
+          key: mujoco-artifact-${{ runner.os }}-${{ hashFiles('packages/robotics/SpaceAGORAMuJoCo.jl/Artifacts.toml') }}
+      - name: Verify companion identity and clean source
+        run: julia --startup-file=no scripts/optional_packages.jl check mujoco
       - name: Check companion installation inputs
-        run: julia --startup-file=no optional/SpaceAGORAMuJoCo/test/installation_plan_tests.jl
+        run: julia --startup-file=no packages/robotics/SpaceAGORAMuJoCo.jl/test/installation_plan_tests.jl
       - name: Check exact core source acquisition
-        run: julia --startup-file=no optional/SpaceAGORAMuJoCo/test/source_acquisition_tests.jl
+        run: julia --startup-file=no packages/robotics/SpaceAGORAMuJoCo.jl/test/source_acquisition_tests.jl
       - name: Build the current core plus pinned companion environment
         env:
           SPACEAGORA_CORE_PATH: ${{ github.workspace }}
           SPACEAGORA_CORE_REV: ""
-        run: julia --startup-file=no optional/SpaceAGORAMuJoCo/scripts/setup_env.jl "$RUNNER_TEMP/mujoco-env"
+        run: julia --startup-file=no scripts/optional_packages.jl setup mujoco "$RUNNER_TEMP/mujoco-env"
       - name: Core-only import and compatibility isolation
-        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" optional/SpaceAGORAMuJoCo/test/core_only.jl
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" packages/robotics/SpaceAGORAMuJoCo.jl/test/core_only.jl
       - name: Reject incompatible core before defining adapter methods
-        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" optional/SpaceAGORAMuJoCo/test/incompatible_core.jl
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" packages/robotics/SpaceAGORAMuJoCo.jl/test/incompatible_core.jl
       - name: Core-first adapter load and conformance
-        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" optional/SpaceAGORAMuJoCo/test/load_order.jl core-first
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" packages/robotics/SpaceAGORAMuJoCo.jl/test/load_order.jl core-first
       - name: Companion-first adapter load and conformance
-        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" optional/SpaceAGORAMuJoCo/test/load_order.jl companion-first
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" packages/robotics/SpaceAGORAMuJoCo.jl/test/load_order.jl companion-first
       - name: Mandatory native tests with four threads
-        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" -e '@assert Threads.nthreads() == 4; include("optional/SpaceAGORAMuJoCo/test/runtests.jl")'
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" -e '@assert Threads.nthreads() == 4; include("packages/robotics/SpaceAGORAMuJoCo.jl/test/runtests.jl")'
       - name: Verify tracked installation inputs were not changed
         run: |
           git diff --exit-code
-          git -C optional/SpaceAGORAMuJoCo diff --exit-code
+          git -C packages/robotics/SpaceAGORAMuJoCo.jl diff --exit-code
 
   # The renderer is independent of core installation. This job qualifies the
   # exact source pin against this checkout, including both extension load orders.

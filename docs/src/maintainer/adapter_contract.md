@@ -20,8 +20,8 @@ share the rules below, not a universal callback or provider registry.
 | Future EDG/guidance integration | Its domain repository after qualification | [Boundary preparation](edg_adapter_boundary.md); must define and qualify a facade before extraction | Proposed request, state, lifecycle and failure ownership; scientific acceptance remains separate |
 
 The EDG row is an adoption requirement, not a claim that an EDG facade is already
-implemented. Moving the HYPR compatibility shim is a separate packaging change;
-the implementation already lives outside SpaceAGORA.
+implemented. The HYPR compatibility shim stays at `packages/SpaceAGORAHYPR/`;
+the implementation remains owned by the external HYPR repository.
 
 ## Facade shape and compatibility
 
@@ -57,6 +57,16 @@ An adapter may be a standalone package depending on SpaceAGORA, or a Julia
 extension activated by a weak dependency. SpaceAGORA must not acquire a mandatory
 dependency on an optional adapter. Keep one authoritative implementation; a
 compatibility shim only forwards to it and checks availability.
+
+The domain layout uses exact Git submodule revisions under `packages/robotics/`
+for HYPR and SpaceAGORAMuJoCo. These are source checkouts, not copies of their
+implementations or new required dependencies. The shared
+[optional-package helper](../user/installation_environment.md#Optional-package-commands)
+verifies the selected gitlink revision, package UUID/version and clean checkout
+before passing its path to the existing installer. It initializes only the
+selected repository. Keep this orchestration separate from provider activation,
+runtime compatibility checks and scientific acceptance. A successful source
+check is not evidence that a native simulation has passed.
 
 Each repository declares its own runtime and test dependencies, owns its native
 artifacts and supplies an installation path that works outside a SpaceAGORA

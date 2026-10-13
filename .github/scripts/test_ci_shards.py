@@ -88,28 +88,41 @@ class PlanTests(unittest.TestCase):
         checkout = re.search(r"repository: Space-FALCON-Lab/SpaceAGORAMuJoCo\.jl\n"
                              r"(?P<settings>(?:          [^\n]*\n)+)", job)
         self.assertIsNotNone(checkout)
-        self.assertRegex(checkout.group("settings"), r"(?m)^          ref: [0-9a-f]{40}$")
-        self.assertIn("path: optional/SpaceAGORAMuJoCo", checkout.group("settings"))
+        self.assertIn("ref: ${{ steps.mujoco-source.outputs.revision }}", checkout.group("settings"))
+        self.assertIn("git rev-parse HEAD:packages/robotics/SpaceAGORAMuJoCo.jl", job)
+        self.assertIn('[[ "$revision" =~ ^[0-9a-f]{40}$ ]] || exit 1', job)
+        self.assertIn("scripts/optional_packages.jl check mujoco", job)
+        self.assertIn('scripts/optional_packages.jl setup mujoco "$RUNNER_TEMP/mujoco-env"', job)
+        self.assertIn("path: packages/robotics/SpaceAGORAMuJoCo.jl", checkout.group("settings"))
         self.assertIn("persist-credentials: false", checkout.group("settings"))
         self.assertIn("SPACEAGORA_CORE_PATH: ${{ github.workspace }}", job)
         self.assertIn('SPACEAGORA_CORE_REV: ""', job)
         self.assertNotIn("packages/SpaceAGORAMuJoCo", job)
-        self.assertIn("hashFiles('optional/SpaceAGORAMuJoCo/Artifacts.toml')", job)
+        self.assertIn("hashFiles('packages/robotics/SpaceAGORAMuJoCo.jl/Artifacts.toml')", job)
         for required in ('SPACEAGORA_MUJOCO_REQUIRED: "1"', 'JULIA_LOAD_PATH: "@:@stdlib"',
                          'JULIA_NUM_THREADS: "4"', '@assert Threads.nthreads() == 4'):
             self.assertIn(required, job)
         # Every isolation/load-order/native probe is a separate fresh process.
         commands = re.findall(r"^        run: (julia [^\n]+)$", job, re.M)
         for script in ("test/installation_plan_tests.jl", "test/source_acquisition_tests.jl",
-                       "scripts/setup_env.jl",
                        "test/core_only.jl", "test/incompatible_core.jl",
                        "test/load_order.jl core-first", "test/load_order.jl companion-first",
                        "test/runtests.jl"):
-            self.assertEqual(sum(f"optional/SpaceAGORAMuJoCo/{script}" in command
+            self.assertEqual(sum(f"packages/robotics/SpaceAGORAMuJoCo.jl/{script}" in command
                                  for command in commands), 1, script)
         self.assertNotRegex(job, r"(?m)^\s*(if|continue-on-error):")
         self.assertNotIn("|| true", job)
-        self.assertIn("git -C optional/SpaceAGORAMuJoCo diff --exit-code", job)
+        self.assertIn("git -C packages/robotics/SpaceAGORAMuJoCo.jl diff --exit-code", job)
+
+
+    def test_domain_packages_use_selected_setup(self):
+        wf = (ROOT / ".github/workflows/julia-ci.yml").read_text()
+        job = re.search(r"^  optional-hypr-installation:\n(.*?)(?=^  \S|\Z)", wf, re.S | re.M).group(1)
+        self.assertIn("test/optional_packages_tests.jl", job)
+        setup = (ROOT / "test/optional_hypr/setup.jl").read_text()
+        self.assertIn('OptionalPackages.setup("hypr",', setup)
+        self.assertIn('with_hypr=false', setup)
+        self.assertNotIn("submodules: recursive", job)
 
     def test_external_visualizer_is_mandatory_and_core_isolated(self):
         wf = (ROOT / ".github/workflows/julia-ci.yml").read_text()

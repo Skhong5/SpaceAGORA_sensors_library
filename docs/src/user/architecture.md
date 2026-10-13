@@ -17,6 +17,9 @@ and HYPR is maintained in its own repository with an optional SpaceAGORA adapter
 The compatibility package in this tree loads that adapter; it contains no search
 implementation. MuJoCo scene code and its adapter live in the independent
 [SpaceAGORAMuJoCo.jl repository](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl).
+Pinned checkouts of both external repositories are available under
+`packages/robotics/`; this source layout does not make them mandatory core
+dependencies. HYPR serves both RPO and robot-arm planning.
 
 Shortest successful command:
 
@@ -282,21 +285,26 @@ the file that performs each step.
 ## Map of the repository
 
 Core package implementation lives in `src/` and `ext/`. The separate HYPR
-repository owns its optimizer and SpaceAGORA adapter. The small compatibility
-package under `packages/SpaceAGORAHYPR/` loads and checks that adapter. The
+repository owns its optimizer and SpaceAGORA adapter. Its reviewed source is
+checked out as a submodule at `packages/robotics/HYPR.jl`. The small compatibility
+package under `packages/SpaceAGORAHYPR/` still loads and checks that adapter. The
 GRAMSuite extension activates when both SpaceAGORA and GRAMSuite are loaded;
 installation alone does not load it. For HYPR, the supported setup installs the
 pinned external package and compatibility package, then the user explicitly
 loads `SpaceAGORAHYPR`. MuJoCo scenes live in the separate
 [SpaceAGORAMuJoCo.jl repository](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl).
-That companion owns its native binding, scene implementation, native tests and
-Basilisk comparison harness. Users explicitly install and load it through the
-[optional companion setup](installation_environment.md#Optional-MuJoCo-companion).
-Its adapter consumes the versioned
+Its pinned submodule is `packages/robotics/SpaceAGORAMuJoCo.jl`. That companion
+owns its native binding, scene implementation, native tests and Basilisk
+comparison harness. The shared [optional-package commands](installation_environment.md#Optional-package-commands)
+acquire and verify one selected source checkout, then delegate installation to
+the existing package installer in a separate environment. Users still load the
+packages explicitly. The standalone installation routes remain available.
+The MuJoCo adapter consumes the versioned
 [`ExternalPropagationServices`](../maintainer/external_propagation_services.md)
 facade; core retains shared gravity, configuration and run lifecycle. These
 integrations follow the [optional adapter standard](../maintainer/adapter_contract.md)
-with separate domain protocols and state ownership.
+with separate domain protocols and state ownership. `packages/gnc/` records the
+future guidance boundary without adding an EDG package; EDG remains in core. GRAMSuite retains its existing submodule at `data/GRAMSuite.jl`.
 The other folders hold tooling, data, examples and documentation. "Owner" below is the
 file or module that defines the behaviour; other code should call it rather
 than copy it. Within the grouped source rows, file names in the third column
@@ -318,6 +326,8 @@ are relative to the directory in the first column.
 | `src/foundation/core/` | Abstract types and shared model contracts, reference frames, geodesy and quaternions | frames: `interfaces/reference_system.jl`; quaternions: `numerics/quaternion_utils.jl`; run buffers and composition belong to simulation orchestration |
 | `src/foundation/assets/` | Manifest lookup and availability checks, RPO station assets and the Odyssey surrogate | reusable manifest records and local checks: `asset_catalog.jl`; CLI report types and presentation remain in the CLI; see [Assets & Modes](../assets.md) |
 | `ext/` | The `GRAMSuite` extension: native GRAM density, SPICE-backed ephemerides, native-free fixed-grid adapter methods | activates when both packages are loaded; see [GRAMSuite Setup](gramsuite_setup.md) |
+| `packages/robotics/` | Pinned submodules for HYPR and SpaceAGORAMuJoCo; each remains an independently maintained repository | `scripts/optional_packages.jl` selects and verifies source, then delegates to its installer; see [Optional package commands](installation_environment.md#Optional-package-commands). |
+| `packages/gnc/` | Documentation for a future guidance-domain package boundary | EDG remains in core; see [EDG boundary preparation](../maintainer/edg_adapter_boundary.md). |
 | `packages/SpaceAGORAHYPR/` | Compatibility package and source pin for external HYPR | `src/SpaceAGORAHYPR.jl` checks and aliases the external adapter; `HYPRSource.toml` pins its revision. Core services are defined in `src/models/gnc/planning/adapters/hypr/services.jl`. Install and load with the [RPO planner guide](rpo_planner_pilot.md#Installing-optional-HYPR). |
 | `examples/` | Runnable scenarios; `common.jl` is the shared bootstrap | primary scenario entrypoints; development viewer demos also live in `scripts/dev/viewer_demos/`; see the [Examples Catalog](examples_catalog.md) |
 | `templates/` | Starting files for a force/torque model, a density model and a control hook | copy one of these to begin an extension |
