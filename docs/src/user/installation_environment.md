@@ -52,6 +52,47 @@ julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl
 
 See the [Odyssey walkthrough](../tutorials/odyssey_surrogate.md).
 
+### Optional package commands
+
+From a SpaceAGORA Git clone, a shared helper manages the optional repositories
+under `packages/robotics/`. It uses Julia's standard library and command-line Git
+for source inspection and checkout; it does not require loading SpaceAGORA first.
+
+```sh
+julia --startup-file=no scripts/optional_packages.jl status
+julia --startup-file=no scripts/optional_packages.jl checkout hypr
+julia --startup-file=no scripts/optional_packages.jl check hypr
+julia --startup-file=no scripts/optional_packages.jl setup hypr /path/to/hypr-env
+```
+
+The selectors are `hypr` and `mujoco`. `status` reports the checkouts; `checkout`
+acquires the selected source at its recorded Git revision; `check` verifies its
+revision, package identity, version and clean state. It does not run scientific
+or native tests. `setup` also performs checkout and verification, then calls the
+existing installer with the selected local package and current core checkout.
+Use a separate environment outside the source checkouts. Installation can
+download dependencies and perform the installer’s normal preparation work.
+
+Only the selected submodule is initialized. This route does not recursively
+fetch other packages or change the existing GRAMSuite setup under
+`data/GRAMSuite.jl`. A dirty or mismatched package checkout is refused rather
+than reset. The environment refers to the source paths, so keep those checkouts
+in place while using it.
+
+GitHub source ZIPs omit submodule contents and the Git metadata needed to verify
+the recorded revisions. Clone SpaceAGORA to use these commands, or follow a
+companion's standalone installation guide. Merely seeing the folder in a clone
+does not mean the package is installed in the active Julia environment.
+
+### Optional HYPR planner
+
+HYPR lives at `packages/robotics/HYPR.jl` and supports RPO and robot-arm planning.
+The existing `packages/SpaceAGORAHYPR/` compatibility shim loads its SpaceAGORA
+adapter. After `setup hypr`, start Julia with `--project=/path/to/hypr-env` and
+load `SpaceAGORA` and `SpaceAGORAHYPR`. The [planner guide](rpo_planner_pilot.md#Installing-optional-HYPR)
+also documents the existing `scripts/setup_hypr.jl` route, which acquires HYPR
+from its external repository without using this submodule layout.
+
 ### Optional MuJoCo companion
 
 [SpaceAGORAMuJoCo.jl](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl)
@@ -60,12 +101,11 @@ provides standalone proximity scenes and externally propagated spacecraft inside
 Basilisk comparison harness. Julia 1.12 is required; native scenes currently
 support Linux x86_64 and use the pinned MuJoCo 3.11.0 artifact.
 
-Build an independent environment from the companion checkout:
+The pinned source is available at `packages/robotics/SpaceAGORAMuJoCo.jl`.
+From the SpaceAGORA repository root:
 
-```text
-git clone https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl.git
-cd SpaceAGORAMuJoCo.jl
-julia --startup-file=no scripts/setup_env.jl /path/to/mujoco-env
+```sh
+julia --startup-file=no scripts/optional_packages.jl setup mujoco /path/to/mujoco-env
 julia --startup-file=no --project=/path/to/mujoco-env
 ```
 
@@ -75,18 +115,19 @@ Then load the packages explicitly:
 using SpaceAGORA, SpaceAGORAMuJoCo
 ```
 
-The companion's setup installs the exact core revision recorded in its
-`Project.toml` and creates its own manifest. It does not use a parent checkout,
-copy a core manifest, or call a HYPR installer. The package version-family
-constraint alone is not a compatibility guarantee; the source pair and
-`ExternalPropagationServices` contract version must agree. Loading core alone
-does not load this adapter or download MuJoCo.
+The shared helper passes this core checkout to the companion's installer through
+`SPACEAGORA_CORE_PATH`. The companion creates its own environment and manifest.
+Loading core alone does not load this adapter or download MuJoCo; the native
+artifact is obtained when first needed by a native operation.
 
-For development, `SPACEAGORA_CORE_PATH` selects a local SpaceAGORA checkout
-instead of that source pin. Core CI uses this override with an immutable
-companion revision so changes to core are tested against the actual candidate.
+The standalone route remains available: clone the companion separately and run
+its `scripts/setup_env.jl`. Without an explicit core override, that installer
+fetches the exact core revision recorded in the companion's `Project.toml`.
+The standalone default and the current-checkout route are distinct source pairs.
+For either route, a package version-family constraint alone is insufficient;
+the source pair and `ExternalPropagationServices` contract must agree.
 See the companion's [installation guide](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl#installation)
-for overrides. Start with [Orbital Scenes with MuJoCo](mujoco_scenes.md) for
+for standalone commands and overrides. Start with [Orbital Scenes with MuJoCo](mujoco_scenes.md) for
 the frame conventions, ownership rules and complete examples. The supported connection is documented in
 [External propagation services](../maintainer/external_propagation_services.md)
 and the shared [optional adapter standard](../maintainer/adapter_contract.md).
