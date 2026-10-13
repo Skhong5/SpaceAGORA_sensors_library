@@ -6,6 +6,9 @@ using Test
 end
 
 include(joinpath(@__DIR__, "example_imports_tests.jl"))
+include(joinpath(@__DIR__, "geometry_altitude_contract_tests.jl"))
+include(joinpath(@__DIR__, "apsis_rotation_contract_tests.jl"))
+include(joinpath(@__DIR__, "legacy_velocity_frame_contract_tests.jl"))
 include(joinpath(@__DIR__, "quaternion_history_plot_tests.jl"))
 include(joinpath(@__DIR__, "body_rate_history_plot_tests.jl"))
 include(joinpath(@__DIR__, "environment", "gram_loading_contract_tests.jl"))

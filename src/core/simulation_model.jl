@@ -57,6 +57,7 @@ include(joinpath(@__DIR__, "..", "gnc", "guidance", "guidance_models.jl"))
 	@reexport using .EphemeridesModels
 
 include(joinpath(@__DIR__, "numerics", "geodesy.jl"))
+include(joinpath(@__DIR__, "numerics", "orbital_geometry.jl"))
 
 # 2. Simple hardware data structs
 include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "components.jl"))
@@ -85,6 +86,8 @@ include(joinpath(@__DIR__, "..", "dynamics", "coupled", "external_propagation.jl
 
 # Private owner for shared coordinate transforms; preserve legacy qualified bindings.
 module FrameTransforms
+using ..Geodesy
+using ..OrbitalGeometry
 using ..EphemeridesModels: ephemerides_requires_spice, planet_frame_lpi
 include(joinpath(@__DIR__, "interfaces", "reference_system.jl"))
 export _EARTH_HIGH_PREC_BODY_FIXED_FRAME, _EARTH_FALLBACK_BODY_FIXED_FRAME

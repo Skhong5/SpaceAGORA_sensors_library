@@ -5,6 +5,10 @@ using AstroTime
 using StaticArrays
 using SPICE
 
+# The enclosing aggregator supplies Geodesy and OrbitalGeometry. This leaf
+# owns frame operations, not dependency loading; standalone test sandboxes
+# use test/helpers/reference_system_sandbox.jl to supply the same source owners.
+
 const _EARTH_HIGH_PREC_BODY_FIXED_FRAME = "ITRF93"
 const _EARTH_FALLBACK_BODY_FIXED_FRAME = "IAU_EARTH"
 
@@ -148,9 +152,7 @@ function orbitalelemtorv(oe::SVector{7, Float64}, planet)
     r_x = (h^2) / planet.μ * (1 / (1 + e * cos(vi))) * SVector{3, Float64}([cos(vi); sin(vi); 0])
     v_x = planet.μ / h * SVector{3, Float64}([-sin(vi); e + cos(vi); 0])
     
-    Q = SMatrix{3, 3, Float64}([-sin(Ω)*cos(i)*sin(ω)+cos(Ω)*cos(ω) cos(Ω)*cos(i)*sin(ω)+sin(Ω)*cos(ω) sin(i)*sin(ω); 
-         -sin(Ω)*cos(i)*cos(ω)-cos(Ω)*sin(ω) cos(Ω)*cos(i)*cos(ω)-sin(Ω)*sin(ω) sin(i)*cos(ω);
-          sin(Ω)*sin(i) -cos(Ω)*sin(i) cos(i)])
+    Q = OrbitalGeometry._perifocal_from_inertial(i, ω, Ω)
 
     R = Q' * r_x
     V = Q' * v_x
@@ -301,22 +303,29 @@ function latlongtor(LATLONGH, planet, α_g0, t, t0)
     return [x, y, z]
 end
 
+"""
+    latlongtoOE(LATLONGH, planet, γ, α, v)
+
+Legacy geodetic-to-orbital-element conversion. `LATLONGH` contains geodetic
+latitude and east longitude in radians, then ellipsoidal height in metres.
+`v` is the **inertial velocity magnitude** in m/s, resolved along the local
+north/east/up directions at that location: `γ` is positive above the local
+geodetic tangent plane, and `α` runs from north toward east, both in radians.
+
+`planet.L_PI` supplies the inertial-to-planet-fixed orientation at the caller's
+chosen epoch. There is no epoch argument or frame update here. The constructed
+velocity is only re-expressed with `planet.L_PI'`; no planetary-rotation transport
+term is added. Thus `v` must not be interpreted as ground-relative or air-relative
+speed. To convert a genuinely planet-relative Cartesian velocity, use the full
+`r_pintor_i` position/velocity transform instead; wind requires a separate,
+explicit convention.
+
+Returns `[a, e, i, Ω, ω, ν]`: metres for `a`, dimensionless eccentricity and radian
+angles. The legacy positional signature, diagnostic printing and arithmetic are
+preserved. This compatibility contract does not establish the provenance of any
+untracked historical caller.
+"""
 function latlongtoOE(LATLONGH, planet, γ, α, v)
-    """
-    From Geodetic to Orbital Elements
-    
-    This function converts geodetic coordinates (latitude, longitude, and altitude) to orbital elements.
-    It uses the planet's parameters and the velocity vector to compute the orbital elements.
-    The function returns the orbital elements as a vector.
-    Parameters:
-    - LATLONGH: A vector containing latitude, longitude, and altitude.
-    - planet: A structure containing the planet's parameters.
-    - γ: The flight path angle.
-    - α: The azimuth of the velocity vector.
-    - v: The velocity magnitude.
-    Returns:
-    - A vector containing the orbital elements: semi-major axis, eccentricity, inclination, right ascension of the ascending node, argument of periapsis, and true anomaly.
-    """
     # Geodetic to Orbital Elements
     ϕ = LATLONGH[1]
     λ = LATLONGH[2]
@@ -341,7 +350,7 @@ function latlongtoOE(LATLONGH, planet, γ, α, v)
     println("z: ", z)
     r_i, _ = r_pintor_i(SVector{3, Float64}([x, y, z]), SVector{3, Float64}([0, 0, 0]), planet)
     # println("r_i: ", r_i)
-    # Define local unit vectors in ECEF:
+    # Local north/east/up basis directions, expressed in planet-fixed axes:
     Z_ecef = SVector{3,Float64}([cos(ϕ)*cos(λ), cos(ϕ)*sin(λ), sin(ϕ)])
     E_ecef = SVector{3,Float64}([-sin(λ), cos(λ), 0])
     N_ecef = -SVector{3,Float64}([-sin(ϕ)*cos(λ), -sin(ϕ)*sin(λ), cos(ϕ)])  # since S = [-sinϕ*cosλ, -sinϕ*sinλ, cosϕ]
@@ -349,15 +358,16 @@ function latlongtoOE(LATLONGH, planet, γ, α, v)
     # Alternatively, you can define N_ecef directly as:
     N_ecef = SVector{3,Float64}([-cos(λ)*sin(ϕ), -sin(λ)*sin(ϕ), cos(ϕ)])
 
-    # Decompose the local velocity (assumed provided as v magnitude, γ, and α):
+    # Resolve the legacy inertial velocity in this local basis:
     v_N = v * cos(γ) * cos(α)  # North component
     v_E = v * cos(γ) * sin(α)  # East component
     v_Z = v * sin(γ)           # Up/Zenith component
 
-    # Form the velocity in ECEF:
+    # These are inertial-velocity components along planet-fixed axes, not
+    # velocity relative to the rotating planet:
     v_ecef = v_N * N_ecef + v_E * E_ecef + v_Z * Z_ecef
 
-    # Convert velocity from PCPF to J2000 for rvtoorbitalelement.
+    # Re-express that velocity in J2000 without adding a transport term.
     v_eci_j2000 = planet.L_PI' * v_ecef
     # v_vec = SVector{3, Float64}([v*cos(γ)*cos(α), v*cos(γ)*sin(α), v*sin(γ)])
 
@@ -377,8 +387,7 @@ end
     ep2 = e2 / (1 - e2)
     p_xy = sqrt(x_p^2 + y_p^2)
 
-    θ = atan(z_p * planet.Rp_e, p_xy * planet.Rp_p)
-    lat = atan(z_p + ep2 * planet.Rp_p * sin(θ)^3, p_xy - e2 * planet.Rp_e * cos(θ)^3)
+    lat = Geodesy._bowring_latitude(z_p, p_xy, e2, ep2, planet)
 
     #Calculate longitude
     lon = atan(y_p, x_p)
@@ -386,7 +395,7 @@ end
     if !spherical_harmonic_topography
         N = planet.Rp_e / sqrt(1 - e2*sin(lat)^2)
         # Bowring closed form: h = p·cosφ + (z + e²·N·sinφ)·sinφ − N.
-        alt = p_xy*cos(lat) + (z_p + e2*N*sin(lat))*sin(lat) - N
+        alt = Geodesy._bowring_altitude(p_xy, z_p, e2, N, lat)
     else
         # Legacy duck-typed topography contract (see the sandbox test in suite
         # 03): the 6-arg planet.topography_function receives the includer

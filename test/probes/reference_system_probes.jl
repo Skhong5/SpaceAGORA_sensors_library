@@ -5,7 +5,7 @@ using StaticArrays
 using SPICE
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const REFSYS_PATH = joinpath(REPO_ROOT, "src", "core", "interfaces", "reference_system.jl")
+const REFSYS_SANDBOX_PATH = joinpath(REPO_ROOT, "test", "helpers", "reference_system_sandbox.jl")
 
 function _ancestry_has_runtime_services(mod::Module)::Bool
     while true
@@ -20,7 +20,7 @@ end
 # reachable while no module in the ancestry defines RuntimeServices, i.e. before
 # simulation_model.jl is included (it installs RuntimeServices in its parent).
 module _SpiceLockErrorProbe end
-Base.include(_SpiceLockErrorProbe, REFSYS_PATH)
+Base.include(_SpiceLockErrorProbe, REFSYS_SANDBOX_PATH)
 const PROBE_ANCESTRY_HAS_RS = _ancestry_has_runtime_services(_SpiceLockErrorProbe)
 const SPICE_LOCK_PROBE_RESULT = try
     _SpiceLockErrorProbe._spice_lock()
