@@ -1,4 +1,4 @@
-"""Robot and cloth-arm kinematics module for serial-arm models, FK, IK, and surface targeting."""
+"""Robot-arm kinematics module for serial-arm models, FK, IK, and surface targeting."""
 module Robotics
 
 using LinearAlgebra
@@ -11,7 +11,7 @@ export ClothArmBasePose, ClothArmLink, ClothArmJoint, ClothArmModel, ClothArmPos
 export default_cloth_arm_model, cloth_fk, cloth_fk_state, cloth_end_effector_pose
 export cloth_ik, cloth_total_reach, closest_surface_target
 
-"""Base pose for a cloth-arm kinematic chain in world coordinates."""
+"""Base pose for a robot-arm kinematic chain in world coordinates."""
 struct ClothArmBasePose
     position::SVector{3, Float64}
     quaternion::SVector{4, Float64}
@@ -26,7 +26,7 @@ ClothArmBasePose(
 ) =
     ClothArmBasePose(SVector{3, Float64}(position), _unit_quat(quaternion))
 
-"""Rigid link geometry and mass properties for a cloth-arm model."""
+"""Rigid link geometry and mass properties for a robot-arm model."""
 struct ClothArmLink
     name::Symbol
     vector_parent::SVector{3, Float64}
@@ -35,7 +35,7 @@ struct ClothArmLink
     mass_kg::Float64
 end
 
-"""Single revolute joint axis and position limits for a cloth-arm model."""
+"""Single revolute joint axis and position limits for a robot-arm model."""
 struct ClothArmJoint
     name::Symbol
     axis_parent::SVector{3, Float64}
@@ -43,14 +43,14 @@ struct ClothArmJoint
     upper_rad::Float64
 end
 
-"""Serial cloth-arm model composed of links and joints."""
+"""Serial robot-arm model composed of links and joints."""
 struct ClothArmModel
     links::Vector{ClothArmLink}
     joints::Vector{ClothArmJoint}
     mount_offset_body::SVector{3, Float64}
 end
 
-"""Forward-kinematics output for cloth-arm joint and link frames."""
+"""Forward-kinematics output for robot-arm joint and link frames."""
 struct ClothArmPose
     base_position::SVector{3, Float64}
     base_quaternion::SVector{4, Float64}
@@ -63,7 +63,7 @@ struct ClothArmPose
     end_effector_quaternion::SVector{4, Float64}
 end
 
-"""Cloth-arm pose plus joint velocity and acceleration state."""
+"""Robot-arm pose plus joint velocity and acceleration state."""
 struct ClothArmState
     pose::ClothArmPose
     q::Vector{Float64}
@@ -83,7 +83,7 @@ end
     return SVector{4, Float64}(s * u[1], s * u[2], s * u[3], cos(0.5 * θ))
 end
 
-"""Construct the default serial cloth-arm model used by examples and tests."""
+"""Construct the default serial robot-arm model used by examples and tests."""
 function default_cloth_arm_model(;
     link_lengths_m=(0.18, 0.16, 0.12),
     link_radii_m=(0.018, 0.016, 0.014),
@@ -123,7 +123,7 @@ end
     return axis / na
 end
 
-"""Return the total reach of all links in a cloth-arm model."""
+"""Return the total reach of all links in a robot-arm model."""
 function cloth_total_reach(model::ClothArmModel)::Float64
     return sum(norm(link.vector_parent) for link in model.links)
 end
@@ -135,7 +135,7 @@ function _validate_joint_vector(model::ClothArmModel, q)
     return Float64.(collect(q))
 end
 
-"""Evaluate cloth-arm forward kinematics for a base pose and joint vector."""
+"""Evaluate robot-arm forward kinematics for a base pose and joint vector."""
 function cloth_fk(model::ClothArmModel, base_pose::ClothArmBasePose, q)::ClothArmPose
     qv = _validate_joint_vector(model, q)
     R_base = _rot(base_pose.quaternion)
@@ -179,7 +179,7 @@ function cloth_fk(model::ClothArmModel, base_pose::ClothArmBasePose, q)::ClothAr
     )
 end
 
-"""Evaluate cloth-arm forward kinematics and attach joint velocity and acceleration."""
+"""Evaluate robot-arm forward kinematics and attach joint velocity and acceleration."""
 function cloth_fk_state(
     model::ClothArmModel,
     base_pose::ClothArmBasePose,
@@ -198,14 +198,14 @@ function cloth_fk_state(
     )
 end
 
-"""Return the end-effector position and orientation from a cloth-arm pose or state."""
+"""Return the end-effector position and orientation from a robot-arm pose or state."""
 cloth_end_effector_pose(state::ClothArmState) =
     state.pose.end_effector_position, state.pose.end_effector_quaternion
 
 cloth_end_effector_pose(pose::ClothArmPose) =
     pose.end_effector_position, pose.end_effector_quaternion
 
-"""Compute the geometric end-effector position Jacobian for the cloth arm."""
+"""Compute the geometric end-effector position Jacobian for the robot arm."""
 function _ee_position_jacobian(
     model::ClothArmModel,
     base_pose::ClothArmBasePose,
@@ -228,7 +228,7 @@ function _ee_position_jacobian(
     return J
 end
 
-"""Solve cloth-arm inverse kinematics with damped least-squares iterations."""
+"""Solve robot-arm inverse kinematics with damped least-squares iterations."""
 function cloth_ik(
     model::ClothArmModel,
     base_pose::ClothArmBasePose,
@@ -289,5 +289,45 @@ function closest_surface_target(points, reference_position; standoff_m::Real=0.0
         index=best_idx,
     )
 end
+
+
+# Preferred terminology. Preserve the original objects for saved data and downstream methods.
+export RobotArmBasePose, RobotArmLink, RobotArmJoint, RobotArmModel, RobotArmPose, RobotArmState, default_robot_arm_model, robot_arm_fk, robot_arm_fk_state, robot_arm_end_effector_pose, robot_arm_ik, robot_arm_total_reach
+
+"""Preferred name for `ClothArmBasePose`; both names refer to the same object."""
+const RobotArmBasePose = ClothArmBasePose
+
+"""Preferred name for `ClothArmLink`; both names refer to the same object."""
+const RobotArmLink = ClothArmLink
+
+"""Preferred name for `ClothArmJoint`; both names refer to the same object."""
+const RobotArmJoint = ClothArmJoint
+
+"""Preferred name for `ClothArmModel`; both names refer to the same object."""
+const RobotArmModel = ClothArmModel
+
+"""Preferred name for `ClothArmPose`; both names refer to the same object."""
+const RobotArmPose = ClothArmPose
+
+"""Preferred name for `ClothArmState`; both names refer to the same object."""
+const RobotArmState = ClothArmState
+
+"""Preferred name for `default_cloth_arm_model`; both names refer to the same object."""
+const default_robot_arm_model = default_cloth_arm_model
+
+"""Preferred name for `cloth_fk`; both names refer to the same object."""
+const robot_arm_fk = cloth_fk
+
+"""Preferred name for `cloth_fk_state`; both names refer to the same object."""
+const robot_arm_fk_state = cloth_fk_state
+
+"""Preferred name for `cloth_end_effector_pose`; both names refer to the same object."""
+const robot_arm_end_effector_pose = cloth_end_effector_pose
+
+"""Preferred name for `cloth_ik`; both names refer to the same object."""
+const robot_arm_ik = cloth_ik
+
+"""Preferred name for `cloth_total_reach`; both names refer to the same object."""
+const robot_arm_total_reach = cloth_total_reach
 
 end # module Robotics

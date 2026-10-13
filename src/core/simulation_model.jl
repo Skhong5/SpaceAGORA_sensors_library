@@ -41,10 +41,13 @@ include(joinpath(@__DIR__, "..", "vehicle", "robotics", "robotics.jl"))
 @reexport using .Robotics
 include(joinpath(@__DIR__, "..", "gnc", "robotics", "robot_arm_planning.jl"))
 @reexport using .RobotArmPlanning
-include(joinpath(@__DIR__, "..", "dynamics", "multibody_cloth", "cloth_multibody.jl"))
-@reexport using .ClothMultibody
-include(joinpath(@__DIR__, "..", "dynamics", "multibody_cloth", "cloth_robot_arm_dynamics.jl"))
-@reexport using .ClothRobotArmDynamics
+include(joinpath(@__DIR__, "..", "dynamics", "compliant_multibody", "compliant_multibody.jl"))
+# Keep the defining module identity for existing serialized objects and HYPR.
+const CompliantMultibody = ClothMultibody
+@reexport using .CompliantMultibody
+include(joinpath(@__DIR__, "..", "dynamics", "compliant_multibody", "compliant_robot_arm_dynamics.jl"))
+const CompliantRobotArmDynamics = ClothRobotArmDynamics
+@reexport using .CompliantRobotArmDynamics
 
 include(joinpath(@__DIR__, "..", "vehicle", "actuators", "thruster", "thruster_models_module.jl"))
 @reexport using .ThrusterModels
@@ -57,6 +60,7 @@ include(joinpath(@__DIR__, "..", "gnc", "guidance", "guidance_models.jl"))
 	@reexport using .EphemeridesModels
 
 include(joinpath(@__DIR__, "numerics", "geodesy.jl"))
+include(joinpath(@__DIR__, "numerics", "orbital_geometry.jl"))
 
 # 2. Simple hardware data structs
 include(joinpath(@__DIR__, "..", "vehicle", "spacecraft", "components.jl"))
@@ -77,7 +81,7 @@ include(joinpath(@__DIR__, "..", "dynamics", "coupled", "articulated_body.jl"))
 
 # Compliant multibody attachments mounted on spacecraft links (the type itself lives in
 # SpacecraftModels; this is its runtime and dynamics).
-include(joinpath(@__DIR__, "..", "dynamics", "multibody_cloth", "compliant_attachment_dynamics.jl"))
+include(joinpath(@__DIR__, "..", "dynamics", "compliant_multibody", "compliant_attachment_dynamics.jl"))
 @reexport using .CompliantAttachmentDynamics
 
 # Generic hooks for spacecraft an external integrator owns for a run (internal name space, not re-exported).
@@ -85,6 +89,8 @@ include(joinpath(@__DIR__, "..", "dynamics", "coupled", "external_propagation.jl
 
 # Private owner for shared coordinate transforms; preserve legacy qualified bindings.
 module FrameTransforms
+using ..Geodesy
+using ..OrbitalGeometry
 using ..EphemeridesModels: ephemerides_requires_spice, planet_frame_lpi
 include(joinpath(@__DIR__, "interfaces", "reference_system.jl"))
 export _EARTH_HIGH_PREC_BODY_FIXED_FRAME, _EARTH_FALLBACK_BODY_FIXED_FRAME

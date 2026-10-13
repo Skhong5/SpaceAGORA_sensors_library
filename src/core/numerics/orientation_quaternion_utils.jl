@@ -1,4 +1,4 @@
-"""Internal Float64 quaternion policy shared by robotics and compliant cloth dynamics.
+"""Internal Float64 quaternion policy shared by robotics and compliant multibody dynamics.
 
 Scalar-last, active rotations use a norm-based identity fallback. Orientation
 products project their inputs and output; the typed raw product retains scale

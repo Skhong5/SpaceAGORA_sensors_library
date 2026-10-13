@@ -15,6 +15,11 @@ reverted to keep this repo mergeable with its upstream):
   exception is `src/mission/operations/maneuver_plans.jl`, which is not part
   of the package. Suites 01 and 03 deliberately raw-include source files into
   throwaway sandbox modules to test standalone loading — keep those.
+  Reference-system sandboxes use `test/helpers/reference_system_sandbox.jl`:
+  it raw-loads the canonical Geodesy and OrbitalGeometry numeric sources before
+  the frame leaf, without importing SpaceAGORA or RuntimeServices. This preserves
+  includer-local `args` and the cold missing-lock probe while keeping dependency
+  orchestration out of the internal `reference_system.jl` leaf.
 - `test/unit/`
   A smaller, standalone (`using SpaceAGORA`, no shared-scope dependency) set of
   domain tests, runnable on their own via `test/unit/runtests.jl`. The default

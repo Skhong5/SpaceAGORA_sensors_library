@@ -141,6 +141,59 @@ julia --project=. -e "using Pkg; Pkg.instantiate()"
 julia --project=. docs/make.jl
 ```
 
+## Your own project
+
+Keep your script and generated results in a project outside the SpaceAGORA
+checkout. First select a recorded commit in your existing checkout and use
+absolute paths. The setup below explicitly installs that checkout into the new
+project, resolves its dependencies without copying a repository manifest, and
+declares the packages imported by the
+[custom-force walkthrough](custom_effector.md). It does not add private modules
+to Julia's load path.
+
+Save this as `setup_user_project.jl` outside the checkout:
+
+```julia
+using Pkg
+length(ARGS) == 2 || error("Usage: setup_user_project.jl CHECKOUT NEW_PROJECT")
+checkout, project = abspath.(ARGS)
+isdir(project) && !isempty(readdir(project)) &&
+    error("Choose a new empty project directory")
+mkpath(project)
+Pkg.activate(project)
+Pkg.develop(PackageSpec(path=checkout); preserve=Pkg.PRESERVE_ALL)
+Pkg.add([PackageSpec(name="StaticArrays"), PackageSpec(name="CSV"),
+         PackageSpec(name="DataFrames")]; preserve=Pkg.PRESERVE_ALL)
+Pkg.instantiate()
+```
+
+Run setup, then save `my_effector.jl` from the walkthrough in the new project:
+
+```text
+julia --startup-file=no setup_user_project.jl /absolute/SpaceAGORA.jl /absolute/my-project
+JULIA_LOAD_PATH="@:@stdlib" julia --startup-file=no --project=/absolute/my-project /absolute/my-project/my_effector.jl
+```
+
+The load-path setting prevents unrelated packages in your default global project
+from hiding a missing direct dependency. On Windows, Julia uses `;` as the load
+path separator, so set `JULIA_LOAD_PATH` to `@;@stdlib` before launching Julia.
+The script writes results beside itself, independently of the terminal's working
+directory. Inspect `SimulationResults` and the three written files as described
+on [Simulation Outputs](outputs.md).
+
+Setup uses your existing Julia depot and can download missing packages. An
+explicit cached/offline check may instead set `JULIA_PKG_OFFLINE=true` and
+`JULIA_PKG_PRECOMPILE_AUTO=0`; a missing cached dependency then remains a setup
+failure, not permission to substitute another version. Success with a populated
+depot is not a clean-depot installation result. Do not modify the source checkout
+while a separate project is using its development path; record the checkout
+commit and both generated environment files with any result you keep.
+
+The optional planner companion has its own
+[documented installation](rpo_planner_pilot.md#Installing-optional-HYPR). Installing
+the core project alone does not install or qualify HYPR, native GRAM, SPICE data,
+or a full mission workflow.
+
 ## Local output paths
 
 Generated reports and builds stay local. Common ignored output roots are:

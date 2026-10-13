@@ -18,7 +18,7 @@ environment. After setup the run needs neither native assets nor network access:
 JULIA_PKG_OFFLINE=true julia --project=examples/rpo_planner_env examples/rpo_planner_env/smoke.jl
 ```
 
-The HYPR RPO/Cloth examples use this same environment, for example:
+The HYPR RPO and compliant robot-arm examples use this same environment, for example:
 
 ```sh
 julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC.jl

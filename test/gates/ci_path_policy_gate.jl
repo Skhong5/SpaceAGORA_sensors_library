@@ -23,6 +23,7 @@ const RETIRED_PATHS = (
     joinpath("src", "benchmarks"),
     joinpath("src", "examples"),
     joinpath("src", "dynamics", "models"),
+    joinpath("src", "dynamics", "multibody_cloth"),
     joinpath("src", "analysis", "plotting"),
     joinpath("src", "analysis", "reports"),
     joinpath("src", "gnc", "estimation"),
@@ -78,6 +79,10 @@ const RETIRED_PATHS = (
 
 # Canonical owner paths that must exist.
 const REQUIRED_PATHS = (
+    joinpath("src", "dynamics", "compliant_multibody", "compliant_multibody.jl"),
+    joinpath("src", "dynamics", "compliant_multibody", "compliant_robot_arm_dynamics.jl"),
+    joinpath("src", "dynamics", "compliant_multibody", "compliant_attachment.jl"),
+    joinpath("src", "dynamics", "compliant_multibody", "compliant_attachment_dynamics.jl"),
     joinpath("src", "simulation", "config", "configuration.jl"),
     joinpath("src", "simulation", "config", "run_settings.jl"),
     joinpath("src", "simulation", "config", "solver_settings.jl"),
@@ -113,6 +118,12 @@ const TEXT_EXTS = (".jl", ".md", ".yml", ".yaml")
 
 # Forbidden tokens: (rule name, scan roots, file extensions, tokens).
 const TOKEN_RULES = (
+    (
+        name = "retired compliant multibody source tree",
+        roots = ("src", "test", "docs"),
+        exts = TEXT_EXTS,
+        tokens = ("multibody_cloth",),
+    ),
     (
         name = "retired dynamics/models tree",
         roots = ("src", "test"),

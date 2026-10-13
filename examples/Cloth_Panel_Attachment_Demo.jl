@@ -1,6 +1,6 @@
 #!/usr/bin/env julia
 
-# Cloth solar panel deployment inside `run_simulation`: a CompliantAttachment on a bus.
+# Compliant multibody solar panel deployment inside `run_simulation`: a CompliantAttachment on a bus.
 #
 # The four-panel tile mesh of Solar_Panel_Cloth_Deployment_Demo.jl (48 compliant bodies, folded
 # in a zigzag, deployed by hinge-line motors on a smoothstep rest schedule) is mounted on the
@@ -17,11 +17,12 @@
 #    deployment reaction torques now rock the bus, and gravity acts on every tile at its own
 #    position.
 #
+# Historical filenames and output identifiers are retained for compatibility.
 # Outputs (output/cloth_panel_attachment_demo/): a 3D deployment HTML built from the saved
 # `attachment_pose` columns, a comparison/reaction HTML, and a CSV of the plotted curves. Set
 # SPACEAGORA_EXAMPLE_SMOKE=1 for a 3 s run.
 #
-# Solver advice: cloth meshes are stiff. This mesh is mild (fastest mode ~30 rad/s, damped), so
+# Solver advice: compliant multibody meshes can be stiff. This mesh is mild (fastest mode ~30 rad/s, damped), so
 # the explicit :tsit5 works; with joint stiffness much larger than the orbit and attitude rates
 # use :auto_stiff or :rodas5p. The attachment state is relative to the bus, so stiff meshes carry no
 # roundoff from orbital-radius positions.
@@ -180,7 +181,7 @@ function run_cloth_panel_attachment_demo()
     push!(traces, PlotlyJS.scatter(x=orb.time, y=bus_angle_deg, mode="lines", name="bus attitude change", xaxis="x3", yaxis="y3"))
     push!(traces, PlotlyJS.scatter(x=orb.time, y=rad2deg.(bus_rate), mode="lines", name="bus angular rate", xaxis="x4", yaxis="y4"))
     comparison = PlotlyJS.Plot(traces, PlotlyJS.Layout(
-        title="Cloth panel deployment as a CompliantAttachment",
+        title="Compliant panel deployment as a CompliantAttachment",
         grid=PlotlyJS.attr(rows=2, columns=2, pattern="independent"),
         xaxis=PlotlyJS.attr(title="time (s)"), yaxis=PlotlyJS.attr(title="relative hinge angle (deg)"),
         xaxis2=PlotlyJS.attr(title="time (s)"), yaxis2=PlotlyJS.attr(title="engine - standalone (m)", type="log"),
@@ -204,7 +205,7 @@ function run_cloth_panel_attachment_demo()
         end
     end
 
-    println("Cloth panel attachment demo complete.")
+    println("Compliant panel attachment demo complete.")
     println("  tile bodies in the attachment    = ", nbodies)
     println("  engine run (huge bus)            = ", @sprintf("%.2f s", t_cmp), ", standalone RK4 = ", @sprintf("%.2f s", t_ref))
     println("  max tile difference vs standalone = ", @sprintf("%.3e m", maximum(tile_diff)), " over ", ATT_DURATION_S, " s (rest quaternions at the step start, as the old demo)")

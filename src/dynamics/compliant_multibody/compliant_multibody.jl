@@ -1,4 +1,4 @@
-"""Compliant multibody dynamics module for cloth-like panels, topologies, joint loads, and integration."""
+"""Compliant lumped-body dynamics: connected bodies with mass, inertia, stiffness, and damping."""
 module ClothMultibody
 
 using LinearAlgebra
@@ -21,7 +21,7 @@ export CompiledCompliantModel, compile_compliant_model
 export step_compliant_multibody_rk4, step_compliant_multibody_implicit_midpoint
 export simulate_compliant_multibody
 
-"""Rigid body properties used by the compliant multibody cloth model."""
+"""Rigid body properties used by the compliant multibody model."""
 struct CompliantBody
     name::Symbol
     mass_kg::Float64
@@ -684,7 +684,7 @@ function simulate_compliant_multibody(
         elseif integrator === :rk4
             step_compliant_multibody_rk4
         else
-            throw(ArgumentError("Unsupported Cloth multibody integrator $(repr(integrator)); expected :implicit_midpoint or :rk4."))
+            throw(ArgumentError("Unsupported compliant multibody integrator $(repr(integrator)); expected :implicit_midpoint or :rk4."))
         end
         states[k] = stepper(model, states[k - 1], times[k - 1], times[k] - times[k - 1]; dynamics_kwargs...)
     end
