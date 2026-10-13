@@ -93,19 +93,19 @@ end
     density_callback_assembly_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "callbacks", "density_callbacks", "assembly.jl"), String)
     legacy_nested_model_path = "SimulationEngine" * ".SimulationModel"
 
-    @test occursin("include(joinpath(@__DIR__, \"simulation\", \"runtime_services.jl\"))", spaceagora_src)
-    @test occursin("include(joinpath(@__DIR__, \"core\", \"simulation_model.jl\"))", spaceagora_src)
-    @test findfirst("include(joinpath(@__DIR__, \"simulation\", \"runtime_services.jl\"))", spaceagora_src) <
-        findfirst("include(joinpath(@__DIR__, \"core\", \"simulation_model.jl\"))", spaceagora_src)
-    @test findfirst("include(joinpath(@__DIR__, \"core\", \"simulation_model.jl\"))", spaceagora_src) <
-        findfirst("include(joinpath(@__DIR__, \"simulation\", \"engine\", \"simulation_engine.jl\"))", spaceagora_src)
+    @test occursin("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"runtime_services.jl\"))", spaceagora_src)
+    @test occursin("include(joinpath(@__DIR__, \"foundation\", \"core\", \"simulation_model.jl\"))", spaceagora_src)
+    @test findfirst("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"runtime_services.jl\"))", spaceagora_src) <
+        findfirst("include(joinpath(@__DIR__, \"foundation\", \"core\", \"simulation_model.jl\"))", spaceagora_src)
+    @test findfirst("include(joinpath(@__DIR__, \"foundation\", \"core\", \"simulation_model.jl\"))", spaceagora_src) <
+        findfirst("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"engine\", \"simulation_engine.jl\"))", spaceagora_src)
     @test occursin("module RuntimeServices", runtime_services_src)
     @test occursin("const SPICE_LOCK = ReentrantLock()", runtime_services_src)
     @test occursin("const GRAM_LOCK = SPICE_LOCK", runtime_services_src)
     @test !occursin("const SPICE_LOCK", simulation_model_src)
     @test !occursin("const GRAM_LOCK", simulation_model_src)
     @test occursin("runtime_services.jl", simulation_model_src)
-    @test occursin("include(joinpath(@__DIR__, \"..\", \"vehicle\", \"spacecraft\", \"model.jl\"))", simulation_model_src)
+    @test occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"models\", \"vehicle\", \"spacecraft\", \"model.jl\"))", simulation_model_src)
     @test occursin("@reexport using .SpacecraftModels", simulation_model_src)
     @test !occursin("@reexport using .PhysicalModel", simulation_model_src)
     @test occursin("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"compat_model_codes.jl\"))", simulation_model_src)
@@ -119,8 +119,8 @@ end
     @test occursin("using ..LegacyModelCodes:", runtime_types_src)
     @test occursin("using ..SpacecraftModels: SpacecraftModel", runtime_types_src)
     @test !occursin("@enum Legacy", runtime_types_src)
-    @test occursin("include(joinpath(@__DIR__, \"..\", \"gnc\", \"command_types.jl\"))", simulation_model_src)
-    @test findfirst("include(joinpath(@__DIR__, \"..\", \"gnc\", \"command_types.jl\"))", simulation_model_src) <
+    @test occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"models\", \"gnc\", \"command_types.jl\"))", simulation_model_src)
+    @test findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"models\", \"gnc\", \"command_types.jl\"))", simulation_model_src) <
         findfirst("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"runtime_types.jl\"))", simulation_model_src)
     @test occursin("module CommandTypes", command_types_src)
     @test occursin("using ..CommandTypes: PropulsiveManeuverCommand", runtime_types_src)
