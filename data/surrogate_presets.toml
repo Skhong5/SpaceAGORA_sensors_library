@@ -1,4 +1,4 @@
-catalog_revision = "odyssey-p20-1.0.0+mars-global-upper-p20-1.0.0+mars-global-near-surface-p20-1.0.0+mars-global-near-surface-p20-1.1.0+mars-global-near-surface-p20-1.2.0"
+catalog_revision = "odyssey-p20-1.0.0+mars-global-upper-p20-1.0.0+mars-global-near-surface-p20-1.0.0+mars-global-near-surface-p20-1.1.0+mars-global-near-surface-p20-1.2.0+mars-global-descent-p20-1.0.0"
 schema_version = 1
 
 [[presets]]
@@ -772,3 +772,60 @@ version = "1.2.0"
     provisional_surface_layer_models = "served and flagged in each surface-layer result's status"
     stored_domain_is_uniform_accuracy_claim = false
     winds = "stored east, north and vertical winds; the horizontal components clipped at 0.7 times the speed of sound, as native Mars-GRAM clips them; refused where a needed stored wind value is unavailable"
+
+[[presets]]
+description = "Mars global descent atmosphere: the near-surface preset 1.2.0 below 80 km above the ellipsoid and the global upper preset 1.0.0 at and above it, frozen at the Odyssey P20 instant"
+id = "mars_global_descent_p20_frozen_v1"
+kind = "composite_by_height"
+planet = "mars"
+release_enabled = true
+version = "1.0.0"
+
+    [presets.atmosphere]
+    api_units = ["m", "rad", "rad"]
+    epoch_utc = "2001-11-07T11:51:04.794789Z"
+    equatorial_radius_m = 3396190.0
+    fields = ["density_kgm3", "temperature_K", "wind_ew_ms", "wind_ns_ms", "wind_up_ms"]
+    handover_discontinuity = "density, temperature and winds change abruptly at the handover; nothing is blended"
+    height = "ellipsoidal"
+    latitude = "geodetic"
+    longitude = "east_positive_periodic"
+    mode = "frozen_mean_snapshot"
+    polar_radius_m = 3376200.0
+    query_elapsed_time_applied = false
+    wind_boolean_suppresses_stored_components = false
+    wind_convention = "stored_nominal_local_ENU"
+    wind_returned = "stored_components"
+    winds_available = true
+
+    [[presets.components]]
+    id = "mars_global_near_surface_p20_frozen_v1"
+    role = "lower"
+    version = "1.2.0"
+
+    [[presets.components]]
+    id = "mars_global_upper_p20_frozen_v1"
+    role = "upper"
+    version = "1.0.0"
+
+    [presets.domain]
+    at_or_above_handover = "the upper component's domain: up to 365 km above the ellipsoid, all latitudes"
+    below_handover = "the lower component's domain: planetocentric latitudes within 85 degrees, surface below 9 km, at least 5 m above the surface, where its stored winds are available"
+    height_top_m = 365000.0
+    longitude_period_deg = 360.0
+    outside = "error"
+
+    [presets.handover]
+    height_m = 80000.0
+    reference = "ellipsoidal"
+    rule = "lower_below_upper_at_or_above"
+
+    [presets.support]
+    algorithm_changes_inherit_reference_accuracy = false
+    application_accuracy_requirements = "unset; choose for the intended study"
+    changed_date_selects_new_atmosphere = false
+    component_validation = "each component's own validation applies on its side of the handover; see its entry"
+    evidence = "The composition, near-surface 1.2.0 below 80 km above the ellipsoid and upper 1.0.0 at and above it, was validated against native Mars-GRAM at the frozen instant under the Space-FALCON Lab release limits: on 48 fixed descent paths (flight-path angles -10, -15 and -20 degrees) and in 24 propagated descents (-12 and -20 degrees) in a reference integrator, and in 23 ballistic entries (-12 and -20 degrees) in SpaceAGORA's engine with native Mars-GRAM in the same engine loop. Every descent started 125 km above the ellipsoid at 5.5 km/s relative to the planet, with a ballistic coefficient of 100 kg/m^2, and ended 100 m above the terrain. Both validations used these components' data and this handover"
+    not_established = "passes that skim or recross the handover, as in aerobraking; other entry speeds, ballistic coefficients and vehicles, and lifting or guided entries; real-world landing accuracy; the engine's use of the near-surface speed of sound; other epochs"
+    stored_domain_is_uniform_accuracy_claim = false
+    validated_use = "ballistic descents within the envelope stated in evidence"

@@ -247,15 +247,18 @@ Julia artifacts handle concurrent installation; a corrupt managed artifact or
 override must be repaired explicitly. User-supplied files are never replaced.
 
 A named version fixes the atmosphere's epoch and domain. Changing the simulation
-date does not evolve it. Three presets are listed, all frozen at the P20 instant
+date does not evolve it. Four presets are listed, all frozen at the P20 instant
 (see [atmosphere models](user/atmosphere_models.md)):
 - the bounded Odyssey preset;
 - `mars_global_upper_p20_frozen_v1`, a global Mars grid from 80 to 365 km;
-- `mars_global_near_surface_p20_frozen_v1`, a near-surface Mars atmosphere from 5 m above the surface. Versions 1.0.0 and 1.1.0 store no winds; version 1.2.0 adds stored winds. Version 1.0.0 reaches 75 km; versions 1.1.0 and 1.2.0 reach 81 km areoid height, above the global preset's 80 km floor everywhere.
+- `mars_global_near_surface_p20_frozen_v1`, a near-surface Mars atmosphere from 5 m above the surface. Versions 1.0.0 and 1.1.0 store no winds; version 1.2.0 adds stored winds. Version 1.0.0 reaches 75 km; versions 1.1.0 and 1.2.0 reach 81 km areoid height, above the global preset's 80 km floor everywhere;
+- `mars_global_descent_p20_frozen_v1`, a composite with no data of its own: the near-surface preset 1.2.0 below 80 km above the ellipsoid and the global preset 1.0.0 at and above it, for descents from orbit to the ground.
 
 The same `fetch` and `check` commands take `--preset=mars_global_upper_p20_frozen_v1 --version=1.0.0`,
 whose archive is about 230 MB, or `--preset=mars_global_near_surface_p20_frozen_v1 --version=1.2.0` (or
-`--version=1.1.0` or `--version=1.0.0`), whose archives are about 34 MB, 17 MB and 15 MB. Other planets and epochs require separately
-generated and validated presets.
+`--version=1.1.0` or `--version=1.0.0`), whose archives are about 34 MB, 17 MB and 15 MB. For
+`--preset=mars_global_descent_p20_frozen_v1 --version=1.0.0`, `fetch` installs and verifies both of its components
+(the upper 1.0.0 and near-surface 1.2.0 archives) and `check` builds the composite from them; it takes no `--file`.
+Other planets and epochs require separately generated and validated presets.
 The ordinary results-bundle manifest includes an `atmosphere` section identifying
 the backend, preset/version, payload/catalog hashes and frozen-domain contract.
