@@ -5,6 +5,7 @@ using LinearAlgebra
 
 using ..Components
 using ..Geodesy: geodetic_altitude, ellipsoid_surface_radius, radius_for_geodetic_altitude
+using ..OrbitalGeometry
 using ..EphemeridesModels: SpiceEphemeridesModel, ephemerides_time_seconds, planet_frame_lpi
 
 export Link, Joint, CompliantAttachment, attachment_body_count, SpacecraftModel, DynamicsModel, InitialCondition, CartesianInitialCondition, AbstractInitialCondition, GuidanceModel, NavigationModel, ControlModel
@@ -115,11 +116,7 @@ end
     ν::Float64
 )::SVector{3, Float64}
     q = SVector{3, Float64}(cos(ν), sin(ν), 0.0)
-    Q = @SMatrix [
-        -sin(Ω)*cos(i)*sin(ω)+cos(Ω)*cos(ω)  cos(Ω)*cos(i)*sin(ω)+sin(Ω)*cos(ω)  sin(i)*sin(ω)
-        -sin(Ω)*cos(i)*cos(ω)-cos(Ω)*sin(ω)  cos(Ω)*cos(i)*cos(ω)-sin(Ω)*sin(ω)  sin(i)*cos(ω)
-         sin(Ω)*sin(i)                       -cos(Ω)*sin(i)                       cos(i)
-    ]
+    Q = OrbitalGeometry._perifocal_from_inertial(i, ω, Ω)
     u = Q' * q
     return u / norm(u)
 end

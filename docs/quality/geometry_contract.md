@@ -40,3 +40,30 @@ match exactly on that grid; no improved or arbitrary-height accuracy is claimed.
 Existing constructor/apsis/frame probes remain applicable.
 This is bounded geometry compatibility, not a new scientific campaign or a claim
 that spherical osculating periapsis and instantaneous geodetic altitude coincide.
+
+## Apsis and orbital-element rotations
+
+`SimulationModel.OrbitalGeometry` owns the internal Float64 matrix
+`_perifocal_from_inertial(i, ω, Ω)`, with inclination, argument of periapsis and
+ascending node in radians. It maps inertial components to perifocal components;
+its transpose maps perifocal vectors into inertial axes. The original nine
+component expressions and their evaluation order are preserved. The owner retains
+the constructor's literal `@SMatrix` construction and inline annotation: replacing
+that construction with an array conversion changes some final normalized direction
+bits even when the matrix entries match. Bounded exact-base differential checks
+therefore cover both actual callers, including signed zero and nonfinite inputs.
+
+`orbitalelemtorv` retains its original angular-momentum, position and velocity
+scaling, multiplication by the transpose, and returned mutable vectors.
+`_initial_condition_apsis_direction_ii` still constructs its own anomaly direction,
+multiplies by that transpose and normalizes the result. It does not substitute a
+unit orbital radius or inherit an orbit's speed. Initial-condition degree/radian
+conversion, frame precedence and altitude validation remain caller-owned.
+
+The matrix owner is loaded before the spacecraft model; FrameTransforms imports
+the same module. Raw reference-system inclusion uses that owner's source in a
+local module if no binding was supplied. No new root export or public API is added.
+The legacy plotting matrix and example-specific element interpretations remain
+separate: their expression order and data contracts have not been declared
+interchangeable. Tests discriminate transpose direction with elementary rotations
+and check conserved two-body state invariants without propagation.

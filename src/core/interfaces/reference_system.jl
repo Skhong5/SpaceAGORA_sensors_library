@@ -10,6 +10,9 @@ using SPICE
 if !isdefined(@__MODULE__, :Geodesy)
     include(joinpath(@__DIR__, "..", "numerics", "geodesy.jl"))
 end
+if !isdefined(@__MODULE__, :OrbitalGeometry)
+    include(joinpath(@__DIR__, "..", "numerics", "orbital_geometry.jl"))
+end
 
 const _EARTH_HIGH_PREC_BODY_FIXED_FRAME = "ITRF93"
 const _EARTH_FALLBACK_BODY_FIXED_FRAME = "IAU_EARTH"
@@ -154,9 +157,7 @@ function orbitalelemtorv(oe::SVector{7, Float64}, planet)
     r_x = (h^2) / planet.μ * (1 / (1 + e * cos(vi))) * SVector{3, Float64}([cos(vi); sin(vi); 0])
     v_x = planet.μ / h * SVector{3, Float64}([-sin(vi); e + cos(vi); 0])
     
-    Q = SMatrix{3, 3, Float64}([-sin(Ω)*cos(i)*sin(ω)+cos(Ω)*cos(ω) cos(Ω)*cos(i)*sin(ω)+sin(Ω)*cos(ω) sin(i)*sin(ω); 
-         -sin(Ω)*cos(i)*cos(ω)-cos(Ω)*sin(ω) cos(Ω)*cos(i)*cos(ω)-sin(Ω)*sin(ω) sin(i)*cos(ω);
-          sin(Ω)*sin(i) -cos(Ω)*sin(i) cos(i)])
+    Q = OrbitalGeometry._perifocal_from_inertial(i, ω, Ω)
 
     R = Q' * r_x
     V = Q' * v_x
