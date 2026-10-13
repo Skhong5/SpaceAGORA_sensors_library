@@ -53,7 +53,7 @@ julia --project=. src/cli/main.jl assets check
 julia --project=. src/cli/main.jl assets setup-open
 ```
 
-`assets check` reports which optional local assets are present.
+`assets check` reports whether each local asset root is usable, missing, empty or still a Git LFS pointer, and exits with status 1 when a required entry is not usable.
 `assets setup-open` summarizes the baseline repo-only path and which licensed
 external assets remain user-provided.
 

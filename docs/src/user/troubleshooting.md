@@ -35,7 +35,8 @@ populated are significantly faster.
 ## GRAM assets not found
 
 **Symptom:** `julia --project=. src/cli/main.jl assets check` reports `gram_root` or
-`spice_directory` as missing, or a GRAM-backed example errors on load.
+`spice_directory` as missing, empty or pointer-only, or a GRAM-backed example
+errors on load.
 
 **Cause:** The official NASA GRAM Suite files have not been copied into the
 expected local path.

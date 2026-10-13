@@ -292,8 +292,9 @@ function run_cli(args::Vector{String}=copy(ARGS); io::IO=stdout, errio::IO=stder
         if subcmd in ("list", "fetch") || (subcmd == "check" && length(tail) > 1)
             return _run_preset_assets(subcmd, tail[2:end]; io=io)
         elseif subcmd == "check"
-            render_asset_report(check_assets(); io=io)
-            return 0
+            report = check_assets()
+            render_asset_report(report; io=io)
+            return asset_check_exit_status(report)
         elseif subcmd == "manifest"
             render_asset_manifest(load_asset_manifest(); io=io)
             return 0

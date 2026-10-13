@@ -116,13 +116,26 @@ Measured on a fresh `GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none`
 | CYGNSS and GRIFEX flight telemetry | no (gitignored) | per-person, granted by the PI; never commit or re-share | the mission studies that name them |
 
 `julia --project=. src/cli/main.jl assets check` prints the same picture for
-the machine you are on: `available`, `missing-optional`, and the licensing
-class of each entry. One qualification: for directory entries the check only
-tests that the directory exists, so after a clone with `GIT_LFS_SKIP_SMUDGE=1`
-it reports `gram_surrogate_directory: available` while the seven `.jls` files
-are still Git LFS pointers; `git lfs ls-files` shows them with `-` instead of
-`*`, and `git lfs pull --include "data/GRAM_surrogate/*"` fetches them before a
-surrogate-backed benchmark.
+the machine you are on. Each entry reports one state and the licensing class:
+
+| State | Meaning |
+|---|---|
+| `usable` | the path holds payload bytes (built-in entries are always usable) |
+| `missing-required`, `missing-optional` | nothing exists at the path |
+| `empty-required`, `empty-optional` | the directory exists but holds no files |
+| `pointer-only-required`, `pointer-only-optional` | some or all files are undownloaded Git LFS pointers |
+| `invalid-required`, `invalid-optional` | every file is empty (0 bytes) |
+
+A `reason` line follows every entry that is not usable, and the report ends
+with a summary. The command exits with status 1 when a required entry is not
+usable and 0 otherwise; optional entries only affect the report. After a clone
+with `GIT_LFS_SKIP_SMUDGE=1`, for example, `gram_surrogate_directory` reports
+`pointer-only-optional` while the seven `.jls` files are still Git LFS
+pointers; `git lfs ls-files` shows them with `-` instead of `*`, and
+`git lfs pull --include "data/GRAM_surrogate/*"` fetches them before a
+surrogate-backed benchmark. The check reads directory listings and file
+headers only; it never downloads, and it does not validate grid contents,
+which the named-preset `assets check --preset` route does.
 
 ### Verification reference data
 
@@ -140,7 +153,8 @@ The package-owned asset check distinguishes:
 
 - baseline onboarding availability
 - optional high-fidelity assets
-- paths that are missing but non-blocking for no-GRAM mode
+- paths that are missing, empty or still Git LFS pointers, and whether that
+  blocks no-GRAM mode (required) or only an optional route
 
 Useful commands:
 
