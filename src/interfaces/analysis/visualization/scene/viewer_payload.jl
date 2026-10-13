@@ -1,6 +1,51 @@
 # Renderer-independent saved-data conversion. The optional visualizer owns
 # browser modules and HTML assembly; the data contract stays with SpaceAGORA.
 
+# Mission history is optional plain data shared with the independent viewer.
+# Validate structure without changing times, names or the underlying results.
+function _validated_mission_history(mission)
+    mission === nothing && return nothing
+    mission isa AbstractDict || throw(ArgumentError("mission must be a JSON object."))
+    schema = get(mission, "schema", nothing)
+    schema isa Integer && !(schema isa Bool) && schema == 1 ||
+        throw(ArgumentError("Unsupported mission history schema; expected 1."))
+    name_ok(x) = x isa AbstractString && !isempty(strip(x))
+    time_ok(x) = x isa Real && !(x isa Bool) && isfinite(x) && x >= 0
+    name_ok(get(mission, "name", nothing)) || throw(ArgumentError("mission.name must be a nonempty string."))
+    segments = get(mission, "segments", nothing)
+    transitions = get(mission, "transitions", nothing)
+    segments isa AbstractVector || throw(ArgumentError("mission.segments must be an array."))
+    transitions isa AbstractVector || throw(ArgumentError("mission.transitions must be an array."))
+    names = Set{String}()
+    for (i, segment) in enumerate(segments)
+        segment isa AbstractDict || throw(ArgumentError("mission segment must be an object."))
+        name = get(segment, "name", nothing)
+        name_ok(name) && !(name in names) || throw(ArgumentError("Mission segment names must be nonempty and unique."))
+        push!(names, name)
+        start_s, end_s = get(segment, "start_s", nothing), get(segment, "end_s", nothing)
+        time_ok(start_s) && time_ok(end_s) && start_s <= end_s ||
+            throw(ArgumentError("Mission segment times must be finite and satisfy 0 <= start_s <= end_s."))
+        i == 1 || segments[i - 1]["end_s"] == start_s ||
+            throw(ArgumentError("Mission segment intervals must be contiguous and ordered."))
+    end
+    n = length(segments)
+    (n == 0 ? isempty(transitions) : length(transitions) in (n - 1, n)) ||
+        throw(ArgumentError("Mission history needs one transition per adjacent segment and an optional final exit."))
+    for (i, transition) in enumerate(transitions)
+        transition isa AbstractDict || throw(ArgumentError("mission transition must be an object."))
+        t = get(transition, "time_s", nothing)
+        time_ok(t) && t == segments[i]["end_s"] ||
+            throw(ArgumentError("Mission transition time must match its segment boundary."))
+        get(transition, "from", nothing) == segments[i]["name"] ||
+            throw(ArgumentError("Mission transition.from must name its outgoing segment."))
+        haskey(transition, "to") && transition["to"] == (i < n ? segments[i + 1]["name"] : nothing) ||
+            throw(ArgumentError("Mission transition.to must name the next segment, or be null at final exit."))
+        name_ok(get(transition, "reason", nothing)) ||
+            throw(ArgumentError("Mission transition.reason must be a nonempty string."))
+    end
+    return mission
+end
+
 const TEXTURES_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "..", "data", "textures"))
 # Plume-surface interaction block of the frames payload: one Float32 array per
 # quantity, frame-major then spacecraft, from the `sc{i}_plume_*` result columns.
@@ -131,6 +176,23 @@ function kept_row_indices(n_rows::Integer, stride::Integer)::Vector{Int}
     return idx
 end
 
+# Keep exact saved boundaries while staying inside the requested frame budget.
+# A transition without a saved row remains metadata; no state is invented here.
+function _mission_kept_rows(df, mission, regular_rows, limit::Int)
+    mission === nothing && return regular_rows
+    isempty(mission["segments"]) && return regular_rows
+    nrow(df) == 0 && return Int[]
+    boundaries = Set(v for segment in mission["segments"] for v in (segment["start_s"], segment["end_s"]))
+    required = unique!([1; findall(t -> t in boundaries, df[!, "time"]); nrow(df)])
+    length(required) <= limit || throw(ArgumentError(
+        "Mission boundary samples exceed the viewer frame budget; increase max_frames or data_budget_mb."))
+    available = setdiff(collect(1:nrow(df)), required)
+    count = min(limit - length(required), length(available))
+    extra = count == 0 ? Int[] : count == 1 ? [available[cld(length(available), 2)]] :
+        available[unique(round.(Int, range(1, length(available); length=count)))]
+    return sort!([required; extra])
+end
+
 """
     build_viewer_frames(df, scene; max_frames=2000, data_budget_mb=150.0) -> Dict{String, Any}
 
@@ -143,8 +205,10 @@ function build_viewer_frames(
     scene::VisualizationScene;
     max_frames::Integer=DEFAULT_MAX_FRAMES,
     data_budget_mb::Real=DEFAULT_DATA_BUDGET_MB,
-    channels=()
+    channels=(),
+    mission=nothing
 )::Dict{String, Any}
+    mission = _validated_mission_history(mission)
     S = length(scene.spacecraft)
     S >= 1 || throw(ArgumentError("The scene has no spacecraft."))
     n_rows = nrow(df)
@@ -212,7 +276,9 @@ function build_viewer_frames(
                            (has_plume ? 4 * length(PLUME_FRAME_FIELDS) : 0) + 4 * length(channel_specs)) + 4 * lp_total + 4 * arm_total + 4 * thr_total + (has_sun ? 12 : 0) + 8
     budget = visualization_frame_budget(n_rows, S; max_frames=max_frames, data_budget_mb=data_budget_mb,
                                         bytes_per_sat_frame=cld(bytes_per_frame, S))
-    rows = kept_row_indices(n_rows, budget.stride)
+    regular_rows = kept_row_indices(n_rows, budget.stride)
+    limit = min(n_rows, Int(max_frames), max(min(n_rows, 2), floor(Int, Float64(data_budget_mb) * 1.0e6 / bytes_per_frame)))
+    rows = _mission_kept_rows(df, mission, regular_rows, limit)
     N = length(rows)
 
     times = Float64[Float64(df[r, "time"]) for r in rows]
@@ -325,7 +391,7 @@ function build_viewer_frames(
         "count" => N,
         "sats" => S,
         "source_rows" => n_rows,
-        "stride_rows" => budget.stride,
+        "stride_rows" => rows == regular_rows ? budget.stride : nothing,
         "t_dtype" => "f64",
         "t_s" => _float64_base64(times),
         "pos_dtype" => pos_f64 ? "f64" : "f32",
@@ -535,17 +601,19 @@ function viewer_payload(
     references=(),
     channels=(),
     terrain=nothing,
-    terrain_max_grid=512
+    terrain_max_grid=512,
+    mission=nothing
 )::Dict{String, Any}
+    mission = _validated_mission_history(mission)
     textures = Dict{String, Any}()
     if include_textures
         entry = texture_payload(scene.planet.texture; resolution=texture_resolution, dir=textures_dir)
         entry === nothing || (textures[scene.planet.texture] = entry)
     end
-    return Dict{String, Any}(
+    payload = Dict{String, Any}(
         "viewer_schema" => 1,
         "scene" => scene_dict(scene),
-        "frames" => build_viewer_frames(df, scene; max_frames=max_frames, data_budget_mb=data_budget_mb, channels=channels),
+        "frames" => build_viewer_frames(df, scene; max_frames=max_frames, data_budget_mb=data_budget_mb, channels=channels, mission=mission),
         "textures" => textures,
         "models" => model_payloads(scene; models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, model_articulations=model_articulations, stl=stl, stl_scale=stl_scale),
         "paths" => path_payloads(paths),
@@ -553,6 +621,8 @@ function viewer_payload(
         "terrain" => terrain === nothing ? nothing : terrain_payload(terrain; max_grid=terrain_max_grid),
         "options" => Dict{String, Any}(options),
     )
+    mission === nothing || (payload["mission"] = deepcopy(mission))
+    return payload
 end
 
 """
@@ -689,7 +759,8 @@ function _saved_viewer_payload(
     channels=(),
     terrain=nothing,
     terrain_max_grid=512,
-    textures_dir::AbstractString=TEXTURES_DIR
+    textures_dir::AbstractString=TEXTURES_DIR,
+    mission=nothing
 )
     prefix = String(prefix)
     scene_path = prefix * "_scene.json"
@@ -698,13 +769,15 @@ function _saved_viewer_payload(
     feather_path = joinpath(dirname(scene_path), scene.results_feather)
     isfile(feather_path) || throw(ArgumentError("Results file $(feather_path) referenced by the sidecar does not exist."))
     df = DataFrame(Arrow.Table(feather_path))
+    history_path = prefix * "_mission.json"
+    mission === nothing && isfile(history_path) && (mission = JSON.parsefile(history_path))
     payload = viewer_payload(
         scene, df;
         textures_dir=textures_dir, include_textures=textures, texture_resolution=texture_resolution,
         options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title, ground_tracks=ground_tracks),
         max_frames=max_frames, data_budget_mb=data_budget_mb,
         models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, model_articulations=model_articulations, stl=stl, stl_scale=stl_scale,
-        paths=paths, references=references, channels=channels, terrain=terrain, terrain_max_grid=terrain_max_grid
+        paths=paths, references=references, channels=channels, terrain=terrain, terrain_max_grid=terrain_max_grid, mission=mission
     )
     page_title = title === nothing ? "SpaceAGORA · $(scene.planet.name) · $(basename(prefix))" : String(title)
     return payload, page_title
@@ -721,7 +794,7 @@ end
 
 function _viewer_output_path(prefix::AbstractString, payload::AbstractDict, out, suffix::String)
     path = out === nothing ? String(prefix) * suffix : String(out)
-    protected = (String(prefix) * "_scene.json",
+    protected = (String(prefix) * "_scene.json", String(prefix) * "_mission.json",
         joinpath(dirname(String(prefix)), String(payload["scene"]["results"]["feather"])))
     return _check_viewer_output(path, protected)
 end
@@ -733,7 +806,9 @@ end
 Convert a saved scene and results bundle to version-1 viewer JSON. The default
 file is `<prefix>_viewer.json`. Frame conventions, precision, decimation and
 options match `export_visualization`; `textures=false` omits local textures.
-No renderer package, browser, download or simulation is needed. Load
+An adjacent `<prefix>_mission.json` is carried into the optional `mission` block.
+Exact saved boundary rows are retained within the frame budget; missing boundary
+states are never reconstructed. No renderer package, browser, download or simulation is needed. Load
 SpaceAGORAVisualizer to turn this portable payload into an HTML page.
 """
 function export_viewer_payload(prefix::AbstractString; out::Union{Nothing, AbstractString}=nothing, kwargs...)::String
@@ -817,7 +892,10 @@ function write_viewer_dev_payload(prefix::AbstractString, out_js::AbstractString
     scene_path = String(prefix) * "_scene.json"
     scene = read_visualization_scene(scene_path)
     df = DataFrame(Arrow.Table(joinpath(dirname(scene_path), scene.results_feather)))
-    payload = viewer_payload(scene, df; textures_dir=textures_dir, include_textures=textures, kwargs...)
+    history_path = String(prefix) * "_mission.json"
+    mission = isfile(history_path) ? JSON.parsefile(history_path) : nothing
+    options = merge((; mission=mission), (; kwargs...))
+    payload = viewer_payload(scene, df; textures_dir=textures_dir, include_textures=textures, options...)
     path = _viewer_output_path(prefix, payload, out_js, "_viewer.js")
     _check_viewer_output(path, (String(prefix) * "_viewer.json",))
     return IOSerialization._atomic_write_file(path, tmp -> write(tmp, "window.SPACEAGORA_VIEWER = " * _script_safe_json(payload) * ";\n"))

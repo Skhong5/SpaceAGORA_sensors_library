@@ -2,8 +2,8 @@
 
 A mission starts with the same `SimulationConfiguration` used by every
 SpaceAGORA run. A `MissionPlan` gives that configuration a reusable builder and a
-name, and can collect descriptive phases and event callback factories. It does
-not choose a different integrator or substitute different physical models.
+name, and can collect operational segments, descriptive phases and event callback
+factories. All segments share one integration and one continuous physical state.
 
 The workflow has three steps: define the configuration, run it into a fresh
 output directory, then inspect the returned data or open the saved viewer
@@ -58,8 +58,9 @@ those workflows continue to use `run_simulation` directly.
 The wrapper changes only output settings: it enables results, chooses the output
 directory and sets the scene-output flag. It preserves the builder's dynamics,
 GNC, epoch, solver, tolerances and output sampling. The `MissionConfiguration`
-still determines duration or orbit-count termination. No phase or event shortens
-the run unless its existing callback explicitly implements a stop.
+still sets the overall horizon or orbit-count termination. A completed final
+operational segment can end the run earlier. Descriptive phases do not change
+the run, and an event shortens it only when its callback implements a stop.
 
 ## Inspect data or open the viewer later
 
@@ -95,6 +96,132 @@ creating its destination.
 The returned table follows the configured output sampling; it is not a promise
 that every accepted solver step or event instant appears as a row.
 
+## Divide a mission into operational segments
+
+A `MissionSegment` defines what happens between two transitions. The first
+segment starts with the simulation. When its exit condition is met, SpaceAGORA
+calls its exit action, enters the next segment and continues from the same
+position, velocity, attitude and mass. It does not construct a new spacecraft
+or restart its controllers.
+
+This sequence uses the coast configuration above:
+
+```julia
+mission = MissionPlan("Three coast segments", build_coast;
+    segments=(
+        MissionSegment(:initial_coast; until=MissionDeadline(120.0)),
+        MissionSegment(:observation; until=MissionDuration(60.0)),
+        MissionSegment(:final_coast),
+    ))
+run = run_mission(mission; output_dir="output/three-segments-001")
+run.history.segments
+run.history.transitions
+run.history_path
+```
+
+The transitions occur at 120 and 180 seconds. `MissionDeadline` is an absolute
+elapsed time from the start of the simulation; `MissionDuration` is measured
+from entry into its segment. These boundaries are registered with the solver,
+so they do not wait for the next output sample or controller tick. This example
+continues to coast throughout because it supplies no command actions.
+
+Only the final segment may omit an exit condition. It then lasts until the
+mission horizon or another engine stop. Giving the final segment an exit
+condition ends the simulation when that condition is met. Segment names must
+be unique, durations must be positive, and a deadline must lie after entry.
+Every timed boundary must fit within the remaining mission horizon; an
+invalid boundary is rejected when that segment is entered.
+
+### Change a command at a transition
+
+Each segment can provide a `build_actions` function. It receives the isolated
+configuration that will actually run, after spacecraft GNC has been composed.
+Return a named tuple with `on_enter` and `on_exit` functions. Capture the run's
+controller or reference in that factory, rather than a controller from a prior
+run. Both actions receive a context containing `time_s`, `configuration`, a
+copied solver `state`, and immutable numerical spacecraft samples in
+`spacecraft`.
+
+For example, a controller with a mutable `commanded_thrust_N` field can be
+commanded like this:
+
+```julia
+burn = MissionSegment(:maneuver; until=MissionDuration(20.0),
+    build_actions=config -> begin
+        controller = only(config.control_model.control_effectors)
+        (
+            on_enter=ctx -> (controller.commanded_thrust_N = 2.0),
+            on_exit=ctx -> (controller.commanded_thrust_N = 0.0),
+        )
+    end)
+```
+
+That field is an example of an application controller's interface, not a field
+shared by every SpaceAGORA controller. The controller must turn its command
+into force, torque, mass flow and any displayed thruster firing. An exit action
+must clear every held actuator command that should stop. Changing only a target
+reference takes effect when its controller next evaluates; changing a held
+actuator command can take effect at the boundary itself. The segment executor
+does not automatically disable a controller or reinitialize a planner.
+
+At a segment transition, entry and exit actions run before the usual discrete
+control and saving callbacks at the same time. Exit precedes entry at an internal
+boundary. The last active exit action also runs when the engine reaches the
+horizon or stops early, after its final normal output snapshot. Use these actions for command and reference changes, not to replace the
+vehicle, environment, solver or state layout. Mutating the copied `state` does
+not modify the integrated state. Segment labels never create an instantaneous
+velocity change.
+
+### Transition on a physical condition
+
+A `MissionCondition` is a scalar function of the current context. For a
+configuration containing a chaser and a target, this condition ends the segment
+as their separation crosses 10 metres from above:
+
+```julia
+using LinearAlgebra: norm
+
+approach = MissionSegment(:approach;
+    until=MissionCondition(
+        ctx -> norm(ctx.spacecraft[2].pos_ii - ctx.spacecraft[1].pos_ii) - 10.0;
+        direction=:falling))
+```
+
+Positions and velocities in these samples are inertial SI values. The same
+samples include `mass_kg`, and attitude and angular velocity when available.
+A falling condition must start strictly positive; a rising condition must
+start strictly negative. Already satisfied conditions are rejected rather than
+silently skipping a segment. The condition must be finite, deterministic and
+free of side effects. The solver locates its zero crossing; saving more frames
+is not what makes the transition precise.
+
+This first implementation keeps the configured models and state dimensions
+fixed. Segmented runs support `:tsit5`, `:auto_stiff`, `:rodas5p` and `:dp8`.
+Other solver modes and external propagators, including MuJoCo, are rejected
+until their event and state-ownership contracts are qualified. The workflow
+never substitutes a different solver. Checkpoint/resume remains unsupported.
+A servicing sequence may change commands for already configured models, but it does not yet transfer
+physics ownership between SpaceAGORA and an external simulator.
+
+### Inspect what actually ran
+
+`run.history` contains actual segment intervals and transition times, with a
+reason for each transition. An early stop closes the active segment; future
+segments are absent. The same history is saved as `simulation_results_mission.json`
+and included in the portable viewer payload, so it remains available after
+moving the output directory. History is also saved when scene and payload
+output are disabled.
+
+The standalone viewer can select a segment or transition within the saved
+playback range and seek to its time. Its current-segment label follows playback
+and scrubbing. A boundary outside that range remains listed with its actual
+time, but its jump control is disabled because no pose was saved there.
+Boundaries retain their recorded times even when trajectory rows are sampled
+more sparsely; the viewer still interpolates between saved states. Export
+preserves boundary rows when those rows exist, and refuses a frame budget too small to retain them.
+This history describes executed operational segments. `MissionPhase` windows
+and declared `MissionEvent` names remain separate metadata.
+
 ## Name phases without changing the equations
 
 A `MissionPhase` names an elapsed-time window for interpreting one run:
@@ -116,8 +243,8 @@ horizon; gaps are allowed.
 
 The engine already has atmosphere-entry and exit behavior, solver regimes and
 controller lifecycle rules. A user-defined phase name does not override them.
-Scripted transitions that change physical models need an explicit transition
-contract and are outside this initial workflow.
+Use operational segments for explicit command transitions. Replacing physical
+models during a run still needs a separate transition contract.
 
 ## Give events fresh callback state
 

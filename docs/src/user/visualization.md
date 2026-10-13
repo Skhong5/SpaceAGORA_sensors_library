@@ -403,7 +403,7 @@ a host that refuses embedded `data:` scripts, `SpaceAGORAVisualizer.jl/viewer/bu
 rewrites an exported page to load the pinned three.js and mp4-muxer from
 `cdn.jsdelivr.net` with the renderer modules inlined; the built page lists
 its network hosts and third-party notices in its footer, and adds fonts
-from Google Fonts only with `--fonts`. See [the companion renderer guide](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl/blob/codex/extract-visualizer/viewer/README.md) for renderer development, module layout and
+from Google Fonts only with `--fonts`. See [the companion renderer guide](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl/blob/7d0d8b3d6fa07a16a396250638a3ac5ecd603ff8/viewer/README.md) for renderer development, module layout and
 licensing. Landing dynamics and plume-surface physics are separate from the
 viewer: the page only draws what the run saved.
 
@@ -462,3 +462,18 @@ with 1 MiB per JSON document. Imagery accepts at most 8192 tiles through level
 checked against their JPEG header. Paths, including symlinks, must resolve
 inside the site or imagery directory. Export neither downloads terrain nor
 changes propagation, touchdown or atmosphere state.
+
+## Follow mission segments
+
+Runs created with operational segments carry their executed segment history in
+the portable payload. In the standalone viewer, select a segment or a transition
+within the saved playback range to move the timeline to that point. Transitions
+outside that range remain listed but cannot be selected for playback. The
+current-segment label changes as you play or scrub through the run. At a shared
+boundary it names the incoming segment.
+
+The history records actual transition times and reasons, including early stops.
+It does not infer events from a trajectory or display unexecuted segments as
+completed. Old payloads without mission history retain the usual timeline. See
+[Mission Workflows](mission_workflows.md) for segment definitions and command
+actions.
