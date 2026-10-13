@@ -348,6 +348,7 @@ jobs:
           path: hypr-installation-coverage
 
       - name: Download visualizer installation coverage
+        if: always()
         uses: actions/download-artifact@v8
         with:
           name: visualizer-installation-coverage
