@@ -34,6 +34,33 @@ const _ASSET_SANDBOX = _ASSET_PARENT.SpaceAGORACLI
 Core.eval(_ASSET_SANDBOX, :(const REPO_ROOT = $_ASSET_FIXTURE))
 Base.include(_ASSET_SANDBOX, _asset_source(_ASSET_REPO))
 
+@testset "Asset recovery guidance across shells" begin
+    catalog = _ASSET_PARENT.AssetCatalog
+    # Windows has several common shells. Preserve the owner and Git pattern
+    # as literal data on every test host, without pretending to run Windows.
+    owner = raw"C:\asset checkout's\repo"
+    pattern = raw"grid data\owner's\*"
+    hint = catalog._lfs_recovery_hint(owner, pattern; windows=true)
+    @test occursin("documented asset route", hint)
+    @test occursin("owning Git checkout: " * repr(owner), hint)
+    @test occursin("Git LFS include pattern: \"grid data/owner's/*\"", hint)
+    @test !occursin("git -C", hint)
+    @test !occursin("lfs pull", hint)
+    @test !occursin("'\"'\"'", hint)
+    @test catalog._lfs_recovery_hint("owner", "grids/*") ==
+          catalog._lfs_recovery_hint("owner", "grids/*"; windows=Sys.iswindows())
+
+    # The existing POSIX command must still preserve unusual paths exactly.
+    if !Sys.iswindows()
+        unix_owner = "/asset checkout's/repo"
+        unix_pattern = "grid data/owner's/*"
+        unix_hint = catalog._lfs_recovery_hint(unix_owner, unix_pattern; windows=false)
+        command = only(eachmatch(r"`([^`]+)`", unix_hint)).captures[1]
+        arguments = readlines(Cmd(["/bin/sh", "-c", "set -- " * command * "; printf '%s\\n' \"\$@\""]))
+        @test arguments == ["git", "-C", unix_owner, "lfs", "pull", "--include=" * unix_pattern]
+    end
+end
+
 @testset "Asset readiness states" begin
     fixture = _ASSET_FIXTURE
     sandbox = _ASSET_SANDBOX
@@ -110,8 +137,14 @@ Base.include(_ASSET_SANDBOX, _asset_source(_ASSET_REPO))
         end
         @test occursin("2 of 2 files are undownloaded Git LFS pointers", reasons["pointer_dir"])
         @test occursin("1 of 2 files are undownloaded Git LFS pointers alongside 1 downloaded payload file", reasons["mixed_dir"])
-        @test occursin("git -C '$(realpath(fixture))' lfs pull --include='pointer.jls'", reasons["pointer_file"])
-        @test occursin("git -C '$(realpath(fixture))' lfs pull --include='pointer_dir/*'", reasons["pointer_dir"])
+        if Sys.iswindows()
+            @test occursin("owning Git checkout: " * repr(realpath(fixture)), reasons["pointer_file"])
+            @test occursin("Git LFS include pattern: \"pointer.jls\"", reasons["pointer_file"])
+            @test occursin("Git LFS include pattern: \"pointer_dir/*\"", reasons["pointer_dir"])
+        else
+            @test occursin("git -C '$(realpath(fixture))' lfs pull --include='pointer.jls'", reasons["pointer_file"])
+            @test occursin("git -C '$(realpath(fixture))' lfs pull --include='pointer_dir/*'", reasons["pointer_dir"])
+        end
         @test occursin("all 2 files are empty", reasons["zero_dir"])
 
         # Rendering names the state, adds the reason and ends with a summary.
@@ -171,7 +204,13 @@ Base.include(_ASSET_SANDBOX, _asset_source(_ASSET_REPO))
         vendor_item = only(sandbox.check_assets(; repo_root=fixture, manifest_path=manifest).items)
         @test vendor_item.state === :pointer_only
         vendor_command = match(r"`([^`]+)`", vendor_item.reason)
-        @test vendor_command !== nothing
+        if Sys.iswindows()
+            @test vendor_command === nothing
+            @test occursin("owning Git checkout: " * repr(realpath(vendor)), vendor_item.reason)
+            @test occursin("Git LFS include pattern: \"grids/*\"", vendor_item.reason)
+        else
+            @test vendor_command !== nothing
+        end
         if vendor_command !== nothing && !Sys.iswindows()
             # Parse, but never execute, the suggested git command. Positional
             # shell arguments establish the exact checkout and include pattern.

@@ -135,8 +135,11 @@ with `GIT_LFS_SKIP_SMUDGE=1`, for example, `gram_surrogate_directory` reports
 `pointer-only-optional` while the seven `.jls` files are still Git LFS
 pointers; `git lfs ls-files` shows them with `-` instead of `*`, and
 `git lfs pull --include "data/GRAM_surrogate/*"` fetches them before a
-surrogate-backed benchmark. Printed recovery commands identify the Git checkout
+surrogate-backed benchmark. Recovery guidance identifies the Git checkout
 that owns each pointer, including GRAMSuite submodules and linked assets.
+On Unix, the report includes a quoted shell command. On Windows, it lists the
+owning checkout and Git LFS include pattern as path values for the documented
+retrieval route, because command quoting depends on the selected shell.
 
 The check ignores hidden files and directories. It follows file symlinks and
 an asset root that is itself a directory symlink, but does not descend into

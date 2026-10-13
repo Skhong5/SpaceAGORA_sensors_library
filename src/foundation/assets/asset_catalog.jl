@@ -55,6 +55,17 @@ end
 
 _asset_shell_quote(value::String) = "'" * replace(value, "'" => "'\"'\"'") * "'"
 
+function _lfs_recovery_hint(owner::String, include_pattern::String; windows::Bool=Sys.iswindows())
+    if windows
+        # Windows users may run cmd.exe, PowerShell or Git Bash. Show the
+        # owning checkout and Git pattern as data instead of guessing a shell.
+        pattern = replace(include_pattern, '\\' => '/')
+        return "retrieve the payload through the documented asset route; owning Git checkout: $(repr(owner)); Git LFS include pattern: $(repr(pattern))"
+    end
+    command = "git -C $(_asset_shell_quote(owner)) lfs pull --include=$(_asset_shell_quote(include_pattern))"
+    return "fetch the payload with `$(command)` or the documented asset route"
+end
+
 function _lfs_fetch_hint(path::String; asset_directory::Union{Nothing,String}=nothing)
     payload = realpath(path)
     owner = _asset_git_root(payload)
@@ -69,8 +80,7 @@ function _lfs_fetch_hint(path::String; asset_directory::Union{Nothing,String}=no
             include_pattern = directory_pattern == "." ? "*" : joinpath(directory_pattern, "*")
         end
     end
-    command = "git -C $(_asset_shell_quote(owner)) lfs pull --include=$(_asset_shell_quote(include_pattern))"
-    return "fetch the payload with `$(command)` or the documented asset route"
+    return _lfs_recovery_hint(owner, include_pattern)
 end
 
 function _is_lfs_pointer(path::String)::Bool
