@@ -788,7 +788,9 @@ end
         @test_throws ArgumentError run_cli(["visualize"]; io=devnull)
         @test_throws ArgumentError run_cli(["visualize", "--run=$(dir)", "--bogus"]; io=devnull)
         print_out = IOBuffer()
-        @test run_cli(["run", "--example=AGORA_Basic_Quickstart.jl", "--visualize", "--print-only"]; io=print_out) == 0
+        withenv("SPACEAGORA_VISUALIZER_ENV" => ENV["SPACEAGORA_VISUALIZER_TEST_ENV"]) do
+            @test run_cli(["run", "--example=AGORA_Basic_Quickstart.jl", "--visualize", "--print-only"]; io=print_out) == 0
+        end
         @test occursin("SPACEAGORA_VISUALIZATION=1", replace(String(take!(print_out)), " => " => "="))
 
         # A run without the flag has no sidecar to export.
