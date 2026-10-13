@@ -150,7 +150,10 @@ makedocs(
         "User Guide" => Any[
             "Start Here" => "getting_started.md",
             "Quickstart" => "user/quickstart.md",
+            "Motion Planning with HYPR" => "user/hypr_planning.md",
             "RPO Planner Pilot" => "user/rpo_planner_pilot.md",
+            "Orbital Scenes with MuJoCo" => "user/mujoco_scenes.md",
+            "Energy Depletion Guidance" => "user/edg_guidance.md",
             "Installation & Environment" => "user/installation_environment.md",
             "GRAMSuite Setup" => "user/gramsuite_setup.md",
             "Assets & Modes" => "assets.md",
