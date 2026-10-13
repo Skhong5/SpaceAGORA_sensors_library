@@ -32,6 +32,10 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
    - `test/gates/ci_public_api_surface_gate.jl`
    - `test/gates/ci_hpc_extensibility_docs_gate.jl`
    - `test/gates/ci_ppb_workload_coverage_gate.jl` (the paper harness precompile workload names every case and mode the paper phases run; reads the harness definitions only)
+   - `test/gates/ci_gnc_typed_command_boundary_gate.jl` (GNC reaches actuators through the typed command boundary; algorithm directories stay in scan scope)
+   - `test/gates/ci_project_compat_gate.jl` (every non-standard-library `[deps]` entry has a `[compat]` bound)
+   - `test/gates/ci_runtime_legacy_surface_gate.jl` (the active runtime does not regain prohibited legacy entry surfaces)
+   - `test/gates/ci_translational_ownership_gate.jl` (translational equations stay with their owner directory)
 
 Additional required smoke checks for this migration track:
 1. `test/smoke/ci_clean_depot_smoke.jl`
