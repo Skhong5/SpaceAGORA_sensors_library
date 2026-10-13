@@ -52,7 +52,9 @@ API or a facade inventory should be treated as internal.
 ## Compliant multibody and robot-arm names
 
 Use the robot-arm names for kinematics and the compliant multibody names for
-spring-connected dynamics. The model represents flexibility through discrete
+spring-connected dynamics. The [Robotics API](generated/robotics_api.md) and
+[Compliant Multibody API](generated/compliant_multibody_api.md) document both the
+preferred names and the compatibility names. The model represents flexibility through discrete
 bodies and compliant joints; it is not a continuum cloth solver. The preferred
 names are aliases of the existing types and generic functions, so changing a
 call's spelling does not change its dispatch, state layout or physics.

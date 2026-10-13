@@ -447,17 +447,34 @@ function render_public_api_markdown(spaceagora::Module;
     io = IOBuffer()
     println(io, "# $(title)")
     println(io)
-    println(io, "This page documents the stable exported interface available from `SpaceAGORA`.")
+    println(io, "This page documents the supported public interface available from `SpaceAGORA`.")
     println(io)
     for section in sections
         println(io, "## $(section.title)")
         println(io)
+        # Julia stores a module alias's docstring in the target module. An alias
+        # of an internal module therefore cannot use Documenter's @docs lookup,
+        # which intentionally excludes those implementation modules.
+        module_aliases = filter(section.items) do item
+            owner = _owner_module(spaceagora, item.owner)
+            value = getproperty(owner, item.symbol)
+            value isa Module && parentmodule(value) !== owner
+        end
         println(io, "```@docs")
         for item in section.items
-            println(io, item.rendered)
+            item in module_aliases || println(io, item.rendered)
         end
         println(io, "```")
         println(io)
+        for item in module_aliases
+            binding = Docs.Binding(_owner_module(spaceagora, item.owner), item.symbol)
+            doc = Docs.doc(binding)
+            doc === nothing && error("Undocumented module alias: $(item.rendered)")
+            println(io, "### `$(item.rendered)`")
+            println(io)
+            show(io, MIME"text/markdown"(), doc)
+            println(io)
+        end
     end
     return String(take!(io))
 end
