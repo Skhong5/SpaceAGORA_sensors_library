@@ -401,6 +401,10 @@ description of the current code.
   closed-form, per-link, attitude, reaction-wheel and torque/inertia diagnostics
   with the legacy capability owner before any port or retirement. Similar modern
   plots or available saved fields alone do not establish equivalent coverage.
+  The [saved-data diagnostic contracts](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/main/docs/quality/legacy_plotting_contracts.md)
+  distinguish the legacy Euler conversion, integrated and aggregate wheel
+  quantities, and costate histories from typed switching predictions. Consult
+  these contracts before adding a maintained consumer.
 - The direct `Tables` dependency and the redundant `output/calibration/` ignore
   entry are cleanup candidates. A direct-dependency change needs manifest
   validation; transitive users of `Tables` must continue to resolve it.
