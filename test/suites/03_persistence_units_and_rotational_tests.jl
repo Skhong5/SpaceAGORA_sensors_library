@@ -612,8 +612,8 @@ end
         return join(no_line, "\n")
     end
 
-    run_src = strip_comments(read(joinpath(REPO_ROOT, "src", "simulation", "engine", "execution.jl"), String))
-    legacy_elements_path = joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_elements.jl")
+    run_src = strip_comments(read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "execution.jl"), String))
+    legacy_elements_path = joinpath(REPO_ROOT, "src", "orchestration", "simulation", "execution", "simulation_elements.jl")
 
     # Canonical engine path should stay SI-native.
     @test !occursin("cnf.DU", run_src)

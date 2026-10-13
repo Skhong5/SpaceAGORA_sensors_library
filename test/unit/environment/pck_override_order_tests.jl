@@ -36,8 +36,7 @@ module PCKOrderFixture
         end
     end
     unload(path) = SPICE.unload(path)
-    source = Meta.parse(read(joinpath(@__DIR__, "..", "..", "..", "src",
-                                     "environment", "ephemerides", "planets.jl"), String))
+    source = Meta.parse(read(joinpath(@__DIR__, "..", "..", "..", "src", "models", "environment", "ephemerides", "planets.jl"), String))
     wanted = Set([:_reset_furnished_kernels!, :_furnsh_once, :_furnsh_required, :_furnsh_first_existing_if_available,
                   :_furnsh_first_existing, :_check_pck_override_policy!, :_furnsh_pck_overrides, :Earth, :Moon, :Mars, :Venus, :Titan])
     found = Set{Symbol}()

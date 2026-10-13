@@ -72,7 +72,7 @@ variable. With the default result settings, the three file names do not
 change, so:
 
 - two runs using the same results directory overwrite those files;
-- `julia --project=. src/cli/main.jl run --example=<script> --output-dir=output/<name>`
+- `julia --project=. src/interfaces/cli/main.jl run --example=<script> --output-dir=output/<name>`
   gives each run its own directory, for the scripts that take their directory
   from `make_example_config`: the first-run scripts (`AGORA_Basic_Quickstart.jl`,
   `AGORA_Earth_NoGRAM.jl`), the controls and torque

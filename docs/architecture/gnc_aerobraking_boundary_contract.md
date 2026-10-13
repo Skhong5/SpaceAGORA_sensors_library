@@ -1,9 +1,9 @@
 # GNC Aerobraking Boundary Contract
 
 ## Canonical ownership
-- `src/gnc/guidance/aerobraking/*` owns aerobraking strategy planning logic (`E-EDG`, `T-EDG`).
-- `src/gnc/control/aerobraking/*` owns algorithm-agnostic tracking/execution only.
-- `src/mission/operations/aerobraking_policy/*` owns strategy selection policy interfaces.
+- `src/models/gnc/guidance/aerobraking/*` owns aerobraking strategy planning logic (`E-EDG`, `T-EDG`).
+- `src/models/gnc/control/aerobraking/*` owns algorithm-agnostic tracking/execution only.
+- `src/orchestration/mission/operations/aerobraking_policy/*` owns strategy selection policy interfaces.
 
 ## Required boundaries
 - Guidance files must not include control source files directly.
@@ -27,7 +27,7 @@
 
 The typed energy-depletion route uses one calculation owner,
 SimulationModel.EDGAlgorithms, under
-src/gnc/guidance/aerobraking/typed_edg/. It owns reachable-energy brackets,
+src/models/gnc/guidance/aerobraking/typed_edg/. It owns reachable-energy brackets,
 mode decisions, heat-load windows, targeting switches, heat/structural limits,
 and the constrained angle decision. The private EDGServices module supplies
 SpaceAGORA state, atmosphere and frame projections. ODEParams remains an

@@ -9,7 +9,7 @@ execution, worker-project setup, or scheduler examples.
 Shortest successful example:
 
 ```text
-julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/hpc_local_runtime_analysis
+julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/hpc_local_runtime_analysis
 ```
 
 What to read next:

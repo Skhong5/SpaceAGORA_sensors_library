@@ -11,7 +11,7 @@ for future reference. Line numbers are as of the commit introducing this file.
 ## Part 1 — Implemented fixes
 
 ### F1. Flat-queue partials reduction was satellite-major (cache-hostile)
-`src/simulation/engine/dynamics_rhs.jl`, reduction after the flat effector queue.
+`src/orchestration/simulation/engine/dynamics_rhs.jl`, reduction after the flat effector queue.
 `partials` is column-major `6×N×W`; the old loop nest iterated satellites outer,
 workers inner, so each inner iteration jumped `6N` doubles. Swapped to
 worker-major/satellite-inner: unit-stride over both `partials` and `totals`.
@@ -34,10 +34,10 @@ comparator indexes it.
 tuples with `hasproperty` reflection for every satellite on every RHS evaluation —
 in simulations with no robot arm anywhere (i.e., every constellation/MC case in
 this suite). Added `SharedBuffers.robot_arm_present`, a lazily-computed
-run-constant flag (`src/core/types/runtime_types.jl`), checked first.
+run-constant flag (`src/foundation/core/types/runtime_types.jl`), checked first.
 
 ### F5. Process-route Monte Carlo re-serialized the sample closure per sample
-`src/simulation/campaigns/monte_carlo.jl`, `_run_monte_carlo_process`. Each
+`src/orchestration/simulation/campaigns/monte_carlo.jl`, `_run_monte_carlo_process`. Each
 `remotecall_fetch` shipped `f` — which can capture a large configuration — anew.
 Now dispatches a wrapping closure through a `Distributed.CachingPool`, so the
 closure crosses the wire once per worker and is referenced by identity afterwards
@@ -67,7 +67,7 @@ invalidation. Interacts with F3: once cached, the sort cost disappears entirely
 between invalidations.
 
 ### D2. `threaded_reduce` has no persistent-pool variant and allocates per call
-`src/parallel/policy/thread_execution.jl`. The per-satellite effector reduction
+`src/orchestration/parallel/policy/thread_execution.jl`. The per-satellite effector reduction
 (`:per_satellite_effector_reduce` route) allocates a `Vector` of partial
 accumulators and pays raw `Threads.@spawn` latency on every invocation, inside
 the innermost RHS. `threaded_foreach` got persistent pools and a spin-barrier
@@ -83,7 +83,7 @@ batch. **Approach:** generalize the spin-barrier opt-in to `:rhs_flat_queue` and
 `:density_callback` sources; the pool machinery is already source-keyed.
 
 ### D4. Density callback does full kinematics for out-of-atmosphere satellites
-`src/simulation/callbacks/density_callbacks/runtime.jl`. The `DiscreteCallback`
+`src/orchestration/simulation/callbacks/density_callbacks/runtime.jl`. The `DiscreteCallback`
 fires every accepted step (`condition = true`) and `_stage_environment_kinematics`
 (planet-frame transform included) runs for every satellite before any
 in-atmosphere gate. For eccentric/aerobraking-style orbits with long coast arcs
@@ -96,7 +96,7 @@ selection in `SharedBuffers` at run start. Not implemented now because the
 correctness surface (buffered-density consumers) needs a dedicated parity pass.
 
 ### D5. GRAM track-cache refreshes convoy on the global GRAM lock
-`src/simulation/callbacks/gram_track_cache/refresh.jl` — each satellite's refresh
+`src/orchestration/simulation/callbacks/gram_track_cache/refresh.jl` — each satellite's refresh
 holds `GRAM_LOCK` for a full native `generate_trajectory` call. Constellation
 members launched with similar epochs expire their caches near-simultaneously, so
 integration threads serialize behind the lock in bursts. This is the "GRAM's own
@@ -107,7 +107,7 @@ satellites' track requests into one locked native call; prefetch the next
 segment asynchronously before expiry so hot-path queries never block.
 
 ### D6. Ensemble members each pay a full configuration `deepcopy`
-`src/simulation/campaigns/constellation_ensemble.jl`. Root cause: solves mutate
+`src/orchestration/simulation/campaigns/constellation_ensemble.jl`. Root cause: solves mutate
 shared model state (e.g., `planet.L_PI` in the planet-frame callback), so
 concurrent members must isolate the whole configuration. **Approach
 (architectural):** move mutable frame state out of model objects into per-run

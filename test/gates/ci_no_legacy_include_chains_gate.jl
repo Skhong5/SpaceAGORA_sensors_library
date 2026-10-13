@@ -3,17 +3,16 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
 const SCAN_ROOTS = (
     joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"),
-    joinpath(REPO_ROOT, "src", "analysis", "reports"),
-    joinpath(REPO_ROOT, "src", "core"),
-    joinpath(REPO_ROOT, "src", "environment"),
-    joinpath(REPO_ROOT, "src", "gnc", "control"),
-    joinpath(REPO_ROOT, "src", "gnc", "guidance"),
-    joinpath(REPO_ROOT, "src", "gnc", "shared"),
-    joinpath(REPO_ROOT, "src", "gnc", "hypr"),
-    joinpath(REPO_ROOT, "src", "gnc", "rrt"),
-    joinpath(REPO_ROOT, "src", "simulation", "engine"),
-    joinpath(REPO_ROOT, "src", "simulation", "callbacks"),
-    joinpath(REPO_ROOT, "src", "parallel")
+    joinpath(REPO_ROOT, "src", "foundation", "core"),
+    joinpath(REPO_ROOT, "src", "models", "environment"),
+    joinpath(REPO_ROOT, "src", "models", "gnc", "control"),
+    joinpath(REPO_ROOT, "src", "models", "gnc", "guidance"),
+    joinpath(REPO_ROOT, "src", "models", "gnc", "shared"),
+    joinpath(REPO_ROOT, "src", "models", "gnc", "hypr"),
+    joinpath(REPO_ROOT, "src", "models", "gnc", "rrt"),
+    joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine"),
+    joinpath(REPO_ROOT, "src", "orchestration", "simulation", "callbacks"),
+    joinpath(REPO_ROOT, "src", "orchestration", "parallel")
 )
 
 const FORBIDDEN_TOKENS = (
@@ -26,30 +25,30 @@ const FORBIDDEN_REGEXES = (
 
 const ALLOWED_RAW_INCLUDE_FILES = Set([
     joinpath("packages", "SpaceAGORAHYPR", "src", "SpaceAGORAHYPR.jl"),
-    joinpath("src", "gnc", "guidance", "rpo", "rpo_planner_module.jl"),
-    joinpath("src", "core", "simulation_model.jl"),
-    joinpath("src", "environment", "physical_models.jl"),
-    joinpath("src", "environment", "ephemerides", "ephemerides_models.jl"),
-    joinpath("src", "environment", "ephemerides", "planets.jl"),
-    joinpath("src", "gnc", "control", "control_hooks.jl"),
-    joinpath("src", "gnc", "control", "propulsive_maneuvers.jl"),
-    joinpath("src", "gnc", "guidance", "guidance_models.jl"),
-    joinpath("src", "gnc", "guidance", "guidance_hooks.jl"),
+    joinpath("src", "models", "gnc", "guidance", "rpo", "rpo_planner_module.jl"),
+    joinpath("src", "foundation", "core", "simulation_model.jl"),
+    joinpath("src", "models", "environment", "physical_models.jl"),
+    joinpath("src", "models", "environment", "ephemerides", "ephemerides_models.jl"),
+    joinpath("src", "models", "environment", "ephemerides", "planets.jl"),
+    joinpath("src", "models", "gnc", "control", "control_hooks.jl"),
+    joinpath("src", "models", "gnc", "control", "propulsive_maneuvers.jl"),
+    joinpath("src", "models", "gnc", "guidance", "guidance_models.jl"),
+    joinpath("src", "models", "gnc", "guidance", "guidance_hooks.jl"),
     # Typed EDG module includes only its own numerical/decision source files.
-    joinpath("src", "gnc", "guidance", "aerobraking", "typed_edg", "algorithms.jl"),
+    joinpath("src", "models", "gnc", "guidance", "aerobraking", "typed_edg", "algorithms.jl"),
     # Existing helper module now loads its shared and RRT source owners.
-    joinpath("src", "gnc", "hypr", "hypr_utils.jl"),
-    joinpath("src", "gnc", "navigation", "navigation_hooks.jl"),
-    joinpath("src", "simulation", "engine", "simulation_engine.jl"),
-    joinpath("src", "simulation", "engine", "setup.jl"),
-    joinpath("src", "simulation", "callbacks", "callbacks.jl"),
-    joinpath("src", "simulation", "callbacks", "registry.jl"),
-    joinpath("src", "simulation", "callbacks", "density_callbacks.jl"),
-    joinpath("src", "simulation", "callbacks", "gram_track_cache.jl"),
-    joinpath("src", "parallel", "policy", "parallel_policy.jl"),
-    joinpath("src", "parallel", "routing", "parallel_profiles.jl"),
-    joinpath("src", "parallel", "process", "parallel_process.jl"),
-    # Fourth src/parallel/<area>/<area>.jl module aggregator, same shape as the
+    joinpath("src", "models", "gnc", "hypr", "hypr_utils.jl"),
+    joinpath("src", "models", "gnc", "navigation", "navigation_hooks.jl"),
+    joinpath("src", "orchestration", "simulation", "engine", "simulation_engine.jl"),
+    joinpath("src", "orchestration", "simulation", "engine", "setup.jl"),
+    joinpath("src", "orchestration", "simulation", "callbacks", "callbacks.jl"),
+    joinpath("src", "orchestration", "simulation", "callbacks", "registry.jl"),
+    joinpath("src", "orchestration", "simulation", "callbacks", "density_callbacks.jl"),
+    joinpath("src", "orchestration", "simulation", "callbacks", "gram_track_cache.jl"),
+    joinpath("src", "orchestration", "parallel", "policy", "parallel_policy.jl"),
+    joinpath("src", "orchestration", "parallel", "routing", "parallel_profiles.jl"),
+    joinpath("src", "orchestration", "parallel", "process", "parallel_process.jl"),
+    # Fourth src/orchestration/parallel/<area>/<area>.jl module aggregator, same shape as the
     # three above: defines its module, includes its own files, exports its
     # surface, owns no behavior. Added with the cost model and omitted here by
     # oversight, so this gate has failed since that commit.
@@ -60,12 +59,12 @@ const ALLOWED_RAW_INCLUDE_FILES = Set([
     # "# Canonical aggregator: no behavior ownership." header and forbids any
     # function or type definition. parallel_policy.jl sits in this list and not
     # in that one for the same reason.
-    joinpath("src", "parallel", "cost", "parallel_cost.jl"),
+    joinpath("src", "orchestration", "parallel", "cost", "parallel_cost.jl"),
 ])
 
 violations = String[]
 for root in SCAN_ROOTS
-    isdir(root) || continue
+    isdir(root) || error("Missing include ownership scan root: $(relpath(root, REPO_ROOT))")
     for (dir, _, files) in walkdir(root)
         for file in files
             endswith(file, ".jl") || continue
@@ -86,13 +85,13 @@ for root in SCAN_ROOTS
                 push!(violations, "$rel: contains forbidden cross-layer include chain pattern '$rx'.")
             end
 
-            if startswith(rel, joinpath("src", "gnc", "guidance", "aerobraking"))
+            if startswith(rel, joinpath("src", "models", "gnc", "guidance", "aerobraking"))
                 if EDGOwnershipChecks.has_control_include(src)
                     push!(violations, "$rel: guidance aerobraking file includes control source directly.")
                 end
             end
 
-            if rel == joinpath("src", "gnc", "guidance", "aerobraking", "typed_edg", "algorithms.jl")
+            if rel == joinpath("src", "models", "gnc", "guidance", "aerobraking", "typed_edg", "algorithms.jl")
                 append!(violations, EDGOwnershipChecks.aggregator_violations(src))
             end
 

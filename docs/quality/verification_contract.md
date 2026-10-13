@@ -53,13 +53,13 @@ Main thresholds:
 2. Main per-file coverage: `>= 80.0%` (unless explicit override exists)
 
 Critical-file thresholds (`>= 90.0%`):
-1. `src/simulation/engine/execution.jl`
-2. `src/gnc/control/propulsive_maneuvers.jl`
-3. `src/core/interfaces/reference_system.jl`
+1. `src/orchestration/simulation/engine/execution.jl`
+2. `src/models/gnc/control/propulsive_maneuvers.jl`
+3. `src/foundation/core/interfaces/reference_system.jl`
 
 Main per-file overrides:
-1. `src/simulation/engine/adapters/from_env.jl` => `>= 70.0%`
-2. `src/simulation/engine/dynamics_rhs.jl` => `>= 70.0%`
+1. `src/orchestration/simulation/engine/adapters/from_env.jl` => `>= 70.0%`
+2. `src/orchestration/simulation/engine/dynamics_rhs.jl` => `>= 70.0%`
 
 ## Native GRAM probe reporting
 

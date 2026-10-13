@@ -1,6 +1,6 @@
 # Quaternion helper contracts
 
-The canonical, robotics and cloth helpers use scalar-last quaternions, but they do not share every mathematical contract. `OrientationQuaternionMath`, in `src/core/numerics/orientation_quaternion_utils.jl`, now owns the equivalent Float64 operations used by Robotics, ClothMultibody and ClothRobotArmDynamics. The existing private bindings import these functions; the module adds no root exports. The tests in `test/unit/robotics/quaternion_contract_tests.jl` characterize the helpers and their direct consumers while preserving the distinction between orientation operations and raw products used for derivatives.
+The canonical, robotics and cloth helpers use scalar-last quaternions, but they do not share every mathematical contract. `OrientationQuaternionMath`, in `src/foundation/core/numerics/orientation_quaternion_utils.jl`, now owns the equivalent Float64 operations used by Robotics, ClothMultibody and ClothRobotArmDynamics. The existing private bindings import these functions; the module adds no root exports. The tests in `test/unit/robotics/quaternion_contract_tests.jl` characterize the helpers and their direct consumers while preserving the distinction between orientation operations and raw products used for derivatives.
 
 ## Current behavior
 
@@ -23,8 +23,8 @@ The shared error-vector operation projects the input, negates it only when the s
 
 ## Consumer boundaries
 
-- Canonical multiplication and rotation belong to `src/core/numerics/quaternion_utils.jl`. Canonical rotational kinematics belongs to `src/dynamics/rotational/attitude_kinematics.jl`.
-- `Robotics.cloth_fk`, in `src/vehicle/robotics/robotics.jl`, normalizes a raw composition before using its active rotation for link positions.
+- Canonical multiplication and rotation belong to `src/foundation/core/numerics/quaternion_utils.jl`. Canonical rotational kinematics belongs to `src/models/dynamics/rotational/attitude_kinematics.jl`.
+- `Robotics.cloth_fk`, in `src/models/vehicle/robotics/robotics.jl`, normalizes a raw composition before using its active rotation for link positions.
 - `ClothMultibody.compliant_joint_loads` uses normalized orientation products for rest/error attitudes. `compliant_multibody_dynamics` uses a raw product for the quaternion derivative after `compliant_state_parts` projects the state. The compiled `compliant_body_derivatives!` path uses the same projector and raw product; mount and in-place load calculations retain active rotation and normalized orientation composition.
 - `ClothRobotArmDynamics` uses normalized products for rest/error attitudes. `assign_coupled_cloth_robot_arm_rhs!` uses a raw product after `_coupled_body_state` projects the state.
 

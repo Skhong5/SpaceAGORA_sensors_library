@@ -8,8 +8,8 @@ plotting code awaiting a capability decision.
 
 1. Runnable example entrypoints are owned by top-level `examples/`.
 2. Plotting/report scripts are owned by top-level `scripts/plotting/`.
-3. Shared example helper builders live in `src/analysis/verification/telemetry_verification/example_support.jl`.
-4. Shared runtime lock ownership lives in `src/simulation/runtime_services.jl`.
+3. Shared example helper builders live in `src/interfaces/analysis/verification/telemetry_verification/example_support.jl`.
+4. Shared runtime lock ownership lives in `src/orchestration/simulation/runtime_services.jl`.
 5. Unfinished subsystem scaffolds are quarantined under top-level
    `experimental/*`, not under `src/*`.
 6. Only the canonical roots above are valid ownership locations for runnable
@@ -22,10 +22,10 @@ plotting code awaiting a capability decision.
 1. Example bootstrap: `examples/common.jl`
 2. Example entrypoints: `examples/*.jl`
 3. Maintained telemetry plotting: `scripts/plotting/telemetry_orbit_accuracy_plots.jl`,
-   invoked by `src/analysis/verification/telemetry_verification/reporting.jl`.
-4. Example helper builders: `src/analysis/verification/telemetry_verification/example_support.jl`
-5. Runtime serialization locks: `src/simulation/runtime_services.jl`
-6. Telemetry verification package surface: `src/analysis/verification/telemetry_verification.jl`
+   invoked by `src/interfaces/analysis/verification/telemetry_verification/reporting.jl`.
+4. Example helper builders: `src/interfaces/analysis/verification/telemetry_verification/example_support.jl`
+5. Runtime serialization locks: `src/orchestration/simulation/runtime_services.jl`
+6. Telemetry verification package surface: `src/interfaces/analysis/verification/telemetry_verification.jl`
 
 ## Retained legacy plotting
 

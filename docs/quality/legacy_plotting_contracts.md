@@ -19,10 +19,10 @@ This schema has a tracked producer: `slew_save_fields` in
 `scripts/dev/viewer_demos/cygnss_slew.jl` records `u.sc[1].ω` through
 `SaveField(:body_rate_rad_s, ...; per_satellite=true, column_prefix="body_rate")`.
 The same script reads `sc1_body_rate_1..3` and labels them `rad/s`.
-`_assign_orientation_rhs!` in `src/simulation/engine/dynamics_rhs.jl` uses
+`_assign_orientation_rhs!` in `src/orchestration/simulation/engine/dynamics_rhs.jl` uses
 `sc_view.ω` as `omega_body`; the external-propagator state contract also states
 body angular velocity in rad/s. The result writer in
-`src/io/outputs/io_outputs.jl` expands these saved three-vectors in component
+`src/interfaces/io/outputs/io_outputs.jl` expands these saved three-vectors in component
 order and names spacecraft by list position.
 
 These are **custom, opt-in fields**. `default_save_fields` saves quaternions

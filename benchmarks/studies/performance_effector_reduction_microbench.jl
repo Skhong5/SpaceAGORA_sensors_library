@@ -3,7 +3,7 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 using Statistics
 using StaticArrays
 
-include(joinpath(REPO_ROOT, "src", "core", "simulation_model.jl"))
+include(joinpath(REPO_ROOT, "src", "foundation", "core", "simulation_model.jl"))
 
 const PP = SimulationModel.ParallelPolicy
 

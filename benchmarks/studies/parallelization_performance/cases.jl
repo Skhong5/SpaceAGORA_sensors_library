@@ -79,7 +79,7 @@ the command line.
 Which of the two ways of reading one shared native `GRAMAtmosphereModel` a run
 uses is not part of `SimulationConfiguration` -- it is read from `SPACEAGORA_*`
 env when the density callback is assembled
-(`src/simulation/callbacks/density_callbacks/vacuum_predicted_gram.jl` for the
+(`src/orchestration/simulation/callbacks/density_callbacks/vacuum_predicted_gram.jl` for the
 look-ahead cache, `.../density_callbacks/config.jl` for the freeze-per-accepted-
 step switch). So the case builder cannot express it and the phase definition
 cannot either; the case name has to.
@@ -430,10 +430,10 @@ function ppc_build_config(;
     # analysis/verification/telemetry_verification/ reads it, and the solver runs
     # on save_everystep with no saveat, so varying it changes literally nothing
     # about the work performed. The real mechanism is
-    # get_data_saving_callback (src/simulation/callbacks/event_callbacks.jl),
+    # get_data_saving_callback (src/orchestration/simulation/callbacks/event_callbacks.jl),
     # which builds `SavingCallback(...; saveat=data_rate)` -- but it is only
     # installed when `simulation_settings.results` is true
-    # (src/simulation/callbacks/density_callbacks/assembly.jl), and this harness
+    # (src/orchestration/simulation/callbacks/density_callbacks/assembly.jl), and this harness
     # hardcoded results=false, so every benchmark case to date has done no
     # trajectory output at all. Setting results=true both installs that callback
     # and (via `needs_full_solution` in simulation/engine/execution.jl) turns on
@@ -1031,7 +1031,7 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
     #
     # SATELLITE COUNT IS IN THE CASE NAME, and the ladder is deliberately run at a
     # smaller N than the other axes, because the actuator rung is quadratic in N.
-    # get_control_callbacks (src/simulation/callbacks/control_callbacks.jl) builds
+    # get_control_callbacks (src/orchestration/simulation/callbacks/control_callbacks.jl) builds
     # one PeriodicCallback per control effector and each one loops over *all*
     # num_sats, so N per-satellite MagneticMomentumManagerModels cost N^2
     # calcControlEffect! calls per tick -- of which N are the intended ones and

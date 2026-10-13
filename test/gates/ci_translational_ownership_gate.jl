@@ -1,8 +1,9 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const SRC_ROOT = joinpath(REPO_ROOT, "src")
-const TRANSLATIONAL_ROOT = joinpath(SRC_ROOT, "dynamics", "translational")
+const TRANSLATIONAL_ROOT = joinpath(SRC_ROOT, "models", "dynamics", "translational")
+isdir(TRANSLATIONAL_ROOT) || error("Missing translational ownership root")
 
-# Translational equations must be owned by src/dynamics/translational/* only.
+# Translational equations must be owned by src/models/dynamics/translational/* only.
 const FORBIDDEN_PATTERNS = (
     r"du_view\.pos\s*\.=\s*sc_view\.vel",
     r"du_view\.pos\s*\.=\s*0\.0",

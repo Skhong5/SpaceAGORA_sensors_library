@@ -320,13 +320,13 @@ end
         bad=copy(sources);bad[path]=get(bad,path,"")*"\n"*extra
         return !isempty(EDGOwnershipChecks.violations(bad))
     end
-    @test refused("src/gnc/control/other.jl","function _edg_prediction_time_grid(t)\n    return [t]\nend")
+    @test refused("src/models/gnc/control/other.jl","function _edg_prediction_time_grid(t)\n    return [t]\nend")
     @test refused(EDGOwnershipChecks.OWNER*"targeting.jl","const reverse = ControlHooks")
     @test refused(EDGOwnershipChecks.OWNER*"targeting.jl","rotate_link(link, axis, angle)")
     @test refused(EDGOwnershipChecks.OWNER*"targeting.jl","link.α = 0.0")
-    @test refused("src/gnc/guidance/target_energy_bracketing.jl","_control_module()._edg_prediction_time_grid(1.0)")
+    @test refused("src/models/gnc/guidance/target_energy_bracketing.jl","_control_module()._edg_prediction_time_grid(1.0)")
     bad=copy(sources)
-    path="src/gnc/control/targeting_control.jl"
+    path="src/models/gnc/control/targeting_control.jl"
     bad[path]=replace(bad[path],"    return EDGAlgorithms._edg_base_alpha"=>"    t += 1.0\n    return EDGAlgorithms._edg_base_alpha")
     @test !isempty(EDGOwnershipChecks.violations(bad))
     for definition in (
@@ -336,8 +336,8 @@ end
         "function EDGAlgorithms._edg_prediction_time_grid(t)\n    [t]\nend",
         "control_decision!(args...) = nothing",
     )
-        @test refused("src/gnc/control/other.jl", definition)
-        @test refused("src/core/other.jl", definition)
+        @test refused("src/models/gnc/control/other.jl", definition)
+        @test refused("src/foundation/core/other.jl", definition)
     end
     @test refused(path, "_edg_base_alpha(model, t, i) = t")
     bad = copy(sources)

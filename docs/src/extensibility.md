@@ -195,8 +195,8 @@ hook function to implement (thermal models are consumed inside the
 force/torque and heat-load machinery, thruster models inside control
 effectors, and guidance models inside the GNC control hooks). Treat them as
 advanced extension points — subtype the abstract type and follow an existing
-implementation in `src/vehicle/thermal/`, `src/vehicle/actuators/thruster/`,
-or `src/gnc/guidance/` as a model rather than a documented recipe.
+implementation in `src/models/vehicle/thermal/`, `src/models/vehicle/actuators/thruster/`,
+or `src/models/gnc/guidance/` as a model rather than a documented recipe.
 
 ## Design guidance
 

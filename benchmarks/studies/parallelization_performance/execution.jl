@@ -130,7 +130,7 @@ end
 # SpaceAGORA.ParallelProcess.ensure_process_workers! (used via
 # adopt_process_workers! below the outer_process route also touches), with
 # its own hardcoded exeflags -- so the pool-worker heap-size-hint default
-# has to be applied here too, not just in src/parallel/process/worker_pool.jl.
+# has to be applied here too, not just in src/orchestration/parallel/process/worker_pool.jl.
 # It reuses that module's exact formula/constants and its env override
 # (SPACEAGORA_POOL_WORKER_HEAP_SIZE_HINT), rather than a third knob, since
 # these are the same kind of worker under the same per-process memory-share
@@ -221,7 +221,7 @@ picks `:process` (8.1x) while the pin forced `:threads` (2.0x), and the resultin
 "router regret" was a property of this table rather than of the router.
 
 The shipped profile definitions already say `outer_backend=:auto` for R3/R4/R5
-(`src/parallel/routing/profile_definitions.jl`), so this restores agreement with
+(`src/orchestration/parallel/routing/profile_definitions.jl`), so this restores agreement with
 them for the two adaptive profiles. R3 deliberately keeps its explicit `threads`
 pin: it is the *static* hybrid baseline the adaptive profiles are measured
 against, so it has to stay fixed.
@@ -541,7 +541,7 @@ end
 #
 # `CachingPool` keys its worker-side cache on the IDENTITY of the function it
 # is handed (see `_acquire_dispatch_runner` in
-# src/simulation/campaigns/monte_carlo.jl), so a closure rebuilt for every
+# src/orchestration/simulation/campaigns/monte_carlo.jl), so a closure rebuilt for every
 # repeat is a guaranteed cache miss on every worker, every time: the campaign's
 # closure is serialized to each of them again and torn down again. Repeats of
 # one point are the same campaign run again, and that is what they should cost.
@@ -726,7 +726,7 @@ end
 # selects poorly for the GRAM case" could be measured but not attributed. The
 # selected RHS plan lives in per-solve `shared_buffers.rhs_plan_override`, which
 # is gone by the time the solve returns; `record_rhs_plan_selection!`
-# (src/parallel/policy/policy_telemetry.jl) copies it into the process-level
+# (src/orchestration/parallel/policy/policy_telemetry.jl) copies it into the process-level
 # policy telemetry so it survives, and this reads it back.
 #
 # Process-route caveat: the counters are per-process, and on the `outer_process`
@@ -1003,7 +1003,7 @@ end
 #
 # `--heap-size-hint` is ON by default (a derived value; see the block
 # comment above `_default_pool_worker_heap_hint_bytes` in
-# src/parallel/process/worker_pool.jl for the diagnostic and the formula).
+# src/orchestration/parallel/process/worker_pool.jl for the diagnostic and the formula).
 # `SPACEAGORA_PPC_WORKER_HEAP_SIZE_HINT=off` removes the flag entirely; any
 # other value overrides the computed default and is passed through verbatim.
 function _ppc_worker_gc_flags(cfg::PPCConfig)::Vector{String}
@@ -1016,7 +1016,7 @@ function _ppc_worker_gc_flags(cfg::PPCConfig)::Vector{String}
         lowercase(heap_hint) == "off" || push!(flags, "--heap-size-hint=$(heap_hint)")
     else
         # Default (env unset): the same derived hint the process pool uses
-        # by default (see src/parallel/process/worker_pool.jl and
+        # by default (see src/orchestration/parallel/process/worker_pool.jl and
         # docs/architecture/heap_contention.md), reusing its exact formula
         # and constants rather than a second copy of them. The harness's own
         # per-point worker subprocess showed the identical unbounded-heap

@@ -26,7 +26,7 @@ why the figure needs two phases, and for how the GRAM density path is selected.
 
 The user asked for 4096 spacecraft. The routing layer's own memory model says
 that cannot work for the native-GRAM traces:
-`native_gram_worker_extra_bytes` in `src/parallel/routing/machine_topology.jl`
+`native_gram_worker_extra_bytes` in `src/orchestration/parallel/routing/machine_topology.jl`
 charges `_GRAM_SAT_MEMORY_BYTES = 90 MB` per spacecraft ("~22 GB / 256"), which
 puts 4096 spacecraft at about 360 GB against the benchmark box's 250 GB.
 
