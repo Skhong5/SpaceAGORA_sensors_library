@@ -73,7 +73,7 @@ SpaceAGORAMuJoCo keep their own source trees outside this directory. The existin
 [`packages/SpaceAGORAHYPR/`](../packages/SpaceAGORAHYPR/) package is a compatibility
 loader for external HYPR. Runnable scenarios remain in [`examples/`](../examples/),
 operational tools in [`scripts/`](../scripts/) and browser code in
-[`viewer/`](../viewer/).
+[SpaceAGORAVisualizer.jl](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl).
 
 See [Architecture and Responsibilities](../docs/src/user/architecture.md) for
 the runtime flow, detailed source owners and guidance on where new work belongs.

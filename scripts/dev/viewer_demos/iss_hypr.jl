@@ -6,7 +6,7 @@
 # model. The epoch is a date on which the Sun stays above the station's horizon
 # for the whole relocation.
 #
-#   julia --project=examples/rpo_planner_env scripts/dev/viewer_demos/iss_hypr.jl
+#   julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/iss_hypr.jl
 #
 # Environment:
 #   SPACEAGORA_VIEWER_DEMO_OUT       output root (default: output/viewer_demos)
@@ -33,6 +33,10 @@
 # plan, never from a new one. With fixed iteration budgets and no wall-clock
 # limits, seeded planning is reproducible across thread counts. Otherwise the
 # run is fresh. Nothing is deleted.
+# Load the optional renderer before example helpers activate the core project.
+if abspath(PROGRAM_FILE) == @__FILE__
+    using SpaceAGORAVisualizer
+end
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
 include(joinpath(REPO_ROOT, "examples", "Earth_RPO_CubeSat_MPC.jl"))
 using Dates

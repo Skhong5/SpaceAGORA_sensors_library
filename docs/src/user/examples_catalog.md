@@ -56,6 +56,20 @@ julia --project=. examples/AGORA_Earth_NoGRAM.jl
 julia --project=. examples/AGORA_Earth_MonteCarlo.jl
 ```
 
+### Reusable mission and viewer output
+
+`AGORA_Mission_Workflow.jl` defines a named mission with a fresh configuration
+builder and saves a portable viewer payload. It uses no GRAM or SPICE assets.
+Choose an absent or empty output directory for each run:
+
+```text
+julia --project=. examples/AGORA_Mission_Workflow.jl output/coast-001
+```
+
+See [Mission Workflows](mission_workflows.md) for the returned table, descriptive
+phase windows and event factories. The standalone viewer opens the exported
+payload without rerunning the simulation.
+
 ### Guidance and control with a frozen atmosphere
 
 `odyssey_surrogate.jl` runs Mars Odyssey's P20 aerobraking passage with a named,

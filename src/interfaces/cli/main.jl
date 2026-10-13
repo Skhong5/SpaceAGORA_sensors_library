@@ -1,5 +1,15 @@
 using SpaceAGORA
 
+# Only explicit visualization commands load the optional renderer. Selecting a
+# prepared project never installs packages or changes its Project/Manifest files.
+visualize_requested = !isempty(ARGS) &&
+    (first(ARGS) == "visualize" || (first(ARGS) == "run" && "--visualize" in ARGS))
+if visualize_requested
+    project = SpaceAGORA.SpaceAGORACLI._visualizer_project()
+    pushfirst!(LOAD_PATH, project)
+    @eval using SpaceAGORAVisualizer
+end
+
 # Load the optional public wrapper as a package so Julia activates its adapter
 # extension. Other CLI commands do not require an atmospheric backend.
 if length(ARGS) >= 2 && ARGS[1] == "assets" && ARGS[2] == "check" && length(ARGS) > 2

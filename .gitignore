@@ -168,3 +168,6 @@ benchmarks/studies/small_wins/results/
 # Generated optional HYPR example environment; Project.template.toml is tracked.
 /examples/rpo_planner_env/Project.toml
 /examples/rpo_planner_env/Manifest.toml
+
+# Optional viewer installation environment
+.visualizer-env/

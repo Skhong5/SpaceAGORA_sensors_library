@@ -24,6 +24,7 @@ using ..Robotics: ClothArmModel, cloth_total_reach
 using ..EphemeridesModels: planet_frame_lpi, ephemerides_time_seconds
 using ..EphemeridesModels: _initial_time_datetime
 using ..SimConfig: SimulationConfiguration, SimulationSettings, _with_configuration
+import ...VisualizerServices
 using ..IOConfig
 using ..IOSerialization
 using ..TerrainModels
@@ -40,7 +41,7 @@ export planet_spec, planet_rotation_table, rotation_sample_times
 export build_visualization_scene, visualization_scene_path, with_visualization_scene
 export write_visualization_scene, read_visualization_scene, write_visualization_scene!
 export velocity_aligned_quaternion, visualization_frame_budget
-export export_visualization, write_viewer_dev_payload
+export export_visualization, export_viewer_payload, write_viewer_dev_payload
 export texture_manifest, texture_entry, texture_payload, build_viewer_frames, viewer_payload, model_payloads, model_format, gltf_required_extensions, path_payloads
 export terrain_payload, terrain_tiles_payload
 export render_viewer_html, viewer_import_map, kept_row_indices
@@ -193,7 +194,7 @@ end
 include(joinpath(@__DIR__, "spacecraft_geometry.jl"))
 include(joinpath(@__DIR__, "planet_spec.jl"))
 include(joinpath(@__DIR__, "scene_export.jl"))
-include(joinpath(@__DIR__, "viewer_bundle.jl"))
+include(joinpath(@__DIR__, "viewer_payload.jl"))
 include(joinpath(@__DIR__, "terrain_payload.jl"))
 include(joinpath(@__DIR__, "ensemble_export.jl"))
 

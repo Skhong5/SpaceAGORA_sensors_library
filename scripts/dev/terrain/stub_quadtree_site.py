@@ -3,7 +3,7 @@
 quadtree tile payload the viewer's horizon renderer expects.
 
 Older site bundles may contain nested square images (`imagery/imagery.json`).
-The current `fetch_moon_site.py` already writes a quadtree and needs no conversion. The renderer in `viewer/src/terrain.js` instead
+The current `fetch_moon_site.py` already writes a quadtree and needs no conversion. The companion renderer in `SpaceAGORAVisualizer.jl/viewer/src/terrain.js` instead
 takes a quadtree over one square root region:
 
     tiles = { scheme: "quadtree", root: {lat_min, lat_max, lon_min, lon_max},

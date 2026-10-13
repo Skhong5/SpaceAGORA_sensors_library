@@ -3,6 +3,10 @@
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "orchestration", "simulation", "composition", "simulation_model.jl"))
     @test Core.eval(sandbox, :(isdefined(@__MODULE__, :RuntimeServices)))
     @test isdefined(sandbox, :SimulationLifecycle)
+    @test isdefined(sandbox, :VisualizerServices)
+    @test sandbox.SimulationModel.SceneVisualization.VisualizerServices === sandbox.VisualizerServices
+    @test !sandbox.VisualizerServices.available()
+    @test_throws sandbox.VisualizerServices.VisualizerUnavailableError sandbox.VisualizerServices.require_available()
     @test sandbox.SimulationModel.ControlHooks.SimulationLifecycle === sandbox.SimulationLifecycle
     @test sandbox.SimulationLifecycle.before_reference_control!(nothing, nothing, nothing, nothing, 0.0) === nothing
     @test_nowarn Core.eval(sandbox, :(using .SimulationModel))
@@ -57,6 +61,8 @@ end
     sandbox = INCLUDE_ORDER_SANDBOX
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "models", "gnc", "interfaces", "simulation_lifecycle.jl"))
     lifecycle = sandbox.SimulationLifecycle
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "interfaces", "analysis", "visualization", "visualizer_services.jl"))
+    visualizer = sandbox.VisualizerServices
 
     Base.include_string(sandbox, """
     module ConflictingExports
@@ -69,6 +75,10 @@ end
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "orchestration", "simulation", "composition", "simulation_model.jl"))
     @test sandbox.SimulationLifecycle === lifecycle
     @test sandbox.SimulationModel.ControlHooks.SimulationLifecycle === lifecycle
+    @test sandbox.VisualizerServices === visualizer
+    @test sandbox.SimulationModel.SceneVisualization.VisualizerServices === visualizer
+    @test !visualizer.available()
+    @test_throws visualizer.VisualizerUnavailableError visualizer.require_available()
     Core.eval(sandbox, :(const quat_mult = SimulationModel.quat_mult))
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "simulation_engine.jl"))
     @test isdefined(sandbox, :RuntimeServices)

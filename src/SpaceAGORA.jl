@@ -8,6 +8,7 @@ include(joinpath(@__DIR__, "models", "gnc", "interfaces", "rpo_planner.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "interfaces", "simulation_lifecycle.jl"))
 include(joinpath(@__DIR__, "orchestration", "parallel", "routing", "parallel_profiles.jl"))
 include(joinpath(@__DIR__, "orchestration", "parallel", "process", "parallel_process.jl"))
+include(joinpath(@__DIR__, "interfaces", "analysis", "visualization", "visualizer_services.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "runtime_services.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "callback_services.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "composition", "simulation_model.jl"))
@@ -17,6 +18,7 @@ include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "lifecycle.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "adapters", "hypr", "services.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "engine", "simulation_engine.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "campaigns", "simulation_campaigns.jl"))
+include(joinpath(@__DIR__, "orchestration", "mission", "mission_workflow.jl"))
 include(joinpath(@__DIR__, "interfaces", "analysis", "verification", "telemetry_verification.jl"))
 include(joinpath(@__DIR__, "foundation", "assets", "rpo_station_assets.jl"))
 include(joinpath(@__DIR__, "foundation", "assets", "odyssey_surrogate_assets.jl"))
@@ -27,6 +29,20 @@ include(joinpath(@__DIR__, "orchestration", "simulation", "external_propagation_
 public ExternalPropagationServices
 
 
+
+using .MissionWorkflow: MissionPlan, MissionPhase, MissionEvent, MissionRun, run_mission
+export MissionPlan, MissionPhase, MissionEvent, MissionRun, run_mission
+for name in (:MissionPlan, :MissionPhase, :MissionEvent, :MissionRun, :run_mission)
+    @eval @doc (@doc MissionWorkflow.$name) $name
+end
+using .VisualizerServices: VisualizerUnavailableError
+const visualizer_available = VisualizerServices.available
+export VisualizerUnavailableError, visualizer_available
+@doc (@doc VisualizerServices.VisualizerUnavailableError) VisualizerUnavailableError
+@doc "Return whether a compatible optional SpaceAGORAVisualizer is loaded in this environment." visualizer_available
+using .SimulationModel.SceneVisualization: export_viewer_payload
+export export_viewer_payload
+@doc (@doc SimulationModel.SceneVisualization.export_viewer_payload) export_viewer_payload
 
 # Opt-in public RPO planner pilot.
 using .RPOPlannerInterfaces: AbstractRPOPlanner, RPOPlanningConstraints, RPOValidationSettings, RPOPlanningRequest, RPOReference, RPOPlanningResult, RPOPlannerCapabilities, RPOValidationResult, RPOPlanningHeadroom, planner_capabilities, initialize_planner, plan_rpo!, retime_rpo!, validate_rpo_result, validate_rpo_capabilities, rpo_reference_is_current
