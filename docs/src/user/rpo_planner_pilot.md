@@ -151,21 +151,34 @@ sampling, metrics, RRT, retiming and quintic robot-arm planner. It preserves HYP
 configuration and result types so saved configurations and qualified names retain
 their defining modules. It does not load the HYPR optimizer or configured execution.
 
-Use a separate project and the setup helper from the reviewed SpaceAGORA
-checkout. The helper resolves HYPR from the full Git commit recorded in
-`packages/SpaceAGORAHYPR/HYPRSource.toml` and preserves existing dependency versions:
+From a reviewed SpaceAGORA Git clone, prepare a separate environment:
+
+```sh
+julia --startup-file=no scripts/optional_packages.jl setup hypr /path/to/my-rpo-project
+```
+
+The helper checks out `packages/robotics/HYPR.jl` at the parent repository's
+recorded revision, verifies its identity and clean state, and delegates to the
+existing HYPR installer with that path. The pin agrees with
+`packages/SpaceAGORAHYPR/HYPRSource.toml`. It selects HYPR 0.1.1 alongside
+SpaceAGORA 0.2.0 and compatibility shim 0.2.0. The shim keeps its existing location;
+HYPR remains optional for the simulator core.
+
+The original external-source route is also supported:
 
 ```sh
 julia --startup-file=no scripts/setup_hypr.jl /path/to/my-rpo-project
 ```
 
+Without an override, this route resolves the immutable HYPR source pin directly
+from its repository, rather than using the submodule checkout. For coordinated
+local development, `SPACEAGORA_HYPR_PATH` explicitly substitutes another local
+HYPR checkout; that override is not published-installation evidence. Failed
+resolution is an error, not a fallback to another revision. Both routes use the
+existing installer's dependency-preservation policy. See [Optional package commands](installation_environment.md#Optional-package-commands)
+for source checks and Git-clone requirements.
+
 Run with `--project=/path/to/my-rpo-project` and explicitly load the companion.
-The supported version pair is SpaceAGORA 0.2.0, HYPR 0.1.1 and compatibility shim 0.2.0.
-HYPR remains optional for the simulator core. For coordinated local development,
-`SPACEAGORA_HYPR_PATH` explicitly substitutes a local HYPR checkout; it is not
-published-installation evidence. Failed resolution is an error, not a fallback
-to another revision. The default Git route installs the immutable source pin
-from the HYPR repository.
 
 ```julia
 using SpaceAGORA, SpaceAGORAHYPR
