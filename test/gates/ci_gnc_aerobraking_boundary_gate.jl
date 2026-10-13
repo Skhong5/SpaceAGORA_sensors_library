@@ -33,12 +33,12 @@ end
 for root_rel in (
     joinpath("packages", "SpaceAGORAHYPR", "src"),
     joinpath("src", "models", "gnc", "guidance"),
-    joinpath("src", "models", "gnc", "shared"),
-    joinpath("src", "models", "gnc", "hypr"),
-    joinpath("src", "models", "gnc", "rrt"),
+    joinpath("src", "models", "gnc", "planning"),
+    joinpath("src", "interfaces", "analysis", "planning"),
     joinpath("src", "models", "gnc", "control"),
 )
     root = joinpath(REPO_ROOT, root_rel)
+    isdir(root) || error("Missing GNC boundary scan root: $root_rel")
     for (dir, _, files) in walkdir(root)
         for file in files
             endswith(file, ".jl") || continue

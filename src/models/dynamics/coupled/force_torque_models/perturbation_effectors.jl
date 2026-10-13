@@ -10,7 +10,7 @@ module PerturbationEffectors
     using ...SimulationModel: SRPSunEphemerisCache, NBodyEphemerisCache, SpiceRhsMemo
     using ...SimulationModel: ephemerides_cache_key, ephemerides_requires_spice, planet_frame_lpi
     using ..GravityEffectors: encke_point_mass_difference
-    using ..AerodynamicEffectors: _multibody_thread_decision
+    using ...ParallelPolicy: _multibody_thread_decision
     # Shared geodetic conversion for the IGRF field option.
     using ...FrameTransforms: rtolatlong
     using StaticArrays

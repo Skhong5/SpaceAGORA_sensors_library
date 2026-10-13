@@ -17,7 +17,7 @@ end
 @inline function _save_positions(num_sats::Int, u, t, integrator)
     positions = Vector{SVector{3, Float64}}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        positions[i] = _simulation_engine_module()._state_position_ii(u, i)
+        positions[i] = CallbackServices._state_position_ii(u, i)
     end
     return positions
 end
@@ -25,7 +25,7 @@ end
 @inline function _save_velocities(num_sats::Int, u, t, integrator)
     velocities = Vector{SVector{3, Float64}}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        velocities[i] = _simulation_engine_module()._state_velocity_ii(u, i)
+        velocities[i] = CallbackServices._state_velocity_ii(u, i)
     end
     return velocities
 end
@@ -126,8 +126,8 @@ end
     planet = integrator.p.args.environment_model.planet
     periapsis_altitudes = Vector{Float64}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        pos = _simulation_engine_module()._state_position_ii(u, i)
-        vel = _simulation_engine_module()._state_velocity_ii(u, i)
+        pos = CallbackServices._state_position_ii(u, i)
+        vel = CallbackServices._state_velocity_ii(u, i)
         oe = rvtoorbitalelement(pos, vel, planet)
         periapsis_altitudes[i] = oe[1] * (1.0 - oe[2]) - planet.Rp_e
     end
@@ -140,8 +140,8 @@ end
     ephemerides_model = integrator.p.args.environment_model.ephemerides_model
     altitudes = Vector{Float64}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        pos = _simulation_engine_module()._state_position_ii(u, i)
-        vel = _simulation_engine_module()._state_velocity_ii(u, i)
+        pos = CallbackServices._state_position_ii(u, i)
+        vel = CallbackServices._state_velocity_ii(u, i)
         rp, _ = r_intor_p!(pos, vel, planet, et, ephemerides_model)
         altitudes[i] = rtolatlong(rp, planet, ephemerides_model)[1]
     end
@@ -154,8 +154,8 @@ end
     ephemerides_model = integrator.p.args.environment_model.ephemerides_model
     latitudes_deg = Vector{Float64}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        pos = _simulation_engine_module()._state_position_ii(u, i)
-        vel = _simulation_engine_module()._state_velocity_ii(u, i)
+        pos = CallbackServices._state_position_ii(u, i)
+        vel = CallbackServices._state_velocity_ii(u, i)
         rp, _ = r_intor_p!(pos, vel, planet, et, ephemerides_model)
         latitudes_deg[i] = rad2deg(rtolatlong(rp, planet, ephemerides_model)[2])
     end
@@ -168,8 +168,8 @@ end
     ephemerides_model = integrator.p.args.environment_model.ephemerides_model
     longitudes_deg = Vector{Float64}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        pos = _simulation_engine_module()._state_position_ii(u, i)
-        vel = _simulation_engine_module()._state_velocity_ii(u, i)
+        pos = CallbackServices._state_position_ii(u, i)
+        vel = CallbackServices._state_velocity_ii(u, i)
         rp, _ = r_intor_p!(pos, vel, planet, et, ephemerides_model)
         longitudes_deg[i] = rad2deg(rtolatlong(rp, planet, ephemerides_model)[3])
     end
@@ -195,7 +195,7 @@ end
 @inline function _save_heat_load(num_sats::Int, u, t, integrator)
     heat_loads = Vector{Float64}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        loads = _simulation_engine_module()._state_heat_loads(u, integrator.p.args, i)
+        loads = CallbackServices._state_heat_loads(u, integrator.p.args, i)
         heat_loads[i] = isempty(loads) ? 0.0 : maximum(loads)
     end
     return heat_loads
@@ -204,7 +204,7 @@ end
 @inline function _save_mass(num_sats::Int, u, t, integrator)
     masses = Vector{Float64}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        masses[i] = _simulation_engine_module()._state_mass_kg(u, integrator.p.args, i)
+        masses[i] = CallbackServices._state_mass_kg(u, integrator.p.args, i)
     end
     return masses
 end
@@ -212,7 +212,7 @@ end
 @inline function _save_quaternion(num_sats::Int, u, t, integrator)
     quaternions = Vector{SVector{4, Float64}}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        q = _simulation_engine_module()._state_quaternion(u, i)
+        q = CallbackServices._state_quaternion(u, i)
         q === nothing && throw(ArgumentError("Quaternion save field requires orientation state."))
         quaternions[i] = q
     end
@@ -260,7 +260,7 @@ end
     poses = Vector{Vector{Float64}}(undef, num_sats)
     @inbounds for i in 1:num_sats
         sc_view = hasproperty(u, :sc) ? u.sc[i] : nothing
-        r_ii = _simulation_engine_module()._state_position_ii(u, i)
+        r_ii = CallbackServices._state_position_ii(u, i)
         poses[i] = sc_view === nothing ? Float64[] : arm_pose_vector(sc_view, r_ii)
     end
     return poses

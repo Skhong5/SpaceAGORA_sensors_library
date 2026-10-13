@@ -1,3 +1,5 @@
+# Compatibility facade only. Physical field kernels are in this directory;
+# spacecraft wrench adapters are owned by DynamicEffectors.GravityEffectors.
 module GravityEffectors
 
 using ..DynamicEffectors.GravityEffectors: ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel

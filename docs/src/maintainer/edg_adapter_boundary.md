@@ -24,7 +24,7 @@ private: its name does not make it the versioned facade required by the standard
 
 | Responsibility | Current owner | Boundary decision |
 |---|---|---|
-| Public EDG configuration, state and guidance model identities | `src/models/gnc/guidance/target_energy_bracketing.jl` | Retain the existing exported type identities and construction path in core; do not define duplicate types in a companion. |
+| Public EDG configuration, state and guidance model identities | `src/models/gnc/guidance/aerobraking/typed_edg/guidance_models.jl` | Retain the existing exported type identities and construction path in core; do not define duplicate types in a companion. |
 | Prediction, heat and structural constraints, targeting and command decisions | Six kernels included by `src/models/gnc/guidance/aerobraking/typed_edg/algorithms.jl` | Candidate domain implementation for later extraction, after scientific acceptance. |
 | Physical-state projections, atmosphere and frame queries | `src/models/gnc/guidance/aerobraking/typed_edg/services.jl` | Keep implementation in core; expose only reviewed value projections and query operations needed by the accepted algorithm. |
 | Model callbacks and panel actuation | `src/models/gnc/control/targeting_control.jl` and the guidance model wrapper | Core invokes the selected algorithm and applies its validated command to configured panel links. |

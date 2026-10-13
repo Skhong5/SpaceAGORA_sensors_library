@@ -32,7 +32,7 @@ function get_impact_callback(num_sats::Int; excluded_spacecraft=nothing)
         Rp_e = p.args.environment_model.planet.Rp_e
         @inbounds for i in 1:num_sats
             out[i] = excluded_spacecraft !== nothing && excluded_spacecraft[i] ? 1.0 :
-                norm(_simulation_engine_module()._state_position_ii(u, i)) - Rp_e - IMPACT_ALTITUDE_M
+                norm(CallbackServices._state_position_ii(u, i)) - Rp_e - IMPACT_ALTITUDE_M
         end
     end
 
@@ -44,7 +44,7 @@ function get_impact_callback(num_sats::Int; excluded_spacecraft=nothing)
             end
             p.is_active[idx] = false
             _apply_active_phase_solver_settings!(integrator)
-            if _simulation_engine_module()._is_gravity_backbone_state(integrator.u)
+            if CallbackServices._is_gravity_backbone_state(integrator.u)
                 integrator.u.x[1].sc[idx].vel .= 0.0
             end
             if all(p.is_active .== false)
@@ -98,7 +98,7 @@ function _touchdown_specs(args, num_sats::Int)
 end
 
 @inline function _touchdown_fixed_state(u, t, p, i::Int)
-    engine = _simulation_engine_module()
+    engine = CallbackServices
     r_i, v_i = engine._state_position_ii(u, i), engine._state_velocity_ii(u, i)
     env = p.args.environment_model
     et = p.shared_buffers.et_start[] + Float64(t)
@@ -131,7 +131,7 @@ function get_touchdown_callback(specs)
         spec.on_touchdown(Float64(integrator.t), r_p, v_p, idx)
         p.is_active[idx] = false
         _apply_active_phase_solver_settings!(integrator)
-        if _simulation_engine_module()._is_gravity_backbone_state(integrator.u)
+        if CallbackServices._is_gravity_backbone_state(integrator.u)
             integrator.u.x[1].sc[idx].vel .= 0.0
         end
         if all(!, p.is_active)
@@ -160,8 +160,8 @@ function get_orbit_end_callback(num_sats::Int)
         # At apoapsis, dot(r,v) crosses + -> -, so -dot(r,v) crosses - -> + (upcrossing),
         # which matches the single affect! handler below.
         @inbounds for i in 1:num_sats
-            pos = _simulation_engine_module()._state_position_ii(u, i)
-            vel = _simulation_engine_module()._state_velocity_ii(u, i)
+            pos = CallbackServices._state_position_ii(u, i)
+            vel = CallbackServices._state_velocity_ii(u, i)
             out[i] = -dot(pos, vel)
         end
     end
@@ -215,7 +215,7 @@ function get_entry_end_callback(num_sats::Int, args::SimulationConfiguration)
                 out[i] = 1.0
                 continue
             end
-            alt = norm(_simulation_engine_module()._state_position_ii(u, i)) - planet.Rp_e
+            alt = norm(CallbackServices._state_position_ii(u, i)) - planet.Rp_e
             out[i] = alt - entry_interface_m
         end
     end
@@ -260,7 +260,7 @@ end
 # roundoff band. Undelivered members retain the geometric/radial convention.
 function _refresh_crossing_atmosphere_flags!(integrator, events)
     p = integrator.p
-    engine = _simulation_engine_module()
+    engine = CallbackServices
     boundary = p.args.environment_model.planet.Rp_e + p.args.environment_model.EI * 1e3
     previous_inside = copy(p.shared_buffers.in_atmosphere)
     for i in eachindex(p.is_active)
@@ -294,7 +294,7 @@ end
 function get_drag_state_callback(num_sats::Int)
     condition!(out, u, t, integrator) = begin
         @inbounds for i in 1:num_sats
-            alt = norm(_simulation_engine_module()._state_position_ii(u, i)) - integrator.p.args.environment_model.planet.Rp_e
+            alt = norm(CallbackServices._state_position_ii(u, i)) - integrator.p.args.environment_model.planet.Rp_e
             out[i] = alt - integrator.p.args.environment_model.EI*1e3 # Positive when above the atmosphere, negative when in the atmosphere
         end
     end
@@ -363,7 +363,7 @@ function get_quaternion_projection_callback(num_sats::Int, args::SimulationConfi
                 art = p.shared_buffers.articulated_runtimes[i]
                 art === nothing || _project_ball_joint_quaternions!(u.sc[i].joint_q, art.tree)
             end
-            q = _simulation_engine_module()._state_quaternion(u, i)
+            q = CallbackServices._state_quaternion(u, i)
             q === nothing && continue
             qnorm2 = dot(q, q)
             if !(isfinite(qnorm2) && qnorm2 > eps(Float64)) || abs(qnorm2 - 1.0) > correction_tol
@@ -412,7 +412,7 @@ function get_initial_force_output_callback(effectors::Tuple; solver_mode::Symbol
     function initialize(cb, u, t, integrator)
         p = integrator.p
         cache = p.save_cache
-        _simulation_engine_module()._initialize_save_cache_buffers!(p)
+        CallbackServices._initialize_save_cache_buffers!(p)
         empty!(cache.initial_force_output_destinations)
         cache.initial_force_output_time[] = Float64(t)
         cache.initial_force_output_state[] = nothing
@@ -588,7 +588,7 @@ function _record_default_save_fields_fused!(
     integrator,
     sample_idx::Int,
 )::Nothing
-    engine = _simulation_engine_module()
+    engine = CallbackServices
     p = integrator.p
     args = p.args
     planet = args.environment_model.planet

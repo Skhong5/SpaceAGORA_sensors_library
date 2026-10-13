@@ -10,7 +10,7 @@ function _plume_effector(args::SimulationConfiguration)
 end
 
 function _plume_sample_state(model, u, p, i, t)
-    engine = _simulation_engine_module()
+    engine = CallbackServices
     x = _simulation_model_module.StateSample(engine._state_position_ii(u, i),
         engine._state_velocity_ii(u, i), engine._state_mass_kg(u, p.args, i);
         q_ib=engine._state_quaternion(u, i),

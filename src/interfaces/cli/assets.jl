@@ -1,4 +1,5 @@
 using TOML
+import ..AssetCatalog
 
 """
     AssetCheckItem
@@ -46,34 +47,15 @@ end
 end
 
 function load_asset_manifest(; repo_root::String=REPO_ROOT, manifest_path::String=joinpath(repo_root, "data", "assets_manifest.toml"))
-    raw = TOML.parsefile(manifest_path)
-    entries = AssetManifestEntry[]
-    for entry in get(raw, "asset", Any[])
-        push!(entries, AssetManifestEntry(
-            name=String(entry["name"]),
-            scope=String(entry["scope"]),
-            relative_path=String(get(entry, "relative_path", ".")),
-            kind=String(get(entry, "kind", "directory")),
-            required=Bool(get(entry, "required", false)),
-            licensing=String(get(entry, "licensing", "unspecified")),
-            detail=String(get(entry, "detail", "")),
-        ))
-    end
-    return entries
+    return AssetManifestEntry[AssetManifestEntry(; entry...) for entry in
+        AssetCatalog.load_asset_manifest(; repo_root, manifest_path)]
 end
 
-@inline function _manifest_entry_path(repo_root::String, entry::AssetManifestEntry)
-    entry.relative_path in ("", ".") && return repo_root
-    return joinpath(repo_root, splitpath(entry.relative_path)...)
-end
+@inline _manifest_entry_path(repo_root::String, entry::AssetManifestEntry) =
+    AssetCatalog.manifest_entry_path(repo_root, entry)
 
-@inline function _manifest_entry_available(repo_root::String, entry::AssetManifestEntry)
-    path = _manifest_entry_path(repo_root, entry)
-    entry.kind == "builtin" && return true
-    entry.kind == "directory" && return isdir(path)
-    entry.kind == "file" && return isfile(path)
-    throw(ArgumentError("Unsupported asset manifest kind '$(entry.kind)' for $(entry.name)."))
-end
+@inline _manifest_entry_available(repo_root::String, entry::AssetManifestEntry) =
+    AssetCatalog.manifest_entry_available(repo_root, entry)
 
 """
     check_assets(; repo_root=REPO_ROOT, manifest_path=joinpath(repo_root, "data", "assets_manifest.toml")) -> AssetCheckReport
@@ -83,21 +65,11 @@ report for baseline, optional, and high-fidelity assets. By default, inspect
 the package repository root, not the current working directory.
 """
 function check_assets(; repo_root::String=REPO_ROOT, manifest_path::String=joinpath(repo_root, "data", "assets_manifest.toml"))::AssetCheckReport
-    entries = load_asset_manifest(; repo_root=repo_root, manifest_path=manifest_path)
-    items = AssetCheckItem[]
-    for entry in entries
-        detail = isempty(entry.detail) ? "licensing=$(entry.licensing)" : "$(entry.detail) [licensing=$(entry.licensing)]"
-        push!(items, _asset_item(
-            entry.name,
-            entry.scope,
-            _manifest_entry_path(repo_root, entry);
-            available=_manifest_entry_available(repo_root, entry),
-            required=entry.required,
-            detail=detail,
-        ))
-    end
-
-    return AssetCheckReport(repo_root=repo_root, items=items)
+    report = AssetCatalog.check_assets(; repo_root, manifest_path)
+    return AssetCheckReport(
+        repo_root=report.repo_root,
+        items=AssetCheckItem[AssetCheckItem(; item...) for item in report.items],
+    )
 end
 
 """

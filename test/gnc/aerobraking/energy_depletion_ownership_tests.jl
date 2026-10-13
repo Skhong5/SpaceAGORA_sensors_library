@@ -324,7 +324,7 @@ end
     @test refused(EDGOwnershipChecks.OWNER*"targeting.jl","const reverse = ControlHooks")
     @test refused(EDGOwnershipChecks.OWNER*"targeting.jl","rotate_link(link, axis, angle)")
     @test refused(EDGOwnershipChecks.OWNER*"targeting.jl","link.α = 0.0")
-    @test refused("src/models/gnc/guidance/target_energy_bracketing.jl","_control_module()._edg_prediction_time_grid(1.0)")
+    @test refused("src/models/gnc/guidance/aerobraking/typed_edg/guidance_models.jl","_control_module()._edg_prediction_time_grid(1.0)")
     bad=copy(sources)
     path="src/models/gnc/control/targeting_control.jl"
     bad[path]=replace(bad[path],"    return EDGAlgorithms._edg_base_alpha"=>"    t += 1.0\n    return EDGAlgorithms._edg_base_alpha")

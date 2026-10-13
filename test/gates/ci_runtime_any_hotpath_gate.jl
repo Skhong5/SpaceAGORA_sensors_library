@@ -11,11 +11,16 @@ function _active_lines(path::String)
 end
 
 const HOTPATH_FILES = String[
-    joinpath(REPO_ROOT, "src", "foundation", "core", "types", "runtime_types.jl"),
+    joinpath(REPO_ROOT, "src", "orchestration", "simulation", "state", "runtime_types.jl"),
     joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "setup.jl"),
     joinpath(REPO_ROOT, "src", "models", "dynamics", "coupled", "aerodynamic_wrench_models.jl"),
     joinpath(REPO_ROOT, "src", "models", "dynamics", "coupled", "perturbations.jl"),
 ]
+
+# Split source keeps exactly the original hot-path scan coverage. New children
+# are covered recursively so later source splits cannot bypass the contract.
+const SPLIT_HOTPATH_DIR = joinpath(REPO_ROOT, "src", "models", "dynamics", "coupled", "perturbations")
+const MULTIBODY_POLICY_FILE = joinpath(REPO_ROOT, "src", "orchestration", "parallel", "policy", "multibody_routing.jl")
 
 const CALLBACK_DIR = joinpath(REPO_ROOT, "src", "orchestration", "simulation", "callbacks")
 const FORBIDDEN_VECTOR_ANY = r"\bVector\{Any\}\b"
@@ -23,11 +28,11 @@ const FORBIDDEN_DICT_SYMBOL_ANY = r"\bDict\{Symbol,\s*Any\}\b"
 const ALLOWED_SAVEDATA_LINE = r"^const\s+SaveData\s*=\s*Dict\{Symbol,\s*Any\}$"
 
 violations = String[]
-targets = copy(HOTPATH_FILES)
+targets = [HOTPATH_FILES; MULTIBODY_POLICY_FILE]
 
-isdir(CALLBACK_DIR) || error("Missing runtime callback scan root: $(relpath(CALLBACK_DIR, REPO_ROOT))")
-let
-    for (root, _, files) in walkdir(CALLBACK_DIR)
+for scan_root in (CALLBACK_DIR, SPLIT_HOTPATH_DIR)
+    isdir(scan_root) || error("Missing runtime hot-path scan root: $(relpath(scan_root, REPO_ROOT))")
+    for (root, _, files) in walkdir(scan_root)
         for file in files
             endswith(file, ".jl") || continue
             push!(targets, joinpath(root, file))

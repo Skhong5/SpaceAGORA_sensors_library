@@ -32,7 +32,7 @@ function _compute_stage_heat_rates!(
         return _heat_rate_buffer_for_sat!(p, sat_idx)
     end
     heat_rates = _heat_rate_buffer_for_sat!(p, sat_idx)
-    engine = _simulation_engine_module()
+    engine = CallbackServices
     planet_frame = engine.sample_planet_frame(x, p, sat_idx, t)
     atmosphere = use_buffered_density ?
         engine.sample_buffered_atmosphere(x, p, sat_idx, t) :

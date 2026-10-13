@@ -20,6 +20,7 @@ on:
       - "src/orchestration/mission/**"
       - "src/orchestration/parallel/**"
       - "src/interfaces/analysis/verification/**"
+      - "src/interfaces/analysis/planning/**"
       - "ext/**"
       - "data/GRAMSuite.jl"
       - "data/telemetry/**"
