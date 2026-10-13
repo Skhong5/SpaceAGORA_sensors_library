@@ -44,8 +44,10 @@ companions retain their own repositories and source trees outside core `src/`.
      layer (scene types, spacecraft geometry conversion, planet rotation
      sampling, the JSON sidecar) as a `SimulationModel` submodule
    - `src/interfaces/analysis/visualization/rpo/*` owns the PlotlyJS RPO plots
-   - the browser viewer itself is owned only by top-level `viewer/` (never
-     under `src/viewer/`)
+   - the browser viewer and HTML assembly are owned by the independent
+     `SpaceAGORAVisualizer.jl` package; core keeps portable payload export and
+     `ext/SpaceAGORAVisualizerExt.jl` connects the optional renderer. No renderer
+     source is duplicated under `src/viewer/` or top-level `viewer/`.
 
 11. Externally propagated spacecraft (shadow entries held in the state vector while an
     optional package integrates them) are owned in four places, none of which

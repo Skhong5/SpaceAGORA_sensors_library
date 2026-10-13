@@ -120,3 +120,25 @@ that revision, then replace the in-tree integration with an exact external pin.
 Remove the old copy only after the standalone native checks pass. Preserve source
 history, licenses and benchmark provenance; historical numerical results must
 remain labeled as historical until rerun.
+
+## Saved-output consumers
+
+The independent SpaceAGORAVisualizer package consumes a versioned data format,
+not simulation services. SpaceAGORA owns scene metadata and saved-row conversion;
+the companion owns HTML assembly, browser code and third-party assets. Their
+renderer protocol and portable payload schema are both version 1. The extension
+checks the renderer protocol before delegation, and the companion checks the
+payload schema before rendering. These integer format versions are separate from
+the VersionNumber service-facade contracts above.
+
+The integration uses `ext/SpaceAGORAVisualizerExt.jl` and a weak dependency.
+Loading core alone leaves the renderer absent; loading both packages in either
+order enables HTML export. A missing renderer fails before a requested run or
+campaign creates outputs. Scene and JSON export remain available without it.
+The companion also opens saved JSON independently of SpaceAGORA.
+
+`scripts/setup_visualizer.jl` installs the revision pinned in
+`packages/VisualizerSource.toml` into a separate environment. Installation and
+both load orders have mandatory CI coverage. The companion does not read raw
+engine state, install a dynamics provider or change propagation settings.
+See the [user guide](../user/visualization.md) for supported commands.

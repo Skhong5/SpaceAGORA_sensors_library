@@ -46,7 +46,7 @@ This contract defines how canonical source files are classified and what is forb
 7. Simulation execution ownership is `src/orchestration/simulation/engine/public_api.jl` and `src/orchestration/simulation/engine/execution.jl`; `src/orchestration/simulation/events/*`, `src/orchestration/simulation/execution/*`, and `src/orchestration/simulation/solver_orchestration/*` are forbidden.
 8. Mission configuration ownership: initial-state definitions live with the spacecraft model (`src/models/vehicle/spacecraft/model.jl`); mission plans and policies live under `src/orchestration/mission/operations/*`.
 9. Structural analysis ownership is `src/models/vehicle/structure/*`, not `src/models/vehicle/spacecraft/*`; CAD/mesh readers live in `src/models/vehicle/structure/mesh_geometry.jl`.
-10. Visualization scene ownership is `src/interfaces/analysis/visualization/scene/*` (a canonical owner inside `SimulationModel`); the browser viewer is top-level `viewer/*`, and `src/viewer/*` is forbidden.
+10. Visualization scene ownership is `src/interfaces/analysis/visualization/scene/*` (a canonical owner inside `SimulationModel`); portable payload export stays with that scene owner. The browser viewer lives in independent `SpaceAGORAVisualizer.jl`; `ext/SpaceAGORAVisualizerExt.jl` connects it, and duplicated renderer source under `src/viewer/*` or top-level `viewer/*` is forbidden.
 
 ## GNC Aerobraking Boundary
 1. `E-EDG` and `T-EDG` strategy ownership is `src/models/gnc/guidance/aerobraking/*`.

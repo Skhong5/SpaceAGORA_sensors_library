@@ -274,7 +274,8 @@ the file that performs each step.
    `src/interfaces/io/checkpoints/checkpoint_storage.jl`.
    With `visualization=true` the scene sidecar and viewer page are produced by
    `src/interfaces/analysis/visualization/scene/`
-   and the browser code under `viewer/`. Completed planner-comparison CSVs and
+   and the optional `SpaceAGORAVisualizer.jl` package. Core can export portable
+   viewer JSON without that package. Completed planner-comparison CSVs and
    Plotly reports are implemented in
    `src/interfaces/analysis/planning/rpo_comparison_reports.jl`. Its analysis
    module supplies methods for the historical GNC function objects, preserving
@@ -303,8 +304,7 @@ The MuJoCo adapter consumes the versioned
 facade; core retains shared gravity, configuration and run lifecycle. These
 integrations follow the [optional adapter standard](../maintainer/adapter_contract.md)
 with separate domain protocols and state ownership. `packages/gnc/` records the
-future guidance boundary without adding an EDG package; EDG and the viewer remain
-in core. GRAMSuite retains its existing submodule at `data/GRAMSuite.jl`.
+future guidance boundary without adding an EDG package; EDG remains in core. GRAMSuite retains its existing submodule at `data/GRAMSuite.jl`.
 The other folders hold tooling, data, examples and documentation. "Owner" below is the
 file or module that defines the behaviour; other code should call it rather
 than copy it. Within the grouped source rows, file names in the third column
@@ -335,7 +335,7 @@ are relative to the directory in the first column.
 | `benchmarks/` | Performance studies and the paper pipeline (`benchmarks/scripts/performance_paper_pipeline.jl`) | measurement work owned by the parallelization effort; see [Studies and Benchmarks](studies_benchmarks.md) |
 | `scripts/` | Operational tools: plotting (`scripts/plotting/`), telemetry fetching, GRAM installation helpers, development launchers (`scripts/dev/`), HPC and remote helpers | operational, not package code |
 | `experimental/` | Typed scaffolds not loaded by the package (resources, laser terminal, constellation, estimation) | no stability guarantee; see its README |
-| `viewer/` | The browser viewer and its build scripts | rendering only; the scene data comes from `src/interfaces/analysis/visualization/scene/` |
+| `SpaceAGORAVisualizer.jl` (separate repository) | The browser viewer and its build scripts | Connected through `ext/SpaceAGORAVisualizerExt.jl`; scene and payload export stay in core |
 | `data/` | Gravity and topography coefficients, references, asset manifests and the Odyssey surrogate manifest | see [Assets & Modes](../assets.md) |
 | `docs/` | This site: user pages under `docs/src/`, maintainer contracts under `docs/architecture/` and `docs/quality/`, the public API registry | [Maintainer Overview](../maintainer/index.md) |
 

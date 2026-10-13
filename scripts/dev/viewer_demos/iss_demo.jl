@@ -1,4 +1,5 @@
 # ISS in its orbit with NASA's ISS (B) glTF standing in for the link boxes.
+using SpaceAGORAVisualizer
 using SpaceAGORA, StaticArrays
 const SM = SpaceAGORA.SimulationModel
 planet = make_no_gram_planet(:earth)

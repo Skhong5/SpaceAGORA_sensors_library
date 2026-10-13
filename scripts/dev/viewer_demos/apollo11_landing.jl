@@ -12,7 +12,7 @@
 # draws, draped with the bundle's imagery quadtree when one was built.
 #
 #   python3 scripts/dev/terrain/fetch_moon_site.py --site 0.67416 23.47314 --nac-half-deg 0.03 --out data/terrain/moon/apollo11
-#   julia --project=. scripts/dev/viewer_demos/apollo11_landing.jl [--duration-s S] [--output-dir DIR]
+#   julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/apollo11_landing.jl [--duration-s S] [--output-dir DIR]
 #
 # The NAC window is narrowed to 0.03 degrees because the registered Apollo 11
 # NAC digital terrain model is a narrow strip whose fully valid square around
@@ -27,6 +27,10 @@
 # guidance, control, terrain-contact and plume models on one documented case.
 # It is not a reconstruction of the flown Apollo 11 trajectory and does not
 # establish flight accuracy; see docs/src/user/lunar_landing.md.
+# Load the optional renderer before example helpers activate the core project.
+if abspath(PROGRAM_FILE) == @__FILE__
+    using SpaceAGORAVisualizer
+end
 include(joinpath(@__DIR__, "common.jl"))
 
 const APOLLO11_SITE_DEFAULT = joinpath(REPO_ROOT, "data", "terrain", "moon", "apollo11", "site.json")

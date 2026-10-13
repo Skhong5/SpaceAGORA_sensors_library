@@ -17,6 +17,9 @@ isdefined(parentmodule(@__MODULE__), :SimulationLifecycle) ||
 isdefined(parentmodule(@__MODULE__), :CallbackServices) ||
     Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "callback_services.jl"))
 
+isdefined(parentmodule(@__MODULE__), :VisualizerServices) ||
+    Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "..", "..", "interfaces", "analysis", "visualization", "visualizer_services.jl"))
+
 # --- Utils ---
 include(joinpath(@__DIR__, "..", "..", "..", "foundation", "core", "numerics", "quaternion_utils.jl"))
 using .QuaternionMath

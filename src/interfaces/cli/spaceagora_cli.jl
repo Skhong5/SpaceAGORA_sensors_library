@@ -1,11 +1,12 @@
 module SpaceAGORACLI
+using TOML
 using ..SimulationModel: SimulationModel
 using ..SimulationModel.EnvironmentModels: available_surrogate_presets, resolve_surrogate_preset, surrogate_preset_model, atmosphere_provenance
 
 export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
-# Every child process runs under the repository project, the environment whose
+# Nonvisual child processes run under the repository project, the environment whose
 # Project.toml is SpaceAGORA itself and the one `julia --project=.` selects.
 # The children used to be launched with `--project=<repo>/.AGORA`, an
 # untracked, machine-local directory that no setup step creates any more; a
@@ -67,14 +68,41 @@ end
 # object, so what is printed is what launches, and the CLI tests compare its
 # arguments directly rather than parsing the printed line (a path with spaces
 # is one argument here and a broken one in any whitespace-split rendering).
-function _child_command(script::String, script_args::Vector{String})::Cmd
-    return `$(Base.julia_cmd()) --project=$CHILD_PROJECT $script $script_args`
+function _visualizer_project()::String
+    selected = get(ENV, "SPACEAGORA_VISUALIZER_ENV", "")
+    if isempty(selected)
+        active = Base.active_project()
+        active === nothing && throw(ArgumentError("Visualization requires a prepared project. Run scripts/setup_visualizer.jl <environment> and start Julia with --project=<environment>."))
+        selected = dirname(active)
+    end
+    project = abspath(selected)
+    file = joinpath(project, "Project.toml")
+    isfile(file) || throw(ArgumentError("Visualizer project is missing: $file. Prepare it with scripts/setup_visualizer.jl <environment>."))
+    dependencies = get(TOML.parsefile(file), "deps", Dict{String, Any}())
+    for (name, uuid) in (("SpaceAGORA", "afbfb69f-5c0b-4832-b760-43725dff8540"),
+                         ("SpaceAGORAVisualizer", "a4677e92-0b7f-4d10-9ebd-8cde6a49f03a"))
+        get(dependencies, name, nothing) == uuid || throw(ArgumentError(
+            "Visualizer project $project must declare $name. Prepare a separate project with scripts/setup_visualizer.jl and select it with --project or SPACEAGORA_VISUALIZER_ENV."))
+    end
+    return project
 end
 
-function _run_subprocess(script::String, script_args::Vector{String}; env_pairs::Vector{Pair{String,String}}=Pair{String,String}[], print_only::Bool=false, io::IO=stdout, errio::IO=stderr)::Int
-    full = _child_command(script, script_args)
+function _child_command(script::String, script_args::Vector{String};
+                        project::String=CHILD_PROJECT, visualize::Bool=false)::Cmd
+    if visualize
+        # Loading a file before the original script preserves PROGRAM_FILE and
+        # ARGS, including its main guard, while retaining the renderer when an
+        # example subsequently activates the core project.
+        preload = joinpath(@__DIR__, "visualizer_preload.jl")
+        return `$(Base.julia_cmd()) --project=$project -L $preload $script $script_args`
+    end
+    return `$(Base.julia_cmd()) --project=$project $script $script_args`
+end
+
+function _run_subprocess(script::String, script_args::Vector{String}; env_pairs::Vector{Pair{String,String}}=Pair{String,String}[], print_only::Bool=false, project::String=CHILD_PROJECT, visualize::Bool=false, io::IO=stdout, errio::IO=stderr)::Int
+    full = _child_command(script, script_args; project, visualize)
     if print_only
-        println(io, "project=$(CHILD_PROJECT)")
+        println(io, "project=$(project)")
         println(io, "script=$(script)")
         if !isempty(env_pairs)
             println(io, "env:")
@@ -85,7 +113,7 @@ function _run_subprocess(script::String, script_args::Vector{String}; env_pairs:
         println(io, "cmd=$(full)")
         return 0
     end
-    mkpath(joinpath(REPO_ROOT, "output"))
+    visualize || mkpath(joinpath(REPO_ROOT, "output"))
     cmd_env = isempty(env_pairs) ? full : addenv(full, env_pairs...)
     process = run(pipeline(ignorestatus(cmd_env); stdout=io, stderr=errio), wait=true)
     return process.exitcode
@@ -123,7 +151,9 @@ function _run_example(args::Vector{String}; io::IO=stdout, errio::IO=stderr)::In
     # The example scripts call run_simulation themselves; the environment switch
     # turns on the scene sidecar and builds the viewer page after the run.
     visualize && push!(env_pairs, "SPACEAGORA_VISUALIZATION" => "1")
-    return _run_subprocess(script, String[]; env_pairs=env_pairs, print_only=print_only, io=io, errio=errio)
+    project = visualize ? _visualizer_project() : CHILD_PROJECT
+    return _run_subprocess(script, String[]; env_pairs=env_pairs, print_only=print_only,
+        project, visualize, io=io, errio=errio)
 end
 
 # `--run` accepts a results directory (holding simulation_results.feather and

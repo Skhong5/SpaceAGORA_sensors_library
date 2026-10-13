@@ -198,7 +198,7 @@ jobs:
 
   tests:
     if: always()
-    needs: [plan, test-shards, optional-hypr-installation, optional-mujoco-installation]
+    needs: [plan, test-shards, optional-hypr-installation, optional-mujoco-installation, optional-visualizer-installation]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -224,7 +224,7 @@ jobs:
       - name: Enforce test shard success
         run: |
           echo "test-shards result=${{ needs.test-shards.result }}"
-          if [ "${{ needs.test-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ] || [ "${{ needs.optional-mujoco-installation.result }}" != "success" ]; then
+          if [ "${{ needs.test-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ] || [ "${{ needs.optional-mujoco-installation.result }}" != "success" ] || [ "${{ needs.optional-visualizer-installation.result }}" != "success" ]; then
             echo "Test shards failed or were cancelled."
             exit 1
           fi
@@ -307,7 +307,7 @@ jobs:
 
   coverage-quality-gate:
     if: always()
-    needs: [plan, coverage-shards, optional-hypr-installation]
+    needs: [plan, coverage-shards, optional-hypr-installation, optional-visualizer-installation]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -346,10 +346,16 @@ jobs:
           name: hypr-installation-coverage
           path: hypr-installation-coverage
 
+      - name: Download visualizer installation coverage
+        uses: actions/download-artifact@v8
+        with:
+          name: visualizer-installation-coverage
+          path: visualizer-installation-coverage
+
       - name: Enforce coverage shard success
         run: |
           echo "coverage-shards result=${{ needs.coverage-shards.result }}"
-          if [ "${{ needs.coverage-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ]; then
+          if [ "${{ needs.coverage-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ] || [ "${{ needs.optional-visualizer-installation.result }}" != "success" ]; then
             echo "Coverage shards failed or were cancelled."
             exit 1
           fi
@@ -364,6 +370,7 @@ jobs:
             tar -xzmf "$archive"
           done
           tar -xzmf hypr-installation-coverage/coverage.tgz
+          tar -xzmf visualizer-installation-coverage/coverage.tgz
           echo "coverage files: $(find src packages/SpaceAGORAHYPR/src -name '*.cov' | wc -l)"
 
       - name: Setup Julia
@@ -584,26 +591,11 @@ jobs:
           # GRAM retrieval supplies its own scoped credential explicitly.
           persist-credentials: false
 
-      - name: Viewer JavaScript regressions
-        run: node test/unit/visualization/viewer_channels_models_tests.mjs
-      - name: Viewer external-host page builder tests
-        run: python3 -m unittest discover -s test/scripts -p 'test_build_cdn_page.py' -v
-
       # Its Instantiate step is the README's `Pkg.instantiate()` command.
       - name: Setup (README instantiate command)
         uses: ./.github/actions/setup
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-
-      - name: Terrain exporter Julia-to-JavaScript regression
-        shell: bash
-        run: |
-          set -euo pipefail
-          terrain_fixture_dir="$(mktemp -d "$RUNNER_TEMP/spaceagora-terrain.XXXXXX")"
-          trap 'rm -rf "$terrain_fixture_dir"' EXIT
-          export SPACEAGORA_TERRAIN_TEST_FIXTURE_DIR="$terrain_fixture_dir"
-          julia --startup-file=no --depwarn=error --project=. test/unit/visualization/terrain_export_tests.jl
-          node test/unit/visualization/terrain_sampling_tests.mjs "$terrain_fixture_dir/fixtures.json"
 
       - name: Terrain producer tests
         shell: bash
@@ -987,3 +979,71 @@ jobs:
         run: |
           git diff --exit-code
           git -C packages/robotics/SpaceAGORAMuJoCo.jl diff --exit-code
+
+  # The renderer is independent of core installation. This job qualifies the
+  # exact source pin against this checkout, including both extension load orders.
+  optional-visualizer-installation:
+    needs: depot
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      JULIA_LOAD_PATH: "@:@stdlib"
+      JULIA_NUM_THREADS: "2"
+      JULIA_PKG_PRECOMPILE_AUTO: "0"
+      SPACEAGORA_VISUALIZER_PATH: ""
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          gram: none
+          gramsuite-smoke: "false"
+          token: ${{ github.token }}
+      - name: Check immutable visualizer installation inputs
+        run: julia --startup-file=no test/optional_visualizer/installation_plan_tests.jl
+      - name: Prepare independent core and pinned renderer projects
+        run: |
+          set -euo pipefail
+          julia --startup-file=no --project=. test/optional_visualizer/setup.jl "$RUNNER_TEMP/visualizer-installations"
+          printf 'SPACEAGORA_VISUALIZER_TEST_ENV=%s\n' "$RUNNER_TEMP/visualizer-installations/visualizer" >> "$GITHUB_ENV"
+      - name: Core installation without a renderer
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/visualizer-installations/core" test/optional_visualizer/core.jl
+      - name: Core-first renderer integration
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/visualizer-installations/visualizer" test/optional_visualizer/optional.jl core-first
+      - name: Renderer-first integration
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/visualizer-installations/visualizer" test/optional_visualizer/optional.jl visualizer-first
+      - name: Locate the installed pinned renderer
+        run: julia --startup-file=no --project="$RUNNER_TEMP/visualizer-installations/visualizer" -e 'using SpaceAGORAVisualizer; println("SPACEAGORA_VISUALIZER_CHECKOUT=", pkgdir(SpaceAGORAVisualizer)); println("SPACEAGORA_VISUALIZER_DIR=", SpaceAGORAVisualizer.viewer_directory())' >> "$GITHUB_ENV"
+      - name: Standalone companion contract tests
+        run: julia --startup-file=no --project="$RUNNER_TEMP/visualizer-installations/visualizer" -e 'using Pkg; Pkg.test("SpaceAGORAVisualizer")'
+      - name: Viewer JavaScript regressions
+        run: node "$SPACEAGORA_VISUALIZER_CHECKOUT/test/unit/visualization/viewer_channels_models_tests.mjs"
+      - name: Viewer external-host page builder tests
+        run: python3 -B -m unittest discover -s "$SPACEAGORA_VISUALIZER_CHECKOUT/test/scripts" -p 'test_*.py' -v
+      - name: Terrain exporter Julia-to-JavaScript regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          terrain_fixture_dir="$(mktemp -d "$RUNNER_TEMP/spaceagora-terrain.XXXXXX")"
+          trap 'rm -rf "$terrain_fixture_dir"' EXIT
+          export SPACEAGORA_TERRAIN_TEST_FIXTURE_DIR="$terrain_fixture_dir"
+          julia --startup-file=no --depwarn=error --project="$RUNNER_TEMP/visualizer-installations/visualizer" test/unit/visualization/terrain_export_tests.jl
+          node test/unit/visualization/terrain_sampling_tests.mjs "$terrain_fixture_dir/fixtures.json" "$SPACEAGORA_VISUALIZER_DIR"
+      - name: Verify core installation inputs were not changed
+        run: git diff --exit-code
+      - name: Retain visualizer integration coverage
+        if: always()
+        run: |
+          find src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
+            mv "$f" "$(printf '%s' "$f" | sed -E 's/\.([0-9]+)\.cov$/.89\1.cov/')"
+          done
+          mkdir -p visualizer-installation-coverage
+          find src -name '*.cov' -print0 | tar --null -czf visualizer-installation-coverage/coverage.tgz -T -
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: visualizer-installation-coverage
+          path: visualizer-installation-coverage/coverage.tgz
+          retention-days: 3
+          if-no-files-found: error

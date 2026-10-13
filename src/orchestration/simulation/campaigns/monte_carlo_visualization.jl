@@ -39,6 +39,7 @@ function run_monte_carlo_visualization(
     nominal=nothing,
     page_kwargs...
 )
+    export_page && SceneVisualization.VisualizerServices.require_available()
     campaign_dir = String(campaign_dir)
     mkpath(campaign_dir)
     seed_list = collect(seeds)
