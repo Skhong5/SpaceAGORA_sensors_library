@@ -4,6 +4,40 @@ The viewer turns saved results into an HTML page: orbit the central body,
 scrub through time, select a spacecraft and inspect its trajectory. The page
 opens from disk and can be shared with someone who does not have Julia.
 
+## Install the optional viewer
+
+SpaceAGORA writes scene data and portable viewer JSON. The independent
+[SpaceAGORAVisualizer package](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl)
+owns HTML assembly, browser playback and its third-party renderer assets.
+Install the tested combination in a separate environment from the repository root:
+
+```sh
+julia --project=. scripts/setup_visualizer.jl .visualizer-env
+julia --project=.visualizer-env
+```
+
+Then load both packages in Julia:
+
+```julia
+using SpaceAGORA
+using SpaceAGORAVisualizer
+```
+
+The helper pins the companion revision recorded in `packages/VisualizerSource.toml`
+and leaves the root project unchanged. You can also install only the viewer in
+another Julia environment to inspect exported JSON without loading SpaceAGORA.
+See the companion's README for that installation and its supported input format.
+
+A simulation can save results and scene data without the viewer installed.
+`export_viewer_payload(prefix; textures=false)` converts those saved files into
+portable `*_viewer.json`; `SpaceAGORAVisualizer.visualize(path)` opens the same
+data as a self-contained HTML file. HTML requests through SpaceAGORA require
+both packages to be loaded, in either order. A missing viewer produces a clear
+error before a requested simulation or visualization campaign starts.
+
+For a reusable definition and a single returned run handle, start with
+[Define, run and inspect a mission](mission_workflows.md).
+
 ## Make your first page
 
 After completing the [Quickstart](quickstart.md), run this from the repository
@@ -11,6 +45,7 @@ root to put the no-GRAM example and its viewer in a dedicated output directory:
 
 ```julia
 using SpaceAGORA
+using SpaceAGORAVisualizer
 SpaceAGORA.run_cli(["run", "--example=AGORA_Earth_NoGRAM.jl", "--visualize",
                    "--output-dir=output/viewer-earth"])
 ```
@@ -119,8 +154,10 @@ the page size; no texture changes the recorded trajectory. Export defaults to
 textures: opt in with `texture_resolution="8k"` or select the largest available
 tier with `:best`. Venus and Titan fall back to 4k. An 8k image has four times
 the decoded pixels of 4k, and its embedded JPEG also makes the HTML larger.
-The standalone builder likewise defaults to 4k; use `--textures 8k` for
-a page containing the higher tiers.
+The companion standalone builder defaults to `--textures none`. To embed local
+textures, pass `--textures 4k` or `--textures 8k` with
+`--textures-dir /path/to/catalog`. That directory must contain `manifest.toml`
+and the selected image files; the builder does not download textures.
 
 STL, OBJ and uncompressed GLB models can replace link boxes:
 
@@ -257,7 +294,7 @@ The lighting selector always offers **lighting: real-time**. The default
 self-contained page embeds its renderer and stops there. A page whose import
 map includes the optional path tracer also offers **lighting: path traced when paused**.
 This is available in the standalone builder's `--cdn` mode and pages made with
-`viewer/build_cdn_page.py` unless `--no-pathtracer` is set:
+`SpaceAGORAVisualizer.jl/viewer/build_cdn_page.py` unless `--no-pathtracer` is set:
 the GPU path tracer loads on demand, refines the still image whenever playback
 is paused and hands back to real-time rendering while the timeline moves. When
 the tracer cannot load, the selector offers real-time lighting only and the
@@ -351,7 +388,7 @@ for another quantity. An existing campaign can be exported with
 ## Standalone files
 
 ```text
-python3 viewer/build_standalone.py --out output/viewer.html
+python3 <SpaceAGORAVisualizer-checkout>/viewer/build_standalone.py --out output/viewer.html
 ```
 
 Open the page and choose a CSV or JSON file, body and epoch. CSV accepts
@@ -362,13 +399,11 @@ not replace the frame metadata saved by a simulation.
 
 The default page embeds its renderer and assets and makes no network
 requests. Imported models with external resource URLs can request them. For
-a host that refuses embedded `data:` scripts, `viewer/build_cdn_page.py`
+a host that refuses embedded `data:` scripts, `SpaceAGORAVisualizer.jl/viewer/build_cdn_page.py`
 rewrites an exported page to load the pinned three.js and mp4-muxer from
 `cdn.jsdelivr.net` with the renderer modules inlined; the built page lists
 its network hosts and third-party notices in its footer, and adds fonts
-from Google Fonts only with `--fonts`. See `viewer/README.md`.
-
-See `viewer/README.md` for renderer development, module layout and
+from Google Fonts only with `--fonts`. See [the companion renderer guide](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl/blob/codex/extract-visualizer/viewer/README.md) for renderer development, module layout and
 licensing. Landing dynamics and plume-surface physics are separate from the
 viewer: the page only draws what the run saved.
 

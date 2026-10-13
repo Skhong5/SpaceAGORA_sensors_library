@@ -18,6 +18,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -31,6 +32,24 @@ def plan():
     out = subprocess.run([sys.executable, str(HERE / "ci_shard_plan.py")], capture_output=True,
                          text=True, check=True, env={k: v for k, v in os.environ.items() if k != "GITHUB_OUTPUT"})
     return {k: json.loads(v) for k, v in (line.split("=", 1) for line in out.stdout.splitlines())}
+
+
+def job_env_runner_references(workflow):
+    """Find runner expressions in this repository's job-level env blocks.
+
+    GitHub permits runner in step contexts, but not jobs.<job_id>.env.
+    Keep this bounded check stdlib-only, like the other workflow wiring tests;
+    it supplements YAML parsing rather than claiming full Actions validation.
+    """
+    invalid = []
+    for job in re.finditer(r"^  ([\w-]+):\n(.*?)(?=^  [\w-]+:|\Z)", workflow, re.M | re.S):
+        for block in re.finditer(r"^    env:([^\n]*(?:\n(?: {6,}[^\n]*|[ \t]*))*)", job.group(2), re.M):
+            value = "\n".join(line for line in block.group(1).splitlines()
+                              if not line.lstrip().startswith("#"))
+            for expression in re.findall(r"\$\{\{(.*?)\}\}", value, re.S):
+                if re.search(r"\brunner\s*(?:\.|\[)", expression):
+                    invalid.append(job.group(1))
+    return invalid
 
 
 class PlanTests(unittest.TestCase):
@@ -71,10 +90,60 @@ class PlanTests(unittest.TestCase):
                 if aggregator == "tests":
                     expected_needs.append("optional-mujoco-installation")
                     self.assertIn("needs.optional-mujoco-installation.result", agg.group(1))
+                expected_needs.append("optional-visualizer-installation")
+                self.assertIn("needs.optional-visualizer-installation.result", agg.group(1))
             needs = re.search(r"needs: \[(.*?)\]", agg.group(1))
             self.assertIsNotNone(needs, aggregator)
             self.assertEqual([x.strip() for x in needs.group(1).split(",")], expected_needs)
             self.assertIn(f"SHARD_MATRIX: ${{{{ needs.plan.outputs.{output} }}}}", agg.group(1), aggregator)
+
+    def test_job_environment_rejects_runner_context(self):
+        valid = """jobs:
+  sample:
+    env:
+      ROOT: ${{ github.workspace }}
+    steps:
+      - run: echo '${{ runner.temp }}'
+        env:
+          STEP_ROOT: ${{ runner.temp }}
+        with:
+          path: ${{ runner.temp }}
+"""
+        self.assertEqual(job_env_runner_references(valid), [])
+        for value in ("${{ runner.temp }}", "${{ runner['temp'] }}", "|\n        ${{ runner.temp }}"):
+            invalid = valid.replace("ROOT: ${{ github.workspace }}", "ROOT: " + value)
+            self.assertEqual(job_env_runner_references(invalid), ["sample"])
+        inline = valid.replace("env:\n      ROOT: ${{ github.workspace }}", "env: {ROOT: '${{ runner.temp }}'}")
+        self.assertEqual(job_env_runner_references(inline), ["sample"])
+        for workflow in sorted((ROOT / ".github/workflows").glob("*.yml")):
+            self.assertEqual(job_env_runner_references(workflow.read_text()), [], workflow.name)
+
+    def test_visualizer_preparation_exports_only_a_successful_environment(self):
+        wf = (ROOT / ".github/workflows/julia-ci.yml").read_text()
+        job = re.search(r"^  optional-visualizer-installation:\n(.*?)(?=^  \S|\Z)", wf, re.S | re.M).group(1)
+        preparation = re.search(r"^      - name: Prepare independent core and pinned renderer projects\n"
+                                r"        run: \|\n((?:          [^\n]*\n)+)", job, re.M)
+        self.assertIsNotNone(preparation)
+        script = textwrap.dedent(preparation.group(1))
+        with tempfile.TemporaryDirectory(prefix="visualizer workflow ") as temporary:
+            root = Path(temporary)
+            executable = root / "julia"
+            executable.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$STUB_JULIA_ARGS"\nexit "$STUB_JULIA_STATUS"\n')
+            executable.chmod(0o755)
+            exported, arguments = root / "GitHub environment", root / "Julia arguments"
+            env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ["PATH"],
+                       RUNNER_TEMP=str(root), GITHUB_ENV=str(exported), STUB_JULIA_ARGS=str(arguments))
+            for status in (0, 23):
+                exported.write_text("PREVIOUS=value\n")
+                result = subprocess.run(["bash", "-c", script], env=dict(env, STUB_JULIA_STATUS=str(status)),
+                                        text=True, capture_output=True)
+                self.assertEqual(result.returncode, status, result.stderr)
+                self.assertEqual(arguments.read_text().splitlines(), ["--startup-file=no", "--project=.",
+                                 "test/optional_visualizer/setup.jl", str(root / "visualizer-installations")])
+                expected = "PREVIOUS=value\n"
+                if status == 0:
+                    expected += f"SPACEAGORA_VISUALIZER_TEST_ENV={root / 'visualizer-installations/visualizer'}\n"
+                self.assertEqual(exported.read_text(), expected)
 
     def test_external_mujoco_companion_is_mandatory(self):
         wf = (ROOT / ".github/workflows/julia-ci.yml").read_text()
@@ -121,6 +190,36 @@ class PlanTests(unittest.TestCase):
         self.assertIn('OptionalPackages.setup("hypr",', setup)
         self.assertIn('with_hypr=false', setup)
         self.assertNotIn("submodules: recursive", job)
+
+    def test_external_visualizer_is_mandatory_and_core_isolated(self):
+        wf = (ROOT / ".github/workflows/julia-ci.yml").read_text()
+        match = re.search(r"^  optional-visualizer-installation:\n(.*?)(?=^  \S|\Z)", wf, re.S | re.M)
+        self.assertIsNotNone(match)
+        job = match.group(1)
+        pin = (ROOT / "packages/VisualizerSource.toml").read_text()
+        self.assertRegex(pin, r'(?m)^rev = "[0-9a-f]{40}"$')
+        self.assertIn('url = "https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl.git"', pin)
+        self.assertIn('JULIA_LOAD_PATH: "@:@stdlib"', job)
+        self.assertIn('SPACEAGORA_VISUALIZER_PATH: ""', job)
+        for probe in ("installation_plan_tests.jl", "setup.jl", "core.jl",
+                      "optional.jl core-first", "optional.jl visualizer-first"):
+            self.assertEqual(job.count("test/optional_visualizer/" + probe), 1, probe)
+        self.assertIn("Pkg.test(\"SpaceAGORAVisualizer\")", job)
+        self.assertIn("test/unit/visualization/terrain_export_tests.jl", job)
+        self.assertIn('"$terrain_fixture_dir/fixtures.json" "$SPACEAGORA_VISUALIZER_DIR"', job)
+        self.assertIn("viewer_channels_models_tests.mjs", job)
+        self.assertIn("test/scripts", job)
+        self.assertNotIn("continue-on-error:", job)
+        self.assertNotIn("|| true", job)
+        self.assertNotRegex(job, r"(?m)^    if:")
+        self.assertEqual(re.findall(r"(?m)^        if: (.*)$", job), ["always()", "always()"])
+        coverage = re.search(r"^  coverage-quality-gate:\n(.*?)(?=^  \S)", wf, re.S | re.M).group(1)
+        self.assertIn("name: visualizer-installation-coverage", coverage)
+        self.assertIn("tar -xzmf visualizer-installation-coverage/coverage.tgz", coverage)
+        setup = (ROOT / ".github/actions/setup/action.yml").read_text()
+        self.assertNotIn("setup_visualizer", setup)
+        self.assertNotIn("SpaceAGORAVisualizer", setup)
+
 
 
 class VerifyTests(unittest.TestCase):

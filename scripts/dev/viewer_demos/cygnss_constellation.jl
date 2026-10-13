@@ -40,6 +40,7 @@
 # mission-configuration geometry is read, embedded or published here.
 #
 #   julia --project=. scripts/dev/run.jl viewer_demos/cygnss_constellation.jl
+using SpaceAGORAVisualizer
 include(joinpath(@__DIR__, "common.jl"))
 # The initial-conditions file's own loader and validator, written and owned by
 # `build_cygnss_ics.jl` alongside it: it raises rather than handing back a
@@ -600,7 +601,7 @@ println("rows=", nrow(df), "  span=", round(saved_t[end] / 3600; digits=2), " h"
 
 The color the viewer gives spacecraft `index` of `count`, as a hex string, so a
 ghost can be drawn in its own twin's color. Mirrors `spacecraftColor` in
-`viewer/src/spacecraft.js`: hue spread evenly around the wheel, HSL saturation
+`SpaceAGORAVisualizer.jl/viewer/src/spacecraft.js`: hue spread evenly around the wheel, HSL saturation
 0.85 and lightness 0.6.
 """
 function spacecraft_hex_color(index::Int, count::Int)::String

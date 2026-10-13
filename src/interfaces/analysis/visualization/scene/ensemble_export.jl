@@ -407,9 +407,10 @@ function export_ensemble_visualization(
     title::Union{Nothing, AbstractString}=nothing,
     textures::Bool=true,
     texture_resolution="4k",
-    viewer_dir::AbstractString=VIEWER_DIR,
+    viewer_dir::Union{Nothing, AbstractString}=nothing,
     textures_dir::AbstractString=TEXTURES_DIR
 )::String
+    VisualizerServices.require_available()
     campaign_dir = String(campaign_dir)
     samples, manifest_scalar = discover_ensemble_samples(campaign_dir)
     isempty(samples) && throw(ArgumentError("No ensemble samples with a scene sidecar under $(campaign_dir)."))
@@ -428,6 +429,7 @@ function export_ensemble_visualization(
     nominal_index = read_ensemble_nominal(campaign_dir)
     nominal_position = nominal_index === nothing ? nothing : findfirst(s -> s.index == nominal_index, finished)
     payload = Dict{String, Any}(
+        "viewer_schema" => 1,
         "scene" => scene_dict(scene),
         "frames" => frames,
         "textures" => textures_payload,
@@ -444,5 +446,12 @@ function export_ensemble_visualization(
     page_title = title === nothing ? "SpaceAGORA · $(scene.planet.name) · ensemble of $(length(finished))" : String(title)
     html = render_viewer_html(payload; viewer_dir=viewer_dir, title=page_title)
     out_path = out === nothing ? joinpath(campaign_dir, "ensemble_viewer.html") : String(out)
+    protected = String[joinpath(campaign_dir, ENSEMBLE_MANIFEST)]
+    for (sample, scene) in zip(finished, scenes)
+        push!(protected, joinpath(sample.directory, "simulation_results_scene.json"))
+        push!(protected, joinpath(sample.directory, scene.results_feather))
+        push!(protected, joinpath(sample.directory, "simulation_results_viewer.json"))
+    end
+    _check_viewer_output(out_path, protected)
     return IOSerialization._atomic_write_file(out_path, tmp -> write(tmp, html))
 end

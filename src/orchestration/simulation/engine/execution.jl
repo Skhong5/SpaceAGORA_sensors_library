@@ -421,6 +421,25 @@ function _flatten_spacecraft_gnc(args::SimulationConfiguration)
             args.dynamics_model.dynamic_effectors))
 end
 
+# Opt-in factories own fresh callback state and capture the configuration that
+# actually runs. The empty default is handled at the call site, preserving the
+# existing extra_callbacks path and construction order without additional work.
+function _callbacks_from_factories(extra_callbacks, factories, args::SimulationConfiguration)
+    factories isa Union{Tuple, AbstractVector} || throw(ArgumentError(
+        "extra_callback_factories must be a tuple or vector of callback factories."))
+    for (i, factory) in enumerate(factories)
+        applicable(factory, args) || throw(ArgumentError(
+            "extra_callback_factories[$i] must accept the isolated SimulationConfiguration."))
+    end
+    built = map(enumerate(Tuple(factories))) do (i, factory)
+        callback = factory(args)
+        callback isa DiffEqBase.DECallback || throw(ArgumentError(
+            "extra_callback_factories[$i] must return a solver callback or CallbackSet; got $(typeof(callback))."))
+        callback
+    end
+    return (extra_callbacks..., built...)
+end
+
 """
     run_simulation(args...; isolate_state=true, kwargs...)
 
@@ -453,6 +472,17 @@ results table built in memory (same columns and values as the CSV, even when
 configuration that actually ran (the deep copy under `isolate_state=true`, so
 controller state and logs are reachable), the files the run wrote, and the
 solution when `return_solution=true` is also given (otherwise `nothing`).
+
+`extra_callback_factories=()` optionally supplies functions of the isolated
+configuration. Each is called once after epoch alignment, state isolation and
+model preflight, before run output is created, and must return a fresh solver
+callback or callback set. Factory-created callbacks are appended after
+`extra_callbacks`; the usual built-in callback ordering is unchanged. Factories
+must allocate their captured mutable state per call, avoid I/O, and refrain from
+mutating configuration during construction. Their callback closures can then
+refer to the same controller/model objects used by the integrator. The empty
+default retains the existing callback path.
+
 Explicitly enabled checkpoint writing remains independent of result-file output.
 It cannot be combined with `return_solver_metadata=true`. With the default
 `return_results=false` the return value is unchanged.
@@ -475,9 +505,11 @@ function run_simulation(
     return_results::Bool=false,
     save_fields=nothing,
     extra_callbacks=(),
+    extra_callback_factories::Union{Tuple, AbstractVector}=(),
     solver_cache::Union{Nothing, SolverIntegratorCache}=nothing,
     visualization::Bool=(_engine_env_get("SPACEAGORA_VISUALIZATION", "0") == "1")
 )
+    visualization && SimulationModel.SceneVisualization.VisualizerServices.require_available()
     return_results && return_solver_metadata &&
         throw(ArgumentError("return_results=true and return_solver_metadata=true cannot be combined."))
     args = _flatten_spacecraft_gnc(args)
@@ -494,7 +526,8 @@ function run_simulation(
         return _with_parallel_flag(true) do
             run_simulation(args; isolate_state=isolate_state, return_solution=return_solution,
                            return_solver_metadata=return_solver_metadata, return_results=return_results,
-                           save_fields=save_fields, extra_callbacks=extra_callbacks, solver_cache=solver_cache,
+                           save_fields=save_fields, extra_callbacks=extra_callbacks,
+                           extra_callback_factories=extra_callback_factories, solver_cache=solver_cache,
                            visualization=visualization)
         end
     end
@@ -523,6 +556,9 @@ function run_simulation(
     _validate_thermal_model_support!(args)
     _validate_ephemerides_support!(args)
     _warn_density_without_atmospheric_effector(args)
+    if !isempty(extra_callback_factories)
+        extra_callbacks = _callbacks_from_factories(extra_callbacks, extra_callback_factories, args)
+    end
     try
         SimulationModel.ParallelPolicy.reset_policy_telemetry!()
         if SimulationModel.ParallelPolicy.persistent_hints_state_reset_requested()

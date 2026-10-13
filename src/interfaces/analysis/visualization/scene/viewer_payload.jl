@@ -1,27 +1,11 @@
-# Single-file HTML bundler for the three.js viewer under top-level `viewer/`.
-#
-# The page carries everything: the vendored three.js modules and our own ES
-# modules through an import map of `data:` URLs (so the browser resolves
-# `import ... from 'three'` with no network and no server), the planet texture
-# as a data URI, the scene sidecar as JSON, and the decimated trajectory as
-# base64 little-endian Float32 blocks. Opening the file from disk is enough.
+# Renderer-independent saved-data conversion. The optional visualizer owns
+# browser modules and HTML assembly; the data contract stays with SpaceAGORA.
 
-const VIEWER_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "..", "viewer"))
 const TEXTURES_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "..", "data", "textures"))
 # Plume-surface interaction block of the frames payload: one Float32 array per
 # quantity, frame-major then spacecraft, from the `sc{i}_plume_*` result columns.
 const PLUME_FRAME_FIELDS = ("height_m", "shear_pa", "pressure_pa", "erosion_kg_s", "eroded_kg", "ejecta_mps", "ground_effect_n")
 
-const VIEWER_MODULES = ("data.js", "colormaps.js", "globe.js", "atmosphere.js", "spacecraft.js", "lod.js", "ensemble.js", "paths.js", "references.js", "groundtrack.js", "video.js", "plots.js", "terrain.js", "plumes.js", "timeline.js", "dust.js", "lighting.js", "ui.js", "main.js")
-const VIEWER_VENDOR = (
-    "three" => joinpath("vendor", "three.module.js"),
-    "three/addons/controls/OrbitControls.js" => joinpath("vendor", "OrbitControls.js"),
-    "three/addons/loaders/STLLoader.js" => joinpath("vendor", "STLLoader.js"),
-    "three/addons/loaders/OBJLoader.js" => joinpath("vendor", "OBJLoader.js"),
-    "three/addons/loaders/GLTFLoader.js" => joinpath("vendor", "GLTFLoader.js"),
-    "three/addons/utils/BufferGeometryUtils.js" => joinpath("vendor", "BufferGeometryUtils.js"),
-    "mp4-muxer" => joinpath("vendor", "mp4-muxer.mjs"),
-)
 # Runs up to this many spacecraft embed Float64 positions so a 3 m assembly
 # does not jitter at planetary distances; larger runs keep Float32.
 const FLOAT64_POSITION_MAX_SPACECRAFT = 64
@@ -423,25 +407,14 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    viewer_import_map(viewer_dir=VIEWER_DIR) -> Dict{String, Any}
+    viewer_import_map(viewer_dir=nothing) -> Dict{String, Any}
 
 Import map whose entries are `data:` URLs of the vendored three.js modules
 and the viewer's own modules, so the bundled page resolves every import
 offline.
 """
-function viewer_import_map(viewer_dir::AbstractString=VIEWER_DIR)::Dict{String, Any}
-    imports = Dict{String, String}()
-    for (specifier, rel) in VIEWER_VENDOR
-        path = joinpath(viewer_dir, rel)
-        isfile(path) || throw(ArgumentError("Missing vendored viewer module $(path)."))
-        imports[specifier] = _js_data_url(read(path, String))
-    end
-    for name in VIEWER_MODULES
-        path = joinpath(viewer_dir, "src", name)
-        isfile(path) || throw(ArgumentError("Missing viewer module $(path)."))
-        imports["viewer/" * name] = _js_data_url(read(path, String))
-    end
-    return Dict{String, Any}("imports" => imports)
+function viewer_import_map(viewer_dir::Union{Nothing, AbstractString}=nothing)::Dict{String, Any}
+    return VisualizerServices.viewer_import_map(viewer_dir)
 end
 
 # JSON embedded in a <script> must never contain the sequence "</" (it would
@@ -570,6 +543,7 @@ function viewer_payload(
         entry === nothing || (textures[scene.planet.texture] = entry)
     end
     return Dict{String, Any}(
+        "viewer_schema" => 1,
         "scene" => scene_dict(scene),
         "frames" => build_viewer_frames(df, scene; max_frames=max_frames, data_budget_mb=data_budget_mb, channels=channels),
         "textures" => textures,
@@ -672,21 +646,12 @@ function reference_payloads(references, scene::VisualizationScene)::Vector{Dict{
 end
 
 """
-    render_viewer_html(payload; viewer_dir=VIEWER_DIR, title="SpaceAGORA viewer") -> String
+    render_viewer_html(payload; viewer_dir=nothing, title="SpaceAGORA viewer") -> String
 
-Fill `viewer/template.html` with the import map and the payload.
+Render through the loaded SpaceAGORAVisualizer companion. `viewer_dir` optionally selects a custom renderer asset directory.
 """
-function render_viewer_html(payload::AbstractDict; viewer_dir::AbstractString=VIEWER_DIR, title::AbstractString="SpaceAGORA viewer")::String
-    template_path = joinpath(viewer_dir, "template.html")
-    isfile(template_path) || throw(ArgumentError("Missing viewer template $(template_path)."))
-    html = read(template_path, String)
-    for token in ("__TITLE__", "__IMPORTMAP__", "__PAYLOAD__")
-        occursin(token, html) || throw(ArgumentError("Viewer template is missing the $(token) placeholder."))
-    end
-    safe_title = replace(String(title), "<" => "&lt;", ">" => "&gt;", "&" => "&amp;")
-    html = replace(html, "__TITLE__" => safe_title)
-    html = replace(html, "__IMPORTMAP__" => _script_safe_json(viewer_import_map(viewer_dir)))
-    return replace(html, "__PAYLOAD__" => _script_safe_json(payload))
+function render_viewer_html(payload::AbstractDict; viewer_dir::Union{Nothing, AbstractString}=nothing, title::AbstractString="SpaceAGORA viewer")::String
+    return VisualizerServices.render_viewer_html(payload; viewer_dir=viewer_dir, title=title)
 end
 
 @inline function _viewer_options(; trail_s, trail_orbits, frame, speed, title, ground_tracks=false)
@@ -698,6 +663,87 @@ end
     title === nothing || (options["title"] = String(title))
     options["ground_tracks"] = Bool(ground_tracks)
     return options
+end
+
+function _saved_viewer_payload(
+    prefix::AbstractString;
+    max_frames::Integer=DEFAULT_MAX_FRAMES,
+    data_budget_mb::Real=DEFAULT_DATA_BUDGET_MB,
+    trail_s::Union{Nothing, Real}=nothing,
+    trail_orbits::Union{Nothing, Real}=nothing,
+    frame::Symbol=:inertial,
+    speed::Union{Nothing, Real}=nothing,
+    title::Union{Nothing, AbstractString}=nothing,
+    ground_tracks::Bool=false,
+    textures::Bool=true,
+    texture_resolution="4k",
+    models::AbstractDict=Dict{Int, String}(),
+    model_scale=nothing,
+    model_rotation_deg::AbstractDict=Dict{Int, Any}(),
+    model_center=true,
+    model_articulations::AbstractDict=Dict{Int, Any}(),
+    stl::AbstractDict=Dict{Int, String}(),
+    stl_scale::Real=1.0,
+    paths=(),
+    references=(),
+    channels=(),
+    terrain=nothing,
+    terrain_max_grid=512,
+    textures_dir::AbstractString=TEXTURES_DIR
+)
+    prefix = String(prefix)
+    scene_path = prefix * "_scene.json"
+    isfile(scene_path) || throw(ArgumentError("No visualization sidecar at $(scene_path); run with simulation_settings.save_visualization_scene = true."))
+    scene = read_visualization_scene(scene_path)
+    feather_path = joinpath(dirname(scene_path), scene.results_feather)
+    isfile(feather_path) || throw(ArgumentError("Results file $(feather_path) referenced by the sidecar does not exist."))
+    df = DataFrame(Arrow.Table(feather_path))
+    payload = viewer_payload(
+        scene, df;
+        textures_dir=textures_dir, include_textures=textures, texture_resolution=texture_resolution,
+        options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title, ground_tracks=ground_tracks),
+        max_frames=max_frames, data_budget_mb=data_budget_mb,
+        models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, model_articulations=model_articulations, stl=stl, stl_scale=stl_scale,
+        paths=paths, references=references, channels=channels, terrain=terrain, terrain_max_grid=terrain_max_grid
+    )
+    page_title = title === nothing ? "SpaceAGORA · $(scene.planet.name) · $(basename(prefix))" : String(title)
+    return payload, page_title
+end
+
+function _check_viewer_output(path::AbstractString, protected)
+    isdir(path) && throw(ArgumentError("Viewer output must be a file, not a directory: $path"))
+    for input in protected
+        (abspath(path) == abspath(input) || (isfile(path) && isfile(input) && samefile(path, input))) &&
+            throw(ArgumentError("Viewer output cannot replace saved input data: $input"))
+    end
+    return String(path)
+end
+
+function _viewer_output_path(prefix::AbstractString, payload::AbstractDict, out, suffix::String)
+    path = out === nothing ? String(prefix) * suffix : String(out)
+    protected = (String(prefix) * "_scene.json",
+        joinpath(dirname(String(prefix)), String(payload["scene"]["results"]["feather"])))
+    return _check_viewer_output(path, protected)
+end
+
+"""
+    export_viewer_payload(prefix; out=nothing, kwargs...) -> String
+    export_viewer_payload(configuration; kwargs...) -> String
+
+Convert a saved scene and results bundle to version-1 viewer JSON. The default
+file is `<prefix>_viewer.json`. Frame conventions, precision, decimation and
+options match `export_visualization`; `textures=false` omits local textures.
+No renderer package, browser, download or simulation is needed. Load
+SpaceAGORAVisualizer to turn this portable payload into an HTML page.
+"""
+function export_viewer_payload(prefix::AbstractString; out::Union{Nothing, AbstractString}=nothing, kwargs...)::String
+    payload, _ = _saved_viewer_payload(prefix; kwargs...)
+    path = _viewer_output_path(prefix, payload, out, "_viewer.json")
+    return IOSerialization._atomic_write_file(path, tmp -> write(tmp, JSON.json(payload)))
+end
+
+function export_viewer_payload(args::SimulationConfiguration; kwargs...)::String
+    return export_viewer_payload(IOConfig._results_bundle_prefix(args); kwargs...)
 end
 
 """
@@ -735,55 +781,21 @@ A channel missing from any spacecraft is omitted. Samples are Float32;
 `missing`/NaN are gaps and infinities/overflow are rejected. Channels use the
 same decimated rows and budget as positions. `terrain` names a local site.json;
 `terrain_max_grid` (default 512) limits its exported DEM dimensions (see
-`terrain_payload`). `viewer_dir` and `textures_dir` override the repository locations.
+`terrain_payload`). `viewer_dir` overrides the optional visualizer package assets; `textures_dir`
+overrides the local texture directory. Load `SpaceAGORAVisualizer` before
+requesting an HTML page, or use `export_viewer_payload` to save portable JSON.
 """
-function export_visualization(
-    prefix::AbstractString;
-    out::Union{Nothing, AbstractString}=nothing,
-    max_frames::Integer=DEFAULT_MAX_FRAMES,
-    data_budget_mb::Real=DEFAULT_DATA_BUDGET_MB,
-    trail_s::Union{Nothing, Real}=nothing,
-    trail_orbits::Union{Nothing, Real}=nothing,
-    frame::Symbol=:inertial,
-    speed::Union{Nothing, Real}=nothing,
-    title::Union{Nothing, AbstractString}=nothing,
-    ground_tracks::Bool=false,
-    textures::Bool=true,
-    texture_resolution="4k",
-    models::AbstractDict=Dict{Int, String}(),
-    model_scale=nothing,
-    model_rotation_deg::AbstractDict=Dict{Int, Any}(),
-    model_center=true,
-    model_articulations::AbstractDict=Dict{Int, Any}(),
-    stl::AbstractDict=Dict{Int, String}(),
-    stl_scale::Real=1.0,
-    paths=(),
-    references=(),
-    channels=(),
-    terrain=nothing,
-    terrain_max_grid=512,
-    viewer_dir::AbstractString=VIEWER_DIR,
-    textures_dir::AbstractString=TEXTURES_DIR
-)::String
-    prefix = String(prefix)
-    scene_path = prefix * "_scene.json"
-    isfile(scene_path) || throw(ArgumentError("No visualization sidecar at $(scene_path); run with simulation_settings.save_visualization_scene = true."))
-    scene = read_visualization_scene(scene_path)
-    feather_path = joinpath(dirname(scene_path), scene.results_feather)
-    isfile(feather_path) || throw(ArgumentError("Results file $(feather_path) referenced by the sidecar does not exist."))
-    df = DataFrame(Arrow.Table(feather_path))
-    payload = viewer_payload(
-        scene, df;
-        textures_dir=textures_dir, include_textures=textures, texture_resolution=texture_resolution,
-        options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title, ground_tracks=ground_tracks),
-        max_frames=max_frames, data_budget_mb=data_budget_mb,
-        models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, model_articulations=model_articulations, stl=stl, stl_scale=stl_scale,
-        paths=paths, references=references, channels=channels, terrain=terrain, terrain_max_grid=terrain_max_grid
-    )
-    page_title = title === nothing ? "SpaceAGORA · $(scene.planet.name) · $(basename(prefix))" : String(title)
+function export_visualization(prefix::AbstractString; out::Union{Nothing, AbstractString}=nothing,
+    viewer_dir::Union{Nothing, AbstractString}=nothing, kwargs...)::String
+    VisualizerServices.require_available()
+    payload, page_title = _saved_viewer_payload(prefix; kwargs...)
+    path = _viewer_output_path(prefix, payload, out, "_viewer.html")
+    payload_path = String(prefix) * "_viewer.json"
+    (abspath(path) == abspath(payload_path) ||
+        (isfile(path) && isfile(payload_path) && samefile(path, payload_path))) &&
+        throw(ArgumentError("HTML output cannot replace the viewer JSON input: $payload_path"))
     html = render_viewer_html(payload; viewer_dir=viewer_dir, title=page_title)
-    out_path = out === nothing ? prefix * "_viewer.html" : String(out)
-    return IOSerialization._atomic_write_file(out_path, tmp -> write(tmp, html))
+    return IOSerialization._atomic_write_file(path, tmp -> write(tmp, html))
 end
 
 """
@@ -806,5 +818,7 @@ function write_viewer_dev_payload(prefix::AbstractString, out_js::AbstractString
     scene = read_visualization_scene(scene_path)
     df = DataFrame(Arrow.Table(joinpath(dirname(scene_path), scene.results_feather)))
     payload = viewer_payload(scene, df; textures_dir=textures_dir, include_textures=textures, kwargs...)
-    return IOSerialization._atomic_write_file(String(out_js), tmp -> write(tmp, "window.SPACEAGORA_VIEWER = " * _script_safe_json(payload) * ";\n"))
+    path = _viewer_output_path(prefix, payload, out_js, "_viewer.js")
+    _check_viewer_output(path, (String(prefix) * "_viewer.json",))
+    return IOSerialization._atomic_write_file(path, tmp -> write(tmp, "window.SPACEAGORA_VIEWER = " * _script_safe_json(payload) * ";\n"))
 end

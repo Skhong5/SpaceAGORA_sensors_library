@@ -70,7 +70,9 @@ end
     code = """
         using SpaceAGORA
         err = try surrogate_preset_model("odyssey_p20_frozen_v1"; version="1.0.0", offline=true); nothing catch e; e end
-        print(err isa ArgumentError && occursin("import GRAMSuite", err.msg) && !isdefined(Main, :GRAMSuite))
+        composite = try surrogate_preset_model("mars_global_descent_p20_frozen_v1"; version="1.0.0", offline=true); nothing catch e; e end
+        print(err isa ArgumentError && occursin("import GRAMSuite", err.msg) && !isdefined(Main, :GRAMSuite) &&
+              composite isa ArgumentError && occursin("import GRAMSuite", composite.msg))
         """
     @test read(`$(Base.julia_cmd()) --startup-file=no --project=$project -e $code`, String) == "true"
 end

@@ -68,6 +68,11 @@ const PUBLIC_API_SECTIONS = [
         items = [
             (owner = :SpaceAGORA, symbol = :run_simulation, rendered = "SpaceAGORA.run_simulation"),
             (owner = :SpaceAGORA, symbol = :SimulationResults, rendered = "SpaceAGORA.SimulationResults"),
+            (owner = :SpaceAGORA, symbol = :MissionPlan, rendered = "SpaceAGORA.MissionPlan"),
+            (owner = :SpaceAGORA, symbol = :MissionPhase, rendered = "SpaceAGORA.MissionPhase"),
+            (owner = :SpaceAGORA, symbol = :MissionEvent, rendered = "SpaceAGORA.MissionEvent"),
+            (owner = :SpaceAGORA, symbol = :MissionRun, rendered = "SpaceAGORA.MissionRun"),
+            (owner = :SpaceAGORA, symbol = :run_mission, rendered = "SpaceAGORA.run_mission"),
             (owner = :SpaceAGORA, symbol = :StateAnchor, rendered = "SpaceAGORA.StateAnchor"),
             (owner = :SpaceAGORA, symbol = :get_state_anchor_callback, rendered = "SpaceAGORA.get_state_anchor_callback"),
             (owner = :SpaceAGORA, symbol = :prewarm_nbody_ephemeris_cache, rendered = "SpaceAGORA.prewarm_nbody_ephemeris_cache"),
@@ -82,6 +87,9 @@ const PUBLIC_API_SECTIONS = [
     (
         title = "Optional Adapter Services",
         items = [
+            (owner = :SpaceAGORA, symbol = :visualizer_available, rendered = "SpaceAGORA.visualizer_available"),
+            (owner = :SpaceAGORA, symbol = :VisualizerUnavailableError, rendered = "SpaceAGORA.VisualizerUnavailableError"),
+            (owner = :SpaceAGORA, symbol = :export_viewer_payload, rendered = "SpaceAGORA.export_viewer_payload"),
             (owner = :SpaceAGORA, symbol = :ExternalPropagationServices, rendered = "SpaceAGORA.ExternalPropagationServices")
         ]
     ),
