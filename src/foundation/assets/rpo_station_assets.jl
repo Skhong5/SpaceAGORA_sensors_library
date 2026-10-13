@@ -2,6 +2,7 @@ module RPOStationAssets
 
 using LinearAlgebra
 using Random
+using ..SimulationModel.Structure: _stl_binary_triangles
 
 export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 
@@ -53,30 +54,7 @@ end
 
 function _load_stl_triangles(path::AbstractString)
     if _stl_is_binary(path)
-        return open(path, "r") do io
-            header = Vector{UInt8}(undef, 80)
-            read!(io, header)
-            count_bytes = Vector{UInt8}(undef, 4)
-            read!(io, count_bytes)
-            ntri = Int(reinterpret(UInt32, count_bytes)[1])
-            triangles = zeros(Float64, 3, 3 * ntri)
-            for tri_idx in 1:ntri
-                normal = Vector{Float32}(undef, 3)
-                read!(io, normal)
-                base = 3 * (tri_idx - 1)
-                v1 = Vector{Float32}(undef, 3)
-                v2 = Vector{Float32}(undef, 3)
-                v3 = Vector{Float32}(undef, 3)
-                read!(io, v1)
-                read!(io, v2)
-                read!(io, v3)
-                triangles[:, base + 1] .= v1
-                triangles[:, base + 2] .= v2
-                triangles[:, base + 3] .= v3
-                read(io, UInt16)
-            end
-            triangles
-        end
+        return _stl_binary_triangles(read(path))
     end
 
     verts = Vector{Vector{Float64}}()

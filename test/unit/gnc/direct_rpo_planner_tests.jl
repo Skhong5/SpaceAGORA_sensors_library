@@ -2,7 +2,7 @@
 module DirectRPOPlannerTests
 using Test, Random, LinearAlgebra
 include(joinpath(@__DIR__, "..", "..", "..", "src", "models", "gnc", "interfaces", "rpo_planner.jl"))
-include(joinpath(@__DIR__, "..", "..", "..", "src", "models", "gnc", "direct_rpo", "direct_rpo_planner.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "src", "models", "gnc", "planning", "rpo", "direct_planner.jl"))
 const P=RPOPlannerInterfaces
 const D=DirectRPOPlanning
 function request(; kwargs...)

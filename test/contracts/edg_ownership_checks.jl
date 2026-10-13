@@ -86,7 +86,7 @@ const FORWARD_CALLS = Dict(
 const WRAPPER_FILES = Set((
     "src/models/gnc/control/targeting_control.jl",
     "src/models/gnc/control/heat_load_control.jl",
-    "src/models/gnc/guidance/target_energy_bracketing.jl",
+    "src/models/gnc/guidance/aerobraking/typed_edg/guidance_models.jl",
 ))
 
 function source_map(root)
@@ -208,7 +208,9 @@ function violations(sources)
         # Strip line comments for dependency checks; function bodies remain parsed
         # as complete top-level blocks so multiline signatures are covered.
         code = join((first(split(line, '#'; limit=2)) for line in split(source, '\n')), '\n')
-        if startswith(path, OWNER)
+        # This relocated callback adapter was outside the numerical owner
+        # before the move and retains its separate no-control rule below.
+        if startswith(path, OWNER) && path != OWNER * "guidance_models.jl"
             for forbidden in (r"\bControlHooks\b", r"\b_control_module\s*\(",
                               r"\b(?:rotate_link|_apply_solar_panel_aoa!)\s*\(",
                               r"\b(?:calcControlEffect!|calcGuidanceEffect!)\s*\(",
@@ -217,7 +219,7 @@ function violations(sources)
                 occursin(forbidden, code) && push!(errors, "$path: forbidden reverse dependency or mutation: $forbidden")
             end
         end
-        if path == "src/models/gnc/guidance/target_energy_bracketing.jl"
+        if path == "src/models/gnc/guidance/aerobraking/typed_edg/guidance_models.jl"
             occursin(r"\b_control_module\s*\(|\bControlHooks\b", code) &&
                 push!(errors, "$path: typed guidance depends on control")
         end

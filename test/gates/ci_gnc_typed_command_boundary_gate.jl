@@ -64,7 +64,8 @@ occursin("controlModel.direction[i] = command.direction_rad", control_propulsive
 const GUIDANCE_ROOT = joinpath(REPO_ROOT, "src", "models", "gnc", "guidance")
 const CONTROL_ROOT = joinpath(REPO_ROOT, "src", "models", "gnc", "control")
 const GUIDANCE_ROOTS = (GUIDANCE_ROOT, joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"),
-    (joinpath(REPO_ROOT, "src", "models", "gnc", owner) for owner in ("shared", "hypr", "rrt"))...)
+    (joinpath(REPO_ROOT, "src", "models", "gnc", owner) for owner in ("planning",))...,
+    joinpath(REPO_ROOT, "src", "interfaces", "analysis", "planning"))
 const GNC_ROOTS = (GUIDANCE_ROOTS..., CONTROL_ROOT)
 const ALLOWED_MANEUVER_COMMAND_OWNERS = Set([
     joinpath("src", "models", "gnc", "guidance", "thruster_guidance", "thruster_guidance_functions.jl"),

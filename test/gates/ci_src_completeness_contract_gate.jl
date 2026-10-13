@@ -4,12 +4,12 @@ const SOURCE_ROOTS = (SRC_ROOT, joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR"
 
 const CANONICAL_AGGREGATOR_FILES = Set([
     joinpath("src", "models", "gnc", "guidance", "aerobraking", "typed_edg", "algorithms.jl"),
-    joinpath("src", "models", "gnc", "guidance", "rpo", "rpo_planner_module.jl"),
+    joinpath("src", "models", "gnc", "planning", "rpo", "lifecycle.jl"),
     joinpath("src", "orchestration", "simulation", "engine", "simulation_engine.jl"),
     joinpath("src", "orchestration", "simulation", "callbacks", "callbacks.jl"),
     joinpath("src", "orchestration", "parallel", "routing", "parallel_profiles.jl"),
     joinpath("src", "orchestration", "parallel", "process", "parallel_process.jl"),
-    joinpath("src", "foundation", "core", "simulation_model.jl")
+    joinpath("src", "orchestration", "simulation", "composition", "simulation_model.jl")
 ])
 
 const STUB_PATTERN = r"\b[a-zA-Z0-9_]*_stub\(\)\s*=\s*nothing\b"

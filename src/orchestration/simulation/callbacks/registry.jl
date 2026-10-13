@@ -38,12 +38,7 @@ export trajectory_times, trajectory_field, trajectory_save_data
 export trajectory_positions, trajectory_velocities, trajectory_masses
 
 const _simulation_model_module = parentmodule(@__MODULE__)
-
-@inline function _simulation_engine_module()
-    root = parentmodule(_simulation_model_module)
-    isdefined(root, :SimulationEngine) || error("SimulationEngine module is not available for callback stage sampling.")
-    return getproperty(root, :SimulationEngine)
-end
+import ...CallbackServices
 
 @inline callback_verbose(integrator) = integrator.p.args.simulation_settings.verbose
 const _gram_track_cache_warning_emitted = Ref(false)

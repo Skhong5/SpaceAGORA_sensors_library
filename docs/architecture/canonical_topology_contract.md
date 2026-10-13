@@ -7,7 +7,7 @@ The source tree has four groups: `src/interfaces/` contains `cli`, `io` and
 `src/models/` contains `vehicle`, `environment`, `dynamics` and `gnc`; and
 `src/foundation/` contains `core` and `assets`. These groups organize files while
 preserving the existing Julia modules and their include order. They do not impose
-a new dependency hierarchy: `foundation/core/simulation_model.jl` remains the
+a new dependency hierarchy: `orchestration/simulation/composition/simulation_model.jl` remains the
 composition loader for definitions owned across the groups.
 
 `src/SpaceAGORA.jl` and `src/precompile_workload.jl` remain at the package source
@@ -89,7 +89,7 @@ companions retain their own repositories and source trees outside core `src/`.
 ## Canonical GNC and Runtime IO Owners
 1. GNC hook owners: `src/models/gnc/control/control_hooks.jl`, `src/models/gnc/guidance/guidance_hooks.jl`, `src/models/gnc/navigation/navigation_hooks.jl`.
 2. GNC bridge helper owner: `src/models/gnc/internal/bridge_helpers.jl`.
-3. Runtime IO owners: `src/interfaces/io/config/io_config.jl`, `src/interfaces/io/serialization/io_serialization.jl`, `src/interfaces/io/outputs/io_outputs.jl`; `src/orchestration/simulation/engine/*` orchestrates IO but does not own serialization or output implementations.
+3. Runtime IO owners: `src/interfaces/io/paths/io_paths.jl`, `src/interfaces/io/checkpoints/checkpoint_storage.jl`, `src/interfaces/io/outputs/io_outputs.jl`; `src/orchestration/simulation/engine/*` orchestrates IO but does not own serialization or output implementations.
 4. No `legacy_` identifiers in `src/`.
 
 ## Enforcement Gates

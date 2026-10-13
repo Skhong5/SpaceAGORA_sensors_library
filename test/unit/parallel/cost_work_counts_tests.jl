@@ -98,14 +98,14 @@ end
     @test PC.effector_cost_terms(SM.InverseSquaredGravityModel()).scalar_items > 0.0
 end
 
-@testset "Flat-queue predicates agree with the engine's" begin
-    # ParallelCost duplicates _batchable_effector / _harmonics_prepass_effector
-    # because it is included below SimulationEngine and cannot call upward.
-    # This test is what makes that duplication safe: if the engine's predicates
-    # change and the mirrored copies do not, queue_nodes silently drifts from
-    # the node count the RHS actually builds, and the cost model mis-ranks the
-    # routing candidates with no other symptom.
+@testset "Flat-queue predicates share one engine and cost contract" begin
+    # Cost accounting and runtime dispatch must use the same function objects,
+    # including value-dependent gravity-gradient and per-link exclusions.
+    ER = SM.EffectorRouting
     SE = SpaceAGORA.SimulationEngine
+    @test PC._cost_batchable_effector === SE._batchable_effector === ER.batchable_effector
+    @test PC._cost_harmonics_prepass_effector === SE._harmonics_prepass_effector === ER.harmonics_prepass_effector
+    @test PC._cost_aero_prepass_effector === SE._aero_prepass_effector === ER.aero_prepass_effector
     E = SM.Earth()
     harm_file = joinpath(@__DIR__, "..", "..", "..", "data",
                          "Gravity_harmonics_data", "EarthGGM05C.csv")
@@ -113,10 +113,10 @@ end
     effectors = Any[
         SM.InverseSquaredGravityModel(),
         SM.InverseSquaredJ2GravityModel(),
-        SM.NBodyGravityModel(["Sun"], "Earth"),
+        SM.NBodyGravityModel(body_names=("Sun",), planet=E, body_mus=(1.32712440041279419e20,)),
         SM.SolarRadiationPressureModel(1.8, 10.0),
         # gravity_gradient flips _batchable_effector for the central terms, so
-        # both variants must be checked -- a type-only mirror would pass the
+        # both variants must be checked -- a type-only predicate would pass the
         # default case and silently disagree here.
         SM.InverseSquaredGravityModel(gravity_gradient=true),
         SM.InverseSquaredJ2GravityModel(gravity_gradient=true),
@@ -138,14 +138,14 @@ end
     @test PC._cost_aero_prepass_effector(SM.AerodynamicCoefficientfM())
     @test !PC._cost_aero_prepass_effector(SM.AerodynamicCoefficientfM(per_link_atmosphere=true))
 
-    # The mirrored node predicate must reproduce the engine's queue-only count.
+    # Cost accounting must reproduce the engine's queue-only count.
     tup = Tuple(effectors)
     expected = SE._count_flat_queue_only_effectors(tup)
     got = count(e -> PC.flat_queue_node_effector(e), effectors)
     @test got == expected
 
     # A (gravity, aero) stack: both are pre-passed, so the queue builds no
-    # nodes, and the mirror must say so rather than counting N aero nodes.
+    # nodes, and cost accounting must say so rather than counting N aero nodes.
     aero_stack = (SM.InverseSquaredJ2GravityModel(), SM.AerodynamicCoefficientfM())
     @test SE._count_flat_queue_only_effectors(aero_stack) == 0
     @test count(e -> PC.flat_queue_node_effector(e), aero_stack) == 0
@@ -153,6 +153,22 @@ end
     @test SE._count_flat_queue_only_effectors(per_link_stack) == 1
     @test count(e -> PC.flat_queue_node_effector(e), per_link_stack) == 1
 
+    # Unknown/custom effectors stay on the queue. These checks pin the result,
+    # not merely agreement between aliases of the same implementation.
+    unknown = nothing
+    @test !ER.batchable_effector(unknown)
+    @test !ER.harmonics_prepass_effector(unknown)
+    @test !ER.aero_prepass_effector(unknown)
+    @test PC.flat_queue_node_effector(unknown)
+    @test ER.batchable_effector(SM.InverseSquaredGravityModel())
+    @test !ER.batchable_effector(SM.InverseSquaredGravityModel(gravity_gradient=true))
+    @test ER.batchable_effector(SM.InverseSquaredJ2GravityModel())
+    @test !ER.batchable_effector(SM.InverseSquaredJ2GravityModel(gravity_gradient=true))
+    @test ER.batchable_effector(SM.NBodyGravityModel(body_names=("Sun",), planet=E, body_mus=(1.32712440041279419e20,)))
+    @test ER.batchable_effector(SM.SolarRadiationPressureModel(1.8, 10.0))
+    @test SE._count_flat_queue_only_effectors((unknown, aero_stack...)) == 1
+
     # And a solver partition puts every effector back on the queue.
+    @test PC.flat_queue_node_effector(unknown; partition_active=true)
     @test all(e -> PC.flat_queue_node_effector(e; partition_active=true), effectors)
 end

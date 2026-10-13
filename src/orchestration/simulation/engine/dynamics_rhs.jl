@@ -1071,11 +1071,7 @@ function _spin_barrier_observe!(p, t::SimulationModel.SpinBarrierTuner, elapsed_
     return nothing
 end
 
-@inline _batchable_effector(::Any)::Bool = false
-@inline _batchable_effector(::SimulationModel.NBodyGravityModel)::Bool = true
-@inline _batchable_effector(::SimulationModel.SolarRadiationPressureModel)::Bool = true
-@inline _batchable_effector(effector::SimulationModel.InverseSquaredGravityModel)::Bool = !effector.gravity_gradient
-@inline _batchable_effector(effector::SimulationModel.InverseSquaredJ2GravityModel)::Bool = !effector.gravity_gradient
+const _batchable_effector = SimulationModel.EffectorRouting.batchable_effector
 
 @inline function _has_any_batchable_effector(effectors::Tuple)::Bool
     @inbounds for e in effectors
@@ -1094,8 +1090,7 @@ end
 
 # Harmonics has its own SIMD pre-pass (different from the batchable trait because
 # it uses mutable LPI matrix state and requires sc_state rather than pos_buffers).
-@inline _harmonics_prepass_effector(::Any)::Bool = false
-@inline _harmonics_prepass_effector(::SimulationModel.GravitationalHarmonicsModel)::Bool = true
+const _harmonics_prepass_effector = SimulationModel.EffectorRouting.harmonics_prepass_effector
 
 @inline function _has_any_harmonics_effector(effectors::Tuple)::Bool
     @inbounds for e in effectors
@@ -1119,9 +1114,7 @@ end
 # reads those instead of position buffers. Per-link atmosphere sampling stays on
 # the queue: it issues a density query per link and carries a `maxlog=1`
 # warning whose firing order would become worker-dependent in a slice.
-@inline _aero_prepass_effector(::Any)::Bool = false
-@inline _aero_prepass_effector(effector::SimulationModel.AerodynamicCoefficientfM)::Bool =
-    !SimulationModel.DynamicEffectors.AerodynamicEffectors._per_link_enabled(effector)
+const _aero_prepass_effector = SimulationModel.EffectorRouting.aero_prepass_effector
 
 @inline function _has_any_aero_prepass_effector(effectors::Tuple)::Bool
     @inbounds for e in effectors

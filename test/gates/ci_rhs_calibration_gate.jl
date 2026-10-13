@@ -10,7 +10,7 @@ calib_src   = _read(joinpath("src", "orchestration", "simulation", "engine", "rh
 setup_src   = _read(joinpath("src", "orchestration", "simulation", "engine", "setup.jl"))
 engine_src  = _read(joinpath("src", "orchestration", "simulation", "engine", "simulation_engine.jl"))
 exec_src    = _read(joinpath("src", "orchestration", "simulation", "engine", "execution.jl"))
-types_src   = _read(joinpath("src", "foundation", "core", "types", "runtime_types.jl"))
+types_src   = _read(joinpath("src", "orchestration", "simulation", "state", "runtime_types.jl"))
 
 # ── §1: All required functions present in rhs_calibration.jl ─────────────────
 

@@ -690,7 +690,7 @@ layouts, schedule activities or introduce additional collection validation.
 Execution policy remains in `src/orchestration/simulation/engine/config/`: `SimulationEngineConfig`
 composes parallel, solver, runtime-policy and artifact settings. It uses the same
 `SolverConfig` definition, not a second solver type. Output and checkpoint path
-derivation stays in `src/interfaces/io/config/`; solver environment settings are parsed in
+derivation stays in `src/interfaces/io/paths/`; solver environment settings are parsed in
 `src/orchestration/simulation/engine/adapters/from_env.jl`. These are distinct responsibilities
 from assembling a scenario.
 

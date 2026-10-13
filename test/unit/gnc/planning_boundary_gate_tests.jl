@@ -3,9 +3,16 @@ using Test
 @testset "Planning owners retain architecture enforcement" begin
     repo = normpath(joinpath(@__DIR__, "..", "..", ".."))
     # Include a nested owner so the fixtures also enforce recursive scanning.
-    owner_paths = (joinpath("src", "models", "gnc", "shared"), joinpath("src", "models", "gnc", "hypr"),
-        joinpath("src", "models", "gnc", "rrt"), joinpath("src", "models", "gnc", "shared", "rpo"),
-        joinpath("packages", "SpaceAGORAHYPR", "src"), joinpath("packages", "SpaceAGORAHYPR", "src", "rpo"))
+    owner_paths = (
+        joinpath("src", "models", "gnc", "planning", "common"),
+        joinpath("src", "models", "gnc", "planning", "adapters", "hypr"),
+        joinpath("src", "models", "gnc", "planning", "rpo"),
+        joinpath("src", "models", "gnc", "planning", "robot_arm"),
+        joinpath("src", "models", "gnc", "planning", "rpo", "nested_probe"),
+        joinpath("src", "interfaces", "analysis", "planning"),
+        joinpath("packages", "SpaceAGORAHYPR", "src"),
+        joinpath("packages", "SpaceAGORAHYPR", "src", "rpo"),
+    )
     gates = (
         ("ci_no_legacy_include_chains_gate.jl", "__legacy_probe = nothing\n",
             "Legacy include-chain gate failed", "contains forbidden legacy token '__legacy_'"),
@@ -53,6 +60,9 @@ using Test
         # the copied source and injected probes remain the only files inspected.
         scan_roots = (
             joinpath("src", "foundation", "core"),
+            joinpath("src", "orchestration", "simulation", "composition"),
+            joinpath("src", "orchestration", "simulation", "state"),
+            joinpath("src", "orchestration", "simulation", "config", "presets"),
             joinpath("src", "models", "environment"),
             joinpath("src", "models", "gnc", "control"),
             joinpath("src", "models", "gnc", "guidance"),
@@ -114,7 +124,7 @@ end
 
 @testset "Shared metric boundary rejects an algorithm configuration dependency" begin
     repo = normpath(joinpath(@__DIR__, "..", "..", ".."))
-    path = joinpath(repo, "src", "models", "gnc", "shared", "rpo", "path_metrics.jl")
+    path = joinpath(repo, "src", "models", "gnc", "planning", "rpo", "path_metrics.jl")
     source = read(path, String)
     function load_metric_source(text)
         isolated = Module(gensym(:MetricBoundary))

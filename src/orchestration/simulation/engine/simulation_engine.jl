@@ -41,6 +41,7 @@ include(joinpath(@__DIR__, "reporting.jl"))
 include(joinpath(@__DIR__, "results.jl"))
 include(joinpath(@__DIR__, "execution.jl"))
 include(joinpath(@__DIR__, "public_api.jl"))
+include(joinpath(@__DIR__, "callback_services.jl"))
 
 export ParallelConfig
 export SolverConfig

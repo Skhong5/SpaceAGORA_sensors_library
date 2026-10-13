@@ -56,7 +56,7 @@ end
 end
 
 @inline function _stage_environment_kinematics(x, p, t::Float64)
-    engine = _simulation_engine_module()
+    engine = CallbackServices
     pos_ii, vel_ii = _extract_pos_vel(x)
     planet_frame = engine.sample_planet_frame(x, p, 1, t)
     return (
@@ -73,7 +73,7 @@ end
 
 @inline function _buffered_stage_environment_state(x, p, sat_idx::Int, t::Float64)
     kin = _stage_environment_kinematics(x, p, t)
-    atmosphere = _simulation_engine_module().sample_buffered_atmosphere(x, p, sat_idx, t)
+    atmosphere = CallbackServices.sample_buffered_atmosphere(x, p, sat_idx, t)
     return merge(kin, (rho=atmosphere.rho_kg_m3, T=atmosphere.temperature_k, wind=atmosphere.wind_pp))
 end
 
@@ -286,8 +286,8 @@ end
 function _stage_environment_state(x, p, sat_idx::Int, t::Float64; write_buffers::Bool=true)
     kin = _stage_environment_kinematics(x, p, t)
     atmosphere = write_buffers ?
-        _simulation_engine_module().sample_buffered_atmosphere(x, p, sat_idx, t) :
-        _simulation_engine_module().sample_atmosphere(x, p, sat_idx, t; write_buffers=false)
+        CallbackServices.sample_buffered_atmosphere(x, p, sat_idx, t) :
+        CallbackServices.sample_atmosphere(x, p, sat_idx, t; write_buffers=false)
     return merge(kin, (rho=atmosphere.rho_kg_m3, T=atmosphere.temperature_k, wind=atmosphere.wind_pp))
 end
 

@@ -16,7 +16,7 @@ This contract defines how canonical source files are classified and what is forb
      - `src/orchestration/simulation/callbacks/callbacks.jl`
      - `src/orchestration/parallel/routing/parallel_profiles.jl`
      - `src/orchestration/parallel/process/parallel_process.jl`
-     - `src/foundation/core/simulation_model.jl`
+     - `src/orchestration/simulation/composition/simulation_model.jl`
 3. `Experimental Interface`
    - Typed contracts for planned subsystems.
    - Lives under top-level `experimental/*`, never under `src/*`.
@@ -29,7 +29,10 @@ This contract defines how canonical source files are classified and what is forb
 
 ## Translational Boundary
 1. `src/models/dynamics/translational/*` is reserved for pure translational terms only.
-2. Gravity ownership is canonical under `src/models/environment/gravity/gravity_models.jl` (not under translational).
+2. Gravity field kernels live under `src/models/environment/gravity/`; spacecraft/runtime
+   adapters live under `src/models/dynamics/coupled/gravity/`. The compatibility include
+   manifest preserves the existing `DynamicEffectors.GravityEffectors` module ownership
+   and declaration order. Neither responsibility belongs under translational dynamics.
 3. Translational files must not own attitude-coupled torque logic or actuator scheduling/commands.
 
 ## Topology Boundary

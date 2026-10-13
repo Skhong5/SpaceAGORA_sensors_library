@@ -155,33 +155,10 @@ satellite; only the per-body arithmetic is.
     return WorkCounts(scalar_items = Float64(max(1, length(model.body_names))))
 end
 
-# Flat-queue node predicates, mirrored from SimulationEngine.
-#
-# SOURCE OF TRUTH: `_batchable_effector` / `_harmonics_prepass_effector` /
-# `_aero_prepass_effector` / `_count_flat_queue_only_effectors` in
-# src/orchestration/simulation/engine/dynamics_rhs.jl.
-# They are duplicated here rather than called because ParallelCost is included
-# from core/simulation_model.jl, which the engine is built on top of -- calling
-# upward would invert the dependency.
-#
-# Duplication is made safe by test/unit/parallel/cost_work_counts_tests.jl,
-# which asserts these agree with the engine's versions for every built-in
-# effector, including the `gravity_gradient` variants. Divergence is a test
-# failure, not a silent mis-count.
-@inline _cost_batchable_effector(::Any)::Bool = false
-@inline _cost_batchable_effector(::NBodyGravityModel)::Bool = true
-@inline _cost_batchable_effector(::SolarRadiationPressureModel)::Bool = true
-@inline _cost_batchable_effector(e::InverseSquaredGravityModel)::Bool = !e.gravity_gradient
-@inline _cost_batchable_effector(e::InverseSquaredJ2GravityModel)::Bool = !e.gravity_gradient
-
-@inline _cost_harmonics_prepass_effector(::Any)::Bool = false
-@inline _cost_harmonics_prepass_effector(::GravitationalHarmonicsModel)::Bool = true
-
-# The fM aerodynamic model has its own flat-route pre-pass unless it samples
-# the atmosphere per link, in which case it stays on the queue.
-@inline _cost_aero_prepass_effector(::Any)::Bool = false
-@inline _cost_aero_prepass_effector(e::AerodynamicCoefficientfM)::Bool =
-    !DynamicEffectors.AerodynamicEffectors._per_link_enabled(e)
+# Historical cost names alias the same eligibility functions used by the engine.
+const _cost_batchable_effector = EffectorRouting.batchable_effector
+const _cost_harmonics_prepass_effector = EffectorRouting.harmonics_prepass_effector
+const _cost_aero_prepass_effector = EffectorRouting.aero_prepass_effector
 
 """
     flat_queue_node_effector(effector; partition_active = false) -> Bool

@@ -21,7 +21,7 @@ const FILE_TARGETS = [
     joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "aerobraking", "t_edg", "trajectory_predictor.jl"),
     joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "aerobraking", "t_edg", "eom_predictor.jl"),
     joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "aerobraking", "t_edg", "targeting_solver.jl"),
-    joinpath(REPO_ROOT, "src", "interfaces", "io", "config", "io_config.jl"),
+    joinpath(REPO_ROOT, "src", "interfaces", "io", "paths", "io_paths.jl"),
     joinpath(REPO_ROOT, "src", "interfaces", "io", "outputs", "io_outputs.jl"),
     joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "persistence.jl"),
     joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "reporting.jl"),
@@ -78,7 +78,7 @@ const FILE_SPECIFIC_FORBIDDEN = Dict(
         r"args\s*\[",
         r"_compat_",
     ),
-    joinpath(REPO_ROOT, "src", "interfaces", "io", "config", "io_config.jl") => (
+    joinpath(REPO_ROOT, "src", "interfaces", "io", "paths", "io_paths.jl") => (
         r"_compat_results_csv_path",
     ),
     joinpath(REPO_ROOT, "src", "interfaces", "io", "outputs", "io_outputs.jl") => (

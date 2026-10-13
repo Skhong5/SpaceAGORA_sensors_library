@@ -27,7 +27,10 @@ end
 # to the test set below (a later top-level expression) without invokelatest.
 const _ASSET_REPO = normpath(joinpath(@__DIR__, "..", "..", ".."))
 const _ASSET_FIXTURE = mktempdir()
-const _ASSET_SANDBOX = Module(gensym(:AssetCheck))
+const _ASSET_PARENT = Module(gensym(:AssetCatalogFixture))
+Base.include(_ASSET_PARENT, joinpath(_ASSET_REPO, "src", "foundation", "assets", "asset_catalog.jl"))
+Core.eval(_ASSET_PARENT, :(module SpaceAGORACLI end))
+const _ASSET_SANDBOX = _ASSET_PARENT.SpaceAGORACLI
 Core.eval(_ASSET_SANDBOX, :(const REPO_ROOT = $_ASSET_FIXTURE))
 Base.include(_ASSET_SANDBOX, _asset_source(_ASSET_REPO))
 
@@ -80,6 +83,9 @@ Base.include(_ASSET_SANDBOX, _asset_source(_ASSET_REPO))
         end
 
         report = sandbox.check_assets(; repo_root=fixture, manifest_path=manifest)
+        service_report = _ASSET_PARENT.AssetCatalog.check_assets(; repo_root=fixture, manifest_path=manifest)
+        @test getproperty.(service_report.items, :state) == getproperty.(report.items, :state)
+        @test getproperty.(service_report.items, :reason) == getproperty.(report.items, :reason)
         states = Dict(item.name => item.state for item in report.items)
         reasons = Dict(item.name => item.reason for item in report.items)
         @test states["builtin_entry"] === :usable
@@ -233,7 +239,8 @@ end
 function _asset_entrypoint_fixture(fixture::String)
     asset_source = _asset_source(_ASSET_REPO)
     cli_dir = dirname(asset_source)
-    for source in (asset_source, joinpath(cli_dir, "spaceagora_cli.jl"),
+    catalog_source = joinpath(_ASSET_REPO, "src", "foundation", "assets", "asset_catalog.jl")
+    for source in (catalog_source, asset_source, joinpath(cli_dir, "spaceagora_cli.jl"),
                    joinpath(cli_dir, "main.jl"), joinpath(_ASSET_REPO, "scripts", "assets", "check_assets.jl"))
         destination = joinpath(fixture, relpath(source, _ASSET_REPO))
         mkpath(dirname(destination))
@@ -250,6 +257,7 @@ function _asset_entrypoint_fixture(fixture::String)
         function atmosphere_provenance end
         end
         end
+        include("foundation/assets/asset_catalog.jl")
         include($(repr(cli_include)))
         using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
         end

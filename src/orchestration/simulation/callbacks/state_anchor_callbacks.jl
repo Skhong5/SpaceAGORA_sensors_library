@@ -92,7 +92,7 @@ function get_state_anchor_callback(anchors::AbstractVector{StateAnchor}; verbose
     end
 
     function affect!(integrator)
-        engine = _simulation_engine_module()
+        engine = CallbackServices
         u = integrator.u
         p = integrator.p
         t = integrator.t
@@ -127,7 +127,7 @@ function get_state_anchor_callback(anchors::AbstractVector{StateAnchor}; verbose
     end
 
     function initialize(cb, u, t, integrator)
-        _simulation_engine_module()._is_gravity_backbone_state(u) && throw(ArgumentError(
+        CallbackServices._is_gravity_backbone_state(u) && throw(ArgumentError(
             "Scheduled state anchors are supported on the first-order solver paths only; the gravity-backbone split (SPACEAGORA_SOLVER_MODE=gravity_backbone_split) cannot be re-anchored."
         ))
         first_future = findfirst(tk -> tk > t + _STATE_ANCHOR_TIME_TOL_S, times)
@@ -194,7 +194,7 @@ function get_periapsis_pulse_callback(delta_v_mps::Real, passes; counter_pass_of
     function condition(u, t, integrator)
         p = integrator.p
         sat <= length(p.orbit_counter) && Int(p.orbit_counter[sat]) + Int(counter_pass_offset) == last_pulsed[] && return 1.0
-        engine = _simulation_engine_module()
+        engine = CallbackServices
         return dot(engine._state_position_ii(u, sat), engine._state_velocity_ii(u, sat)) + _PULSE_RDOTV_OFFSET
     end
 
@@ -211,7 +211,7 @@ function get_periapsis_pulse_callback(delta_v_mps::Real, passes; counter_pass_of
             return nothing
         end
         last_pulsed[] = pass
-        engine = _simulation_engine_module()
+        engine = CallbackServices
         pos = engine._state_position_ii(u, sat)
         vel = engine._state_velocity_ii(u, sat)
         kin = _stage_environment_kinematics(u.sc[sat], p, t)

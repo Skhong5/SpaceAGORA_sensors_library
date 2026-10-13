@@ -7,9 +7,11 @@ const SCAN_ROOTS = (
     joinpath(REPO_ROOT, "src", "models", "environment"),
     joinpath(REPO_ROOT, "src", "models", "gnc", "control"),
     joinpath(REPO_ROOT, "src", "models", "gnc", "guidance"),
-    joinpath(REPO_ROOT, "src", "models", "gnc", "shared"),
-    joinpath(REPO_ROOT, "src", "models", "gnc", "hypr"),
-    joinpath(REPO_ROOT, "src", "models", "gnc", "rrt"),
+    joinpath(REPO_ROOT, "src", "models", "gnc", "planning"),
+    joinpath(REPO_ROOT, "src", "interfaces", "analysis", "planning"),
+    joinpath(REPO_ROOT, "src", "orchestration", "simulation", "composition"),
+    joinpath(REPO_ROOT, "src", "orchestration", "simulation", "state"),
+    joinpath(REPO_ROOT, "src", "orchestration", "simulation", "config", "presets"),
     joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine"),
     joinpath(REPO_ROOT, "src", "orchestration", "simulation", "callbacks"),
     joinpath(REPO_ROOT, "src", "orchestration", "parallel")
@@ -23,10 +25,23 @@ const FORBIDDEN_REGEXES = (
     r"include\(joinpath\(@__DIR__,\s*\"\.\.\",\s*\"\.\.\",\s*\"\.\.\",",
 )
 
+# These two explicit composition seams cross physical groups while retaining
+# their established Julia ownership. Other files still obey the depth check.
+const CROSS_GROUP_COMPOSITION_OWNERS = Set([
+    joinpath("src", "orchestration", "simulation", "composition", "simulation_model.jl"),
+    joinpath("src", "models", "gnc", "planning", "rpo", "comparison", "reporting_compat.jl"),
+])
+
 const ALLOWED_RAW_INCLUDE_FILES = Set([
+    # Ordered model manifests and planning composition, not duplicate owners.
+    joinpath("src", "models", "environment", "gravity", "gravity_models.jl"),
+    joinpath("src", "models", "gnc", "planning", "adapters", "hypr", "robot_arm.jl"),
+    joinpath("src", "models", "gnc", "planning", "robot_arm", "planning.jl"),
+    joinpath("src", "models", "gnc", "planning", "rpo", "comparison", "planner_comparison.jl"),
+    joinpath("src", "models", "gnc", "planning", "rpo", "comparison", "reporting_compat.jl"),
     joinpath("packages", "SpaceAGORAHYPR", "src", "SpaceAGORAHYPR.jl"),
-    joinpath("src", "models", "gnc", "guidance", "rpo", "rpo_planner_module.jl"),
-    joinpath("src", "foundation", "core", "simulation_model.jl"),
+    joinpath("src", "models", "gnc", "planning", "rpo", "lifecycle.jl"),
+    joinpath("src", "orchestration", "simulation", "composition", "simulation_model.jl"),
     joinpath("src", "models", "environment", "physical_models.jl"),
     joinpath("src", "models", "environment", "ephemerides", "ephemerides_models.jl"),
     joinpath("src", "models", "environment", "ephemerides", "planets.jl"),
@@ -37,7 +52,7 @@ const ALLOWED_RAW_INCLUDE_FILES = Set([
     # Typed EDG module includes only its own numerical/decision source files.
     joinpath("src", "models", "gnc", "guidance", "aerobraking", "typed_edg", "algorithms.jl"),
     # Existing helper module now loads its shared and RRT source owners.
-    joinpath("src", "models", "gnc", "hypr", "hypr_utils.jl"),
+    joinpath("src", "models", "gnc", "planning", "adapters", "hypr", "hypr_utils.jl"),
     joinpath("src", "models", "gnc", "navigation", "navigation_hooks.jl"),
     joinpath("src", "orchestration", "simulation", "engine", "simulation_engine.jl"),
     joinpath("src", "orchestration", "simulation", "engine", "setup.jl"),
@@ -81,6 +96,7 @@ for root in SCAN_ROOTS
                 push!(violations, "$rel: contains forbidden legacy token '$token'.")
             end
             for rx in FORBIDDEN_REGEXES
+                rel in CROSS_GROUP_COMPOSITION_OWNERS && continue
                 occursin(rx, active_src) || continue
                 push!(violations, "$rel: contains forbidden cross-layer include chain pattern '$rx'.")
             end

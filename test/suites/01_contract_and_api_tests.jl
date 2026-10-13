@@ -1,6 +1,6 @@
 @testset "SimulationModel Export Contract" begin
     sandbox = EXPORT_IMPORT_SANDBOX
-    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "foundation", "core", "simulation_model.jl"))
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "orchestration", "simulation", "composition", "simulation_model.jl"))
     @test Core.eval(sandbox, :(isdefined(@__MODULE__, :RuntimeServices)))
     @test isdefined(sandbox, :SimulationLifecycle)
     @test sandbox.SimulationModel.ControlHooks.SimulationLifecycle === sandbox.SimulationLifecycle
@@ -66,7 +66,7 @@ end
     using .ConflictingExports
     """)
 
-    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "foundation", "core", "simulation_model.jl"))
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "orchestration", "simulation", "composition", "simulation_model.jl"))
     @test sandbox.SimulationLifecycle === lifecycle
     @test sandbox.SimulationModel.ControlHooks.SimulationLifecycle === lifecycle
     Core.eval(sandbox, :(const quat_mult = SimulationModel.quat_mult))
@@ -80,11 +80,11 @@ end
 @testset "SimulationModel Sibling-Module Topology Contract" begin
     spaceagora_src = read(joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"), String)
     runtime_services_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "runtime_services.jl"), String)
-    simulation_model_src = read(joinpath(REPO_ROOT, "src", "foundation", "core", "simulation_model.jl"), String)
+    simulation_model_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "composition", "simulation_model.jl"), String)
     reference_system_config_src = read(joinpath(REPO_ROOT, "src", "foundation", "core", "state", "reference_system_config.jl"), String)
     spacecraft_model_src = read(joinpath(REPO_ROOT, "src", "models", "vehicle", "spacecraft", "model.jl"), String)
     legacy_model_codes_src = read(joinpath(REPO_ROOT, "src", "foundation", "core", "types", "compat_model_codes.jl"), String)
-    runtime_types_src = read(joinpath(REPO_ROOT, "src", "foundation", "core", "types", "runtime_types.jl"), String)
+    runtime_types_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "state", "runtime_types.jl"), String)
     command_types_src = read(joinpath(REPO_ROOT, "src", "models", "gnc", "command_types.jl"), String)
     engine_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "simulation_engine.jl"), String)
     engine_public_api_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "public_api.jl"), String)
@@ -94,10 +94,10 @@ end
     legacy_nested_model_path = "SimulationEngine" * ".SimulationModel"
 
     @test occursin("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"runtime_services.jl\"))", spaceagora_src)
-    @test occursin("include(joinpath(@__DIR__, \"foundation\", \"core\", \"simulation_model.jl\"))", spaceagora_src)
+    @test occursin("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"composition\", \"simulation_model.jl\"))", spaceagora_src)
     @test findfirst("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"runtime_services.jl\"))", spaceagora_src) <
-        findfirst("include(joinpath(@__DIR__, \"foundation\", \"core\", \"simulation_model.jl\"))", spaceagora_src)
-    @test findfirst("include(joinpath(@__DIR__, \"foundation\", \"core\", \"simulation_model.jl\"))", spaceagora_src) <
+        findfirst("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"composition\", \"simulation_model.jl\"))", spaceagora_src)
+    @test findfirst("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"composition\", \"simulation_model.jl\"))", spaceagora_src) <
         findfirst("include(joinpath(@__DIR__, \"orchestration\", \"simulation\", \"engine\", \"simulation_engine.jl\"))", spaceagora_src)
     @test occursin("module RuntimeServices", runtime_services_src)
     @test occursin("const SPICE_LOCK = ReentrantLock()", runtime_services_src)
@@ -105,12 +105,12 @@ end
     @test !occursin("const SPICE_LOCK", simulation_model_src)
     @test !occursin("const GRAM_LOCK", simulation_model_src)
     @test occursin("runtime_services.jl", simulation_model_src)
-    @test occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"models\", \"vehicle\", \"spacecraft\", \"model.jl\"))", simulation_model_src)
+    @test occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"vehicle\", \"spacecraft\", \"model.jl\"))", simulation_model_src)
     @test occursin("@reexport using .SpacecraftModels", simulation_model_src)
     @test !occursin("@reexport using .PhysicalModel", simulation_model_src)
-    @test occursin("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"compat_model_codes.jl\"))", simulation_model_src)
-    @test findfirst("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"compat_model_codes.jl\"))", simulation_model_src) <
-        findfirst("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"runtime_types.jl\"))", simulation_model_src)
+    @test occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"foundation\", \"core\", \"types\", \"compat_model_codes.jl\"))", simulation_model_src)
+    @test findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"foundation\", \"core\", \"types\", \"compat_model_codes.jl\"))", simulation_model_src) <
+        findfirst("include(joinpath(@__DIR__, \"..\", \"state\", \"runtime_types.jl\"))", simulation_model_src)
     @test occursin("module ReferenceSystems", reference_system_config_src)
     @test !occursin("module ref_sys", reference_system_config_src)
     @test occursin("module SpacecraftModels", spacecraft_model_src)
@@ -119,9 +119,9 @@ end
     @test occursin("using ..LegacyModelCodes:", runtime_types_src)
     @test occursin("using ..SpacecraftModels: SpacecraftModel", runtime_types_src)
     @test !occursin("@enum Legacy", runtime_types_src)
-    @test occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"models\", \"gnc\", \"command_types.jl\"))", simulation_model_src)
-    @test findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"models\", \"gnc\", \"command_types.jl\"))", simulation_model_src) <
-        findfirst("include(joinpath(@__DIR__, \"..\", \"core\", \"types\", \"runtime_types.jl\"))", simulation_model_src)
+    @test occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"command_types.jl\"))", simulation_model_src)
+    @test findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"command_types.jl\"))", simulation_model_src) <
+        findfirst("include(joinpath(@__DIR__, \"..\", \"state\", \"runtime_types.jl\"))", simulation_model_src)
     @test occursin("module CommandTypes", command_types_src)
     @test occursin("using ..CommandTypes: PropulsiveManeuverCommand", runtime_types_src)
     @test occursin("maneuver_commands::Vector{PropulsiveManeuverCommand}", runtime_types_src)
@@ -524,7 +524,7 @@ end
     @test last(precompile_solution.t) > first(precompile_solution.t)
 
     @test occursin("using SpaceAGORA", clean_depot_smoke)
-    @test !occursin("include(joinpath(REPO_ROOT, \"src\", \"foundation\", \"core\", \"simulation_model.jl\"))", clean_depot_smoke)
+    @test !occursin("include(joinpath(REPO_ROOT, \"src\", \"orchestration\", \"simulation\", \"composition\", \"simulation_model.jl\"))", clean_depot_smoke)
     @test !occursin("include(joinpath(REPO_ROOT, \"src\", \"orchestration\", \"simulation\", \"engine\", \"simulation_engine.jl\"))", clean_depot_smoke)
 end
 
