@@ -24,18 +24,19 @@ implementing the interface.
 
 ## Existing ownership to preserve
 
-Paths in this table are relative to core. The existing `EDGServices` module is
+The ownership audit used the revision cited above; paths in the table follow
+the current source grouping and are relative to core. The existing `EDGServices` module is
 private: its name does not make it the versioned facade required by the standard.
 
 | Responsibility | Current owner | Boundary decision |
 |---|---|---|
-| Public EDG configuration, state and guidance model identities | `src/gnc/guidance/target_energy_bracketing.jl` | Retain the existing exported type identities and construction path in core; do not define duplicate types in a companion. |
-| Prediction, heat and structural constraints, targeting and command decisions | Six kernels included by `src/gnc/guidance/aerobraking/typed_edg/algorithms.jl` | Candidate domain implementation for later extraction, after scientific acceptance. |
-| Physical-state projections, atmosphere and frame queries | `src/gnc/guidance/aerobraking/typed_edg/services.jl` | Keep implementation in core; expose only reviewed value projections and query operations needed by the accepted algorithm. |
-| Model callbacks and panel actuation | `src/gnc/control/targeting_control.jl` and the guidance model wrapper | Core invokes the selected algorithm and applies its validated command to configured panel links. |
-| Fresh-run initialization and passage resets | `src/gnc/guidance/aerobraking/energy_depletion_lifecycle.jl`, `src/gnc/control/energy_depletion_lifecycle.jl` | Core schedules lifecycle events; one owner updates each shared EDG runtime. |
-| Integrator, physical heat integrals, event roots, atmosphere mask, solver tolerances and output saving | `src/simulation/engine/` and `src/simulation/callbacks/` | Remain core-owned. The adapter must not mutate their storage or install replacement phase handlers. |
-| Older E-EDG/T-EDG strategy and bridge paths | `src/gnc/guidance/aerobraking/e_edg/`, `t_edg/` and control bridge code | Outside the initial extraction scope; inventory their callers before changing any shared helper. |
+| Public EDG configuration, state and guidance model identities | `src/models/gnc/guidance/target_energy_bracketing.jl` | Retain the existing exported type identities and construction path in core; do not define duplicate types in a companion. |
+| Prediction, heat and structural constraints, targeting and command decisions | Six kernels included by `src/models/gnc/guidance/aerobraking/typed_edg/algorithms.jl` | Candidate domain implementation for later extraction, after scientific acceptance. |
+| Physical-state projections, atmosphere and frame queries | `src/models/gnc/guidance/aerobraking/typed_edg/services.jl` | Keep implementation in core; expose only reviewed value projections and query operations needed by the accepted algorithm. |
+| Model callbacks and panel actuation | `src/models/gnc/control/targeting_control.jl` and the guidance model wrapper | Core invokes the selected algorithm and applies its validated command to configured panel links. |
+| Fresh-run initialization and passage resets | `src/models/gnc/guidance/aerobraking/energy_depletion_lifecycle.jl`, `src/models/gnc/control/energy_depletion_lifecycle.jl` | Core schedules lifecycle events; one owner updates each shared EDG runtime. |
+| Integrator, physical heat integrals, event roots, atmosphere mask, solver tolerances and output saving | `src/orchestration/simulation/engine/` and `src/orchestration/simulation/callbacks/` | Remain core-owned. The adapter must not mutate their storage or install replacement phase handlers. |
+| Older E-EDG/T-EDG strategy and bridge paths | `src/models/gnc/guidance/aerobraking/e_edg/`, `t_edg/` and control bridge code | Outside the initial extraction scope; inventory their callers before changing any shared helper. |
 
 The present algorithm still consumes `ODEParams`, `u`, spacecraft objects and
 private core modules. Re-exporting that whole module would expose mutable engine

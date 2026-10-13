@@ -9,7 +9,7 @@ verification studies, benchmarks, and asset inspection.
 Shortest successful command:
 
 ```text
-julia --project=. src/cli/main.jl assets check
+julia --project=. src/interfaces/cli/main.jl assets check
 ```
 
 What to read next:
@@ -21,7 +21,7 @@ What to read next:
 SpaceAGORA exposes a package-owned CLI surface through:
 
 ```text
-julia --project=. src/cli/main.jl
+julia --project=. src/interfaces/cli/main.jl
 ```
 
 This Julia entrypoint is the cross-platform command path for Windows, Linux,
@@ -65,7 +65,7 @@ GRAMSuite not found in current path"; that is the prerequisite, not the CLI.
 ### Run an example
 
 ```text
-julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_run
+julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_run
 ```
 
 Supported options:
@@ -88,7 +88,7 @@ command.
 ### Run telemetry verification
 
 ```text
-julia --project=. src/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
+julia --project=. src/interfaces/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
 ```
 
 Profiles:
@@ -102,7 +102,7 @@ Profiles:
 The profile can also be set explicitly:
 
 ```text
-julia --project=. src/cli/main.jl telemetry --profile=full --output-dir=output/telemetry_full
+julia --project=. src/interfaces/cli/main.jl telemetry --profile=full --output-dir=output/telemetry_full
 ```
 
 Supported options:
@@ -129,8 +129,8 @@ telemetry_orbit_accuracy_errors.csv
 ### Run benchmark launchers
 
 ```text
-julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_cli
-julia --project=. src/cli/main.jl benchmark smart-parallel-ladder smoke --output-dir=output/smart_ladder_cli
+julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_cli
+julia --project=. src/interfaces/cli/main.jl benchmark smart-parallel-ladder smoke --output-dir=output/smart_ladder_cli
 ```
 
 Supported benchmark modes:
@@ -151,16 +151,16 @@ Any other arguments after the benchmark mode are passed through to the study
 launcher. For example:
 
 ```text
-julia --project=. src/cli/main.jl benchmark runtime-analysis quick --output-dir=output/perf_quick
-julia --project=. src/cli/main.jl benchmark smart-parallel-ladder full --passes=3 --output-dir=output/smart_ladder_full
+julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis quick --output-dir=output/perf_quick
+julia --project=. src/interfaces/cli/main.jl benchmark smart-parallel-ladder full --passes=3 --output-dir=output/smart_ladder_full
 ```
 
 ### Inspect assets
 
 ```text
-julia --project=. src/cli/main.jl assets check
-julia --project=. src/cli/main.jl assets manifest
-julia --project=. src/cli/main.jl assets setup-open
+julia --project=. src/interfaces/cli/main.jl assets check
+julia --project=. src/interfaces/cli/main.jl assets manifest
+julia --project=. src/interfaces/cli/main.jl assets setup-open
 ```
 
 ## Print-only mode
@@ -171,9 +171,9 @@ launcher, environment, and project without running the workload.
 Examples:
 
 ```text
-julia --project=. src/cli/main.jl run --example=AGORA_Earth_NoGRAM.jl --smoke --print-only
-julia --project=. src/cli/main.jl telemetry smoke --output-dir=output/telemetry_smoke --print-only
-julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke --print-only
+julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Earth_NoGRAM.jl --smoke --print-only
+julia --project=. src/interfaces/cli/main.jl telemetry smoke --output-dir=output/telemetry_smoke --print-only
+julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke --print-only
 ```
 
 ### Named surrogate data
@@ -181,9 +181,9 @@ julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=
 After [setting up the public Odyssey environment](tutorials/odyssey_surrogate.md):
 
 ```sh
-julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets list
-julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets fetch --preset=odyssey_p20_frozen_v1 --version=1.0.0
-julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets check --preset=odyssey_p20_frozen_v1 --version=1.0.0
+julia --project=examples/odyssey_surrogate_env src/interfaces/cli/main.jl assets list
+julia --project=examples/odyssey_surrogate_env src/interfaces/cli/main.jl assets fetch --preset=odyssey_p20_frozen_v1 --version=1.0.0
+julia --project=examples/odyssey_surrogate_env src/interfaces/cli/main.jl assets check --preset=odyssey_p20_frozen_v1 --version=1.0.0
 ```
 
 `list` reads the catalog without downloading. `fetch` downloads only the selected

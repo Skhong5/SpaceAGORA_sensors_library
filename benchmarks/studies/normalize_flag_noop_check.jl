@@ -3,8 +3,8 @@
 # from an earlier nondimensional-units era of the engine) still changes
 # propagation accuracy or runtime in the current typed `run_simulation` path.
 #
-# Source inspection (src/simulation/engine/execution.jl,
-# src/simulation/engine/reporting.jl) shows `normalize=true` either throws
+# Source inspection (src/orchestration/simulation/engine/execution.jl,
+# src/orchestration/simulation/engine/reporting.jl) shows `normalize=true` either throws
 # an ArgumentError, or — with SPACEAGORA_ALLOW_TYPED_NORMALIZE=1 set — just
 # prints a transition warning and then propagates in SI units exactly as
 # `normalize=false` does. There is no surviving code path that actually

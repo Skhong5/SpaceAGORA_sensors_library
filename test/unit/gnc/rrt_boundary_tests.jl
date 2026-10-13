@@ -4,11 +4,11 @@ using Test, Random, LinearAlgebra, StaticArrays
 module StandaloneRRT
     using Random, LinearAlgebra, StaticArrays
     const ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
-    include(joinpath(ROOT, "src/gnc/shared/path_geometry.jl"))
-    include(joinpath(ROOT, "src/gnc/shared/rpo/sampling_settings.jl"))
-    include(joinpath(ROOT, "src/gnc/shared/rpo/path_sampling.jl"))
-    include(joinpath(ROOT, "src/gnc/rrt/tree_operations.jl"))
-    include(joinpath(ROOT, "src/gnc/rrt/rrt_connect.jl"))
+    include(joinpath(ROOT, "src/models/gnc/shared/path_geometry.jl"))
+    include(joinpath(ROOT, "src/models/gnc/shared/rpo/sampling_settings.jl"))
+    include(joinpath(ROOT, "src/models/gnc/shared/rpo/path_sampling.jl"))
+    include(joinpath(ROOT, "src/models/gnc/rrt/tree_operations.jl"))
+    include(joinpath(ROOT, "src/models/gnc/rrt/rrt_connect.jl"))
 end
 
 @testset "RRT executes with explicit policies and no HYPR" begin
@@ -75,7 +75,7 @@ end
 
 @testset "RRT boundary rejects definition-time HYPR coupling" begin
     root = StandaloneRRT.ROOT
-    path = joinpath(root, "src/gnc/rrt/rrt_connect.jl")
+    path = joinpath(root, "src/models/gnc/rrt/rrt_connect.jl")
     source = read(path, String)
     function load_rrt(text)
         target = Module(gensym(:IsolatedRRT))

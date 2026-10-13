@@ -260,7 +260,7 @@ check.
 Use the built-in asset report:
 
 ```text
-julia --project=. src/cli/main.jl assets check
+julia --project=. src/interfaces/cli/main.jl assets check
 ```
 
 For a GRAM-ready machine, the report should show these as available:

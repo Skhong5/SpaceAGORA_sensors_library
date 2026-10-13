@@ -7,7 +7,7 @@
 # and what the next-largest remaining cost is.
 #
 # Root cause found in that re-profile: `auto_thread_min_budget(:density_callback)`
-# (src/parallel/policy/env_config.jl) hardcodes a 16-thread minimum before
+# (src/orchestration/parallel/policy/env_config.jl) hardcodes a 16-thread minimum before
 # SPACEAGORA_DENSITY_CALLBACK_PARALLEL=auto will ever enable threading, so at
 # --threads=8 the entire per-satellite GRAM atmosphere sample loop
 # (_prefill_environment_samples!, dynamics_rhs.jl) runs serially on the calling

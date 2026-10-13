@@ -25,7 +25,7 @@ function source_function(path, name)
     return only(definitions)
 end
 
-const TARGETING = source_function("src/gnc/guidance/aerobraking/t_edg/eom_predictor.jl", :asim_ctrl_targeting_plot)
+const TARGETING = source_function("src/models/gnc/guidance/aerobraking/t_edg/eom_predictor.jl", :asim_ctrl_targeting_plot)
 const TARGETING_BODY = filter(x -> !(x isa LineNumberNode), TARGETING.args[2].args)
 const TAIL_START = only(findall(x -> x isa Expr && x.head === :(=) && x.args[1] === :v_ii_mag, TARGETING_BODY))
 # Execute the original speed extraction, switching formula and two append calls.
@@ -39,7 +39,7 @@ end)
 Core.eval(@__MODULE__, Expr(:function, :(targeting_time_span(time_0)),
     Expr(:block, TIME_INITIALIZATION, :(return (initial_time, final_time)))))
 
-const CONSTRAINT = source_function("src/gnc/control/aerobraking/constraint_tracking.jl", :asim_ctrl_plot)
+const CONSTRAINT = source_function("src/models/gnc/control/aerobraking/constraint_tracking.jl", :asim_ctrl_plot)
 const CONSTRAINT_BODY = filter(x -> !(x isa LineNumberNode), CONSTRAINT.args[2].args)
 function original_push(field)
     return only(filter(CONSTRAINT_BODY) do x

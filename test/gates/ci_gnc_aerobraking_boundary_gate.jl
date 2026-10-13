@@ -2,24 +2,24 @@ include(joinpath(@__DIR__, "..", "contracts", "edg_ownership_checks.jl"))
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
 required_files = (
-    joinpath("src", "gnc", "guidance", "aerobraking", "interfaces.jl"),
-    joinpath("src", "gnc", "guidance", "aerobraking", "dispatcher.jl"),
-    joinpath("src", "gnc", "guidance", "aerobraking", "e_edg", "e_edg_strategy.jl"),
-    joinpath("src", "gnc", "guidance", "aerobraking", "t_edg", "t_edg_strategy.jl"),
-    joinpath("src", "gnc", "control", "aerobraking", "tracking_executor.jl"),
-    joinpath("src", "mission", "operations", "aerobraking_policy", "policy_types.jl"),
+    joinpath("src", "models", "gnc", "guidance", "aerobraking", "interfaces.jl"),
+    joinpath("src", "models", "gnc", "guidance", "aerobraking", "dispatcher.jl"),
+    joinpath("src", "models", "gnc", "guidance", "aerobraking", "e_edg", "e_edg_strategy.jl"),
+    joinpath("src", "models", "gnc", "guidance", "aerobraking", "t_edg", "t_edg_strategy.jl"),
+    joinpath("src", "models", "gnc", "control", "aerobraking", "tracking_executor.jl"),
+    joinpath("src", "orchestration", "mission", "operations", "aerobraking_policy", "policy_types.jl"),
 )
 for rel in required_files
     isfile(joinpath(REPO_ROOT, rel)) || error("Missing aerobraking boundary file: $rel")
 end
 
-isdir(joinpath(REPO_ROOT, "src", "gnc", "guidance", "targeting_control")) &&
+isdir(joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "targeting_control")) &&
     error("Retired guidance targeting_control path still exists.")
 
 violations = String[]
 
 # Guidance must not include control source files.
-guidance_root = joinpath(REPO_ROOT, "src", "gnc", "guidance", "aerobraking")
+guidance_root = joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "aerobraking")
 for (root, _, files) in walkdir(guidance_root)
     for file in files
         endswith(file, ".jl") || continue
@@ -32,11 +32,11 @@ end
 
 for root_rel in (
     joinpath("packages", "SpaceAGORAHYPR", "src"),
-    joinpath("src", "gnc", "guidance"),
-    joinpath("src", "gnc", "shared"),
-    joinpath("src", "gnc", "hypr"),
-    joinpath("src", "gnc", "rrt"),
-    joinpath("src", "gnc", "control"),
+    joinpath("src", "models", "gnc", "guidance"),
+    joinpath("src", "models", "gnc", "shared"),
+    joinpath("src", "models", "gnc", "hypr"),
+    joinpath("src", "models", "gnc", "rrt"),
+    joinpath("src", "models", "gnc", "control"),
 )
     root = joinpath(REPO_ROOT, root_rel)
     for (dir, _, files) in walkdir(root)
@@ -52,9 +52,9 @@ end
 
 # Control must not own strategy/planning solver definitions.
 for rel in (
-    joinpath("src", "gnc", "control", "aerobraking", "tracking_executor.jl"),
-    joinpath("src", "gnc", "control", "aerobraking", "control_commands.jl"),
-    joinpath("src", "gnc", "control", "aerobraking", "constraint_tracking.jl"),
+    joinpath("src", "models", "gnc", "control", "aerobraking", "tracking_executor.jl"),
+    joinpath("src", "models", "gnc", "control", "aerobraking", "control_commands.jl"),
+    joinpath("src", "models", "gnc", "control", "aerobraking", "constraint_tracking.jl"),
 )
     src = read(joinpath(REPO_ROOT, rel), String)
     for forbidden_fn in (

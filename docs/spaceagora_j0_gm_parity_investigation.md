@@ -43,7 +43,7 @@ The GMAT-reference values for Earth/Venus/Moon are exactly SpaceAGORA's own bund
 (`BODY399_GM=398600.436`, `BODY299_GM=324858.599`, `BODY301_GM=4902.799`) — i.e.
 SpaceAGORA's existing `planet.μ` already matched the GMAT reference almost exactly for
 those three bodies. **Mars was the sole outlier**: SpaceAGORA forces
-`MARS_MU_M3S2 = 42828.372854` (`src/environment/ephemerides/planets.jl`), a value that
+`MARS_MU_M3S2 = 42828.372854` (`src/models/environment/ephemerides/planets.jl`), a value that
 matches the *STK* reference almost to machine precision but differs from the GMAT
 reference by ~0.06 km³/s² — small in relative terms, but enough to dominate the J0
 position-error budget over a 1,000,000 s / ~150-orbit propagation.
@@ -65,7 +65,7 @@ target specifically:
 
 - `TimeAlignedScenarioConfig`/`OrbitEventsScenarioConfig` gained an optional
   `gravity_harmonics_gm_override_m3s2` field
-  (`src/analysis/verification/telemetry_verification/types.jl`, wired through
+  (`src/interfaces/analysis/verification/telemetry_verification/types.jl`, wired through
   `manifest_parsing.jl`).
 - `_scenario_dynamic_effectors` (`scenario_builders.jl`) builds a degree-0
   `GravitationalHarmonicsModel` with that GM explicitly passed as `gm_m3s2` whenever the

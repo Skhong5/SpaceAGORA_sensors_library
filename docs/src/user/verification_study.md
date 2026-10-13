@@ -43,7 +43,7 @@ when threshold failures should stop the run.
 The packaged CLI route is:
 
 ```text
-julia --project=. src/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
+julia --project=. src/interfaces/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
 ```
 
 Plot generation is off by default in the CLI path so the command remains usable

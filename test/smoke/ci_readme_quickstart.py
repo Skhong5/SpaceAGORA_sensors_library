@@ -101,7 +101,7 @@ def run_smoke(julia="julia", *, repo_root=REPO_ROOT, timeout=1200):
     repo_root = Path(repo_root).resolve()
     # Absolute paths preserve the README command while isolating cwd/output.
     command = [julia, "--startup-file=no", "--compiled-modules=existing",
-               f"--project={repo_root}", str(repo_root / "src/cli/main.jl"),
+               f"--project={repo_root}", str(repo_root / "src/interfaces/cli/main.jl"),
                "run", f"--example={EXAMPLE}", "--smoke"]
     env = os.environ.copy()
     # Let the documented --smoke switch enable smoke mode and CSV saving itself.

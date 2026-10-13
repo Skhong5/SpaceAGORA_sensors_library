@@ -81,7 +81,7 @@ AbstractThermalModel          (abstract_types.jl)
 ### Module Layout
 
 ```
-src/vehicle/thermal/
+src/models/vehicle/thermal/
     thermal_models_module.jl   — VehicleThermalModels module; exports MaxwellianHeat, getHeatRate
     thermal_models.jl          — struct definition and method implementations
 ```

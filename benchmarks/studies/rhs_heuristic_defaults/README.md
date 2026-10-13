@@ -7,7 +7,7 @@ sweep would consider, size by size, on one machine at one thread budget.
 
 The pinned parallel routes (`R1a`/`R2`/`R3` in
 `benchmarks/studies/paper_parallelization_benchmarks`) run whatever
-`_rhs_execution_plan_uncached` (`src/simulation/engine/setup.jl`) decides; the
+`_rhs_execution_plan_uncached` (`src/orchestration/simulation/engine/setup.jl`) decides; the
 adaptive routes (`R6`/`R7`) run whatever the pre-solve calibration sweep
 measured. On the archived TRX50 P1 ladder the two answers differ by up to ten
 times in the middle of the constellation-size range, so what needs fixing is

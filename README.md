@@ -11,7 +11,7 @@ user-facing surfaces are:
 
 Cross-platform command conventions used below:
 
-- `julia --project=. src/cli/main.jl ...` works on Windows, Linux, and macOS
+- `julia --project=. src/interfaces/cli/main.jl ...` works on Windows, Linux, and macOS
 - `julia --project=. scripts/ensure_gram_native.jl ...` works on Windows,
   Linux, and macOS
 - `./bin/spaceagora` and `./scripts/ensure_gram_native.sh` remain available as
@@ -49,8 +49,8 @@ need GRAM or SPICE to run the first quickstart example, and there is no bootstra
 Helpful first checks:
 
 ```text
-julia --project=. src/cli/main.jl assets check
-julia --project=. src/cli/main.jl assets setup-open
+julia --project=. src/interfaces/cli/main.jl assets check
+julia --project=. src/interfaces/cli/main.jl assets setup-open
 ```
 
 `assets check` reports whether each local asset root is usable, missing, empty or still a Git LFS pointer, and exits with status 1 when a required entry is not usable.
@@ -151,7 +151,7 @@ julia --project=. examples/AGORA_Basic_Quickstart.jl
 Or through the CLI:
 
 ```text
-julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl
+julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl
 ```
 
 That example is intentionally simple:
@@ -165,7 +165,7 @@ That example is intentionally simple:
 If you only want to verify the end-to-end path with a short run, use:
 
 ```text
-julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --smoke
+julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --smoke
 ```
 
 ## Basic Example
@@ -216,7 +216,7 @@ Before running it, verify:
 Useful commands:
 
 ```text
-julia --project=. src/cli/main.jl assets check
+julia --project=. src/interfaces/cli/main.jl assets check
 julia --project=. scripts/ensure_gram_native.jl
 julia --project=. examples/AGORA_Basic_GRAMEarth.jl
 ```
@@ -232,14 +232,30 @@ add mission-specific guidance, maneuvers, and higher-fidelity dynamics.
 ## CLI and docs
 
 - Docs site: [space-falcon-lab.github.io/SpaceAGORA.jl](https://space-falcon-lab.github.io/SpaceAGORA.jl)
-- Cross-platform CLI entrypoint: `julia --project=. src/cli/main.jl`
+- Cross-platform CLI entrypoint: `julia --project=. src/interfaces/cli/main.jl`
 - Linux/macOS wrapper: `./bin/spaceagora`
 - Windows wrapper: `bin\spaceagora.bat`
-- Run an example: `julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl`
-- Asset check: `julia --project=. src/cli/main.jl assets check`
-- Verification study: `julia --project=. src/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1`
+- Run an example: `julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl`
+- Asset check: `julia --project=. src/interfaces/cli/main.jl assets check`
+- Verification study: `julia --project=. src/interfaces/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1`
 
 ## For contributors
+
+Source files are organized into four responsibility groups:
+
+| Group | Contents |
+| --- | --- |
+| `src/interfaces/` | CLI entry points, configuration and output I/O, analysis and visualization support. |
+| `src/orchestration/` | Simulation configuration and execution, mission operations and parallel routing. |
+| `src/models/` | Vehicle construction, environment models, dynamics, guidance, navigation and control. |
+| `src/foundation/` | Shared types, state, numerical and frame utilities, model composition and asset lookup. |
+
+These folders organize existing code. They do not introduce new Julia modules
+or change the public API. `src/SpaceAGORA.jl` remains the package entry point,
+with its package-level `src/precompile_workload.jl` helper alongside it.
+Julia package extensions remain in root `ext/`. See the
+[source directory guide](src/README.md) for the folder tree and composition
+loader, or the architecture page below to follow a simulation through the code.
 
 - User docs live in `docs/src/` and are built with `julia --project=. docs/make.jl`
 - Generated API pages come from `docs/public_api_symbols.jl`

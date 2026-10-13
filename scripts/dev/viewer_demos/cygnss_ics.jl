@@ -46,7 +46,7 @@ const CYGNSS_EPOCH_UTC = "2025-06-06T00:00:00Z"
 
 """
 Earth's gravitational parameter, m^3/s^2. DE421 value, the same one
-`SpaceAGORA`'s `Earth()` planet carries (`src/environment/ephemerides/planets.jl`),
+`SpaceAGORA`'s `Earth()` planet carries (`src/models/environment/ephemerides/planets.jl`),
 so elements computed here agree with elements computed from a simulation state.
 Used only for the sanity-check elements, never for the states themselves.
 """
