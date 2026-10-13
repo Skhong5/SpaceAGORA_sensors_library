@@ -96,4 +96,3 @@ end
     use_threads = policy.use_threads && allotment > 1
     return (use_threads=use_threads, allotment=use_threads ? allotment : 1, mode=mode)
 end
-

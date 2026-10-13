@@ -22,4 +22,3 @@ end
     )
     return gravity_ii_mag_spherical * pos_ii_hat + 3 / 2 * J2 * μ * Rp_m^2 / r^4 * j2_term
 end
-

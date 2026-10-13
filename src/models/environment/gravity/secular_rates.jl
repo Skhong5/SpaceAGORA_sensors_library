@@ -29,4 +29,3 @@ periapsis drift `ωdot` in rad/s.
     ωdot = 0.75 * n * scale * (5.0 * cos(i)^2 - 1.0)
     return Ωdot, ωdot
 end
-

@@ -262,4 +262,3 @@ end
     model.include_central || return noncentral
     return encke_point_mass_difference(model.gm_m3s2, x_base.pos_ii, ρ) + noncentral
 end
-

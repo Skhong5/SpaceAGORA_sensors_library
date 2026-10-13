@@ -21,4 +21,3 @@ end
     # Rp_m::Float64 = 6378137.0    # Equatorial radius of Earth in meters
     gravity_gradient::Bool = false
 end
-

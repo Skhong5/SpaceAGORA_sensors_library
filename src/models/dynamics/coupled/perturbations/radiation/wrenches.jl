@@ -486,4 +486,3 @@ end
     p3 = cache.positions_j2000_m[idx + 2]
     return _interp_vec3_catmull_rom(p0, p1, p2, p3, tau)
 end
-

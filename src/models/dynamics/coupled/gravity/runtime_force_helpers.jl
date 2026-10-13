@@ -24,4 +24,3 @@ end
     gravity_pp = _inverse_squared_j2_gravity_accel(pos_pp, planet)
     return mass * (l_pi' * gravity_pp)
 end
-

@@ -713,4 +713,3 @@ function _harmonics_lpi_at!(
         shared.harmonics_lpi[]
     end
 end
-

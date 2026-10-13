@@ -21,4 +21,3 @@ function gravity_gradient(J::SMatrix{3,3,Float64}, rVec::SVector{3,Float64}, μ:
     r_hat = rVec / r
     return 3*μ/r^3 * cross(r_hat, J * r_hat)
 end
-

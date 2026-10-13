@@ -328,4 +328,3 @@ end
     torque_body = calculate_magnetic_torque(m_body, B_body)
     return SVector{3, Float64}(0.0, 0.0, 0.0), torque_body
 end
-

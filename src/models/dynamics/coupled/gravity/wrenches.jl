@@ -162,4 +162,3 @@ end
     # J2 is a small term (1e-3 of the point mass), so its plain difference is accurate enough.
     return point_mass + pb.l_pi' * (_j2_only_gravity_accel(pf.pos_pp, planet) - _j2_only_gravity_accel(pb.pos_pp, planet))
 end
-

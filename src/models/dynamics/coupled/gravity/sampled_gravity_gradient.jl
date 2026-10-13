@@ -45,4 +45,3 @@ end
     r_body = rot(x.q_ib) * x.pos_ii
     return gravity_gradient(inertia_tensor, r_body, planet.μ)
 end
-

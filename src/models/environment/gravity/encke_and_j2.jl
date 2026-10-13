@@ -30,4 +30,3 @@ end
     )
     return 3 / 2 * J2 * μ * Rp_m^2 / r^4 * j2_term
 end
-

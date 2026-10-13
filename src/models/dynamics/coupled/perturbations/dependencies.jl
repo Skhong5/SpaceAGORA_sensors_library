@@ -10,4 +10,3 @@ using ...QuaternionMath
 # Define delta function
 δ(x,y) = ==(x,y)
 δ(x) = δ(x,0)
-

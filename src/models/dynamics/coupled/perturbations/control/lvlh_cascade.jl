@@ -174,4 +174,3 @@ end
     torque = _lvlh_cascade_torque(model, x.pos_ii, x.vel_ii, x.q_ib, x.ω_body)
     return SVector{3, Float64}(0.0, 0.0, 0.0), torque
 end
-
