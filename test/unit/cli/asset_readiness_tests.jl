@@ -25,18 +25,21 @@ end
 
 # The sandbox is built at file top level so the methods it defines are visible
 # to the test set below (a later top-level expression) without invokelatest.
+const _ASSET_REPO = normpath(joinpath(@__DIR__, "..", "..", ".."))
 const _ASSET_FIXTURE = mktempdir()
 const _ASSET_SANDBOX = Module(gensym(:AssetCheck))
 Core.eval(_ASSET_SANDBOX, :(const REPO_ROOT = $_ASSET_FIXTURE))
-Base.include(_ASSET_SANDBOX, _asset_source(normpath(joinpath(@__DIR__, "..", "..", ".."))))
+Base.include(_ASSET_SANDBOX, _asset_source(_ASSET_REPO))
 
 @testset "Asset readiness states" begin
     fixture = _ASSET_FIXTURE
     sandbox = _ASSET_SANDBOX
     try
+        mkpath(joinpath(fixture, ".git"))
         # Directory entries.
         mkpath(joinpath(fixture, "empty_dir"))
         _write(joinpath(fixture, "dotfile_dir", ".DS_Store"), "x")
+        _write(joinpath(fixture, "hidden_dir", ".cache", "payload.bin"), "ignored")
         _write(joinpath(fixture, "pointer_dir", "a.jls"), _LFS_POINTER)
         _write(joinpath(fixture, "pointer_dir", "b.jls"), _LFS_POINTER)
         _write(joinpath(fixture, "mixed_dir", "a.jls"), _LFS_POINTER)
@@ -45,6 +48,7 @@ Base.include(_ASSET_SANDBOX, _asset_source(normpath(joinpath(@__DIR__, "..", "..
         _write(joinpath(fixture, "zero_dir", "b.csv"), "")
         _write(joinpath(fixture, "usable_dir", "nested", "truth.csv"), "t,x\n0,1\n")
         _write(joinpath(fixture, "usable_dir", ".hidden"), "ignored")
+        _write(joinpath(fixture, "usable_dir", ".cache", "pointer.jls"), _LFS_POINTER)
         # File entries.
         _write(joinpath(fixture, "empty.feather"), "")
         _write(joinpath(fixture, "pointer.jls"), _LFS_POINTER)
@@ -62,6 +66,7 @@ Base.include(_ASSET_SANDBOX, _asset_source(normpath(joinpath(@__DIR__, "..", "..
                 entry("missing_dir", "directory", "missing_dir"; required=true),
                 entry("empty_dir", "directory", "empty_dir"),
                 entry("dotfile_dir", "directory", "dotfile_dir"),
+                entry("hidden_dir", "directory", "hidden_dir"),
                 entry("pointer_dir", "directory", "pointer_dir"),
                 entry("mixed_dir", "directory", "mixed_dir"),
                 entry("zero_dir", "directory", "zero_dir"),
@@ -81,6 +86,7 @@ Base.include(_ASSET_SANDBOX, _asset_source(normpath(joinpath(@__DIR__, "..", "..
         @test states["missing_dir"] === :missing
         @test states["empty_dir"] === :empty
         @test states["dotfile_dir"] === :empty
+        @test states["hidden_dir"] === :empty
         @test states["pointer_dir"] === :pointer_only
         @test states["mixed_dir"] === :pointer_only
         @test states["zero_dir"] === :invalid
@@ -98,8 +104,8 @@ Base.include(_ASSET_SANDBOX, _asset_source(normpath(joinpath(@__DIR__, "..", "..
         end
         @test occursin("2 of 2 files are undownloaded Git LFS pointers", reasons["pointer_dir"])
         @test occursin("1 of 2 files are undownloaded Git LFS pointers alongside 1 downloaded payload file", reasons["mixed_dir"])
-        @test occursin("git lfs pull --include=\"pointer.jls\"", reasons["pointer_file"])
-        @test occursin("git lfs pull --include=\"pointer_dir/*\"", reasons["pointer_dir"])
+        @test occursin("git -C '$(realpath(fixture))' lfs pull --include='pointer.jls'", reasons["pointer_file"])
+        @test occursin("git -C '$(realpath(fixture))' lfs pull --include='pointer_dir/*'", reasons["pointer_dir"])
         @test occursin("all 2 files are empty", reasons["zero_dir"])
 
         # Rendering names the state, adds the reason and ends with a summary.
@@ -110,7 +116,7 @@ Base.include(_ASSET_SANDBOX, _asset_source(normpath(joinpath(@__DIR__, "..", "..
         @test occursin("- usable_dir: usable", text)
         @test !occursin(": available", text)
         @test occursin("  reason: the directory contains no files", text)
-        @test occursin("summary: 4 of 13 entries usable; 1 required entries not usable", text)
+        @test occursin("summary: 4 of 14 entries usable; 1 required entries not usable", text)
 
         # Exit status follows required entries only.
         @test sandbox.asset_check_exit_status(report) == 1
@@ -131,12 +137,181 @@ Base.include(_ASSET_SANDBOX, _asset_source(normpath(joinpath(@__DIR__, "..", "..
         end
         @test_throws ArgumentError sandbox.check_assets(; repo_root=fixture, manifest_path=manifest)
         @test_throws ArgumentError sandbox._asset_item("x", "test", fixture; state=:present, required=false)
+        @test_throws ArgumentError sandbox.AssetCheckItem("x", "test", fixture, false, true, "", :present, "")
+        @test_throws ArgumentError sandbox.AssetCheckItem(name="x", scope="test", path=fixture, available=true, required=true, state=:missing)
 
         # Keyword construction without a state still works for existing callers.
         legacy = sandbox.AssetCheckItem(name="x", scope="test", path=fixture, available=false, required=true)
         @test legacy.state === :missing
         @test isempty(legacy.reason)
+        for available in (false, true)
+            positional = sandbox.AssetCheckItem("old", "test", fixture, available, true, "legacy detail")
+            @test positional.available == available
+            @test positional.state === (available ? :usable : :missing)
+            @test positional.required
+            @test positional.detail == "legacy detail"
+            @test isempty(positional.reason)
+        end
+
+        # A nested checkout/submodule owns its pointers, even when the command
+        # inspects the parent repository. Its .git marker is a file, as it is in
+        # linked worktrees; the apostrophe also exercises shell argument quoting.
+        vendor = joinpath(fixture, "vendor checkout's")
+        _write(joinpath(vendor, ".git"), "gitdir: ../metadata\n")
+        _write(joinpath(vendor, "grids", "pointer.jls"), _LFS_POINTER)
+        open(manifest, "w") do io
+            TOML.print(io, Dict("asset" => [entry("vendor", "directory", "vendor checkout's/grids")]))
+        end
+        vendor_item = only(sandbox.check_assets(; repo_root=fixture, manifest_path=manifest).items)
+        @test vendor_item.state === :pointer_only
+        vendor_command = match(r"`([^`]+)`", vendor_item.reason)
+        @test vendor_command !== nothing
+        if vendor_command !== nothing && !Sys.iswindows()
+            # Parse, but never execute, the suggested git command. Positional
+            # shell arguments establish the exact checkout and include pattern.
+            parse_command = "set -- " * vendor_command.captures[1] * "; printf '%s\\n' \"\$@\""
+            arguments = readlines(Cmd(Cmd(["/bin/sh", "-c", parse_command]); dir=dirname(fixture)))
+            @test arguments == ["git", "-C", realpath(vendor), "lfs", "pull", "--include=grids/*"]
+        end
+
+        mktempdir() do detached
+            _write(joinpath(detached, "pointer.jls"), _LFS_POINTER)
+            detached_manifest = joinpath(detached, "assets_manifest.toml")
+            open(detached_manifest, "w") do io
+                TOML.print(io, Dict("asset" => [entry("detached", "file", "pointer.jls")]))
+            end
+            detached_item = only(sandbox.check_assets(; repo_root=detached, manifest_path=detached_manifest).items)
+            @test detached_item.state === :pointer_only
+            @test occursin("no Git checkout found", detached_item.reason)
+            @test !occursin("git -C", detached_item.reason)
+        end
+
+        # File symlinks classify their target; nested directory symlinks do
+        # not add payloads or pointers from outside the inspected directory.
+        if !Sys.iswindows()
+            links = joinpath(fixture, "links")
+            mkpath(links)
+            symlink(joinpath(fixture, "usable.stl"), joinpath(links, "payload.stl"))
+            symlink(joinpath(fixture, "pointer.jls"), joinpath(links, "pointer.jls"))
+            symlink(joinpath(vendor, "grids", "pointer.jls"), joinpath(links, "vendor_pointer.jls"))
+            symlink(joinpath(fixture, "absent"), joinpath(links, "broken"))
+            mkpath(joinpath(links, "only_directory_link"))
+            symlink(joinpath(fixture, "usable_dir"), joinpath(links, "only_directory_link", "payloads"))
+            symlink(joinpath(fixture, "pointer_dir"), joinpath(fixture, "usable_dir", "pointer_link"))
+            open(manifest, "w") do io
+                TOML.print(io, Dict("asset" => [
+                    entry("linked_payload", "file", "links/payload.stl"),
+                    entry("linked_pointer", "file", "links/pointer.jls"),
+                    entry("broken_link", "file", "links/broken"),
+                    entry("directory_link_only", "directory", "links/only_directory_link"),
+                    entry("usable_with_directory_link", "directory", "usable_dir"),
+                    entry("cross_checkout_links", "directory", "links"),
+                ]))
+            end
+            linked = Dict(item.name => item for item in sandbox.check_assets(; repo_root=fixture, manifest_path=manifest).items)
+            @test linked["linked_payload"].state === :usable
+            @test linked["linked_pointer"].state === :pointer_only
+            @test linked["broken_link"].state === :missing
+            @test linked["directory_link_only"].state === :empty
+            @test linked["usable_with_directory_link"].state === :usable
+            @test linked["cross_checkout_links"].state === :pointer_only
+            linked_commands = [m.captures[1] for m in eachmatch(r"`([^`]+)`", linked["cross_checkout_links"].reason)]
+            @test length(linked_commands) == 2
+            linked_arguments = [readlines(Cmd(["/bin/sh", "-c", "set -- " * command * "; printf '%s\\n' \"\$@\""]))
+                                for command in linked_commands]
+            @test ["git", "-C", realpath(fixture), "lfs", "pull", "--include=pointer.jls"] in linked_arguments
+            @test ["git", "-C", realpath(vendor), "lfs", "pull", "--include=grids/pointer.jls"] in linked_arguments
+        end
     finally
         rm(fixture; recursive=true, force=true)
+    end
+end
+
+# Only the unrelated environment-model imports are stubbed. The asset logic,
+# CLI dispatcher, and both process entrypoints below are unchanged production
+# files. Preserving their relative locations also exercises repo-root discovery.
+function _asset_entrypoint_fixture(fixture::String)
+    asset_source = _asset_source(_ASSET_REPO)
+    cli_dir = dirname(asset_source)
+    for source in (asset_source, joinpath(cli_dir, "spaceagora_cli.jl"),
+                   joinpath(cli_dir, "main.jl"), joinpath(_ASSET_REPO, "scripts", "assets", "check_assets.jl"))
+        destination = joinpath(fixture, relpath(source, _ASSET_REPO))
+        mkpath(dirname(destination))
+        cp(source, destination)
+    end
+    cli_include = joinpath(relpath(cli_dir, joinpath(_ASSET_REPO, "src")), "spaceagora_cli.jl")
+    _write(joinpath(fixture, "src", "SpaceAGORA.jl"), """
+        module SpaceAGORA
+        module SimulationModel
+        module EnvironmentModels
+        function available_surrogate_presets end
+        function resolve_surrogate_preset end
+        function surrogate_preset_model end
+        function atmosphere_provenance end
+        end
+        end
+        include($(repr(cli_include)))
+        using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
+        end
+        """)
+    open(joinpath(fixture, "Project.toml"), "w") do io
+        TOML.print(io, Dict("name" => "SpaceAGORA",
+                           "uuid" => "afbfb69f-5c0b-4832-b760-43725dff8540",
+                           "deps" => Dict("TOML" => string(Base.PkgId(TOML).uuid))))
+    end
+    return joinpath(fixture, relpath(joinpath(cli_dir, "main.jl"), _ASSET_REPO)),
+           joinpath(fixture, "scripts", "assets", "check_assets.jl")
+end
+
+@testset "Asset check process exit status" begin
+    mktempdir() do fixture
+        cli_main, asset_script = _asset_entrypoint_fixture(fixture)
+        _write(joinpath(fixture, "pointer.jls"), _LFS_POINTER)
+        _write(joinpath(fixture, "invalid.bin"), "")
+        _write(joinpath(fixture, "payload.bin"), "payload bytes")
+        mkpath(joinpath(fixture, "empty_dir"))
+        mkpath(joinpath(fixture, "data"))
+        mkpath(joinpath(fixture, ".git"))
+        entry(name, kind, path, required) = Dict(
+            "name" => name, "scope" => "test", "kind" => kind,
+            "relative_path" => path, "required" => required, "licensing" => "open")
+        unavailable = [
+            ("missing", "directory", "absent", "missing"),
+            ("pointer", "file", "pointer.jls", "pointer-only"),
+            ("empty", "directory", "empty_dir", "empty"),
+            ("invalid", "file", "invalid.bin", "invalid"),
+        ]
+        scenarios = [(name=name, entries=[entry(name, kind, path, true)], code=1,
+                      labels=["- $(name): $(state)-required"])
+                     for (name, kind, path, state) in unavailable]
+        push!(scenarios, (name="optional entries",
+                          entries=vcat([entry("builtin", "builtin", ".", true)],
+                                       [entry(name, kind, path, false) for (name, kind, path, _) in unavailable]),
+                          code=0, labels=["- $(name): $(state)-optional" for (name, _, _, state) in unavailable]))
+        push!(scenarios, (name="required payload", entries=[entry("payload", "file", "payload.bin", true)],
+                          code=0, labels=["- payload: usable"]))
+        for scenario in scenarios
+            open(joinpath(fixture, "data", "assets_manifest.toml"), "w") do io
+                TOML.print(io, Dict("asset" => scenario.entries))
+            end
+            for (name, script, args) in (("CLI", cli_main, ["assets", "check"]),
+                                        ("asset script", asset_script, String[]))
+                @testset "$(name): $(scenario.name)" begin
+                    output = IOBuffer()
+                    command = Cmd(`$(Base.julia_cmd()) --startup-file=no --history-file=no --compiled-modules=no --project=$fixture $script $args`;
+                                  dir=dirname(fixture))
+                    command = addenv(command, "JULIA_LOAD_PATH" => "@:@stdlib", "JULIA_PKG_PRECOMPILE_AUTO" => "0")
+                    process = run(pipeline(ignorestatus(command); stdout=output, stderr=output))
+                    text = String(take!(output))
+                    @test process.exitcode == scenario.code
+                    for label in scenario.labels
+                        @test occursin(label, text)
+                    end
+                    @test occursin("SpaceAGORA asset check", text)
+                    @test occursin("summary: ", text)
+                    @test !occursin("ERROR:", text)
+                end
+            end
+        end
     end
 end

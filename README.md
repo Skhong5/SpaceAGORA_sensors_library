@@ -53,7 +53,7 @@ julia --project=. src/interfaces/cli/main.jl assets check
 julia --project=. src/interfaces/cli/main.jl assets setup-open
 ```
 
-`assets check` reports whether each local asset root is usable, missing, empty or still a Git LFS pointer, and exits with status 1 when a required entry is not usable.
+`assets check` reports whether each local asset root has payload bytes, is missing or empty, or still contains Git LFS pointers. It exits with status 1 when a required entry is not usable; this inventory does not validate payload contents.
 `assets setup-open` summarizes the baseline repo-only path and which licensed
 external assets remain user-provided.
 

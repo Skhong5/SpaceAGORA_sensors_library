@@ -1,5 +1,7 @@
 using TOML
 
+const ASSET_STATES = (:usable, :missing, :empty, :pointer_only, :invalid)
+
 """
     AssetCheckItem
 
@@ -9,6 +11,10 @@ Single asset-root status entry produced by `check_assets()`.
 `:invalid`. `available` is `true` exactly when `state === :usable`; it is kept
 so existing readers keep working. `reason` explains any other state in one
 sentence, including what to do about it.
+
+The original six-argument positional constructor and keyword construction
+without `state` derive the state from `available`. An explicit state must be
+one of the supported values and agree with `available`.
 """
 Base.@kwdef struct AssetCheckItem
     name::String
@@ -17,11 +23,21 @@ Base.@kwdef struct AssetCheckItem
     available::Bool
     required::Bool
     detail::String = ""
-    state::Symbol = available ? :usable : :missing
+    state::Symbol = convert(Bool, available) ? :usable : :missing
     reason::String = ""
+
+    function AssetCheckItem(name, scope, path, available, required, detail, state, reason)
+        ready = convert(Bool, available)
+        status = convert(Symbol, state)
+        status in ASSET_STATES || throw(ArgumentError("Unknown asset readiness state $(repr(status)) for $(name)."))
+        ready == (status === :usable) || throw(ArgumentError("Asset availability must agree with readiness state $(repr(status)) for $(name)."))
+        return new(name, scope, path, ready, required, detail, status, reason)
+    end
 end
 
-const ASSET_STATES = (:usable, :missing, :empty, :pointer_only, :invalid)
+AssetCheckItem(name, scope, path, available, required, detail) =
+    AssetCheckItem(name, scope, path, available, required, detail,
+                   convert(Bool, available) ? :usable : :missing, "")
 
 """
     AssetCheckReport
@@ -44,7 +60,6 @@ Base.@kwdef struct AssetManifestEntry
 end
 
 @inline function _asset_item(name::String, scope::String, path::String; state::Symbol, required::Bool, detail::String="", reason::String="")
-    state in ASSET_STATES || throw(ArgumentError("Unknown asset readiness state $(repr(state)) for $(name)."))
     return AssetCheckItem(
         name=name,
         scope=scope,
@@ -85,8 +100,39 @@ end
 # payloads; this check only classifies, it never fetches.
 const _LFS_POINTER_HEADER = "version https://git-lfs.github.com/spec/v1"
 const _LFS_POINTER_MAX_BYTES = 1024
-_lfs_fetch_hint(include_pattern::String) =
-    "fetch the payload with `git lfs pull --include=\"$(include_pattern)\"` or the documented asset route"
+
+# Git worktrees and initialized submodules use a .git file instead of a
+# directory. Finding that marker needs no Git process or network access.
+function _asset_git_root(path::String)
+    candidate = isdir(path) ? path : dirname(path)
+    while true
+        marker = joinpath(candidate, ".git")
+        (isdir(marker) || isfile(marker)) && return candidate
+        parent = dirname(candidate)
+        parent == candidate && return nothing
+        candidate = parent
+    end
+end
+
+_asset_shell_quote(value::String) = "'" * replace(value, "'" => "'\"'\"'") * "'"
+
+function _lfs_fetch_hint(path::String; asset_directory::Union{Nothing,String}=nothing)
+    payload = realpath(path)
+    owner = _asset_git_root(payload)
+    isnothing(owner) && return "retrieve the payload through the documented asset route (no Git checkout found for this path)"
+    include_pattern = relpath(payload, owner)
+    if !isnothing(asset_directory) && _asset_git_root(asset_directory) == owner
+        # Collapse ordinary directory pointers into one hint, but preserve the
+        # actual owner and exact path for file symlinks outside this asset root.
+        relative_parts = splitpath(relpath(payload, asset_directory))
+        if first(relative_parts) != ".."
+            directory_pattern = relpath(asset_directory, owner)
+            include_pattern = directory_pattern == "." ? "*" : joinpath(directory_pattern, "*")
+        end
+    end
+    command = "git -C $(_asset_shell_quote(owner)) lfs pull --include=$(_asset_shell_quote(include_pattern))"
+    return "fetch the payload with `$(command)` or the documented asset route"
+end
 
 function _is_lfs_pointer(path::String)::Bool
     size = filesize(path)
@@ -95,22 +141,25 @@ function _is_lfs_pointer(path::String)::Bool
     return String(header) == _LFS_POINTER_HEADER
 end
 
-function _file_readiness(path::String, include_pattern::String)
+function _file_readiness(path::String)
     isfile(path) || return (:missing, "no file at this path")
     filesize(path) == 0 && return (:invalid, "the file is empty (0 bytes)")
-    _is_lfs_pointer(path) && return (:pointer_only, "the file is an undownloaded Git LFS pointer; " * _lfs_fetch_hint(include_pattern))
+    _is_lfs_pointer(path) && return (:pointer_only, "the file is an undownloaded Git LFS pointer; " * _lfs_fetch_hint(path))
     return (:usable, "")
 end
 
-# Hidden files such as .DS_Store never count as payload. Symlinks to files
+# Hidden files and directories never count as payload. Symlinks to files
 # count as whatever they point at; the walk does not follow symlinked
 # directories.
-function _directory_readiness(path::String, include_pattern::String)
+function _directory_readiness(path::String)
     isdir(path) || return (:missing, "no directory at this path")
     payloads = 0
     pointers = 0
     empties = 0
-    for (root, _, files) in walkdir(path)
+    fetch_hints = String[]
+    canonical_directory = realpath(path)
+    for (root, directories, files) in walkdir(path)
+        filter!(directory -> !startswith(directory, "."), directories)
         for file in files
             startswith(file, ".") && continue
             full = joinpath(root, file)
@@ -119,6 +168,8 @@ function _directory_readiness(path::String, include_pattern::String)
                 empties += 1
             elseif _is_lfs_pointer(full)
                 pointers += 1
+                hint = _lfs_fetch_hint(full; asset_directory=canonical_directory)
+                hint in fetch_hints || push!(fetch_hints, hint)
             else
                 payloads += 1
             end
@@ -128,7 +179,7 @@ function _directory_readiness(path::String, include_pattern::String)
     total == 0 && return (:empty, "the directory contains no files")
     if pointers > 0
         detail = payloads > 0 ? " alongside $(payloads) downloaded payload file$(payloads == 1 ? "" : "s")" : ""
-        return (:pointer_only, "$(pointers) of $(total) files are undownloaded Git LFS pointers$(detail); " * _lfs_fetch_hint(include_pattern))
+        return (:pointer_only, "$(pointers) of $(total) files are undownloaded Git LFS pointers$(detail); " * join(fetch_hints, "; "))
     end
     payloads == 0 && return (:invalid, "all $(total) files are empty (0 bytes)")
     return (:usable, "")
@@ -146,9 +197,8 @@ contents, which the named-preset `assets check --preset` route does for grids.
 function _manifest_entry_readiness(repo_root::String, entry::AssetManifestEntry)
     path = _manifest_entry_path(repo_root, entry)
     entry.kind == "builtin" && return (:usable, "")
-    # The hint names the entry as the repository tracks it, so it is runnable as printed.
-    entry.kind == "directory" && return _directory_readiness(path, entry.relative_path * "/*")
-    entry.kind == "file" && return _file_readiness(path, entry.relative_path)
+    entry.kind == "directory" && return _directory_readiness(path)
+    entry.kind == "file" && return _file_readiness(path)
     throw(ArgumentError("Unsupported asset manifest kind '$(entry.kind)' for $(entry.name)."))
 end
 
