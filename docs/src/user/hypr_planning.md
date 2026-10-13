@@ -53,18 +53,23 @@ provides the simulation, shared geometry and the versioned integration services.
 The small `SpaceAGORAHYPR` package loads the two together. Loading SpaceAGORA alone
 does not activate HYPR.
 
-From a SpaceAGORA checkout, prepare a separate environment and run the public
+From a SpaceAGORA Git clone, prepare a separate environment and run the public
 planner example:
 
 ```sh
-julia --startup-file=no scripts/setup_hypr.jl /path/to/hypr-env
+julia --startup-file=no scripts/optional_packages.jl setup hypr /path/to/hypr-env
 JULIA_LOAD_PATH='@:@stdlib' julia --startup-file=no --project=/path/to/hypr-env \
   examples/rpo_planner_env/smoke.jl
 ```
 
-The setup helper installs the exact HYPR revision in
-[`packages/SpaceAGORAHYPR/HYPRSource.toml`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/main/packages/SpaceAGORAHYPR/HYPRSource.toml). Keep that
-pin and the SpaceAGORA revision in the run record. The short example executes
+The setup helper uses the verified submodule at `packages/robotics/HYPR.jl`.
+Its recorded revision agrees with
+[`packages/SpaceAGORAHYPR/HYPRSource.toml`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/main/packages/SpaceAGORAHYPR/HYPRSource.toml).
+The robotics folder is a source organization choice; HYPR supports spacecraft
+RPO as well as robot arms. The [installation guide](installation_environment.md#Optional-package-commands)
+describes source checks, and the [RPO guide](rpo_planner_pilot.md#Installing-optional-HYPR)
+retains the separate `scripts/setup_hypr.jl` route. Keep the HYPR pin and
+SpaceAGORA revision in the run record. The short example executes
 both the direct planner and HYPR through the public interface, checking that
 references reach the controller and produce finite, bounded outputs. It covers
 only a two-second portion of a maneuver. Its small swarm, simple geometry and
