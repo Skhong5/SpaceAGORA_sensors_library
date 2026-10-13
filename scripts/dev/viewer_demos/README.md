@@ -1,5 +1,24 @@
 # Local viewer demonstrations
 
+HTML rendering is supplied by the optional `SpaceAGORAVisualizer` companion.
+Prepare a separate environment once, then use it for the direct demonstration
+commands below:
+
+```bash
+julia --startup-file=no scripts/setup_visualizer.jl /path/to/visualizer-env
+julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/iss_demo.jl --duration-s 60 --output-dir output/iss-first-run
+```
+
+The setup uses the reviewed commit in `packages/VisualizerSource.toml`; it does
+not add the renderer to SpaceAGORA's normal environment. The executable demos
+load the companion explicitly. For demos launched through `scripts/dev/run.jl`,
+set `SPACEAGORA_VISUALIZER_ENV=/path/to/visualizer-env` so that launcher can see
+the prepared environment. A demo that also uses HYPR needs both companions in
+the same separate environment; run `scripts/setup_hypr.jl` against that
+visualizer environment first. The browser and page-building tools live under
+`SpaceAGORAVisualizer.viewer_directory()` in the companion installation.
+
+
 Run these scripts from the repository with its Julia environment instantiated.
 The four basic demonstrations below use analytic ephemerides and either no
 atmosphere or an exponential model.
@@ -17,7 +36,7 @@ physical mass or aerodynamic mesh.
 For a short first run:
 
 ```sh
-julia --project=. scripts/dev/viewer_demos/iss_demo.jl --duration-s 60 --output-dir output/iss-first-run
+julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/iss_demo.jl --duration-s 60 --output-dir output/iss-first-run
 ```
 
 All four scripts accept `--duration-s` and `--output-dir` with space-separated
@@ -49,23 +68,24 @@ The station model and controller are a demonstration, not an ISS flight model.
 
 Start with the short hop:
 
-Prepare the optional HYPR companion environment once from the repository root:
+Add HYPR to the separate visualizer environment from the repository root:
 
 ```text
-julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
+julia --startup-file=no scripts/setup_hypr.jl /path/to/visualizer-env
 ```
 
-These HYPR examples load `SpaceAGORAHYPR` before their common helper activates
-the root project. Baseline examples continue to use `--project=.`.
+These HYPR examples load `SpaceAGORAHYPR` and the renderer before their common
+helper activates the core project. Baseline examples without HTML export can
+continue to use `--project=.`.
 
 ```sh
-SPACEAGORA_DEMO_SMOKE=1 julia --project=examples/rpo_planner_env scripts/dev/viewer_demos/iss_hypr.jl
+SPACEAGORA_DEMO_SMOKE=1 julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/iss_hypr.jl
 ```
 
 Run the complete approach by omitting the environment variable:
 
 ```sh
-julia --project=examples/rpo_planner_env scripts/dev/viewer_demos/iss_hypr.jl
+julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/iss_hypr.jl
 ```
 
 The script prints the HTML path under `output/viewer_demos/iss_hypr_<inputs digest>/`.

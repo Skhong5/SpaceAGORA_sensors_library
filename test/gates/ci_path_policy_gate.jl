@@ -96,7 +96,7 @@ const RETIRED_PATHS = (
     joinpath("src", "models", "vehicle", "sensors"),
     joinpath("src", "models", "gnc", "guidance", "targeting_control"),
     joinpath("src", "models", "gnc", "control", "heatload_control"),
-    # the browser viewer is top-level viewer/ (interactive_visualization_plan.md)
+    # browser rendering belongs to the optional SpaceAGORAVisualizer companion
     joinpath("src", "viewer"),
     # retired source files
     joinpath("src", "foundation", "core", "state", "simulation_configuration.jl"),

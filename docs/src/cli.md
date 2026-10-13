@@ -34,11 +34,12 @@ Convenience wrappers:
 
 ## What each command needs
 
-Every child process the CLI starts (`run`, `telemetry`, `benchmark`) runs
+The CLI normally starts child processes (`run`, `telemetry`, `benchmark`)
 under the repository project, the same environment as `julia --project=.`,
 so the script can load `SpaceAGORA` whether or not it activates the project
-itself. `--print-only` prints that project on its `project=` line and the
-full command on its `cmd=` line without running anything.
+itself. A `run --visualize` request instead uses the prepared visualizer project
+described below. `--print-only` prints the selected project on its `project=`
+line and the full command on its `cmd=` line without running anything.
 
 What a command needs beyond `Pkg.instantiate()` depends on the script it
 starts, not on the CLI:
@@ -52,10 +53,10 @@ starts, not on the CLI:
 | `telemetry ...` | the `data/GRAMSuite.jl` submodule: the study loads the vendored `GRAMSuite` package before it reads any scenario, even for `--scenarios=odyssey`; the truth files it grades are in the repository |
 | `benchmark ...` | the `data/GRAMSuite.jl` submodule, and for the GRAM-backed cases the native GRAM library |
 
-The CLI does not select the HYPR companion environment. Its `run` command
-always launches the repository project, even if the CLI itself was started
-with `--project=examples/rpo_planner_env`. Run those examples directly with
-that companion project as shown in the catalog.
+The CLI does not automatically select the HYPR companion environment. An
+ordinary `run` launches the repository project, even if the CLI itself was
+started with `--project=examples/rpo_planner_env`. Run HYPR examples directly
+with that companion project as shown in the catalog.
 
 Without the submodule, `telemetry` and `benchmark` stop with "Package
 GRAMSuite not found in current path"; that is the prerequisite, not the CLI.
@@ -75,15 +76,45 @@ Supported options:
 | `--example=<file>` | Example filename under `examples/`, or a direct path |
 | `--output-dir=<dir>` | Sets `SPACEAGORA_CLI_OUTPUT_DIR` for the child process |
 | `--smoke` | Sets the example smoke-mode environment variables |
+| `--visualize` | Loads the optional renderer in the selected project and exports a page after the run |
 | `--print-only` | Prints the resolved launcher without running it |
 
 Use `--smoke` for long examples that support
 `SPACEAGORA_EXAMPLE_SMOKE=1`.
 
-The child runs under the repository project (the environment of
-`julia --project=.`), so the example can load `SpaceAGORA` whether or not it
-activates the project itself; `--print-only` shows that project and the exact
-command.
+Without `--visualize`, the child runs under the repository project.
+`--print-only` shows the selected project and the exact command.
+
+### View saved results or export a page after a run
+
+Prepare the optional renderer once in a separate project:
+
+```sh
+julia --startup-file=no scripts/setup_visualizer.jl ../spaceagora-viewer
+julia --project=../spaceagora-viewer src/interfaces/cli/main.jl visualize --run=output/cli_run
+julia --project=../spaceagora-viewer src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_viewer --visualize
+```
+
+`visualize` reads a saved scene and result bundle without repeating the
+simulation. `run --visualize` requests scene recording and HTML export from the
+example. The direct CLI entrypoint loads `SpaceAGORAVisualizer` for these
+commands only. When calling `run_cli` from Julia to view saved results, load both
+`SpaceAGORA` and `SpaceAGORAVisualizer` first.
+
+A visualized child uses the active project unless `SPACEAGORA_VISUALIZER_ENV`
+explicitly selects another prepared project. The selected project must declare
+both packages. The child loads the renderer before the example starts, so an
+example can still activate the core project without losing viewer support.
+The script's `PROGRAM_FILE`, arguments, and main guard retain their usual
+meaning. A missing project or package declaration is rejected before launching
+the example, including in `--print-only` mode. If declarations exist but the
+renderer has not been installed, its preload fails before the example can
+create outputs. The CLI never installs packages.
+
+For the convenience wrappers, which start under the core project, set
+`SPACEAGORA_VISUALIZER_ENV` to the prepared project directory. See
+[Visualization](user/visualization.md) for the saved-payload workflow and
+renderer options.
 
 ### Run telemetry verification
 

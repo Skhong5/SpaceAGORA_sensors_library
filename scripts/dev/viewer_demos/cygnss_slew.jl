@@ -4,6 +4,7 @@
 # The wheels-only adequacy check is deliberately independent of execution success.
 # Demands are not automatically executed torques. The rwCmd and tqDmdCtrl comparisons
 # retain the same initial state and constants; neither includes a torque-rod model.
+using SpaceAGORAVisualizer
 include(joinpath(@__DIR__, "common.jl"))
 include(joinpath(@__DIR__, "cygnss_slew_telemetry.jl"))
 using .CygnssSlewTelemetry

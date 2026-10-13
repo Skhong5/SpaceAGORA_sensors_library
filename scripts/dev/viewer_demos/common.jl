@@ -299,7 +299,7 @@ end
 function build_cdn_page(html::AbstractString, out::AbstractString, title::AbstractString, heading::AbstractString,
                         orbit::AbstractString, span::AbstractString, foot::AbstractString)
     get(ENV, "SPACEAGORA_DEMO_CDN", "0") == "1" || return nothing
-    script = joinpath(REPO_ROOT, "viewer", "build_cdn_page.py")
+    script = joinpath(SpaceAGORA.VisualizerServices.viewer_directory(), "build_cdn_page.py")
     isfile(script) || throw(ArgumentError("optional CDN export requires the separately installed build_cdn_page.py tool; standalone HTML is already complete"))
     run(`python3 $script $html $out $title $heading $orbit $span $foot`)
     return String(out)

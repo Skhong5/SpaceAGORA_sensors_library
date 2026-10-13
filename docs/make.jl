@@ -160,6 +160,7 @@ makedocs(
             "GRAMSuite Setup" => "user/gramsuite_setup.md",
             "Assets & Modes" => "assets.md",
             "First Simulation" => "user/first_simulation.md",
+            "Mission Workflows" => "user/mission_workflows.md",
             "Simulation Configuration" => "user/simulation_configuration.md",
             "Atmosphere Models" => "user/atmosphere_models.md",
             "Odyssey Surrogate Control Exercise" => "tutorials/odyssey_surrogate.md",

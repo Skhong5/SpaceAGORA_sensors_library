@@ -1,6 +1,7 @@
 # Robot arm on an orbiting bus: the Robot_Arm_Planner_Cloth_Demo single-arm case
 # (q_start -> target through the baseline robot-arm planner) coupled into run_simulation.
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
+using SpaceAGORAVisualizer
 using SpaceAGORA, StaticArrays, Arrow, DataFrames, JSON
 import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft
 const SM = SpaceAGORA.SimulationModel

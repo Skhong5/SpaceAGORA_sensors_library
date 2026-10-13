@@ -229,6 +229,22 @@ If you want fuller mission examples after that, start with:
 Both of those use the same GRAM access pattern as the basic GRAM example, but
 add mission-specific guidance, maneuvers, and higher-fidelity dynamics.
 
+## Reusable missions and viewing results
+
+A `MissionPlan` builds a fresh configuration for each run. `run_mission` saves
+results into a new directory and returns the table, configuration and portable
+viewer payload together. Named phases describe observation windows; named events
+construct fresh callbacks against the configuration that actually runs.
+See the [mission workflow guide](docs/src/user/mission_workflows.md) and
+`examples/AGORA_Mission_Workflow.jl` for a complete example.
+
+The browser viewer is the independent
+[SpaceAGORAVisualizer.jl package](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl).
+Install the tested pair with `julia --project=. scripts/setup_visualizer.jl .visualizer-env`,
+then load both packages in that environment. A saved viewer JSON can also be
+opened with the companion alone, after moving the output directory or closing
+the simulation process. See the [visualization guide](docs/src/user/visualization.md).
+
 ## CLI and docs
 
 - Docs site: [space-falcon-lab.github.io/SpaceAGORA.jl](https://space-falcon-lab.github.io/SpaceAGORA.jl)

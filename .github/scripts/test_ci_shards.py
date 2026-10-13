@@ -71,6 +71,8 @@ class PlanTests(unittest.TestCase):
                 if aggregator == "tests":
                     expected_needs.append("optional-mujoco-installation")
                     self.assertIn("needs.optional-mujoco-installation.result", agg.group(1))
+                expected_needs.append("optional-visualizer-installation")
+                self.assertIn("needs.optional-visualizer-installation.result", agg.group(1))
             needs = re.search(r"needs: \[(.*?)\]", agg.group(1))
             self.assertIsNotNone(needs, aggregator)
             self.assertEqual([x.strip() for x in needs.group(1).split(",")], expected_needs)
@@ -108,6 +110,36 @@ class PlanTests(unittest.TestCase):
         self.assertNotRegex(job, r"(?m)^\s*(if|continue-on-error):")
         self.assertNotIn("|| true", job)
         self.assertIn("git -C optional/SpaceAGORAMuJoCo diff --exit-code", job)
+
+    def test_external_visualizer_is_mandatory_and_core_isolated(self):
+        wf = (ROOT / ".github/workflows/julia-ci.yml").read_text()
+        match = re.search(r"^  optional-visualizer-installation:\n(.*?)(?=^  \S|\Z)", wf, re.S | re.M)
+        self.assertIsNotNone(match)
+        job = match.group(1)
+        pin = (ROOT / "packages/VisualizerSource.toml").read_text()
+        self.assertRegex(pin, r'(?m)^rev = "[0-9a-f]{40}"$')
+        self.assertIn('url = "https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl.git"', pin)
+        self.assertIn('JULIA_LOAD_PATH: "@:@stdlib"', job)
+        self.assertIn('SPACEAGORA_VISUALIZER_PATH: ""', job)
+        for probe in ("installation_plan_tests.jl", "setup.jl", "core.jl",
+                      "optional.jl core-first", "optional.jl visualizer-first"):
+            self.assertEqual(job.count("test/optional_visualizer/" + probe), 1, probe)
+        self.assertIn("Pkg.test(\"SpaceAGORAVisualizer\")", job)
+        self.assertIn("test/unit/visualization/terrain_export_tests.jl", job)
+        self.assertIn('"$terrain_fixture_dir/fixtures.json" "$SPACEAGORA_VISUALIZER_DIR"', job)
+        self.assertIn("viewer_channels_models_tests.mjs", job)
+        self.assertIn("test/scripts", job)
+        self.assertNotIn("continue-on-error:", job)
+        self.assertNotIn("|| true", job)
+        self.assertNotRegex(job, r"(?m)^    if:")
+        self.assertEqual(re.findall(r"(?m)^        if: (.*)$", job), ["always()", "always()"])
+        coverage = re.search(r"^  coverage-quality-gate:\n(.*?)(?=^  \S)", wf, re.S | re.M).group(1)
+        self.assertIn("name: visualizer-installation-coverage", coverage)
+        self.assertIn("tar -xzmf visualizer-installation-coverage/coverage.tgz", coverage)
+        setup = (ROOT / ".github/actions/setup/action.yml").read_text()
+        self.assertNotIn("setup_visualizer", setup)
+        self.assertNotIn("SpaceAGORAVisualizer", setup)
+
 
 
 class VerifyTests(unittest.TestCase):
