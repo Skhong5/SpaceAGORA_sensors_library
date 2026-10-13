@@ -208,9 +208,12 @@ physics ownership between SpaceAGORA and an external simulator.
 `run.history` contains actual segment intervals and transition times, with a
 reason for each transition. An early stop closes the active segment; future
 segments are absent. The same history is saved as `simulation_results_mission.json`
-and included in the portable viewer payload, so it remains available after
-moving the output directory. History is also saved when scene and payload
-output are disabled.
+and included in the portable viewer payload. The result manifest links the
+history to that run's scene and trajectory, with content checks to prevent an
+old record from being attached to new results. Move the complete output folder,
+including its manifest, to preserve this link. An unbound history file is never
+attached automatically. History is also saved when scene and payload output
+are disabled, without associating it with any older scene in that folder.
 
 The standalone viewer can select a segment or transition within the saved
 playback range and seek to its time. Its current-segment label follows playback

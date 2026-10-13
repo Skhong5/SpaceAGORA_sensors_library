@@ -735,6 +735,60 @@ end
     return options
 end
 
+# The result manifest owns the association, so a normal result overwrite drops
+# it even when the new trajectory happens to contain identical bytes. Hashes
+# detect separately replaced history, scene or Arrow files. Relative names keep
+# the association valid when the complete saved folder is moved.
+function _mission_file_sha256(path::AbstractString)
+    return open(path, "r") do io
+        bytes2hex(SHA.sha256(io))
+    end
+end
+
+function _bind_mission_history!(prefix::AbstractString)
+    manifest_path = String(prefix) * ".manifest.toml"
+    scene_path = String(prefix) * "_scene.json"
+    history_path = String(prefix) * "_mission.json"
+    scene = read_visualization_scene(scene_path)
+    feather_path = joinpath(dirname(scene_path), scene.results_feather)
+    _validated_mission_history(JSON.parsefile(history_path))
+    manifest = TOML.parsefile(manifest_path)
+    feather_hash = _mission_file_sha256(feather_path)
+    get(get(get(manifest, "files", Dict()), "feather", Dict()), "sha256", nothing) == feather_hash ||
+        throw(ArgumentError("Cannot associate mission history with a different saved results bundle."))
+    manifest["mission_history"] = Dict(
+        "schema" => 1, "path" => basename(history_path),
+        "sha256" => _mission_file_sha256(history_path),
+        "feather_sha256" => feather_hash,
+        "scene_sha256" => _mission_file_sha256(scene_path))
+    IOSerialization._atomic_write_file(manifest_path, tmp -> open(tmp, "w") do io
+        TOML.print(io, manifest)
+    end)
+    return nothing
+end
+
+function _saved_mission_history(prefix::AbstractString, scene_path::String, feather_path::String)
+    manifest_path = String(prefix) * ".manifest.toml"
+    isfile(manifest_path) || return nothing
+    manifest = try
+        TOML.parsefile(manifest_path)
+    catch err
+        err isa TOML.ParserError || rethrow()
+        return nothing
+    end
+    association = get(manifest, "mission_history", nothing)
+    association === nothing && return nothing
+    history_path = String(prefix) * "_mission.json"
+    association isa AbstractDict && get(association, "schema", nothing) === 1 &&
+        get(association, "path", nothing) == basename(history_path) ||
+        throw(ArgumentError("Unsupported saved mission history association in $manifest_path."))
+    for (path, key) in ((history_path, "sha256"), (feather_path, "feather_sha256"), (scene_path, "scene_sha256"))
+        isfile(path) && get(association, key, nothing) == _mission_file_sha256(path) ||
+            throw(ArgumentError("Saved mission history no longer matches $path; export the matching saved bundle or supply mission explicitly."))
+    end
+    return JSON.parsefile(history_path)
+end
+
 function _saved_viewer_payload(
     prefix::AbstractString;
     max_frames::Integer=DEFAULT_MAX_FRAMES,
@@ -769,8 +823,7 @@ function _saved_viewer_payload(
     feather_path = joinpath(dirname(scene_path), scene.results_feather)
     isfile(feather_path) || throw(ArgumentError("Results file $(feather_path) referenced by the sidecar does not exist."))
     df = DataFrame(Arrow.Table(feather_path))
-    history_path = prefix * "_mission.json"
-    mission === nothing && isfile(history_path) && (mission = JSON.parsefile(history_path))
+    mission === nothing && (mission = _saved_mission_history(prefix, scene_path, feather_path))
     payload = viewer_payload(
         scene, df;
         textures_dir=textures_dir, include_textures=textures, texture_resolution=texture_resolution,
@@ -794,7 +847,7 @@ end
 
 function _viewer_output_path(prefix::AbstractString, payload::AbstractDict, out, suffix::String)
     path = out === nothing ? String(prefix) * suffix : String(out)
-    protected = (String(prefix) * "_scene.json", String(prefix) * "_mission.json",
+    protected = (String(prefix) * "_scene.json", String(prefix) * "_mission.json", String(prefix) * ".manifest.toml",
         joinpath(dirname(String(prefix)), String(payload["scene"]["results"]["feather"])))
     return _check_viewer_output(path, protected)
 end
@@ -806,7 +859,10 @@ end
 Convert a saved scene and results bundle to version-1 viewer JSON. The default
 file is `<prefix>_viewer.json`. Frame conventions, precision, decimation and
 options match `export_visualization`; `textures=false` omits local textures.
-An adjacent `<prefix>_mission.json` is carried into the optional `mission` block.
+The result manifest links `<prefix>_mission.json` to its own saved run. Only a
+verified association is carried into the optional `mission` block; an unbound
+sidecar is never attached automatically. Move the complete saved folder to
+preserve that association, or supply a deliberate `mission` keyword value.
 Exact saved boundary rows are retained within the frame budget; missing boundary
 states are never reconstructed. No renderer package, browser, download or simulation is needed. Load
 SpaceAGORAVisualizer to turn this portable payload into an HTML page.
@@ -888,14 +944,13 @@ end
 Write `window.SPACEAGORA_VIEWER = {...};` for `viewer/dev.html`, so the
 viewer modules can be edited and reloaded without rebundling.
 """
-function write_viewer_dev_payload(prefix::AbstractString, out_js::AbstractString; textures::Bool=true, textures_dir::AbstractString=TEXTURES_DIR, kwargs...)::String
+function write_viewer_dev_payload(prefix::AbstractString, out_js::AbstractString; textures::Bool=true, textures_dir::AbstractString=TEXTURES_DIR, mission=nothing, kwargs...)::String
     scene_path = String(prefix) * "_scene.json"
     scene = read_visualization_scene(scene_path)
-    df = DataFrame(Arrow.Table(joinpath(dirname(scene_path), scene.results_feather)))
-    history_path = String(prefix) * "_mission.json"
-    mission = isfile(history_path) ? JSON.parsefile(history_path) : nothing
-    options = merge((; mission=mission), (; kwargs...))
-    payload = viewer_payload(scene, df; textures_dir=textures_dir, include_textures=textures, options...)
+    feather_path = joinpath(dirname(scene_path), scene.results_feather)
+    df = DataFrame(Arrow.Table(feather_path))
+    mission === nothing && (mission = _saved_mission_history(prefix, scene_path, feather_path))
+    payload = viewer_payload(scene, df; textures_dir=textures_dir, include_textures=textures, mission=mission, kwargs...)
     path = _viewer_output_path(prefix, payload, out_js, "_viewer.js")
     _check_viewer_output(path, (String(prefix) * "_viewer.json",))
     return IOSerialization._atomic_write_file(path, tmp -> write(tmp, "window.SPACEAGORA_VIEWER = " * _script_safe_json(payload) * ";\n"))

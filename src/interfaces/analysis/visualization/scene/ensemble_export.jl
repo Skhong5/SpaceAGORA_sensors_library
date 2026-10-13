@@ -452,6 +452,7 @@ function export_ensemble_visualization(
         push!(protected, joinpath(sample.directory, scene.results_feather))
         push!(protected, joinpath(sample.directory, "simulation_results_viewer.json"))
         push!(protected, joinpath(sample.directory, "simulation_results_mission.json"))
+        push!(protected, joinpath(sample.directory, "simulation_results.manifest.toml"))
     end
     _check_viewer_output(out_path, protected)
     return IOSerialization._atomic_write_file(out_path, tmp -> write(tmp, html))

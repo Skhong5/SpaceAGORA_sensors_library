@@ -208,6 +208,13 @@ function run_mission(plan::MissionPlan; output_dir::AbstractString,
     prefix = SimulationModel.IOConfig._results_bundle_prefix(results.configuration)
     history = runtime_ref[] === nothing ? _empty_segment_history() : runtime_ref[].history
     history_path = isempty(plan.segments) ? nothing : _write_mission_history(prefix, plan.name, history)
+    if history_path !== nothing && save_scene
+        # Associate only outputs this run actually produced, never an old scene
+        # or manifest surviving in a reused output directory.
+        all(path -> path in results.files, (prefix * ".manifest.toml", prefix * "_scene.json")) ||
+            throw(ArgumentError("Mission history needs this run's saved scene and result manifest."))
+        SimulationModel.SceneVisualization._bind_mission_history!(prefix)
+    end
     payload_path = save_payload ? SimulationModel.SceneVisualization.export_viewer_payload(prefix; textures=false) : nothing
     files = copy(results.files)
     payload_path === nothing || push!(files, payload_path)

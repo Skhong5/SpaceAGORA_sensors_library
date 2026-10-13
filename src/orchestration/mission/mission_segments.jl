@@ -265,9 +265,9 @@ end
 
 function _write_mission_history(prefix, name, history)
     path = prefix * "_mission.json"
-    open(path, "w") do io
+    SimulationModel.IOSerialization._atomic_write_file(path, tmp -> open(tmp, "w") do io
         JSON.print(io, (; schema=1, name, segments=history.segments, transitions=history.transitions), 2)
         println(io)
-    end
+    end)
     return path
 end
