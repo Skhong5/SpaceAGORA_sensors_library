@@ -183,6 +183,7 @@ Three named presets are published. All are frozen at the Odyssey P20 instant, 20
 | `mars_global_upper_p20_frozen_v1` 1.0.0 | 80 to 365 km, all latitudes and longitudes | Pointwise within 225 s of the frozen instant, down to 80 km; propagated passes designed for periapsis from 85 to 130 km (see below) |
 | `mars_global_near_surface_p20_frozen_v1` 1.0.0 | 5 m above the local surface to 75 km areoid height, planetocentric latitudes within 85 degrees, surface below 9 km; density, temperature and pressure, no winds | Pointwise at the frozen instant |
 | `mars_global_near_surface_p20_frozen_v1` 1.1.0 | As 1.0.0, up to 81 km areoid height, above the global upper preset's floor everywhere | Pointwise at the frozen instant |
+| `mars_global_near_surface_p20_frozen_v1` 1.2.0 | As 1.1.0, with stored east, north and vertical winds; refused where a stored wind it needs is unavailable | Pointwise, on fixed descent paths and in propagated descents at the frozen instant; ballistic entries in the engine, with the global upper preset above 80 km |
 
 The global preset was validated against native Mars-GRAM under the lab's release
 limits for pointwise density and wind error and per-pass drag and heating; its
@@ -205,7 +206,7 @@ The grid's height and latitude spacing is not uniform: nodes
 are added where Mars-GRAM has structure, the catalog lists every node, and
 `surrogate_preset_model` checks them against the grid. Heights below 80 km are
 not covered by this grid, because terrain over the Tharsis summits shapes the native
-atmosphere there; such queries fail. The near-surface preset below covers heights up to 75 km (1.0.0) or 81 km (1.1.0).
+atmosphere there; such queries fail. The near-surface preset below covers heights up to 75 km (1.0.0) or 81 km (1.1.0 and 1.2.0).
 
 ```julia
 using SpaceAGORA
@@ -221,51 +222,62 @@ native Mars-GRAM's own near-surface rule, driven by the local terrain.
 - **Components.** They are stored on a 1.5-degree lattice and interpolated bilinearly.
 - **Model.** `surrogate_preset_model` returns a `GRAMNearSurfaceAtmosphereModel`.
 - **Outputs.** `getDensity` returns density, temperature and the wind vector.
-  - The published versions (1.0.0 and 1.1.0) have format 1 payloads, which store no winds: the wind vector is zero, so
-    a simulation using them has no atmospheric wind.
-  - A format 2 payload returns its stored east, north and vertical winds, with the horizontal components clipped at
-    0.7 times the speed of sound as native clips them.
+  - Versions 1.0.0 and 1.1.0 have format 1 payloads, which store no winds: the wind vector is zero, so a simulation
+    using them has no atmospheric wind.
+  - Version 1.2.0 has a format 2 payload. It returns its stored east, north and vertical winds, with the horizontal
+    components clipped at 0.7 times the speed of sound as native clips them. A simulation with its wind setting off
+    uses zero wind, as with the grid presets' stored winds.
   - The catalog declares which kind a version is, and the loaded payload must agree.
 - **Pressure and status.** `GRAMSuite.near_surface_state(model.core, lat_deg, lon_deg, h_m)` returns pressure, the regime and the status of the surface-layer model used.
+- **Winds and speed of sound.** For a format 2 payload, `GRAMSuite.near_surface_wind_state(model.core, lat_deg, lon_deg, h_m)` adds the winds, the unclipped horizontal winds, the speed of sound and which components were clipped.
 
 ```julia
 using SpaceAGORA
 import GRAMSuite
-density_model = surrogate_preset_model("mars_global_near_surface_p20_frozen_v1"; version="1.1.0")
+density_model = surrogate_preset_model("mars_global_near_surface_p20_frozen_v1"; version="1.2.0")
 rho, T, wind = getDensity(density_model, 250.0, deg2rad(-4.5), deg2rad(137.4), 0.0, true)
 ```
 
-**Versions.** Both published versions stay available.
+**Versions.** All three published versions stay available, and each call names its version.
 - **1.0.0** is unchanged.
 - **1.1.0** adds two table levels, at 80.0323 and 85.0323 km areoid height. They sit where Mars-GRAM places the first
   two levels of its upper table at this instant.
 - **Top.** 1.1.0 raises the top from 75 to 81 km. Between 75 km and the first added level, native joins its lower
   and upper tables, and the preset follows the same rule.
 - **Below 75 km,** 1.1.0 gives the same results as 1.0.0.
+- **1.2.0** adds the stored winds and the speed of sound that limits them. Its density, temperature and pressure equal
+  1.1.0's wherever served.
 
 **Refusals.** Queries fail with a `DomainError` naming the reason when any of these holds:
 - planetocentric latitude beyond 85 degrees;
 - surface height of 9 km or more (volcano flanks);
 - less than 5 m above the surface;
-- above the version's top: 75 km areoid height in 1.0.0, 81 km in 1.1.0;
-- a needed component is unavailable at that position.
+- above the version's top: 75 km areoid height in 1.0.0, 81 km in 1.1.0 and 1.2.0;
+- a needed component is unavailable at that position;
+- in 1.2.0, a stored wind value the query needs is unavailable, or the speed of sound is not determined.
 
 **Coverage.** Within 85 degrees:
 - about 98% of the area is served down to 5 m with a qualified surface-layer model;
 - about 1.7% is served with a provisional model, flagged in each result's status;
 - the rest is refused at the lowest heights or on volcano flanks.
 
-From 75 to 81 km (1.1.0), every location with a surface below 9 km is served.
+From 75 to 81 km (1.1.0 and 1.2.0), every location with a surface below 9 km is served.
+
+In 1.2.0, the winds are served wherever the scalars are over about 99.65% of the area. Over about 0.07%, in deep,
+narrow terrain, a stored wind is unavailable at one or more heights between −5 and 7 km areoid height, and those
+queries are refused; `GRAMSuite.near_surface_state` still serves their scalars, as 1.1.0 does.
 
 The archive's support map lists the cells.
 
 **Validation.** The preset was validated pointwise against native Mars-GRAM at the frozen instant, under the lab's release limits.
 - **1.0.0:** separately for qualified-model areas, provisional-model areas and all served queries.
 - **1.1.0:** the heights it adds were validated with every point's expected outcome specified in advance. The 1.0.0 validation carries over below 75 km, where results are unchanged.
+- **1.2.0:** the stored winds and the speed of sound were validated against native Mars-GRAM pointwise, on fixed descent paths and in propagated descents, and in SpaceAGORA's engine: ballistic entries flown with 1.2.0 below 80 km and the global upper preset above, against native Mars-GRAM in the same engine loop. The archive README lists the limits and what was not established. It also lists the exemptions: at the exact wind jumps at 78.75 and 82.5 degrees north and at exact first-level contours, native can resolve a query to the other side, and the values 1.2.0 returns there were validated only where its own side matched native; native's extrapolation band at the contours; and the 80 km composition switch. The scalar validations carry over.
 
 **Other limits.**
 - **1.0.0 gap.** In 1.0.0, the 75 to 80 km interval lies between this preset and the upper one, and neither covers it.
-- **1.1.0 overlap.** 1.1.0 reaches 81 km areoid height, above the upper preset's 80 km ellipsoidal floor everywhere, so both presets are defined between that floor and 81 km. `CombinedAtmosphereModel` hands over between them; see [Height-based composition of two frozen atmospheres](#Height-based-composition-of-two-frozen-atmospheres).
+- **1.1.0 and 1.2.0 overlap.** These versions reach 81 km areoid height, above the upper preset's 80 km ellipsoidal floor everywhere, so both presets are defined between that floor and 81 km. `CombinedAtmosphereModel` hands over between them; see [Height-based composition of two frozen atmospheres](#Height-based-composition-of-two-frozen-atmospheres).
+- **1.2.0 scope.** Its validation does not establish real-world landing accuracy, the engine's use of the preset's speed of sound (the engine's Mach number uses its own gas constants), or other vehicles, epochs and entries.
 - The payload's terrain component holds Mars-GRAM's MOLA terrain values at its lattice nodes. Credit NASA MOLA as the archive README states.
 
 `GRAMGridAtmosphereModel` connects GRAMSuite's existing offline interpolation
@@ -343,17 +355,18 @@ upper = surrogate_preset_model("mars_global_upper_p20_frozen_v1"; version="1.0.0
 density_model = CombinedAtmosphereModel(lower, upper; handover_height_m=80e3)
 ```
 
-- **Handover.** Hand over at 80 km above the ellipsoid, the upper preset's floor. Near-surface version 1.1.0 reaches
-  81 km areoid height, above that floor everywhere. Version 1.0.0 stops at 75 km and leaves a gap below the floor.
+- **Handover.** Hand over at 80 km above the ellipsoid, the upper preset's floor. Near-surface versions 1.1.0 and
+  1.2.0 reach 81 km areoid height, above that floor everywhere. Version 1.0.0 stops at 75 km and leaves a gap below
+  the floor.
 - **Coverage is the components' coverage.** There is no blending, extrapolation or fallback between the two. A query
   the selected component refuses fails with that component's `DomainError`. Below the handover, coverage stops 5 m
   above supported terrain and excludes latitudes beyond 85 degrees, volcano flanks and positions where a component is
   unavailable, even though the upper preset covers those columns above 80 km.
 - **Steps at the handover.** Each component returns its own wind.
-  - The published near-surface versions store none, so with them the wind is zero below the handover and the upper
+  - Near-surface versions 1.0.0 and 1.1.0 store none, so with them the wind is zero below the handover and the upper
     preset's stored wind at and above it: the wind changes abruptly there.
-  - A near-surface payload with stored winds (format 2) returns them below the handover; the two components' winds
-    still differ at the handover.
+  - Version 1.2.0, a format 2 payload, returns its stored winds below the handover; the two components' winds still
+    differ at the handover.
   Density and temperature can also step by the difference between the presets.
 - **Frozen state.** Both presets are frozen at the same instant. The composition adds no time evolution and has no
   validated accuracy claim of its own; each preset's documented validation applies on its side of the handover.

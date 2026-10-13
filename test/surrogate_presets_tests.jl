@@ -282,10 +282,11 @@ end
 @testset "Named near-surface preset versions" begin
     catalog_template = TOML.parsefile(PRESET_ENV._SURROGATE_CATALOG)
     near=filter(p->p["id"]=="mars_global_near_surface_p20_frozen_v1",catalog_template["presets"])
-    @test sort([p["version"] for p in near])==["1.0.0","1.1.0"]
+    @test sort([p["version"] for p in near])==["1.0.0","1.1.0","1.2.0"]
     v100=only(filter(p->p["version"]=="1.0.0",near)); v110=only(filter(p->p["version"]=="1.1.0",near))
+    v120=only(filter(p->p["version"]=="1.2.0",near))
     listed=SpaceAGORA.available_surrogate_presets()
-    @test all(v->any(x->x["id"]=="mars_global_near_surface_p20_frozen_v1" && x["version"]==v,listed),("1.0.0","1.1.0"))
+    @test all(v->any(x->x["id"]=="mars_global_near_surface_p20_frozen_v1" && x["version"]==v,listed),("1.0.0","1.1.0","1.2.0"))
     # 1.0.0 keeps its published identities; 1.1.0 extends it to 81 km with two added levels and has its own identities.
     @test v100["domain"]["top_areoid_height_m"]==75000.0 && length(v100["required_metadata"]["levels_km"])==29
     @test v100["distribution"]["archive_sha256"]=="f0fa4a4cd05b747cef77f723bdb2a1a9697d8b824ee8b6159095c0bcb9212b37"
@@ -303,9 +304,28 @@ end
     @test v110["distribution"]["git_tree_sha1"]=="19bd3b55915f05b4e437510d1d66dc751852fb07"
     @test all(u->occursin("/surrogate-mars-global-near-surface-p20-1.1.0/",u),v110["distribution"]["urls"])
     @test v110["generation_provenance"]["runtime_evaluator_sha256"]=="1aa2c8f7244d7459208f301cdd7dd39f4f05723559ef91a4d4a0ac3941d8afb5"
+    # 1.2.0 keeps 1.1.0's scalar contract and adds the stored winds (format 2), with its own identities.
+    @test v120["kind"]=="gram_near_surface_scalars" && v120["release_enabled"] && !haskey(v120,"axes")
+    @test v120["required_metadata"]["format"]==v120["payload"]["format"]=="spaceagora_mars_near_surface_v2"
+    for k in ("levels_km","lattice","support","generation_config","epoch_utc","planet","elapsed_time_s")
+        @test v120["required_metadata"][k]==v110["required_metadata"][k]
+    end
+    @test v120["domain"]==merge(v110["domain"],Dict("unavailable_winds"=>v120["domain"]["unavailable_winds"]))
+    @test v120["required_metadata"]["wind_rules"]==Dict("clip_fraction"=>0.7,"composition_switch_km"=>80.0,"switch_band_km"=>1e-9)
+    atm=v120["atmosphere"]
+    @test atm["winds_available"]===true && atm["wind_returned"]=="stored_components" && atm["wind_convention"]=="stored_nominal_local_ENU"
+    @test atm["wind_boolean_suppresses_stored_components"]===false && all(in(atm["fields"]),("wind_ew_ms","wind_ns_ms","wind_up_ms"))
+    @test v120["artifact_name"]=="mars_global_near_surface_p20_frozen_v1_1_2_0" && !(v120["artifact_name"] in (v100["artifact_name"],v110["artifact_name"]))
+    @test v120["payload"]["sha256"]=="1bb74ca6eb5b2495350e68f1d38653b1a82e0c43ab54ce1fa8fd3781dfdea632"
+    @test v120["distribution"]["archive_sha256"]=="fb2be94b84f6690d53ef7bb48048b2c01dafd2930a01ae9ec76e732d5ba4b342"
+    @test v120["distribution"]["git_tree_sha1"]=="31b3ac96ca736c821dc2d63426082ab2d9dea3f2"
+    @test all(u->occursin("/surrogate-mars-global-near-surface-p20-1.2.0/",u),v120["distribution"]["urls"])
+    @test v120["generation_provenance"]["base_payload_sha256"]==v110["payload"]["sha256"]
+    @test v120["generation_provenance"]["runtime_evaluator_sha256"]=="6aafc4cadcf83298b430e3f1beb9f1d31b6b41f33a81d3799f0da5856793c558"
+    @test v120["generation_provenance"]["runtime_wind_evaluator_sha256"]=="37f1e27326a0d89e02ac1b83104166ef98a75c039d8155890be301939e8919aa"
     # Each version's Artifacts.toml binding matches its catalog entry.
     bindings=TOML.parsefile(PRESET_ENV._SURROGATE_ARTIFACTS)
-    for e in (v100,v110)
+    for e in (v100,v110,v120)
         b=bindings[e["artifact_name"]]; d=only(b["download"])
         @test b["git-tree-sha1"]==e["distribution"]["git_tree_sha1"] && b["lazy"]===true
         @test d["sha256"]==e["distribution"]["archive_sha256"] && d["url"] in e["distribution"]["urls"]
@@ -352,9 +372,9 @@ end
 @testset "Named near-surface presets with stored winds (format 2)" begin
     catalog_template = TOML.parsefile(PRESET_ENV._SURROGATE_CATALOG)
     near=filter(p->p["id"]=="mars_global_near_surface_p20_frozen_v1",catalog_template["presets"])
-    # The published versions keep format 1 payloads and their zero-wind declarations.
+    # Versions 1.0.0 and 1.1.0 keep format 1 payloads and their zero-wind declarations; 1.2.0 stores winds (format 2).
     @test all(p->p["required_metadata"]["format"]=="spaceagora_mars_near_surface_scalars_v1" && p["atmosphere"]["winds_available"]===false &&
-        p["atmosphere"]["wind_returned"]=="zero_vector",near)
+        p["atmosphere"]["wind_returned"]=="zero_vector",filter(p->p["version"] in ("1.0.0","1.1.0"),near))
     v110=only(filter(p->p["version"]=="1.1.0",near)); v2="spaceagora_mars_near_surface_v2"
     mktempdir() do dir
         file=joinpath(dir,"fixture.jls"); catalog_file=joinpath(dir,"catalog.toml"); artifacts_file=joinpath(dir,"Artifacts.toml")
@@ -441,6 +461,19 @@ end
         e1["atmosphere"]=deepcopy(v110["atmosphere"]); preset_write_toml(catalog_file,legacy)
         @test_throws ArgumentError SpaceAGORA.surrogate_preset_model("synthetic_near_surface_winds";opts...)
         preset_write_toml(catalog_file,catalog)
+        # The published 1.2.0 contract accepts the same synthetic winds once the payload carries 1.2.0's status and
+        # distribution record, and serves them unchanged.
+        v120=only(filter(p->p["version"]=="1.2.0",near)); e12=deepcopy(v120)
+        e12["id"]="synthetic_near_surface_winds_1_2_0"; e12["release_enabled"]=false; e12["artifact_name"]="synthetic_near_surface_winds_1_2_0"
+        p12=merge(deepcopy(payload),Dict(k=>deepcopy(v120["required_metadata"][k]) for k in ("status","distribution")))
+        file12=joinpath(dir,"fixture_1_2_0.jls"); serialize(file12,p12)
+        e12["payload"]["sha256"]=preset_sha(file12); e12["payload"]["bytes"]=filesize(file12)
+        catalog12=deepcopy(catalog_template); catalog12["presets"]=[e12]; catalog12_file=joinpath(dir,"catalog_1_2_0.toml")
+        preset_write_toml(catalog12_file,catalog12)
+        m12=SpaceAGORA.surrogate_preset_model("synthetic_near_surface_winds_1_2_0";version="1.2.0",catalog_file=catalog12_file,
+            artifacts_file=artifacts_file,file=file12,allow_unreleased=true)
+        @test SpaceAGORA.getDensity(m12,3000.,deg2rad(10.),deg2rad(40.),0.,true)===(rho,T,wind)
+        @test SpaceAGORA.atmosphere_provenance(m12)["preset_version"]=="1.2.0"
         # Below the handover the combined model returns the near-surface component's stored winds, and the grid's above.
         grid=deepcopy(only(filter(p->p["id"]=="odyssey_p20_frozen_v1",catalog_template["presets"]))["required_metadata"])
         grid["grid"]=Dict("alt_km"=>[40.,260.],"lat_deg"=>[-90.,90.],"lon_deg"=>[0.,180.])
