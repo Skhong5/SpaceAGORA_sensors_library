@@ -301,7 +301,7 @@ export_visualization("output/viewer-earth/simulation_results";
 
 ## Robot arms
 
-A spacecraft carrying the cloth robot-arm chain records the `arm_pose` field:
+A spacecraft carrying the compliant robot-arm chain records the `arm_pose` field:
 per arm link, the link centre of mass relative to the spacecraft in inertial
 metres and the link's inertial attitude quaternion. The page draws one
 cylinder per link along the link's own vector, a joint sphere at its origin and

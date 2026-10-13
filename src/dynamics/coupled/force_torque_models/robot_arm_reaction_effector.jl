@@ -28,7 +28,7 @@ function calcForceTorque(model::RobotArmReactionEffector, sc_view, p, sat_idx::I
     sat_idx == model.spacecraft_idx || return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     model.plan === nothing && return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     # Placeholder hook for the coupled backend: the feedforward path is present,
-    # but reaction wrench estimation belongs with Cloth/RNEA dynamics.
+    # but reaction wrench estimation belongs with compliant multibody/RNEA dynamics.
     return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
