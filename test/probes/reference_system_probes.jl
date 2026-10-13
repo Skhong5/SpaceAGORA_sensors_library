@@ -130,7 +130,7 @@ end
     # ------------------------------------------------------------------
     kclear()
     # kclear() wipes CSPICE's kernel pool but not the furnished-kernel /
-    # planet-instance caches in src/environment/ephemerides/planets.jl; without
+    # planet-instance caches in src/models/environment/ephemerides/planets.jl; without
     # this, the Earth("", SPICE_PATH) restore below would hit the cache from
     # the `const EARTH = ...` call above and skip re-furnishing entirely.
     SimulationModel.Planets._reset_furnished_kernels!()

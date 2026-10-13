@@ -3,7 +3,7 @@
 // The scene is lit from where the Sun actually was: `frames.sun_dir` is the
 // unit vector from the planet's center to the Sun in the same inertial frame
 // as `frames.pos_km` (written by the `sun_dir` save field, see
-// src/simulation/callbacks/save_fields.jl), interpolated on the timeline and
+// src/orchestration/simulation/callbacks/save_fields.jl), interpolated on the timeline and
 // rotated into the scene exactly as positions are -- by the world group's
 // quaternion, which is identity in the inertial frame and the inverse planet
 // rotation in planet-fixed mode. The world group's translation (the floating

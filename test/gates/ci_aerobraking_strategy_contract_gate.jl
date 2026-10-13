@@ -6,11 +6,11 @@ function _read(rel)
     return read(path, String)
 end
 
-interfaces = _read(joinpath("src", "gnc", "guidance", "aerobraking", "interfaces.jl"))
-dispatcher = _read(joinpath("src", "gnc", "guidance", "aerobraking", "dispatcher.jl"))
-command_types = _read(joinpath("src", "gnc", "command_types.jl"))
-policy_types = _read(joinpath("src", "mission", "operations", "aerobraking_policy", "policy_types.jl"))
-selector_stub = _read(joinpath("src", "mission", "operations", "aerobraking_policy", "selector_stub.jl"))
+interfaces = _read(joinpath("src", "models", "gnc", "guidance", "aerobraking", "interfaces.jl"))
+dispatcher = _read(joinpath("src", "models", "gnc", "guidance", "aerobraking", "dispatcher.jl"))
+command_types = _read(joinpath("src", "models", "gnc", "command_types.jl"))
+policy_types = _read(joinpath("src", "orchestration", "mission", "operations", "aerobraking_policy", "policy_types.jl"))
+selector_stub = _read(joinpath("src", "orchestration", "mission", "operations", "aerobraking_policy", "selector_stub.jl"))
 
 for token in (
     "abstract type AbstractAerobrakingStrategy",

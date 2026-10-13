@@ -1,5 +1,5 @@
 # Regression guard for `@simd ivdep` on the flat harmonics batch kernel
-# (`_harmonics_flat_batch_kernel!`, src/dynamics/coupled/perturbations.jl).
+# (`_harmonics_flat_batch_kernel!`, src/models/dynamics/coupled/perturbations.jl).
 #
 # `@simd ivdep` licenses LLVM to vectorise the three per-degree batch loops
 # unconditionally instead of only above the batch size LLVM's own alias

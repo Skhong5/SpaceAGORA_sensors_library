@@ -13,7 +13,7 @@ const SNAPSHOT = Ref((hold_ns = Int64(0), wait_hold_ratio = 0.0, acquisitions = 
 time_ns() = CLOCK[]
 native_lock_stats_snapshot() = SNAPSHOT[]
 
-const SOURCE_PATH = normpath(joinpath(@__DIR__, "..", "..", "..", "src", "simulation", "runtime_services.jl"))
+const SOURCE_PATH = normpath(joinpath(@__DIR__, "..", "..", "..", "src", "orchestration", "simulation", "runtime_services.jl"))
 const SOURCE_AST = Meta.parseall(read(SOURCE_PATH, String); filename = SOURCE_PATH)
 const RUNTIME_MODULE = only(filter(SOURCE_AST.args) do node
     node isa Expr && node.head === :module && node.args[2] === :RuntimeServices

@@ -8,9 +8,9 @@ using Test, Roots, LinearAlgebra, SHA
 const SOURCE_ROOT = abspath(isempty(ARGS) ?
     get(ENV, "SPACEAGORA_LEGACY_SOURCE_ROOT", joinpath(@__DIR__, "..", "..")) : ARGS[1])
 const CALLER_FILES = [
-    "src/gnc/guidance/aerobraking/e_edg/second_switch_solver.jl",
-    "src/gnc/guidance/aerobraking/e_edg/switch_window_solver.jl",
-    "src/gnc/guidance/aerobraking/t_edg/targeting_solver.jl",
+    "src/models/gnc/guidance/aerobraking/e_edg/second_switch_solver.jl",
+    "src/models/gnc/guidance/aerobraking/e_edg/switch_window_solver.jl",
+    "src/models/gnc/guidance/aerobraking/t_edg/targeting_solver.jl",
 ]
 const SOURCE_HASHES = Dict(path => bytes2hex(sha256(read(joinpath(SOURCE_ROOT, path))))
     for path in CALLER_FILES)

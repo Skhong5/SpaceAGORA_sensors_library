@@ -4,7 +4,7 @@ module GramLoadingContractTests
 using Test
 
 const ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
-const SERVICES = joinpath(ROOT, "src", "simulation", "runtime_services.jl")
+const SERVICES = joinpath(ROOT, "src", "orchestration", "simulation", "runtime_services.jl")
 const EXAMPLES = joinpath(ROOT, "examples", "common.jl")
 const RUNTIME = joinpath(ROOT, "benchmarks", "studies", "performance_runtime_analysis", "main.jl")
 const PACKAGE = joinpath(ROOT, "benchmarks", "studies", "parallelization_performance", "cases.jl")

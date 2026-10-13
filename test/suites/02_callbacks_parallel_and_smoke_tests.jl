@@ -332,7 +332,7 @@
     # default (16), which exceeds the CI thread count. args_control uses
     # NoAtmosphereModel, which routes through the lock-free density-callback
     # source (see the source= selection in
-    # src/simulation/callbacks/density_callbacks/config.jl), so the
+    # src/orchestration/simulation/callbacks/density_callbacks/config.jl), so the
     # lock-free-specific knob is what actually gates this decision.
     withenv(
         "SPACEAGORA_DENSITY_CALLBACK_PARALLEL" => "auto",

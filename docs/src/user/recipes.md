@@ -8,7 +8,7 @@ not need a longer explanation first.
 Shortest successful command:
 
 ```text
-julia --project=. src/cli/main.jl assets check
+julia --project=. src/interfaces/cli/main.jl assets check
 ```
 
 What to read next:
@@ -29,7 +29,7 @@ julia --project=. examples/AGORA_Basic_Quickstart.jl
 ## Run an example through the CLI
 
 ```text
-julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_run
+julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_run
 ```
 
 ## Run an aerobraking example in smoke mode
@@ -38,7 +38,7 @@ Needs the `data/GRAMSuite.jl` submodule ([GRAMSuite Setup](gramsuite_setup.md)):
 the script loads GRAM even in smoke mode.
 
 ```text
-julia --project=. src/cli/main.jl run --example=AGORA_Earth_Aerobraking.jl --smoke --output-dir=output/aerobraking_smoke
+julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Earth_Aerobraking.jl --smoke --output-dir=output/aerobraking_smoke
 ```
 
 ## Run a Monte Carlo example script with threads
@@ -112,8 +112,8 @@ and use `run_simulation(...; return_results=true).configuration` to inspect the 
 ## Inspect local assets
 
 ```text
-julia --project=. src/cli/main.jl assets check
-julia --project=. src/cli/main.jl assets manifest
+julia --project=. src/interfaces/cli/main.jl assets check
+julia --project=. src/interfaces/cli/main.jl assets manifest
 ```
 
 ## Run the telemetry verification study
@@ -127,20 +127,20 @@ julia --project=. benchmarks/studies/telemetry_orbit_accuracy_study.jl quick --e
 ## Run the telemetry verification CLI path
 
 ```text
-julia --project=. src/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
+julia --project=. src/interfaces/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
 ```
 
 ## Run benchmark smoke launchers
 
 ```text
-julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke
-julia --project=. src/cli/main.jl benchmark smart-parallel-ladder smoke --output-dir=output/smart_ladder_smoke
+julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke
+julia --project=. src/interfaces/cli/main.jl benchmark smart-parallel-ladder smoke --output-dir=output/smart_ladder_smoke
 ```
 
 ## Inspect a benchmark command before running it
 
 ```text
-julia --project=. src/cli/main.jl benchmark runtime-analysis quick --output-dir=output/perf_quick --print-only
+julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis quick --output-dir=output/perf_quick --print-only
 ```
 
 ## Build the docs locally

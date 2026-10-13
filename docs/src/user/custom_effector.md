@@ -233,10 +233,17 @@ The mass is the bus plus two panels. The expected rise comes from the rate at
 which a tangential acceleration raises a near-circular orbit,
 `da/dt = 2 a² a_t v / μ`, integrated over one period; the observed rise is
 read from the final rows of the two results files, with the semi-major axis
-computed from position and velocity through the orbital energy. Success is a
-ratio close to one. A ratio near `1/520` means you returned an acceleration
-instead of a force; a negative rise means the force points against the
-velocity; a `MethodError` naming `calcForceTorque` means the `wrench` method
+computed from position and velocity through the orbital energy. The estimate
+holds the initial semi-major axis and circular speed fixed, while the simulated
+orbit evolves. The ratio is a diagnostic comparison with this first-order
+estimate, not a numerical pass/fail criterion or a bound on physical accuracy.
+The displayed `1.0` is rounded to three decimal places and does not imply exact
+agreement.
+
+For this configuration, a ratio near `1/520` is a clue that acceleration was
+returned instead of force, and a negative rise is a clue that the force points
+against the velocity. Inspect the force units and direction when the comparison
+is unexpected. A `MethodError` naming `calcForceTorque` means the `wrench` method
 was not matched (check its annotations).
 
 Both runs write the standard three files under `output/effector_walkthrough`

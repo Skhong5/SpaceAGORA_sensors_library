@@ -54,7 +54,7 @@ end
 end
 
 @testset "Documented CLI entrypoint activates the adapter" begin
-    script = joinpath(@__DIR__, "..", "src", "cli", "main.jl")
+    script = joinpath(@__DIR__, "..", "src", "interfaces", "cli", "main.jl")
     project = dirname(Base.active_project())
     command = `$(Base.julia_cmd()) --startup-file=no --project=$project $script assets check --preset=odyssey_p20_frozen_v1 --version=1.0.0`
     text = read(command, String)

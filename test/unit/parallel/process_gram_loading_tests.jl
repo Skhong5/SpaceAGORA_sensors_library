@@ -5,8 +5,8 @@ using Test
 using Logging
 
 const ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
-const WORKER_SOURCE = joinpath(ROOT, "src", "parallel", "process", "worker_pool.jl")
-const SERVICES_SOURCE = joinpath(ROOT, "src", "simulation", "runtime_services.jl")
+const WORKER_SOURCE = joinpath(ROOT, "src", "orchestration", "parallel", "process", "worker_pool.jl")
+const SERVICES_SOURCE = joinpath(ROOT, "src", "orchestration", "simulation", "runtime_services.jl")
 const PROJECT = joinpath("synthetic", "repo", "Project.toml")
 const VENDOR = joinpath(dirname(PROJECT), "data", "GRAMSuite.jl")
 const INITIAL_PATH = ["@", "synthetic-fallback", "@stdlib"]
