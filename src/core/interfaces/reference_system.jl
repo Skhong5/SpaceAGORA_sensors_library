@@ -5,6 +5,12 @@ using AstroTime
 using StaticArrays
 using SPICE
 
+# The canonical owner supplies this binding. Legacy raw-include sandboxes use
+# the same numeric source locally, without requiring a package import.
+if !isdefined(@__MODULE__, :Geodesy)
+    include(joinpath(@__DIR__, "..", "numerics", "geodesy.jl"))
+end
+
 const _EARTH_HIGH_PREC_BODY_FIXED_FRAME = "ITRF93"
 const _EARTH_FALLBACK_BODY_FIXED_FRAME = "IAU_EARTH"
 
@@ -377,8 +383,7 @@ end
     ep2 = e2 / (1 - e2)
     p_xy = sqrt(x_p^2 + y_p^2)
 
-    θ = atan(z_p * planet.Rp_e, p_xy * planet.Rp_p)
-    lat = atan(z_p + ep2 * planet.Rp_p * sin(θ)^3, p_xy - e2 * planet.Rp_e * cos(θ)^3)
+    lat = Geodesy._bowring_latitude(z_p, p_xy, e2, ep2, planet)
 
     #Calculate longitude
     lon = atan(y_p, x_p)
@@ -386,7 +391,7 @@ end
     if !spherical_harmonic_topography
         N = planet.Rp_e / sqrt(1 - e2*sin(lat)^2)
         # Bowring closed form: h = p·cosφ + (z + e²·N·sinφ)·sinφ − N.
-        alt = p_xy*cos(lat) + (z_p + e2*N*sin(lat))*sin(lat) - N
+        alt = Geodesy._bowring_altitude(p_xy, z_p, e2, N, lat)
     else
         # Legacy duck-typed topography contract (see the sandbox test in suite
         # 03): the 6-arg planet.topography_function receives the includer
