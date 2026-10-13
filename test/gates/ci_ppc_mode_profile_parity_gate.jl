@@ -1,7 +1,7 @@
 # The benchmark harness's mode table must agree with the shipped profile it names.
 #
 # benchmarks/studies/parallelization_performance/modes.jl duplicates the routing
-# knobs that src/parallel/routing/profile_definitions.jl already declares. That
+# knobs that src/orchestration/parallel/routing/profile_definitions.jl already declares. That
 # duplicate has gone stale twice: R5's inner scheduler was reverted to "static"
 # in 622ae2a0 and its thermal_mode to "auto" later, and in both cases the
 # harness kept measuring the old value -- so the benchmark backing the paper's

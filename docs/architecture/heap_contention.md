@@ -43,7 +43,7 @@ number, then profiles a third with `Profile.Allocs` and buckets every sampled
 allocation by the `src/` domain that owns its innermost SpaceAGORA.jl stack
 frame -- split finely enough to separate `engine/execution.jl` and
 `engine/persistence.jl` (the two files this study modifies) from the rest of
-`src/simulation/engine/` (`solver_policy.jl`, `dynamics_rhs.jl`,
+`src/orchestration/simulation/engine/` (`solver_policy.jl`, `dynamics_rhs.jl`,
 `rhs_calibration.jl`, ...).
 
 P4 (`montecarlo_heavy_aerobraking`) is a 6 h mission at a 1 s max step, ~365
@@ -254,7 +254,7 @@ giving it a target to aim for.
 Three separate worker-launch sites needed the same fix, because there are
 three separate places a process worker gets its `julia` command line built:
 
-1. **`SpaceAGORA.ParallelProcess`'s own pool** (`src/parallel/process/worker_pool.jl`,
+1. **`SpaceAGORA.ParallelProcess`'s own pool** (`src/orchestration/parallel/process/worker_pool.jl`,
    `_process_worker_exeflags`/`ensure_process_workers!`) -- the general
    campaign-dispatch process pool.
 2. **The parallelization_performance harness's per-point controller

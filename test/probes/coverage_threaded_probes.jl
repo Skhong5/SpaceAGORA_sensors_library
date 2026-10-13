@@ -20,7 +20,7 @@ const quat_mult = SimulationModel.quat_mult
 if !isdefined(@__MODULE__, :SimulationEngine)
     const SimulationEngine = SpaceAGORA.SimulationEngine
 end
-# Frame helpers called unqualified below (src/core/interfaces/reference_system.jl).
+# Frame helpers called unqualified below (src/foundation/core/interfaces/reference_system.jl).
 const rtolatlong = SimulationEngine.rtolatlong
 const r_intor_p! = SimulationEngine.r_intor_p!
 if !isdefined(@__MODULE__, :build_initial_conditions)

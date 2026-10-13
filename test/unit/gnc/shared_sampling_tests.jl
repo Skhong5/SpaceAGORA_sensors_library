@@ -5,10 +5,10 @@ using Test
 module SharedSamplingOnly
     using LinearAlgebra, StaticArrays
     const ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
-    include(joinpath(ROOT, "src", "gnc", "shared", "path_geometry.jl"))
-    include(joinpath(ROOT, "src", "gnc", "shared", "rpo", "path_geometry.jl"))
-    include(joinpath(ROOT, "src", "gnc", "shared", "rpo", "sampling_settings.jl"))
-    include(joinpath(ROOT, "src", "gnc", "shared", "rpo", "path_sampling.jl"))
+    include(joinpath(ROOT, "src", "models", "gnc", "planning", "common", "path_geometry.jl"))
+    include(joinpath(ROOT, "src", "models", "gnc", "planning", "rpo", "path_geometry.jl"))
+    include(joinpath(ROOT, "src", "models", "gnc", "planning", "rpo", "sampling_settings.jl"))
+    include(joinpath(ROOT, "src", "models", "gnc", "planning", "rpo", "path_sampling.jl"))
     # Analytic one-point station used only to exercise the standalone sampler.
     rpo_clearance_distance_to_station(p, g) = norm(p) - g.station.keepout_radius_m - maximum(g.chaser.half_extents_body)
 end

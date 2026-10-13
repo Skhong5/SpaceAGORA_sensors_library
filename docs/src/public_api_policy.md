@@ -97,8 +97,8 @@ The following modules remain internal implementation detail namespaces:
 - `ParallelProfiles`
 - `TelemetryVerification`
 - `SpaceAGORACLI`
-- subsystem modules under `src/gnc`, `src/dynamics`, `src/simulation`, and
-  `src/parallel`
+- subsystem modules under `src/models/gnc`, `src/models/dynamics`, `src/orchestration/simulation`, and
+  `src/orchestration/parallel`
 
 These modules are still used heavily inside the package and tests, but they are
 not the stable user contract. They may be reorganized without a deprecation

@@ -61,7 +61,7 @@ Keywords: `max_frames`, `data_budget_mb`, `trail_orbits` or `trail_s`, `frame`
 | `template.html` | page skeleton the Julia bundler fills |
 | `dev.html` | development harness (see below) |
 
-The Julia side is `src/analysis/visualization/scene/viewer_bundle.jl`.
+The Julia side is `src/interfaces/analysis/visualization/scene/viewer_bundle.jl`.
 Modules import each other through bare specifiers (`viewer/globe.js`,
 `three`) that the page's import map resolves, to `data:` URLs in the bundled
 file and to local paths in `dev.html`. No build tool is involved.

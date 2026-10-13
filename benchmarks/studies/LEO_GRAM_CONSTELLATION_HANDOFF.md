@@ -31,19 +31,19 @@ regardless of Julia-level thread budget.
 
 ## Source Fixes Made (all validated against the full test suite, 4039/4039 clean each time)
 
-1. **`in_atmosphere` never initialized from actual state** — `src/simulation/engine/setup.jl`
-   (`_initialize_in_atmosphere_flags!`) / `src/simulation/engine/execution.jl`. The flag
+1. **`in_atmosphere` never initialized from actual state** — `src/orchestration/simulation/engine/setup.jl`
+   (`_initialize_in_atmosphere_flags!`) / `src/orchestration/simulation/engine/execution.jl`. The flag
    defaulted to `false` for every satellite and only flipped on an altitude-crossing
    event; an orbit that starts (and stays) below `EI` never crosses, so it silently
    never got the vacuum-predicted GRAM cache or the finer `dt_max_atmosphere` step size.
    Now set from each satellite's starting altitude at solve setup.
 
 2. **Real data race in aero force caching, unrelated to GRAM** —
-   `src/simulation/engine/setup.jl` (`_initialize_save_cache_buffers!`) /
-   `src/simulation/engine/execution.jl`. `SaveCache.drag_cache`/`lift_cache`/
-   `cross_cache` (`src/core/types/runtime_types.jl`) started as empty `Vector`s and
+   `src/orchestration/simulation/engine/setup.jl` (`_initialize_save_cache_buffers!`) /
+   `src/orchestration/simulation/engine/execution.jl`. `SaveCache.drag_cache`/`lift_cache`/
+   `cross_cache` (`src/foundation/core/types/runtime_types.jl`) started as empty `Vector`s and
    grew lazily via `resize!` in `_store_vector_cache!`
-   (`src/dynamics/coupled/aerodynamic_wrench_models.jl:139`). `AerodynamicCoefficientfM`'s
+   (`src/models/dynamics/coupled/aerodynamic_wrench_models.jl:139`). `AerodynamicCoefficientfM`'s
    wrench is dispatched per-satellite across persistent worker threads whenever gravity
    is threaded across 2+ satellites (**any** density model, not just GRAM), so two
    satellites on different workers could both see the cache as too short and both
@@ -55,7 +55,7 @@ regardless of Julia-level thread budget.
    Fixed by pre-sizing all three caches to `num_sats` before any threaded dispatch begins.
 
 3. **Routing bug: 2-effector constellations never reach the flat queue** —
-   `src/simulation/engine/setup.jl` (`_rhs_flat_has_batch_privileged_effector`,
+   `src/orchestration/simulation/engine/setup.jl` (`_rhs_flat_has_batch_privileged_effector`,
    wired into `_rhs_execution_plan`'s flat-queue eligibility check). The
    `n_effectors >= _rhs_flat_min_effectors()` (default 3) gate silently excluded any
    2-effector constellation (e.g. harmonics + drag — a very common shape) from ever
@@ -70,7 +70,7 @@ regardless of Julia-level thread budget.
    inverse-square/J2 effector is present.
 
 4. **Redundant per-call sort in the flat queue** —
-   `src/simulation/engine/dynamics_rhs.jl` (`_prepare_rhs_flat_work_items!`). Sorted
+   `src/orchestration/simulation/engine/dynamics_rhs.jl` (`_prepare_rhs_flat_work_items!`). Sorted
    every RHS call even when only one effector type remains in the residual flat queue
    (the common case once harmonics is pre-passed away) — cost only varies by `eff_idx`,
    so with one residual type every item shares the same key and the sort is a
@@ -78,10 +78,10 @@ regardless of Julia-level thread budget.
    `_count_flat_queue_only_effectors` helper.
 
 5. **Env-var re-parsing in the per-satellite density hot path** —
-   `src/core/types/runtime_types.jl` (new `SharedBuffers.density_static_config` field),
-   `src/simulation/engine/setup.jl` (`_initialize_density_static_config!`),
-   `src/simulation/engine/effector_sampling.jl`,
-   `src/simulation/callbacks/density_callbacks/runtime.jl`.
+   `src/foundation/core/types/runtime_types.jl` (new `SharedBuffers.density_static_config` field),
+   `src/orchestration/simulation/engine/setup.jl` (`_initialize_density_static_config!`),
+   `src/orchestration/simulation/engine/effector_sampling.jl`,
+   `src/orchestration/simulation/callbacks/density_callbacks/runtime.jl`.
    `_sample_atmosphere_from_planet_frame` was calling `_gram_track_cache_config()`
    (~10 env-var parses), `_gram_runtime_stats_enabled()`, and
    `_gram_track_cache_target_use_j2()`/`_uses_j2_gravity_effector()` fresh on every
@@ -104,7 +104,7 @@ overhead for 2048 satellites) that routing can't touch.
 (`GRAMAtmosphereModel`, `data/GRAMSuite.jl`) hangs indefinitely when 2+ satellites in
 one constellation solve need the vacuum-predicted GRAM cache
 (`SPACEAGORA_VACUUM_GRAM_CACHE`,
-`src/simulation/callbacks/density_callbacks/vacuum_predicted_gram.jl`) to *rebuild*
+`src/orchestration/simulation/callbacks/density_callbacks/vacuum_predicted_gram.jl`) to *rebuild*
 (mission duration exceeds the cache horizon, default 600s).
 
 - 1 satellite, any mission length: fine (tested up to 3600s / ~6 rebuilds).
@@ -164,10 +164,10 @@ post-routing-fix "51%" numbers were dominated by this artifact**, not by real
 application behavior; they were never a meaningful before/after comparison.
 
 **Root cause of the real finding (8 of 9 compute threads idle):**
-`auto_thread_min_budget(:density_callback)` in `src/parallel/policy/env_config.jl`
+`auto_thread_min_budget(:density_callback)` in `src/orchestration/parallel/policy/env_config.jl`
 (line ~140) hardcodes `max(default_budget, 16)` — a **16-thread minimum** before
 `SPACEAGORA_DENSITY_CALLBACK_PARALLEL=auto` will ever enable threading. In
-`thread_policy_decision` (`src/parallel/policy/adaptive_decision.jl:12`):
+`thread_policy_decision` (`src/orchestration/parallel/policy/adaptive_decision.jl:12`):
 ```julia
 auto_budget_allowed = mode != :auto || budget >= auto_thread_min_budget(source)
 ```

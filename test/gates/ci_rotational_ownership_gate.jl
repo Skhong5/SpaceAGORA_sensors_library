@@ -1,6 +1,7 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const SRC_ROOT = joinpath(REPO_ROOT, "src")
-const ROTATIONAL_ROOT = joinpath(SRC_ROOT, "dynamics", "rotational")
+const ROTATIONAL_ROOT = joinpath(SRC_ROOT, "models", "dynamics", "rotational")
+isdir(ROTATIONAL_ROOT) || error("Missing rotational ownership root")
 
 const FORBIDDEN_PATTERNS = (
     r"0\.5\s*\*\s*quat_mult\(",

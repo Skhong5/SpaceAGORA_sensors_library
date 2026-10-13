@@ -37,7 +37,7 @@ julia --project=. examples/AGORA_Earth_NoGRAM.jl
 If you prefer the CLI wrapper:
 
 ```text
-julia --project=. src/cli/main.jl run --example=AGORA_Earth_NoGRAM.jl --output-dir=output/earth_no_gram
+julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Earth_NoGRAM.jl --output-dir=output/earth_no_gram
 ```
 
 After any of these commands, read [Simulation Outputs](outputs.md) to understand
@@ -100,7 +100,7 @@ julia --project=. examples/AGORA_Basic_GRAMEarth.jl
 For a longer Earth aerobraking case, start in smoke mode:
 
 ```text
-julia --project=. src/cli/main.jl run --example=AGORA_Earth_Aerobraking.jl --smoke --output-dir=output/aerobraking_smoke
+julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Earth_Aerobraking.jl --smoke --output-dir=output/aerobraking_smoke
 ```
 
 Related mission scripts:

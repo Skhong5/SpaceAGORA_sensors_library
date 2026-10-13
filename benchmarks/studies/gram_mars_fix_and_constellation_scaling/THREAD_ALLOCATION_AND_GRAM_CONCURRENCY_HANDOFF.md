@@ -32,7 +32,7 @@ memory).
 
 ## Finding 1 — the density-callback auto-gate silently caps the surrogate too
 
-`auto_thread_min_budget(:density_callback)` (`src/parallel/policy/env_config.jl:140-154`)
+`auto_thread_min_budget(:density_callback)` (`src/orchestration/parallel/policy/env_config.jl:140-154`)
 defaults to a **16-thread minimum** before `SPACEAGORA_DENSITY_CALLBACK_PARALLEL=auto`
 ever threads density sampling — regardless of density-model type. This was
 already known to hurt native GRAM (see
@@ -192,7 +192,7 @@ changes, both now in place (submodule + parent repo, see
   construction on a fresh worker can happen inside an already-compiled
   Distributed closure. See `feedback_julia_distributed_gotchas` memory, point 5.
 - **`SpaceAGORA.ParallelProcess`** (item 2, formalized): a shared,
-  auto-bootstrapping `Distributed` worker pool (`src/parallel/process/`),
+  auto-bootstrapping `Distributed` worker pool (`src/orchestration/parallel/process/`),
   wired into `run_monte_carlo`/`run_constellation_ensemble`'s adaptive
   `threads=:auto` routing as a real `:process` route — no more silent
   downgrade to `:threads`/`:none` for native-GRAM workloads.
@@ -290,7 +290,7 @@ a fundamental Julia scheduler limitation with no available fix, as the
 turns out **not** to be a uniformly-enforced kill-switch across this codebase: it
 correctly gates the density/control/thermal callback paths and the dynamic-effector
 thread decision, but three multi-worker auto/forced-routing branches inside
-`_rhs_execution_plan` (`src/simulation/engine/setup.jl`) never checked it at all —
+`_rhs_execution_plan` (`src/orchestration/simulation/engine/setup.jl`) never checked it at all —
 the harmonics-batch/flat-constellation route (the exact mechanism
 `SPACEAGORA_HARMONICS_BATCH_ENABLED=1` triggers, used by default in this study),
 plus two structurally identical siblings (`single_invsq_flat`, and the
@@ -366,10 +366,10 @@ three modes. Raw data: `mc_multisat_thread_allocation_summary.csv` /
 ## Finding 7 — Finding 6 item 7's cold-worker JIT cost: fixed, with a real diagnosis correction along the way
 
 Direct follow-up to Finding 6's item 7. Implemented an optional `warmup_fn`
-parameter on `ensure_process_workers!` (`src/parallel/process/worker_pool.jl`):
+parameter on `ensure_process_workers!` (`src/orchestration/parallel/process/worker_pool.jl`):
 a zero-argument closure, `remotecall_fetch`'d best-effort on each *newly added*
 worker only, after the existing generic bootstrap. `_run_campaign_with_route_env`'s
-`:process` branch (`src/simulation/campaigns/adaptive_routing.jl`) now passes
+`:process` branch (`src/orchestration/simulation/campaigns/adaptive_routing.jl`) now passes
 `warmup_fn=() -> f(first(spec.seeds))` — reusing the campaign's own real
 per-sample closure, so a newly grown worker's first-ever JIT/specialization
 cost is paid once during pool growth instead of landing inside the caller's

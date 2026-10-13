@@ -1,5 +1,5 @@
 include(joinpath(@__DIR__, "common.jl"))
-include(joinpath(REPO_ROOT, "src", "mission", "operations", "maneuver_plans.jl"))
+include(joinpath(REPO_ROOT, "src", "orchestration", "mission", "operations", "maneuver_plans.jl"))
 using CSV
 using DataFrames
 using Plots

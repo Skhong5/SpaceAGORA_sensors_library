@@ -5,10 +5,10 @@ module EDGE2cRepairTests
 using Test, StaticArrays, LinearAlgebra
 
 const ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
-const HEAT = "src/gnc/guidance/aerobraking/typed_edg/heat_load.jl"
-const CONTROL = "src/gnc/guidance/aerobraking/typed_edg/targeting.jl"
-const ANGLE = "src/gnc/guidance/aerobraking/typed_edg/angle_decision.jl"
-const GUIDANCE = "src/gnc/guidance/aerobraking/typed_edg/guidance_decision.jl"
+const HEAT = "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl"
+const CONTROL = "src/models/gnc/guidance/aerobraking/typed_edg/targeting.jl"
+const ANGLE = "src/models/gnc/guidance/aerobraking/typed_edg/angle_decision.jl"
+const GUIDANCE = "src/models/gnc/guidance/aerobraking/typed_edg/guidance_decision.jl"
 
 function load_definitions!(target, path, names)
     # The override allows the same tests to discriminate the pinned parent revision.

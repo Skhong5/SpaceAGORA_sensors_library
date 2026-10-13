@@ -44,7 +44,7 @@ three result files under `output/`, without generating plots.
 Use the CLI to keep this run's files in their own directory:
 
 ```text
-julia --project=. src/cli/main.jl run --example=AGORA_Earth_NoGRAM.jl --output-dir=output/cli_run
+julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Earth_NoGRAM.jl --output-dir=output/cli_run
 ```
 
 ### Your own script

@@ -1,7 +1,7 @@
 // Blowing regolith under a landing vehicle: the dust sheet the descent engine's
 // plume drives off the surface, the ground it obscures, and the scour mark it
 // leaves. Driven entirely by the `frames.plume` block the plume-surface
-// effector writes (see src/dynamics/coupled/force_torque_models/
+// effector writes (see src/models/dynamics/coupled/force_torque_models/
 // plume_surface_interaction.jl), so the sheet only appears where the physics
 // says soil is actually moving.
 //
