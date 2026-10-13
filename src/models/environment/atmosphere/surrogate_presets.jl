@@ -9,8 +9,14 @@ const _SURROGATE_ARTIFACTS = normpath(joinpath(@__DIR__, "..", "..", "..", "..",
 const _SURROGATE_PACKAGE_UUID = Base.UUID("afbfb69f-5c0b-4832-b760-43725dff8540")
 const _PRESET_METADATA_KEY = "spaceagora_named_surrogate"
 _preset_error(message) = throw(ArgumentError(message))
-# A preset's kind selects its model: a fixed grid (the default when absent) or a near-surface payload.
-const _PRESET_KINDS = ("gram_grid", "gram_near_surface_scalars")
+# A preset's kind selects its model: a fixed grid (the default when absent), a near-surface payload, or a composite of
+# two catalog entries by height, which has no payload of its own.
+const _COMPOSITE_KIND = "composite_by_height"
+const _PRESET_KINDS = ("gram_grid", "gram_near_surface_scalars", _COMPOSITE_KIND)
+# A composite's only rule: the lower component below the handover height, the upper at or above it, nothing blended.
+const _COMPOSITE_RULE = "lower_below_upper_at_or_above"
+# The keys that identify a payload. A composite has none: its components' entries hold the payload identities.
+const _PAYLOAD_KEYS = ("payload", "artifact_name", "distribution", "required_metadata", "axes", "generation_provenance")
 # A near-surface payload's format says whether it stores winds: format 1 (published versions 1.0.0 and 1.1.0) stores
 # none and returns a zero wind vector; format 2 adds a wind layer and returns its stored winds.
 const _NEAR_SURFACE_FORMAT = "spaceagora_mars_near_surface_scalars_v1"
@@ -51,6 +57,7 @@ function _preset_catalog(path)
     entries = get(catalog, "presets", nothing)
     entries isa Vector || _preset_error("The surrogate catalog must contain preset entries.")
     seen = Set{Tuple{String,String}}()
+    composites = Any[]
     for entry in entries
         id = get(entry, "id", ""); version = get(entry, "version", "")
         occursin(r"^[a-z][a-z0-9_]*$", id) || _preset_error("Invalid surrogate preset ID '$id'.")
@@ -61,6 +68,8 @@ function _preset_catalog(path)
         kind = _preset_kind(entry)
         kind in _PRESET_KINDS || _preset_error("Preset '$id' has an unsupported kind '$kind'.")
         _preset_planet(entry["planet"])
+        # A composite refers to other entries, which may come later in the file; it is checked once all are read.
+        kind == _COMPOSITE_KIND && (push!(composites, entry); continue)
         payload = entry["payload"]
         occursin(r"^[0-9a-f]{64}$", payload["sha256"]) || _preset_error("Invalid preset payload SHA256.")
         payload["bytes"] isa Integer && payload["bytes"] > 0 || _preset_error("Invalid preset payload size.")
@@ -92,7 +101,84 @@ function _preset_catalog(path)
             occursin(r"^[0-9a-f]{40}$", distribution["git_tree_sha1"]) && occursin(r"^[0-9a-f]{64}$", distribution["archive_sha256"]) && !isempty(distribution["urls"]) || _preset_error("Released presets require complete artifact publication identities.")
         end
     end
+    foreach(entry -> _preset_composite_entry(entry, entries), composites)
     return catalog, bytes2hex(SHA.sha256(bytes))
+end
+
+_preset_label(entry) = "'$(entry["id"])@$(entry["version"])'"
+# Whether an entry returns stored winds: a grid with stored local ENU winds, or a near-surface payload of format 2.
+function _preset_stored_winds(entry)
+    atmosphere = entry["atmosphere"]
+    _preset_kind(entry) == "gram_near_surface_scalars" && return atmosphere["winds_available"] === true
+    return get(atmosphere, "wind_convention", nothing) == "stored_nominal_local_ENU" &&
+        get(atmosphere, "wind_boolean_suppresses_stored_components", nothing) === false && all(in(get(atmosphere, "fields", Any[])), _WIND_FIELDS)
+end
+# A composite preset names two catalog entries and the height that separates them; it has no payload of its own.
+function _preset_composite_entry(entry, entries)
+    name = "Composite preset $(_preset_label(entry))"
+    present = filter(key -> haskey(entry, key), _PAYLOAD_KEYS)
+    isempty(present) || _preset_error("$name has no payload of its own, so it cannot declare $(join(present, ", ")); its components' entries hold the payload identities.")
+    get(entry, "release_enabled", nothing) isa Bool || _preset_error("Preset release_enabled must be explicit.")
+    for key in ("components", "handover", "atmosphere", "domain", "support")
+        get(entry, key, nothing) isa Union{AbstractDict, AbstractVector} || _preset_error("$name needs its $key.")
+    end
+    components = entry["components"]
+    components isa AbstractVector && length(components) == 2 && all(c -> c isa AbstractDict, components) &&
+        sort([get(c, "role", "") for c in components]) == ["lower", "upper"] ||
+        _preset_error("$name needs exactly two components, one with role \"lower\" and one with role \"upper\".")
+    side = Dict{String, Any}()
+    for c in components
+        id, version = get(c, "id", ""), get(c, "version", "")
+        matches = filter(p -> p["id"] == id && p["version"] == version, entries)
+        length(matches) == 1 || _preset_error("$name names the component '$id@$version', which is not in the catalog.")
+        component = only(matches)
+        _preset_kind(component) == _COMPOSITE_KIND && _preset_error("$name names the component '$id@$version', which is itself a composite; composites do not nest.")
+        entry["release_enabled"] && !component["release_enabled"] && _preset_error("$name is released, but its component '$id@$version' is not.")
+        _preset_planet(component["planet"]) == _preset_planet(entry["planet"]) ||
+            _preset_error("$name is for $(entry["planet"]), but its component '$id@$version' is for $(component["planet"]).")
+        side[c["role"]] = component
+    end
+    lower, upper = side["lower"], side["upper"]
+    # The validated shape: terrain-following data below the handover and a fixed grid above it.
+    _preset_kind(lower) == "gram_near_surface_scalars" && _preset_kind(upper) == "gram_grid" ||
+        _preset_error("$name needs a near-surface preset as its lower component and a grid preset as its upper one, " *
+            "not $(_preset_kind(lower)) $(_preset_label(lower)) and $(_preset_kind(upper)) $(_preset_label(upper)).")
+    atmosphere = entry["atmosphere"]
+    get(atmosphere, "query_elapsed_time_applied", nothing) === false || _preset_error("Only explicitly frozen atmospheric presets are supported.")
+    get(atmosphere, "latitude", nothing) == "geodetic" && get(atmosphere, "height", nothing) == "ellipsoidal" ||
+        _preset_error("Preset coordinate datum is inconsistent or unsupported.")
+    for component in (lower, upper)
+        theirs = component["atmosphere"]
+        get(atmosphere, "epoch_utc", nothing) == theirs["epoch_utc"] ||
+            _preset_error("$name declares the frozen instant $(get(atmosphere, "epoch_utc", nothing)), but its component $(_preset_label(component)) is frozen at $(theirs["epoch_utc"]).")
+        all(key -> get(atmosphere, key, nothing) == theirs[key], ("equatorial_radius_m", "polar_radius_m")) ||
+            _preset_error("$name declares reference-ellipsoid radii that differ from its component $(_preset_label(component))'s.")
+        _preset_stored_winds(component) ||
+            _preset_error("$name needs stored winds on both sides of its handover, but its component $(_preset_label(component)) stores none.")
+    end
+    atmosphere["winds_available"] === true && get(atmosphere, "wind_returned", nothing) == "stored_components" &&
+        get(atmosphere, "wind_convention", nothing) == "stored_nominal_local_ENU" &&
+        get(atmosphere, "wind_boolean_suppresses_stored_components", nothing) === false && all(in(get(atmosphere, "fields", Any[])), _WIND_FIELDS) ||
+        _preset_error("$name returns its components' stored winds: it must declare winds_available = true, wind_returned = " *
+            "\"stored_components\", wind_convention = \"stored_nominal_local_ENU\", wind_boolean_suppresses_stored_components = false, " *
+            "and the wind fields $(join(_WIND_FIELDS, ", ")).")
+    handover = entry["handover"]; h = get(handover, "height_m", nothing)
+    h isa Real && !(h isa Bool) && isfinite(h) && h > 0 || _preset_error("$name needs a finite, positive handover height_m.")
+    get(handover, "reference", nothing) == "ellipsoidal" ||
+        _preset_error("$name's handover height must be measured above the reference ellipsoid (reference = \"ellipsoidal\").")
+    get(handover, "rule", nothing) == _COMPOSITE_RULE || _preset_error("$name's handover rule must be \"$_COMPOSITE_RULE\": " *
+        "the lower component below the handover height and the upper one at or above it, with nothing blended.")
+    floor_m, ceiling_m = upper["domain"]["height_m"]
+    floor_m <= h < ceiling_m || _preset_error("$name hands over at $h m, outside its upper component $(_preset_label(upper))'s " *
+        "range from $floor_m m (inclusive) to $ceiling_m m.")
+    # Necessary only: the lower top is an areoid height, which the catalog cannot compare with an ellipsoidal one everywhere.
+    h < lower["domain"]["top_areoid_height_m"] || _preset_error("$name hands over at $h m above the ellipsoid, not below its lower " *
+        "component $(_preset_label(lower))'s top of $(lower["domain"]["top_areoid_height_m"]) m areoid height.")
+    domain = entry["domain"]
+    get(domain, "outside", nothing) == "error" && get(domain, "longitude_period_deg", nothing) == 360 ||
+        _preset_error("Named presets require errors outside their supported domain.")
+    get(domain, "height_top_m", nothing) == ceiling_m || _preset_error("$name's domain top differs from its upper component's ceiling, $ceiling_m m.")
+    return nothing
 end
 
 function _preset_grid_domain(entry)
@@ -229,6 +315,8 @@ An unreleased preset is available only with both an explicit file and
 `catalog_file` and `artifacts_file` are advanced trusted-catalog overrides.
 Resolution performs no native GRAM initialization and never selects native fallback.
 A first installation logs its source and, once verified, its location.
+A composite preset has no payload of its own and is refused here: build it with
+`surrogate_preset_model`, or resolve each of its components.
 """
 function resolve_surrogate_preset(id::AbstractString; version::AbstractString,
     planet::AbstractString="Mars", file::AbstractString="", offline::Bool=false,
@@ -239,6 +327,8 @@ function resolve_surrogate_preset(id::AbstractString; version::AbstractString,
     length(candidates) == 1 || _preset_error("Unknown surrogate preset '$id@$version'. Inspect available_surrogate_presets(); select an exact listed version.")
     entry = only(candidates); key = _preset_planet(planet)
     key == _preset_planet(entry["planet"]) || _preset_error("Preset '$id@$version' is for $(entry["planet"]), not $planet.")
+    _preset_kind(entry) == _COMPOSITE_KIND && _preset_error("Preset '$id@$version' is a composite of " *
+        "$(_composite_component_text(entry)) and has no payload of its own. Build it with surrogate_preset_model, or resolve each component with resolve_surrogate_preset.")
     explicit = !isempty(strip(file))
     released = entry["release_enabled"]
     released || (allow_unreleased && explicit) || _preset_error("Preset '$id@$version' is not published. Public retrieval is disabled until its distribution identities are recorded; local development requires an explicit file and allow_unreleased=true.")
@@ -322,6 +412,63 @@ function _preset_requested_kind(id, kwargs)
     return "gram_grid"
 end
 
+# The keyword constructors come from the GRAMSuite extension; without it a construction fails with a MethodError
+# naming keywords the user never passed.
+function _require_preset_constructor(near_surface::Bool)
+    hasmethod(near_surface ? GRAMNearSurfaceAtmosphereModel : GRAMGridAtmosphereModel, Tuple{}) ||
+        _preset_error("surrogate_preset_model needs the public GRAMSuite " *
+        "Julia package, which provides the $(near_surface ? "near-surface" : "grid") atmosphere: run `import GRAMSuite` first (the Odyssey example " *
+        "environment installs it). No native GRAM installation is used.")
+    return nothing
+end
+
+# A composite's components, lower first, and their description in messages.
+_composite_components(entry) = sort(entry["components"]; by = c -> c["role"])
+_composite_component_text(entry) = join(["$(c["id"])@$(c["version"]) ($(c["role"]))" for c in _composite_components(entry)], " and ")
+_composite_file_error(id, version) = _preset_error("Preset '$id@$version' is a composite and has no payload of its own, so an " *
+    "explicit file cannot select it. To use local payload files, build each component from its own preset and file and " *
+    "compose them with CombinedAtmosphereModel; that composition carries no named composite contract.")
+
+# The components of a released composite entry as (role, id, version), lower first; an unreleased composite is refused.
+function _composite_entry_components(entry)
+    entry["release_enabled"] || _preset_error("Preset $(_preset_label(entry)) is not published. A composite preset has no " *
+        "local-development path: build its components and compose them with CombinedAtmosphereModel.")
+    return [(role = c["role"], id = c["id"], version = c["version"]) for c in _composite_components(entry)]
+end
+# The same for a preset named by id and version, or `nothing` for any other entry (an unknown id or version included,
+# which resolution reports).
+function _composite_preset_components(id, version; catalog_file::AbstractString=_SURROGATE_CATALOG)
+    catalog, _ = _preset_catalog(catalog_file)
+    for entry in catalog["presets"]
+        entry["id"] == id && entry["version"] == version && _preset_kind(entry) == _COMPOSITE_KIND &&
+            return _composite_entry_components(entry)
+    end
+    return nothing
+end
+
+# A composite preset: each component built and verified through its own entry, composed at the entry's handover.
+function _composite_preset_model(id; version::AbstractString, planet::AbstractString="Mars", file::AbstractString="",
+        offline::Bool=false, allow_unreleased::Bool=false, catalog_file::AbstractString=_SURROGATE_CATALOG,
+        artifacts_file::AbstractString=_SURROGATE_ARTIFACTS)
+    isempty(strip(file)) || _composite_file_error(id, version)
+    catalog, catalog_sha = _preset_catalog(catalog_file)
+    entry = only(filter(p -> p["id"] == id && p["version"] == version, catalog["presets"]))
+    key = _preset_planet(planet)
+    key == _preset_planet(entry["planet"]) || _preset_error("Preset '$id@$version' is for $(entry["planet"]), not $planet.")
+    components = _composite_entry_components(entry)
+    # The catalog fixes the kinds: a near-surface lower component and a grid upper one.
+    _require_preset_constructor(true); _require_preset_constructor(false)
+    lower, upper = (surrogate_preset_model(c.id; version=c.version, planet, offline, catalog_file, artifacts_file) for c in components)
+    model = CombinedAtmosphereModel(lower, upper; handover_height_m=entry["handover"]["height_m"])
+    model.metadata[_PRESET_METADATA_KEY] = Dict{String,Any}(
+        "preset_kind" => _COMPOSITE_KIND, "preset_id" => String(id), "preset_version" => String(version), "planet" => key,
+        "components" => [Dict{String,Any}("role" => c.role, "id" => c.id, "version" => c.version) for c in components],
+        "catalog_sha256" => catalog_sha, "catalog_revision" => catalog["catalog_revision"],
+        "public_release" => true, "local_development" => false,
+        "atmosphere" => deepcopy(entry["atmosphere"]), "domain" => deepcopy(entry["domain"]), "support" => deepcopy(entry["support"]))
+    return model
+end
+
 """
     surrogate_preset_model(id; version, planet="Mars", file="", offline=false, ...)
 
@@ -333,6 +480,10 @@ behavior are unchanged. A near-surface preset with payload format 1 (the publish
 versions 1.0.0 and 1.1.0) stores no winds and returns a zero wind vector; one with
 format 2 returns its stored winds, and its catalog entry and payload must agree on
 that. Queries outside the declared domain fail; longitude is periodic.
+A composite preset (kind `composite_by_height`) builds each of its two components
+through its own entry, as above, and composes them with `CombinedAtmosphereModel` at
+the entry's handover height. It has no payload of its own, so it takes no `file`, and
+an unreleased composite is refused.
 Use `atmosphere_provenance(model)` to retain the selected contract in run outputs.
 Without `GRAMSuite` loaded it raises an `ArgumentError` before resolving anything.
 Accepts the keywords of `resolve_surrogate_preset` only. A named preset fixes its
@@ -346,13 +497,10 @@ function surrogate_preset_model(id::AbstractString; kwargs...)
         "For another policy, such as above_grid=:vacuum, construct the generic GRAMGridAtmosphereModel directly, " *
         "for example with surrogate_file=resolve_surrogate_preset(id; version).file; that model carries no named preset contract. " *
         "Accepted keywords: $(join(_PRESET_RESOLUTION_KEYWORDS, ", ")).")
-    # The keyword constructors come from the GRAMSuite extension; without it the
-    # call below fails with a MethodError naming keywords the user never passed.
-    near_surface = _preset_requested_kind(id, kwargs) == "gram_near_surface_scalars"
-    hasmethod(near_surface ? GRAMNearSurfaceAtmosphereModel : GRAMGridAtmosphereModel, Tuple{}) ||
-        _preset_error("surrogate_preset_model needs the public GRAMSuite " *
-        "Julia package, which provides the $(near_surface ? "near-surface" : "grid") atmosphere: run `import GRAMSuite` first (the Odyssey example " *
-        "environment installs it). No native GRAM installation is used.")
+    kind = _preset_requested_kind(id, kwargs)
+    kind == _COMPOSITE_KIND && return _composite_preset_model(id; kwargs...)
+    near_surface = kind == "gram_near_surface_scalars"
+    _require_preset_constructor(near_surface)
     resolved = resolve_surrogate_preset(id; kwargs...)
     model = if near_surface
         _validate_near_surface_preset_model(GRAMNearSurfaceAtmosphereModel(; planet=resolved.planet,
@@ -370,7 +518,9 @@ end
 
 Return an independent metadata dictionary identifying an atmosphere backend. Named
 surrogates include their immutable preset/version, payload and catalog identities,
-frozen epoch, coordinates, support domain and limitations. Custom models are
+frozen epoch, coordinates, support domain and limitations. A composition records its
+handover rule and both components' records; a named composite preset adds its own
+preset/version, components, catalog identity and support. Custom models are
 identified by their actual type without inventing a preset or native-free claim.
 """
 atmosphere_provenance(model::AbstractDensityModel) = Dict{String,Any}(
@@ -388,8 +538,10 @@ function atmosphere_provenance(model::GRAMGridAtmosphereModel)
         "preset_status" => "user_supplied_grid_without_named_preset_contract", "above_grid" => string(model.core.above_grid))
 end
 function atmosphere_provenance(model::CombinedAtmosphereModel)
-    return Dict{String,Any}("backend" => "combined_native_free_snapshot",
+    record = Dict{String,Any}("backend" => "combined_native_free_snapshot",
         "handover_height_m" => model.handover_height_m, "handover_reference" => "height above the reference ellipsoid",
         "rule" => "lower component below the handover height, upper component at or above it; each keeps its own domain errors and winds",
         "lower" => atmosphere_provenance(model.lower), "upper" => atmosphere_provenance(model.upper))
+    haskey(model.metadata, _PRESET_METADATA_KEY) && merge!(record, deepcopy(model.metadata[_PRESET_METADATA_KEY]))
+    return record
 end
