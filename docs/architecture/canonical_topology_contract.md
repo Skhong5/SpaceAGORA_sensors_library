@@ -36,18 +36,24 @@ This contract defines canonical ownership for the topology cleanup that answers 
      under `src/viewer/`)
 
 11. Externally propagated spacecraft (shadow entries held in the state vector while an
-    optional package integrates them) are owned in three places, none of which
+    optional package integrates them) are owned in four places, none of which
     knows any concrete integrator:
     - `src/dynamics/coupled/external_propagation.jl`: the `SimulationModel.ExternalPropagation`
-      hook surface (an internal name space, not a root export). Unimplemented hooks throw
-      `Not implemented`.
+      hook implementation identities. Optional adapters use the supported facade below;
+      default hooks throw `Not implemented`, except for the accepting preflight default.
     - `src/simulation/engine/external_propagation.jl`: setup-time refusals, per-run runtimes
       and the shadow right-hand side.
     - `src/simulation/callbacks/external_propagation_callbacks.jl`: the sync callback that
       overwrites shadow entries after every accepted step, first among the discrete callbacks.
+    - `src/simulation/external_propagation_services.jl`: the versioned
+      `SpaceAGORA.ExternalPropagationServices` adapter boundary, aliasing existing hook
+      identities and supplying narrow configuration, state and frame services.
     `SimulationConfiguration.external_propagators` carries the owners. Concrete owners live
-    in optional packages under `packages/` (for example `packages/SpaceAGORAMuJoCo`); the root
-    package never depends on them.
+    in their domain repositories, including the independent
+    [SpaceAGORAMuJoCo.jl companion](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl).
+    The root package never depends on them. Native bindings, adapter tests and the
+    Basilisk/MuJoCo comparison harness belong to that companion; generic lifecycle,
+    conformance tests and shared physics remain in core.
 
 ## Required Canonical Files
 1. `src/simulation/engine/public_api.jl`

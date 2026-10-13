@@ -52,6 +52,45 @@ julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl
 
 See the [Odyssey walkthrough](../tutorials/odyssey_surrogate.md).
 
+### Optional MuJoCo companion
+
+[SpaceAGORAMuJoCo.jl](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl)
+provides standalone proximity scenes and externally propagated spacecraft inside
+`run_simulation`. Its repository owns the package, native binding, tests and
+Basilisk comparison harness. Julia 1.12 is required; native scenes currently
+support Linux x86_64 and use the pinned MuJoCo 3.11.0 artifact.
+
+Build an independent environment from the companion checkout:
+
+```text
+git clone https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl.git
+cd SpaceAGORAMuJoCo.jl
+julia --startup-file=no scripts/setup_env.jl /path/to/mujoco-env
+julia --startup-file=no --project=/path/to/mujoco-env
+```
+
+Then load the packages explicitly:
+
+```julia
+using SpaceAGORA, SpaceAGORAMuJoCo
+```
+
+The companion's setup installs the exact core revision recorded in its
+`Project.toml` and creates its own manifest. It does not use a parent checkout,
+copy a core manifest, or call a HYPR installer. The package version-family
+constraint alone is not a compatibility guarantee; the source pair and
+`ExternalPropagationServices` contract version must agree. Loading core alone
+does not load this adapter or download MuJoCo.
+
+For development, `SPACEAGORA_CORE_PATH` selects a local SpaceAGORA checkout
+instead of that source pin. Core CI uses this override with an immutable
+companion revision so changes to core are tested against the actual candidate.
+See the companion's [installation guide](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl#installation)
+for overrides and its [scene example and limits](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl#spaceagoramujocojl)
+before constructing an owner. The supported connection is documented in
+[External propagation services](../maintainer/external_propagation_services.md)
+and the shared [optional adapter standard](../maintainer/adapter_contract.md).
+
 ### `docs/`
 
 The docs build uses its own project:

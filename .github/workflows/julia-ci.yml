@@ -919,16 +919,30 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
-  # The optional MuJoCo subpackage (packages/SpaceAGORAMuJoCo), Linux only. The root project never
-  # depends on it. The MuJoCo 3.11.0 artifact is a public Apache-2.0 release, so unlike GRAM content it may
-  # be cached; Pkg still verifies the sha256 and tree hash from Artifacts.toml whenever it downloads.
+  # Qualify the independent companion against this core checkout on every PR.
+  # Keep the companion revision immutable; upgrades also require its standalone
+  # installation/native CI. The tests aggregate requires this job to pass.
+  # MuJoCo's public artifact may be cached; Pkg still verifies its declared hashes.
   optional-mujoco-installation:
     needs: depot
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
+    env:
+      SPACEAGORA_MUJOCO_REQUIRED: "1"
+      JULIA_LOAD_PATH: "@:@stdlib"
+      JULIA_NUM_THREADS: "4"
+      OPENBLAS_NUM_THREADS: "1"
+      JULIA_PKG_PRECOMPILE_AUTO: "0"
     steps:
       - uses: actions/checkout@v7
         with:
+          persist-credentials: false
+      - name: Checkout the pinned MuJoCo companion
+        uses: actions/checkout@v7
+        with:
+          repository: Space-FALCON-Lab/SpaceAGORAMuJoCo.jl
+          ref: 3f2845b05e45a6521344e1d31383079454318759
+          path: optional/SpaceAGORAMuJoCo
           persist-credentials: false
       - uses: ./.github/actions/setup
         with:
@@ -939,12 +953,27 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.julia/artifacts/6a34a368d528ad0332f9da97de3d2f105977bac8
-          key: mujoco-artifact-${{ runner.os }}-${{ hashFiles('packages/SpaceAGORAMuJoCo/Artifacts.toml') }}
-      - name: Build the SpaceAGORA plus SpaceAGORAMuJoCo environment
-        run: julia --startup-file=no --project=. packages/SpaceAGORAMuJoCo/scripts/setup_env.jl "$RUNNER_TEMP/mujoco-env"
-      - name: SpaceAGORAMuJoCo tests
+          key: mujoco-artifact-${{ runner.os }}-${{ hashFiles('optional/SpaceAGORAMuJoCo/Artifacts.toml') }}
+      - name: Check companion installation inputs
+        run: julia --startup-file=no optional/SpaceAGORAMuJoCo/test/installation_plan_tests.jl
+      - name: Check exact core source acquisition
+        run: julia --startup-file=no optional/SpaceAGORAMuJoCo/test/source_acquisition_tests.jl
+      - name: Build the current core plus pinned companion environment
         env:
-          SPACEAGORA_MUJOCO_REQUIRED: "1"
-          JULIA_LOAD_PATH: "@:@stdlib"
-          JULIA_NUM_THREADS: "4"                  # the threaded Monte Carlo identity test
-        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" packages/SpaceAGORAMuJoCo/test/runtests.jl
+          SPACEAGORA_CORE_PATH: ${{ github.workspace }}
+          SPACEAGORA_CORE_REV: ""
+        run: julia --startup-file=no optional/SpaceAGORAMuJoCo/scripts/setup_env.jl "$RUNNER_TEMP/mujoco-env"
+      - name: Core-only import and compatibility isolation
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" optional/SpaceAGORAMuJoCo/test/core_only.jl
+      - name: Reject incompatible core before defining adapter methods
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" optional/SpaceAGORAMuJoCo/test/incompatible_core.jl
+      - name: Core-first adapter load and conformance
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" optional/SpaceAGORAMuJoCo/test/load_order.jl core-first
+      - name: Companion-first adapter load and conformance
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" optional/SpaceAGORAMuJoCo/test/load_order.jl companion-first
+      - name: Mandatory native tests with four threads
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" -e '@assert Threads.nthreads() == 4; include("optional/SpaceAGORAMuJoCo/test/runtests.jl")'
+      - name: Verify tracked installation inputs were not changed
+        run: |
+          git diff --exit-code
+          git -C optional/SpaceAGORAMuJoCo diff --exit-code

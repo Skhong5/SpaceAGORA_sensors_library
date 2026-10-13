@@ -76,6 +76,39 @@ class PlanTests(unittest.TestCase):
             self.assertEqual([x.strip() for x in needs.group(1).split(",")], expected_needs)
             self.assertIn(f"SHARD_MATRIX: ${{{{ needs.plan.outputs.{output} }}}}", agg.group(1), aggregator)
 
+    def test_external_mujoco_companion_is_mandatory(self):
+        wf = (ROOT / ".github/workflows/julia-ci.yml").read_text()
+        match = re.search(r"^  optional-mujoco-installation:\n(.*?)(?=^  \S|\Z)", wf, re.S | re.M)
+        self.assertIsNotNone(match)
+        job = match.group(1)
+        # An external checkout must stay pinned; testing its default core pin
+        # would fail to qualify the SpaceAGORA revision under review.
+        checkout = re.search(r"repository: Space-FALCON-Lab/SpaceAGORAMuJoCo\.jl\n"
+                             r"(?P<settings>(?:          [^\n]*\n)+)", job)
+        self.assertIsNotNone(checkout)
+        self.assertRegex(checkout.group("settings"), r"(?m)^          ref: [0-9a-f]{40}$")
+        self.assertIn("path: optional/SpaceAGORAMuJoCo", checkout.group("settings"))
+        self.assertIn("persist-credentials: false", checkout.group("settings"))
+        self.assertIn("SPACEAGORA_CORE_PATH: ${{ github.workspace }}", job)
+        self.assertIn('SPACEAGORA_CORE_REV: ""', job)
+        self.assertNotIn("packages/SpaceAGORAMuJoCo", job)
+        self.assertIn("hashFiles('optional/SpaceAGORAMuJoCo/Artifacts.toml')", job)
+        for required in ('SPACEAGORA_MUJOCO_REQUIRED: "1"', 'JULIA_LOAD_PATH: "@:@stdlib"',
+                         'JULIA_NUM_THREADS: "4"', '@assert Threads.nthreads() == 4'):
+            self.assertIn(required, job)
+        # Every isolation/load-order/native probe is a separate fresh process.
+        commands = re.findall(r"^        run: (julia [^\n]+)$", job, re.M)
+        for script in ("test/installation_plan_tests.jl", "test/source_acquisition_tests.jl",
+                       "scripts/setup_env.jl",
+                       "test/core_only.jl", "test/incompatible_core.jl",
+                       "test/load_order.jl core-first", "test/load_order.jl companion-first",
+                       "test/runtests.jl"):
+            self.assertEqual(sum(f"optional/SpaceAGORAMuJoCo/{script}" in command
+                                 for command in commands), 1, script)
+        self.assertNotRegex(job, r"(?m)^\s*(if|continue-on-error):")
+        self.assertNotIn("|| true", job)
+        self.assertIn("git -C optional/SpaceAGORAMuJoCo diff --exit-code", job)
+
 
 class VerifyTests(unittest.TestCase):
     MATRIX = {"include": [{"shard": "t-1", "items": "suite:01 unit:a.jl grid"},
