@@ -1,6 +1,7 @@
 module SpaceAGORACLI
 using ..SimulationModel: SimulationModel
-using ..SimulationModel.EnvironmentModels: available_surrogate_presets, resolve_surrogate_preset, surrogate_preset_model, atmosphere_provenance
+using ..SimulationModel.EnvironmentModels: available_surrogate_presets, resolve_surrogate_preset, surrogate_preset_model, atmosphere_provenance,
+    _composite_preset_components, _composite_file_error
 
 export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli
 

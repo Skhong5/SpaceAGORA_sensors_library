@@ -199,7 +199,17 @@ function _run_preset_assets(command::String, args::Vector{String}; io::IO=stdout
     file = get(options, "file", "")
     # Fetch verifies the downloaded bytes. Check additionally loads and validates
     # the schema, axes and metadata; neither command initializes native GRAM.
-    if command == "fetch"
+    # A composite preset has no payload of its own: fetch verifies its components.
+    components = command == "fetch" ? _composite_preset_components(preset, version) : nothing
+    if components !== nothing
+        isempty(file) || _composite_file_error(preset, version)
+        println(io, "Composite ", preset, "@", version, ": verifying its components")
+        for c in components
+            resolved = resolve_surrogate_preset(c.id; version=c.version, offline)
+            println(io, "Verified ", c.role, " component ", c.id, "@", c.version, ": ", resolved.file)
+            println(io, "sha256=", resolved.expected_sha256)
+        end
+    elseif command == "fetch"
         resolved = resolve_surrogate_preset(preset; version, file, offline)
         println(io, "Verified ", preset, "@", version, ": ", resolved.file)
         println(io, "sha256=", resolved.expected_sha256)
