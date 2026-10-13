@@ -221,6 +221,18 @@ const PUBLIC_API_SECTIONS = [
     (
         title = "Robotics and Planning",
         items = [
+            (owner = :SpaceAGORA, symbol = :RobotArmBasePose, rendered = "SpaceAGORA.RobotArmBasePose"),
+            (owner = :SpaceAGORA, symbol = :RobotArmLink, rendered = "SpaceAGORA.RobotArmLink"),
+            (owner = :SpaceAGORA, symbol = :RobotArmJoint, rendered = "SpaceAGORA.RobotArmJoint"),
+            (owner = :SpaceAGORA, symbol = :RobotArmModel, rendered = "SpaceAGORA.RobotArmModel"),
+            (owner = :SpaceAGORA, symbol = :RobotArmPose, rendered = "SpaceAGORA.RobotArmPose"),
+            (owner = :SpaceAGORA, symbol = :RobotArmState, rendered = "SpaceAGORA.RobotArmState"),
+            (owner = :SpaceAGORA, symbol = :default_robot_arm_model, rendered = "SpaceAGORA.default_robot_arm_model"),
+            (owner = :SpaceAGORA, symbol = :robot_arm_fk, rendered = "SpaceAGORA.robot_arm_fk"),
+            (owner = :SpaceAGORA, symbol = :robot_arm_fk_state, rendered = "SpaceAGORA.robot_arm_fk_state"),
+            (owner = :SpaceAGORA, symbol = :robot_arm_end_effector_pose, rendered = "SpaceAGORA.robot_arm_end_effector_pose"),
+            (owner = :SpaceAGORA, symbol = :robot_arm_ik, rendered = "SpaceAGORA.robot_arm_ik"),
+            (owner = :SpaceAGORA, symbol = :robot_arm_total_reach, rendered = "SpaceAGORA.robot_arm_total_reach"),
             (owner = :SpaceAGORA, symbol = :ClothArmBasePose, rendered = "SpaceAGORA.ClothArmBasePose"),
             (owner = :SpaceAGORA, symbol = :ClothArmLink, rendered = "SpaceAGORA.ClothArmLink"),
             (owner = :SpaceAGORA, symbol = :ClothArmJoint, rendered = "SpaceAGORA.ClothArmJoint"),
@@ -248,7 +260,7 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
-        title = "Compliant Multibody and Cloth Coupling",
+        title = "Compliant Multibody Dynamics",
         items = [
             (owner = :SpaceAGORA, symbol = :CompliantBody, rendered = "SpaceAGORA.CompliantBody"),
             (owner = :SpaceAGORA, symbol = :CompliantJoint, rendered = "SpaceAGORA.CompliantJoint"),
@@ -271,6 +283,20 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :step_compliant_multibody_rk4, rendered = "SpaceAGORA.step_compliant_multibody_rk4"),
             (owner = :SpaceAGORA, symbol = :step_compliant_multibody_implicit_midpoint, rendered = "SpaceAGORA.step_compliant_multibody_implicit_midpoint"),
             (owner = :SpaceAGORA, symbol = :simulate_compliant_multibody, rendered = "SpaceAGORA.simulate_compliant_multibody"),
+            (owner = :SpaceAGORA, symbol = :CompliantMultibody, rendered = "SpaceAGORA.CompliantMultibody"),
+            (owner = :SpaceAGORA, symbol = :CompliantRobotArmDynamics, rendered = "SpaceAGORA.CompliantRobotArmDynamics"),
+            (owner = :SpaceAGORA, symbol = :CompliantRobotArmReferenceState, rendered = "SpaceAGORA.CompliantRobotArmReferenceState"),
+            (owner = :SpaceAGORA, symbol = :CompliantRobotArmSimulation, rendered = "SpaceAGORA.CompliantRobotArmSimulation"),
+            (owner = :SpaceAGORA, symbol = :compliant_robot_arm_reference_state, rendered = "SpaceAGORA.compliant_robot_arm_reference_state"),
+            (owner = :SpaceAGORA, symbol = :compliant_robot_arm_multibody, rendered = "SpaceAGORA.compliant_robot_arm_multibody"),
+            (owner = :SpaceAGORA, symbol = :compliant_robot_arm_initial_state, rendered = "SpaceAGORA.compliant_robot_arm_initial_state"),
+            (owner = :SpaceAGORA, symbol = :compliant_robot_arm_rest_quaternions, rendered = "SpaceAGORA.compliant_robot_arm_rest_quaternions"),
+            (owner = :SpaceAGORA, symbol = :compliant_robot_arm_end_effector, rendered = "SpaceAGORA.compliant_robot_arm_end_effector"),
+            (owner = :SpaceAGORA, symbol = :compliant_robot_arm_actuators, rendered = "SpaceAGORA.compliant_robot_arm_actuators"),
+            (owner = :SpaceAGORA, symbol = :coupled_compliant_robot_arm_state_shape, rendered = "SpaceAGORA.coupled_compliant_robot_arm_state_shape"),
+            (owner = :SpaceAGORA, symbol = :initialize_coupled_compliant_robot_arm_state!, rendered = "SpaceAGORA.initialize_coupled_compliant_robot_arm_state!"),
+            (owner = :SpaceAGORA, symbol = :assign_coupled_compliant_robot_arm_rhs!, rendered = "SpaceAGORA.assign_coupled_compliant_robot_arm_rhs!"),
+            (owner = :SpaceAGORA, symbol = :simulate_compliant_robot_arm_plan, rendered = "SpaceAGORA.simulate_compliant_robot_arm_plan"),
             (owner = :SpaceAGORA, symbol = :ClothRobotArmSimulation, rendered = "SpaceAGORA.ClothRobotArmSimulation"),
             (owner = :SpaceAGORA, symbol = :cloth_robot_arm_multibody, rendered = "SpaceAGORA.cloth_robot_arm_multibody"),
             (owner = :SpaceAGORA, symbol = :cloth_robot_arm_initial_state, rendered = "SpaceAGORA.cloth_robot_arm_initial_state"),
@@ -421,17 +447,34 @@ function render_public_api_markdown(spaceagora::Module;
     io = IOBuffer()
     println(io, "# $(title)")
     println(io)
-    println(io, "This page documents the stable exported interface available from `SpaceAGORA`.")
+    println(io, "This page documents the supported public interface available from `SpaceAGORA`.")
     println(io)
     for section in sections
         println(io, "## $(section.title)")
         println(io)
+        # Julia stores a module alias's docstring in the target module. An alias
+        # of an internal module therefore cannot use Documenter's @docs lookup,
+        # which intentionally excludes those implementation modules.
+        module_aliases = filter(section.items) do item
+            owner = _owner_module(spaceagora, item.owner)
+            value = getproperty(owner, item.symbol)
+            value isa Module && parentmodule(value) !== owner
+        end
         println(io, "```@docs")
         for item in section.items
-            println(io, item.rendered)
+            item in module_aliases || println(io, item.rendered)
         end
         println(io, "```")
         println(io)
+        for item in module_aliases
+            binding = Docs.Binding(_owner_module(spaceagora, item.owner), item.symbol)
+            doc = Docs.doc(binding)
+            doc === nothing && error("Undocumented module alias: $(item.rendered)")
+            println(io, "### `$(item.rendered)`")
+            println(io)
+            show(io, MIME"text/markdown"(), doc)
+            println(io)
+        end
     end
     return String(take!(io))
 end

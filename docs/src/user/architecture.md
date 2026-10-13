@@ -64,20 +64,25 @@ This physical collection
 can represent a single vehicle, a servicing pair or a constellation; it
 does not by itself allocate tasks or provide a communication network.
 
-The compliant multibody capability belongs to this physical
-foundation. The current folder name retains its historical cloth terminology. `src/dynamics/multibody_cloth/cloth_multibody.jl` defines bodies
-with mass and inertia, compliant connections with translational and rotational
-stiffness and damping, and topology builders. The coupled robot-arm path in
-`cloth_robot_arm_dynamics.jl` supplies internal-state initialization and
+Compliant multibody dynamics belongs to this physical foundation. Its
+compliant lumped-body model represents flexibility with discrete bodies joined
+by springs and dampers. `src/dynamics/compliant_multibody/compliant_multibody.jl`
+defines their mass and inertia, the translational and rotational stiffness and
+damping of their connections, and topology builders. The coupled robot-arm path in
+`compliant_robot_arm_dynamics.jl` supplies internal-state initialization and
 derivatives to the engine. Each arm link feels gravity at its own inertial
 position, from the run's position-only gravity effectors, so the joint springs
 carry only the loads that differ from the bus's own free fall. This supports specified articulated and compliant
 models; it is not a claim that every arbitrary flexible surface or contact
 interaction is already coupled and validated. A mesh describes surface
-geometry, while a multibody model describes motion and loads.
+geometry, while a multibody model describes motion and loads. The preferred
+module aliases are `CompliantMultibody` and `CompliantRobotArmDynamics`; their
+historical defining modules are retained for compatibility. This naming change
+does not add MuJoCo contact coupling. See the [API migration note](../public_api_policy.md#Compliant-multibody-and-robot-arm-names)
+for the corresponding type and function names.
 
 Articulated spacecraft use a second multibody path that is not tied to the
-cloth arm. A `Joint` with `joint_type` `:hinge`, `:slide` or `:ball` makes its
+compliant robot arm. A `Joint` with `joint_type` `:hinge`, `:slide` or `:ball` makes its
 spacecraft articulated: `src/dynamics/coupled/articulated_body.jl` builds a tree
 of rigid bodies (links joined by `:fixed` joints are merged) and solves the
 forward dynamics in joint coordinates, with the root as a free-floating base.
@@ -95,7 +100,7 @@ or a moving articulated link), integrates its bodies beside the spacecraft
 (`att_r`, `att_q`, `att_v`, `att_ω`) and exchanges forces and torques with the
 link in both directions: through the bus equations for a rigid spacecraft and
 through per-body wrenches into the articulated backbone otherwise
-(`src/dynamics/multibody_cloth/compliant_attachment_dynamics.jl`). The
+(`src/dynamics/compliant_multibody/compliant_attachment_dynamics.jl`). The
 robot-arm coupling keeps its own path for now. See
 [Compliant attachments](simulation_configuration.md#Compliant-attachments).
 
@@ -104,7 +109,7 @@ A free-flying inspector is another spacecraft. Their task assignment and
 coordination belong at the mission level, above individual vehicle construction.
 The source-owner table below distinguishes vehicle construction from dynamics.
 Robot hardware, compliant equations, planning and control are currently spread
-across `src/vehicle/robotics/`, `src/dynamics/multibody_cloth/`,
+across `src/vehicle/robotics/`, `src/dynamics/compliant_multibody/`,
 `src/gnc/robotics/` and `src/gnc/control/robot_arm_control.jl`. HYPR robot-arm
 search is implemented in the separate [HYPR.jl repository](https://github.com/Space-FALCON-Lab/HYPR.jl),
 under its `ext/robot/` adapter files. SpaceAGORA retains configuration types,
@@ -240,7 +245,7 @@ than copy it.
 | `src/core/` | Abstract types, shared state and runtime types, reference frames, geodesy, quaternions | frames: `core/interfaces/reference_system.jl`; quaternions: `core/numerics/quaternion_utils.jl`; model composition: `core/simulation_model.jl` |
 | `src/environment/` | Planets and ephemerides, atmosphere models and presets, gravity fields, terrain grids | density sampling: `environment/atmosphere/density_models.jl`; terrain queries: `environment/terrain/terrain_models.jl` |
 | `src/vehicle/` | Spacecraft components and assembly, structure and mass properties, mesh readers, thrusters, thermal models, kinematics, robotics | vehicle boundary per the [topology contract](../generated/contracts/architecture/canonical_topology_contract.md): `spacecraft/` composes, `structure/` computes mass, inertia and geometry, `actuators/thruster/thruster_hooks.jl` owns thruster hooks |
-| `src/dynamics/` | Translational and rotational equations, the coupled force/torque wrapper and its models, compliant multibody dynamics (currently under `multibody_cloth/`), articulated-body dynamics (`coupled/articulated_body.jl`) | effector evaluation: `dynamics/coupled/force_torque_models.jl` |
+| `src/dynamics/` | Translational and rotational equations, the coupled force/torque wrapper and its models, compliant multibody dynamics (`compliant_multibody/`), articulated-body dynamics (`coupled/articulated_body.jl`) | effector evaluation: `dynamics/coupled/force_torque_models.jl` |
 | `src/gnc/` | Guidance, navigation and control hooks, planner contracts and lifecycle, shared calculations, baseline algorithms and HYPR compatibility types | the three hook files named above; planner contracts: `gnc/interfaces/`; lifecycle: `gnc/guidance/rpo/`; shared calculations: `gnc/shared/`; RRT kernels: `gnc/rrt/`; aerobraking bridge helpers: `gnc/internal/` |
 | `src/mission/` | Aerobraking policy types and strategy selection | `mission/operations/aerobraking_policy/` |
 | `src/simulation/` | One-run configuration, the engine (execution settings, setup, RHS, solver policy, execution, checkpoints, persistence), callbacks, campaigns, runtime locks and external-propagation services | configuration assembly and copying: `simulation/config/`; setup and solve: `simulation/engine/`; callbacks: `simulation/callbacks/`; Monte Carlo and ensembles: `simulation/campaigns/`; shared locks: `simulation/runtime_services.jl`; optional dynamics adapter boundary: `simulation/external_propagation_services.jl` |
@@ -401,6 +406,10 @@ description of the current code.
   closed-form, per-link, attitude, reaction-wheel and torque/inertia diagnostics
   with the legacy capability owner before any port or retirement. Similar modern
   plots or available saved fields alone do not establish equivalent coverage.
+  The [saved-data diagnostic contracts](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/main/docs/quality/legacy_plotting_contracts.md)
+  distinguish the legacy Euler conversion, integrated and aggregate wheel
+  quantities, and costate histories from typed switching predictions. Consult
+  these contracts before adding a maintained consumer.
 - The direct `Tables` dependency and the redundant `output/calibration/` ignore
   entry are cleanup candidates. A direct-dependency change needs manifest
   validation; transitive users of `Tables` must continue to resolve it.

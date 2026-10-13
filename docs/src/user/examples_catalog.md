@@ -127,7 +127,7 @@ julia --project=. examples/Articulated_Panels_Demo.jl
 
 ### Compliant attachments
 
-`Cloth_Panel_Attachment_Demo.jl` runs the four-panel cloth solar array deployment of
+`Cloth_Panel_Attachment_Demo.jl` runs the four-panel compliant solar array deployment of
 `Solar_Panel_Cloth_Deployment_Demo.jl` inside `run_simulation`: the 48-tile mesh is a
 `CompliantAttachment` on a bus (deployment schedule as `rest_schedule`, hinge motors as
 `joint_actuators`). A 1e8 kg bus in free space is compared with the standalone RK4 stepping of the
@@ -232,13 +232,13 @@ For a planner-comparison smoke run:
 SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl --runs 1
 ```
 
-For the robot-arm and Cloth dynamics batch:
+For the robot-arm and compliant multibody dynamics batch:
 
 ```text
 SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Robot_Arm_Planner_Cloth_Demo.jl
 ```
 
-For the solar-panel cloth deployment demo:
+For the solar-panel compliant multibody deployment demo:
 
 ```text
 julia --project=. examples/Solar_Panel_Cloth_Deployment_Demo.jl

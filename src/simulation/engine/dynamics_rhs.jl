@@ -2714,7 +2714,7 @@ end
 @inline _effector_value(effector, name::Symbol, default) =
     hasproperty(effector, name) ? getproperty(effector, name) : default
 
-"""Build the cloth-coupled robot-arm RHS configuration from an active effector."""
+"""Build the compliant robot-arm RHS configuration from an active effector."""
 @inline function _robot_arm_coupling_from_effector(effector, t::Float64)
     return (
         plan=getproperty(effector, :plan),
@@ -2781,7 +2781,7 @@ end
 @inline (g::_ArmLinkGravity)(r_ii) =
     _gravity_only_acceleration_ii(g.p, SVector{3, Float64}(r_ii), g.t; sat_idx=g.sat_idx)
 
-"""Apply coupled cloth robot-arm state derivatives to one spacecraft RHS view."""
+"""Apply coupled compliant robot-arm state derivatives to one spacecraft RHS view."""
 @inline function _apply_coupled_robot_arm_rhs!(du_view, sc_view, p, sat_idx::Int, t::Float64, forces, torques)
     # Fast path: skip the per-satellite effector-tuple scan when the run has no
     # robot-arm effector anywhere (cached in shared_buffers on first use).

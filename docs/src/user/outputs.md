@@ -83,7 +83,7 @@ change, so:
   `AGORA_Earth.jl`, `AGORA_Keplerian.jl` and `Earth_Navigation.jl` write to
   `output/` directly, `AGORA_Earth_Aerobraking.jl` to `output/earth_aerobraking/`,
   `AGORA_Mars_RAAN_Scenario.jl` to `output/mars_raan_scenario/`, and the RPO,
-  robot-arm and cloth demos to their own `output/<demo>/` directories; running
+  robot-arm and compliant multibody demos to their own `output/<demo>/` directories; running
   one of them twice overwrites its previous results;
 - `odyssey_surrogate.jl` runs in its own environment and writes its own files:
   the comparison writes to `odyssey_surrogate_results/` in the current
@@ -155,7 +155,7 @@ the [CSV column reference](#Visualization-fields) below:
   ephemerides can locate the Sun at the start epoch. The viewer's sun lighting
   reads it.
 - `arm_pose`: `sc{N}_arm_pose_1` .. `sc{N}_arm_pose_7m` for a spacecraft with
-  a cloth robot-arm plan, `[rx, ry, rz, qx, qy, qz, qw]` per arm link: the
+  a compliant robot-arm plan, `[rx, ry, rz, qx, qy, qz, qw]` per arm link: the
   link centre of mass relative to the spacecraft position, in inertial metres,
   and the link's inertial attitude quaternion.
 - Articulated spacecraft (any non-fixed `Joint`) add four fields to the default

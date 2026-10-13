@@ -988,7 +988,7 @@ export RhsEffectorDecision, RhsExecutionPlan
         # `SimulationSettings.articulated_live_pose_loads` for runs with articulated spacecraft, read once at
         # setup (`_initialize_articulated_runtimes!`); one Bool load per articulated RHS call.
         articulated_live_loads::Base.RefValue{Bool} = Ref(false)
-        # Compliant attachments (cloth meshes, flexible appendages mounted on links): per-satellite
+        # Compliant attachments (compliant meshes, flexible appendages mounted on links): per-satellite
         # runtime built once per run by `_initialize_attachment_runtimes!` (`nothing` for spacecraft
         # without attachments). `attachments_present` is the run-constant flag the RHS tests first
         # (one Bool load per RHS call without attachments). A satellite's runtime buffers are touched

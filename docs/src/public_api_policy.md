@@ -49,6 +49,44 @@ supported boundary; use them by qualified name. Their
 separately from package versions. Other symbols absent from the documented root
 API or a facade inventory should be treated as internal.
 
+## Compliant multibody and robot-arm names
+
+Use the robot-arm names for kinematics and the compliant multibody names for
+spring-connected dynamics. The [Robotics API](generated/robotics_api.md) and
+[Compliant Multibody API](generated/compliant_multibody_api.md) document both the
+preferred names and the compatibility names. The model represents flexibility through discrete
+bodies and compliant joints; it is not a continuum cloth solver. The preferred
+names are aliases of the existing types and generic functions, so changing a
+call's spelling does not change its dispatch, state layout or physics.
+
+| Historical name | Preferred name |
+| --- | --- |
+| `ClothArmBasePose`, `ClothArmLink`, `ClothArmJoint`, `ClothArmModel`, `ClothArmPose`, `ClothArmState` | `RobotArmBasePose`, `RobotArmLink`, `RobotArmJoint`, `RobotArmModel`, `RobotArmPose`, `RobotArmState` |
+| `default_cloth_arm_model` | `default_robot_arm_model` |
+| `cloth_fk`, `cloth_fk_state`, `cloth_ik`, `cloth_total_reach`, `cloth_end_effector_pose` | Corresponding `robot_arm_` names |
+| `ClothRobotArmSimulation`, `ClothRobotArmReferenceState` | `CompliantRobotArmSimulation`, `CompliantRobotArmReferenceState` |
+| `cloth_reference_state` | `compliant_robot_arm_reference_state` |
+| Functions containing `cloth_robot_arm`, including `simulate_cloth_robot_arm_plan` | The same names with `compliant_robot_arm`, including `simulate_compliant_robot_arm_plan` |
+
+For example, write `arm = default_robot_arm_model()` and
+`pose = robot_arm_fk(arm, RobotArmBasePose([0.0, 0.0, 0.0]), q)` when `q` contains
+the arm's joint angles. Existing calls using the historical names remain valid.
+The defining modules and types retain their identities, so printed types and
+serialized owner names may still contain `Cloth`.
+The root also provides the qualified module aliases
+`SpaceAGORA.CompliantMultibody` and `SpaceAGORA.CompliantRobotArmDynamics`.
+These aliases do not make every module member public; supported operations
+remain those listed in the public reference.
+
+Some historical strings are configuration or data identifiers, rather than
+display names. Keep `planner=:cloth_quintic`, `mode=:cloth`, the `retime_cloth_*`
+configuration fields, and existing example filenames, output directories and
+CSV column names. The versioned `HYPRServices.Cloth` namespaces and their
+inventory retain their exact spellings; see the [HYPR service contract](maintainer/hypr_services.md#Cloth).
+This compatibility change neither adds contact physics nor couples the core
+compliant model to MuJoCo. The optional [MuJoCo companion](user/mujoco_scenes.md)
+has its own propagation ownership and coupling limits.
+
 ## Internal modules
 
 The following modules remain internal implementation detail namespaces:
