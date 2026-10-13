@@ -292,7 +292,7 @@ also requires the configured retiming and package-loading work.
 
 ### Configured retiming ownership
 
-`src/models/gnc/shared/rpo/path_retiming.jl` owns two internal calculations in the
+`src/models/gnc/planning/rpo/path_retiming.jl` owns two internal calculations in the
 existing `GuidanceHooks` module. `rpo_retime_samples(raw_samples, geometry; ...)`
 advances along an already sampled path. The five-argument
 `rpo_retime_profile(curve, samples, params, clearances, geometry; ...)` builds

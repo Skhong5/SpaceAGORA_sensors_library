@@ -36,7 +36,7 @@ if myid() == 1
     using Plots
 end
 
-include(joinpath(REPO_ROOT, "src", "foundation", "core", "simulation_model.jl"))
+include(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "composition", "simulation_model.jl"))
 using .SimulationModel
 const MissionType = SimulationModel.SimConfig.MissionType
 const MissionTime = SimulationModel.SimConfig.MissionTime

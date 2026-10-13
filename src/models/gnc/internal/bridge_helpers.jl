@@ -1,3 +1,4 @@
+# Legacy aerobraking runtime-context compatibility, shared by guidance and control.
 if !isdefined(@__MODULE__, :CONTROL_BRIDGE_STATE_LOCK)
     const CONTROL_BRIDGE_STATE_LOCK = ReentrantLock()
 end

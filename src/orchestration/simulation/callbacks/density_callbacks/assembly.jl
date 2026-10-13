@@ -190,7 +190,7 @@ function get_callbacks(
     record_saved_values::Bool=false
 )::CallbackSet
     save_fields_resolved = _resolve_save_fields(save_fields, args)
-    backbone_mode = _simulation_engine_module()._solver_policy_mode() == :gravity_backbone_split
+    backbone_mode = CallbackServices._solver_policy_mode() == :gravity_backbone_split
     touchdown_specs = _touchdown_specs(args, num_sats)
     has_touchdown = any(spec -> spec !== nothing, touchdown_specs)
     # Touchdown spacecraft and externally propagated shadow entries have no impact event.
@@ -248,7 +248,7 @@ function get_callbacks(
         callbacks = _append_callback(callbacks, get_quaternion_projection_callback(num_sats, args))
     end
     callbacks = _append_callback(callbacks, get_plume_callback(args))
-    engine = _simulation_engine_module()
+    engine = CallbackServices
     output_solver_mode = args.solver_config === nothing ? engine._solver_policy_mode() :
         engine._solver_policy_mode(args.solver_config)
     callbacks = _append_callback(callbacks,

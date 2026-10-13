@@ -6,6 +6,7 @@ import ...RuntimeServices
 
 using ..EnvironmentModels
 using ..ParallelPolicy
+import ..EffectorRouting
 using Polyester: @batch
 import Polyester
 using ..DynamicEffectors: ConstantGravityModel, InverseSquaredGravityModel

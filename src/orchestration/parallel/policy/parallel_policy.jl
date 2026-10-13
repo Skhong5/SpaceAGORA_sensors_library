@@ -26,4 +26,6 @@ include(joinpath(@__DIR__, "adaptive_decision.jl"))
 include(joinpath(@__DIR__, "thread_execution.jl"))
 include(joinpath(@__DIR__, "observation_tracking.jl"))
 
+include(joinpath(@__DIR__, "multibody_routing.jl"))
+
 end # module ParallelPolicy

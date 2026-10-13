@@ -80,7 +80,7 @@ function update_planet_frame_callback()
         # accepted step, unconditionally, for every non-backbone-mode solve -- the same
         # boundary the cache needs, with no extra CallbackSet entry required. No-op
         # (single false check) when SPACEAGORA_RHS_PLAN_STEP_CACHE is off (default).
-        if _simulation_engine_module()._rhs_plan_step_cache_enabled()
+        if CallbackServices._rhs_plan_step_cache_enabled()
             p.shared_buffers.rhs_plan_step_cache[] = nothing
         end
     end
