@@ -10,9 +10,9 @@ audit used commit
 [`5e9a9df9`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/commit/5e9a9df97efbbb69fb2a730b085b75cc5fd83a64)
 (browse that historical tree at
 [github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/5e9a9df9](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/5e9a9df97efbbb69fb2a730b085b75cc5fd83a64));
-this page also records later configuration and optional-adapter packaging
-changes. Paths are relative to the repository named for each owner. Suggested
-cleanup is labelled separately. One-run configuration lives under `src/simulation/config/`,
+this page also records later configuration, optional-adapter packaging and
+source-organization changes. Paths are relative to the repository named for each owner. Suggested
+cleanup is labelled separately. One-run configuration lives under `src/orchestration/simulation/config/`,
 and HYPR is maintained in its own repository with an optional SpaceAGORA adapter.
 The compatibility package in this tree loads that adapter; it contains no search
 implementation. MuJoCo scene code and its adapter live in the independent
@@ -52,20 +52,53 @@ coordinates Monte Carlo and ensemble runs. `src/SpaceAGORA.jl` loads these
 modules and exposes the supported public interface. The folder map below
 identifies where their implementations live.
 
+## Source groups and Julia modules
+
+The source tree groups related responsibilities under four parent directories.
+Use this map to find an implementation; use the run-flow figure above to follow
+the data and calls made during a simulation.
+
+| Source group | Child directories | Responsibility |
+| --- | --- | --- |
+| `src/interfaces/` | `cli/`, `io/`, `analysis/` | Commands and file formats, saved-output analysis, verification studies and visualization support. |
+| `src/orchestration/` | `simulation/`, `mission/`, `parallel/` | Assemble a run, prepare and advance it, schedule callbacks and campaigns, select mission policy and route parallel work. |
+| `src/models/` | `vehicle/`, `environment/`, `dynamics/`, `gnc/` | Describe spacecraft and their surroundings, evaluate equations and loads, and implement guidance, navigation and control contracts and algorithms. |
+| `src/foundation/` | `core/`, `assets/` | Share state and types, numerical and frame utilities, the model-composition loader and asset lookup. |
+
+The physical folder tree and the Julia module tree serve different purposes.
+The folders do not create namespace modules or impose a strict dependency
+direction between groups. Existing modules keep their identities, and their
+include order still determines how definitions are assembled.
+`src/SpaceAGORA.jl` remains the package entry point.
+The package-level precompilation helper, `src/precompile_workload.jl`, also
+stays at the source root.
+`src/foundation/core/simulation_model.jl` remains the composition loader for
+`SimulationModel`: it includes implementations from several groups and exposes
+their existing bindings. Its location does not make it an independent layer
+that can be loaded without those models and execution contracts.
+
+Julia discovers optional package extensions in root `ext/`, so that directory
+remains beside `src/`. The GRAMSuite extension belongs there even though it
+provides environment-model integration. External companions such as HYPR and
+SpaceAGORAMuJoCo continue to own their implementations in separate repositories;
+this source organization does not bring them into `src/` or make them required
+dependencies. The existing HYPR compatibility package remains under
+`packages/SpaceAGORAHYPR/`.
+
 ## Spacecraft assembly and constellation composition
 
 A spacecraft contains components; a scenario contains spacecraft.
-`SpacecraftModel` in `src/vehicle/spacecraft/model.jl` holds its links,
+`SpacecraftModel` in `src/models/vehicle/spacecraft/model.jl` holds its links,
 joints, root body, mass properties, actuators and initial conditions.
-`DynamicsModel` in `src/simulation/config/constellation_configuration.jl` holds
+`DynamicsModel` in `src/orchestration/simulation/config/constellation_configuration.jl` holds
 the spacecraft collection and selected dynamics effectors. It remains included
 inside `SpacecraftModels`, preserving the existing type and module identity.
 This physical collection
 can represent a single vehicle, a servicing pair or a constellation; it
 does not by itself allocate tasks or provide a communication network.
 
-The compliant multibody capability belongs to this physical
-foundation. The current folder name retains its historical cloth terminology. `src/dynamics/multibody_cloth/cloth_multibody.jl` defines bodies
+The compliant multibody capability describes motion within a spacecraft
+assembly. The current folder name retains its historical cloth terminology. `src/models/dynamics/multibody_cloth/cloth_multibody.jl` defines bodies
 with mass and inertia, compliant connections with translational and rotational
 stiffness and damping, and topology builders. The coupled robot-arm path in
 `cloth_robot_arm_dynamics.jl` supplies internal-state initialization and
@@ -78,7 +111,7 @@ geometry, while a multibody model describes motion and loads.
 
 Articulated spacecraft use a second multibody path that is not tied to the
 cloth arm. A `Joint` with `joint_type` `:hinge`, `:slide` or `:ball` makes its
-spacecraft articulated: `src/dynamics/coupled/articulated_body.jl` builds a tree
+spacecraft articulated: `src/models/dynamics/coupled/articulated_body.jl` builds a tree
 of rigid bodies (links joined by `:fixed` joints are merged) and solves the
 forward dynamics in joint coordinates, with the root as a free-floating base.
 The engine integrates the joint coordinates beside the root state
@@ -95,7 +128,7 @@ or a moving articulated link), integrates its bodies beside the spacecraft
 (`att_r`, `att_q`, `att_v`, `att_ω`) and exchanges forces and torques with the
 link in both directions: through the bus equations for a rigid spacecraft and
 through per-body wrenches into the articulated backbone otherwise
-(`src/dynamics/multibody_cloth/compliant_attachment_dynamics.jl`). The
+(`src/models/dynamics/multibody_cloth/compliant_attachment_dynamics.jl`). The
 robot-arm coupling keeps its own path for now. See
 [Compliant attachments](simulation_configuration.md#Compliant-attachments).
 
@@ -104,8 +137,8 @@ A free-flying inspector is another spacecraft. Their task assignment and
 coordination belong at the mission level, above individual vehicle construction.
 The source-owner table below distinguishes vehicle construction from dynamics.
 Robot hardware, compliant equations, planning and control are currently spread
-across `src/vehicle/robotics/`, `src/dynamics/multibody_cloth/`,
-`src/gnc/robotics/` and `src/gnc/control/robot_arm_control.jl`. HYPR robot-arm
+across `src/models/vehicle/robotics/`, `src/models/dynamics/multibody_cloth/`,
+`src/models/gnc/robotics/` and `src/models/gnc/control/robot_arm_control.jl`. HYPR robot-arm
 search is implemented in the separate [HYPR.jl repository](https://github.com/Space-FALCON-Lab/HYPR.jl),
 under its `ext/robot/` adapter files. SpaceAGORA retains configuration types,
 shared kinematics and dynamics, and compatibility entry points. The
@@ -114,7 +147,7 @@ services this adapter may use. Other robotics folder boundaries remain under rev
 
 Use a joint simulation when spacecraft interact. The independent
 `run_constellation_ensemble` route in
-`src/simulation/campaigns/constellation_ensemble.jl` rejects nonempty GNC
+`src/orchestration/simulation/campaigns/constellation_ensemble.jl` rejects nonempty GNC
 effectors by default because they might couple spacecraft. Its explicit
 opt-in is for independently acting effectors, not a way to add cross-vehicle
 communication. Independent ensemble runs and coordinated constellation
@@ -129,32 +162,32 @@ the file that performs each step.
    loads `examples/common.jl`, which activates the project and imports
    `SpaceAGORA`. The configuration is a
    `SimulationConfiguration` defined in
-   `src/simulation/config/simulation_configuration.jl`,
+   `src/orchestration/simulation/config/simulation_configuration.jl`,
    whose fields are listed on the [configuration page](simulation_configuration.md).
    Studies that derive a variant from an existing configuration use
    `SimulationModel.SimConfig._with_configuration`, defined in the same file, so
    unchanged fields keep their references and model types are inferred again.
 2. **`run_simulation` validates and prepares.** The root wrapper in
    `src/SpaceAGORA.jl` forwards the typed configuration to
-   `src/simulation/engine/execution.jl`.
+   `src/orchestration/simulation/engine/execution.jl`.
    Additional call wrappers, including the engine-configuration form, live in
-   `src/simulation/engine/public_api.jl`.
+   `src/orchestration/simulation/engine/public_api.jl`.
    It aligns the density-model epoch, then deep-copies the configuration unless
    `isolate_state=false`, checks inertia, thermal and ephemerides support, builds
    initial conditions
    (`dynamics_rhs.jl`,
    `build_initial_conditions`), and allocates the shared buffers held in
-   `ODEParams` (`src/core/types/runtime_types.jl`).
+   `ODEParams` (`src/foundation/core/types/runtime_types.jl`).
 3. **Frames and geometry.** Inertial-to-planet-fixed conversions and their
    time-dependent SPICE variants are in
-   `src/core/interfaces/reference_system.jl`
+   `src/foundation/core/interfaces/reference_system.jl`
    (`r_intor_p!`, `r_pintor_i`); geodetic altitude and ellipsoid radius helpers
-   are in `src/core/numerics/geodesy.jl`;
+   are in `src/foundation/core/numerics/geodesy.jl`;
    planet constants and ephemerides models are under
-   `src/environment/ephemerides/`.
+   `src/models/environment/ephemerides/`.
 4. **Atmosphere sampling.** Every density model answers `getDensity` (and the
    batched `getDensityBatch!`) in
-   `src/environment/atmosphere/density_models.jl`.
+   `src/models/environment/atmosphere/density_models.jl`.
    The analytic models live there; the surrogate grid model and named presets are
    in `gram_grid_atmosphere_model.jl`
    and `surrogate_presets.jl`;
@@ -167,31 +200,31 @@ the file that performs each step.
 5. **Forces and torques.** The engine obtains the state and environment required by
    each effector and calls its `wrench` (or the compatibility
    `calcForceTorque`). The wrapper module and its models are under
-   `src/dynamics/coupled/force_torque_models.jl`
+   `src/models/dynamics/coupled/force_torque_models.jl`
    and the `force_torque_models/`
    folder (gravity, aerodynamics, perturbations, thrusters, plume, reaction
    wheels). These modules also include implementations from other owners, such
-   as `src/environment/gravity/gravity_models.jl` and
-   `src/dynamics/coupled/aerodynamic_mesh_surrogate.jl`. The hook contract is on the [Extensibility](../extensibility.md) page.
+   as `src/models/environment/gravity/gravity_models.jl` and
+   `src/models/dynamics/coupled/aerodynamic_mesh_surrogate.jl`. The hook contract is on the [Extensibility](../extensibility.md) page.
 6. **Guidance, navigation and control.** The hooks are three modules:
-   `src/gnc/guidance/guidance_hooks.jl`,
-   `src/gnc/navigation/navigation_hooks.jl`
-   and `src/gnc/control/control_hooks.jl`.
-   Planner contracts live under `src/gnc/interfaces/` and their RPO lifecycle
-   under `src/gnc/guidance/rpo/`. Shared geometry, timing and metrics live under
-   `src/gnc/shared/`, and RRT kernels under `src/gnc/rrt/`. Concrete implementations also remain in the guidance and
+   `src/models/gnc/guidance/guidance_hooks.jl`,
+   `src/models/gnc/navigation/navigation_hooks.jl`
+   and `src/models/gnc/control/control_hooks.jl`.
+   Planner contracts live under `src/models/gnc/interfaces/` and their RPO lifecycle
+   under `src/models/gnc/guidance/rpo/`. Shared geometry, timing and metrics live under
+   `src/models/gnc/shared/`, and RRT kernels under `src/models/gnc/rrt/`. Concrete implementations also remain in the guidance and
    control subfolders. Configured HYPR execution is provided by the external
    HYPR package through `SpaceAGORA.HYPRServices`; the local
    `packages/SpaceAGORAHYPR/` compatibility package loads its adapter. The
    aerobraking strategy selector lives in
-   `src/mission/operations/aerobraking_policy/`.
+   `src/orchestration/mission/operations/aerobraking_policy/`.
    Navigation and guidance hooks run as periodic callbacks between integrator
    steps; control commands are refreshed on periodic or event-driven schedules, and the
    resulting control force and torque are evaluated inside the right-hand side
    through `calcControlForceTorque`.
 7. **Callbacks.** Save fields, density updates, thermal and plume updates, GNC
    dispatch, state anchors and stop conditions are registered from
-   `src/simulation/callbacks/callbacks.jl`;
+   `src/orchestration/simulation/callbacks/callbacks.jl`;
    `default_save_fields` is in `save_fields.jl`.
    See [Stopping on a Condition](stop_conditions.md).
 8. **Propagation.** `spacecraft_dynamics!` in
@@ -200,16 +233,16 @@ the file that performs each step.
    `solver_policy.jl`
    builds tolerances and chooses the integrator route from `SolverConfig`
    (see [Solver Configuration](solver_configuration.md)). Parallel routing of the
-   effector work is decided in `src/parallel/`
+   effector work is decided in `src/orchestration/parallel/`
    (see [Parallel Execution](parallel_execution.md)).
 9. **Outputs.** After the solve,
    `persistence.jl`
    turns the saved values into a table and writes the enabled CSV, Feather and
-   manifest outputs through `src/io/outputs/io_outputs.jl`
+   manifest outputs through `src/interfaces/io/outputs/io_outputs.jl`
    and the atomic-write helpers in
-   `src/io/serialization/io_serialization.jl`.
+   `src/interfaces/io/serialization/io_serialization.jl`.
    With `visualization=true` the scene sidecar and viewer page are produced by
-   `src/analysis/visualization/scene/`
+   `src/interfaces/analysis/visualization/scene/`
    and the browser code under `viewer/`. See [Simulation Outputs](outputs.md).
 
 ## Map of the repository
@@ -232,31 +265,33 @@ integrations follow the [optional adapter standard](../maintainer/adapter_contra
 with separate domain protocols and state ownership.
 The other folders hold tooling, data, examples and documentation. "Owner" below is the
 file or module that defines the behaviour; other code should call it rather
-than copy it.
+than copy it. Within the grouped source rows, file names in the third column
+are relative to the directory in the first column.
 
 | Path | What it holds | Owner of the shared operation |
 | --- | --- | --- |
-| `src/SpaceAGORA.jl` | Includes the modules below in order and re-exports the public surface | the root package; the supported list is the generated [Public API](../generated/public_api.md) |
-| `src/core/` | Abstract types, shared state and runtime types, reference frames, geodesy, quaternions | frames: `core/interfaces/reference_system.jl`; quaternions: `core/numerics/quaternion_utils.jl`; model composition: `core/simulation_model.jl` |
-| `src/environment/` | Planets and ephemerides, atmosphere models and presets, gravity fields, terrain grids | density sampling: `environment/atmosphere/density_models.jl`; terrain queries: `environment/terrain/terrain_models.jl` |
-| `src/vehicle/` | Spacecraft components and assembly, structure and mass properties, mesh readers, thrusters, thermal models, kinematics, robotics | vehicle boundary per the [topology contract](../generated/contracts/architecture/canonical_topology_contract.md): `spacecraft/` composes, `structure/` computes mass, inertia and geometry, `actuators/thruster/thruster_hooks.jl` owns thruster hooks |
-| `src/dynamics/` | Translational and rotational equations, the coupled force/torque wrapper and its models, compliant multibody dynamics (currently under `multibody_cloth/`), articulated-body dynamics (`coupled/articulated_body.jl`) | effector evaluation: `dynamics/coupled/force_torque_models.jl` |
-| `src/gnc/` | Guidance, navigation and control hooks, planner contracts and lifecycle, shared calculations, baseline algorithms and HYPR compatibility types | the three hook files named above; planner contracts: `gnc/interfaces/`; lifecycle: `gnc/guidance/rpo/`; shared calculations: `gnc/shared/`; RRT kernels: `gnc/rrt/`; aerobraking bridge helpers: `gnc/internal/` |
-| `src/mission/` | Aerobraking policy types and strategy selection | `mission/operations/aerobraking_policy/` |
-| `src/simulation/` | One-run configuration, the engine (execution settings, setup, RHS, solver policy, execution, checkpoints, persistence), callbacks, campaigns, runtime locks and external-propagation services | configuration assembly and copying: `simulation/config/`; setup and solve: `simulation/engine/`; callbacks: `simulation/callbacks/`; Monte Carlo and ensembles: `simulation/campaigns/`; shared locks: `simulation/runtime_services.jl`; optional dynamics adapter boundary: `simulation/external_propagation_services.jl` |
-| `src/parallel/` | Parallel profiles and routing, cost models, worker process pools, in-process policy | route selection and process pools; owned by the parallelization work |
-| `src/io/` | Configuration file loading, serialization helpers, output tables | output recording: `io/outputs/io_outputs.jl` |
-| `src/analysis/` | Telemetry verification studies and example helpers, visualization scene and RPO plots | example helper builders: `analysis/verification/telemetry_verification/example_support.jl` |
-| `src/assets/`, `src/cli/` | Asset lookup for RPO stations and the Odyssey surrogate; the `spaceagora` command | [CLI](../cli.md), [Assets & Modes](../assets.md) |
+| `src/SpaceAGORA.jl` | Loads the existing modules in order and exposes the public surface | the root package; the supported list is the generated [Public API](../generated/public_api.md) |
+| `src/interfaces/cli/` | The `spaceagora` command and its entry point | `main.jl` launches the CLI; see [CLI](../cli.md) |
+| `src/interfaces/io/` | Configuration file loading, serialization helpers and output tables | output recording: `outputs/io_outputs.jl` |
+| `src/interfaces/analysis/` | Telemetry verification studies and example helpers, visualization scenes and RPO plots | example helper builders: `verification/telemetry_verification/example_support.jl` |
+| `src/orchestration/simulation/` | One-run configuration, engine setup and execution, callbacks, campaigns, runtime locks and external-propagation services | configuration: `config/`; setup and solve: `engine/`; callbacks: `callbacks/`; Monte Carlo and ensembles: `campaigns/`; shared locks: `runtime_services.jl`; optional dynamics adapter boundary: `external_propagation_services.jl` |
+| `src/orchestration/mission/` | Aerobraking policy types and strategy selection | `operations/aerobraking_policy/` |
+| `src/orchestration/parallel/` | Parallel profiles and routing, cost models, worker process pools and in-process policy | route selection and process pools; owned by the parallelization work |
+| `src/models/vehicle/` | Spacecraft components and assembly, structure and mass properties, mesh readers, thrusters, thermal models, kinematics and robotics | vehicle boundary per the [topology contract](../generated/contracts/architecture/canonical_topology_contract.md): `spacecraft/` composes, `structure/` computes mass, inertia and geometry, `actuators/thruster/thruster_hooks.jl` owns thruster hooks |
+| `src/models/environment/` | Planets and ephemerides, atmosphere models and presets, gravity fields and terrain grids | density sampling: `atmosphere/density_models.jl`; terrain queries: `terrain/terrain_models.jl` |
+| `src/models/dynamics/` | Translational and rotational equations, coupled force/torque models, compliant multibody dynamics under `multibody_cloth/`, and articulated-body dynamics | effector evaluation: `coupled/force_torque_models.jl`; articulated solver: `coupled/articulated_body.jl` |
+| `src/models/gnc/` | Guidance, navigation and control hooks, planner contracts and lifecycle, shared calculations, baseline algorithms and HYPR compatibility types | the three hook files named above; planner contracts: `interfaces/`; lifecycle: `guidance/rpo/`; shared calculations: `shared/`; RRT kernels: `rrt/`; aerobraking bridge helpers: `internal/` |
+| `src/foundation/core/` | Abstract types, shared state and runtime types, reference frames, geodesy, quaternions and the model-composition loader | frames: `interfaces/reference_system.jl`; quaternions: `numerics/quaternion_utils.jl`; composition loader: `simulation_model.jl` |
+| `src/foundation/assets/` | Asset lookup for RPO stations and the Odyssey surrogate | asset resolution and provenance; see [Assets & Modes](../assets.md) |
 | `ext/` | The `GRAMSuite` extension: native GRAM density, SPICE-backed ephemerides, native-free fixed-grid adapter methods | activates when both packages are loaded; see [GRAMSuite Setup](gramsuite_setup.md) |
-| `packages/SpaceAGORAHYPR/` | Compatibility package and source pin for external HYPR | `src/SpaceAGORAHYPR.jl` checks and aliases the external adapter; `HYPRSource.toml` pins its revision. Core services are defined in `src/gnc/hypr/services.jl`. Install and load with the [RPO planner guide](rpo_planner_pilot.md#Installing-optional-HYPR). |
+| `packages/SpaceAGORAHYPR/` | Compatibility package and source pin for external HYPR | `src/SpaceAGORAHYPR.jl` checks and aliases the external adapter; `HYPRSource.toml` pins its revision. Core services are defined in `src/models/gnc/hypr/services.jl`. Install and load with the [RPO planner guide](rpo_planner_pilot.md#Installing-optional-HYPR). |
 | `examples/` | Runnable scenarios; `common.jl` is the shared bootstrap | primary scenario entrypoints; development viewer demos also live in `scripts/dev/viewer_demos/`; see the [Examples Catalog](examples_catalog.md) |
 | `templates/` | Starting files for a force/torque model, a density model and a control hook | copy one of these to begin an extension |
 | `test/` | Unit, integration, smoke and stress suites, CI gates under `test/gates/`, contract checks under `test/contracts/`, review artifacts under `test/ai_reviews/` | the gates enforce the ownership rules on this page |
 | `benchmarks/` | Performance studies and the paper pipeline (`benchmarks/scripts/performance_paper_pipeline.jl`) | measurement work owned by the parallelization effort; see [Studies and Benchmarks](studies_benchmarks.md) |
 | `scripts/` | Operational tools: plotting (`scripts/plotting/`), telemetry fetching, GRAM installation helpers, development launchers (`scripts/dev/`), HPC and remote helpers | operational, not package code |
 | `experimental/` | Typed scaffolds not loaded by the package (resources, laser terminal, constellation, estimation) | no stability guarantee; see its README |
-| `viewer/` | The browser viewer and its build scripts | rendering only; the scene data comes from `src/analysis/visualization/scene/` |
+| `viewer/` | The browser viewer and its build scripts | rendering only; the scene data comes from `src/interfaces/analysis/visualization/scene/` |
 | `data/` | Gravity and topography coefficients, references, asset manifests and the Odyssey surrogate manifest | see [Assets & Modes](../assets.md) |
 | `docs/` | This site: user pages under `docs/src/`, maintainer contracts under `docs/architecture/` and `docs/quality/`, the public API registry | [Maintainer Overview](../maintainer/index.md) |
 
@@ -316,7 +351,7 @@ private results repository, not in this public tree.
 For example, a reusable scheduling interface and the mechanism that executes
 its commands can belong in the package after their API is agreed. A student's
 particular scheduling objective, search algorithm and experiment belong in the
-study or research repository. The current `src/mission/` folder contains
+study or research repository. The current `src/orchestration/mission/` folder contains
 specific aerobraking policy code; its name does not imply that a general
 scheduling API already exists.
 

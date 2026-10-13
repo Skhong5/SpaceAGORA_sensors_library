@@ -1,10 +1,10 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
 const SRP_SENSITIVE_FILES = (
-    joinpath("src", "gnc", "control", "aerobraking", "control_commands.jl"),
-    joinpath("src", "gnc", "control", "aerobraking", "constraint_tracking.jl"),
-    joinpath("src", "gnc", "guidance", "aerobraking", "t_edg", "eom_predictor.jl"),
-    joinpath("src", "gnc", "guidance", "aerobraking", "t_edg", "trajectory_predictor.jl")
+    joinpath("src", "models", "gnc", "control", "aerobraking", "control_commands.jl"),
+    joinpath("src", "models", "gnc", "control", "aerobraking", "constraint_tracking.jl"),
+    joinpath("src", "models", "gnc", "guidance", "aerobraking", "t_edg", "eom_predictor.jl"),
+    joinpath("src", "models", "gnc", "guidance", "aerobraking", "t_edg", "trajectory_predictor.jl")
 )
 
 function _non_comment_lines(src::String)

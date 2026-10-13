@@ -11,13 +11,13 @@ function _active_lines(path::String)
 end
 
 const HOTPATH_FILES = String[
-    joinpath(REPO_ROOT, "src", "core", "types", "runtime_types.jl"),
-    joinpath(REPO_ROOT, "src", "simulation", "engine", "setup.jl"),
-    joinpath(REPO_ROOT, "src", "dynamics", "coupled", "aerodynamic_wrench_models.jl"),
-    joinpath(REPO_ROOT, "src", "dynamics", "coupled", "perturbations.jl"),
+    joinpath(REPO_ROOT, "src", "foundation", "core", "types", "runtime_types.jl"),
+    joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "setup.jl"),
+    joinpath(REPO_ROOT, "src", "models", "dynamics", "coupled", "aerodynamic_wrench_models.jl"),
+    joinpath(REPO_ROOT, "src", "models", "dynamics", "coupled", "perturbations.jl"),
 ]
 
-const CALLBACK_DIR = joinpath(REPO_ROOT, "src", "simulation", "callbacks")
+const CALLBACK_DIR = joinpath(REPO_ROOT, "src", "orchestration", "simulation", "callbacks")
 const FORBIDDEN_VECTOR_ANY = r"\bVector\{Any\}\b"
 const FORBIDDEN_DICT_SYMBOL_ANY = r"\bDict\{Symbol,\s*Any\}\b"
 const ALLOWED_SAVEDATA_LINE = r"^const\s+SaveData\s*=\s*Dict\{Symbol,\s*Any\}$"
@@ -25,7 +25,8 @@ const ALLOWED_SAVEDATA_LINE = r"^const\s+SaveData\s*=\s*Dict\{Symbol,\s*Any\}$"
 violations = String[]
 targets = copy(HOTPATH_FILES)
 
-if isdir(CALLBACK_DIR)
+isdir(CALLBACK_DIR) || error("Missing runtime callback scan root: $(relpath(CALLBACK_DIR, REPO_ROOT))")
+let
     for (root, _, files) in walkdir(CALLBACK_DIR)
         for file in files
             endswith(file, ".jl") || continue

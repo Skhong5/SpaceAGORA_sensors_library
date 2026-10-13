@@ -9,7 +9,7 @@ higher-fidelity workflows, or checking whether required data is present.
 Shortest successful command:
 
 ```text
-julia --project=. src/cli/main.jl assets check
+julia --project=. src/interfaces/cli/main.jl assets check
 ```
 
 What to read next:
@@ -115,7 +115,7 @@ Measured on a fresh `GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none`
 | Simulator reference sets (Basilisk, GMAT parity matrix) and public OPS-SAT-1 telemetry | no (gitignored) | lab organisation, `scripts/dev/fetch_private_telemetry.sh references` | the parity matrix `test/gmat_scenario_matrix.jl` |
 | CYGNSS and GRIFEX flight telemetry | no (gitignored) | per-person, granted by the PI; never commit or re-share | the mission studies that name them |
 
-`julia --project=. src/cli/main.jl assets check` prints the same picture for
+`julia --project=. src/interfaces/cli/main.jl assets check` prints the same picture for
 the machine you are on: `available`, `missing-optional`, and the licensing
 class of each entry. One qualification: for directory entries the check only
 tests that the directory exists, so after a clone with `GIT_LFS_SKIP_SMUDGE=1`
@@ -145,9 +145,9 @@ The package-owned asset check distinguishes:
 Useful commands:
 
 ```text
-julia --project=. src/cli/main.jl assets check
-julia --project=. src/cli/main.jl assets manifest
-julia --project=. src/cli/main.jl assets setup-open
+julia --project=. src/interfaces/cli/main.jl assets check
+julia --project=. src/interfaces/cli/main.jl assets manifest
+julia --project=. src/interfaces/cli/main.jl assets setup-open
 ```
 
 ## Machine-readable manifest
@@ -168,7 +168,7 @@ This file is the machine-readable asset source of truth for:
 You can inspect it with either:
 
 ```text
-julia --project=. src/cli/main.jl assets manifest
+julia --project=. src/interfaces/cli/main.jl assets manifest
 julia --project=. scripts/assets/show_asset_manifest.jl
 ```
 
@@ -202,9 +202,9 @@ at its lattice nodes; credit NASA MOLA as its archive README states. Scenario as
 their original NAIF and gravity-data terms.
 
 ```sh
-julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets list
-julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets fetch --preset=odyssey_p20_frozen_v1 --version=1.0.0
-julia --project=examples/odyssey_surrogate_env src/cli/main.jl assets check --preset=odyssey_p20_frozen_v1 --version=1.0.0
+julia --project=examples/odyssey_surrogate_env src/interfaces/cli/main.jl assets list
+julia --project=examples/odyssey_surrogate_env src/interfaces/cli/main.jl assets fetch --preset=odyssey_p20_frozen_v1 --version=1.0.0
+julia --project=examples/odyssey_surrogate_env src/interfaces/cli/main.jl assets check --preset=odyssey_p20_frozen_v1 --version=1.0.0
 ```
 
 `fetch` installs and verifies the exact payload bytes. `check` stays offline and

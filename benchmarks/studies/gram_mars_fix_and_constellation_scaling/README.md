@@ -61,7 +61,7 @@ julia --project=. --threads=4 benchmarks/studies/gram_mars_fix_and_constellation
 All 33 `(N_SATS, mode)` points for one thread count run back-to-back in ONE
 process (`leo_constellation_size_scaling_point.jl`'s `run_scaling_point`) --
 `ODEParams`/`SharedBuffers`'s `N_sats` is a runtime field
-(`src/core/types/runtime_types.jl`), so every `N_sats` value for a given mode
+(`src/foundation/core/types/runtime_types.jl`), so every `N_sats` value for a given mode
 shares one compiled specialization and only the 3 modes still differ in
 type. Thread count, however, is fixed at Julia process startup, so each
 thread count in the ladder still runs as its own subprocess (this script
@@ -188,7 +188,7 @@ scheduler limitation, out of scope to fix. It wasn't: `outer_parallel_active()`
 is meant to be a uniform kill-switch against exactly this kind of nesting, and
 correctly gates most call sites in this codebase (density/control/thermal
 callbacks, dynamic-effector threading) -- but three multi-worker routing
-branches inside `_rhs_execution_plan` (`src/simulation/engine/setup.jl`),
+branches inside `_rhs_execution_plan` (`src/orchestration/simulation/engine/setup.jl`),
 including the harmonics-batch/flat-constellation route this study's own env
 config enables by default, never checked it. Since that route fires on every
 RHS/ODE step (not once per sample), an outer worker already blocked waiting on

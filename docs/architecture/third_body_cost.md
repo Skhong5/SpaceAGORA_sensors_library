@@ -63,7 +63,7 @@ not.
 ### 1. The solver family changes — about 8x
 
 `SolverConfig.solver_mode = :auto_stiff` (the harness default) has a fast path:
-`_auto_stiff_smooth_gravity_eligible` in `src/simulation/engine/solver_policy.jl`
+`_auto_stiff_smooth_gravity_eligible` in `src/orchestration/simulation/engine/solver_policy.jl`
 routes a configuration whose effectors are all *smooth gravity*
 (inverse-square, J2, harmonics, n-body) with no atmosphere and no solar
 requirement straight to plain `Tsit5()`. Anything else gets
@@ -102,7 +102,7 @@ is smooth enough for the explicit solver. Cost of the misrouting on this case:
 
 ### 2. The RHS route falls off the batched harmonics kernel — about 4x
 
-`_resolve_rhs_execution_plan` in `src/simulation/engine/setup.jl` routes a
+`_resolve_rhs_execution_plan` in `src/orchestration/simulation/engine/setup.jl` routes a
 single-harmonics constellation through `:flat_constellation_effector_queue`
 *even at a thread budget of one* — the branch explicitly allows `budget <= 1`,
 because the flat route's harmonics pre-pass loads each (degree, order)
@@ -138,7 +138,7 @@ therefore measuring the route's worst case, not the force model's cost.
 ### 3. The third-body sample is rebuilt per spacecraft — about 1.5x
 
 Under `satellite_batch`, `sample_environment_with_reusable_buffers`
-(`src/simulation/engine/effector_sampling.jl`) reuses a prefilled planet frame,
+(`src/orchestration/simulation/engine/effector_sampling.jl`) reuses a prefilled planet frame,
 atmosphere and *solar* sample when one is available, but there is no such reuse
 for third bodies: `sample_third_body_ephemerides` runs per spacecraft, per
 evaluation, unconditionally.
@@ -170,7 +170,7 @@ lock.
 
 ## What was changed
 
-`_spice_query_name` (`src/dynamics/coupled/perturbations.jl`) now interns its
+`_spice_query_name` (`src/models/dynamics/coupled/perturbations.jl`) now interns its
 result. It is called once per third body per spacecraft per derivative
 evaluation from the per-spacecraft sampling path — and once per spacecraft for
 the SRP primary body — and `strip`/`lowercase`/`replace` allocated three short
@@ -261,14 +261,14 @@ a ratio between two runs of the same ladder, never an absolute benchmark.
 
 ### What changed
 
-1. `sample_third_body_ephemerides` (`src/simulation/engine/effector_sampling.jl`)
+1. `sample_third_body_ephemerides` (`src/orchestration/simulation/engine/effector_sampling.jl`)
    builds its position tuple with `map` over `model.body_names` instead of
    `ntuple` over `length(model.body_names)`. The body-name tuple's length is part
    of `NBodyGravityModel`'s type, so the mapped construction infers; the
    `ntuple`-over-a-runtime-`Int` form did not, and allocated the tuple and its
    boxed closure once per spacecraft per derivative evaluation. Same bodies, same
    order, same values.
-2. `_rhs_execution_plan_uncached` (`src/simulation/engine/setup.jl`) admits a
+2. `_rhs_execution_plan_uncached` (`src/orchestration/simulation/engine/setup.jl`) admits a
    whole class of stacks to the flat route at `budget <= 1`, not just the
    single-harmonics one: if every effector is served by a flat-route pre-pass --
    `_batchable_effector` (n-body, SRP, non-gradient inverse-square) or
@@ -278,7 +278,7 @@ a ratio between two runs of the same ladder, never an absolute benchmark.
    `_rhs_all_prepass_effectors`, and it dispatches on the same two traits the
    flat driver itself uses, so it cannot drift from what that driver pre-passes.
 3. `_auto_stiff_smooth_gravity_effector` / `_auto_stiff_smooth_gravity_reject_reason`
-   (`src/simulation/engine/solver_policy.jl`) accept `SolarRadiationPressureModel`
+   (`src/orchestration/simulation/engine/solver_policy.jl`) accept `SolarRadiationPressureModel`
    as a smooth effector and no longer reject it for declaring `req.solar` -- the
    solar sample is the Sun position that SRP itself consumes. Any other
    smooth-gravity effector asking for solar samples still rejects, and

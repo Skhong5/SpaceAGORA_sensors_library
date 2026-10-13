@@ -62,7 +62,7 @@ const _save_quaternion = SM.SimulationCallbacks._save_quaternion
 const num_sats = 2
 end
 const RECORDED_FIELD = Core.eval(SavedProducer, only(quaternion_field_calls(source_function(
-    joinpath(ROOT, "src", "simulation", "callbacks", "save_fields.jl"), :default_save_fields))))
+    joinpath(ROOT, "src", "orchestration", "simulation", "callbacks", "save_fields.jl"), :default_save_fields))))
 
 axis_quaternion(axis, angle) = SVector{4, Float64}(
     ntuple(i -> i == 4 ? cos(angle / 2) : (i == axis ? sin(angle / 2) : 0.0), 4))

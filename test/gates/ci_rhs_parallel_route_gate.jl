@@ -6,13 +6,13 @@ function _read(rel)
     return read(path, String)
 end
 
-setup_src    = _read(joinpath("src", "simulation", "engine", "setup.jl"))
-dynamics_src = _read(joinpath("src", "simulation", "engine", "dynamics_rhs.jl"))
-assembly_src = _read(joinpath("src", "simulation", "callbacks", "density_callbacks", "assembly.jl"))
-types_src    = _read(joinpath("src", "parallel", "policy", "types.jl"))
-obs_src      = _read(joinpath("src", "parallel", "policy", "observation_tracking.jl"))
-telemetry_src = _read(joinpath("src", "parallel", "policy", "policy_telemetry.jl"))
-pp_src       = _read(joinpath("src", "parallel", "policy", "parallel_policy.jl"))
+setup_src    = _read(joinpath("src", "orchestration", "simulation", "engine", "setup.jl"))
+dynamics_src = _read(joinpath("src", "orchestration", "simulation", "engine", "dynamics_rhs.jl"))
+assembly_src = _read(joinpath("src", "orchestration", "simulation", "callbacks", "density_callbacks", "assembly.jl"))
+types_src    = _read(joinpath("src", "orchestration", "parallel", "policy", "types.jl"))
+obs_src      = _read(joinpath("src", "orchestration", "parallel", "policy", "observation_tracking.jl"))
+telemetry_src = _read(joinpath("src", "orchestration", "parallel", "policy", "policy_telemetry.jl"))
+pp_src       = _read(joinpath("src", "orchestration", "parallel", "policy", "parallel_policy.jl"))
 
 # ── §1/§2: Satellite-batch route contract ───────────────────────────────────
 # _satellite_batch_saturates_pool must exist and be used in auto routing.

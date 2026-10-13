@@ -662,11 +662,11 @@ apply only to its controlled panels.
 
 ## Source ownership for contributors
 
-The existing configuration API is assembled by `src/simulation/config/configuration.jl`.
+The existing configuration API is assembled by `src/orchestration/simulation/config/configuration.jl`.
 This is a source-file organization; users still access the same types through
 `SpaceAGORA.SimulationModel`. No new configuration wrapper is required.
 
-| Source file under `src/simulation/config/` | Responsibility |
+| Source file under `src/orchestration/simulation/config/` | Responsibility |
 | --- | --- |
 | `run_settings.jl` | Epoch, mission duration/orbits, sampling, paths, output and checkpoint settings |
 | `solver_settings.jl` | `SolverConfig` and `IntegrationTolerances` |
@@ -680,11 +680,11 @@ inside `SimConfig`. A one-spacecraft run and a constellation use the same collec
 The constructor retains the supplied spacecraft vector. It does not generate orbital
 layouts, schedule activities or introduce additional collection validation.
 
-Execution policy remains in `src/simulation/engine/config/`: `SimulationEngineConfig`
+Execution policy remains in `src/orchestration/simulation/engine/config/`: `SimulationEngineConfig`
 composes parallel, solver, runtime-policy and artifact settings. It uses the same
 `SolverConfig` definition, not a second solver type. Output and checkpoint path
-derivation stays in `src/io/config/`; solver environment settings are parsed in
-`src/simulation/engine/adapters/from_env.jl`. These are distinct responsibilities
+derivation stays in `src/interfaces/io/config/`; solver environment settings are parsed in
+`src/orchestration/simulation/engine/adapters/from_env.jl`. These are distinct responsibilities
 from assembling a scenario.
 
 `_with_configuration` makes a shallow update and preserves unspecified references.

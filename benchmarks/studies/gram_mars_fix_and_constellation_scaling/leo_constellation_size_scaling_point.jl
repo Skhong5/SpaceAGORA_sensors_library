@@ -8,7 +8,7 @@
 # distinct satellite count forced its own fresh JIT specialization of the
 # whole RHS/solver pipeline -- accumulating compiled code across a 33-point
 # sweep in one process. That's no longer true: N_sats is now a runtime field
-# (src/core/types/runtime_types.jl's ODEParams/SharedBuffers), so every n_sats
+# (src/foundation/core/types/runtime_types.jl's ODEParams/SharedBuffers), so every n_sats
 # value for a given mode shares one compiled specialization, and only the
 # density-model type (3 modes) still varies the type. Subprocess-per-point is
 # no longer necessary to bound compiled-code growth to a sane amount.

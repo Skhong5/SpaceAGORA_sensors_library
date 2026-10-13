@@ -69,7 +69,7 @@ height below −31 m with *"Height below -31 meters. This is an unrecoverable
 error."*, so below that altitude the locked path returned a density and the
 pooled path aborted the solve. A run that reaches the surface — an entry, a
 landing — completed with the pool off and died with it on. The pool now applies
-the same floor. `src/simulation/callbacks/density_callbacks/gram_process_batch.jl`
+the same floor. `src/orchestration/simulation/callbacks/density_callbacks/gram_process_batch.jl`
 sends unclamped altitudes to the process-backed density service the same way and
 has not been changed here.
 
@@ -211,9 +211,9 @@ This is the single most load-bearing thing to know before touching this path.
 _density_callback_thread_decision(p, args, num_sats; heavy_work=true).allotment
 ```
 
-(`src/simulation/callbacks/density_callbacks/runtime.jl`), and that decision goes
+(`src/orchestration/simulation/callbacks/density_callbacks/runtime.jl`), and that decision goes
 through `ParallelPolicy.auto_thread_min_budget(:density_callback)`
-(`src/parallel/policy/env_config.jl`), which is **16**. On any process with fewer
+(`src/orchestration/parallel/policy/env_config.jl`), which is **16**. On any process with fewer
 than 16 threads the decision returns `allotment = 1`, the pooled call fails its
 own `workers > 1` guard, returns `false`, and the run takes the locked path —
 with no warning, whatever `SPACEAGORA_GRAM_ISOLATED_POOL` is set to. Measured

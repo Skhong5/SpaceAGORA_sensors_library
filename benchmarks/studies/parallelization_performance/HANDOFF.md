@@ -74,7 +74,7 @@ Known pre-existing failure:
 
 - `julia --project=. --startup-file=no test/gates/ci_architecture_contract_gate.jl`
   still fails on unrelated existing `ENV` usage in
-  `src/simulation/engine/solver_policy.jl`.
+  `src/orchestration/simulation/engine/solver_policy.jl`.
 
 ## Next Suggested Checks
 

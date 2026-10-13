@@ -183,7 +183,7 @@ const C=SpaceAGORA.HYPRServices
 end
 # Use an isolated support module so these refusal tests do not poison other suites.
 const Fixture=Module(:HYPRProviderFixture)
-Base.include(Fixture,joinpath(@__DIR__,"..","..","..","src","gnc","hypr","support.jl"))
+Base.include(Fixture,joinpath(@__DIR__, "..", "..", "..", "src", "models", "gnc", "hypr", "support.jl"))
 const Support=Fixture.HYPRSupport
 @testset "One runtime provider, fail closed after conflict" begin
     @test !Support.hypr_available()
@@ -196,7 +196,7 @@ const Support=Fixture.HYPRSupport
     @test_throws Support.HYPRCompatibilityError Support.activate!(:HYPR,v"0.1.0")
 end
 const OldFixture=Module(:OldHYPRProviderFixture)
-Base.include(OldFixture,joinpath(@__DIR__,"..","..","..","src","gnc","hypr","support.jl"))
+Base.include(OldFixture,joinpath(@__DIR__, "..", "..", "..", "src", "models", "gnc", "hypr", "support.jl"))
 @testset "Old activation protocol is unsupported" begin
     @test_throws OldFixture.HYPRSupport.HYPRCompatibilityError OldFixture.HYPRSupport.activate!()
     @test !OldFixture.HYPRSupport.hypr_available()

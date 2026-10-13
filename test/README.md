@@ -12,7 +12,7 @@ reverted to keep this repo mergeable with its upstream):
   `SimulationModel`, `SimulationEngine`, `TelemetryVerification`, the parallel
   modules and a handful of frame helpers as aliases into it, so there is one
   copy of every module in the process. It does not include `src/`; the one
-  exception is `src/mission/operations/maneuver_plans.jl`, which is not part
+  exception is `src/orchestration/mission/operations/maneuver_plans.jl`, which is not part
   of the package. Suites 01 and 03 deliberately raw-include source files into
   throwaway sandbox modules to test standalone loading — keep those.
   Reference-system sandboxes use `test/helpers/reference_system_sandbox.jl`:
