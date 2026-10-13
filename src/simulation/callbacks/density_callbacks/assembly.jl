@@ -243,11 +243,9 @@ function get_callbacks(
 
     if !backbone_mode
         drag_callback = _requires_drag_state_callback(effectors, args) ? get_drag_state_callback(num_sats) : nothing
-        # Pair simultaneous roots, without installing drag side effects when
-        # phase tolerances would not otherwise require them.
-        boundary_callback = isempty(_edg_heat_states(args)) ? drag_callback :
-            get_edg_heat_callback(num_sats; drag_callback=drag_callback)
-        callbacks = _append_callback(callbacks, boundary_callback)
+        # Preserve main's original continuous roots and their priority. EDG
+        # passage heat is observed after the complete callback set is assembled.
+        callbacks = _append_callback(callbacks, drag_callback)
     end
 
     if !backbone_mode
@@ -282,5 +280,7 @@ function get_callbacks(
     end
     callbacks = _append_callbacks(callbacks, extra_callbacks)
 
-    return CallbackSet(callbacks...)
+    original = CallbackSet(callbacks...)
+    return !backbone_mode && !isempty(_edg_heat_states(args)) ?
+        _edg_observe_heat_callbacks(original, num_sats) : original
 end

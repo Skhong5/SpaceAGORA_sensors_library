@@ -31,6 +31,9 @@ function _edg_initialize_heat_accounting!(args, u, t_start::Float64)
         state.heat_load_exit_j_cm2[i] = Float64[]
         state.last_pass_heat_load_j_cm2[i] = NaN
         state.heat_boundary_inside[i] = nothing
+        state.heat_boundary_entry_time_s[i] = NaN
+        state.heat_boundary_exit_time_s[i] = NaN
+        state.heat_boundary_observed_at_s[i] = NaN
     end
     return nothing
 end
@@ -62,12 +65,15 @@ function _edg_heat_boundary_vertical_speed(u, p::ODEParams, t::Float64, i::Int)
     return abs(vertical_speed) <= roundoff ? 0.0 : vertical_speed
 end
 
-function _edg_capture_entry_heat!(args, u, i::Int; deduplicate::Bool=false)
+function _edg_capture_entry_heat!(args, u, i::Int; deduplicate::Bool=false, crossing_time_s::Float64=NaN, observed_at_s::Float64=NaN)
     sc = _edg_control_sat_state(u, i)
     for state in _edg_heat_states(args)
         _edg_control_state_index_ok(state, i) || continue
         deduplicate && state.heat_boundary_inside[i] === true && continue
         state.heat_boundary_inside[i] = true
+        state.heat_boundary_entry_time_s[i] = crossing_time_s
+        state.heat_boundary_exit_time_s[i] = NaN
+        state.heat_boundary_observed_at_s[i] = observed_at_s
         GuidanceHooks._edg_reset_pass!(state, i)
         state.heat_load_entry_j_cm2[i] = hasproperty(sc, :heat_loads) ? Float64.(sc.heat_loads) : Float64[]
         state.heat_load_exit_j_cm2[i] = Float64[]
@@ -76,12 +82,14 @@ function _edg_capture_entry_heat!(args, u, i::Int; deduplicate::Bool=false)
     return nothing
 end
 
-function _edg_capture_exit_heat!(args, u, i::Int; deduplicate::Bool=false)
+function _edg_capture_exit_heat!(args, u, i::Int; deduplicate::Bool=false, crossing_time_s::Float64=NaN, observed_at_s::Float64=NaN)
     sc = _edg_control_sat_state(u, i)
     for state in _edg_heat_states(args)
         _edg_control_state_index_ok(state, i) || continue
         deduplicate && state.heat_boundary_inside[i] === false && continue
         state.heat_boundary_inside[i] = false
+        state.heat_boundary_exit_time_s[i] = crossing_time_s
+        state.heat_boundary_observed_at_s[i] = observed_at_s
         GuidanceHooks._edg_reset_pass!(state, i)
         state.heat_load_exit_j_cm2[i] = hasproperty(sc, :heat_loads) ? Float64.(sc.heat_loads) : Float64[]
     end
@@ -91,7 +99,7 @@ end
 
 # Reconcile undelivered simultaneous members geometrically. An initially unknown
 # member records its side without inventing an entry or resetting a t0 plan.
-function _edg_reconcile_heat_boundary!(args, u, i::Int, inside::Bool; event::Bool)
+function _edg_reconcile_heat_boundary!(args, u, i::Int, inside::Bool; event::Bool, crossing_time_s::Float64=NaN, observed_at_s::Float64=NaN)
     states = _edg_heat_states(args)
     for state in states
         if !event && state.heat_boundary_inside[i] === nothing
@@ -99,8 +107,8 @@ function _edg_reconcile_heat_boundary!(args, u, i::Int, inside::Bool; event::Boo
         end
     end
     if any(state -> state.heat_boundary_inside[i] !== inside, states)
-        inside ? _edg_capture_entry_heat!(args, u, i; deduplicate=true) :
-            _edg_capture_exit_heat!(args, u, i; deduplicate=true)
+        inside ? _edg_capture_entry_heat!(args, u, i; deduplicate=true, crossing_time_s, observed_at_s) :
+            _edg_capture_exit_heat!(args, u, i; deduplicate=true, crossing_time_s, observed_at_s)
     end
     return nothing
 end

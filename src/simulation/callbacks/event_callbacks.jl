@@ -291,79 +291,16 @@ function _refresh_crossing_atmosphere_flags!(integrator, events)
     return nothing
 end
 
-# Pair the heat and optional original drag events in one vector callback.
-# SciML may apply only one continuous affect at coincident roots, so either
-# selected root must also handle the other event when both surfaces coincide.
+# Internal convenience for focused passage tests and existing private callers.
+# Production wraps the complete original callback set after assembly.
 function get_edg_heat_callback(num_sats::Int; drag_callback=nothing)
-    offset = drag_callback === nothing ? 0 : num_sats
-    function condition!(out, u, t, integrator)
-        if drag_callback !== nothing
-            drag_callback.condition(view(out, 1:num_sats), u, t, integrator)
-        end
-        @inbounds for i in 1:num_sats
-            distance = _edg_heat_boundary_distance(u, integrator.p, Float64(t), i)
-            if drag_callback !== nothing
-                position = _simulation_engine_module()._state_position_ii(u, i)
-                radius = integrator.p.args.environment_model.planet.Rp_e
-                roundoff = 64eps(Float64) * max(1.0, norm(position), abs(radius))
-                # Identical physical surfaces can differ by a few floating-point
-                # ulps after the frame conversion. Give the solver one root value
-                # so it cannot redispatch the same crossing at the other index.
-                if abs(distance - out[i]) <= roundoff
-                    distance = out[i]
-                end
-            end
-            out[offset+i] = distance
-        end
+    callback = drag_callback
+    if callback !== nothing && !(callback isa VectorContinuousCallback)
+        callback = VectorContinuousCallback(callback.condition, callback.affect!, num_sats;
+            save_positions=callback.save_positions)
     end
-    function affect_events!(integrator, events)
-        p = integrator.p
-        drag_events = offset == 0 ? Int8[] : Int8.(view(events, 1:num_sats))
-        for idx in 1:num_sats
-            heat_direction = events[offset + idx]
-            drag_direction = offset == 0 ? 0 : drag_events[idx]
-            position = _simulation_engine_module()._state_position_ii(integrator.u, idx)
-            planet_radius = p.args.environment_model.planet.Rp_e
-            root_roundoff = 64eps(Float64) * max(1.0, norm(position), abs(planet_radius))
-            spherical_distance = norm(position) - planet_radius - p.args.environment_model.EI*1e3
-            geodetic_distance = _edg_heat_boundary_distance(integrator.u,p,Float64(integrator.t),idx)
-            coincident = abs(geodetic_distance - spherical_distance) <= root_roundoff
-            heat_direction == 0 && coincident && (heat_direction = drag_direction)
-            inside = heat_direction != 0 ? heat_direction < 0 :
-                (abs(geodetic_distance) <= root_roundoff ?
-                    _edg_heat_boundary_vertical_speed(integrator.u,p,Float64(integrator.t),idx) <= 0.0 :
-                    geodetic_distance < 0.0)
-            _edg_reconcile_heat_boundary!(p.args, integrator.u, idx, inside; event=heat_direction != 0)
-            if offset != 0 && drag_direction == 0 && coincident
-                drag_events[idx] = heat_direction
-            end
-        end
-        # Main's callback consumes the entire signed simultaneous-event mask.
-        drag_callback === nothing || drag_callback.affect!(integrator, drag_events)
-        return nothing
-    end
-    function initialize_heat_side!(callback, u, t, integrator)
-        p = integrator.p
-        for idx in 1:num_sats
-            position = _simulation_engine_module()._state_position_ii(u, idx)
-            radius = p.args.environment_model.planet.Rp_e
-            roundoff = 64eps(Float64) * max(1.0, norm(position), abs(radius))
-            distance = _edg_heat_boundary_distance(u,p,Float64(t),idx)
-            inside = abs(distance) <= roundoff ?
-                _edg_heat_boundary_vertical_speed(u,p,Float64(t),idx) <= 0.0 : distance < 0.0
-            for state in _edg_heat_states(p.args)
-                # Record the initial side before any omitted first crossing.
-                # Starting within a passage is not a new entry event and must
-                # preserve both cumulative heat and any t0 guidance plan.
-                state.heat_boundary_inside[idx] === nothing &&
-                    (state.heat_boundary_inside[idx] = inside)
-            end
-        end
-        return nothing
-    end
-    saves = drag_callback === nothing ? (false, false) : drag_callback.save_positions
-    return VectorContinuousCallback(condition!, affect_events!, num_sats+offset;
-        save_positions=saves, initialize=initialize_heat_side!)
+    original = callback === nothing ? CallbackSet() : CallbackSet(callback)
+    return _edg_observe_heat_callbacks(original, num_sats)
 end
 
 function get_drag_state_callback(num_sats::Int)

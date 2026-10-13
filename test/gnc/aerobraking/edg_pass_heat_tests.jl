@@ -150,9 +150,9 @@ end
                 abstol_atmosphere=1e-8,abstol_orbit=1e-8),))...)
         @test SimulationModel.SimulationCallbacks._requires_drag_state_callback((),equal_args)
         callbacks = SimulationModel.SimulationCallbacks.get_callbacks(1, (), equal_args)
-        heat_type = typeof(SimulationModel.SimulationCallbacks.get_edg_heat_callback(1;
-            drag_callback=SimulationModel.SimulationCallbacks.get_drag_state_callback(1)))
-        @test any(cb -> cb isa heat_type, callbacks.continuous_callbacks)
+        @test length(callbacks.continuous_callbacks) >= 1
+        # The observer precedes discrete consumers and adds no continuous root.
+        @test !isempty(callbacks.discrete_callbacks)
     end
 end
 

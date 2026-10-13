@@ -36,6 +36,8 @@ using Test
         "src/gnc/guidance/aerobraking/typed_edg/algorithms.jl",
         "src/gnc/guidance/aerobraking/typed_edg/services.jl",
         "src/gnc/guidance/aerobraking/typed_edg/targeting.jl",
+        "src/gnc/guidance/aerobraking/typed_edg/targeting_plan.jl",
+        "src/gnc/guidance/aerobraking/typed_edg/pass_heat.jl",
         "src/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
         "src/gnc/guidance/aerobraking/typed_edg/heat_rate.jl",
         "src/gnc/guidance/aerobraking/typed_edg/structural_load.jl",

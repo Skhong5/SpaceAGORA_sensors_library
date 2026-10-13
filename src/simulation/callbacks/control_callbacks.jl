@@ -132,7 +132,7 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
             initialize_control_clock = (cb, u, t, integrator) -> begin
                 # Match PeriodicCallback's actual solve-start phase on resumes.
                 control_model.state.control_clock_origin_s = Float64(t)
-                u_modified!(integrator, false)
+                DiffEqBase.derivative_discontinuity!(integrator, false)
             end
             push!(callbacks, PeriodicCallback(control_func, control_rate;
                 initialize=initialize_control_clock))

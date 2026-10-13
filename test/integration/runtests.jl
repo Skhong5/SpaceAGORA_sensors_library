@@ -102,6 +102,7 @@ include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "energy_depletion_gnc_
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_e2c_repair_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_feasibility_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_pass_heat_tests.jl"))
+include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_heat_observer_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_journal_contract_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_replan_callback_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "energy_depletion_lifecycle_tests.jl"))

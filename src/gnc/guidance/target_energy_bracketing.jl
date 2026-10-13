@@ -156,6 +156,9 @@ mutable struct AerobrakingEnergyDepletionState
     control_clock_origin_s::Float64
     targeting_diagnostics::Vector{NamedTuple}
     heat_boundary_inside::Vector{Union{Nothing, Bool}}
+    heat_boundary_entry_time_s::Vector{Float64}
+    heat_boundary_exit_time_s::Vector{Float64}
+    heat_boundary_observed_at_s::Vector{Float64}
 end
 
 function AerobrakingEnergyDepletionState(; num_sats::Integer)
@@ -198,6 +201,9 @@ function AerobrakingEnergyDepletionState(; num_sats::Integer)
         0.0,
         NamedTuple[(status=:unplanned,) for _ in 1:n],
         Union{Nothing, Bool}[nothing for _ in 1:n],
+        fill(NaN, n),
+        fill(NaN, n),
+        fill(NaN, n),
     )
 end
 

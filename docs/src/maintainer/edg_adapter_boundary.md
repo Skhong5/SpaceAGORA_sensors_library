@@ -32,8 +32,15 @@ now has eight files, adding candidate-family planning and passage heat.
 
 The candidate resolves the policy differences below as follows: geodetic EDG
 entry/exit owns cache invalidation and per-panel heat baselines; spherical solver
-phase events remain separate. Signed simultaneous event masks retain per-member
-and duplicate-delivery handling. Physical heat and actuator geometry stay in core.
+phase events remain separate. A dense-trajectory observer records crossing heat
+before existing effects and discrete consumers, without adding a competing root.
+Original callback masks, order and root options remain intact. Crossing time and
+observation time are distinct diagnostics. The eleven-node interval scan is
+bounded, so it does not certify arbitrarily short excursions. Physical heat and
+actuator geometry stay in core. Generic effects use raw geometric signs; only
+explicitly registered scalar geodetic EI conditions synchronize heat at a
+coincident solver event. Registration validates spacecraft, altitude and event
+geometry and leaves the original callable and root settings intact.
 Guidance owns targeting replans, including renewed heat checks, while control
 consumes plans. Checkpoint writing/resume remains refused. This current-main
 candidate still needs independent integration review and numerical qualification.

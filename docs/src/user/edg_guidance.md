@@ -326,11 +326,46 @@ reset. The next control callback can change the between-passage command
 according to the configured mode's default.
 
 The engine's solver-phase events use a spherical radius; EDG uses its own
-geodetic heat/prediction surface. The combined event callback handles both
-surfaces, including coincident roots and simultaneous spacecraft masks. Only
-the geodetic EDG transition resets its plan and records passage heat. A spherical
-phase transition alone must not reset it. Duplicate unchanged EDG transitions
-do not clear a newly established plan.
+geodetic heat/prediction surface. EDG observes the accepted dense trajectory
+before existing callback effects and before discrete guidance/control consumers.
+It does not add a continuous root that could consume a coincident user stop.
+The original callbacks retain their conditions, root-location options, order and
+simultaneous-event masks. This preserves the solver's existing winner semantics;
+it does not promise that every coincident user callback executes.
+
+Each accepted interval is scanned at eleven nodes, and every detected geodetic
+sign change is refined with dense interpolation. Per-panel heat is copied at the
+refined crossing, before a later user callback can change physical heat. The bounded
+scan does not guarantee detection of arbitrarily short excursions between nodes.
+`heat_boundary_entry_time_s` and `heat_boundary_exit_time_s` record those refined
+crossing times; `heat_boundary_observed_at_s` records when bookkeeping consumed
+the crossing. These diagnostic clocks are separate from planning clocks.
+
+An unregistered callback that stops just before the numerical geodetic sign
+change keeps its original stop behavior; a proximity band is not treated as an
+EDG crossing. For a scalar callback whose condition explicitly represents the
+same geodetic EI surface, wrap the condition with
+`SpaceAGORA.SimulationModel.SimulationCallbacks.EDGGeodeticBoundaryCondition(condition, spacecraft_index, altitude_m)`.
+The callable delegates the original condition unchanged. Registration checks the
+spacecraft index and exact configured EI altitude, and requires event geometry
+within frame-transform roundoff. At such a declared event, heat is captured at
+the original solver event time before its effect. Geodetic normal velocity
+chooses entry or exit; a tangent does not force a transition. Registration is an
+explicit surface-identity contract, not a test of an arbitrary function's
+mathematical equivalence. It currently supports scalar continuous callbacks;
+vector and generic callbacks retain raw geometric observation. The native-free
+Odyssey example registers its known outbound EI event this way.
+
+Only an actual geodetic transition resets the plan and records passage heat.
+A spherical phase transition alone, a duplicate observation or an outside
+computed trajectory touching the boundary tangentially must not invent a new passage.
+A numerically integrated trajectory that actually dips below the surface is a
+small passage in that computed trajectory, even if an analytic ideal is tangent.
+Original callback effects that change the spacecraft's side are reconciled
+before the next same-time consumer. Initialization changes define the initial
+side without inventing an entry or erasing a prepared initial plan. At startup
+only, the established transform-roundoff band uses geodetic normal velocity to
+classify a supplied EI state; it is not used to advance later generic crossings.
 
 Maximum-depletion control can run without a paired guidance model, but
 targeting requires guidance to establish its bracket. A configuration may

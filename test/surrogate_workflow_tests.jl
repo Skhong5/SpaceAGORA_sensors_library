@@ -45,6 +45,9 @@ end
     for cap in (90, 30)
         summary = TOML.parsefile(joinpath(directory, "cap_$(cap)_deg", "summary.toml"))
         @test summary["panel_cap_active"]
+        @test summary["guidance_active_during_passage"]
+        @test summary["guidance_cleared_at_exit"]
+        @test summary["exit_heat_captured"]
         @test !summary["thermal_feedback_tested"]
         @test startswith(summary["state_frame"], "Mars-centred J2000 inertial")
         @test summary["atmosphere"]["preset_version"] == "1.0.0"

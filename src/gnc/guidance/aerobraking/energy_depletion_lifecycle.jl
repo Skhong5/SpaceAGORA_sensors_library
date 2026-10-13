@@ -44,6 +44,9 @@ function _edg_initialize_state!(s::AerobrakingEnergyDepletionState)
         s.heat_load_exit_j_cm2[i] = Float64[]
         s.last_pass_heat_load_j_cm2[i] = NaN
         s.heat_boundary_inside[i] = nothing
+        s.heat_boundary_entry_time_s[i] = NaN
+        s.heat_boundary_exit_time_s[i] = NaN
+        s.heat_boundary_observed_at_s[i] = NaN
     end
     return nothing
 end
