@@ -82,4 +82,94 @@ end
         @test !output.plotly_outputs && !output.failed_path_outputs
     end
 end
+
+@testset "Station geometry preserves coordinates and mesh connectivity" begin
+    points = Float64[1 4 7 10 13 16 19; 2 5 8 11 14 17 20; 3 6 9 12 15 18 21]
+    batch = (geometry=(station=(points_body=points,),),)
+    cloud = G.rpo_comparison_station_trace(batch; max_points=2)
+    @test cloud.fields[:type] == "scatter3d"
+    @test cloud.fields[:mode] == "markers"
+    @test cloud.fields[:x] == [1.0, 13.0]
+    @test cloud.fields[:y] == [2.0, 14.0]
+    @test cloud.fields[:z] == [3.0, 15.0]
+    # An explicitly absent mesh uses the same point-cloud representation.
+    no_mesh = G.rpo_comparison_station_trace(merge(batch, (station_triangles=nothing,)))
+    @test no_mesh.fields[:x] == points[1, :]
+    @test no_mesh.fields[:y] == points[2, :]
+    @test no_mesh.fields[:z] == points[3, :]
+    triangles = Float64[0 1 0 2 3 2; 0 0 1 0 0 1; 0 0 0 1 1 1]
+    mesh = G.rpo_comparison_station_trace(merge(batch, (station_triangles=triangles,)))
+    @test mesh.fields[:type] == "mesh3d"
+    @test mesh.fields[:x] == [0.0, 1.0, 0.0, 2.0, 3.0, 2.0]
+    @test mesh.fields[:y] == [0.0, 0.0, 1.0, 0.0, 0.0, 1.0]
+    @test mesh.fields[:z] == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+    # Plotly indices are zero-based: the two faces must remain disconnected.
+    @test mesh.fields[:i] == [0, 3]
+    @test mesh.fields[:j] == [1, 4]
+    @test mesh.fields[:k] == [2, 5]
+end
+
+@testset "Path reports distinguish reference, tracked, raw and failed cases" begin
+    reference = Float64[10 11 12; 20 21 22; 30 31 32]
+    actual = Float64[40 41 42; 50 51 52; 60 61 62]
+    raw = Float64[70 71; 80 81; 90 91]
+    # Distinct velocity rows catch an accidental use of the whole state history.
+    tracking = (r_ref_rtn=reference, x_hist=vcat(actual, fill(-100.0, 3, 3)))
+    selected = (case=(label="selected", start_rtn=[1.0, 2.0, 3.0],
+                      goal_rtn=[4.0, 5.0, 6.0]), tracking=tracking, raw_path=raw)
+    other = (case=(label="other", start_rtn=[-1.0, -2.0, -3.0],
+                   goal_rtn=[-4.0, -5.0, -6.0]),
+             tracking=(r_ref_rtn=-reference, x_hist=-tracking.x_hist))
+    batch = (geometry=(station=(points_body=zeros(3, 1),),),
+             planner_types=[:rrt_connect, :chomp],
+             plans_by_planner=Dict(:rrt_connect=>[other, selected], :chomp=>[other]))
+    single = G.rpo_comparison_single_path_plot(batch, selected; planner=:rrtconnect)
+    @test [t.fields[:name] for t in single.data] ==
+        ["station point cloud", "desired", "tracked", "raw planner path", "start", "goal"]
+    for (idx, coordinates) in ((2, reference), (3, actual), (4, raw))
+        @test single.data[idx].fields[:x] == coordinates[1, :]
+        @test single.data[idx].fields[:y] == coordinates[2, :]
+        @test single.data[idx].fields[:z] == coordinates[3, :]
+    end
+    @test single.data[4].fields[:mode] == "lines+markers"
+    @test single.data[5].fields[:x] == [1.0]
+    @test single.data[5].fields[:y] == [2.0]
+    @test single.data[5].fields[:z] == [3.0]
+    @test single.data[6].fields[:x] == [4.0]
+    @test single.data[6].fields[:y] == [5.0]
+    @test single.data[6].fields[:z] == [6.0]
+    no_raw = G.rpo_comparison_single_path_plot(batch, other; planner=:rrt_connect)
+    @test [t.fields[:name] for t in no_raw.data] ==
+        ["station point cloud", "desired", "tracked", "start", "goal"]
+    @test no_raw.data[2].fields[:x] == -reference[1, :]
+
+    failed = G.rpo_comparison_failed_paths_plot(batch; planner=:rrtconnect, failed_indices=[2])
+    @test [t.fields[:name] for t in failed.data] ==
+        ["station point cloud", "case selected desired", "case selected tracked",
+         "case selected raw planner path", "case selected start", "case selected goal"]
+    for (idx, coordinates) in ((2, reference), (3, actual), (4, raw))
+        @test failed.data[idx].fields[:x] == coordinates[1, :]
+        @test failed.data[idx].fields[:y] == coordinates[2, :]
+        @test failed.data[idx].fields[:z] == coordinates[3, :]
+    end
+    @test failed.data[5].fields[:x] == [1.0]
+    @test failed.data[6].fields[:z] == [6.0]
+    failed_no_raw = G.rpo_comparison_failed_paths_plot(batch; planner=:rrt_connect, failed_indices=[1])
+    @test [t.fields[:name] for t in failed_no_raw.data] ==
+        ["station point cloud", "case other desired", "case other tracked", "case other start", "case other goal"]
+    @test failed_no_raw.data[3].fields[:y] == -actual[2, :]
+    @test length(G.rpo_comparison_failed_paths_plot(batch; planner=:rrt_connect, failed_indices=Int[]).data) == 1
+
+    family = G.rpo_comparison_path_family_plot(batch; planner=:rrtconnect)
+    @test length(family.data) == 9
+    @test all(t -> !occursin("CHOMP", t.fields[:name]), family.data)
+    @test family.data[2].fields[:x] == -reference[1, :]
+    @test family.data[6].fields[:x] == reference[1, :]
+    @test family.data[7].fields[:z] == actual[3, :]
+    @test family.data[8].fields[:y] == [2.0]
+    @test family.data[9].fields[:z] == [6.0]
+    all_planners = G.rpo_comparison_path_family_plot(batch)
+    @test length(all_planners.data) == 13
+    @test all_planners.data[10].fields[:name] == "CHOMP case other desired"
+end
 end # module PlanningOwnershipTests

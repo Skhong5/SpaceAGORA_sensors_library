@@ -6,6 +6,12 @@ public facade, package, contract version or new supported execution mode. Scient
 qualification and integration of the experimental controller remain prerequisites;
 this document does not establish manuscript equivalence or authorize extraction.
 
+`packages/gnc/README.md` records this future domain boundary. It contains no
+installable EDG package, and the shared optional-package helper has no EDG
+target. The current folder organization does not move guidance code or change
+its runtime ownership. Complete the qualification and interface work below
+before adding a package checkout or installation command.
+
 The inventory below uses core commit
 [`f9eb5f13`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/f9eb5f13cf2f19f4327abb358d22513960bef23f).
 The experimental comparison uses draft

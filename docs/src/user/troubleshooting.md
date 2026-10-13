@@ -45,7 +45,7 @@ expected local path.
 
 1. Pull the `GRAMSuite.jl` submodule:
    ```text
-   git submodule update --init --recursive --remote
+   git submodule update --init --recursive -- data/GRAMSuite.jl
    ```
 2. Copy the official GRAM Suite distribution into:
    ```text
