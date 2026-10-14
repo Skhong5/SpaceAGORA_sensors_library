@@ -208,7 +208,7 @@ the file that performs each step.
    native GRAM integration and the fixed-grid adapter methods are provided by
    the package extension when both SpaceAGORA and `GRAMSuite` are loaded, through
    `ext/SpaceAGORAGRAMSuiteExt.jl`
-   and `ext/gram_grid_atmosphere.jl`.
+   and `ext/SpaceAGORAGRAMSuiteExt/gram_grid_atmosphere.jl`.
    The fixed-grid path needs the wrapper and a grid file, not native GRAM binaries.
    See [Atmosphere Models](atmosphere_models.md) for choosing one.
 5. **Forces and torques.** The engine obtains the state and environment required by
@@ -332,10 +332,10 @@ are relative to the directory in the first column.
 | `packages/gnc/` | Optional guidance-domain packages, including experimental SpaceAGORAEDG | The companion owns numerical kernels; core retains model types, lifecycle and physics through [EDGServices](../maintainer/edg_adapter_boundary.md). |
 | `packages/SpaceAGORAHYPR/` | Compatibility package and source pin for external HYPR | `src/SpaceAGORAHYPR.jl` checks and aliases the external adapter; `HYPRSource.toml` pins its revision. Core services are defined in `src/models/gnc/planning/adapters/hypr/services.jl`. Install and load with the [RPO planner guide](rpo_planner_pilot.md#Installing-optional-HYPR). |
 | `examples/` | Runnable scenarios; `common.jl` is the shared bootstrap | primary scenario entrypoints; development viewer demos also live in `scripts/dev/viewer_demos/`; see the [Examples Catalog](examples_catalog.md) |
-| `templates/` | Starting files for a force/torque model, a density model and a control hook | copy one of these to begin an extension |
+| `templates/` | Starting files for a force/torque model, a density model and a control hook, plus the interactive `startup.jl` template | copy one of these to begin an extension |
 | `test/` | Unit, integration, smoke and stress suites, CI gates under `test/gates/`, contract checks under `test/contracts/`, review artifacts under `test/ai_reviews/` | the gates enforce the ownership rules on this page |
 | `benchmarks/` | Performance studies and the paper pipeline (`benchmarks/scripts/performance_paper_pipeline.jl`) | measurement work owned by the parallelization effort; see [Studies and Benchmarks](studies_benchmarks.md) |
-| `scripts/` | Operational tools: plotting (`scripts/plotting/`), telemetry fetching, GRAM installation helpers, development launchers (`scripts/dev/`), HPC and remote helpers | operational, not package code |
+| `scripts/` | Operational tools: plotting (`scripts/plotting/`), telemetry fetching, GRAM installation helpers, development launchers and scenario-matrix diagnostics (`scripts/dev/`), HPC and remote helpers | operational, not package code |
 | `experimental/` | Typed scaffolds not loaded by the package (resources, laser terminal, constellation, estimation) | no stability guarantee; see its README |
 | `SpaceAGORAVisualizer.jl` (separate repository) | The browser viewer and its build scripts | Connected through `ext/SpaceAGORAVisualizerExt.jl`; scene and payload export stay in core |
 | `data/` | Gravity and topography coefficients, references, asset manifests and the Odyssey surrogate manifest | see [Assets & Modes](../assets.md) |
@@ -435,8 +435,8 @@ description of the current code.
 - [#164](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/164) removed five
   example-local constant-density definitions and reused the shared model.
 - [#188](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/188) replaced the
-  generated `scripts/tb_matrix_debug_defs_only.jl` copy with a compatibility
-  loader through `scripts/scenario_matrix_debug_support.jl`, which loads
+  generated `scripts/dev/tb_matrix_debug_defs_only.jl` copy with a compatibility
+  loader through `scripts/dev/scenario_matrix_debug_support.jl`, which loads
   `test/gmat_scenario_matrix.jl` in definitions-only mode, repaired the debug runners,
   and retired the one-time `scripts/dev/test_reorg_b1.sh` migration.
 - [#194](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/194) consolidated
@@ -499,7 +499,7 @@ description of the current code.
   telemetry tools and study scripts, and `performance_runtime_analysis/main.jl`
   defines extension methods itself. A shared bootstrap needs agreement with the
   parallelization and surrogate owners first.
-- `examples/aerobraking_mission_plot_utils.jl` mixes mission setup, event
+- `examples/support/aerobraking_mission_plot_utils.jl` mixes mission setup, event
   extraction, reference comparison and plotting with live consumers; splitting by responsibility is organization work, not a duplicate
   removal.
 

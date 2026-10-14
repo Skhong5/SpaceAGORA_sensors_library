@@ -5,7 +5,7 @@
 #
 # One-time setup:
 #   1. Copy or symlink this file:
-#        cp startup.jl ~/.julia/config/startup.jl
+#        cp templates/startup.jl ~/.julia/config/startup.jl
 #
 # This template intentionally avoids project-specific package loads so it stays
 # usable even in minimal Julia environments.

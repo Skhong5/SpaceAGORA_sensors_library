@@ -332,7 +332,7 @@ choose the spacecraft and destination:
 
 ```julia
 include("examples/common.jl")
-include("examples/aerobraking_mission_plot_utils.jl")
+include("examples/support/aerobraking_mission_plot_utils.jl")
 quaternion_history = _save_quaternion_history_plot(
     "results/my_run/simulation_results.csv";
     spacecraft_index=1,
@@ -393,7 +393,7 @@ To plot an existing CSV, use the example helpers explicitly:
 
 ```julia
 include("examples/common.jl")
-include("examples/aerobraking_mission_plot_utils.jl")
+include("examples/support/aerobraking_mission_plot_utils.jl")
 body_rate_history = _save_body_rate_history_plot(
     "results/my_run/simulation_results.csv";
     spacecraft_index=1,

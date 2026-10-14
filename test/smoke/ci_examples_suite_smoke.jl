@@ -28,7 +28,7 @@ function example_command(path)
 end
 
 function list_examples()
-    helper_files = Set(["common.jl", "aerobraking_mission_plot_utils.jl"])
+    helper_files = Set(["common.jl"])
     # Odyssey uses its pinned example environment, not this repository environment.
     # surrogate-user.yml runs its full native-free passage and verifies the outputs.
     dedicated_environment_examples = Set(["odyssey_surrogate.jl"])
