@@ -210,10 +210,11 @@ leap-second calendar fields to the general `InitialTime` API.
 
 ## CYGNSS research tools
 
-Use the [private reconstruction record](https://github.com/gfalcon2/spaceagora-private-telemetry/blob/f7800266ff604f7c8ca521a8221418dcb8369019/retained_studies/2026-10-14-repository-cleanup/docs/spaceagora_cygnss_reconstruction_record.md)
-(access to `gfalcon2/spaceagora-private-telemetry` required) for the separate
-development environment, seven-spacecraft Earthdata fetch,
+Use the private reconstruction record, originally
+`docs/spaceagora_cygnss_reconstruction_record.md`, for the separate development
+environment, seven-spacecraft Earthdata fetch,
 private-input access, and the distinction between the wheels-only diagnostic
-and recorded-command reconstruction. Generated flight pages remain private.
+and recorded-command reconstruction. Generated flight pages remain private. Authorized collaborators can obtain the
+October 14, 2026 archive snapshot from the maintainers.
 The wheels-only physical-adequacy check is currently failing, even when the
 demo completes. Do not report execution success as physical acceptance.

@@ -985,7 +985,7 @@ end
 # Default false, matching _effector_allow_with_outer, keeps that nesting an
 # explicit choice. Historical contention evidence is in the private
 # THREAD_ALLOCATION_AND_GRAM_CONCURRENCY_HANDOFF.md record (Finding 3),
-# gfalcon2/spaceagora-private-telemetry, retained_studies/2026-10-14-repository-cleanup/
+# the private research archive, October 14, 2026 cleanup snapshot, original path
 # benchmarks/studies/gram_mars_fix_and_constellation_scaling/.
 @inline function _harmonics_batch_allow_with_outer()::Bool
     return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_HARMONICS_BATCH_ALLOW_WITH_OUTER", false)

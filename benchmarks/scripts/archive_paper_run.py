@@ -73,8 +73,8 @@ except ModuleNotFoundError:  # pragma: no cover - older interpreters
 # so it is derived from the data instead.  Each entry names where the value was
 # read from, and that source string is copied into the manifest.
 # The historical docs paths in these serialized strings identify originals in
-# the private gfalcon2/spaceagora-private-telemetry repository under
-# retained_studies/2026-10-14-repository-cleanup/; they are not local files read
+# the private research archive (October 14, 2026 cleanup snapshot);
+# they are provenance labels, not local files read
 # by this tool. Keep the strings unchanged for existing archive compatibility.
 # --------------------------------------------------------------------------
 HOST_FACTS = {

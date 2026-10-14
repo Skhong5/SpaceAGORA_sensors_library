@@ -162,8 +162,8 @@ function _scenario_dynamic_effectors(
         # When set, the override takes priority over both the file's declared
         # `gm_m3s2` and `planet.μ`. Historical GMAT/STK comparison:
         # private `spaceagora_j0_gm_parity_investigation.md` in
-        # gfalcon2/spaceagora-private-telemetry,
-        # retained_studies/2026-10-14-repository-cleanup/docs/.
+        # the private research archive,
+        # October 14, 2026 cleanup snapshot, original path docs/.
         harmonics_file = cfg.gravity_harmonics_file
         isempty(harmonics_file) && throw(ArgumentError(
             "Scenario $(cfg.name) sets gravity_harmonics_degree=$(cfg.gravity_harmonics_degree) but does not provide gravity_harmonics_file."

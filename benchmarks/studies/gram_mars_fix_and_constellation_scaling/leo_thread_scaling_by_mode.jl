@@ -12,8 +12,8 @@
 # startup, so each (mode, threads) point is its own subprocess via the existing
 # leo_constellation_size_scaling_worker.jl.
 # Historical results are in the private LEO_GRAM_CONSTELLATION_HANDOFF.md record,
-# gfalcon2/spaceagora-private-telemetry,
-# retained_studies/2026-10-14-repository-cleanup/benchmarks/studies/.
+# the private research archive,
+# October 14, 2026 cleanup snapshot, original path benchmarks/studies/.
 #
 # Each point also records the worker subprocess's own resource footprint --
 # peak RSS and mean/peak CPU%, sampled by pid via `ps` (resource_monitor.jl)

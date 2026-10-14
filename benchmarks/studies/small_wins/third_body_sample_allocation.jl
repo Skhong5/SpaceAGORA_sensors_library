@@ -26,8 +26,8 @@
 #
 # Historical allocation measurements and dump/cmp evidence are in the private
 # `third_body_cost.md` and `small_wins_20260923.md` records in
-# gfalcon2/spaceagora-private-telemetry,
-# retained_studies/2026-10-14-repository-cleanup/docs/architecture/.
+# the private research archive,
+# October 14, 2026 cleanup snapshot, original path docs/architecture/.
 # Those records retain the earlier revision and measurement conditions; this
 # script does not recreate the historical result by measuring the current tree.
 

@@ -152,8 +152,8 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     # reference tool's own GM convention for a body. `nothing` preserves the
     # existing degree/file-driven behavior. Historical GMAT/STK comparison:
     # private `spaceagora_j0_gm_parity_investigation.md` in
-    # gfalcon2/spaceagora-private-telemetry,
-    # retained_studies/2026-10-14-repository-cleanup/docs/.
+    # the private research archive,
+    # October 14, 2026 cleanup snapshot, original path docs/.
     gravity_harmonics_gm_override_m3s2::Union{Nothing, Float64} = nothing
     nbody_bodies::Vector{String} = String[]
     srp_enabled::Bool = false
@@ -259,8 +259,8 @@ Base.@kwdef struct TimeAlignedScenarioConfig <: AbstractScenarioConfig
     # reference tool's own GM convention for a body. `nothing` preserves the
     # existing degree/file-driven behavior. Historical GMAT/STK comparison:
     # private `spaceagora_j0_gm_parity_investigation.md` in
-    # gfalcon2/spaceagora-private-telemetry,
-    # retained_studies/2026-10-14-repository-cleanup/docs/.
+    # the private research archive,
+    # October 14, 2026 cleanup snapshot, original path docs/.
     gravity_harmonics_gm_override_m3s2::Union{Nothing, Float64} = nothing
     nbody_bodies::Vector{String} = String[]
     srp_enabled::Bool = false

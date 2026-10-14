@@ -150,11 +150,9 @@ Keep the source revision, configuration, host, logs and raw outputs together
 when recording a new result; a historical result does not validate current code.
 
 The originals removed during the October 14, 2026 cleanup are retained in the
-private research archive, `gfalcon2/spaceagora-private-telemetry`, at commit
-`0cb7ad12f69d8c6da24e9fdd05ab819e16858935` in
-`retained_studies/2026-10-14-repository-cleanup`,
-under their original repository paths. Access requires permission to that private
-repository. The archive identifies its source revision and any unavailable
+private research archive under their original repository paths. Authorized
+collaborators can obtain the archive location and verification manifest from
+the maintainers. The record identifies its source revision and any unavailable
 underlying inputs; a copied report is not a replacement for missing raw data.
 The public procedures remain usable without access to those historical records.
 

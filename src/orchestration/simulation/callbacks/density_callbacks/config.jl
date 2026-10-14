@@ -456,8 +456,8 @@ end
     # exists for that case. A lock-free model (e.g. GRAMAtmosphereModelSurrogate)
     # has no such cost, so it gets the general default floor instead via a
     # separate source category. The historical rationale is Finding 1 in the
-    # private PARALLELIZATION_CURRENT_STATE.md record, gfalcon2/spaceagora-private-telemetry,
-    # retained_studies/2026-10-14-repository-cleanup/benchmarks/studies/
+    # private PARALLELIZATION_CURRENT_STATE.md record, the private research archive,
+    # October 14, 2026 cleanup snapshot, original path benchmarks/studies/
     # gram_mars_fix_and_constellation_scaling/.
     source = (model isa EnvironmentModels.GRAMAtmosphereModel && !lock_free) ?
         :density_callback : :density_callback_lockfree

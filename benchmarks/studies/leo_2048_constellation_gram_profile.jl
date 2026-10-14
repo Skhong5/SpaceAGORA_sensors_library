@@ -1,7 +1,7 @@
 # Profile the 1024-satellite LEO GRAM constellation scenario on the current
 # tree. Historical profiles are in the private LEO_GRAM_CONSTELLATION_HANDOFF.md
-# record in gfalcon2/spaceagora-private-telemetry,
-# retained_studies/2026-10-14-repository-cleanup/benchmarks/studies/.
+# record in the private research archive,
+# October 14, 2026 cleanup snapshot, original path benchmarks/studies/.
 #
 # `auto_thread_min_budget(:density_callback)` defaults to a 16-thread floor
 # for the locked density source; it is configurable in

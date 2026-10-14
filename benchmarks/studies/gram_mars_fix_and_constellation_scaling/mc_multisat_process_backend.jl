@@ -12,7 +12,7 @@
 # Follow-up to mc_multisat_thread_allocation.jl. The historical construction
 # race investigation is Finding 4 in the private
 # THREAD_ALLOCATION_AND_GRAM_CONCURRENCY_HANDOFF.md record,
-# gfalcon2/spaceagora-private-telemetry, retained_studies/2026-10-14-repository-cleanup/
+# the private research archive, October 14, 2026 cleanup snapshot, original path
 # benchmarks/studies/gram_mars_fix_and_constellation_scaling/.
 # Separate OS processes do not share native global state, so this script routes outer
 # parallelism through Distributed.addprocs instead of Threads.@spawn --

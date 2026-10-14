@@ -1020,8 +1020,8 @@ end
 # of degree). Each comparison target has its own selected value rather than
 # a single shared μ per body. Historical reconstruction evidence is in the
 # private spaceagora_j0_gm_parity_investigation.md record,
-# gfalcon2/spaceagora-private-telemetry,
-# retained_studies/2026-10-14-repository-cleanup/docs/.
+# the private research archive,
+# October 14, 2026 cleanup snapshot, original path docs/.
 #
 # The :basilisk values were reconstructed from Basilisk_Examples_Full, called
 # "GMAT" by the historical investigation. The :gmat values below are the

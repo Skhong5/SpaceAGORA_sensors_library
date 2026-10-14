@@ -24,8 +24,8 @@
 # `@inbounds for b = 1:B` (three occurrences), re-run this script into a
 # second `<outdir>`, restore the file, and `cmp` the two `*_vacuum.bin` pairs.
 # Historical measurements and dump/cmp evidence are in the private
-# `small_wins_20260923.md` record in gfalcon2/spaceagora-private-telemetry,
-# retained_studies/2026-10-14-repository-cleanup/docs/architecture/.
+# `small_wins_20260923.md` record in the private research archive,
+# October 14, 2026 cleanup snapshot, original path docs/architecture/.
 
 outdir = length(ARGS) >= 1 ? ARGS[1] : joinpath(@__DIR__, "results", "harmonics_simd_dump")
 mkpath(outdir)

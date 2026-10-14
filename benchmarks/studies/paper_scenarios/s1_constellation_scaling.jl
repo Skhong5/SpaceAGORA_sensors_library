@@ -39,7 +39,7 @@
 # policy. Non-default combinations write to a suffixed CSV/label set so they
 # never clobber the (l20, none) paper-baseline results already on disk.
 # Historical D1 investigation: private FABLE_FINDINGS.md in
-# gfalcon2/spaceagora-private-telemetry, retained_studies/2026-10-14-repository-cleanup/
+# the private research archive, October 14, 2026 cleanup snapshot, original path
 # benchmarks/studies/paper_scenarios/.
 
 include(joinpath(@__DIR__, "common.jl"))

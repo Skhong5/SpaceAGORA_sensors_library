@@ -5,7 +5,7 @@
 # means no shared native GRAM/CSPICE global state to race on, unlike
 # Threads.@spawn-based outer parallelism. Historical construction-race evidence
 # is Finding 4 in the private THREAD_ALLOCATION_AND_GRAM_CONCURRENCY_HANDOFF.md,
-# gfalcon2/spaceagora-private-telemetry, retained_studies/2026-10-14-repository-cleanup/
+# the private research archive, October 14, 2026 cleanup snapshot, original path
 # benchmarks/studies/gram_mars_fix_and_constellation_scaling/.
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
