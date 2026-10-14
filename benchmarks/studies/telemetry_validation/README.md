@@ -1,8 +1,8 @@
 # Telemetry validation: Odyssey and Venus Express aerobraking reconstructions
 
 This study is the runnable form of the internal technical record
-[`docs/spaceagora_aerobraking_reconstruction_record.md`](../../../docs/spaceagora_aerobraking_reconstruction_record.md)
-(also `docs/spaceagora_aerobraking_reconstruction_record.pdf`). It executes
+`spaceagora_aerobraking_reconstruction_record.md` (kept with its PDF in the
+lab's private research archive, not in this repository). It executes
 the Mars Odyssey and Venus Express (VEX) aerobraking reconstructions exactly
 as documented there, through the `SpaceAGORA.TelemetryVerification` engine,
 with one frozen manifest per run under `manifests/`.

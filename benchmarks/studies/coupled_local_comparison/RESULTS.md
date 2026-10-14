@@ -50,9 +50,9 @@ warm-ups, `Profile.Allocs` at sample rate 0.001 (24,729 samples).
 
   | Share | Site |
   |---|---|
-  | 47.2% | `src/simulation/engine/dynamics_rhs.jl:293`, the call into `_accumulate_control_effectors_from_tuple!` |
-  | 14.9% | `src/simulation/engine/dynamics_rhs.jl:162`, `any(_wrench_method_available(effector) for effector in dynamic_effectors)` |
-  | 4.4% | `src/simulation/engine/setup.jl:547`, `_dynamic_effectors_parallel_supported` |
+  | 47.2% | `src/orchestration/simulation/engine/dynamics_rhs.jl:293`, the call into `_accumulate_control_effectors_from_tuple!` |
+  | 14.9% | `src/orchestration/simulation/engine/dynamics_rhs.jl:162`, `any(_wrench_method_available(effector) for effector in dynamic_effectors)` |
+  | 4.4% | `src/orchestration/simulation/engine/setup.jl:547`, `_dynamic_effectors_parallel_supported` |
 
 - By allocated type: `ODEParams{...}` 41.6% (about 2.4 KB each), the
   dynamic-effector tuple 17.7%, `NTuple{32, MagneticMomentumManagerModel}`

@@ -106,7 +106,7 @@ smoke: set `PS_SIZES=1,4 PS_MC_SAMPLES=4 PS_WORKERS=1,2 PS_MISSION_S=60 PS_REPEA
   a heavier force model shrinks that overhead fraction and produces *superlinear*
   speedup at N >= 1024 (up to 21.6x on a 12-thread budget) — reproducible but not
   confirmed against hardware cache-miss counters. See "S1 Force-Model Sensitivity
-  Finding" in `docs/architecture/parallelization_paper_notes.md` for the full data
+  Finding" in the private research notes (`parallelization_paper_notes.md`, lab archive) for the full data
   and the caveat to state alongside it in the paper.
 
 ## S1 finding: TRX50 thread-count sensitivity at N=2048/4096

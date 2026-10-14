@@ -34,7 +34,7 @@ comparator indexes it.
 tuples with `hasproperty` reflection for every satellite on every RHS evaluation —
 in simulations with no robot arm anywhere (i.e., every constellation/MC case in
 this suite). Added `SharedBuffers.robot_arm_present`, a lazily-computed
-run-constant flag (`src/foundation/core/types/runtime_types.jl`), checked first.
+run-constant flag (`src/orchestration/simulation/state/runtime_types.jl`), checked first.
 
 ### F5. Process-route Monte Carlo re-serialized the sample closure per sample
 `src/orchestration/simulation/campaigns/monte_carlo.jl`, `_run_monte_carlo_process`. Each

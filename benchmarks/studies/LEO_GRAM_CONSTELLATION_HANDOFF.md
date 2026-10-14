@@ -41,7 +41,7 @@ regardless of Julia-level thread budget.
 2. **Real data race in aero force caching, unrelated to GRAM** —
    `src/orchestration/simulation/engine/setup.jl` (`_initialize_save_cache_buffers!`) /
    `src/orchestration/simulation/engine/execution.jl`. `SaveCache.drag_cache`/`lift_cache`/
-   `cross_cache` (`src/foundation/core/types/runtime_types.jl`) started as empty `Vector`s and
+   `cross_cache` (`src/orchestration/simulation/state/runtime_types.jl`) started as empty `Vector`s and
    grew lazily via `resize!` in `_store_vector_cache!`
    (`src/models/dynamics/coupled/aerodynamic_wrench_models.jl:139`). `AerodynamicCoefficientfM`'s
    wrench is dispatched per-satellite across persistent worker threads whenever gravity
@@ -78,7 +78,7 @@ regardless of Julia-level thread budget.
    `_count_flat_queue_only_effectors` helper.
 
 5. **Env-var re-parsing in the per-satellite density hot path** —
-   `src/foundation/core/types/runtime_types.jl` (new `SharedBuffers.density_static_config` field),
+   `src/orchestration/simulation/state/runtime_types.jl` (new `SharedBuffers.density_static_config` field),
    `src/orchestration/simulation/engine/setup.jl` (`_initialize_density_static_config!`),
    `src/orchestration/simulation/engine/effector_sampling.jl`,
    `src/orchestration/simulation/callbacks/density_callbacks/runtime.jl`.

@@ -39,6 +39,7 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
    - `test/gates/ci_runtime_any_hotpath_gate.jl` (no new explicit `Vector{Any}` or `Dict{Symbol, Any}` in runtime hot paths, including whitespace and qualified spellings; each inventoried heterogeneous boundary must occur exactly once in its declared owner)
    - `test/gates/ci_ppc_mode_profile_parity_gate.jl` (the parallelization benchmark's evaluated mode values, scheduler and declared profile identity agree with the shipped routing profiles it names)
    - `test/gates/ci_runtime_analysis_copy_overhead_gate.jl` (synthetic rows check actual summary/report copy-overhead values, successful-run denominators, failed/empty/zero cases, ordering and input preservation; no simulation or performance measurement)
+   - `test/gates/ci_markdown_path_reference_gate.jl` (every repository-relative file path named in maintained Markdown exists; gitignored, submodule and output paths are expected absent; review records, loose dated records under `docs/` and the topology contract pages are out of scope)
 
 Additional required smoke checks for this migration track:
 1. `test/smoke/ci_clean_depot_smoke.jl`

@@ -22,7 +22,7 @@ is internal and may change without compatibility guarantees.
 ## Canonical File Ownership
 1. Engine public API: `src/orchestration/simulation/engine/public_api.jl`
 2. Engine runtime execution: `src/orchestration/simulation/engine/execution.jl`
-3. Legacy integer-coded selector enums: `src/foundation/core/types/legacy_model_codes.jl`
+3. Legacy integer-coded selector enums: `src/foundation/core/types/compat_model_codes.jl`
 4. Runtime buffers and ODE parameter ownership: `src/orchestration/simulation/state/runtime_types.jl`
 5. Reference-system helper module: `src/foundation/core/state/reference_system_config.jl` with module name `ReferenceSystems`
 6. Spacecraft container owner: `src/models/vehicle/spacecraft/model.jl` with module name `SpacecraftModels`

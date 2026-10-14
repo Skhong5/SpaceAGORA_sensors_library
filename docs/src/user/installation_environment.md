@@ -121,7 +121,7 @@ Loading core alone does not load this adapter or download MuJoCo; the native
 artifact is obtained when first needed by a native operation.
 
 The standalone route remains available: clone the companion separately and run
-its `scripts/setup_env.jl`. Without an explicit core override, that installer
+its own `setup_env.jl` installer script. Without an explicit core override, that installer
 fetches the exact core revision recorded in the companion's `Project.toml`.
 The standalone default and the current-checkout route are distinct source pairs.
 For either route, a package version-family constraint alone is insufficient;
@@ -164,7 +164,7 @@ separate environment using this core checkout. An absent pin, incompatible
 service contract or missing provider raises an error. It does not select a
 different guidance method or install a provider merely because core was loaded.
 The standalone companion installer instead uses its recorded immutable core
-revision. See the companion's `docs/installation.md` for that route and explicit
+revision. See the companion's installation guide (`installation.md` in its own docs) for that route and explicit
 local development overrides.
 
 Installation and load-order checks establish that the packages connect. They do
