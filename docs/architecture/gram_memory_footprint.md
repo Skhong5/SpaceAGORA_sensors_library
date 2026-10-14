@@ -2,7 +2,7 @@
 
 ## The question
 
-`src/parallel/routing/machine_topology.jl` charges every process worker a
+`src/orchestration/parallel/routing/machine_topology.jl` charges every process worker a
 per-spacecraft memory term whenever the workload is native GRAM point density,
 and `effective_process_workers` / `mixed_local_slots` turn that charge into a
 hard routing decision: fewer than two affordable workers withdraws the process

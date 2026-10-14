@@ -1,12 +1,12 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const STRUCTURE_ROOT = joinpath(REPO_ROOT, "src", "vehicle", "structure")
-const SPACECRAFT_ROOT = joinpath(REPO_ROOT, "src", "vehicle", "spacecraft")
+const STRUCTURE_ROOT = joinpath(REPO_ROOT, "src", "models", "vehicle", "structure")
+const SPACECRAFT_ROOT = joinpath(REPO_ROOT, "src", "models", "vehicle", "spacecraft")
 
 required_structure_files = (
-    joinpath("src", "vehicle", "structure", "structure_models.jl"),
-    joinpath("src", "vehicle", "structure", "assembly_graph.jl"),
-    joinpath("src", "vehicle", "structure", "mass_properties.jl"),
-    joinpath("src", "vehicle", "structure", "geometry_properties.jl"),
+    joinpath("src", "models", "vehicle", "structure", "structure_models.jl"),
+    joinpath("src", "models", "vehicle", "structure", "assembly_graph.jl"),
+    joinpath("src", "models", "vehicle", "structure", "mass_properties.jl"),
+    joinpath("src", "models", "vehicle", "structure", "geometry_properties.jl"),
 )
 
 for rel in required_structure_files
@@ -14,8 +14,8 @@ for rel in required_structure_files
         error("Vehicle structure boundary violation: missing canonical structure owner file: $rel")
 end
 
-isfile(joinpath(REPO_ROOT, "src", "vehicle", "spacecraft", "spacecraft_analysis.jl")) &&
-    error("Vehicle structure boundary violation: retired file still exists at src/vehicle/spacecraft/spacecraft_analysis.jl")
+isfile(joinpath(REPO_ROOT, "src", "models", "vehicle", "spacecraft", "spacecraft_analysis.jl")) &&
+    error("Vehicle structure boundary violation: retired file still exists at src/models/vehicle/spacecraft/spacecraft_analysis.jl")
 
 const STRUCTURE_OWNER_FUNCTIONS = (
     "traverse_bodies",

@@ -31,6 +31,14 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
    - `test/gates/ci_docs_contract_gate.jl`
    - `test/gates/ci_public_api_surface_gate.jl`
    - `test/gates/ci_hpc_extensibility_docs_gate.jl`
+   - `test/gates/ci_ppb_workload_coverage_gate.jl` (the paper harness precompile workload names every case and mode the paper phases run; reads the harness definitions only)
+   - `test/gates/ci_gnc_typed_command_boundary_gate.jl` (GNC reaches actuators through the typed command boundary; algorithm directories stay in scan scope)
+   - `test/gates/ci_project_compat_gate.jl` (every non-standard-library `[deps]` entry has a `[compat]` bound)
+   - `test/gates/ci_runtime_legacy_surface_gate.jl` (the active runtime does not regain prohibited legacy entry surfaces)
+   - `test/gates/ci_translational_ownership_gate.jl` (translational equations stay with their owner directory)
+   - `test/gates/ci_runtime_any_hotpath_gate.jl` (no new explicit `Vector{Any}` or `Dict{Symbol, Any}` in runtime hot paths, including whitespace and qualified spellings; each inventoried heterogeneous boundary must occur exactly once in its declared owner)
+   - `test/gates/ci_ppc_mode_profile_parity_gate.jl` (the parallelization benchmark's evaluated mode values, scheduler and declared profile identity agree with the shipped routing profiles it names)
+   - `test/gates/ci_runtime_analysis_copy_overhead_gate.jl` (synthetic rows check actual summary/report copy-overhead values, successful-run denominators, failed/empty/zero cases, ordering and input preservation; no simulation or performance measurement)
 
 Additional required smoke checks for this migration track:
 1. `test/smoke/ci_clean_depot_smoke.jl`
@@ -53,13 +61,13 @@ Main thresholds:
 2. Main per-file coverage: `>= 80.0%` (unless explicit override exists)
 
 Critical-file thresholds (`>= 90.0%`):
-1. `src/simulation/engine/execution.jl`
-2. `src/gnc/control/propulsive_maneuvers.jl`
-3. `src/core/interfaces/reference_system.jl`
+1. `src/orchestration/simulation/engine/execution.jl`
+2. `src/models/gnc/control/propulsive_maneuvers.jl`
+3. `src/foundation/core/interfaces/reference_system.jl`
 
 Main per-file overrides:
-1. `src/simulation/engine/adapters/from_env.jl` => `>= 70.0%`
-2. `src/simulation/engine/dynamics_rhs.jl` => `>= 70.0%`
+1. `src/orchestration/simulation/engine/adapters/from_env.jl` => `>= 70.0%`
+2. `src/orchestration/simulation/engine/dynamics_rhs.jl` => `>= 70.0%`
 
 ## Native GRAM probe reporting
 

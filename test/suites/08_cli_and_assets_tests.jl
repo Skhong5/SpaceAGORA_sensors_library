@@ -11,6 +11,15 @@
         text = sprint(io -> SpaceAGORA.render_asset_report(report; io=io))
         @test occursin("no_gram_mode", text)
         @test occursin("gram_root", text)
+        # Readiness is a state with a reason, not a bare existence flag.
+        builtin = only(item for item in report.items if item.name == "no_gram_mode")
+        @test builtin.state === :usable
+        @test builtin.available
+        @test all(item.available == (item.state === :usable) for item in report.items)
+        @test all(isempty(item.reason) == (item.state === :usable) for item in report.items)
+        @test occursin("- no_gram_mode: usable", text)
+        @test occursin("summary: ", text)
+        @test SpaceAGORA.SpaceAGORACLI.asset_check_exit_status(report) == 0
     end
 
     @testset "CLI help and print-only dispatch" begin

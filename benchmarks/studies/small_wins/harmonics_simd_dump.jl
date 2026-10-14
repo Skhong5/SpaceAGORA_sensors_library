@@ -1,6 +1,6 @@
 # Reproduces the "after" (current tree) half of the WS11f item 1 dump/cmp
 # proof for `@simd ivdep` on the flat harmonics batch kernel
-# (`_harmonics_flat_batch_kernel!`, src/dynamics/coupled/perturbations.jl).
+# (`_harmonics_flat_batch_kernel!`, src/models/dynamics/coupled/perturbations.jl).
 #
 # `@simd ivdep` was already applied and shipped at this branch's base commit
 # (cd212833aa, "The batched harmonics loops vectorise at every batch size" --

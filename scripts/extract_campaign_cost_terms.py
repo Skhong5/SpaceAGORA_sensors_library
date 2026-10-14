@@ -28,7 +28,7 @@ then the median across the run's cold campaigns.
 
 With `--rank`, every plan the run measured at each point is priced by the
 planner's makespan model (a Python mirror of `predictive_plan_makespan` in
-src/simulation/campaigns/predictive_planner.jl) under four variants -- the
+src/orchestration/simulation/campaigns/predictive_planner.jl) under four variants -- the
 model without the new terms, with the round tail, with the round tail and a
 scaled heap term, and with the round tail and the local slots' slowdown as the
 run's own traces measured it -- and ranked against the measured medians.

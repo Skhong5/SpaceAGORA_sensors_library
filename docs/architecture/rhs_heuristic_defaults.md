@@ -2,7 +2,7 @@
 
 > Status: measurement record and the derivation of the shipped defaults.
 > Measurement: `benchmarks/studies/rhs_heuristic_defaults/`.
-> Code: `_rhs_execution_plan_uncached` in `src/simulation/engine/setup.jl`.
+> Code: `_rhs_execution_plan_uncached` in `src/orchestration/simulation/engine/setup.jl`.
 
 ## What was wrong
 
@@ -97,7 +97,7 @@ The flat route pays a fixed per-RHS-call cost: it dispatches a worker team for
 the harmonics pre-pass (`_accumulate_harmonics_flat_batch!`), and the team is
 woken through a persistent channel pool whose own dispatch is documented at
 ~1-5 microseconds per call (`threaded_foreach_worker_persistent`,
-`src/parallel/policy/thread_execution.jl`). The satellite batch route pays no
+`src/orchestration/parallel/policy/thread_execution.jl`). The satellite batch route pays no
 such cost: its Polyester `@batch` over the spacecraft is the only split there
 is.
 
@@ -170,7 +170,7 @@ defect at the same place:
 ## The decision
 
 A new routing-only floor, `SPACEAGORA_HARMONICS_FLAT_MIN_SATS_PER_WORKER`
-(default **64**), in `src/simulation/engine/setup.jl`: the default opens a
+(default **64**), in `src/orchestration/simulation/engine/setup.jl`: the default opens a
 multi-worker flat team only when `active_sats >= floor * thread_budget`, i.e.
 when every worker of a full-budget team gets at least 64 spacecraft. Below
 that it returns `satellite_batch` at the full budget. Above it nothing changes:

@@ -5,6 +5,7 @@ SpaceAGORA.HYPRServices
 ```
 
 `SpaceAGORA.HYPRServices` is the supported boundary for HYPR's optional extension.
+It follows the shared [optional adapter standard](adapter_contract.md).
 SpaceAGORA **0.2.0** provides contract **1.0.0**, supporting HYPR **0.1.0** and **0.1.1** and the
 `SpaceAGORAHYPR` **0.2.0** compatibility package. The setup helper pins the exact
 HYPR source revision. A release requires both hosted checks and installation
@@ -91,3 +92,11 @@ are not permitted.
 `assign_coupled_cloth_robot_arm_rhs!`. `Cloth.ClothMultibody` supplies
 `compliant_state_parts`. These narrow namespaces preserve the original function
 identities; they do not expose the entire dynamics implementation.
+
+These are the literal names in contract 1.0.0. They continue to identify the
+compliant multibody services even though ordinary core code now prefers
+`RobotArmModel`, `robot_arm_fk` and the `CompliantRobotArm` names. The `Cloth`
+namespace, `CLOTH_SERVICES`, and the binding inventory above are unchanged.
+Use the [preferred root API names](../public_api_policy.md#Compliant-multibody-and-robot-arm-names)
+for new application code, and retain the listed facade names in an adapter
+that consumes this contract.

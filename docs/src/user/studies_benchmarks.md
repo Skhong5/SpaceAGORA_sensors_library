@@ -9,7 +9,7 @@ GRAM comparison outputs, or paper-study artifacts.
 Inspect the benchmark command without starting a workload:
 
 ```text
-julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke --print-only
+julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke --print-only
 ```
 
 What to read next:
@@ -24,7 +24,7 @@ What to read next:
 After checking the prerequisites below, run a reduced benchmark workload:
 
 ```text
-julia --project=. src/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke
+julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/perf_smoke
 ```
 
 Benchmark `smoke` profiles execute workloads, including simulations. Executing
@@ -41,13 +41,13 @@ setup, worker creation or simulation.
 If you need telemetry verification outputs, run:
 
 ```text
-julia --project=. src/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
+julia --project=. src/interfaces/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
 ```
 
 If you need parallel-policy comparison outputs, run:
 
 ```text
-julia --project=. src/cli/main.jl benchmark smart-parallel-ladder smoke --output-dir=output/smart_ladder_smoke
+julia --project=. src/interfaces/cli/main.jl benchmark smart-parallel-ladder smoke --output-dir=output/smart_ladder_smoke
 ```
 
 Use `--print-only` on any CLI-backed study to inspect the resolved Julia command
@@ -60,7 +60,7 @@ before running it.
 Use this when the goal is orbit-event or time-aligned telemetry validation.
 
 ```text
-julia --project=. src/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
+julia --project=. src/interfaces/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1
 ```
 
 The command writes:
@@ -78,7 +78,7 @@ Use this when the goal is timing, scaling, hardware metadata, or performance
 regression artifacts.
 
 ```text
-julia --project=. src/cli/main.jl benchmark runtime-analysis quick --output-dir=output/performance
+julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis quick --output-dir=output/performance
 ```
 
 Use `smoke` first on a new machine. Use `full` only when you need full study
@@ -90,7 +90,7 @@ Use this when the goal is comparing serial, threaded, process, and adaptive
 parallel-policy rungs.
 
 ```text
-julia --project=. src/cli/main.jl benchmark smart-parallel-ladder smoke --output-dir=output/smart_ladder_cli
+julia --project=. src/interfaces/cli/main.jl benchmark smart-parallel-ladder smoke --output-dir=output/smart_ladder_cli
 ```
 
 ### Aerobraking perturbation Monte Carlo
@@ -130,6 +130,7 @@ Run [GRAMSuite Setup](gramsuite_setup.md) before using GRAM-backed studies.
 | Performance support | `performance_effector_reduction_microbench.jl`, `performance_split_imex_compare.jl`, `performance_static_vs_parallel.jl`, `performance_thread_scaling_1024.jl`, `performance_thread_scaling_64_aero_gram.jl`, `performance_hybrid_scaling_64_aero_gram.jl`, `performance_mc_thread_scaling.jl`, `performance_smart_parallel_ladder_cross_machine.jl` |
 | Parallelization paper benchmarks | `paper_parallelization_benchmarks.jl`, `parallelization_performance.jl` — each has a same-named subdirectory with its own `protocol.sh`, `cli.jl`, and `CASES.md` case catalog |
 | Tuning and validation | `telemetry_hybrid_tuner.jl`, `telemetry_odyssey_tuner.jl` |
+| Scenario matrix runs | `run_cygnss_96hr.jl` and `run_venus_matrix_only.jl` drive `test/gmat_scenario_matrix.jl`; `cygnss_96hr_offset_sweep_worker.jl` builds its own manifest and calls `TelemetryVerification`. The offset worker needs private telemetry; the matrix drivers use available configured reference sets and report skipped inputs |
 
 The former `SpaceAGORACalibration.jl/` campaign package and its `bin/` drivers
 have been retired. Use the tuning scripts listed above for telemetry parameter

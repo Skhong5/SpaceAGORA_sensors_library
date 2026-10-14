@@ -45,6 +45,9 @@ end
     for cap in (90, 30)
         summary = TOML.parsefile(joinpath(directory, "cap_$(cap)_deg", "summary.toml"))
         @test summary["panel_cap_active"]
+        @test summary["guidance_active_during_passage"]
+        @test summary["guidance_cleared_at_exit"]
+        @test summary["exit_heat_captured"]
         @test !summary["thermal_feedback_tested"]
         @test startswith(summary["state_frame"], "Mars-centred J2000 inertial")
         @test summary["atmosphere"]["preset_version"] == "1.0.0"
@@ -54,7 +57,7 @@ end
 end
 
 @testset "Documented CLI entrypoint activates the adapter" begin
-    script = joinpath(@__DIR__, "..", "src", "cli", "main.jl")
+    script = joinpath(@__DIR__, "..", "src", "interfaces", "cli", "main.jl")
     project = dirname(Base.active_project())
     command = `$(Base.julia_cmd()) --startup-file=no --project=$project $script assets check --preset=odyssey_p20_frozen_v1 --version=1.0.0`
     text = read(command, String)
@@ -67,7 +70,9 @@ end
     code = """
         using SpaceAGORA
         err = try surrogate_preset_model("odyssey_p20_frozen_v1"; version="1.0.0", offline=true); nothing catch e; e end
-        print(err isa ArgumentError && occursin("import GRAMSuite", err.msg) && !isdefined(Main, :GRAMSuite))
+        composite = try surrogate_preset_model("mars_global_descent_p20_frozen_v1"; version="1.0.0", offline=true); nothing catch e; e end
+        print(err isa ArgumentError && occursin("import GRAMSuite", err.msg) && !isdefined(Main, :GRAMSuite) &&
+              composite isa ArgumentError && occursin("import GRAMSuite", composite.msg))
         """
     @test read(`$(Base.julia_cmd()) --startup-file=no --project=$project -e $code`, String) == "true"
 end

@@ -37,7 +37,7 @@ size the reference case set uses and the size this workstation can hold; the
 
 The constellation cases that carry aerodynamics run the flat constellation
 effector queue (`_spacecraft_dynamics_flat_constellation_effector_queue!`,
-`src/simulation/engine/dynamics_rhs.jl`). For an effector tuple of
+`src/orchestration/simulation/engine/dynamics_rhs.jl`). For an effector tuple of
 `(GravitationalHarmonicsModel, AerodynamicCoefficientfM)`, one derivative
 evaluation does this, in this order:
 
@@ -53,7 +53,7 @@ evaluation does this, in this order:
      writes `pos_pp`, `vel_pp`, `alt_m`, `lat_rad`, `lon_rad` into the
      per-satellite component buffers;
    - `_sample_atmosphere_from_planet_frame(...; write_buffers=true)`
-     (`src/simulation/engine/effector_sampling.jl`), which per satellite
+     (`src/orchestration/simulation/engine/effector_sampling.jl`), which per satellite
      re-reads `_callback_env_config(p)`, re-resolves
      `_density_model_for_sat(p, sat_idx)`, re-derives
      `target_include_j2` (a short-circuited scan of the effector tuple),
@@ -92,7 +92,7 @@ evaluation does this, in this order:
    - `wrench_caching!` calls `_aero_pure_wrench(:fm, x, env, nothing,
      model.fixed_attitude_incidence)` and then `_store_aero_caches!`.
 
-4. `_aero_pure_wrench` (`src/dynamics/coupled/aerodynamic_wrench_models.jl`)
+4. `_aero_pure_wrench` (`src/models/dynamics/coupled/aerodynamic_wrench_models.jl`)
    is the arithmetic. Per satellite: the vacuum/zero-airspeed early returns,
    `cross`/`norm` for `h_pp`, `latlongtoNED`, the wind-relative velocity,
    `lift_pp_hat`/`drag_pp_hat`/`cross_pp_hat`, `l_pi'`, `θ_body`, then a loop
@@ -116,7 +116,7 @@ can be dropped without the other.
 
 ### A. An aero pre-pass slot in the flat route
 
-`src/simulation/engine/dynamics_rhs.jl` gains `_aero_prepass_effector`, a
+`src/orchestration/simulation/engine/dynamics_rhs.jl` gains `_aero_prepass_effector`, a
 trait in the shape of the existing `_harmonics_prepass_effector`, true for
 `AerodynamicCoefficientfM` and false for everything else, plus a pre-pass
 `_accumulate_aero_flat_batch!(slots, eff_idx, model, sc_state, p, t, plan)`
@@ -184,7 +184,7 @@ function, called the same number of times, with the same inputs.
 
 Change A only takes effect where the flat constellation queue is taken, and a
 serial aero constellation is not on it. `_rhs_execution_plan`
-(`src/simulation/engine/setup.jl`) admits the flat route at a thread budget of
+(`src/orchestration/simulation/engine/setup.jl`) admits the flat route at a thread budget of
 one only when `_rhs_all_prepass_effectors(dynamic_effectors)` holds, and that
 predicate lists the batchable kernels and the harmonics pre-pass, so a
 `(GravitationalHarmonicsModel, AerodynamicCoefficientfM)` stack fails it today
@@ -221,7 +221,7 @@ take. Change B therefore has the same route scope as change A.
 
 ### B. One density query per evaluation for a shared analytic atmosphere
 
-`src/simulation/engine/effector_sampling.jl` gains
+`src/orchestration/simulation/engine/effector_sampling.jl` gains
 `_uniform_light_density_model` and `_fill_uniform_light_atmosphere!`, used by
 `_prefill_environment_samples!`. When the constellation shares one light,
 cache-free density model, the pre-sample's loop fills the planet frames only,
@@ -265,7 +265,7 @@ asserts on a sweep of altitudes rather than on the author's reading of the
 source.
 
 This change is in the *density sampling path*, not in the density models:
-`src/environment/atmosphere/density_models.jl` is not edited.
+`src/models/environment/atmosphere/density_models.jl` is not edited.
 
 One more allocation in the same file, found by the attribution: every
 atmosphere sample evaluated `_uses_j2_gravity_effector(dynamic_effectors)`,
@@ -551,7 +551,7 @@ buffers and its per-call planning replace the per-satellite loop's stack
 temporaries. It is still 2.3-2.8x faster.
 Raw: `results/serial_route_1t_{before,after}_r{1,2}.csv`.
 
-**Cost-model mirror** (`src/parallel/cost/work_counts.jl`):
+**Cost-model mirror** (`src/orchestration/parallel/cost/work_counts.jl`):
 `flat_queue_node_effector` now knows the aero pre-pass (and its per-link
 exclusion), so `constellation_work_counts` stops charging N aero queue nodes
 the queue no longer builds. Routing input only; no dynamics path reads it.

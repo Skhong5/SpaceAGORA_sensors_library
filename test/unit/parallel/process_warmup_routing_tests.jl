@@ -48,8 +48,8 @@ function load_method(path, name)
     Core.eval(@__MODULE__, method)
 end
 const REPO = normpath(joinpath(@__DIR__, "..", "..", ".."))
-load_method(joinpath(REPO, "src", "parallel", "process", "worker_pool.jl"), :ensure_process_workers!)
-load_method(joinpath(REPO, "src", "simulation", "campaigns", "adaptive_routing.jl"), :_run_campaign_with_route_env)
+load_method(joinpath(REPO, "src", "orchestration", "parallel", "process", "worker_pool.jl"), :ensure_process_workers!)
+load_method(joinpath(REPO, "src", "orchestration", "simulation", "campaigns", "adaptive_routing.jl"), :_run_campaign_with_route_env)
 
 function reset_pool!()
     POOL[] = ProcessPool(Base.active_project())

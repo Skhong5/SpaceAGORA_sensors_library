@@ -472,10 +472,10 @@ coordinates use the quaternion and angular-rate tolerances.
 
 ## Compliant attachments
 
-A `CompliantAttachment` mounts a `CompliantMultibodyModel` (a cloth panel mesh, a
-flexible appendage) on a spacecraft link. The attachment bodies move under their own
+A `CompliantAttachment` mounts a `CompliantMultibodyModel` (a panel mesh or another
+flexible appendage represented by discrete bodies) on a spacecraft link. The attachment bodies move under their own
 compliant joint springs, dampers and actuators and exchange forces and torques with the
-link in both directions. `examples/Cloth_Panel_Attachment_Demo.jl` runs the four-panel cloth
+link in both directions. `examples/Cloth_Panel_Attachment_Demo.jl` runs the four-panel compliant
 deployment of `Solar_Panel_Cloth_Deployment_Demo.jl` inside `run_simulation` this way.
 
 ```julia
@@ -553,7 +553,7 @@ Thrust, mass flow and every other effector see the spacecraft mass only.
 | Attachment link not in the spacecraft, model without a joint to the mount | refused |
 | Mixing spacecraft with different attachment body counts (or with and without attachments) in one run | refused (equal-sized state blocks) |
 
-Cloth meshes are stiff in general. Use `:auto_stiff` or `:rodas5p` when the fastest attachment
+Compliant multibody meshes can be stiff. Use `:auto_stiff` or `:rodas5p` when the fastest attachment
 mode (about `sqrt(k/m)` for the translational springs and `sqrt(k_rot/I)` for the rotational ones,
 plus the damping rate `c/m`) is much faster than the orbit and attitude dynamics of interest; the
 explicit modes are fine for mild meshes such as the demo (about 30 rad/s). The attitude and
@@ -568,11 +568,14 @@ and unchanged.
 
 ## Using `make_example_config`
 
-For quick studies and all repository examples, `make_example_config` from
-`SpaceAGORA.TelemetryVerification` assembles the configuration in one call:
+For quick studies, the public `make_example_config` helper assembles the
+configuration in one call. Both it and `make_three_body_spacecraft` are exported
+by `SpaceAGORA`:
 
 ```julia
-import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft, run_and_report
+using SpaceAGORA
+
+planet = make_no_gram_planet(:earth)
 
 spacecraft = make_three_body_spacecraft(
     bus_dims        = (2.05, 2.05, 2.8),
@@ -580,32 +583,33 @@ spacecraft = make_three_body_spacecraft(
     bus_mass        = 620.0,
     panel_mass_each = 10.0,
     panel_offset_y  = 2.05/2.0 + 2.85/2.0,
-    ic              = SM.InitialCondition(ra=..., rp=..., i=28.5, ω=10.0, Ω=20.0, ν=0.0),
+    ic              = InitialCondition(ra=planet.Rp_e + 500e3, rp=planet.Rp_e + 500e3,
+                                     i=28.5, ω=10.0, Ω=20.0, ν=0.0),
     prop_mass       = 200.0,
     id              = 1
 )
 
 config = make_example_config(
-    planet             = SM.make_no_gram_planet(:earth),
+    planet             = planet,
     spacecraft         = spacecraft,
     mission_time       = 3600.0 * 12.0,
-    initial_time       = SM.InitialTime(year=2024, month=1, day=1),
-    dynamic_effectors  = (SM.InverseSquaredJ2GravityModel(),),
-    density_model      = SM.NoAtmosphereModel(),
-    ephemerides_model  = SM.SimpleEphemeridesModel(),
+    initial_time       = InitialTime(year=2024, month=1, day=1),
+    dynamic_effectors  = (InverseSquaredJ2GravityModel(),),
+    density_model      = NoAtmosphereModel(),
+    ephemerides_model  = SimpleEphemeridesModel(),
     orientation_sim    = false,
     keplerian          = true,
     EI_km              = 120.0,
     verbose            = true
 )
 
-run_and_report(config)
+run_simulation(config)
 ```
 
-`make_example_config` is not part of the stable root `SpaceAGORA` export — it
-lives in `SpaceAGORA.TelemetryVerification` and is imported by all repository
-examples through `examples/common.jl`. It is appropriate for examples and
-quick studies; for production use, build `SimulationConfiguration` directly.
+`using SpaceAGORA` is sufficient for this example; no nested helper import is
+needed. For a helper-based first run, see [First Simulation](first_simulation.md).
+Build `SimulationConfiguration` directly when you need to choose its components
+explicitly, as described above.
 
 ## `make_three_body_spacecraft`
 
@@ -621,12 +625,15 @@ make_three_body_spacecraft(
     panel_offset_y  = offset,            # panel center offset from bus center, m
     ic              = SM.InitialCondition(...),
     prop_mass       = 200.0,             # propellant mass, kg
-    id              = 1                  # spacecraft ID, used in output column names
+    id              = 1                  # spacecraft identifier; CSV prefixes use list position
 )
 ```
 
-The `id` field determines the column prefix in the output CSV: spacecraft 1
-gets `sc1_*` columns, spacecraft 2 gets `sc2_*`, and so on.
+Saved columns use the spacecraft's one-based position in the list passed to
+`DynamicsModel`, not its `id`. For `DynamicsModel([spacecraft_a, spacecraft_b],
+effectors)`, the first spacecraft gets `sc1_*` columns and the second gets `sc2_*`,
+even if their IDs are `42` and `7`. A single spacecraft with `id=42` still gets
+`sc1_*` columns. See the [CSV column reference](outputs.md#CSV-column-reference).
 
 ## Panel angles and heating
 
@@ -662,11 +669,11 @@ apply only to its controlled panels.
 
 ## Source ownership for contributors
 
-The existing configuration API is assembled by `src/simulation/config/configuration.jl`.
+The existing configuration API is assembled by `src/orchestration/simulation/config/configuration.jl`.
 This is a source-file organization; users still access the same types through
 `SpaceAGORA.SimulationModel`. No new configuration wrapper is required.
 
-| Source file under `src/simulation/config/` | Responsibility |
+| Source file under `src/orchestration/simulation/config/` | Responsibility |
 | --- | --- |
 | `run_settings.jl` | Epoch, mission duration/orbits, sampling, paths, output and checkpoint settings |
 | `solver_settings.jl` | `SolverConfig` and `IntegrationTolerances` |
@@ -680,11 +687,11 @@ inside `SimConfig`. A one-spacecraft run and a constellation use the same collec
 The constructor retains the supplied spacecraft vector. It does not generate orbital
 layouts, schedule activities or introduce additional collection validation.
 
-Execution policy remains in `src/simulation/engine/config/`: `SimulationEngineConfig`
+Execution policy remains in `src/orchestration/simulation/engine/config/`: `SimulationEngineConfig`
 composes parallel, solver, runtime-policy and artifact settings. It uses the same
 `SolverConfig` definition, not a second solver type. Output and checkpoint path
-derivation stays in `src/io/config/`; solver environment settings are parsed in
-`src/simulation/engine/adapters/from_env.jl`. These are distinct responsibilities
+derivation stays in `src/interfaces/io/paths/`; solver environment settings are parsed in
+`src/orchestration/simulation/engine/adapters/from_env.jl`. These are distinct responsibilities
 from assembling a scenario.
 
 `_with_configuration` makes a shallow update and preserves unspecified references.

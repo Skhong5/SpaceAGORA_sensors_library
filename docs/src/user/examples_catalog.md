@@ -37,7 +37,7 @@ julia --project=. examples/AGORA_Earth_NoGRAM.jl
 If you prefer the CLI wrapper:
 
 ```text
-julia --project=. src/cli/main.jl run --example=AGORA_Earth_NoGRAM.jl --output-dir=output/earth_no_gram
+julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Earth_NoGRAM.jl --output-dir=output/earth_no_gram
 ```
 
 After any of these commands, read [Simulation Outputs](outputs.md) to understand
@@ -55,6 +55,20 @@ julia --project=. examples/AGORA_Basic_Quickstart.jl
 julia --project=. examples/AGORA_Earth_NoGRAM.jl
 julia --project=. examples/AGORA_Earth_MonteCarlo.jl
 ```
+
+### Reusable mission and viewer output
+
+`AGORA_Mission_Workflow.jl` defines a named mission with a fresh configuration
+builder and saves a portable viewer payload. It uses no GRAM or SPICE assets.
+Choose an absent or empty output directory for each run:
+
+```text
+julia --project=. examples/AGORA_Mission_Workflow.jl output/coast-001
+```
+
+See [Mission Workflows](mission_workflows.md) for the returned table, descriptive
+phase windows and event factories. The standalone viewer opens the exported
+payload without rerunning the simulation.
 
 ### Guidance and control with a frozen atmosphere
 
@@ -100,7 +114,7 @@ julia --project=. examples/AGORA_Basic_GRAMEarth.jl
 For a longer Earth aerobraking case, start in smoke mode:
 
 ```text
-julia --project=. src/cli/main.jl run --example=AGORA_Earth_Aerobraking.jl --smoke --output-dir=output/aerobraking_smoke
+julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Earth_Aerobraking.jl --smoke --output-dir=output/aerobraking_smoke
 ```
 
 Related mission scripts:
@@ -127,7 +141,7 @@ julia --project=. examples/Articulated_Panels_Demo.jl
 
 ### Compliant attachments
 
-`Cloth_Panel_Attachment_Demo.jl` runs the four-panel cloth solar array deployment of
+`Cloth_Panel_Attachment_Demo.jl` runs the four-panel compliant solar array deployment of
 `Solar_Panel_Cloth_Deployment_Demo.jl` inside `run_simulation`: the 48-tile mesh is a
 `CompliantAttachment` on a bus (deployment schedule as `rest_schedule`, hinge motors as
 `joint_actuators`). A 1e8 kg bus in free space is compared with the standalone RK4 stepping of the
@@ -232,13 +246,13 @@ For a planner-comparison smoke run:
 SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl --runs 1
 ```
 
-For the robot-arm and Cloth dynamics batch:
+For the robot-arm and compliant multibody dynamics batch:
 
 ```text
 SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Robot_Arm_Planner_Cloth_Demo.jl
 ```
 
-For the solar-panel cloth deployment demo:
+For the solar-panel compliant multibody deployment demo:
 
 ```text
 julia --project=. examples/Solar_Panel_Cloth_Deployment_Demo.jl
@@ -266,6 +280,6 @@ Related scripts:
 Support files included by examples:
 
 - `common.jl`
-- `aerobraking_mission_plot_utils.jl`
+- `support/aerobraking_mission_plot_utils.jl` (mission setup, event extraction and plotting used by the aerobraking examples)
 - `support/aerobraking_result_tables.jl` (saved-table access used by the mission plotting helper)
 - `support/aerobraking_plot_errors.jl` (absolute RTN error components for mission plots)

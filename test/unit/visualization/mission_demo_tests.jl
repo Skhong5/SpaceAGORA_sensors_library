@@ -1,3 +1,4 @@
+Base.include(@__MODULE__, joinpath(@__DIR__, "..", "..", "helpers", "load_visualizer.jl"))
 using Test, SpaceAGORA, Arrow, DataFrames, JSON
 module MissionDemoHelpersTest
 include(joinpath(@__DIR__, "..", "..", "..", "scripts", "dev", "viewer_demos", "common.jl"))

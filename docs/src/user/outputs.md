@@ -22,8 +22,8 @@ What to read next:
 
 ## Output files
 
-When `simulation_settings.results = true` (the default), `run_simulation`
-writes three files to the `results_directory`:
+With the default output settings, `run_simulation` writes three files to the
+`results_directory`:
 
 ```text
 output/
@@ -32,10 +32,18 @@ output/
   simulation_results.manifest.toml ← metadata: row count, spacecraft count, file hashes
 ```
 
-The Feather file is always written. The CSV is written when
-`simulation_settings.save_csv = true` (also the default). The manifest records
+Set `simulation_settings.save_csv = false` to save the Feather file and manifest
+without writing a CSV. A CSV left by an earlier run is preserved, but is not
+listed in the new manifest or in `SimulationResults.files`.
+Set `simulation_settings.results = false` to disable result-file output.
+The manifest records
 `schema_version`, `created_utc`, `mission_time_s`, `steps`,
 `spacecraft_count`, and SHA-256 hashes for each data file.
+
+The developer override `SPACEAGORA_SAVE_BUNDLE=0` disables Feather and manifest
+output. With this override and `save_csv=false`, use `return_results=true` to
+receive the table in memory. Explicitly enabled scene sidecars and checkpoints
+can still be written.
 
 ## Getting the results in memory
 
@@ -72,7 +80,7 @@ variable. With the default result settings, the three file names do not
 change, so:
 
 - two runs using the same results directory overwrite those files;
-- `julia --project=. src/cli/main.jl run --example=<script> --output-dir=output/<name>`
+- `julia --project=. src/interfaces/cli/main.jl run --example=<script> --output-dir=output/<name>`
   gives each run its own directory, for the scripts that take their directory
   from `make_example_config`: the first-run scripts (`AGORA_Basic_Quickstart.jl`,
   `AGORA_Earth_NoGRAM.jl`), the controls and torque
@@ -83,7 +91,7 @@ change, so:
   `AGORA_Earth.jl`, `AGORA_Keplerian.jl` and `Earth_Navigation.jl` write to
   `output/` directly, `AGORA_Earth_Aerobraking.jl` to `output/earth_aerobraking/`,
   `AGORA_Mars_RAAN_Scenario.jl` to `output/mars_raan_scenario/`, and the RPO,
-  robot-arm and cloth demos to their own `output/<demo>/` directories; running
+  robot-arm and compliant multibody demos to their own `output/<demo>/` directories; running
   one of them twice overwrites its previous results;
 - `odyssey_surrogate.jl` runs in its own environment and writes its own files:
   the comparison writes to `odyssey_surrogate_results/` in the current
@@ -155,7 +163,7 @@ the [CSV column reference](#Visualization-fields) below:
   ephemerides can locate the Sun at the start epoch. The viewer's sun lighting
   reads it.
 - `arm_pose`: `sc{N}_arm_pose_1` .. `sc{N}_arm_pose_7m` for a spacecraft with
-  a cloth robot-arm plan, `[rx, ry, rz, qx, qy, qz, qw]` per arm link: the
+  a compliant robot-arm plan, `[rx, ry, rz, qx, qy, qz, qw]` per arm link: the
   link centre of mass relative to the spacecraft position, in inertial metres,
   and the link's inertial attitude quaternion.
 - Articulated spacecraft (any non-fixed `Joint`) add four fields to the default
@@ -214,7 +222,7 @@ selectable on the page). Zooming in on a spacecraft, or selecting it and
 pressing F, swaps its marker for the link-box assembly with thruster and
 facet glyphs; `stl=Dict(id => "model.stl")` draws a CAD mesh instead.
 The [Interactive Visualization](visualization.md) page covers the options,
-ensembles and textures; `viewer/README.md` documents the controls and how to
+ensembles and textures; [the independent renderer guide](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl/blob/codex/extract-visualizer/viewer/README.md) documents the controls and how to
 develop the viewer itself.
 
 ## Loading results in Julia
@@ -332,7 +340,7 @@ choose the spacecraft and destination:
 
 ```julia
 include("examples/common.jl")
-include("examples/aerobraking_mission_plot_utils.jl")
+include("examples/support/aerobraking_mission_plot_utils.jl")
 quaternion_history = _save_quaternion_history_plot(
     "results/my_run/simulation_results.csv";
     spacecraft_index=1,
@@ -362,6 +370,60 @@ The call saves only the explicitly requested image and does not open a plot
 window. Supply a supported filename extension (for example `.png` or `.pdf`)
 and an existing destination directory; the input CSV cannot be the destination.
 This opt-in helper does not run a simulation or change any existing example plots.
+
+### Body angular-rate history (explicit save fields)
+
+Body rates are not included by `default_save_fields`, even for orientation runs.
+For an existing orientation-enabled configuration `args`, explicitly record the
+body angular velocity state in radians per second with this save-field recipe:
+
+```julia
+using SpaceAGORA
+using StaticArrays
+SC = SpaceAGORA.SimulationModel.SimulationCallbacks
+body_rate_field = SC.SaveField(
+    :body_rate_rad_s,
+    (u, t, integrator) -> [SVector{3, Float64}(sc.ω) for sc in u.sc];
+    per_satellite=true,
+    column_prefix="body_rate",
+)
+fields = [SC.default_save_fields(args)..., body_rate_field]
+# Supply fields to your already configured run:
+# run_simulation(args; save_fields=fields)
+```
+
+This records `scN_body_rate_1..3` in body-axis component order. `N` is the
+spacecraft's one-based list position, not its model ID. The CYGNSS slew demo
+already records the same schema for its single spacecraft. Existing custom
+`:omega` save fields have a different schema and are not inferred as aliases.
+
+To plot an existing CSV, use the example helpers explicitly:
+
+```julia
+include("examples/common.jl")
+include("examples/support/aerobraking_mission_plot_utils.jl")
+body_rate_history = _save_body_rate_history_plot(
+    "results/my_run/simulation_results.csv";
+    spacecraft_index=1,
+    output_path="results/my_run/body_rate.png",
+)
+```
+
+The helper requires `time` in seconds and all three selected body-rate columns
+in rad/s. It plots time in minutes and angular velocity in deg/min, using the
+legacy conversion `rad2deg.(rates) .* 60` and labels `ω1`, `ω2`, `ω3` in red,
+green and blue. It preserves signs and row order, including repeated or
+nonmonotone times; it neither derives rates from quaternions nor rotates frames.
+
+The returned `rates_rad_s` contains copies of the saved values; `components`
+contains the displayed deg/min values. The other fields are `time_min`,
+`labels`, `colors`, `spacecraft_index`, `plot` and `output_path`.
+`_body_rate_history_samples(df; spacecraft_index=1)` prepares the arrays without
+rendering. Empty input, missing columns, invalid selected values or nonfinite
+converted values produce an error. Other spacecraft's columns are not inspected.
+Supply a filename extension and an existing destination directory. The input
+CSV, including filesystem aliases, cannot be the destination. No plot window
+or simulation is started by the plotting helper.
 
 ### Visualization fields
 

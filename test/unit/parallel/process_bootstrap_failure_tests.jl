@@ -8,7 +8,7 @@ module ProcessBootstrapFailureFixture
 import Distributed
 using Distributed: CachingPool
 
-include(joinpath(@__DIR__, "..", "..", "..", "src", "parallel", "process", "worker_pool.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "src", "orchestration", "parallel", "process", "worker_pool.jl"))
 
 const STATE = Ref{Any}()
 const FAILURE_MESSAGE = "injected mandatory bootstrap failure"

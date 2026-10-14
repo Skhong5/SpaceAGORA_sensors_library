@@ -26,7 +26,7 @@
             kclear()
         end
         # kclear() wipes CSPICE's kernel pool but not the furnished-kernel /
-        # planet-instance caches in src/environment/ephemerides/planets.jl;
+        # planet-instance caches in src/models/environment/ephemerides/planets.jl;
         # without this, a subsequent Earth(...)/Mars(...) call with a
         # previously-seen key silently skips re-furnishing and returns a
         # planet built from kernels that no longer exist in the pool.
@@ -86,7 +86,7 @@
             kclear()
         end
         # kclear() wipes CSPICE's kernel pool but not the furnished-kernel /
-        # planet-instance caches in src/environment/ephemerides/planets.jl;
+        # planet-instance caches in src/models/environment/ephemerides/planets.jl;
         # without this, a subsequent Earth(...)/Mars(...) call with a
         # previously-seen key silently skips re-furnishing and returns a
         # planet built from kernels that no longer exist in the pool.

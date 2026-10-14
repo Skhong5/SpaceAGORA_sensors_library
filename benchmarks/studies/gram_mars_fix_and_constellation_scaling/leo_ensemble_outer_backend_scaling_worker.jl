@@ -21,7 +21,7 @@
 #
 # Always mode="standard" (native GRAM point density): the workload class fixed by
 # this session's GRAM-constructor-lock (data/GRAMSuite.jl, submodule) and
-# GRAM/SPICE-lock-unification (src/simulation/runtime_services.jl) fixes -- previously
+# GRAM/SPICE-lock-unification (src/orchestration/simulation/runtime_services.jl) fixes -- previously
 # this crashed outright under the ensemble route at outer_workers>=2. Compare the
 # "threads" series here against leo_thread_scaling_by_mode.jl's own ensemble-route
 # "standard" points (pre-fix: crash; post-fix: safe but lock-limited near ~1x

@@ -23,7 +23,7 @@
 # (n_sats, mode) points run back-to-back in that one subprocess
 # (leo_constellation_size_scaling_point.jl's run_scaling_point), not one
 # subprocess per point -- ODEParams/SharedBuffers's N_sats is a runtime field
-# (src/core/types/runtime_types.jl), so every n_sats value for a given mode
+# (src/orchestration/simulation/state/runtime_types.jl), so every n_sats value for a given mode
 # shares one compiled specialization and only the 3 modes still differ in
 # type. A single point's exception is caught and recorded as a failure
 # (status="failed" in the CSV) rather than aborting its thread-count worker;
