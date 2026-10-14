@@ -9,4 +9,4 @@ const _VENUS_MATRIX_SCENARIOS = join([
 
 ENV["SPACEAGORA_GMAT_SCENARIOS"] = _VENUS_MATRIX_SCENARIOS
 
-include(joinpath(@__DIR__, "gmat_scenario_matrix.jl"))
+include(joinpath(@__DIR__, "..", "..", "test", "gmat_scenario_matrix.jl"))

@@ -81,7 +81,7 @@ export force_on_endpoint, laser_force_on_spacecraft
 @doc """Refresh link availability, score candidates, and select the maximum-total-score terminal matching.""" schedule_interlinks!
 @doc """Create the accepted-step scheduler callback used automatically by `run_simulation` when interlinks are enabled.""" interlink_scheduler_callback
 @doc """Return the repulsive inertial laser force on one endpoint, with magnitude `B * P / c` and direction away from the other endpoint.""" force_on_endpoint
-@doc """Sum selected laser-link forces on a spacecraft using its incident-edge index.""" laser_force_on_spacecraft
+@doc """Sum selected idealized laser-link forces on a spacecraft; optional `is_active` flags mask both endpoints.""" laser_force_on_spacecraft
 @doc (@doc SimulationModel.ExampleConfiguration.make_example_config) make_example_config
 @doc (@doc SimulationModel.ExampleConfiguration.make_three_body_spacecraft) make_three_body_spacecraft
 @doc """Dynamics model of a run: the spacecraft list and the tuple of force/torque effectors, `DynamicsModel([spacecraft], effectors)`.""" DynamicsModel

@@ -94,6 +94,8 @@ class PlanTests(unittest.TestCase):
                 self.assertIn("needs.optional-visualizer-installation.result", agg.group(1))
                 expected_needs.append("optional-edg-installation")
                 self.assertIn("needs.optional-edg-installation.result", agg.group(1))
+                expected_needs.append("optional-interlink-installation")
+                self.assertIn("needs.optional-interlink-installation.result", agg.group(1))
             needs = re.search(r"needs: \[(.*?)\]", agg.group(1))
             self.assertIsNotNone(needs, aggregator)
             self.assertEqual([x.strip() for x in needs.group(1).split(",")], expected_needs)
@@ -247,6 +249,48 @@ class PlanTests(unittest.TestCase):
         setup = (ROOT / ".github/actions/setup/action.yml").read_text()
         self.assertNotIn("setup_visualizer", setup)
         self.assertNotIn("SpaceAGORAVisualizer", setup)
+
+    def test_optional_interlink_backend_is_mandatory_and_core_isolated(self):
+        wf = (ROOT / ".github/workflows/julia-ci.yml").read_text()
+        match = re.search(r"^  optional-interlink-installation:\n(.*?)(?=^  \S|\Z)", wf, re.S | re.M)
+        self.assertIsNotNone(match)
+        job = match.group(1)
+        for required in ('JULIA_LOAD_PATH: "@:@stdlib"', 'JULIA_CONDAPKG_BACKEND: "Null"',
+                         'test/integration/interlink_python_setup.jl "$RUNNER_TEMP/interlink-environment"',
+                         'Base.get_extension(SpaceAGORA, :SpaceAGORAPythonCallExt) === nothing',
+                         'include("test/unit/simulation/interlink_tests.jl")', 'git diff --exit-code'):
+            self.assertIn(required, job)
+        # Core isolation and the two optional load orders run in fresh processes;
+        # the companion environment must never replace the root project.
+        commands = re.findall(r"^          (julia [^\n]+)$", job, re.M)
+        self.assertEqual(sum('--project=. -e ' in command for command in commands), 1)
+        for order in ("core-first", "python-first"):
+            expected = ('julia --startup-file=no --code-coverage=user '
+                        '--project="$RUNNER_TEMP/interlink-environment" '
+                        'test/integration/interlink_python.jl ' + order)
+            self.assertEqual(commands.count(expected), 1, order)
+        self.assertNotIn("continue-on-error:", job)
+        self.assertNotIn("|| true", job)
+        self.assertNotRegex(job, r"(?m)^    if:")
+        self.assertEqual(re.findall(r"(?m)^        if: (.*)$", job), ["always()", "always()"])
+        for aggregate in ("tests", "coverage-quality-gate"):
+            body = re.search(rf"^  {aggregate}:\n(.*?)(?=^  \S|\Z)", wf, re.S | re.M).group(1)
+            # Exercise the actual shell guard: missing, failed, skipped and
+            # cancelled backend jobs must all prevent aggregate success.
+            guard = re.search(r'^          if \[ [^\n]*needs\.optional-interlink-installation\.result[^\n]*\n.*?^          fi$',
+                              body, re.M | re.S)
+            self.assertIsNotNone(guard, aggregate)
+            for result in ("success", "failure", "cancelled", "skipped", ""):
+                script = re.sub(r"\$\{\{ needs\.([\w-]+)\.result \}\}",
+                                lambda m: result if m.group(1) == "optional-interlink-installation" else "success",
+                                textwrap.dedent(guard.group(0)))
+                completed = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+                self.assertEqual(completed.returncode, 0 if result == "success" else 1,
+                                 (aggregate, result, completed.stderr))
+        coverage = re.search(r"^  coverage-quality-gate:\n(.*?)(?=^  \S|\Z)", wf, re.S | re.M).group(1)
+        self.assertIn("name: interlink-installation-coverage", coverage)
+        self.assertIn("tar -xzmf interlink-installation-coverage/coverage.tgz", coverage)
+        self.assertIn("find src ext -name '*.cov' -print0 | tar", job)
 
 
 

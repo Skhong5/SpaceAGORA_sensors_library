@@ -336,3 +336,15 @@ The general CI example suite discovers the runnable scripts at the top of
 `examples/`, excluding `common.jl` and `odyssey_surrogate.jl`. The latter has its
 own atmosphere-surrogate workflow. Discovery does not imply that every script
 runs in a bare root environment: HYPR and EDG examples use their prepared projects.
+
+### Laser interlink scheduling
+
+- `gve_sma_interlinks.jl` runs a three-spacecraft, two-candidate-link example.
+  Its Julia matching path needs no Python, native GRAM or private telemetry.
+- `targeted_40sat_sma_interlinks.jl` configures thirty helper spacecraft and ten
+  targets. Its optional GIF shows the connection graph, not orbital geometry.
+  The default run spans twenty target orbits; the CI smoke route uses the
+  standard shortened mission duration and disables animation.
+
+See [Constellation laser interlinks](simulation_configuration.md#Constellation-laser-interlinks)
+for interpretation, optional cyclic matching and the model's physical limits.

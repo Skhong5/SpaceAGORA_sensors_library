@@ -5,7 +5,7 @@
 #   for t in 1 2 4 8 12; do julia --project=. --threads=$t \
 #       scripts/dev/probe_lock_thread_ladder.jl; done
 #
-# scripts/probe_contention_matrix.jl measures occupancy rho at one thread, which
+# scripts/dev/probe_contention_matrix.jl measures occupancy rho at one thread, which
 # gives the Amdahl ceiling 1/rho but cannot show contention: with one worker
 # nothing ever waits. This runs the same workload across a thread ladder and
 # reads wait/hold, which is the quantity that says whether the width in use is

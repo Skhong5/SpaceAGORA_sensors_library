@@ -1,12 +1,10 @@
 module SchedulingPolicies
 
 using LinearAlgebra
-using DiffEqBase
-import PythonCall
 using ..InterLinkModels
 
 export SchedulingPolicyModel, score_candidates!
-export select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
+export select_interlinks!, schedule_interlinks!
 
 # 1. Matching workspace for dynamic programming
 # 1.1. Scheduler-owned scores and matching scratch (reused between scheduling calls)
@@ -83,7 +81,149 @@ function matching_workspace!(model::ConstellationInterLinkModel, policy::Schedul
 	return policy.matching
 end
 
-include(joinpath(@__DIR__, "3_scheduling_policies.jl"))
+# POLICY 1. Increase Target Satellite Semimajor Axis Rate
+function score_gve_sma!(model::ConstellationInterLinkModel, policy::SchedulingPolicyModel, state, mu::Real;
+	candidate_force)
+	function semimajor_axis_rate(target, force, mu::Real)
+		semimajor_axis = inv(2 / norm(target.pos) - dot(target.vel, target.vel) / mu)
+		return 2 * semimajor_axis^2 / mu * dot(target.vel, force) / target.mass
+	end
+
+	isfinite(mu) && mu > 0 || throw(ArgumentError("The gravitational parameter must be finite and positive."))
+	policy.target_idxs === nothing || all(index -> index <= length(state.sc), policy.target_idxs) ||
+		throw(ArgumentError("target_idxs contains an index outside the spacecraft state vector."))
+	policy.target_idxs !== nothing || policy.target_idx === nothing || policy.target_idx <= length(state.sc) ||
+		throw(ArgumentError("target_idx is outside the spacecraft state vector."))
+	work = matching_workspace!(model, policy)
+	for index in eachindex(model.graph.edges)
+		key = map(v -> model.graph.vertices[v], model.graph.edges[index])
+		score = 0.0
+		first_satellite, second_satellite = key[1][1], key[2][1]
+		if model.graph.available[index]
+			for (target_idx, partner_idx) in ((first_satellite, second_satellite), (second_satellite, first_satellite))
+				if policy.target_idxs === nothing
+					policy.target_idx === nothing || policy.target_idx == target_idx || continue
+				else
+					target_idx in policy.target_idxs || continue
+				end
+				target = state.sc[target_idx]
+				partner = state.sc[partner_idx]
+				force = candidate_force(target, partner, model.graph.edge_properties[index])
+				score += semimajor_axis_rate(target, force, mu)
+			end
+		end
+		isfinite(score) || throw(ArgumentError("Nonfinite $(policy.policy) score for candidate $key."))
+		work.score[index] = score
+	end
+	return nothing
+end
+
+# Near circularity the existing score is the norm of the eccentricity-vector
+# rate. Norms from two simultaneous forces are not additive: opposite forces
+# can receive positive individual scores even though their combined rate is zero.
+# Admit this objective only when a scored near-circular spacecraft cannot receive
+# two positive-score candidate links in the same terminal matching.
+function _validate_eccentricity_matching_objective!(model, work, circular_candidates)
+	for (satellite, edges) in circular_candidates
+		candidates = Tuple{Int, Int}[]
+		for edge in edges
+			model.graph.available[edge] && work.score[edge] > 0 || continue
+			endpoints = model.graph.edges[edge]
+			for previous in candidates
+				if all(vertex -> vertex != endpoints[1] && vertex != endpoints[2], previous)
+					throw(ArgumentError("The :gve_eccentricity objective does not support simultaneous links " *
+						"on near-circular target spacecraft $satellite: per-link eccentricity-rate norms " *
+						"are not additive. Use candidate links that share one terminal on that target."))
+				end
+			end
+			push!(candidates, endpoints)
+		end
+	end
+	return nothing
+end
+
+# POLICY 2. Increase Target Satellite Eccentricity Rate
+"""
+Score the selected spacecraft's eccentricity rate. At eccentricity no greater
+than `sqrt(eps(Float64))`, the retained per-link score is an eccentricity-vector
+rate norm. Reject candidate matchings that can apply multiple positive-score
+links to the same such target, because summing those norms is not the rate of
+the combined force. The scalar projected rate remains additive away from this
+near-circular branch. This restriction does not apply to the SMA policies.
+"""
+function score_gve_eccentricity!(model::ConstellationInterLinkModel, policy::SchedulingPolicyModel, state, mu::Real;
+	candidate_force)
+	function eccentricity_rate(target, force, mu::Real)
+		position = target.pos
+		velocity = target.vel
+		acceleration = force / target.mass
+		angular_momentum = cross(position, velocity)
+		eccentricity_vector = cross(velocity, angular_momentum) / mu - position / norm(position)
+		eccentricity_vector_rate = (
+			cross(acceleration, angular_momentum) + cross(velocity, cross(position, acceleration))
+		) / mu
+		eccentricity = norm(eccentricity_vector)
+		near_circular = eccentricity <= sqrt(eps(Float64))
+		rate = near_circular ? norm(eccentricity_vector_rate) :
+			dot(eccentricity_vector, eccentricity_vector_rate) / eccentricity
+		return rate, near_circular
+	end
+
+	isfinite(mu) && mu > 0 || throw(ArgumentError("The gravitational parameter must be finite and positive."))
+	policy.target_idx === nothing || policy.target_idx <= length(state.sc) ||
+		throw(ArgumentError("target_idx is outside the spacecraft state vector."))
+	work = matching_workspace!(model, policy)
+	circular_candidates = Dict{Int, Vector{Int}}()
+	for index in eachindex(model.graph.edges)
+		key = map(v -> model.graph.vertices[v], model.graph.edges[index])
+		score = 0.0
+		first_satellite, second_satellite = key[1][1], key[2][1]
+		if model.graph.available[index]
+			for (target_idx, partner_idx) in ((first_satellite, second_satellite), (second_satellite, first_satellite))
+				policy.target_idx === nothing || policy.target_idx == target_idx || continue
+				target = state.sc[target_idx]
+				partner = state.sc[partner_idx]
+				force = candidate_force(target, partner, model.graph.edge_properties[index])
+				rate, near_circular = eccentricity_rate(target, force, mu)
+				score += rate
+				if near_circular && rate > 0
+					push!(get!(Vector{Int}, circular_candidates, target_idx), index)
+				end
+			end
+		end
+		isfinite(score) || throw(ArgumentError("Nonfinite $(policy.policy) score for candidate $key."))
+		work.score[index] = score
+	end
+	_validate_eccentricity_matching_objective!(model, work, circular_candidates)
+	return nothing
+end
+
+# POLICY 3: Increase the SMA of the lower-index satellite in each interlink pair.
+"""
+Score each available link by the SMA rate of its lower spacecraft vector index,
+regardless of altitude or registration order. The target is chosen per pair,
+so `policy.target_idx` is ignored. Nonpositive scores are excluded by the matcher.
+"""
+function score_gve_sma_first_index!(model::ConstellationInterLinkModel, policy::SchedulingPolicyModel, state, mu::Real;
+	candidate_force)
+	isfinite(mu) && mu > 0 || throw(ArgumentError("The gravitational parameter must be finite and positive."))
+	work = matching_workspace!(model, policy)
+	for index in eachindex(model.graph.edges)
+		key = map(v -> model.graph.vertices[v], model.graph.edges[index])
+		score = 0.0
+		if model.graph.available[index]
+			target_idx, partner_idx = minmax(key[1][1], key[2][1])
+			target = state.sc[target_idx]
+			partner = state.sc[partner_idx]
+			force = candidate_force(target, partner, model.graph.edge_properties[index])
+			semimajor_axis = inv(2 / norm(target.pos) - dot(target.vel, target.vel) / mu)
+			score = 2 * semimajor_axis^2 / mu * dot(target.vel, force) / target.mass
+		end
+		isfinite(score) || throw(ArgumentError("Nonfinite $(policy.policy) score for candidate $key."))
+		work.score[index] = score
+	end
+	return nothing
+end
 
 # 2.2. Define the function to score candidate interlinks based on the scheduling policy
 function score_candidates!(model::ConstellationInterLinkModel, policy::SchedulingPolicyModel, state, mu::Real;
@@ -141,6 +281,16 @@ function select_tree!(model, work, first_index, last_index, selected)
 end
 
 
+function _select_cyclic!(model, work, selected)
+	extension = Base.get_extension(parentmodule(parentmodule(@__MODULE__)), :SpaceAGORAPythonCallExt)
+	extension === nothing && throw(ArgumentError(
+		"Cyclic interlink matching requires the optional PythonCall backend. " *
+		"Install PythonCall in the active Julia environment and load it with `using PythonCall`; " *
+		"install NetworkX in the Python environment used by PythonCall. Tree matching works without Python."))
+	return extension.select_cyclic!(model, work, selected)
+end
+
+
 """
 	select_interlinks!(model::ConstellationInterLinkModel, policy::SchedulingPolicyModel)
 
@@ -162,7 +312,9 @@ Ties are deterministic for a given backend version, but tree ties may choose a
 different optimum than Blossom alone. Register topology through `register_allowed_link!`.
 For manual scores, refresh with `matching_workspace!(model, policy)` before editing
 its `score` vector. Graph availability and workspace scores are reread on every call.
-PythonCall provisions NetworkX from CondaPkg.toml on first use; setup needs network access.
+Tree components work without Python. Cyclic components require the optional
+PythonCall package loaded with `using PythonCall`, and NetworkX installed in the
+Python environment used by PythonCall. Core loading does not install either backend.
 """
 function select_interlinks!(model::ConstellationInterLinkModel, policy::SchedulingPolicyModel)
 	# Step 1. Collect available, positive-score edges in canonical endpoint order.
@@ -224,22 +376,7 @@ function select_interlinks!(model::ConstellationInterLinkModel, policy::Scheduli
 	end
 	# Step 4. Solve cyclic components with NetworkX's maximum-weight Blossom matching.
 	if !isempty(work.candidates) && any(work.cyclic)
-		PythonCall.C.PyGILState_Check() != 0 || throw(ArgumentError(
-			"Cyclic interlink matching requires the Python GIL. Run on Python's owning thread or use process workers. " *
-			"For threaded calls, release the GIL on its owner and acquire it with PythonCall.GIL.@lock."))
-		networkx = PythonCall.pyimport("networkx")
-		graph = networkx.Graph()
-		for edge in work.candidates
-			first_vertex, second_vertex = model.graph.edges[edge][1], model.graph.edges[edge][2]
-			work.cyclic[first_vertex] || continue
-			graph.add_edge(first_vertex, second_vertex;
-				weight=PythonCall.pybuiltins.int(string(work.weights[edge])))
-		end
-		matching = PythonCall.pyconvert(Vector{Tuple{Int, Int}},
-			PythonCall.pybuiltins.list(networkx.max_weight_matching(graph; maxcardinality=false)))
-		for (first_index, second_index) in matching
-			push!(selected, minmax(model.graph.vertices[first_index], model.graph.vertices[second_index]))
-		end
+		_select_cyclic!(model, work, selected)
 	end
 	# Step 5. Replace the active-link flags with the combined tree and cyclic selections.
 	fill!(model.graph.active, false)
@@ -256,32 +393,10 @@ function schedule_interlinks!(model::ConstellationInterLinkModel, policy::Schedu
 	update_availability!(model, spacecraft, state; is_active)
 
 	# step 2. compute the score of each interlink based on the scheduling policy / scoring policy
-	score_candidates!(model, policy, state, mu; candidate_force) 
+	score_candidates!(model, policy, state, mu; candidate_force)
 
 	# step 3. select the best set of interlinks based on the current scores
 	return select_interlinks!(model, policy)
 end
 
-# 5. Define the callback function for the interlink graph update with scheduler
-function interlink_scheduler_callback(; candidate_force)
-	function affect!(integrator)
-		args = integrator.p.args
-		model = args.interlink_model
-		selected = schedule_interlinks!(model, args.scheduling_policy_model,
-			args.dynamics_model.spacecraft, integrator.u, args.environment_model.planet.μ;
-			candidate_force, is_active=integrator.p.is_active)
-		sample = InterLinkHistory(Float64(integrator.t), selected)
-		if !isempty(model.history) && model.history[end].time == sample.time
-			model.history[end] = sample
-		else
-			push!(model.history, sample)
-		end
-		DiffEqBase.u_modified!(integrator, true)
-		return nothing
-	end
-	initialize = (callback, state, time, integrator) -> affect!(integrator) # update link graph when the simulation is initialized
-	return DiffEqBase.DiscreteCallback((state, time, integrator) -> true, affect!; # update link graph at every internal simulation step
-		initialize=initialize, save_positions=(false, false))
-end
-
-end
+end # module SchedulingPolicies

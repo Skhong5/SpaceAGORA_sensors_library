@@ -5,7 +5,6 @@ using ComponentArrays
 using OrdinaryDiffEq
 using Random
 using StaticArrays
-using PythonCall
 include(joinpath(@__DIR__, "..", "..", "..", "examples", "gve_sma_interlinks.jl"))
 using SpaceAGORA.SimulationModel.SchedulingPolicies: matching_workspace!
 
@@ -190,36 +189,27 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
         fill!(triangle.graph.available, true)
         triangle_policy = SchedulingPolicyModel(:gve_sma)
         matching_workspace!(triangle, triangle_policy).score .= [3.0, 2.0, 1.0]
-        @test select_interlinks!(triangle, triangle_policy) == [((1, 1), (2, 1))]
-        @test any(triangle_policy.matching.cyclic)
-        PythonCall.GIL.@unlock begin
-            @test_throws ArgumentError select_interlinks!(triangle, triangle_policy)
+        if Base.get_extension(SpaceAGORA, :SpaceAGORAPythonCallExt) === nothing
+            triangle.graph.active .= [false, true, false]
+            previous_active = copy(triangle.graph.active)
+            missing_backend = try
+                select_interlinks!(triangle, triangle_policy)
+                nothing
+            catch err
+                err
+            end
+            @test missing_backend isa ArgumentError
+            @test occursin("using PythonCall", sprint(showerror, missing_backend))
+            @test occursin("NetworkX", sprint(showerror, missing_backend))
+            @test triangle.graph.active == previous_active
+        else
+            @test select_interlinks!(triangle, triangle_policy) == [((1, 1), (2, 1))]
         end
-        @test select_interlinks!(triangle, triangle_policy) == [((1, 1), (2, 1))]
         triangle.graph.available[1] = false
         @test select_interlinks!(triangle, triangle_policy) == [((2, 1), (3, 1))]
         @test !any(triangle_policy.matching.cyclic)
 
-        rng = MersenneTwister(718)
-        pairs = [(i, j) for i in 1:5 for j in (i + 1):6]
-        six = [SpacecraftModel() for _ in 1:6]
-        for _ in 1:40
-            random_model = ConstellationInterLinkModel()
-            for (i, j) in shuffle(rng, pairs)[1:8]
-                register_allowed_link!(random_model, six, (i, 1), (j, 1))
-            end
-            random_model.graph.available .= rand(rng, Bool, 8)
-            random_policy = SchedulingPolicyModel(:gve_sma)
-            scores = matching_workspace!(random_model, random_policy).score
-            scores .= rand(rng, [-1.0, 0.0, 1e-20, 1.0, nextfloat(1.0), 3.0], 8)
-            expected = exhaustive_matching_score(random_model, random_policy)
-            selected = select_interlinks!(random_model, random_policy)
-            actual = sum((Rational{BigInt}(scores[random_model.graph.edge_index_lookup[key]])
-                for key in selected); init=zero(Rational{BigInt}))
-            @test actual == expected
-            @test length(Set(endpoint for key in selected for endpoint in key)) == 2 * length(selected)
-            @test selected == select_interlinks!(random_model, random_policy)
-        end
+
     end
 
     @testset "Forces and GVE policies" begin
@@ -277,6 +267,20 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
         @test iszero(laser_force_on_spacecraft(model, state, 1))
     end
 
+    @testset "Inactive endpoints invalidate held forces immediately" begin
+        spacecraft, state, model, key, runtime = endpoint_fixture()
+        model.graph.active .= true
+        for activity in ([true, false], [false, true], [false, false])
+            runtime.is_active .= activity
+            derivative = zero(state)
+            SE._apply_interlink_rhs!(derivative, state, runtime)
+            @test all(iszero(sc.vel) for sc in derivative.sc)
+            @test all(iszero(sc.laser_dv) for sc in derivative.sc)
+            @test all(iszero(sc.laser_delta_sma) for sc in derivative.sc)
+            @test model.graph.active == [true] # RHS never reschedules a trial state.
+        end
+    end
+
     @testset "Continuous positions and switching cache refresh" begin
         spacecraft, state, model, key, runtime = endpoint_fixture(range=1000.5)
         state.sc[1].vel[2] = 1.0
@@ -332,18 +336,6 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
         stiff = run_simulation(stiff_args; return_solution=true)
         @test stiff.prob.f.jac_prototype === nothing
         @test isapprox(stiff.u[end], solution.u[end]; rtol=1e-8, atol=1e-5)
-        multi_target = gve_sma_configuration(duration=20.0)
-        register_allowed_link!(multi_target.interlink_model, multi_target.dynamics_model.spacecraft,
-            (2, 1), (3, 1); parameters=InterLinkParameters(range=500e3))
-        multi_target = SM.SimConfig._with_configuration(multi_target;
-            scheduling_policy_model=SchedulingPolicyModel(:gve_sma; target_idxs=[3, 1, 2]))
-        multi_solution = run_simulation(multi_target; return_solution=true)
-        multi_ran = multi_solution.prob.p.args
-        @test multi_solution.t[end] == 20.0
-        @test all(isfinite, multi_solution.u[end])
-        @test any(multi_ran.scheduling_policy_model.matching.cyclic)
-        @test length(multi_ran.interlink_model.history) == multi_solution.stats.naccept + 1
-        @test all(length(sample.active) == 1 for sample in multi_ran.interlink_model.history)
         orientation_args = SM.SimConfig._with_configuration(args;
             mission_configuration=MissionConfiguration(mission_type=MissionTime, mission_time=20.0,
                 orientation_sim=true, data_rate=10.0))

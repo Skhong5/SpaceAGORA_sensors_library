@@ -3149,7 +3149,7 @@ function _apply_interlink_rhs!(derivative, state, parameters)
         parameters.is_active[satellite] || continue
         current = state.sc[satellite]
         current_derivative = derivative.sc[satellite]
-        force = SimulationModel.laser_force_on_spacecraft(model, state, satellite)
+        force = SimulationModel.laser_force_on_spacecraft(model, state, satellite; is_active=parameters.is_active)
         acceleration = force / current.mass
         current_derivative.vel .+= acceleration
         current_derivative.laser_dv .= acceleration

@@ -15,12 +15,13 @@ function force_on_endpoint(current, other, parameters)
 	return (parameters.B * parameters.P / SPEED_OF_LIGHT_MPS) * (separation / distance)
 end
 
-function laser_force_on_spacecraft(model::ConstellationInterLinkModel, state, satellite::Int)
+function laser_force_on_spacecraft(model::ConstellationInterLinkModel, state, satellite::Int; is_active=nothing)
 	force = SVector{3, Float64}(0.0, 0.0, 0.0)
 	1 <= satellite <= length(model.graph.satellite_edges) || return force
 	for index in model.graph.satellite_edges[satellite]
 		key = map(v -> model.graph.vertices[v], model.graph.edges[index])
 		model.graph.active[index] || continue
+		is_active === nothing || (is_active[key[1][1]] && is_active[key[2][1]]) || continue
 		partner = if key[1][1] == satellite
 			key[2][1]
 		elseif key[2][1] == satellite

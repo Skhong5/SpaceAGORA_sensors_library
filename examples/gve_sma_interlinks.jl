@@ -54,6 +54,7 @@ function run_gve_sma_case(; dt_max_orbit::Float64=10.0, duration::Float64=3600.0
     save_results::Bool=true)
     # Step 1: Build and run one configuration at the requested maximum timestep.
     args = gve_sma_configuration(; dt_max_orbit, duration, save_results)
+    args = SpaceAGORA.TelemetryVerification._example_smoke_args(args)
     solution = run_simulation(args; return_solution=true)
     model = solution.prob.p.args.interlink_model
     history = model.history
@@ -75,6 +76,5 @@ function run_gve_sma_case(; dt_max_orbit::Float64=10.0, duration::Float64=3600.0
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    include(joinpath(@__DIR__, "targeted_40sat_sma_interlinks.jl"))
-    run_targeted_40sat_example()
+    run_gve_sma_case()
 end

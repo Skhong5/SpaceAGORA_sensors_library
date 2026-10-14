@@ -198,7 +198,7 @@ jobs:
 
   tests:
     if: always()
-    needs: [plan, test-shards, optional-hypr-installation, optional-mujoco-installation, optional-visualizer-installation, optional-edg-installation]
+    needs: [plan, test-shards, optional-hypr-installation, optional-mujoco-installation, optional-visualizer-installation, optional-edg-installation, optional-interlink-installation]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -224,7 +224,7 @@ jobs:
       - name: Enforce test shard success
         run: |
           echo "test-shards result=${{ needs.test-shards.result }}"
-          if [ "${{ needs.test-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ] || [ "${{ needs.optional-mujoco-installation.result }}" != "success" ] || [ "${{ needs.optional-visualizer-installation.result }}" != "success" ] || [ "${{ needs.optional-edg-installation.result }}" != "success" ]; then
+          if [ "${{ needs.test-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ] || [ "${{ needs.optional-mujoco-installation.result }}" != "success" ] || [ "${{ needs.optional-visualizer-installation.result }}" != "success" ] || [ "${{ needs.optional-edg-installation.result }}" != "success" ] || [ "${{ needs.optional-interlink-installation.result }}" != "success" ]; then
             echo "Test shards failed or were cancelled."
             exit 1
           fi
@@ -307,7 +307,7 @@ jobs:
 
   coverage-quality-gate:
     if: always()
-    needs: [plan, coverage-shards, optional-hypr-installation, optional-visualizer-installation, optional-edg-installation]
+    needs: [plan, coverage-shards, optional-hypr-installation, optional-visualizer-installation, optional-edg-installation, optional-interlink-installation]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -369,10 +369,17 @@ jobs:
           name: edg-installation-coverage
           path: edg-installation-coverage
 
+      - name: Download interlink backend coverage
+        if: always()
+        uses: actions/download-artifact@v8
+        with:
+          name: interlink-installation-coverage
+          path: interlink-installation-coverage
+
       - name: Enforce coverage shard success
         run: |
           echo "coverage-shards result=${{ needs.coverage-shards.result }}"
-          if [ "${{ needs.coverage-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ] || [ "${{ needs.optional-visualizer-installation.result }}" != "success" ] || [ "${{ needs.optional-edg-installation.result }}" != "success" ]; then
+          if [ "${{ needs.coverage-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ] || [ "${{ needs.optional-visualizer-installation.result }}" != "success" ] || [ "${{ needs.optional-edg-installation.result }}" != "success" ] || [ "${{ needs.optional-interlink-installation.result }}" != "success" ]; then
             echo "Coverage shards failed or were cancelled."
             exit 1
           fi
@@ -389,6 +396,7 @@ jobs:
           tar -xzmf hypr-installation-coverage/coverage.tgz
           tar -xzmf visualizer-installation-coverage/coverage.tgz
           tar -xzmf edg-installation-coverage/coverage.tgz
+          tar -xzmf interlink-installation-coverage/coverage.tgz
           echo "coverage files: $(find src packages/SpaceAGORAHYPR/src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' | wc -l)"
 
       - name: Coverage quality gate
@@ -1112,5 +1120,57 @@ jobs:
         with:
           name: edg-installation-coverage
           path: edg-installation-coverage/coverage.tgz
+          retention-days: 3
+          if-no-files-found: error
+
+  # Tree matching remains Julia-only. This job explicitly installs the cyclic backend.
+  optional-interlink-installation:
+    needs: depot
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      JULIA_LOAD_PATH: "@:@stdlib"
+      JULIA_NUM_THREADS: "2"
+      JULIA_PKG_PRECOMPILE_AUTO: "0"
+      JULIA_CONDAPKG_BACKEND: "Null"
+      GKSwstype: "100"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          gram: none
+          gramsuite-smoke: "false"
+          edg: "false"
+          token: ${{ github.token }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install the explicit matching backend
+        run: |
+          python -m pip install 'networkx==3.4.2'
+          echo "JULIA_PYTHONCALL_EXE=$(command -v python)" >> "$GITHUB_ENV"
+          julia --startup-file=no --project=. test/integration/interlink_python_setup.jl "$RUNNER_TEMP/interlink-environment"
+      - name: Core without Python and both optional load orders
+        run: |
+          julia --startup-file=no --project=. -e 'using SpaceAGORA; @assert Base.get_extension(SpaceAGORA, :SpaceAGORAPythonCallExt) === nothing; include("test/unit/simulation/interlink_tests.jl")'
+          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/interlink-environment" test/integration/interlink_python.jl core-first
+          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/interlink-environment" test/integration/interlink_python.jl python-first
+      - name: Verify core installation inputs were not changed
+        run: git diff --exit-code
+      - name: Retain interlink coverage
+        if: always()
+        run: |
+          find src ext -name '*.cov' -print0 | while IFS= read -r -d '' f; do
+            mv "$f" "$(printf '%s' "$f" | sed -E 's/\.([0-9]+)\.cov$/.77\1.cov/')"
+          done
+          mkdir -p interlink-installation-coverage
+          find src ext -name '*.cov' -print0 | tar --null -czf interlink-installation-coverage/coverage.tgz -T -
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: interlink-installation-coverage
+          path: interlink-installation-coverage/coverage.tgz
           retention-days: 3
           if-no-files-found: error

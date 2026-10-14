@@ -109,8 +109,12 @@ keep exploratory configurations separate from a recorded baseline.
 - `gram_standard` (direct native GRAM): density frozen per accepted step
   (`SPACEAGORA_DENSITY_FREEZE_PER_STEP=1`; per-RK-stage perturbation noise
   otherwise collapses adaptive dt) and density callback kept serial.
-- `gram_lookahead`: vacuum-predicted cache with horizon/deviation loosened past
-  mission reach so only the proven-safe initial build runs (native rebuild with
-  2+ satellites hangs — see `[[project_gram_multisat_rebuild_bug]]`).
+- `gram_lookahead`: the study sets the vacuum-predicted cache horizon and
+  deviation limits beyond the mission reach to avoid rebuilds during the planned
+  run. The existing study comments attribute these settings to reported native
+  rebuild hangs with multiple satellites and cite
+  `project_gram_multisat_rebuild_bug`; that cited source is not included in this
+  checkout. See [the study configuration](common.jl) for the retained settings;
+  this note does not report a new native validation.
 - Process modes: each pool worker is `--threads=1` with its own native GRAM; the
   coordinator only dispatches.

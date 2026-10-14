@@ -5,6 +5,22 @@ using Base.Docs
 export PUBLIC_API_SECTIONS, public_api_specs, render_public_api_markdown, undocumented_public_api_specs
 
 const PUBLIC_API_SECTIONS = [
+    (title = "Constellation laser interlinks", items = [
+        (owner = :SpaceAGORA, symbol = :ConstellationInterLinkModel, rendered = "SpaceAGORA.ConstellationInterLinkModel"),
+        (owner = :SpaceAGORA, symbol = :InterLinkGraph, rendered = "SpaceAGORA.InterLinkGraph"),
+        (owner = :SpaceAGORA, symbol = :InterLinkParameters, rendered = "SpaceAGORA.InterLinkParameters"),
+        (owner = :SpaceAGORA, symbol = :InterLinkKey, rendered = "SpaceAGORA.InterLinkKey"),
+        (owner = :SpaceAGORA, symbol = :InterLinkHistory, rendered = "SpaceAGORA.InterLinkHistory"),
+        (owner = :SpaceAGORA, symbol = :SchedulingPolicyModel, rendered = "SpaceAGORA.SchedulingPolicyModel"),
+        (owner = :SpaceAGORA, symbol = :register_allowed_link!, rendered = "SpaceAGORA.register_allowed_link!"),
+        (owner = :SpaceAGORA, symbol = :update_availability!, rendered = "SpaceAGORA.update_availability!"),
+        (owner = :SpaceAGORA, symbol = :score_candidates!, rendered = "SpaceAGORA.score_candidates!"),
+        (owner = :SpaceAGORA, symbol = :select_interlinks!, rendered = "SpaceAGORA.select_interlinks!"),
+        (owner = :SpaceAGORA, symbol = :schedule_interlinks!, rendered = "SpaceAGORA.schedule_interlinks!"),
+        (owner = :SpaceAGORA, symbol = :interlink_scheduler_callback, rendered = "SpaceAGORA.interlink_scheduler_callback"),
+        (owner = :SpaceAGORA, symbol = :force_on_endpoint, rendered = "SpaceAGORA.force_on_endpoint"),
+        (owner = :SpaceAGORA, symbol = :laser_force_on_spacecraft, rendered = "SpaceAGORA.laser_force_on_spacecraft"),
+    ]),
     (title = "RPO planner pilot", items = [
         (owner = :SpaceAGORA, symbol = :hypr_available, rendered = "SpaceAGORA.hypr_available"),
         (owner = :SpaceAGORA, symbol = :HYPRUnavailableError, rendered = "SpaceAGORA.HYPRUnavailableError"),
@@ -97,25 +113,6 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :export_viewer_payload, rendered = "SpaceAGORA.export_viewer_payload"),
             (owner = :SpaceAGORA, symbol = :ExternalPropagationServices, rendered = "SpaceAGORA.ExternalPropagationServices"),
             (owner = :SpaceAGORA, symbol = :EDGServices, rendered = "SpaceAGORA.EDGServices")
-        ]
-    ),
-    (
-        title = "Constellation Interlinks",
-        items = [
-            (owner = :SpaceAGORA, symbol = :ConstellationInterLinkModel, rendered = "SpaceAGORA.ConstellationInterLinkModel"),
-            (owner = :SpaceAGORA, symbol = :InterLinkGraph, rendered = "SpaceAGORA.InterLinkGraph"),
-            (owner = :SpaceAGORA, symbol = :InterLinkParameters, rendered = "SpaceAGORA.InterLinkParameters"),
-            (owner = :SpaceAGORA, symbol = :InterLinkKey, rendered = "SpaceAGORA.InterLinkKey"),
-            (owner = :SpaceAGORA, symbol = :InterLinkHistory, rendered = "SpaceAGORA.InterLinkHistory"),
-            (owner = :SpaceAGORA, symbol = :SchedulingPolicyModel, rendered = "SpaceAGORA.SchedulingPolicyModel"),
-            (owner = :SpaceAGORA, symbol = :register_allowed_link!, rendered = "SpaceAGORA.register_allowed_link!"),
-            (owner = :SpaceAGORA, symbol = :update_availability!, rendered = "SpaceAGORA.update_availability!"),
-            (owner = :SpaceAGORA, symbol = :score_candidates!, rendered = "SpaceAGORA.score_candidates!"),
-            (owner = :SpaceAGORA, symbol = :select_interlinks!, rendered = "SpaceAGORA.select_interlinks!"),
-            (owner = :SpaceAGORA, symbol = :schedule_interlinks!, rendered = "SpaceAGORA.schedule_interlinks!"),
-            (owner = :SpaceAGORA, symbol = :interlink_scheduler_callback, rendered = "SpaceAGORA.interlink_scheduler_callback"),
-            (owner = :SpaceAGORA, symbol = :force_on_endpoint, rendered = "SpaceAGORA.force_on_endpoint"),
-            (owner = :SpaceAGORA, symbol = :laser_force_on_spacecraft, rendered = "SpaceAGORA.laser_force_on_spacecraft")
         ]
     ),
     (

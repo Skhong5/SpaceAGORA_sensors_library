@@ -9,8 +9,8 @@ using LinearAlgebra
 using Logging
 using Dates
 
-include(joinpath(@__DIR__, "support", "aerobraking_result_tables.jl"))
-include(joinpath(@__DIR__, "support", "aerobraking_plot_errors.jl"))
+include(joinpath(@__DIR__, "aerobraking_result_tables.jl"))
+include(joinpath(@__DIR__, "aerobraking_plot_errors.jl"))
 
 """
     _save_quaternion_history_plot(csv_path::String; spacecraft_index, output_path::String)

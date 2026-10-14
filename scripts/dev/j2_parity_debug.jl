@@ -1,7 +1,7 @@
 using DataFrames
 using Statistics
 
-const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
+const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
 # Optional controls:
 # - SPACEAGORA_DEBUG_COMPARE_J2=1

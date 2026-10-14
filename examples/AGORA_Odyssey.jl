@@ -10,7 +10,7 @@ using StaticArrays
 using LinearAlgebra
 using Logging
 
-include(joinpath(@__DIR__, "aerobraking_mission_plot_utils.jl"))
+include(joinpath(@__DIR__, "support", "aerobraking_mission_plot_utils.jl"))
 
 setup_gram_example!()
 

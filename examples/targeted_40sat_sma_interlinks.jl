@@ -137,6 +137,7 @@ function run_targeted_40sat_example(; save_results::Bool=true, orbits::Float64=2
     frame_count >= 2 || throw(ArgumentError("frame_count must be at least two."))
     fps > 0 || throw(ArgumentError("fps must be positive."))
     args = targeted_40sat_configuration(; save_results, orbits)
+    args = SpaceAGORA.TelemetryVerification._example_smoke_args(args)
     solution = if animate
         withenv("SPACEAGORA_SOLVER_SAVE_EVERYSTEP" => "true") do
             run_simulation(args; return_solution=true)
@@ -168,5 +169,5 @@ function run_targeted_40sat_example(; save_results::Bool=true, orbits::Float64=2
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    run_targeted_40sat_example()
+    run_targeted_40sat_example(animate=get(ENV, "SPACEAGORA_EXAMPLE_SMOKE", "0") != "1")
 end

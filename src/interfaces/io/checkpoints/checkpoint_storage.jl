@@ -31,7 +31,8 @@ function _sha256_hex(path::String)::String
     end
 end
 
-function _write_checkpoint!(args, t::Float64, u_state, checkpoint_schema_version; solver_mode::Union{Nothing, String}=nothing)
+function _write_checkpoint!(args, t::Float64, u_state, checkpoint_schema_version;
+    solver_mode::Union{Nothing, String}=nothing, runtime_state=nothing)
     paths = IOConfig._checkpoint_paths(args)
     payload = (
         schema_version=checkpoint_schema_version,
@@ -40,6 +41,8 @@ function _write_checkpoint!(args, t::Float64, u_state, checkpoint_schema_version
         solver_mode=solver_mode,
         u=deepcopy(u_state)
     )
+    # Ordinary checkpoints retain the established payload schema.
+    runtime_state === nothing || (payload = merge(payload, (runtime_state=deepcopy(runtime_state),)))
     _atomic_write_file(paths.data, tmp -> open(tmp, "w") do io
         serialize(io, payload)
     end)
@@ -71,13 +74,15 @@ function _load_checkpoint(args)
         throw(ArgumentError("Checkpoint payload missing required keys (:t, :u)."))
     end
     solver_mode = haskey(payload, :solver_mode) ? payload[:solver_mode] : nothing
-    return (
+    checkpoint = (
         t=Float64(payload[:t]),
         u=payload[:u],
         solver_mode=solver_mode === nothing ? nothing : String(solver_mode),
         data_path=paths.data,
         manifest_path=paths.manifest
     )
+    runtime_state = get(payload, :runtime_state, nothing)
+    return runtime_state === nothing ? checkpoint : merge(checkpoint, (runtime_state=runtime_state,))
 end
 
 function _clear_checkpoint!(args)

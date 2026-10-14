@@ -22,8 +22,8 @@ What to read next:
 
 ## Output files
 
-When `simulation_settings.results = true` (the default), `run_simulation`
-writes three files to the `results_directory`:
+With the default output settings, `run_simulation` writes three files to the
+`results_directory`:
 
 ```text
 output/
@@ -32,10 +32,18 @@ output/
   simulation_results.manifest.toml ← metadata: row count, spacecraft count, file hashes
 ```
 
-The Feather file is always written. The CSV is written when
-`simulation_settings.save_csv = true` (also the default). The manifest records
+Set `simulation_settings.save_csv = false` to save the Feather file and manifest
+without writing a CSV. A CSV left by an earlier run is preserved, but is not
+listed in the new manifest or in `SimulationResults.files`.
+Set `simulation_settings.results = false` to disable result-file output.
+The manifest records
 `schema_version`, `created_utc`, `mission_time_s`, `steps`,
 `spacecraft_count`, and SHA-256 hashes for each data file.
+
+The developer override `SPACEAGORA_SAVE_BUNDLE=0` disables Feather and manifest
+output. With this override and `save_csv=false`, use `return_results=true` to
+receive the table in memory. Explicitly enabled scene sidecars and checkpoints
+can still be written.
 
 ## Getting the results in memory
 
@@ -332,7 +340,7 @@ choose the spacecraft and destination:
 
 ```julia
 include("examples/common.jl")
-include("examples/aerobraking_mission_plot_utils.jl")
+include("examples/support/aerobraking_mission_plot_utils.jl")
 quaternion_history = _save_quaternion_history_plot(
     "results/my_run/simulation_results.csv";
     spacecraft_index=1,
@@ -393,7 +401,7 @@ To plot an existing CSV, use the example helpers explicitly:
 
 ```julia
 include("examples/common.jl")
-include("examples/aerobraking_mission_plot_utils.jl")
+include("examples/support/aerobraking_mission_plot_utils.jl")
 body_rate_history = _save_body_rate_history_plot(
     "results/my_run/simulation_results.csv";
     spacecraft_index=1,

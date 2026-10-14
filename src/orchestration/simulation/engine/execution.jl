@@ -352,7 +352,9 @@ function _save_simulation_results_if_enabled!(
     results_df = _build_results_dataframe(results_times, results_data, save_fields_resolved, args)
     csv_path = nothing
     if args.simulation_settings.results
-        csv_path = _write_results_csv!(results_df, args)
+        if args.simulation_settings.save_csv
+            csv_path = _write_results_csv!(results_df, args)
+        end
         if _typed_save_bundle_enabled()
             _write_results_bundle!(results_df, results_times, args; csv_path=csv_path)
         end
@@ -681,6 +683,7 @@ function run_simulation(
                     hasproperty(sc, :laser_delta_sma) == has_interlinks, ckpt.u.sc) ||
                     throw(ArgumentError("Checkpoint interlink state does not match the configured interlink_model; resume with the same interlink setting."))
             end
+            _restore_interlink_checkpoint_state!(args, ckpt, p.is_active)
             t_start = ckpt.t
             u_start = ckpt.u
             _initialize_in_atmosphere_flags!(p, u_start)
@@ -986,7 +989,7 @@ function run_simulation(
             end
             t_cursor = Float64(seg_sol.t[end])
             u_cursor = deepcopy(seg_sol.u[end])
-            _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode))
+            _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode); is_active=p.is_active)
             checkpoint_written = true
             if string(seg_sol.retcode) != "Success" || !_gravity_backbone_time_reached(t_cursor, t_next)
                 break

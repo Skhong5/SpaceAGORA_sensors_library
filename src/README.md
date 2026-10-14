@@ -21,7 +21,6 @@ src/
 │   ├── vehicle/
 │   ├── environment/
 │   ├── dynamics/
-│   ├── satellite_interlink/
 │   └── gnc/
 └── foundation/
     ├── core/
@@ -32,12 +31,6 @@ src/
 storage, and analysis and visualization support. It includes the operations used to enter a run or inspect
 its results; it is not a registry of every abstract interface in the package.
 Model-specific hooks stay with their model owners.
-
-`models/satellite_interlink/` owns the indexed constellation graph, GVE scoring
-policies, and terminal matching. The laser force law lives with the coupled
-dynamics effectors. Simulation configuration, accepted-step scheduling, state
-derivatives, and saved laser diagnostics are wired through the existing
-orchestration modules.
 
 **Orchestration** prepares and executes simulations, dispatches callbacks and
 campaigns, selects mission policy and routes parallel work. **Models** holds
@@ -67,7 +60,9 @@ references, shared geometry and tree operations, and optional-adapter services.
 Navigation retains its estimator hook; reference and collision geometry belongs
 to planning. Completed planner-comparison reports are implemented in
 `interfaces/analysis/planning/`, while historical function bindings remain
-available from GNC. HYPR search remains external; EDG remains in core guidance.
+available from GNC. HYPR search and the typed EDG numerical kernels live in their
+optional companion packages. Core retains their supported services and simulation
+integration, including EDG model types, lifecycle and actuation.
 
 Environment sources supply atmospheric, ephemeris and gravitational-field
 quantities. Dynamics sources adapt those quantities to spacecraft forces and
