@@ -43,6 +43,8 @@ struct AerobrakingEnergyDepletionConfig
     targeting_certification_samples::Int
     targeting_energy_order_tolerance_jkg::Float64
     targeting_heat_load_tolerance_j_cm2::Float64
+    second_switch_reevaluation::Bool
+    heat_load_security_mode::Bool
 end
 
 function AerobrakingEnergyDepletionConfig(;
@@ -57,10 +59,12 @@ function AerobrakingEnergyDepletionConfig(;
     heat_load_limit_j_cm2::Real=Inf,
     structural_load_limit_pa::Real=Inf,
     planning_horizon_s::Real=5_000.0,
-    switch_recompute_interval_s::Real=30.0,
+    switch_recompute_interval_s::Real=2.0,
     targeting_certification_samples::Integer=9,
     targeting_energy_order_tolerance_jkg::Real=1e-3,
     targeting_heat_load_tolerance_j_cm2::Real=1e-6,
+    second_switch_reevaluation::Bool=true,
+    heat_load_security_mode::Bool=true,
 )
     guidance_modes_t = _edg_validate_symbol_set(_edg_symbol_tuple(guidance_modes), _EDG_GUIDANCE_MODES, "guidance_modes")
     max_energy_submodes_t = _edg_validate_symbol_set(_edg_symbol_tuple(max_energy_submodes), _EDG_MAX_ENERGY_SUBMODES, "max_energy_submodes")
@@ -103,6 +107,8 @@ function AerobrakingEnergyDepletionConfig(;
         certification_samples,
         energy_order_tolerance,
         heat_load_tolerance,
+        second_switch_reevaluation,
+        heat_load_security_mode,
     )
 end
 
@@ -120,11 +126,16 @@ mutable struct AerobrakingEnergyDepletionState
     energy_bracketing_evaluated::Vector{Bool}
     energy_bracketing_count::Vector{Int}
     target_energy_jkg::Vector{Float64}
+    target_perturbation_energy_change_jkg::Vector{Float64}
     bracket_min_energy_jkg::Vector{Float64}
     bracket_max_energy_jkg::Vector{Float64}
     heat_load_switches_s::Vector{NTuple{2, Float64}}
     heat_load_switch_solved::Vector{Bool}
     heat_load_drag_passage_active::Vector{Bool}
+    heat_load_entry_time_s::Vector{Float64}
+    heat_load_last_reevaluation_s::Vector{Float64}
+    heat_load_security_active::Vector{Bool}
+    heat_load_previous_j_cm2::Vector{Float64}
     targeting_switch_s::Vector{Float64}
     last_switch_solve_t::Vector{Float64}
     last_alpha_rad::Vector{Float64}
@@ -133,6 +144,21 @@ mutable struct AerobrakingEnergyDepletionState
     last_heat_rate_w_cm2::Vector{Float64}
     last_heat_load_j_cm2::Vector{Float64}
     last_dynamic_pressure_pa::Vector{Float64}
+    last_structural_load_pa::Vector{Float64}
+    last_minimum_heat_rate_w_cm2::Vector{Float64}
+    last_minimum_structural_load_pa::Vector{Float64}
+    last_heat_rate_status::Vector{Symbol}
+    last_structural_load_status::Vector{Symbol}
+    last_heat_budget_status::Vector{Symbol}
+    heat_load_entry_j_cm2::Vector{Vector{Float64}}
+    heat_load_exit_j_cm2::Vector{Vector{Float64}}
+    last_pass_heat_load_j_cm2::Vector{Float64}
+    control_clock_origin_s::Float64
+    targeting_diagnostics::Vector{NamedTuple}
+    heat_boundary_inside::Vector{Union{Nothing, Bool}}
+    heat_boundary_entry_time_s::Vector{Float64}
+    heat_boundary_exit_time_s::Vector{Float64}
+    heat_boundary_observed_at_s::Vector{Float64}
 end
 
 function AerobrakingEnergyDepletionState(; num_sats::Integer)
@@ -147,9 +173,14 @@ function AerobrakingEnergyDepletionState(; num_sats::Integer)
         fill(NaN, n),
         fill(NaN, n),
         fill(NaN, n),
+        fill(NaN, n),
         fill((Inf, Inf), n),
         falses(n),
         falses(n),
+        fill(NaN, n),
+        fill(-Inf, n),
+        falses(n),
+        zeros(n),
         fill(Inf, n),
         fill(-Inf, n),
         fill(NaN, n),
@@ -158,8 +189,24 @@ function AerobrakingEnergyDepletionState(; num_sats::Integer)
         fill(NaN, n),
         fill(NaN, n),
         fill(NaN, n),
+        fill(NaN, n),
+        fill(NaN, n),
+        fill(NaN, n),
+        fill(:unobserved, n),
+        fill(:unobserved, n),
+        fill(:unobserved, n),
+        [Float64[] for _ in 1:n],
+        [Float64[] for _ in 1:n],
+        fill(NaN, n),
+        0.0,
+        NamedTuple[(status=:unplanned,) for _ in 1:n],
+        Union{Nothing, Bool}[nothing for _ in 1:n],
+        fill(NaN, n),
+        fill(NaN, n),
+        fill(NaN, n),
     )
 end
+
 
 """
     AerobrakingEnergyDepletionGuidanceModel

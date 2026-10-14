@@ -1,163 +1,125 @@
-# EDG adapter boundary preparation
+# EDG package boundary
 
-This is a design proposal for a future external energy-depletion guidance (EDG)
-adapter under the [optional adapter standard](adapter_contract.md). It creates no
-public facade, package, contract version or new supported execution mode. Scientific
-qualification and integration of the experimental controller remain prerequisites;
-this document does not establish manuscript equivalence or authorize extraction.
+`SpaceAGORAEDG.jl` is the optional, experimental implementation of the typed
+energy-depletion guidance used by SpaceAGORA. The core facade is
+`SpaceAGORA.EDGServices`, contract `v"1.0.0"`. This separation follows the
+[optional adapter standard](adapter_contract.md). It changes where numerical
+kernels live; it does not establish manuscript equivalence or make the
+controller flight-qualified. The [user guide](../user/edg_guidance.md) explains
+the scientific policy and its current limits.
 
-`packages/gnc/README.md` records this future domain boundary. It contains no
-installable EDG package, and the shared optional-package helper has no EDG
-target. The current folder organization does not move guidance code or change
-its runtime ownership. Complete the qualification and interface work below
-before adding a package checkout or installation command.
+## Ownership
 
-The inventory below uses core commit
-[`f9eb5f13`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/f9eb5f13cf2f19f4327abb358d22513960bef23f).
-The experimental comparison uses draft
-[PR251](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/251) at
-[`6888f007`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/6888f007db34c14e9431bddd968442873e80cee8),
-whose base is `Gen-EDG` at `8d86d5edf2cfd459d9467047b0ddd29b90328a02`, not this
-core revision. These are source observations, not an accepted combined tree.
-Refresh this comparison against the scientifically accepted revision before
-implementing the interface.
+| Responsibility | Owner |
+|---|---|
+| Public configuration, state, guidance/control model and angle-command types | SpaceAGORA; existing type identities and constructors are retained. |
+| Heat-rate and heat-load decisions, structural restriction, targeting, candidate planning, passage heat, guidance and control decisions | Eight source files in SpaceAGORAEDG. |
+| Observation copies, atmosphere, epoch, frames, gravity and vehicle queries | SpaceAGORA, behind the versioned facade. |
+| Integrator, heat integrals, event roots, solver masks, callback order, output and panel actuation | SpaceAGORA. |
+| Fresh-run initialization, per-passage bookkeeping and shared guidance/control state | Core lifecycle hooks, operating on the run's own EDG state. |
+| Older E-EDG/T-EDG bridge routes | Retained in core; shared typed numerical calls forward to the optional provider. |
 
-## Existing ownership to preserve
+The private core `typed_edg/algorithms.jl` is a compatibility dispatcher. Its
+explicit `COMPATIBILITY_FUNCTIONS` inventory forwards existing helper names to
+the companion; it contains no second implementation of the eight kernels.
+Core source gates reject a numerical implementation added back to that owner.
 
-The ownership audit used the revision cited above; paths in the table follow
-the current source grouping and are relative to core. The existing `EDGServices` module is
-private: its name does not make it the versioned facade required by the standard.
+## Supported calls and values
 
-| Responsibility | Current owner | Boundary decision |
-|---|---|---|
-| Public EDG configuration, state and guidance model identities | `src/models/gnc/guidance/aerobraking/typed_edg/guidance_models.jl` | Retain the existing exported type identities and construction path in core; do not define duplicate types in a companion. |
-| Prediction, heat and structural constraints, targeting and command decisions | Six kernels included by `src/models/gnc/guidance/aerobraking/typed_edg/algorithms.jl` | Candidate domain implementation for later extraction, after scientific acceptance. |
-| Physical-state projections, atmosphere and frame queries | `src/models/gnc/guidance/aerobraking/typed_edg/services.jl` | Keep implementation in core; expose only reviewed value projections and query operations needed by the accepted algorithm. |
-| Model callbacks and panel actuation | `src/models/gnc/control/targeting_control.jl` and the guidance model wrapper | Core invokes the selected algorithm and applies its validated command to configured panel links. |
-| Fresh-run initialization and passage resets | `src/models/gnc/guidance/aerobraking/energy_depletion_lifecycle.jl`, `src/models/gnc/control/energy_depletion_lifecycle.jl` | Core schedules lifecycle events; one owner updates each shared EDG runtime. |
-| Integrator, physical heat integrals, event roots, atmosphere mask, solver tolerances and output saving | `src/orchestration/simulation/engine/` and `src/orchestration/simulation/callbacks/` | Remain core-owned. The adapter must not mutate their storage or install replacement phase handlers. |
-| Older E-EDG/T-EDG strategy and bridge paths | `src/models/gnc/guidance/aerobraking/e_edg/`, `t_edg/` and control bridge code | Outside the initial extraction scope; inventory their callers before changing any shared helper. |
+`IMPLEMENTED_FUNCTIONS` names `guidance_decision!` and `control_decision!`.
+Core invokes them with the existing immutable configuration, the run-owned
+mutable EDG state, a copied observation and a borrowed prediction context.
+`CONSUMED_SERVICES` lists the exact types and query operations used by the
+companion. The retained helper inventory supports compatibility routes and
+regression fixtures; it is not a general-purpose simulation API.
 
-The present algorithm still consumes `ODEParams`, `u`, spacecraft objects and
-private core modules. Re-exporting that whole module would expose mutable engine
-storage. The future facade must replace those accesses deliberately, with parity
-tests, rather than treating the current signatures as a stable external API.
+`control_decision!` returns the core-owned `EDGControlDecision`: an angle command
+in radians, an `apply` flag, a switch/cache action and diagnostics. The flag
+distinguishes an invalid-index no-op from a valid zero-angle command. A cache
+hit or a returned command does not certify scientific feasibility. Core applies
+the command to the configured non-root panel links.
 
-## Proposed supported interface
+Observations contain inertial position in metres, inertial velocity in m/s,
+mass in kg and copied cumulative per-link heat in J/cm². Spacecraft indices and
+controlled-link indices are 1-based. Position and velocity are immutable
+`SVector` values; heat and link collections are tuples. Geometry queries return
+only the masses, dimensions, reference areas, reflection coefficients and angles
+consumed by the kernels. Mutable physical geometry is never passed to the provider.
 
-Use one guidance-domain facade with the standard's version check, compatibility
-error and explicit implemented/consumed inventories. Its final name, symbols and
-version are to be selected in the implementation review. The operations below
-describe the proposed contract, not callable methods available today.
+| Service | Meaning |
+|---|---|
+| `planet_constants`, `thermal_parameters`, `entry_altitude_m`, `spacecraft_geometry` | Immutable value projections, with entry altitude in metres. |
+| `_edg_environment_state` | Current geodetic altitude, atmosphere and air-relative motion for a copied spacecraft observation. |
+| `_edg_targeting_prediction_environment` | The same physical conventions at an explicit inertial state and elapsed simulation time. |
+| `_edg_sample_prediction_atmosphere` | Altitude-only prediction at zero latitude/longitude; it is not interchangeable with a full trajectory query. |
+| `_edg_ephemeris_time`, `_edg_planet_frame_lpi`, `frame_state` | Configured epoch and frame services; `l_pi` maps inertial components to planet-fixed components. |
+| `gravity_acceleration` | The configured central/J2 and N-body acceleration, preserving the existing predictor's arithmetic. |
+| `density_scale_height`, `_edg_targeting_control_clock` | Existing density-model fallback and callback-grid semantics. |
 
-| Operation | Inputs | Result and permitted effects |
-|---|---|---|
-| Preflight | EDG configuration, spacecraft/link mapping, callback periods and execution capabilities | Validate supported combinations before output creation or stepping; no scientific feasibility claim. |
-| Initialize | Run-owned EDG runtime and initial observation | Reset plan/history according to the reconciled lifecycle; establish any required passage baselines without resetting physical integrals. |
-| Passage transition | Spacecraft index, event time, boundary kind, direction and copied observation | Update only that spacecraft's plan/history; deliver once to the runtime shared by guidance and control. |
-| Guidance update | Immutable observation, configuration, run-owned EDG runtime and scoped prediction services | Select mode and update bracket/target state; return a diagnostic snapshot. No link rotation or trajectory-state write. |
-| Control update | The same ownership inputs at the configured control tick | Return an apply flag, the core-owned panel-AoA command, switch/cache status and diagnostic snapshot; core applies the command. |
+Environment values use metres, kg/m³, kelvin, m/s and pascals; molecular speed
+ratio is dimensionless. Heat rate is W/cm² and specific energy is J/kg. Frame
+queries use the configured epoch plus elapsed time. Atmosphere queries use
+elapsed time. Winds are east/north/up; airspeed uses spacecraft velocity
+relative to the rotating planet minus atmospheric velocity, including the
+rotation transport term.
 
-The control result should preserve the distinction already present in
-`EDGControlDecision`: whether to apply a command, the command itself and what the
-switch planner did. A successful computation or cache hit is not evidence that a
-trajectory meets its constraints. Reuse the existing core command identity where
-appropriate; do not return a mutable view of runtime state.
+## Prediction capability and state lifetime
 
-An observation must identify the 1-based spacecraft and controlled links, elapsed
-simulation time in seconds, inertial position in metres, inertial velocity in
-metres/second, mass in kilograms and copied per-panel cumulative heat in J/cm².
-Environment observations must label geodetic altitude in metres, density in
-kg/m³, temperature in kelvin, airspeed in metres/second, dimensionless molecular
-speed ratio and dynamic pressure in pascals. AoA is in radians; heat rate is
-W/cm²; specific energy is J/kg. Missing values and invalid samples need explicit
-status, preserving the accepted algorithm's existing handling rather than
-silently inventing replacements.
+`AbstractPredictionContext` is an opaque, synchronous, call-scoped capability.
+Only the facade query functions are supported. Ordinary property access is
+refused, and the query closure checks expiry before accessing the core. Core
+revokes each lease in a `finally` block, including when a kernel throws. Retaining
+a handle does not extend its lifetime. Julia reflection into private fields or
+modules is outside this interface; the facade is an ownership boundary, not a
+security sandbox.
 
-Core must distinguish simulation time from ephemeris time. Existing live and
-trajectory queries use the configured epoch plus elapsed time for frames and the
-elapsed time for atmosphere queries. Local atmosphere wind is east/north/up;
-airspeed is spacecraft velocity relative to the rotating planet minus atmosphere
-velocity. `l_pi` maps inertial components to planet-fixed components. Preserve
-these conventions and the rotation transport term. The altitude-only prediction
-helper currently queries zero latitude/longitude; it is not interchangeable with
-the full trajectory query.
+The capability does not expose `ODEParams`, `shared_buffers`, the live state,
+mutable geometry, an atmosphere reseeding operation or solver controls. Existing
+atmosphere caches and RNG behavior remain core-owned and use the configured
+query path. Packaging introduces no new prediction instance, seed or cache
+policy. Any future change to those semantics needs its own scientific review.
 
-Prediction services should take explicit state/time values and a run-scoped,
-opaque environment context. Inventory frame/atmosphere queries, configured gravity
-evaluation, per-link aerodynamic evaluation and vehicle geometry projections.
-Retain core implementations of shared physics; do not copy them into the adapter.
-The facade must specify query side effects, atmosphere caches and RNG ownership:
-a predictor must not gain direct access to `shared_buffers`, mutate geometry, or
-silently reseed a live atmosphere. Separate prediction instances or replayable
-samples require a reviewed equivalence decision if they change existing query
-semantics. Call-scoped borrowed service handles must not escape their run.
+EDG may update its own run-owned plan, counters and diagnostic state. Under the
+default `run_simulation` isolation, core deep-copies the configuration while
+preserving the shared state between paired guidance and control. Separate runs
+receive separate state. `isolate_state=false` means caller-owned state with fresh
+initialization; it does not resume a prior passage. Checkpoint writing and resume
+remain refused because they do not persist the complete EDG state.
 
-## State ownership and lifecycle
+Core owns normal callback periods, lifecycle scheduling and physical integration.
+The geodetic EDG entry/exit observer owns passage heat baselines; the solver's
+spherical atmosphere phase boundary remains a separate concept. Neither the
+package move nor a diagnostic snapshot changes the physical cumulative heat
+integral, callback ordering, root settings, limits or 3 Hz scientific cases.
 
-Core retains the public configuration/model/state types and creates the run's
-configuration. The EDG implementation may mutate only its run-owned algorithm
-state through the agreed contract. Paired guidance and control must share that
-same state within a run; separate runs and supported concurrent samples must not
-share it. Current `run_simulation` isolation deep-copies configuration while
-preserving that within-run relationship. Explicit `isolate_state=false` means
-caller ownership and fresh initialization, not implicit resume.
+## Installation and errors
 
-Current preflight checks require state-vector lengths to match spacecraft count,
-at most one EDG guidance and one EDG control model, matching paired configuration
-and shared state, and a guidance partner for targeting control. Maximum-depletion
-control can operate alone and then owns initialization/reset. Preserve these
-guards unless a separately reviewed feature deliberately changes them. Record
-any additional adapter scratch arrays and RNGs as per-run resources; define
-cleanup if a later implementation allocates external resources. There is no
-need for a global provider registry or a dynamics-owner stepping loop.
+The [installation guide](../user/installation_environment.md) describes the
+optional `edg` target and the exact pair recorded in package metadata. Load
+`SpaceAGORAEDG` before running EDG. Non-EDG simulations can still load and run
+with core alone. Selecting an EDG model without its provider raises
+`EDGUnavailableError` during preflight, before output or stepping; it never
+silently selects another guidance law.
 
-The engine owns event scheduling and normal guidance/control periods. It supplies
-the correct spacecraft index and calls the adapter at those times; the adapter
-does not advance the physical trajectory. Core alone rotates the validated
-non-root panel links. EDG's current force/torque effector returns zero; the normal
-aerodynamic dynamics observe the resulting geometry. Preserve callback ordering,
-held-command activation, event save behavior and output sampling explicitly in
-the accepted integration. No period, threshold or solver setting changes as a
-side effect of packaging.
+The companion checks that the facade exists and requires exactly contract
+`v"1.0.0"` before including its algorithms. The extension repeats the version
+check during initialization and dispatch. An incompatible contract raises
+`CompatibilityError`; install a supported pair and start a fresh process.
+Core retains existing configuration, state pairing and panel-mapping validation.
+Prediction failures, unreachable targets and observed constraint violations keep
+their existing diagnostics and scientific meaning.
 
-### Main/experimental differences that must be reconciled
+## Evidence and limits
 
-| Topic | Inspected core | Experimental PR251 observation | Required decision before facade implementation |
-|---|---|---|---|
-| Passage plan lifetime | The engine's atmosphere transition invalidates cached plans, retaining counters/last telemetry; duplicate unchanged masks do not reset again. | Branch bookkeeping adds per-panel geodetic entry/exit heat snapshots and retains its branch's scheduling policy. | Specify exactly which boundary invalidates a plan and which captures/finalizes heat, including coincident events, duplicate delivery, start-inside, poles and multiple passages. Do not equate the spherical phase boundary with the geodetic EDG gate. |
-| Heat quantity | The typed decision path reads cumulative controlled-link heat. | Planning uses the maximum of individual panel increments for the current passage; physical heat and existing telemetry remain cumulative. | Qualify the passage accounting and its transfer to current main. Never subtract a maximum baseline from a maximum current load, or reset physical heat integrals. |
-| Checkpoints | Preflight rejects both checkpoint writing and resume because EDG history is absent. | Initialization explicitly rejects nonzero-time resume without passage baselines/history. | Keep current core's refusal until a separately versioned complete history format and continuation tests exist; this proposal grants no checkpoint support. |
-| Scientific policy | Current typed kernels and lifecycle are the executable baseline. | Applied-profile, terminal/event, passage-constraint and sensitivity acceptance remain open. | Select one reviewed scientific baseline, integrate it with current main and retain discriminators before moving code. Do not choose equations or cadence in this document. |
+The extracted baseline is the reviewed PR289/current-main integration recorded
+in the companion's `provenance/extraction.json`. That record preserves original
+file hashes and identifies the service substitutions. Numerical ownership tests,
+the existing equation, targeting, heat, event and lifecycle regressions,
+core-only failure tests, both package load orders and a short analytic-atmosphere
+run exercise the software boundary. Native reference campaigns and their exact
+settings remain separate evidence; an installation test does not qualify them.
 
-## Error behavior
-
-An incompatible contract must fail before adapter methods or optional libraries
-become available, and be checked again during runtime initialization. Missing
-providers and unsupported capabilities must produce a clear setup error, not
-activate a different algorithm. Invalid configuration, ownership or panel mapping
-must fail before actuation. Preserve current checkpoint refusal.
-
-Prediction failure, an unreachable target, a sampled constraint exceedance and
-absence of a valid command are distinct outcomes. Preserve the scientifically
-accepted mode fallback and command law, accompanied by structured diagnostics;
-do not introduce a new generic low-drag override or classify a sampled failure as
-proof of global infeasibility. Programmer errors must remain errors. Existing
-legacy exception fallback behavior must be inventoried before any change in
-propagation policy. A rejected compatibility load requires a fresh process.
-
-## Acceptance sequence and evidence
-
-| Stage | Required evidence | Status of this preparation |
-|---|---|---|
-| Scientific baseline | Exact accepted source, cases, settings and manuscript interpretation; applied commands, terminal/event certificates, passage constraints and sensitivity evidence. Retain historical results with their original labels. | Pending separate scientific review; no new acceptance here. |
-| Current-main reconciliation | Explicit resolution of the differences above; source review and unchanged scientific tolerances; existing ownership, lifecycle, wind-relative and strategy-parity regressions plus the accepted branch's heat/predictor discriminators. | Not performed by this document. |
-| Public boundary | Explicit bindings, exact version refusal, no private engine/storage access; state/time/unit fixtures and unsupported-mode errors. Extend `test/unit/adapter_contract_tests.jl` to the new facade only when implemented. | Proposed. Existing shared tests already cover HYPR and external propagation. |
-| Lifecycle and isolation | Fresh/reused configurations, shared paired state, control-only case, two spacecraft, independent concurrent runs, duplicate/coincident transitions, start-inside/at-boundary, two passages and checkpoint refusal. Verify physical heat and noncontrolled geometry stay core-owned. | Use current lifecycle tests as a baseline; add reconciled passage cases. |
-| External installation | Declared dependencies and exact qualified source pair; fresh core-first/adapter-first loading, repeated initialization, early incompatibility refusal, core-only isolation and one end-to-end configuration/run/result test. Require native validation for any supported native atmosphere path. | Future adapter work. |
-| Extraction | Publish reviewed core facade, qualify adapter against it, then pin that adapter in mandatory current-core CI. Preserve type identities, source history, licenses and fixtures; remove the in-tree implementation only after both repositories pass. | Blocked on preceding stages; no extraction authorized by this design. |
-
-Tests of module shape establish interface conformance, not scientific validity.
-The initial scope excludes moving the legacy bridge paths, redesigning EDG
-equations, changing controller settings, enabling checkpoints or claiming new
-concurrency support. Those require their own evidence and review.
+The initial package is experimental. Exact journal reproduction, continuous-family
+optimality, flight use, new checkpoint support and new concurrency guarantees
+are not established by this extraction. Existing observed violations remain
+violations; no threshold or scientific setting is relaxed to pass packaging tests.

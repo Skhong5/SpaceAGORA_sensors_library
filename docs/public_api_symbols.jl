@@ -56,6 +56,7 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :SaveField, rendered = "SpaceAGORA.SaveField"),
             (owner = :SpaceAGORA, symbol = :default_save_fields, rendered = "SpaceAGORA.default_save_fields"),
             (owner = :SpaceAGORA, symbol = :MaxwellianHeat, rendered = "SpaceAGORA.MaxwellianHeat"),
+            (owner = :SpaceAGORA, symbol = :AerodynamicCoefficientfM, rendered = "SpaceAGORA.AerodynamicCoefficientfM"),
             (owner = :SpaceAGORA, symbol = :InverseSquaredGravityModel, rendered = "SpaceAGORA.InverseSquaredGravityModel"),
             (owner = :SpaceAGORA, symbol = :InverseSquaredJ2GravityModel, rendered = "SpaceAGORA.InverseSquaredJ2GravityModel"),
             (owner = :SpaceAGORA, symbol = :NBodyGravityModel, rendered = "SpaceAGORA.NBodyGravityModel"),
@@ -94,7 +95,8 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :visualizer_available, rendered = "SpaceAGORA.visualizer_available"),
             (owner = :SpaceAGORA, symbol = :VisualizerUnavailableError, rendered = "SpaceAGORA.VisualizerUnavailableError"),
             (owner = :SpaceAGORA, symbol = :export_viewer_payload, rendered = "SpaceAGORA.export_viewer_payload"),
-            (owner = :SpaceAGORA, symbol = :ExternalPropagationServices, rendered = "SpaceAGORA.ExternalPropagationServices")
+            (owner = :SpaceAGORA, symbol = :ExternalPropagationServices, rendered = "SpaceAGORA.ExternalPropagationServices"),
+            (owner = :SpaceAGORA, symbol = :EDGServices, rendered = "SpaceAGORA.EDGServices")
         ]
     ),
     (

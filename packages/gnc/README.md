@@ -1,16 +1,18 @@
 # Guidance, navigation and control packages
 
-This directory records the intended home for optional GNC integrations. It does
-not currently contain an installable EDG package. Energy-depletion guidance and
-its simulation lifecycle remain in SpaceAGORA core.
+`SpaceAGORAEDG.jl` is the optional, experimental energy-depletion guidance
+implementation. The shared optional-package command installs its reviewed source
+pair in a separate environment; the companion remains an independent repository.
+Load both packages before selecting an EDG model. See the
+[installation guide](../../docs/src/user/installation_environment.md) for the
+`edg` target and the [package boundary](../../docs/src/maintainer/edg_adapter_boundary.md)
+for ownership, compatibility and scientific limits.
 
-A future extraction needs a supported, versioned service boundary, clear
-ownership of guidance state and commands, and scientific qualification of the
-implementation being moved. The [EDG boundary preparation](../../docs/src/maintainer/edg_adapter_boundary.md)
-records those decisions and unresolved comparisons; creating this directory
-does not resolve them or change the controller's behavior.
+SpaceAGORA retains public configuration/model types, physical dynamics, lifecycle
+and actuation. The companion owns the eight numerical guidance/control kernels.
+Their service boundary does not expose the physical integrator or mutable vehicle
+geometry, and it does not claim journal reproduction or flight qualification.
 
 HYPR's source checkout is under [robotics/](../robotics/README.md), although it
-also supplies spacecraft RPO planning. Its existing integration remains the
-supported route for that capability. There is no `edg` target in the shared
-optional-package command and no placeholder Julia package to install here.
+also supplies spacecraft rendezvous planning. That remains its supported entry
+point; domain grouping does not duplicate its implementation under GNC.

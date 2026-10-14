@@ -54,6 +54,13 @@ This contract defines how canonical source files are classified and what is forb
 3. Guidance files must not include control source files directly.
 4. Strategy selection contracts are mission-owned in `src/orchestration/mission/operations/aerobraking_policy/*`.
 5. Propulsive maneuver guidance/control coupling must use typed command buffers; guidance must not mutate thruster runtime state directly.
+6. The typed EDG numerical kernels live in the optional `SpaceAGORAEDG.jl` package.
+   Core `typed_edg/algorithms.jl` is a compatibility dispatcher, not an include
+   aggregator: it must contain exactly the declared package forwarders and no
+   numerical implementations. The source-completeness and EDG ownership gates
+   enforce that exact inventory. Core physical services include only their
+   reviewed `adapter_queries.jl` capability wrapper; the companion receives no
+   raw integrator state or mutable vehicle geometry.
 
 ## Experimental Interface Set
 1. `experimental/vehicle/resources/resources.jl`

@@ -507,3 +507,50 @@ end
     p3 = cache.positions_j2000_m[idx + 2, body_idx]
     return _interp_vec3_catmull_rom(p0, p1, p2, p3, tau)
 end
+
+
+"""Return configured third-body acceleration at an arbitrary ephemeris epoch."""
+function nbody_acceleration_ii_at_epoch(
+    model::NBodyGravityModel,
+    pos_ii::SVector{3, Float64},
+    param::ODEParams,
+    et::Float64,
+)::SVector{3, Float64}
+    primary_body_name = _spice_query_name(model.primary_body_name)
+    nbody_cache_entry = param.shared_buffers.nbody_ephemeris_cache[]
+    spice_rhs_memo_enabled = param.shared_buffers.spice_rhs_memo_enabled[]
+    spice_rhs_memo = param.shared_buffers.spice_rhs_memo
+    counter = param.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls
+    positions_ii = SVector{3, Float64}[]
+
+    for (k, body_name) in pairs(model.body_names)
+        body_name_spice = _spice_query_name(body_name)
+        pos_primary_body_j2000_m = if nbody_cache_entry isa NBodyEphemerisCache
+            cached = _nbody_body_position_from_cache_j2000_m(
+                nbody_cache_entry,
+                et,
+                body_name_spice,
+                primary_body_name,
+            )
+            cached === nothing ? _nbody_body_position_from_spice_j2000_m(
+                body_name_spice,
+                et,
+                primary_body_name,
+                spice_rhs_memo_enabled,
+                spice_rhs_memo,
+                counter,
+            ) : cached
+        else
+            _nbody_body_position_from_spice_j2000_m(
+                body_name_spice,
+                et,
+                primary_body_name,
+                spice_rhs_memo_enabled,
+                spice_rhs_memo,
+                counter,
+            )
+        end
+        push!(positions_ii, pos_primary_body_j2000_m)
+    end
+    return _nbody_acceleration_from_positions(model, pos_ii, positions_ii)
+end

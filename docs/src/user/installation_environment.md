@@ -55,7 +55,7 @@ See the [Odyssey walkthrough](../tutorials/odyssey_surrogate.md).
 ### Optional package commands
 
 From a SpaceAGORA Git clone, a shared helper manages the optional repositories
-under `packages/robotics/`. It uses Julia's standard library and command-line Git
+under `packages/robotics/` and `packages/gnc/`. It uses Julia's standard library and command-line Git
 for source inspection and checkout; it does not require loading SpaceAGORA first.
 
 ```sh
@@ -65,7 +65,7 @@ julia --startup-file=no scripts/optional_packages.jl check hypr
 julia --startup-file=no scripts/optional_packages.jl setup hypr /path/to/hypr-env
 ```
 
-The selectors are `hypr` and `mujoco`. `status` reports the checkouts; `checkout`
+The selectors are `hypr`, `mujoco` and `edg`. `status` reports the checkouts; `checkout`
 acquires the selected source at its recorded Git revision; `check` verifies its
 revision, package identity, version and clean state. It does not run scientific
 or native tests. `setup` also performs checkout and verification, then calls the
@@ -131,6 +131,66 @@ for standalone commands and overrides. Start with [Orbital Scenes with MuJoCo](m
 the frame conventions, ownership rules and complete examples. The supported connection is documented in
 [External propagation services](../maintainer/external_propagation_services.md)
 and the shared [optional adapter standard](../maintainer/adapter_contract.md).
+
+### Optional energy-depletion guidance
+
+SpaceAGORAEDG contains the experimental energy-depletion planning implementation.
+Its linked checkout belongs in `packages/gnc/SpaceAGORAEDG.jl`. SpaceAGORA owns the
+simulation state, callback schedule, accumulated heat and application of panel
+commands; the companion computes decisions through `EDGServices` contract 1.0.0.
+
+For a core revision that records a published EDG companion pin:
+
+```sh
+julia --startup-file=no scripts/optional_packages.jl setup edg /path/to/edg-env
+julia --startup-file=no --project=/path/to/edg-env
+```
+
+Load both packages before creating an EDG mission:
+
+```julia
+using SpaceAGORA, SpaceAGORAEDG
+SpaceAGORA.EDGServices.require_provider()
+```
+
+The CLI preserves the prepared EDG environment for the built-in EDG examples.
+Start it with `--project=/path/to/edg-env`, or set
+`SPACEAGORA_EDG_ENV=/path/to/edg-env`. With `--visualize`, the selected visualizer
+environment must also declare SpaceAGORAEDG; this avoids launching a mission
+with only one of its required companions.
+
+The installer checks the recorded revision and package identity, then creates a
+separate environment using this core checkout. An absent pin, incompatible
+service contract or missing provider raises an error. It does not select a
+different guidance method or install a provider merely because core was loaded.
+The standalone companion installer instead uses its recorded immutable core
+revision. See the companion's `docs/installation.md` for that route and explicit
+local development overrides.
+
+Installation and load-order checks establish that the packages connect. They do
+not establish flight readiness or full reproduction of the EDG study. The
+approved experimental cases retain the original 3 Hz guidance/control rates and
+original heat and structural limits. Known sampled constraint violations remain
+reported as violations. Native validation still needs the identified GRAM and
+SPICE assets. The native-free Odyssey surrogate exercise is a separate example
+with its own documented configuration, not a substitute for that campaign.
+
+The existing numerical EDG suites continue to run in both normal and coverage
+CI, with the companion required. The parent coverage gate also collects the
+companion kernels at the existing thresholds and rejects missing measurements;
+extracting a file does not remove it from that gate. A separate core-only check verifies that
+loading SpaceAGORA without EDG remains possible. To reproduce those tests in an
+isolated development environment:
+
+```sh
+julia --startup-file=no scripts/setup_edg.jl /path/to/edg-test-env
+julia --startup-file=no --project=/path/to/edg-test-env test/runtests.jl
+```
+
+The test setup retains the core's dependency versions and leaves its tracked
+project files unchanged. `SPACEAGORA_EDG_PATH=/absolute/path/to/SpaceAGORAEDG.jl`
+is an explicit development override for this test helper; it is not a release
+pin. Full suites may require the other documented optional packages and assets.
 
 ### `docs/`
 

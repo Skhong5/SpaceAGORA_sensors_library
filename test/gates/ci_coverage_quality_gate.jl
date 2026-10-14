@@ -1,6 +1,7 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const SRC_ROOT = joinpath(REPO_ROOT, "src")
-const SOURCE_ROOTS = (SRC_ROOT, joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"))
+const EDG_SRC_ROOT = joinpath(REPO_ROOT, "packages", "gnc", "SpaceAGORAEDG.jl", "src")
+const SOURCE_ROOTS = (SRC_ROOT, joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"), EDG_SRC_ROOT)
 
 using Printf
 
@@ -313,9 +314,26 @@ function enforce_gate(summaries::Vector{CoverageSummary})
     end
 end
 
+# The extracted kernels retain the same coverage thresholds as their old core
+# paths. Missing companion artifacts must not silently shrink the denominator.
+function require_edg_coverage(summaries; source_root::String=EDG_SRC_ROOT,
+                              repo_root::String=REPO_ROOT)
+    isdir(source_root) || error("Pinned EDG source is absent from the coverage gate: $source_root")
+    expected = String[]
+    for (root, _, files) in walkdir(source_root), file in files
+        endswith(file, ".jl") && push!(expected, relpath(joinpath(root, file), repo_root))
+    end
+    isempty(expected) && error("Pinned EDG source contains no Julia files")
+    measured = Set(summary.path for summary in summaries)
+    missing = sort!(filter(path -> !(path in measured), expected))
+    isempty(missing) || error("EDG source has no coverage artifact: " * join(missing, ", "))
+    return nothing
+end
+
 function run_coverage_quality_gate()
     cov_files = list_active_cov_files()
     summaries = summarize_coverage(cov_files)
+    require_edg_coverage(summaries)
     print_summary(summaries)
     enforce_gate(summaries)
     println("coverage_quality_gate_ok")

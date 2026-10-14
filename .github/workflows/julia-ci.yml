@@ -198,7 +198,7 @@ jobs:
 
   tests:
     if: always()
-    needs: [plan, test-shards, optional-hypr-installation, optional-mujoco-installation, optional-visualizer-installation]
+    needs: [plan, test-shards, optional-hypr-installation, optional-mujoco-installation, optional-visualizer-installation, optional-edg-installation]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -224,7 +224,7 @@ jobs:
       - name: Enforce test shard success
         run: |
           echo "test-shards result=${{ needs.test-shards.result }}"
-          if [ "${{ needs.test-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ] || [ "${{ needs.optional-mujoco-installation.result }}" != "success" ] || [ "${{ needs.optional-visualizer-installation.result }}" != "success" ]; then
+          if [ "${{ needs.test-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ] || [ "${{ needs.optional-mujoco-installation.result }}" != "success" ] || [ "${{ needs.optional-visualizer-installation.result }}" != "success" ] || [ "${{ needs.optional-edg-installation.result }}" != "success" ]; then
             echo "Test shards failed or were cancelled."
             exit 1
           fi
@@ -287,12 +287,12 @@ jobs:
         if: always()
         run: |
           shard_no=$(printf '%02d' "${SHARD##*-}")
-          find src packages/SpaceAGORAHYPR/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
+          find src packages/SpaceAGORAHYPR/src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
             mv "$f" "$(printf '%s' "$f" | sed -E "s/\.([0-9]+)\.cov\$/.9${shard_no}\1.cov/")"
           done
-          echo "coverage files: $(find src packages/SpaceAGORAHYPR/src -name '*.cov' | wc -l)"
+          echo "coverage files: $(find src packages/SpaceAGORAHYPR/src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' | wc -l)"
           mkdir -p "$SPACEAGORA_CI_SHARD_REPORT_DIR"
-          find src packages/SpaceAGORAHYPR/src -name '*.cov' -print0 | tar --null -czf "$SPACEAGORA_CI_SHARD_REPORT_DIR/coverage.tgz" -T -
+          find src packages/SpaceAGORAHYPR/src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | tar --null -czf "$SPACEAGORA_CI_SHARD_REPORT_DIR/coverage.tgz" -T -
         env:
           SHARD: ${{ matrix.shard }}
 
@@ -307,7 +307,7 @@ jobs:
 
   coverage-quality-gate:
     if: always()
-    needs: [plan, coverage-shards, optional-hypr-installation, optional-visualizer-installation]
+    needs: [plan, coverage-shards, optional-hypr-installation, optional-visualizer-installation, optional-edg-installation]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -329,6 +329,14 @@ jobs:
           # GRAM retrieval supplies its own scoped credential explicitly.
           persist-credentials: false
 
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - name: Verify pinned EDG coverage source
+        run: julia --startup-file=no scripts/optional_packages.jl checkout edg
+
       - name: Download shard reports
         uses: actions/download-artifact@v8
         with:
@@ -341,21 +349,30 @@ jobs:
         run: python3 .github/scripts/ci_shard_verify.py tests shard-reports
 
       - name: Download optional installation coverage
+        if: always()
         uses: actions/download-artifact@v8
         with:
           name: hypr-installation-coverage
           path: hypr-installation-coverage
 
       - name: Download visualizer installation coverage
+        if: always()
         uses: actions/download-artifact@v8
         with:
           name: visualizer-installation-coverage
           path: visualizer-installation-coverage
 
+      - name: Download EDG installation coverage
+        if: always()
+        uses: actions/download-artifact@v8
+        with:
+          name: edg-installation-coverage
+          path: edg-installation-coverage
+
       - name: Enforce coverage shard success
         run: |
           echo "coverage-shards result=${{ needs.coverage-shards.result }}"
-          if [ "${{ needs.coverage-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ] || [ "${{ needs.optional-visualizer-installation.result }}" != "success" ]; then
+          if [ "${{ needs.coverage-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ] || [ "${{ needs.optional-visualizer-installation.result }}" != "success" ] || [ "${{ needs.optional-edg-installation.result }}" != "success" ]; then
             echo "Coverage shards failed or were cancelled."
             exit 1
           fi
@@ -371,13 +388,8 @@ jobs:
           done
           tar -xzmf hypr-installation-coverage/coverage.tgz
           tar -xzmf visualizer-installation-coverage/coverage.tgz
-          echo "coverage files: $(find src packages/SpaceAGORAHYPR/src -name '*.cov' | wc -l)"
-
-      - name: Setup Julia
-        if: always()
-        uses: julia-actions/setup-julia@v2
-        with:
-          version: "1.12"
+          tar -xzmf edg-installation-coverage/coverage.tgz
+          echo "coverage files: $(find src packages/SpaceAGORAHYPR/src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' | wc -l)"
 
       - name: Coverage quality gate
         if: always()
@@ -900,11 +912,11 @@ jobs:
       - name: Retain installation coverage
         if: always()
         run: |
-          find src packages/SpaceAGORAHYPR/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
+          find src packages/SpaceAGORAHYPR/src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
             mv "$f" "$(printf '%s' "$f" | sed -E 's/\.([0-9]+)\.cov$/.88\1.cov/')"
           done
           mkdir -p hypr-installation-coverage
-          find src packages/SpaceAGORAHYPR/src -name '*.cov' -print0 | tar --null -czf hypr-installation-coverage/coverage.tgz -T -
+          find src packages/SpaceAGORAHYPR/src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | tar --null -czf hypr-installation-coverage/coverage.tgz -T -
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -1045,5 +1057,58 @@ jobs:
         with:
           name: visualizer-installation-coverage
           path: visualizer-installation-coverage/coverage.tgz
+          retention-days: 3
+          if-no-files-found: error
+
+  # Absence is exercised only in the dedicated core-only environment. Existing
+  # runtime/native/coverage suites above continue to execute every EDG test.
+  optional-edg-installation:
+    needs: depot
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      JULIA_NUM_THREADS: "2"
+      JULIA_LOAD_PATH: "@:@stdlib"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          gram: none
+          gramsuite-smoke: "false"
+          edg: "false"
+          token: ${{ github.token }}
+      - name: Installer safeguards
+        run: julia --startup-file=no test/optional_packages_tests.jl
+      - name: Prepare core-only and EDG environments
+        env:
+          JULIA_PKG_PRECOMPILE_AUTO: "0"
+        run: julia --startup-file=no --project=@stdlib test/optional_edg/setup.jl "$RUNNER_TEMP/edg-installations"
+      - name: Core without the EDG provider
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/core" test/optional_edg/core.jl
+      - name: Both EDG load orders
+        run: |
+          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional_edg/optional.jl core-first
+          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional_edg/optional.jl edg-first
+      - name: EDG CLI environment and child process
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional_edg/cli.jl
+      - name: EDG example smoke child environment
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional_edg/example_smoke.jl
+      - name: Companion tests
+        run: julia --startup-file=no --project="$RUNNER_TEMP/edg-installations/edg" -e 'using Pkg; Pkg.test("SpaceAGORAEDG")'
+      - name: Retain EDG integration coverage
+        if: always()
+        run: |
+          find src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
+            mv "$f" "$(printf '%s' "$f" | sed -E 's/\.([0-9]+)\.cov$/.66\1.cov/')"
+          done
+          mkdir -p edg-installation-coverage
+          find src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | tar --null -czf edg-installation-coverage/coverage.tgz -T -
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: edg-installation-coverage
+          path: edg-installation-coverage/coverage.tgz
           retention-days: 3
           if-no-files-found: error

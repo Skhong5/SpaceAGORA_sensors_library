@@ -11,7 +11,7 @@ module ControlHooks
     using ..GravityEffectors: aerobraking_gravity_force_ii
     using ..AerodynamicEffectors: aerodynamic_coefficient_fM
     using ..GuidanceHooks: AerobrakingGuidanceInput, dispatch_aerobraking_guidance
-    using ..GuidanceHooks: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
+    using ..GuidanceHooks: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState, AerobrakingEnergyDepletionGuidanceModel
     using ..GuidanceHooks: ApolloDescentConfig, ApolloDescentState, _validate_descent_config, _descent_indices
     using ..AbstractTypes: AbstractTerrainModel
     using ..TerrainModels: NoTerrainModel, DEMTerrainModel
@@ -82,6 +82,7 @@ module ControlHooks
     include(joinpath(@__DIR__, "heat_load_control.jl"))
     include(joinpath(@__DIR__, "struct_load_control.jl"))
     include(joinpath(@__DIR__, "targeting_control.jl"))
+    include(joinpath(@__DIR__, "edg_heat_accounting.jl"))
     include(joinpath(@__DIR__, "energy_depletion_lifecycle.jl"))
     include(joinpath(@__DIR__, "rpo_mpc", "lqmpc.jl"))
     include(joinpath(@__DIR__, "rpo_mpc", "rpo_control_types.jl"))

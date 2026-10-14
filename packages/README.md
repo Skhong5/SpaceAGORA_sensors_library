@@ -8,11 +8,13 @@ Loading SpaceAGORA alone does not activate these packages.
 | Location | Role |
 | --- | --- |
 | [robotics/](robotics/README.md) | Pinned HYPR and MuJoCo repositories for motion planning and mechanical scenes. HYPR supports both spacecraft RPO and robot-arm planning. |
-| [gnc/](gnc/README.md) | Guidance-domain boundary notes. EDG remains implemented in core; there is no installable EDG companion here. |
+| [gnc/](gnc/README.md) | Pinned SpaceAGORAEDG repository for experimental energy-depletion guidance; core retains simulation lifecycle and actuation. |
+| [VisualizerSource.toml](VisualizerSource.toml) | Source pin for the separate SpaceAGORAVisualizer installer; the renderer is not stored in this tree. |
 | [SpaceAGORAHYPR/](SpaceAGORAHYPR/README.md) | Existing compatibility package that loads SpaceAGORA and HYPR together. Its location and role are unchanged. |
 
-GRAMSuite keeps its existing submodule at `data/GRAMSuite.jl`. The viewer
-remains at `viewer/`. Neither is moved by this layout.
+GRAMSuite keeps its submodule at `data/GRAMSuite.jl`. The viewer implementation
+lives in SpaceAGORAVisualizer; core retains the scene contract and compatibility
+entrypoints.
 
 ## Choose an integration
 
@@ -25,7 +27,7 @@ julia --startup-file=no scripts/optional_packages.jl check hypr
 julia --startup-file=no scripts/optional_packages.jl setup hypr /path/to/hypr-env
 ```
 
-Replace `hypr` with `mujoco` to select the MuJoCo companion. `status` reports the
+Replace `hypr` with `mujoco` or `edg` to select another companion. `status` reports the
 optional checkouts. `checkout` acquires only the selected repository at the
 recorded Git revision, without recursively initializing other submodules.
 `check` verifies its revision, package identity, version and clean state; it is

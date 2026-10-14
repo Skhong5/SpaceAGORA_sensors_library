@@ -1,81 +1,138 @@
 module EDGOwnershipChecks
 # These checks cover the typed route as well as the legacy boundary gate.
 const OWNER = "src/models/gnc/guidance/aerobraking/typed_edg/"
-const EXPECTED = Dict(
-    "_edg_control_sat_state" => "src/models/gnc/guidance/aerobraking/typed_edg/services.jl",
-    "_edg_control_pos_vel_mass" => "src/models/gnc/guidance/aerobraking/typed_edg/services.jl",
-    "_edg_environment_state" => "src/models/gnc/guidance/aerobraking/typed_edg/services.jl",
-    "_edg_in_drag_passage" => "src/models/gnc/guidance/aerobraking/typed_edg/services.jl",
-    "_edg_ephemeris_time" => "src/models/gnc/guidance/aerobraking/typed_edg/services.jl",
-    "_edg_planet_frame_lpi" => "src/models/gnc/guidance/aerobraking/typed_edg/services.jl",
-    "_edg_targeting_prediction_environment" => "src/models/gnc/guidance/aerobraking/typed_edg/services.jl",
-    "_edg_sample_prediction_atmosphere" => "src/models/gnc/guidance/aerobraking/typed_edg/services.jl",
-    "_edg_heat_load_scale_height" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_total_ref_area" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_predict_mass" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_max_heat_load_for_links" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_weighted_aero_coefficients" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_heat_load_coefficients" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_eccentric_anomaly_from_true" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_mean_anomaly_from_true" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_drag_passage_duration" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_prediction_time_grid" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_closed_form_heat_load_trajectory" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_integrated_heat_load_trajectory" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_heat_load_lambdas" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_heat_load_alpha_profile" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_heat_load_track_env" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_constrained_heat_load_alpha_profile" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_profile_heat_rates" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_integrate_series" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_profile_heat_load" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_first_low_alpha_interval_indices" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_first_two_switch_alpha_profile" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_low_alpha_switch_window" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_balanced_tpbvp_heat_load_window" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_padded_heat_load_window" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_heat_load_profile_for_k" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_solve_heat_load_switches" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_edg_heat_load_low_drag_active" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-    "_energy_depletion_heat_rate_calc" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_rate.jl",
-    "_energy_depletion_heatrate_root_alpha" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_rate.jl",
-    "_edg_maxwellian_heat_rate" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_rate.jl",
-    "_edg_heat_rate_alpha" => "src/models/gnc/guidance/aerobraking/typed_edg/heat_rate.jl",
-    "_energy_depletion_struct_drag_area" => "src/models/gnc/guidance/aerobraking/typed_edg/structural_load.jl",
-    "_energy_depletion_struct_load_root_alpha" => "src/models/gnc/guidance/aerobraking/typed_edg/structural_load.jl",
-    "_edg_structural_alpha" => "src/models/gnc/guidance/aerobraking/typed_edg/structural_load.jl",
-    "_edg_recompute_switches!" => "src/models/gnc/guidance/aerobraking/typed_edg/angle_decision.jl",
-    "_edg_base_alpha" => "src/models/gnc/guidance/aerobraking/typed_edg/angle_decision.jl",
-    "_edg_command_alpha!" => "src/models/gnc/guidance/aerobraking/typed_edg/angle_decision.jl",
-    "_edg_orbit_metrics_from_rv" => "src/models/gnc/guidance/aerobraking/typed_edg/targeting.jl",
-    "_edg_target_energy_from_apoapsis" => "src/models/gnc/guidance/aerobraking/typed_edg/targeting.jl",
-    "_edg_targeting_constrained_alpha" => "src/models/gnc/guidance/aerobraking/typed_edg/targeting.jl",
-    "_edg_targeting_prediction_time_grid" => "src/models/gnc/guidance/aerobraking/typed_edg/targeting.jl",
-    "_edg_targeting_aero_acceleration" => "src/models/gnc/guidance/aerobraking/typed_edg/targeting.jl",
-    "_edg_integrated_targeting_trajectory" => "src/models/gnc/guidance/aerobraking/typed_edg/targeting.jl",
-    "_edg_integrated_max_energy_depletion_trajectory" => "src/models/gnc/guidance/aerobraking/typed_edg/targeting.jl",
-    "_edg_predict_targeting_outcome" => "src/models/gnc/guidance/aerobraking/typed_edg/targeting.jl",
-    "_edg_predict_max_energy_depletion_outcome" => "src/models/gnc/guidance/aerobraking/typed_edg/targeting.jl",
-    "_edg_targeting_switch_outcomes" => "src/models/gnc/guidance/aerobraking/typed_edg/targeting.jl",
-    "_edg_targeting_bracket_outcomes" => "src/models/gnc/guidance/aerobraking/typed_edg/targeting.jl",
-    "_edg_targeting_outcome_with_heat_load" => "src/models/gnc/guidance/aerobraking/typed_edg/targeting.jl",
-    "_edg_certify_targeting_candidates" => "src/models/gnc/guidance/aerobraking/typed_edg/targeting.jl",
-    "_edg_disable_uncertified_targeting!" => "src/models/gnc/guidance/aerobraking/typed_edg/targeting.jl",
-    "_edg_solve_targeting_switch" => "src/models/gnc/guidance/aerobraking/typed_edg/targeting.jl",
-    "_edg_interpolate_bracket_value" => "src/models/gnc/guidance/aerobraking/typed_edg/guidance_decision.jl",
-    "_edg_target_energy_from_reachable_bracket" => "src/models/gnc/guidance/aerobraking/typed_edg/guidance_decision.jl",
-    "_edg_set_targeting_fallback!" => "src/models/gnc/guidance/aerobraking/typed_edg/guidance_decision.jl",
-    "_edg_run_target_energy_bracketing!" => "src/models/gnc/guidance/aerobraking/typed_edg/guidance_decision.jl",
+const KERNELS = (
+    "_edg_at_control_tick",
+    "_edg_balanced_tpbvp_heat_load_window",
+    "_edg_base_alpha",
+    "_edg_candidate_constraint_sample",
+    "_edg_candidate_energy_mapping",
+    "_edg_certify_targeting_candidates",
+    "_edg_chebyshev4",
+    "_edg_chebyshev44",
+    "_edg_chebyshev_t0_t4",
+    "_edg_closed_form_correction_fit",
+    "_edg_closed_form_density",
+    "_edg_closed_form_density_fit",
+    "_edg_closed_form_f1_f2",
+    "_edg_closed_form_heat_load_trajectory",
+    "_edg_command_alpha!",
+    "_edg_constrained_heat_load_alpha_profile",
+    "_edg_constraint_min_alpha",
+    "_edg_constraint_status",
+    "_edg_controlled_panel_area",
+    "_edg_controlled_ref_area",
+    "_edg_corrected_target_energy_from_apoapsis",
+    "_edg_disable_uncertified_targeting!",
+    "_edg_drag_passage_duration",
+    "_edg_dynamic_spacecraft_aero_coefficients",
+    "_edg_eccentric_anomaly_from_true",
+    "_edg_exact_targeting_exit",
+    "_edg_first_low_alpha_interval_indices",
+    "_edg_first_two_switch_alpha_profile",
+    "_edg_heat_budget_status",
+    "_edg_heat_load_alpha_profile",
+    "_edg_heat_load_coefficients",
+    "_edg_heat_load_costates",
+    "_edg_heat_load_lambdas",
+    "_edg_heat_load_low_drag_active",
+    "_edg_heat_load_profile_for_k",
+    "_edg_heat_load_scale_height",
+    "_edg_heat_load_security_required",
+    "_edg_heat_load_shooting_profile",
+    "_edg_heat_load_shooting_stage",
+    "_edg_heat_load_track_env",
+    "_edg_heat_rate_alpha",
+    "_edg_integrate_heat_load_shooting",
+    "_edg_integrate_series",
+    "_edg_integrated_heat_load_trajectory",
+    "_edg_integrated_max_energy_depletion_trajectory",
+    "_edg_integrated_targeting_trajectory",
+    "_edg_interpolate_bracket_value",
+    "_edg_journal_plate_coefficients",
+    "_edg_journal_spacecraft_aero_coefficients",
+    "_edg_journal_targeting_plan",
+    "_edg_low_alpha_switch_window",
+    "_edg_max_heat_load_for_links",
+    "_edg_maxwellian_heat_rate",
+    "_edg_mean_anomaly_from_true",
+    "_edg_orbit_metrics_from_rv",
+    "_edg_ordered_feasible_prefix",
+    "_edg_outbound_exit_index",
+    "_edg_padded_heat_load_window",
+    "_edg_pass_heat_load_for_links",
+    "_edg_predict_mass",
+    "_edg_predict_max_energy_depletion_outcome",
+    "_edg_predict_targeting_outcome",
+    "_edg_prediction_advance",
+    "_edg_prediction_event",
+    "_edg_prediction_gravity_acceleration",
+    "_edg_prediction_step",
+    "_edg_prediction_time_grid",
+    "_edg_profile_heat_load",
+    "_edg_profile_heat_rates",
+    "_edg_recompute_second_heat_load_switch",
+    "_edg_recompute_switches!",
+    "_edg_remaining_closed_form_heat_load_trajectory",
+    "_edg_remaining_closed_form_reference",
+    "_edg_replan_due",
+    "_edg_run_target_energy_bracketing!",
+    "_edg_select_mapped_candidate",
+    "_edg_set_targeting_fallback!",
+    "_edg_solve_heat_load_switches",
+    "_edg_solve_targeting_switch",
+    "_edg_structural_alpha",
+    "_edg_switch_due",
+    "_edg_target_energy_from_apoapsis",
+    "_edg_target_energy_from_reachable_bracket",
+    "_edg_targeting_aero_acceleration",
+    "_edg_targeting_bracket_outcomes",
+    "_edg_targeting_candidate_certificate",
+    "_edg_targeting_constrained_alpha",
+    "_edg_targeting_control_period",
+    "_edg_targeting_outcome_with_heat_load",
+    "_edg_targeting_prediction_time_grid",
+    "_edg_targeting_switch_outcomes",
+    "_edg_targeting_switch_solution",
+    "_edg_total_ref_area",
+    "_edg_update_heat_load_security!",
+    "_edg_vacuum_apoapsis_correction",
+    "_edg_vacuum_drag_passage_exit",
+    "_edg_weighted_aero_coefficients",
+    "_energy_depletion_heat_rate_calc",
+    "_energy_depletion_heatrate_root_alpha",
+    "_energy_depletion_struct_drag_area",
+    "_energy_depletion_struct_load_root_alpha",
+    "control_decision!",
+    "guidance_decision!",
 )
-
-# Decision entry points have the same ownership rules as the retained kernels.
-EXPECTED["control_decision!"] = OWNER * "angle_decision.jl"
-EXPECTED["guidance_decision!"] = OWNER * "guidance_decision.jl"
+const EXPECTED = Dict(name => OWNER * "algorithms.jl" for name in KERNELS)
+EXPECTED["_edg_control_sat_state"] = OWNER * "services.jl"
+EXPECTED["_edg_control_pos_vel_mass"] = OWNER * "services.jl"
+EXPECTED["_edg_environment_state"] = OWNER * "services.jl"
+EXPECTED["_edg_in_drag_passage"] = OWNER * "services.jl"
+EXPECTED["_edg_ephemeris_time"] = OWNER * "services.jl"
+EXPECTED["_edg_planet_frame_lpi"] = OWNER * "services.jl"
+EXPECTED["_edg_targeting_prediction_environment"] = OWNER * "services.jl"
+EXPECTED["_edg_sample_prediction_atmosphere"] = OWNER * "services.jl"
+const RETIRED_KERNEL_FILES = ("heat_rate.jl", "heat_load.jl", "structural_load.jl",
+    "targeting.jl", "targeting_plan.jl", "pass_heat.jl", "guidance_decision.jl", "angle_decision.jl")
+const SERVICE_OVERLOADS = Set(("_edg_environment_state", "_edg_in_drag_passage", "_edg_ephemeris_time",
+    "_edg_planet_frame_lpi", "_edg_targeting_prediction_environment", "_edg_sample_prediction_atmosphere"))
+const FACADE_FILE = "src/models/gnc/guidance/adapters/edg/services.jl"
+const FACADE_FORWARD = Dict(
+    "_edg_environment_state" => :(_environment(u, p, t, i)),
+    "_edg_in_drag_passage" => :(_in_passage(p, env)),
+    "_edg_ephemeris_time" => :(_epoch(p, t)),
+    "_edg_planet_frame_lpi" => :(_frame(p, t)),
+    "_edg_targeting_prediction_environment" => :(_trajectory(p, r, v, t)),
+    "_edg_sample_prediction_atmosphere" => :(_atmosphere(p, h, t)),
+)
 
 const FORWARD_CALLS = Dict(
     "_edg_recompute_switches!" => :(EDGAlgorithms._edg_recompute_switches!(model.config, model.state, p, env, spacecraft, pos, vel, mass, heat_load_j_cm2, t, i)),
     "_edg_base_alpha" => :(EDGAlgorithms._edg_base_alpha(model.config, model.state, t, i)),
-    "_edg_command_alpha!" => :(EDGAlgorithms._edg_command_alpha!(model.config, model.state, p, model.aoa_effector.controlled_panel_links, env, spacecraft, base_alpha, heat_load_j_cm2, heat_load_low_drag_active, i)),
+    "_edg_command_alpha!" => :(EDGAlgorithms._edg_command_alpha!(model.config, model.state, p, model.aoa_effector.controlled_panel_links, env, spacecraft, base_alpha, heat_load_j_cm2, heat_load_low_drag_active, i; pass_heat_load_j_cm2=pass_heat_load_j_cm2)),
     "_edg_heat_load_low_drag_active" => :(EDGAlgorithms._edg_heat_load_low_drag_active(model.config, model.state, t, i)),
     "_edg_interpolate_bracket_value" => :(_edg_algorithms()._edg_interpolate_bracket_value(exit_energy, energy_min, energy_max, value_at_min, value_at_max)),
     "_edg_target_energy_from_reachable_bracket" => :(_edg_algorithms()._edg_target_energy_from_reachable_bracket(planet, target_apoapsis_radius_m, energy_min, energy_max, periapsis_at_min, periapsis_at_max)),
@@ -166,13 +223,28 @@ _syntax(ex) = ex isa Expr ?
     Expr(ex.head, (_syntax(arg) for arg in ex.args if !(arg isa LineNumberNode))...) : ex
 
 function aggregator_violations(source)
-    siblings = ("heat_rate.jl", "heat_load.jl", "structural_load.jl",
-                "targeting.jl", "guidance_decision.jl", "angle_decision.jl")
-    expected = [_syntax(Meta.parse("include(joinpath(@__DIR__, $(repr(file))))"))
-                for file in siblings]
-    actual = map(_syntax, _include_calls(source))
-    return actual == expected ? String[] :
-        ["$(OWNER)algorithms.jl: expected exactly the six ordered sibling includes"]
+    errors = String[]
+    isempty(_include_calls(source)) || push!(errors, "$(OWNER)algorithms.jl: numerical source includes are forbidden")
+    inventory = Any[]
+    definitions = Dict{String,Int}()
+    _walk(Meta.parseall(source)) do ex
+        if ex.head == :const && ex.args[1] isa Expr && ex.args[1].head == :(=) &&
+                ex.args[1].args[1] == :COMPATIBILITY_FUNCTIONS
+            push!(inventory, _syntax(ex.args[1].args[2]))
+        end
+        definition = _definition(ex)
+        definition === nothing && return
+        name, _, _ = definition
+        expected = Meta.parse("$name(args...; kwargs...) = _invoke_kernel(:$name, args...; kwargs...)")
+        name in KERNELS && _syntax(ex) == _syntax(expected) ||
+            push!(errors, "$(OWNER)algorithms.jl: $name must be an exact package forwarder")
+        definitions[name] = get(definitions, name, 0) + 1
+    end
+    expected_inventory = Expr(:tuple, (QuoteNode(Symbol(name)) for name in KERNELS)...)
+    inventory == [expected_inventory] || push!(errors, "$(OWNER)algorithms.jl: compatibility inventory must match all declared kernels")
+    all(get(definitions, name, 0) == 1 for name in KERNELS) ||
+        push!(errors, "$(OWNER)algorithms.jl: expected exactly one forwarder for every kernel")
+    return errors
 end
 
 # Runtime checks complement the source inventory: aliases share the same
@@ -230,6 +302,10 @@ function violations(sources)
             haskey(EXPECTED, name) || return
             if path == EXPECTED[name] && callee isa Symbol
                 counts[name] += 1
+            elseif path == OWNER * "adapter_queries.jl" && name in SERVICE_OVERLOADS && callee isa Symbol
+                counts[name] += 1
+            elseif path == FACADE_FILE && haskey(FACADE_FORWARD, name) && callee isa Symbol
+                _syntax(body isa Expr && body.head == :block ? only(filter(x -> !(x isa LineNumberNode), body.args)) : body) == FACADE_FORWARD[name] || push!(errors, "$path: $name must forward its capability query unchanged")
             elseif path in WRAPPER_FILES && callee isa Symbol
                 _forwarder_only(body, name) ||
                     push!(errors, "$path: $name must be an exact forwarding compatibility method")
@@ -238,12 +314,21 @@ function violations(sources)
             end
         end
     end
+    services = OWNER * "services.jl"
+    if haskey(sources, services)
+        _syntax.(_include_calls(sources[services])) == [_syntax(:(include(joinpath(@__DIR__, "adapter_queries.jl"))))] ||
+            push!(errors, "$services: only the reviewed adapter_queries.jl include is allowed")
+    end
     aggregator = OWNER * "algorithms.jl"
     haskey(sources, aggregator) ?
         append!(errors, aggregator_violations(sources[aggregator])) :
         push!(errors, "$aggregator: missing aggregator")
     for (name, count) in counts
-        count == 1 || push!(errors, "$(EXPECTED[name]): expected one $name definition, found $count")
+        expected_count = name in SERVICE_OVERLOADS ? 2 : 1
+        count == expected_count || push!(errors, "$(EXPECTED[name]): expected $expected_count $name definitions, found $count")
+    end
+    for file in RETIRED_KERNEL_FILES
+        haskey(sources, OWNER * file) && push!(errors, "$(OWNER)$file: numerical implementation belongs to SpaceAGORAEDG")
     end
     return sort!(errors)
 end

@@ -303,8 +303,10 @@ The MuJoCo adapter consumes the versioned
 [`ExternalPropagationServices`](../maintainer/external_propagation_services.md)
 facade; core retains shared gravity, configuration and run lifecycle. These
 integrations follow the [optional adapter standard](../maintainer/adapter_contract.md)
-with separate domain protocols and state ownership. `packages/gnc/` records the
-future guidance boundary without adding an EDG package; EDG remains in core. GRAMSuite retains its existing submodule at `data/GRAMSuite.jl`.
+with separate domain protocols and state ownership. The experimental EDG companion
+belongs under `packages/gnc/` and consumes [`EDGServices`](../maintainer/edg_adapter_boundary.md).
+Core retains its public model identities, physical dynamics and lifecycle.
+GRAMSuite retains its existing submodule at `data/GRAMSuite.jl`.
 The other folders hold tooling, data, examples and documentation. "Owner" below is the
 file or module that defines the behaviour; other code should call it rather
 than copy it. Within the grouped source rows, file names in the third column
@@ -325,9 +327,9 @@ are relative to the directory in the first column.
 | `src/models/gnc/` | Guidance, navigation and control hooks, planner contracts and lifecycle, shared calculations, baseline algorithms and HYPR compatibility types | the three hook files named above; planner contracts: `interfaces/`; planning and lifecycle: `planning/rpo/`; arm references: `planning/robot_arm/`; shared kernels: `planning/common/`; optional-adapter services: `planning/adapters/`; aerobraking bridges: `internal/` |
 | `src/foundation/core/` | Abstract types and shared model contracts, reference frames, geodesy and quaternions | frames: `interfaces/reference_system.jl`; quaternions: `numerics/quaternion_utils.jl`; run buffers and composition belong to simulation orchestration |
 | `src/foundation/assets/` | Manifest lookup and availability checks, RPO station assets and the Odyssey surrogate | reusable manifest records and local checks: `asset_catalog.jl`; CLI report types and presentation remain in the CLI; see [Assets & Modes](../assets.md) |
-| `ext/` | The `GRAMSuite` extension: native GRAM density, SPICE-backed ephemerides, native-free fixed-grid adapter methods | activates when both packages are loaded; see [GRAMSuite Setup](gramsuite_setup.md) |
+| `ext/` | Optional package connections for GRAMSuite, the visualizer and EDG | Each extension activates when its package pair is loaded; see [GRAMSuite Setup](gramsuite_setup.md) and the [optional adapter standard](../maintainer/adapter_contract.md). |
 | `packages/robotics/` | Pinned submodules for HYPR and SpaceAGORAMuJoCo; each remains an independently maintained repository | `scripts/optional_packages.jl` selects and verifies source, then delegates to its installer; see [Optional package commands](installation_environment.md#Optional-package-commands). |
-| `packages/gnc/` | Documentation for a future guidance-domain package boundary | EDG remains in core; see [EDG boundary preparation](../maintainer/edg_adapter_boundary.md). |
+| `packages/gnc/` | Optional guidance-domain packages, including experimental SpaceAGORAEDG | The companion owns numerical kernels; core retains model types, lifecycle and physics through [EDGServices](../maintainer/edg_adapter_boundary.md). |
 | `packages/SpaceAGORAHYPR/` | Compatibility package and source pin for external HYPR | `src/SpaceAGORAHYPR.jl` checks and aliases the external adapter; `HYPRSource.toml` pins its revision. Core services are defined in `src/models/gnc/planning/adapters/hypr/services.jl`. Install and load with the [RPO planner guide](rpo_planner_pilot.md#Installing-optional-HYPR). |
 | `examples/` | Runnable scenarios; `common.jl` is the shared bootstrap | primary scenario entrypoints; development viewer demos also live in `scripts/dev/viewer_demos/`; see the [Examples Catalog](examples_catalog.md) |
 | `templates/` | Starting files for a force/torque model, a density model and a control hook | copy one of these to begin an extension |

@@ -291,6 +291,18 @@ function _refresh_crossing_atmosphere_flags!(integrator, events)
     return nothing
 end
 
+# Internal convenience for focused passage tests and existing private callers.
+# Production wraps the complete original callback set after assembly.
+function get_edg_heat_callback(num_sats::Int; drag_callback=nothing)
+    callback = drag_callback
+    if callback !== nothing && !(callback isa VectorContinuousCallback)
+        callback = VectorContinuousCallback(callback.condition, callback.affect!, num_sats;
+            save_positions=callback.save_positions)
+    end
+    original = callback === nothing ? CallbackSet() : CallbackSet(callback)
+    return _edg_observe_heat_callbacks(original, num_sats)
+end
+
 function get_drag_state_callback(num_sats::Int)
     condition!(out, u, t, integrator) = begin
         @inbounds for i in 1:num_sats

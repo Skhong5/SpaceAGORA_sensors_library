@@ -6,7 +6,7 @@ binding_path(path::Tuple{Vararg{Symbol}}) = path
 resolve_binding(facade, path) = foldl(getproperty, binding_path(path); init=facade)
 
 @testset "Optional adapter facade conformance" begin
-    for facade in (SpaceAGORA.HYPRServices, SpaceAGORA.ExternalPropagationServices)
+    for facade in (SpaceAGORA.HYPRServices, SpaceAGORA.ExternalPropagationServices, SpaceAGORA.EDGServices)
         @testset "$(nameof(facade))" begin
             @test facade.CONTRACT_VERSION == v"1.0.0"
             @test facade.CompatibilityError <: Exception

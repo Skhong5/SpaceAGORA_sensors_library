@@ -13,7 +13,7 @@ function SimulationLifecycle.initialize_control!(c::AerobrakingEnergyDepletionCo
     return nothing
 end
 function SimulationLifecycle.atmosphere_transition!(c::AerobrakingEnergyDepletionControlModel, u, p, t, i, inside)
-    _edg_has_guidance_owner(c, p.args) || GuidanceHooks._edg_reset_pass!(c.state, i)
+    # The dedicated geodetic boundary callback owns EDG passage transitions.
     return nothing
 end
 

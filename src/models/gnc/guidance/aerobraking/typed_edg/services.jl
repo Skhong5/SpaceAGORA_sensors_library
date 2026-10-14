@@ -122,4 +122,27 @@ function _edg_sample_prediction_atmosphere(p::ODEParams, altitude::Float64, t_ab
     return max(0.0, rho), max(temperature, eps(Float64))
 end
 
+_edg_control_clock_entry(::Any) = nothing
+
+function _edg_targeting_control_clock(config, p::ODEParams)
+    model = p.args.control_model
+    periods = Float64[]
+    origins = Float64[]
+    for i in eachindex(model.control_effectors)
+        entry = _edg_control_clock_entry(model.control_effectors[i])
+        entry === nothing && continue
+        entry.config === config || continue
+        push!(periods, Float64(model.control_rates[i]))
+        push!(origins, Float64(entry.origin))
+    end
+    isempty(periods) && throw(ArgumentError("EDG prediction requires its configured control effector."))
+    all(x -> isfinite(x) && x > 0.0 && x == first(periods), periods) ||
+        throw(ArgumentError("EDG prediction requires one unambiguous positive control period."))
+    all(x -> isfinite(x) && x == first(origins), origins) ||
+        throw(ArgumentError("EDG prediction requires one finite control-clock origin."))
+    return (period=first(periods), origin=first(origins))
+end
+
+include(joinpath(@__DIR__, "adapter_queries.jl"))
+
 end # module EDGServices
