@@ -31,3 +31,10 @@ bridges remain available, with shared typed calculations forwarded to the
 companion. See the [EDG package boundary](../../../docs/src/reference/edg_adapter_boundary.md)
 for ownership and supported calls. This split does not establish numerical
 equivalence between the scientific formulations.
+
+Interlink scoring and terminal matching live in `control/interlink_scheduling.jl`.
+They choose actuation from a candidate
+graph; the graph and terminal metadata belong to vehicle models. Accepted-step
+callback lifecycle belongs to simulation orchestration, and the central laser
+force belongs to coupled dynamics. These responsibilities use the existing
+source domains.

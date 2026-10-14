@@ -142,6 +142,7 @@ end
 
 """Return whether any configured effector couples one satellite's dynamics to another's."""
 function _config_has_cross_satellite_coupling(args)::Bool
+    hasproperty(args, :interlink_model) && args.interlink_model !== nothing && return true
     for (model_name, effectors_name) in (
         (:dynamics_model, :dynamic_effectors),
         (:guidance_model, :guidance_effectors),
@@ -391,7 +392,8 @@ _without_gnc(sc::SimulationModel.SpacecraftModel) = SimulationModel.SpacecraftMo
     sc.joints, sc.links, sc.root, sc.instant_actuation, sc.dry_mass, sc.prop_mass, sc.inertia_tensor,
     sc.n_reaction_wheels, sc.n_thrusters, sc.initial_condition, sc.id,
     SimulationModel.GuidanceModel((), Float64[]), SimulationModel.NavigationModel((), Float64[]),
-    SimulationModel.ControlModel((), Float64[]), sc.attachments)
+    SimulationModel.ControlModel((), Float64[]), sc.attachments,
+    sc.n_terminal, sc.battery_energy_index, sc.tempurature_index)
 
 """
 Fold per-spacecraft GNC declarations (`SpacecraftModel` `guidance`/`navigation`/`control`) into the
@@ -560,10 +562,18 @@ function run_simulation(
     _validate_articulated_spacecraft!(args, solver_mode)
     _validate_attachments!(args, solver_mode)
     _validate_external_propagators!(args, solver_mode)
+    _validate_interlinks!(args, solver_mode)
     _validate_orientation_inertia!(args)
     _validate_thermal_model_support!(args)
     _validate_ephemerides_support!(args)
     _warn_density_without_atmospheric_effector(args)
+    if args.interlink_model !== nothing
+        empty!(args.interlink_model.history)
+        graph = args.interlink_model.graph
+        fill!(graph.available, false)
+        fill!(graph.active, false)
+        args.scheduling_policy_model.matching = nothing
+    end
     if !isempty(extra_callback_factories)
         extra_callbacks = _callbacks_from_factories(extra_callbacks, extra_callback_factories, args)
     end
@@ -631,6 +641,10 @@ function run_simulation(
         priority_callbacks=priority_callbacks,
         record_saved_values=return_results
     ) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
+    if args.interlink_model !== nothing
+        callbacks = CallbackSet(callbacks, SimulationModel.interlink_scheduler_callback(
+            candidate_force=SimulationModel.force_on_endpoint))
+    end
     ephemerides_model = args.environment_model.ephemerides_model
     et_start = SimulationModel.ephemerides_time_seconds(args.initial_time, ephemerides_model)
     p.shared_buffers.et_start[] = et_start
@@ -663,6 +677,13 @@ function run_simulation(
                     "Checkpoint was written by gravity_backbone_split and cannot be resumed with solver mode $(solver_mode)."
                 ))
             end
+            if solver_mode != :gravity_backbone_split
+                has_interlinks = args.interlink_model !== nothing
+                all(sc -> hasproperty(sc, :laser_dv) == has_interlinks &&
+                    hasproperty(sc, :laser_delta_sma) == has_interlinks, ckpt.u.sc) ||
+                    throw(ArgumentError("Checkpoint interlink state does not match the configured interlink_model; resume with the same interlink setting."))
+            end
+            _restore_interlink_checkpoint_state!(args, ckpt, p.is_active)
             t_start = ckpt.t
             u_start = ckpt.u
             _initialize_in_atmosphere_flags!(p, u_start)
@@ -968,7 +989,7 @@ function run_simulation(
             end
             t_cursor = Float64(seg_sol.t[end])
             u_cursor = deepcopy(seg_sol.u[end])
-            _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode))
+            _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode); is_active=p.is_active)
             checkpoint_written = true
             if string(seg_sol.retcode) != "Success" || !_gravity_backbone_time_reached(t_cursor, t_next)
                 break
