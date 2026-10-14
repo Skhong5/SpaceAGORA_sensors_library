@@ -1,10 +1,21 @@
 using TOML
 import ..AssetCatalog
 
+const ASSET_STATES = AssetCatalog.ASSET_STATES
+
 """
     AssetCheckItem
 
 Single asset-root status entry produced by `check_assets()`.
+
+`state` is one of `:usable`, `:missing`, `:empty`, `:pointer_only` or
+`:invalid`. `available` is `true` exactly when `state === :usable`; it is kept
+so existing readers keep working. `reason` explains any other state in one
+sentence, including what to do about it.
+
+The original six-argument positional constructor and keyword construction
+without `state` derive the state from `available`. An explicit state must be
+one of the supported values and agree with `available`.
 """
 Base.@kwdef struct AssetCheckItem
     name::String
@@ -13,7 +24,21 @@ Base.@kwdef struct AssetCheckItem
     available::Bool
     required::Bool
     detail::String = ""
+    state::Symbol = convert(Bool, available) ? :usable : :missing
+    reason::String = ""
+
+    function AssetCheckItem(name, scope, path, available, required, detail, state, reason)
+        ready = convert(Bool, available)
+        status = convert(Symbol, state)
+        status in ASSET_STATES || throw(ArgumentError("Unknown asset readiness state $(repr(status)) for $(name)."))
+        ready == (status === :usable) || throw(ArgumentError("Asset availability must agree with readiness state $(repr(status)) for $(name)."))
+        return new(name, scope, path, ready, required, detail, status, reason)
+    end
 end
+
+AssetCheckItem(name, scope, path, available, required, detail) =
+    AssetCheckItem(name, scope, path, available, required, detail,
+                   convert(Bool, available) ? :usable : :missing, "")
 
 """
     AssetCheckReport
@@ -35,14 +60,16 @@ Base.@kwdef struct AssetManifestEntry
     detail::String = ""
 end
 
-@inline function _asset_item(name::String, scope::String, path::String; available::Bool, required::Bool, detail::String="")
+@inline function _asset_item(name::String, scope::String, path::String; state::Symbol, required::Bool, detail::String="", reason::String="")
     return AssetCheckItem(
         name=name,
         scope=scope,
         path=path,
-        available=available,
+        available=state === :usable,
         required=required,
-        detail=detail
+        detail=detail,
+        state=state,
+        reason=reason,
     )
 end
 
@@ -54,15 +81,21 @@ end
 @inline _manifest_entry_path(repo_root::String, entry::AssetManifestEntry) =
     AssetCatalog.manifest_entry_path(repo_root, entry)
 
+@inline _manifest_entry_readiness(repo_root::String, entry::AssetManifestEntry) =
+    AssetCatalog.manifest_entry_readiness(repo_root, entry)
+
 @inline _manifest_entry_available(repo_root::String, entry::AssetManifestEntry) =
     AssetCatalog.manifest_entry_available(repo_root, entry)
 
 """
     check_assets(; repo_root=REPO_ROOT, manifest_path=joinpath(repo_root, "data", "assets_manifest.toml")) -> AssetCheckReport
 
-Inspect the standard SpaceAGORA asset roots and return a typed availability
-report for baseline, optional, and high-fidelity assets. By default, inspect
-the package repository root, not the current working directory.
+Inspect the standard SpaceAGORA asset roots and return a typed readiness
+report for baseline, optional, and high-fidelity assets. Each item carries a
+`state` (`:usable`, `:missing`, `:empty`, `:pointer_only` or `:invalid`) and a
+`reason` for any state other than `:usable`. The check reads directory
+listings and file headers only; it never downloads. By default, inspect the
+package repository root, not the current working directory.
 """
 function check_assets(; repo_root::String=REPO_ROOT, manifest_path::String=joinpath(repo_root, "data", "assets_manifest.toml"))::AssetCheckReport
     report = AssetCatalog.check_assets(; repo_root, manifest_path)
@@ -72,21 +105,40 @@ function check_assets(; repo_root::String=REPO_ROOT, manifest_path::String=joinp
     )
 end
 
+_asset_status_label(item::AssetCheckItem) =
+    item.state === :usable ? "usable" :
+    replace(String(item.state), '_' => '-') * (item.required ? "-required" : "-optional")
+
+"""
+    asset_check_exit_status(report) -> Int
+
+`0` when every required entry is usable, `1` otherwise. Optional entries never
+change the exit status; their state is only reported.
+"""
+asset_check_exit_status(report::AssetCheckReport)::Int =
+    any(item -> item.required && item.state !== :usable, report.items) ? 1 : 0
+
 """
     render_asset_report(report; io=stdout)
 
-Render a human-readable asset status report.
+Render a human-readable asset readiness report. Each entry shows its status
+(`usable`, or its state suffixed with `-required` or `-optional`), its scope,
+path and licensing detail, and a `reason` line for any entry that is not
+usable. The report ends with a one-line summary.
 """
 function render_asset_report(report::AssetCheckReport; io::IO=stdout)
     println(io, "SpaceAGORA asset check")
     println(io, "repo_root=$(report.repo_root)")
     for item in report.items
-        status = item.available ? "available" : (item.required ? "missing-required" : "missing-optional")
-        println(io, "- $(item.name): $(status)")
+        println(io, "- $(item.name): $(_asset_status_label(item))")
         println(io, "  scope: $(item.scope)")
         println(io, "  path: $(item.path)")
         println(io, "  detail: $(item.detail)")
+        isempty(item.reason) || println(io, "  reason: $(item.reason)")
     end
+    usable = count(item -> item.state === :usable, report.items)
+    blocked = count(item -> item.required && item.state !== :usable, report.items)
+    println(io, "summary: $(usable) of $(length(report.items)) entries usable; $(blocked) required entries not usable")
     return nothing
 end
 

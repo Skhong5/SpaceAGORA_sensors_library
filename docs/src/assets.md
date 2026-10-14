@@ -116,13 +116,38 @@ Measured on a fresh `GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none`
 | CYGNSS and GRIFEX flight telemetry | no (gitignored) | per-person, granted by the PI; never commit or re-share | the mission studies that name them |
 
 `julia --project=. src/interfaces/cli/main.jl assets check` prints the same picture for
-the machine you are on: `available`, `missing-optional`, and the licensing
-class of each entry. One qualification: for directory entries the check only
-tests that the directory exists, so after a clone with `GIT_LFS_SKIP_SMUDGE=1`
-it reports `gram_surrogate_directory: available` while the seven `.jls` files
-are still Git LFS pointers; `git lfs ls-files` shows them with `-` instead of
-`*`, and `git lfs pull --include "data/GRAM_surrogate/*"` fetches them before a
-surrogate-backed benchmark.
+the machine you are on. Each entry reports one state and the licensing class:
+
+| State | Meaning |
+|---|---|
+| `usable` | a file holds non-pointer bytes, or a directory has at least one nonempty payload and no visible pointers (built-in entries are always usable) |
+| `missing-required`, `missing-optional` | the expected file or directory does not exist |
+| `empty-required`, `empty-optional` | the directory has no visible files to inspect |
+| `pointer-only-required`, `pointer-only-optional` | some or all files are undownloaded Git LFS pointers |
+| `invalid-required`, `invalid-optional` | the file is empty (0 bytes), or every visible file in the directory is empty |
+
+A `reason` line follows every entry that is not usable, and the report ends
+with a summary. The command exits with status 1 when a required entry is not
+usable and 0 otherwise; optional states only affect the report. Filesystem
+inspection errors, such as insufficient read permission, stop the check; this
+required/optional exit rule applies to completed reports. After a clone
+with `GIT_LFS_SKIP_SMUDGE=1`, for example, `gram_surrogate_directory` reports
+`pointer-only-optional` while the seven `.jls` files are still Git LFS
+pointers; `git lfs ls-files` shows them with `-` instead of `*`, and
+`git lfs pull --include "data/GRAM_surrogate/*"` fetches them before a
+surrogate-backed benchmark. Recovery guidance identifies the Git checkout
+that owns each pointer, including GRAMSuite submodules and linked assets.
+On Unix, the report includes a quoted shell command. On Windows, it lists the
+owning checkout and Git LFS include pattern as path values for the documented
+retrieval route, because command quoting depends on the selected shell.
+
+The check ignores hidden files and directories. It follows file symlinks and
+an asset root that is itself a directory symlink, but does not descend into
+nested directory symlinks. It reads directory listings, sizes and small file
+headers only; it never downloads. `usable` confirms this limited byte-presence
+check, not completeness, scientific validity or native readiness. A directory
+with both empty and nonempty payload files can therefore be `usable`. Use the
+named-preset `assets check --preset` route to validate grid contents.
 
 ### Verification reference data
 
@@ -140,7 +165,13 @@ The package-owned asset check distinguishes:
 
 - baseline onboarding availability
 - optional high-fidelity assets
-- paths that are missing but non-blocking for no-GRAM mode
+- required entries that prevent a successful asset check when missing, empty,
+  invalid or still Git LFS pointers
+- optional entries whose readiness is reported without failing the asset check
+
+The manifest also requires telemetry reference data for verification. Missing
+those references fails the asset check; it does not prevent a baseline no-GRAM
+simulation from running.
 
 Useful commands:
 
