@@ -813,12 +813,12 @@ end
                     "returns its components' stored winds"=>c->(c["presets"][1]["atmosphere"]["wind_returned"]="zero_vector"),
                     "finite, positive handover height_m"=>c->(c["presets"][1]["handover"]["height_m"]=-1.0),
                     "measured above the reference ellipsoid"=>c->(c["presets"][1]["handover"]["reference"]="areoid"),
-                    "handover rule must be"=>c->(c["presets"][1]["handover"]["rule"]="blend"),
-                    "outside its upper component"=>c->(c["presets"][1]["handover"]["height_m"]=30000.0),
-                    "outside its upper component"=>c->(c["presets"][1]["handover"]["height_m"]=260000.0),
-                    "not below its lower component"=>c->(c["presets"][1]["handover"]["height_m"]=81000.0),
+                    "handover rule of composite preset 'synthetic_descent@1.0.0' must be"=>c->(c["presets"][1]["handover"]["rule"]="blend"),
+                    "outside the range of its upper component"=>c->(c["presets"][1]["handover"]["height_m"]=30000.0),
+                    "outside the range of its upper component"=>c->(c["presets"][1]["handover"]["height_m"]=260000.0),
+                    "not below the top of its lower component"=>c->(c["presets"][1]["handover"]["height_m"]=81000.0),
                     "require errors outside their supported domain"=>c->(c["presets"][1]["domain"]["outside"]="clamp"),
-                    "domain top differs"=>c->(c["presets"][1]["domain"]["height_top_m"]=365000.0)]
+                    "domain top of composite preset 'synthetic_descent@1.0.0' differs"=>c->(c["presets"][1]["domain"]["height_top_m"]=365000.0)]
                 for (message,breakit) in rules
                     broken=deepcopy(catalog); breakit(broken); preset_write_toml(catalog_file,broken)
                     err=try SpaceAGORA.available_surrogate_presets(;catalog_file) catch e e end
@@ -830,4 +830,72 @@ end
         end
     end
     @test !any(x->occursin("libgram",lowercase(basename(x))),Libdl.dllist())
+end
+
+@testset "Malformed preset catalogs fail with ArgumentErrors" begin
+    # A catalog fails when it is read, with an ArgumentError that names the problem, whatever is malformed: a missing or
+    # mistyped table or field of any preset kind. Each case breaks one field of a copy of the shipped catalog.
+    template=TOML.parsefile(PRESET_ENV._SURROGATE_CATALOG)
+    at(id,version)=findfirst(p->p["id"]==id && p["version"]==version,template["presets"])
+    grid=at("odyssey_p20_frozen_v1","1.0.0"); near=at("mars_global_near_surface_p20_frozen_v1","1.2.0")
+    comp=at("mars_global_descent_p20_frozen_v1","1.0.0")
+    cases=Pair{String,Function}[
+        "Every surrogate catalog preset entry must be a table"=>c->(c["presets"][grid]="not a table"),
+        "needs a catalog_revision string"=>c->delete!(c,"catalog_revision"),
+        "needs a catalog_revision string"=>c->(c["catalog_revision"]=7),
+        "is malformed: KeyError: key \"planet\""=>c->delete!(c["presets"][grid],"planet"),
+        "is malformed: MethodError"=>c->(c["presets"][grid]["planet"]=7),
+        "is malformed: KeyError: key \"payload\""=>c->delete!(c["presets"][grid],"payload"),
+        "is malformed: MethodError"=>c->(c["presets"][grid]["payload"]="payload"),
+        "is malformed: KeyError: key \"sha256\""=>c->delete!(c["presets"][grid]["payload"],"sha256"),
+        "is malformed: MethodError"=>c->(c["presets"][grid]["atmosphere"]=[1,2]),
+        "is malformed: KeyError: key \"generation_config\""=>c->delete!(c["presets"][grid]["required_metadata"],"generation_config"),
+        "is malformed: KeyError: key \"step\""=>c->delete!(c["presets"][grid]["axes"]["altitude"],"step"),
+        "is malformed: KeyError: key \"distribution\""=>c->delete!(c["presets"][grid],"distribution"),
+        "require complete artifact publication identities"=>c->(c["presets"][grid]["distribution"]["urls"]="https://example.org/a.tar.gz"),
+        "needs its artifact_name"=>c->delete!(c["presets"][grid],"artifact_name"),
+        "needs its support table"=>c->delete!(c["presets"][grid],"support"),
+        "needs its support table"=>c->(c["presets"][grid]["support"]="validated"),
+        "is malformed: KeyError: key \"minimum_clearance_m\""=>c->delete!(c["presets"][near]["domain"],"minimum_clearance_m"),
+        "atmosphere fields of preset 'mars_global_near_surface_p20_frozen_v1@1.2.0' must be a list of field names"=>c->(c["presets"][near]["atmosphere"]["fields"]="density_kgm3"),
+        "returns its stored winds"=>c->delete!(c["presets"][near]["atmosphere"],"winds_available"),
+        "needs its atmosphere table"=>c->(c["presets"][comp]["atmosphere"]=[1,2]),
+        "needs its support table"=>c->(c["presets"][comp]["support"]=["validated"]),
+        "needs exactly two components"=>c->(c["presets"][comp]["components"][1]["role"]=1),
+        "returns its components' stored winds"=>c->delete!(c["presets"][comp]["atmosphere"],"winds_available"),
+        "atmosphere fields of preset 'mars_global_descent_p20_frozen_v1@1.0.0' must be a list of field names"=>c->(c["presets"][comp]["atmosphere"]["fields"]="density_kgm3")]
+    mktempdir() do dir
+        file=joinpath(dir,"catalog.toml")
+        for (message,breakit) in cases
+            broken=deepcopy(template); breakit(broken); preset_write_toml(file,broken)
+            err=try SpaceAGORA.available_surrogate_presets(;catalog_file=file) catch e e end
+            @test err isa ArgumentError && occursin(message,err.msg)
+        end
+        # A malformed entry is named by its position and identity.
+        broken=deepcopy(template); delete!(broken["presets"][grid],"payload"); preset_write_toml(file,broken)
+        err=try SpaceAGORA.available_surrogate_presets(;catalog_file=file) catch e e end
+        @test err isa ArgumentError && occursin("Surrogate catalog entry $grid ('odyssey_p20_frozen_v1@1.0.0') is malformed",err.msg)
+        # An unpublished preset may have no distribution record yet: it resolves from an explicit file, and its
+        # provenance records an empty distribution.
+        entry=deepcopy(template["presets"][grid]); delete!(entry,"distribution")
+        entry["id"]="synthetic_unpublished"; entry["release_enabled"]=false
+        entry["axes"]=Dict("altitude"=>Dict("start"=>100.,"step"=>160.,"count"=>2),"latitude"=>Dict("start"=>40.,"step"=>50.,"count"=>2),
+            "longitude"=>Dict("start"=>0.,"step"=>180.,"count"=>2))
+        payload=deepcopy(entry["required_metadata"])
+        payload["grid"]=Dict("alt_km"=>[100.,260.],"lat_deg"=>[40.,90.],"lon_deg"=>[0.,180.])
+        payload["fields"]=Dict(k=>fill(v,2,2,2) for (k,v) in zip(("density_kgm3","temperature_K","wind_ew_ms","wind_ns_ms","wind_up_ms"),(1e-8,180.,2.,3.,4.)))
+        payload_file=joinpath(dir,"payload.jls"); serialize(payload_file,payload)
+        entry["payload"]["sha256"]=preset_sha(payload_file); entry["payload"]["bytes"]=filesize(payload_file)
+        catalog=deepcopy(template); catalog["presets"]=[entry]; preset_write_toml(file,catalog)
+        artifacts_file=joinpath(dir,"Artifacts.toml"); preset_write_toml(artifacts_file,Dict())
+        resolved=SpaceAGORA.resolve_surrogate_preset("synthetic_unpublished";version="1.0.0",catalog_file=file,artifacts_file,
+            file=payload_file,allow_unreleased=true)
+        @test resolved.file==payload_file && resolved.provenance["distribution"]==Dict{String,Any}()
+        # A distribution record that is present must be a table.
+        entry["distribution"]="not yet"; preset_write_toml(file,catalog)
+        err=try SpaceAGORA.available_surrogate_presets(;catalog_file=file) catch e e end
+        @test err isa ArgumentError && occursin("distribution record of preset 'synthetic_unpublished@1.0.0' must be a table",err.msg)
+    end
+    # The shipped catalog is unchanged and still reads.
+    @test length(SpaceAGORA.available_surrogate_presets())==length(template["presets"])
 end

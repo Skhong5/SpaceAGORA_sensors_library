@@ -54,77 +54,120 @@ function _preset_catalog(path)
     bytes = read(path)
     catalog = TOML.parse(String(copy(bytes)))
     get(catalog, "schema_version", nothing) == 1 || _preset_error("Unsupported surrogate catalog schema.")
+    revision = get(catalog, "catalog_revision", nothing)
+    revision isa AbstractString && !isempty(revision) || _preset_error("The surrogate catalog needs a catalog_revision string.")
     entries = get(catalog, "presets", nothing)
     entries isa Vector || _preset_error("The surrogate catalog must contain preset entries.")
+    all(entry -> entry isa AbstractDict, entries) || _preset_error("Every surrogate catalog preset entry must be a table.")
     seen = Set{Tuple{String,String}}()
-    composites = Any[]
-    for entry in entries
-        id = get(entry, "id", ""); version = get(entry, "version", "")
-        occursin(r"^[a-z][a-z0-9_]*$", id) || _preset_error("Invalid surrogate preset ID '$id'.")
-        occursin(r"^\d+\.\d+\.\d+$", version) || _preset_error("Preset '$id' needs an exact release version; moving versions are unsupported.")
-        key = (id, version)
-        key ∉ seen || _preset_error("Duplicate preset/version '$id@$version' in catalog.")
-        push!(seen, key)
-        kind = _preset_kind(entry)
-        kind in _PRESET_KINDS || _preset_error("Preset '$id' has an unsupported kind '$kind'.")
-        _preset_planet(entry["planet"])
-        # A composite refers to other entries, which may come later in the file; it is checked once all are read.
-        kind == _COMPOSITE_KIND && (push!(composites, entry); continue)
-        payload = entry["payload"]
-        occursin(r"^[0-9a-f]{64}$", payload["sha256"]) || _preset_error("Invalid preset payload SHA256.")
-        payload["bytes"] isa Integer && payload["bytes"] > 0 || _preset_error("Invalid preset payload size.")
-        file = payload["file"]
-        file isa String && !isempty(file) && !isabspath(file) && !occursin('\\', file) &&
-            all(x -> x ∉ ("", ".", ".."), split(file, '/')) || _preset_error("Unsafe preset payload filename.")
-        get(entry, "release_enabled", nothing) isa Bool || _preset_error("Preset release_enabled must be explicit.")
-        get(entry["atmosphere"], "query_elapsed_time_applied", nothing) === false ||
-            _preset_error("Only explicitly frozen atmospheric presets are supported.")
-        atmosphere = entry["atmosphere"]; domain = entry["domain"]
-        required = entry["required_metadata"]; generation = required["generation_config"]
-        _preset_planet(required["planet"]) == _preset_planet(entry["planet"]) || _preset_error("Preset metadata planet is inconsistent.")
-        payload["format"] == required["format"] || _preset_error("Preset payload format is inconsistent.")
-        kind == "gram_grid" ? _preset_grid_domain(entry) : _preset_near_surface_domain(entry)
-        atmosphere["latitude"] == "geodetic" && generation["is_planetocentric"] === false && atmosphere["height"] == "ellipsoidal" || _preset_error("Preset coordinate datum is inconsistent or unsupported.")
-        for (public_name, native_name) in (("equatorial_radius_m","equatorial_radius_km"),("polar_radius_m","polar_radius_km"))
-            atmosphere[public_name] == 1000*generation[native_name] || _preset_error("Preset radii are inconsistent.")
-        end
-        epoch = match(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)Z$", atmosphere["epoch_utc"])
-        if kind == "gram_grid"
-            initial = required["initial_time"]
-            initial == generation["initial_time"] || _preset_error("Preset epoch metadata is inconsistent.")
-            epoch !== nothing && all(parse(Float64,epoch.captures[i]) == initial[k] for (i,k) in enumerate(("year","month","day","hour","minute","second"))) || _preset_error("Preset frozen epoch differs from its generation metadata.")
-        else
-            epoch !== nothing && atmosphere["epoch_utc"] == required["epoch_utc"] || _preset_error("Preset frozen epoch differs from its payload metadata.")
-        end
-        if entry["release_enabled"]
-            distribution = entry["distribution"]
-            occursin(r"^[0-9a-f]{40}$", distribution["git_tree_sha1"]) && occursin(r"^[0-9a-f]{64}$", distribution["archive_sha256"]) && !isempty(distribution["urls"]) || _preset_error("Released presets require complete artifact publication identities.")
+    for (n, entry) in enumerate(entries)
+        _preset_entry_checked(n, entry) do
+            id = get(entry, "id", ""); version = get(entry, "version", "")
+            occursin(r"^[a-z][a-z0-9_]*$", id) || _preset_error("Invalid surrogate preset ID '$id'.")
+            occursin(r"^\d+\.\d+\.\d+$", version) || _preset_error("Preset '$id' needs an exact release version; moving versions are unsupported.")
+            key = (id, version)
+            key ∉ seen || _preset_error("Duplicate preset/version '$id@$version' in catalog.")
+            push!(seen, key)
+            kind = _preset_kind(entry)
+            kind in _PRESET_KINDS || _preset_error("Preset '$id' has an unsupported kind '$kind'.")
+            _preset_planet(entry["planet"])
+            # A composite refers to other entries, which may come later in the file; it is checked once all are read.
+            kind == _COMPOSITE_KIND || _preset_payload_entry(entry, kind)
         end
     end
-    foreach(entry -> _preset_composite_entry(entry, entries), composites)
+    for (n, entry) in enumerate(entries)
+        _preset_kind(entry) == _COMPOSITE_KIND && _preset_entry_checked(() -> _preset_composite_entry(entry, entries), n, entry)
+    end
     return catalog, bytes2hex(SHA.sha256(bytes))
 end
 
+# Runs an entry's checks. A malformed entry, with a table or field missing or of the wrong type, fails with an
+# ArgumentError naming the entry instead of the lower-level error the checks would raise.
+function _preset_entry_checked(checks, n, entry)
+    try
+        checks()
+    catch err
+        err isa Union{ArgumentError, InterruptException} && rethrow()
+        detail = first(split(sprint(showerror, err), '\n'))
+        _preset_error("Surrogate catalog entry $n ('$(get(entry, "id", "?"))@$(get(entry, "version", "?"))') is malformed: $detail. " *
+            "Each table and field the catalog requires must be present, with its expected type.")
+    end
+    return nothing
+end
+
+# A preset with a payload: a fixed grid or a near-surface payload.
+function _preset_payload_entry(entry, kind)
+    label = _preset_label(entry)
+    payload = entry["payload"]
+    occursin(r"^[0-9a-f]{64}$", payload["sha256"]) || _preset_error("Invalid preset payload SHA256.")
+    payload["bytes"] isa Integer && payload["bytes"] > 0 || _preset_error("Invalid preset payload size.")
+    file = payload["file"]
+    file isa String && !isempty(file) && !isabspath(file) && !occursin('\\', file) &&
+        all(x -> x ∉ ("", ".", ".."), split(file, '/')) || _preset_error("Unsafe preset payload filename.")
+    get(entry, "release_enabled", nothing) isa Bool || _preset_error("Preset release_enabled must be explicit.")
+    get(entry["atmosphere"], "query_elapsed_time_applied", nothing) === false ||
+        _preset_error("Only explicitly frozen atmospheric presets are supported.")
+    atmosphere = entry["atmosphere"]; domain = entry["domain"]
+    required = entry["required_metadata"]; generation = required["generation_config"]
+    _preset_planet(required["planet"]) == _preset_planet(entry["planet"]) || _preset_error("Preset metadata planet is inconsistent.")
+    payload["format"] == required["format"] || _preset_error("Preset payload format is inconsistent.")
+    kind == "gram_grid" ? _preset_grid_domain(entry) : _preset_near_surface_domain(entry)
+    atmosphere["latitude"] == "geodetic" && generation["is_planetocentric"] === false && atmosphere["height"] == "ellipsoidal" || _preset_error("Preset coordinate datum is inconsistent or unsupported.")
+    for (public_name, native_name) in (("equatorial_radius_m","equatorial_radius_km"),("polar_radius_m","polar_radius_km"))
+        atmosphere[public_name] == 1000*generation[native_name] || _preset_error("Preset radii are inconsistent.")
+    end
+    epoch = match(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)Z$", atmosphere["epoch_utc"])
+    if kind == "gram_grid"
+        initial = required["initial_time"]
+        initial == generation["initial_time"] || _preset_error("Preset epoch metadata is inconsistent.")
+        epoch !== nothing && all(parse(Float64,epoch.captures[i]) == initial[k] for (i,k) in enumerate(("year","month","day","hour","minute","second"))) || _preset_error("Preset frozen epoch differs from its generation metadata.")
+    else
+        epoch !== nothing && atmosphere["epoch_utc"] == required["epoch_utc"] || _preset_error("Preset frozen epoch differs from its payload metadata.")
+    end
+    # Resolution records the support statement in the provenance.
+    get(entry, "support", nothing) isa AbstractDict || _preset_error("Preset $label needs its support table.")
+    if entry["release_enabled"]
+        name = get(entry, "artifact_name", nothing)
+        name isa AbstractString && !isempty(name) || _preset_error("Released preset $label needs its artifact_name.")
+        distribution = entry["distribution"]; urls = get(distribution, "urls", nothing)
+        occursin(r"^[0-9a-f]{40}$", distribution["git_tree_sha1"]) && occursin(r"^[0-9a-f]{64}$", distribution["archive_sha256"]) &&
+            urls isa AbstractVector && !isempty(urls) && all(url -> url isa AbstractString && !isempty(url), urls) ||
+            _preset_error("Released presets require complete artifact publication identities.")
+    else
+        # An unpublished preset may have no distribution record yet.
+        get(entry, "distribution", Dict{String,Any}()) isa AbstractDict || _preset_error("The distribution record of preset $label must be a table.")
+    end
+    return nothing
+end
+
 _preset_label(entry) = "'$(entry["id"])@$(entry["version"])'"
+# An entry's declared output fields: a list of names.
+function _preset_fields(entry)
+    fields = get(entry["atmosphere"], "fields", Any[])
+    fields isa AbstractVector && all(field -> field isa AbstractString, fields) ||
+        _preset_error("The atmosphere fields of preset $(_preset_label(entry)) must be a list of field names.")
+    return fields
+end
 # Whether an entry returns stored winds: a grid with stored local ENU winds, or a near-surface payload of format 2.
 function _preset_stored_winds(entry)
     atmosphere = entry["atmosphere"]
-    _preset_kind(entry) == "gram_near_surface_scalars" && return atmosphere["winds_available"] === true
+    _preset_kind(entry) == "gram_near_surface_scalars" && return get(atmosphere, "winds_available", nothing) === true
     return get(atmosphere, "wind_convention", nothing) == "stored_nominal_local_ENU" &&
-        get(atmosphere, "wind_boolean_suppresses_stored_components", nothing) === false && all(in(get(atmosphere, "fields", Any[])), _WIND_FIELDS)
+        get(atmosphere, "wind_boolean_suppresses_stored_components", nothing) === false && all(in(_preset_fields(entry)), _WIND_FIELDS)
 end
 # A composite preset names two catalog entries and the height that separates them; it has no payload of its own.
 function _preset_composite_entry(entry, entries)
-    name = "Composite preset $(_preset_label(entry))"
+    name = "Composite preset $(_preset_label(entry))"; subject = "composite preset $(_preset_label(entry))"
     present = filter(key -> haskey(entry, key), _PAYLOAD_KEYS)
     isempty(present) || _preset_error("$name has no payload of its own, so it cannot declare $(join(present, ", ")); its components' entries hold the payload identities.")
     get(entry, "release_enabled", nothing) isa Bool || _preset_error("Preset release_enabled must be explicit.")
-    for key in ("components", "handover", "atmosphere", "domain", "support")
-        get(entry, key, nothing) isa Union{AbstractDict, AbstractVector} || _preset_error("$name needs its $key.")
+    get(entry, "components", nothing) isa AbstractVector || _preset_error("$name needs its components, a list of tables.")
+    for key in ("handover", "atmosphere", "domain", "support")
+        get(entry, key, nothing) isa AbstractDict || _preset_error("$name needs its $key table.")
     end
     components = entry["components"]
-    components isa AbstractVector && length(components) == 2 && all(c -> c isa AbstractDict, components) &&
-        sort([get(c, "role", "") for c in components]) == ["lower", "upper"] ||
+    length(components) == 2 && all(c -> c isa AbstractDict && get(c, "role", nothing) isa AbstractString, components) &&
+        sort([c["role"] for c in components]) == ["lower", "upper"] ||
         _preset_error("$name needs exactly two components, one with role \"lower\" and one with role \"upper\".")
     side = Dict{String, Any}()
     for c in components
@@ -152,32 +195,32 @@ function _preset_composite_entry(entry, entries)
         get(atmosphere, "epoch_utc", nothing) == theirs["epoch_utc"] ||
             _preset_error("$name declares the frozen instant $(get(atmosphere, "epoch_utc", nothing)), but its component $(_preset_label(component)) is frozen at $(theirs["epoch_utc"]).")
         all(key -> get(atmosphere, key, nothing) == theirs[key], ("equatorial_radius_m", "polar_radius_m")) ||
-            _preset_error("$name declares reference-ellipsoid radii that differ from its component $(_preset_label(component))'s.")
+            _preset_error("$name declares reference-ellipsoid radii that differ from those of its component $(_preset_label(component)).")
         _preset_stored_winds(component) ||
             _preset_error("$name needs stored winds on both sides of its handover, but its component $(_preset_label(component)) stores none.")
     end
-    atmosphere["winds_available"] === true && get(atmosphere, "wind_returned", nothing) == "stored_components" &&
+    get(atmosphere, "winds_available", nothing) === true && get(atmosphere, "wind_returned", nothing) == "stored_components" &&
         get(atmosphere, "wind_convention", nothing) == "stored_nominal_local_ENU" &&
-        get(atmosphere, "wind_boolean_suppresses_stored_components", nothing) === false && all(in(get(atmosphere, "fields", Any[])), _WIND_FIELDS) ||
+        get(atmosphere, "wind_boolean_suppresses_stored_components", nothing) === false && all(in(_preset_fields(entry)), _WIND_FIELDS) ||
         _preset_error("$name returns its components' stored winds: it must declare winds_available = true, wind_returned = " *
             "\"stored_components\", wind_convention = \"stored_nominal_local_ENU\", wind_boolean_suppresses_stored_components = false, " *
             "and the wind fields $(join(_WIND_FIELDS, ", ")).")
     handover = entry["handover"]; h = get(handover, "height_m", nothing)
     h isa Real && !(h isa Bool) && isfinite(h) && h > 0 || _preset_error("$name needs a finite, positive handover height_m.")
     get(handover, "reference", nothing) == "ellipsoidal" ||
-        _preset_error("$name's handover height must be measured above the reference ellipsoid (reference = \"ellipsoidal\").")
-    get(handover, "rule", nothing) == _COMPOSITE_RULE || _preset_error("$name's handover rule must be \"$_COMPOSITE_RULE\": " *
+        _preset_error("The handover height of $subject must be measured above the reference ellipsoid (reference = \"ellipsoidal\").")
+    get(handover, "rule", nothing) == _COMPOSITE_RULE || _preset_error("The handover rule of $subject must be \"$_COMPOSITE_RULE\": " *
         "the lower component below the handover height and the upper one at or above it, with nothing blended.")
     floor_m, ceiling_m = upper["domain"]["height_m"]
-    floor_m <= h < ceiling_m || _preset_error("$name hands over at $h m, outside its upper component $(_preset_label(upper))'s " *
-        "range from $floor_m m (inclusive) to $ceiling_m m.")
+    floor_m <= h < ceiling_m || _preset_error("$name hands over at $h m, outside the range of its upper component $(_preset_label(upper)), " *
+        "from $floor_m m (inclusive) to $ceiling_m m.")
     # Necessary only: the lower top is an areoid height, which the catalog cannot compare with an ellipsoidal one everywhere.
-    h < lower["domain"]["top_areoid_height_m"] || _preset_error("$name hands over at $h m above the ellipsoid, not below its lower " *
-        "component $(_preset_label(lower))'s top of $(lower["domain"]["top_areoid_height_m"]) m areoid height.")
+    h < lower["domain"]["top_areoid_height_m"] || _preset_error("$name hands over at $h m above the ellipsoid, not below the top of its lower " *
+        "component $(_preset_label(lower)), $(lower["domain"]["top_areoid_height_m"]) m areoid height.")
     domain = entry["domain"]
     get(domain, "outside", nothing) == "error" && get(domain, "longitude_period_deg", nothing) == 360 ||
         _preset_error("Named presets require errors outside their supported domain.")
-    get(domain, "height_top_m", nothing) == ceiling_m || _preset_error("$name's domain top differs from its upper component's ceiling, $ceiling_m m.")
+    get(domain, "height_top_m", nothing) == ceiling_m || _preset_error("The domain top of $subject differs from its upper component's ceiling, $ceiling_m m.")
     return nothing
 end
 
@@ -211,13 +254,13 @@ function _preset_near_surface_domain(entry)
         _preset_error("Near-surface preset domain differs from its payload support limits.")
     domain["longitude_period_deg"] == 360 || _preset_error("Near-surface preset longitude must be periodic over 360 degrees.")
     domain["outside"] == "error" || _preset_error("Named presets require errors outside their supported domain.")
-    fields = get(atmosphere, "fields", Any[])
+    fields = _preset_fields(entry)
     if format == _NEAR_SURFACE_FORMAT
-        atmosphere["winds_available"] === false && atmosphere["wind_returned"] == "zero_vector" && !any(in(fields), _WIND_FIELDS) ||
+        get(atmosphere, "winds_available", nothing) === false && get(atmosphere, "wind_returned", nothing) == "zero_vector" && !any(in(fields), _WIND_FIELDS) ||
             _preset_error("A near-surface preset with payload format $format stores no winds: it must declare winds_available = false " *
                 "and wind_returned = \"zero_vector\", and list no wind fields.")
     else
-        atmosphere["winds_available"] === true && atmosphere["wind_returned"] == "stored_components" &&
+        get(atmosphere, "winds_available", nothing) === true && get(atmosphere, "wind_returned", nothing) == "stored_components" &&
             get(atmosphere, "wind_convention", nothing) == "stored_nominal_local_ENU" &&
             get(atmosphere, "wind_boolean_suppresses_stored_components", nothing) === false && all(in(fields), _WIND_FIELDS) ||
             _preset_error("A near-surface preset with payload format $format returns its stored winds: it must declare " *
@@ -349,7 +392,7 @@ function resolve_surrogate_preset(id::AbstractString; version::AbstractString,
         "catalog_sha256" => catalog_sha, "catalog_revision" => catalog["catalog_revision"],
         "resolution" => source, "artifact_git_tree_sha1" => tree, "resolved_file" => resolved,
         "public_release" => released, "local_development" => !released,
-        "distribution" => deepcopy(entry["distribution"]),
+        "distribution" => deepcopy(get(entry, "distribution", Dict{String,Any}())),
         "generation_provenance" => deepcopy(get(entry, "generation_provenance", Dict{String,Any}())),
         "atmosphere" => deepcopy(entry["atmosphere"]), "domain" => deepcopy(entry["domain"]),
         "generation" => deepcopy(entry["required_metadata"]["generation_config"]),
