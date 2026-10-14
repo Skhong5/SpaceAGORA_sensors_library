@@ -20,14 +20,14 @@ HYPR's search implementation remains in its companion repository. A
 to that implementation; it does not imply another copy of the search algorithm.
 Existing module and type identities are retained, including historical
 `GuidanceHooks`, `RobotArmPlanning`, `HYPRUtils` and `NavigationHooks` bindings.
-The [HYPR contract](hypr_services.md) governs the external boundary.
+The [HYPR contract](../src/reference/hypr_services.md) governs the external boundary.
 
 RPO has two integration paths. The public planner interface connects a planner
 to `RPOPlannerLifecycle`, which validates returned references before installing
 them in the buffer shared with one controller. The existing `RPOGuidanceModel`
 uses its HYPR configuration directly and remains available for existing studies.
 Their configuration and lifecycle assumptions must not be interchanged merely
-because both produce an `RPOPlan`. See the [public planner guide](../user/rpo_planner_pilot.md).
+because both produce an `RPOPlan`. See the [public planner guide](../src/user/rpo_planner_pilot.md).
 
 The `navigation/` directory now contains the navigation extension hook. RPO
 reference and collision geometry lives in `planning/rpo/geometry/`; its defining
@@ -64,13 +64,13 @@ bindings, not additional algorithms.
 The older `e_edg/` and `t_edg/` strategies and `control/aerobraking/` execution
 paths remain separate. `internal/bridge_helpers.jl` supplies their legacy runtime
 context conversions. This organization does not retire either path or certify
-their scientific equivalence. The [EDG adapter contract](edg_adapter_boundary.md)
-defines the supported service boundary; the [EDG guide](../user/edg_guidance.md)
+their scientific equivalence. The [EDG adapter contract](../src/reference/edg_adapter_boundary.md)
+defines the supported service boundary; the [EDG guide](../src/user/edg_guidance.md)
 describes installation and the bounded experimental scope. Extraction and
 interface conformance do not establish broader scientific qualification.
 
 Robot hardware remains under vehicle models, and compliant multibody equations
 remain under dynamics. MuJoCo uses the engine's
-[external-propagation contract](external_propagation_services.md), which governs
+[external-propagation contract](../src/reference/external_propagation_services.md), which governs
 propagation ownership rather than planning. A Robotics grouping for companion
 checkouts does not transfer these core responsibilities to either companion.

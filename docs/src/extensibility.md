@@ -16,7 +16,6 @@ What to read next:
 - [Adding a Force or Torque of Your Own](user/custom_effector.md) (a complete, tested walkthrough of the force/torque hook)
 - [Public API](generated/public_api.md)
 - [Concepts](user/concepts.md)
-- [Maintainer Overview](maintainer/index.md)
 
 SpaceAGORA now exposes a minimal stable extension contract from the root package.
 
@@ -30,11 +29,11 @@ Do not build new extensions by importing internal modules directly unless you
 are intentionally working on SpaceAGORA internals.
 
 Optional packages with a broader integration use a named, versioned facade.
-See the [Optional Adapter Standard](maintainer/adapter_contract.md) for shared
+See the [Optional Adapter Standard](reference/adapter_contract.md) for shared
 ownership, compatibility, installation and conformance requirements, and
-[External Propagation Services](maintainer/external_propagation_services.md) for
+[External Propagation Services](reference/external_propagation_services.md) for
 external spacecraft integrators. HYPR uses its existing
-[versioned planning services](maintainer/hypr_services.md).
+[versioned planning services](reference/hypr_services.md).
 
 ## Add a force or torque model
 

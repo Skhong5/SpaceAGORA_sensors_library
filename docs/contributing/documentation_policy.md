@@ -4,7 +4,7 @@ Use this page when you are changing the docs site, the generated API surface,
 or the process rules that keep documentation current.
 
 This page is for maintainers. If you are trying to run SpaceAGORA or find a
-command, go back to the User Guide.
+command, see the [User Guide](../src/getting_started.md).
 
 Quickest maintainer check:
 
@@ -14,11 +14,14 @@ julia --project=. docs/make.jl
 
 What to read next:
 
-- [Maintainer Overview](maintainer/index.md)
-- [API Policy](public_api_policy.md)
+- [Contributor Guide](index.md)
+- [API Policy](../src/public_api_policy.md)
 - [Contracts](contracts.md)
 
 SpaceAGORA uses three documentation layers, and each one has a different owner.
+Only user workflows and supported API or extension references belong in
+`docs/src/`. Contributor procedures and repository contracts stay outside that
+published source tree.
 
 ## 1. Generated API docs
 
@@ -95,3 +98,43 @@ julia --project=. test/gates/ci_hpc_extensibility_docs_gate.jl
 ```
 
 These are treated as release blockers for the documentation surface.
+
+## Documentation enforcement
+
+The docs build checks the root exported public API list and fails if any symbol
+listed in the generated public API page is missing documentation.
+
+The generated undocumented-export report is written to:
+
+```text
+docs/build/undocumented_public_exports.txt
+```
+
+That report is intentionally scoped to the stable root API, not to internal
+modules.
+
+## Build the docs locally
+
+From the repository root, prepare the project and build the documentation:
+
+```text
+julia --project=. -e "using Pkg; Pkg.instantiate()"
+julia --project=. docs/make.jl
+```
+
+Generated documentation stays local under the ignored `docs/build/`,
+`docs/site/` and `docs/src/generated/` directories.
+
+## Regenerate common local artifacts
+
+The repository helper recreates common ignored reports or documentation:
+
+```text
+julia --project=. scripts/regenerate_ignored_outputs.jl runtime-analysis quick
+julia --project=. scripts/regenerate_ignored_outputs.jl telemetry quick
+julia --project=. scripts/regenerate_ignored_outputs.jl docs
+```
+
+These commands execute the selected study or build; they are not required to
+inspect existing simulation results. The helper's `docs` mode selects the
+`docs/` project. The direct build command above uses the root project.

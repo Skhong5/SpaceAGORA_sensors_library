@@ -129,8 +129,8 @@ the source pair and `ExternalPropagationServices` contract must agree.
 See the companion's [installation guide](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl#installation)
 for standalone commands and overrides. Start with [Orbital Scenes with MuJoCo](mujoco_scenes.md) for
 the frame conventions, ownership rules and complete examples. The supported connection is documented in
-[External propagation services](../maintainer/external_propagation_services.md)
-and the shared [optional adapter standard](../maintainer/adapter_contract.md).
+[External propagation services](../reference/external_propagation_services.md)
+and the shared [optional adapter standard](../reference/adapter_contract.md).
 
 ### Optional energy-depletion guidance
 
@@ -192,15 +192,6 @@ project files unchanged. `SPACEAGORA_EDG_PATH=/absolute/path/to/SpaceAGORAEDG.jl
 is an explicit development override for this test helper; it is not a release
 pin. Full suites may require the other documented optional packages and assets.
 
-### `docs/`
-
-The docs build uses its own project:
-
-```text
-julia --project=. -e "using Pkg; Pkg.instantiate()"
-julia --project=. docs/make.jl
-```
-
 ## Your own project
 
 Keep your script and generated results in a project outside the SpaceAGORA
@@ -256,22 +247,11 @@ or a full mission workflow.
 
 ## Local output paths
 
-Generated reports and builds stay local. Common ignored output roots are:
+Generated reports stay local. Common ignored output roots are:
 
 - `output/`
 - `odyssey_surrogate_results/` and `odyssey_surrogate_<cap>/`, the Odyssey
   surrogate example's defaults when run from the repository root
-- `docs/build/`
-- `docs/site/`
-- `docs/src/generated/`
-
-You can regenerate common local artifacts with:
-
-```text
-julia --project=. scripts/regenerate_ignored_outputs.jl runtime-analysis quick
-julia --project=. scripts/regenerate_ignored_outputs.jl telemetry quick
-julia --project=. scripts/regenerate_ignored_outputs.jl docs
-```
 
 ## When you need more than setup
 

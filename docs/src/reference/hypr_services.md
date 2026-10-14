@@ -8,8 +8,7 @@ SpaceAGORA.HYPRServices
 It follows the shared [optional adapter standard](adapter_contract.md).
 SpaceAGORA **0.2.0** provides contract **1.0.0**, supporting HYPR **0.1.0** and **0.1.1** and the
 `SpaceAGORAHYPR` **0.2.0** compatibility package. The setup helper pins the exact
-HYPR source revision. A release requires both hosted checks and installation
-from the published sources for that version pair.
+HYPR source revision.
 
 ## Loading and failure behavior
 
@@ -31,10 +30,7 @@ and checks successful initialization and availability again from its `__init__`.
 The facade exposes `CompatibilityError` as an alias of the existing error type.
 
 Both core-first and HYPR-first loading are supported. Availability belongs to the
-current process; a worker must load its own supported packages. CI precompiles the core, extension and shim, then tests fresh processes with
-compiled modules required, including either load order and failed activation.
-Local package-image evidence and published-source installation are separate
-checks; both are required alongside hosted CI before release acceptance.
+current process; a worker must load its own supported packages.
 
 ## Ownership and version policy
 
