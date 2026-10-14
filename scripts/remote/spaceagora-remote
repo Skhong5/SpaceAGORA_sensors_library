@@ -16,7 +16,7 @@ DEFAULT_DATA_ALLOWLIST=(
   "data/planets/gram_surrogate"
   "data/planets/topography"
   "data/planets/gravity"
-  "scripts/remote/spice.txt"
+  "data/planets/spice_overrides/spice.txt"
 )
 DEFAULT_PULL_PATHS=("output" "results")
 DEFAULT_POLL_INTERVAL=30
