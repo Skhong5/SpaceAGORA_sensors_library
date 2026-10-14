@@ -156,13 +156,15 @@ experiment through the full SpaceAGORA simulator. It uses the final paper's
 case coordinates, geometry draws and the paper-producing source revision have
 not been recovered. This example is a reconstruction, not an original-run replay.
 
-The example defaults to five cases for all seven methods. Set `HYPR_CASES=500`
-for the static campaign size. Write evidence outside the repository and any
+The example defaults to one HyPR case. Select other methods explicitly with
+`HYPR_PLANNERS`; comparisons are optional, not an installation requirement.
+The [paper implementation walkthrough](hypr_paper.md) gives runnable commands,
+algorithm mapping and the retained dynamic failure. Write evidence outside the repository and any
 cloud-synced vault, for example:
 
 ```sh
-HYPR_CASES=5 HYPR_OUTPUT_ROOT="$HOME/AgentScratch/hypr_final_isparo" \
-  JULIA_NUM_THREADS=2 julia --project=examples/rpo_planner_env \
+HYPR_CASES=1 HYPR_OUTPUT_ROOT="$HOME/AgentScratch/hypr_final_isparo" \
+  JULIA_NUM_THREADS=2 julia --project=/path/to/hypr-env \
   examples/Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl
 ```
 

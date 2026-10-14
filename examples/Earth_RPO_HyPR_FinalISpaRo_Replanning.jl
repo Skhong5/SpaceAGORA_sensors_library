@@ -16,12 +16,12 @@ function config_from_json(d)
 end
 
 function full_replanning_pilot()
-    d=JSON.parsefile(get(ENV,"HYPR_BASELINE_RECORD",joinpath(OUT,"pilot_case_4_plan.json")));cfg=config_from_json(d["config"]);c=d["case"]
+    d=JSON.parsefile(get(ENV,"HYPR_BASELINE_RECORD",joinpath(@__DIR__,"support","hypr_final_isparo_case4.json")));cfg=config_from_json(d["config"]);c=d["case"]
     cloud=SpaceAGORA.load_rpo_station_cad_pointcloud(:gateway;n_points=10000,rng=MersenneTwister(740))
     geometry=RPOReferenceGeometry(RPOStationGeometry(cloud;keepout_radius_m=.25,name="gateway_core");chaser=RPOCubeSatGeometry(dims_m=(.1,.1,.3)))
     rt=Float64.(d["reference_time"]);r=reduce(hcat,d["reference_position"]);v=reduce(hcat,d["reference_velocity"])
     initial=RPOPlan(valid=true,t_ref_s=rt,r_ref_rtn=r,v_ref_rtn=v,path_rtn=reduce(hcat,d["path"]),diagnostics=(planned_at_s=0.,))
-    initialT=last(rt);trigger=round(.25initialT;digits=1);idx=searchsortedfirst(rt,trigger)
+    initialT=last(rt);budget=paper_dynamic_budget(initialT);trigger=round(.25initialT;digits=1);idx=searchsortedfirst(rt,trigger)
     anchor=clamp(searchsortedfirst(rt,.6initialT),idx+1,length(rt));tangent=r[:,min(anchor+1,end)]-r[:,max(anchor-1,1)]
     normal=cross(tangent,[0.,0.,1.]);norm(normal)<1e-8&&(normal=cross(tangent,[0.,1.,0.]));normal/=norm(normal)
     function pathdistance(point)
@@ -42,6 +42,8 @@ function full_replanning_pilot()
     if haskey(ENV,"HYPR_DYNAMIC_SCENARIOS")
         specs=Symbol.(split(ENV["HYPR_DYNAMIC_SCENARIOS"],","))
     end
+    allowed=(:baseline,:far_obstacle,:near_path_feasible,:partial_blockage,:directly_ahead,:obstructed_goal_negative_control,:goal_change,:displacement_retime,:displacement_replan,:sensor_false_positive)
+    !isempty(specs) && length(unique(specs))==length(specs) && all(in(allowed),specs) || throw(ArgumentError("Unknown or repeated HYPR_DYNAMIC_SCENARIOS"))
     prefix=get(ENV,"HYPR_DYNAMIC_PREFIX","full_dynamic")
     # Compile the real replacement planner before measuring any hold latency.
     warm=SM.RPOGuidanceModel(goal_rtn=SVector{3}(c["goal_rtn"]),geometry=geometry,pso_config=paper_config(),safe_distance_m=.5)
@@ -70,7 +72,7 @@ function full_replanning_pilot()
 
         path=reduce(hcat,d["path"])
         plan=(path=path,config=cfg,cost=last(d["cost_history"]),components=NamedTuple(),adaptive=d["adaptive"],refinement_improved=false,cost_history=d["cost_history"])
-        demo=build_rpo_cubesat_mpc_demo(mission_time=max(600.,4initialT),seed=744,start_rtn=c["start_rtn"],goal_rtn=c["goal_rtn"],
+        demo=build_rpo_cubesat_mpc_demo(mission_time=budget,seed=744,start_rtn=c["start_rtn"],goal_rtn=c["goal_rtn"],
             pso_config=cfg,precomputed_plan=plan,chaser_dry_mass_kg=4.8,minimum_throttle_fraction=.2,
             station_points=cloud,station_keepout_radius_m=.25,safe_distance_m=.5,mpc_horizon=60,mpc_terminal_weight_scale=20.,
             post_reference_hold_s=30.,retime_accel_mps2=.00625,data_rate_s=.05,record_control_commands=true,verbose=false)
@@ -134,7 +136,7 @@ function full_replanning_pilot()
         fuel=sum(sum(f)*h for (f,h) in zip(log.thruster_forces_n,dt))/(60*9.80665)
         statuses=Dict(string(q)=>count(==(q),log.qp_status) for q in unique(log.qp_status))
         ts=collect(0.:.05:last(sol.t));last(ts)<last(sol.t)&&push!(ts,last(sol.t))
-        clearance=Inf;violations=0;before=relative(sol(0.))
+        clearance=Inf;violations=0;before=relative(sol(0.;continuity=:right))
         releases=[p.t_s for p in phasehistory if p.phase==:tracking]
         release_time=isempty(releases) ? nothing : first(releases)
         post_release_clearance=Inf;post_release_violations=0
@@ -159,14 +161,20 @@ function full_replanning_pilot()
                 post_release_violations+=q+1e-9<.5
             end
         end
-        error=norm(relative(last(sol.u))[1:3]-model.goal_rtn)
-        row=(scenario=scenario,negative_control=scenario==:obstructed_goal_negative_control,plant=:full_spaceagora,case_id=4,success=done[]&&violations==0&&error<=.25&&all(==("Solved"),keys(statuses))&&fuel<=.2,
-            completion_reached=done[],release_time_s=release_time,post_release_min_clearance_m=post_release_clearance,post_release_violations=post_release_violations,
-            fuel_g=1000fuel,final_error_m=error,min_clearance_m=clearance,violations=violations,duration_s=last(sol.t),
+        terminal_error=norm(relative(last(sol.u))[1:3]-model.goal_rtn)
+        row=(scenario=scenario,negative_control=scenario==:obstructed_goal_negative_control,plant=:full_spaceagora,case_id=4,success=done[]&&violations==0&&terminal_error<=.25&&all(==("Solved"),keys(statuses))&&fuel<=.2,
+            completion_reached=done[],clearance_satisfied=violations==0,terminal_satisfied=terminal_error<=.25,
+            control_satisfied=all(==("Solved"),keys(statuses)),fuel_satisfied=fuel<=.2,
+            observation_ceiling_s=budget,event_provenance="reconstructed scenario, not an original Table III trial",release_time_s=release_time,post_release_min_clearance_m=post_release_clearance,post_release_violations=post_release_violations,
+            fuel_g=1000fuel,final_error_m=terminal_error,min_clearance_m=clearance,violations=violations,duration_s=last(sol.t),
             retime_count=model.retime_count,replan_count=model.replan_count,safe_hold_count=model.safe_hold_count,
             phase=model.replanning_phase,phases=phasehistory,events=model.replanning_events,event_input=eventrecord[],
             spheres=spheres,trigger_time_s=trigger,observation_window_s=.02initialT,qp_status_counts=statuses,retcode=string(sol.retcode),
-            mass_balance_error_kg=abs(fuel-(first(sol.u).sc[1].mass-last(sol.u).sc[1].mass)),wall_s=(time_ns()-wall)/1e9)
+            mass_balance_error_kg=abs(fuel-(sol(0.;continuity=:right).sc[1].mass-last(sol.u).sc[1].mass)),wall_s=(time_ns()-wall)/1e9)
+        # Keep the failed overall outcome even if the replacement route completes.
+        savejson(prefix*"_$(scenario)_commands.json",(t_s=log.t_s,forces_n=log.thruster_forces_n,qp_status=string.(log.qp_status),
+            terminal_time_s=last(sol.t),terminal_state=collect(relative(last(sol.u))),
+            initial_mass_kg=sol(0.;continuity=:right).sc[1].mass,terminal_mass_kg=last(sol.u).sc[1].mass))
         push!(rows,row);savejson(prefix*"_results.json",rows)
         CSV.write(joinpath(OUT,prefix*"_$(scenario)_trace.csv"),DataFrame(history))
         println("FULL_DYNAMIC_RESULT ",JSON.json((scenario=scenario,success=row.success,fuel_g=row.fuel_g,phase=row.phase,replans=row.replan_count)));flush(stdout)

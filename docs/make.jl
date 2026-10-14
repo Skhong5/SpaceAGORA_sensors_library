@@ -153,6 +153,7 @@ makedocs(
             "Start Here" => "getting_started.md",
             "Quickstart" => "user/quickstart.md",
             "Motion Planning with HYPR" => "user/hypr_planning.md",
+            "Run the HyPR paper algorithm" => "user/hypr_paper.md",
             "RPO Planner Pilot" => "user/rpo_planner_pilot.md",
             "Orbital Scenes with MuJoCo" => "user/mujoco_scenes.md",
             "Energy Depletion Guidance" => "user/edg_guidance.md",

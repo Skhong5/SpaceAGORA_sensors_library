@@ -1,7 +1,7 @@
 # Final iSpaRo paper reconstruction, not an original-run replay.
-# Requires both HYPR and SpaceAGORA reconstruction candidates in examples/rpo_planner_env.
-# Default: five cases, all seven methods, full nonlinear SpaceAGORA execution.
-# HYPR_CASES=500 selects the Table II campaign size; no claim is made until it finishes.
+# Install the pinned HYPR companion with scripts/setup_hypr.jl in a separate environment.
+# Default: one HyPR case in the full nonlinear SpaceAGORA simulator.
+# HYPR_CASE_IDS selects explicit generated cases; comparisons are optional.
 # HYPR_OUTPUT_ROOT must be outside cloud-synced research folders.
 using SpaceAGORA, SpaceAGORAHYPR, HYPR, JSON, SHA, Random, LinearAlgebra, StaticArrays, Statistics, Dates, Test
 const OUT = get(ENV,"HYPR_OUTPUT_ROOT",joinpath(homedir(),"AgentScratch","hypr_final_isparo"))
@@ -10,6 +10,7 @@ const ROOT = normpath(joinpath(@__DIR__,".."))
 include(joinpath(ROOT,"examples","Earth_RPO_CubeSat_MPC_Batch.jl"))
 const G = SM.GuidanceHooks
 const C = SM.ControlHooks
+include(joinpath(@__DIR__, "support", "hypr_paper_comparison.jl"))
 BLAS.set_num_threads(1)
 function savejson(name,x)
     open(joinpath(OUT,name),"w") do io; JSON.print(io,x,2);end
@@ -50,7 +51,7 @@ function full_evaluate(plan,case,geometry,tracking)
     terminal=relative(last(sol.u));dt=diff(vcat(log.t_s,last(sol.t)))
     fuel=sum(sum(f)*h for (f,h) in zip(log.thruster_forces_n,dt))/(60*9.80665)
     ts=collect(0.:.05:last(sol.t));last(ts)<last(sol.t)&&push!(ts,last(sol.t))
-    minimum_clearance=Inf;violations=0;before=relative(sol(first(ts)))
+    minimum_clearance=Inf;violations=0;before=relative(sol(first(ts);continuity=:right))
     for t in ts[2:end]
         next=relative(sol(t));q=G.rpo_comparison_segment_clearance(before[1:3],next[1:3],geometry)
         minimum_clearance=min(minimum_clearance,q);violations+=q<.5;before=next
@@ -63,7 +64,9 @@ function full_evaluate(plan,case,geometry,tracking)
         final_pos_error=error,actual_travel_duration=last(sol.t),planned_travel_duration=last(demo.initial_plan.t_ref_s),
         qp_status_counts=statuses,thruster_forces_n=reduce(hcat,log.thruster_forces_n),mass_history_kg=[sol(t).sc[1].mass for t in times],
         x_hist=positions,t_ref=demo.initial_plan.t_ref_s,r_ref_rtn=demo.initial_plan.r_ref_rtn,v_ref_rtn=demo.initial_plan.v_ref_rtn,
-        plant=:full_spaceagora,retcode=string(sol.retcode))
+        plant=:full_spaceagora,retcode=string(sol.retcode),
+        sample_time=times,command_time=copy(log.t_s),command_status=string.(log.qp_status),terminal_state=collect(terminal),
+        initial_mass_kg=sol(0.;continuity=:right).sc[1].mass,terminal_mass_kg=last(sol.u).sc[1].mass)
 end
 
 function tracking_config(cfg;deadband=.2,mass=5.)
@@ -76,15 +79,15 @@ function summarize(track)
         min_clearance_m=track.min_clearance,clearance_violations=track.keepout_violations,final_error_m=track.final_pos_error,
         duration_s=track.actual_travel_duration,reference_duration_s=track.planned_travel_duration,
         qp_status_counts=track.qp_status_counts,subthreshold_commands=count(x->0<x<=.01,track.thruster_forces_n),
-        mass_balance_error_kg=abs(track.fuel_used-(first(track.mass_history_kg)-last(track.mass_history_kg))))
+        mass_balance_error_kg=abs(track.fuel_used-(track.initial_mass_kg-track.terminal_mass_kg)))
 end
 function main()
     cfg=paper_config(); trackcfg=tracking_config(cfg)
-    n=parse(Int,get(ENV,"HYPR_CASES","5"));prefix=get(ENV,"HYPR_RUN_NAME","pilot")
+    case_ids=paper_case_ids();planners=paper_planners();prefix=get(ENV,"HYPR_RUN_NAME","pilot")
     cloud=SpaceAGORA.load_rpo_station_cad_pointcloud(:gateway;n_points=10000,rng=MersenneTwister(740))
     geometry=RPOReferenceGeometry(RPOStationGeometry(cloud;keepout_radius_m=.25,name="gateway_core");chaser=RPOCubeSatGeometry(dims_m=(.1,.1,.3)))
     cases=Any[]
-    for i in 1:n
+    for i in case_ids
         c=only(generate_rpo_seeded_batch_cases(n_cases=1,seed=740+i,geometry_seed=740,n_station_points=10000,endpoint_min_clearance_m=.8,endpoint_max_clearance_m=1.5))
         push!(cases,merge(c,(case_id=i,seed=740+i)))
     end
@@ -92,39 +95,82 @@ function main()
     cc=G.RPOPlannerComparisonConfig(pso_config=cfg,tracking=trackcfg,show_progress=false,write_plotly_outputs=false,write_failed_path_outputs=false,
         rrt_connect=G.RPORRTConnectSettings(n_iters=1000,step_size_m=.75,goal_sample_rate=.05,shortcut_iters=80),
         rrt_star=G.RPORRTStarSettings(n_iters=1000,step_size_m=.75,goal_sample_rate=.05,shortcut_iters=80),
-        optimizer=G.RPOTrajectoryOptimizerSettings(match_hypr_runtime=true,runtime_max_iters=100000,force_full_iters=true))
+        optimizer=G.RPOTrajectoryOptimizerSettings(w_obs_scale=1.,match_hypr_runtime=true,runtime_max_iters=100000,force_full_iters=true))
     # Compile each planner and evaluator before any measured per-case allowance.
     warmstart=SVector(-2.,30.,0.);warmgoal=SVector(2.,30.,0.)
-    planners=Symbol.(split(get(ENV,"HYPR_PLANNERS","hypr,pso_unrefined,rrt_connect,rrt_connect_bezier,rrt_star,chomp,stomp"),","))
+    warm_rrt=nothing
     for planner in planners
         println("WARMUP ",planner);flush(stdout)
-        p=G.rpo_plan_comparison_path(planner,warmstart,warmgoal,geometry,cc;rng=MersenneTwister(100),runtime_limit_s=.1)
+        p = if planner == :rrt_connect_bezier
+            warm_rrt === nothing && error("Missing warmup RRT-Connect result")
+            paper_planning_failed(warm_rrt) && error("Warmup RRT-Connect failed")
+            paired_bezier_shape(warm_rrt,geometry,G.rpo_pso_config(cfg;refinement_enable=false))
+        else
+            G.rpo_plan_comparison_path(planner,warmstart,warmgoal,geometry,cc;rng=MersenneTwister(100),runtime_limit_s=.1)
+        end
+        planner == :rrt_connect && (warm_rrt=p)
         if planner==:hypr
             USE_FULL_SIM ? full_evaluate(p,(seed=100,start_rtn=warmstart,goal_rtn=warmgoal),geometry,trackcfg) : G.rpo_track_retimed_path_lqmpc(p.path,warmgoal,geometry,p.config,trackcfg;safe_distance_m=.5)
         end
     end
     rows=Any[]
     for case in cases
-        allowance=Inf;warm=nothing
+        allowance=Inf;warm=nothing;rrt_base=nothing;baseline_ready=false
         for planner in planners
             println("CASE_START ",case.case_id," ",planner);flush(stdout)
             begun=time_ns()
+            if planner != :hypr && !baseline_ready
+                row=(case_id=case.case_id,seed=case.seed,planner=string(planner),status="blocked_baseline",success=false,
+                    plant_executed=false,fuel_g=nothing,reason="HYPR planning did not supply a valid measured allowance and warm start")
+                push!(rows,row);savejson(prefix*"_results.json",rows)
+                println("BLOCKED_BASELINE ",case.case_id," ",planner);flush(stdout)
+                continue
+            end
             try
                 pcfg=planner in (:rrt_connect,:rrt_connect_bezier,:rrt_star) ?
                     G.RPOPlannerComparisonConfig(; (k=>getfield(cc,k) for k in fieldnames(typeof(cc)) if k!=:pso_config)...,
                         pso_config=G.rpo_pso_config(cfg;refinement_enable=false)) : cc
-                plan=G.rpo_plan_comparison_path(planner,case.start_rtn,case.goal_rtn,geometry,pcfg;rng=MersenneTwister(case.seed),
-                    runtime_limit_s=allowance,warmstart_path=warm)
+                plan = if planner == :rrt_connect_bezier
+                    rrt_base === nothing && error("Missing paired RRT-Connect result")
+                    fit_start=time_ns()
+                    shape=paper_planning_failed(rrt_base) ? rrt_base : paired_bezier_shape(rrt_base,geometry,pcfg.pso_config)
+                    fitting_s=(time_ns()-fit_start)/1e9
+                    merge(shape,(planner_plan_time=rrt_base.planner_plan_time+fitting_s,
+                        planner_iteration_count=rrt_base.planner_iteration_count,paired_search_path=rrt_base.path))
+                else
+                    G.rpo_plan_comparison_path(planner,case.start_rtn,case.goal_rtn,geometry,pcfg;rng=MersenneTwister(case.seed),
+                        runtime_limit_s=allowance,warmstart_path=warm)
+                end
+                planner == :rrt_connect && (rrt_base=plan)
+                if paper_planning_failed(plan)
+                    row=(case_id=case.case_id,seed=case.seed,planner=string(planner),status="planning_failed",success=false,
+                        path_found=false,plant_executed=false,fuel_g=nothing,planning_s=plan.planner_plan_time,
+                        whole_wall_s=(time_ns()-begun)/1e9,iterations=plan.planner_iteration_count)
+                    savejson(prefix*"_case_$(case.case_id)_$(planner)_plan.json",(case=case,path_found=false,diagnostic_path=plan.path))
+                    push!(rows,row);savejson(prefix*"_results.json",rows)
+                    println("PLANNING_FAILED ",case.case_id," ",planner);flush(stdout)
+                    continue
+                end
                 if planner==:hypr
                     allowance=plan.planner_plan_time;warm=plan.warmstart.path
+                    isfinite(allowance) && allowance > 0 && warm isa AbstractMatrix &&
+                        size(warm,1)==3 && size(warm,2)>=2 && all(isfinite,warm) ||
+                        error("HYPR planning returned an invalid comparison baseline")
+                    baseline_ready=true
                 end
                 track=USE_FULL_SIM ? full_evaluate(plan,case,geometry,trackcfg) : G.rpo_track_retimed_path_lqmpc(plan.path,case.goal_rtn,geometry,plan.config,trackcfg;safe_distance_m=.5)
-                row=merge((case_id=case.case_id,seed=case.seed,planner=string(planner),plant=USE_FULL_SIM ? "full_spaceagora" : "reduced_two_body",planning_s=plan.planner_plan_time,
+                row=merge((case_id=case.case_id,seed=case.seed,planner=string(planner),status="executed",plant_executed=true,plant=USE_FULL_SIM ? "full_spaceagora" : "reduced_two_body",planning_s=plan.planner_plan_time,
                     iterations=plan.planner_iteration_count,whole_wall_s=(time_ns()-begun)/1e9,cost=plan.cost),summarize(track))
                 savejson(prefix*"_case_$(case.case_id)_$(planner)_plan.json",(case=case,path=plan.path,config=Dict(string(k)=>getfield(plan.config,k) for k in fieldnames(typeof(cfg))),reference_time=track.t_ref,reference_position=track.r_ref_rtn,reference_velocity=track.v_ref_rtn,adaptive=plan.adaptive,cost_history=plan.cost_history))
+                savejson(prefix*"_case_$(case.case_id)_$(planner)_commands.json",(t_s=track.command_time,
+                    forces_n=track.thruster_forces_n,qp_status=track.command_status,
+                    terminal_time_s=track.actual_travel_duration,terminal_state=track.terminal_state,
+                    initial_mass_kg=track.initial_mass_kg,terminal_mass_kg=track.terminal_mass_kg))
                 if planner==:hypr
-                    continuous=USE_FULL_SIM ? full_evaluate(plan,case,geometry,tracking_config(cfg;deadband=0.)) : G.rpo_track_retimed_path_lqmpc(plan.path,case.goal_rtn,geometry,plan.config,tracking_config(cfg;deadband=0.);safe_distance_m=.5)
-                    row=merge(row,(continuous=summarize(continuous),))
+                    if get(ENV,"HYPR_COMPARE_DEADBAND","0")=="1"
+                        continuous=USE_FULL_SIM ? full_evaluate(plan,case,geometry,tracking_config(cfg;deadband=0.)) : G.rpo_track_retimed_path_lqmpc(plan.path,case.goal_rtn,geometry,plan.config,tracking_config(cfg;deadband=0.);safe_distance_m=.5)
+                        row=merge(row,(continuous=summarize(continuous),))
+                    end
                     savejson(prefix*"_case_$(case.case_id)_plan.json",(case=case,path=plan.path,config=Dict(string(k)=>getfield(plan.config,k) for k in fieldnames(typeof(cfg))),
                         reference_time=track.t_ref,reference_position=track.r_ref_rtn,reference_velocity=track.v_ref_rtn,warmstart=plan.warmstart,
                         adaptive=plan.adaptive,cost_history=plan.cost_history))
@@ -133,13 +179,13 @@ function main()
                 end
                 push!(rows,row);println("CASE_RESULT ",JSON.json(row));flush(stdout)
             catch err
-                row=(case_id=case.case_id,seed=case.seed,planner=string(planner),success=false,error=sprint(showerror,err),whole_wall_s=(time_ns()-begun)/1e9)
+                row=(case_id=case.case_id,seed=case.seed,planner=string(planner),status="execution_error",success=false,error=sprint(showerror,err),whole_wall_s=(time_ns()-begun)/1e9)
                 push!(rows,row);println("CASE_ERROR ",JSON.json(row));showerror(stdout,err,catch_backtrace());println();flush(stdout)
             end
             savejson(prefix*"_results.json",rows)
         end
     end
-    println("CAMPAIGN_COMPLETE ",length(rows));flush(stdout)
+    println("RUN_FINISHED ",length(rows)," outcomes; ",count(r->r.success,rows)," passed");flush(stdout)
 end
 
 if abspath(PROGRAM_FILE)==@__FILE__
