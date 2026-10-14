@@ -60,7 +60,9 @@ references, shared geometry and tree operations, and optional-adapter services.
 Navigation retains its estimator hook; reference and collision geometry belongs
 to planning. Completed planner-comparison reports are implemented in
 `interfaces/analysis/planning/`, while historical function bindings remain
-available from GNC. HYPR search remains external; EDG remains in core guidance.
+available from GNC. HYPR search and the typed EDG numerical kernels live in their
+optional companion packages. Core retains their supported services and simulation
+integration, including EDG model types, lifecycle and actuation.
 
 Environment sources supply atmospheric, ephemeris and gravitational-field
 quantities. Dynamics sources adapt those quantities to spacecraft forces and
