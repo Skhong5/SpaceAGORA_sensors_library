@@ -1,3 +1,5 @@
+using SpaceAGORA
+
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const EXAMPLES_DIR = joinpath(REPO_ROOT, "examples")
 const PROJECT_PATH = REPO_ROOT
@@ -7,8 +9,19 @@ const HYPR_EXAMPLES = Set([
     "Earth_RPO_CubeSat_MPC_PlannerComparison.jl", "Earth_RPO_CubeSat_MPC_Replanning.jl",
     "Robot_Arm_Planner_Cloth_Demo.jl",
 ])
-example_project(path) = basename(path) in HYPR_EXAMPLES ?
-    joinpath(REPO_ROOT, "examples", "rpo_planner_env") : PROJECT_PATH
+const EDG_EXAMPLES = Set([
+    "AGORA_Odyssey_Energy_Depletion_Control_Test.jl", "odyssey_surrogate.jl",
+])
+function example_project(path)
+    name = basename(path)
+    if name in EDG_EXAMPLES
+        # Reuse the CLI's explicit/active paired-project validation. The child
+        # loads EDG before common.jl activates core, while LOAD_PATH stays isolated.
+        return SpaceAGORA.SpaceAGORACLI._edg_project()
+    end
+    return name in HYPR_EXAMPLES ?
+        joinpath(REPO_ROOT, "examples", "rpo_planner_env") : PROJECT_PATH
+end
 function example_command(path)
     project = example_project(path)
     return `$(Base.julia_cmd()) --startup-file=no --compiled-modules=existing --depwarn=error --project=$(project) $(path)`

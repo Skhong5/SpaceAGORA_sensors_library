@@ -1093,6 +1093,8 @@ jobs:
           julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional_edg/optional.jl edg-first
       - name: EDG CLI environment and child process
         run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional_edg/cli.jl
+      - name: EDG example smoke child environment
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional_edg/example_smoke.jl
       - name: Companion tests
         run: julia --startup-file=no --project="$RUNNER_TEMP/edg-installations/edg" -e 'using Pkg; Pkg.test("SpaceAGORAEDG")'
       - name: Retain EDG integration coverage
