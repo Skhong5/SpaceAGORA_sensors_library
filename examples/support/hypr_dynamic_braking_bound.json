@@ -1,0 +1,54 @@
+{
+  "classification": "original_late_appearance_unavoidable_clearance_loss_under_declared_bounded_model",
+  "input": "Retained reconstructed case 4 state at obstacle appearance, 2026-10-14",
+  "time_s": 21.1,
+  "relative_state": [
+    -3.039598304852274,
+    1.8396581283882636,
+    10.090103682104173,
+    0.03894106169039151,
+    -0.0024146388361827825,
+    0.011680175203395326
+  ],
+  "obstacle_center_rtn_m": [
+    -1.9282553797235042,
+    1.7685309815669816,
+    10.42544497650078
+  ],
+  "required_center_distance_m": 1.15,
+  "initial_center_distance_m": 1.1630115872063778,
+  "initial_clearance_m": 0.5130115872063777,
+  "assumptions": {
+    "plant": "circular target with nonlinear inverse-square Earth gravity; stationary RTN obstacle",
+    "maximum_force_per_axis_N": 0.05,
+    "minimum_mass_kg": 4.8,
+    "maximum_relative_position_m": 20.0,
+    "maximum_relative_speed_mps": 0.2,
+    "target_radius_m": 6798136.599999998,
+    "mean_motion_radps": 0.0011263777277415762,
+    "no_reaction_delay_assumed": true,
+    "arbitrary_continuous_acceleration_direction_allowed": true,
+    "attitude_rotation_cannot_increase_force_norm": true
+  },
+  "acceleration_bounds_mps2": {
+    "thrust": 0.018042195912175808,
+    "tidal": 5.0749519333391e-05,
+    "coriolis": 0.0004505510910966305,
+    "centrifugal": 2.537453571104553e-05,
+    "sum": 0.018568871058316876,
+    "rounded_conservative_bound": 0.02
+  },
+  "horizon_s": 1.0,
+  "position_envelope_m": 10.74809516055159,
+  "speed_envelope_mps": 0.0607266897631773,
+  "best_possible_center_distance_upper_bound_m": 1.1322850286523072,
+  "best_possible_clearance_upper_bound_m": 0.48228502865230716,
+  "bound_violates_required_clearance": true,
+  "method": "For any acceleration with norm <= A, distance from the stationary obstacle at tau is <= norm(r0-c+v0*tau)+A*tau^2/2. A first-exit bootstrap keeps the position and speed within the bounds used to derive A for the entire interval.",
+  "limits": [
+    "Model-conditional analytic reachability bound, not a new collision-avoidance controller or general flight certification.",
+    "The original failing scenario remains a failure and stays in success-rate denominators.",
+    "No change to appearance time, limits, control rate or policy is authorized by this calculation."
+  ],
+  "provenance": "New reconstruction and model-conditional calculation; not original paper data."
+}

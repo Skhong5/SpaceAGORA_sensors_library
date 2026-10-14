@@ -20,9 +20,10 @@ worker transport, native resources and scientific settings remain caller-owned.
 | Core process workers | Prepend an existing vendored project inside the existing worker callback. Import separately into worker `Main`; warn on failure and continue to SPICE setup for non-GRAM campaigns. Worker project precedence, preload and warmup ordering are unchanged. |
 
 The runtime benchmark's append order preserves the caller project ahead of the
-vendored environment. `benchmarks/studies/parallelization_performance/HANDOFF.md`
-records that prepending caused fresh workers to resolve dependencies against the
-vendored project. The examples and package benchmark currently prepend instead.
+vendored environment. Prepending instead changes dependency resolution for fresh
+workers. The historical worker investigation is retained under the
+[research-record policy](../src/user/studies_benchmarks.md#research-records-and-generated-results).
+The examples and package benchmark currently prepend instead.
 These policies must not be unified by a blind replacement.
 
 The examples and package benchmark guard on `isdefined(SpaceAGORA, :GRAMSuite)`,

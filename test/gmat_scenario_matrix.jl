@@ -1017,11 +1017,11 @@ end
 # whatever degree the subsequent force model integrates with -- confirmed
 # by reconstructing it from row 0 of the J0/J2/J50 reference files
 # independently and getting identical values per (body, tool) regardless
-# of degree). GMAT's and STK's own conventions do not agree with each
-# other -- confirmed by swapping Mars's J0 μ, which cut the GMAT
-# comparison's error 16x but grew the STK comparison's error from ~5e-6 km
-# to ~2.2 km -- so each comparison target gets its own value here rather
-# than a single shared μ per body. See spaceagora_j0_gm_parity_investigation.md.
+# of degree). Each comparison target has its own selected value rather than
+# a single shared μ per body. Historical reconstruction evidence is in the
+# private spaceagora_j0_gm_parity_investigation.md record,
+# the private research archive,
+# October 14, 2026 cleanup snapshot, original path docs/.
 #
 # The :basilisk values were reconstructed from Basilisk_Examples_Full, called
 # "GMAT" by the historical investigation. The :gmat values below are the

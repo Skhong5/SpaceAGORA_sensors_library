@@ -803,6 +803,8 @@ jobs:
     needs: depot
     permissions:
       contents: read
+      # Documenter authenticates links to this repository's pull requests.
+      pull-requests: read
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:

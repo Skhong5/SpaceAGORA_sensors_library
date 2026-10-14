@@ -12,21 +12,15 @@
 #
 # --repeats runs the whole pass N times and reports each constant's spread.
 #
-# Read that spread as diagnostics, NOT as the acceptance criterion. Measured
-# here across three passes, the arithmetic rates reproduce to 2-4% while the
-# thread-dispatch ones reach 10-29%, because dispatch pays OS wake latency on
-# every call and so offers no uncontended window for a minimum to find. That
-# looks alarming and mostly is not: dispatch cost is common-mode between the
-# routing candidates (both dispatch), so it largely cancels in the comparison,
-# while the terms that actually discriminate -- the coefficient-touch curve and
-# the SIMD-lane plateau -- are the stable ones.
+# Read repeat spread as a diagnostic, not as the acceptance criterion. Dispatch
+# timing includes OS wake scheduling, and a cost shared by candidate routes can
+# cancel in their comparison. Coefficient-touch and SIMD-lane costs can still
+# distinguish the routes.
 #
-# The criterion that matters is whether calibration noise changes a DECISION.
-# Across 100 configurations (satellite count x degree/order x worker count)
-# scored under three independent calibration passes, quiet and again under
-# eight competing processes, the candidate ranking disagreed zero times; the
-# median margin between candidates was ~70%. One configuration sat at a 0.1%
-# margin, which is the case the predictor's abstention guard exists for.
+# Evaluate whether calibration variability changes the candidate ranking, not
+# just whether absolute timings vary. Small predicted margins can be sensitive
+# to noise; repeat validation under controlled conditions before interpreting
+# them as a reliable routing preference.
 
 using SpaceAGORA
 

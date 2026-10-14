@@ -1,6 +1,7 @@
 ## Canonical aggregator: no behavior ownership.
 module SimulationEngine
 
+# SolverConfig is defined by SimulationModel.SimConfig and re-exported here.
 using ..SimulationModel
 import ..SimulationLifecycle
 import ..RuntimeServices
@@ -20,7 +21,6 @@ using SparseArrays
 import LinearSolve: KLUFactorization
 
 include(joinpath(@__DIR__, "config", "parallel_config.jl"))
-include(joinpath(@__DIR__, "config", "solver_config.jl"))
 include(joinpath(@__DIR__, "config", "runtime_policy_config.jl"))
 include(joinpath(@__DIR__, "config", "artifact_config.jl"))
 include(joinpath(@__DIR__, "config", "simulation_engine_config.jl"))

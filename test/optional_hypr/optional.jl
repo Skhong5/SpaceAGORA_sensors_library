@@ -33,8 +33,11 @@ end
 include(joinpath(@__DIR__,"..","unit","gnc","rpo_planner_adapter_tests.jl"))
 # One order runs the wider integration campaign; both run the seeded adapters.
 if order=="core-first"
-    for path in ("gnc/rpo_planner_compatibility_tests.jl", "gnc/rpo_planner_lifecycle_tests.jl",
+    include(joinpath(@__DIR__,"paper_examples.jl"))
+    include(joinpath(@__DIR__,"paper_runner_failure.jl"))
+    for path in ("rpo_port_tests.jl", "gnc/rpo_planner_compatibility_tests.jl", "gnc/rpo_planner_lifecycle_tests.jl",
             "gnc/rpo_ownership_reproducibility_tests.jl", "gnc/rpo_hypr_manuscript_tests.jl",
+            "gnc/rpo_final_isparo_reconstruction_tests.jl",
             "gnc/shared_sampling_tests.jl", "gnc/shared_metrics_tests.jl", "robotics/runtests.jl")
         Base.include(Module(gensym(:HYPRIntegration)),joinpath(@__DIR__,"..","unit",path))
     end

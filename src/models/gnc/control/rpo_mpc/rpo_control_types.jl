@@ -30,6 +30,7 @@ Base.@kwdef mutable struct RPOMPCControlModel <: AbstractControlEffectorModel
     chaser_idx::Int = 1
     target_idx::Int = 2
     thrusters::SixAxisThrusterModel = SixAxisThrusterModel()
+    minimum_throttle_fraction::Float64 = 0.0
     controller::Any = nothing
     plan_buffer::RPOPlanBuffer = RPOPlanBuffer()
     held::RPOHeldActuation = RPOHeldActuation()
