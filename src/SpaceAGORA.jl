@@ -30,9 +30,9 @@ public ExternalPropagationServices
 
 
 
-using .MissionWorkflow: MissionPlan, MissionPhase, MissionEvent, MissionRun, run_mission
-export MissionPlan, MissionPhase, MissionEvent, MissionRun, run_mission
-for name in (:MissionPlan, :MissionPhase, :MissionEvent, :MissionRun, :run_mission)
+using .MissionWorkflow: MissionPlan, MissionPhase, MissionEvent, MissionRun, run_mission, MissionSegment, MissionDeadline, MissionDuration, MissionCondition
+export MissionPlan, MissionPhase, MissionEvent, MissionRun, run_mission, MissionSegment, MissionDeadline, MissionDuration, MissionCondition
+for name in (:MissionPlan, :MissionPhase, :MissionEvent, :MissionRun, :run_mission, :MissionSegment, :MissionDeadline, :MissionDuration, :MissionCondition)
     @eval @doc (@doc MissionWorkflow.$name) $name
 end
 using .VisualizerServices: VisualizerUnavailableError

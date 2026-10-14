@@ -481,7 +481,11 @@ callback or callback set. Factory-created callbacks are appended after
 must allocate their captured mutable state per call, avoid I/O, and refrain from
 mutating configuration during construction. Their callback closures can then
 refer to the same controller/model objects used by the integrator. The empty
-default retains the existing callback path.
+default retains the existing callback path. `priority_callback_factories=()`
+uses the same isolated factory contract but installs callbacks before normal
+guidance, navigation, control and result saving. Engine impact handling and
+external-state synchronization retain their ordering. Operational mission
+segments use this hook; continuous events still follow solver event ordering.
 
 Explicitly enabled checkpoint writing remains independent of result-file output.
 It cannot be combined with `return_solver_metadata=true`. With the default
@@ -506,6 +510,7 @@ function run_simulation(
     save_fields=nothing,
     extra_callbacks=(),
     extra_callback_factories::Union{Tuple, AbstractVector}=(),
+    priority_callback_factories::Union{Tuple, AbstractVector}=(),
     solver_cache::Union{Nothing, SolverIntegratorCache}=nothing,
     visualization::Bool=(_engine_env_get("SPACEAGORA_VISUALIZATION", "0") == "1")
 )
@@ -527,7 +532,8 @@ function run_simulation(
             run_simulation(args; isolate_state=isolate_state, return_solution=return_solution,
                            return_solver_metadata=return_solver_metadata, return_results=return_results,
                            save_fields=save_fields, extra_callbacks=extra_callbacks,
-                           extra_callback_factories=extra_callback_factories, solver_cache=solver_cache,
+                           extra_callback_factories=extra_callback_factories,
+                           priority_callback_factories=priority_callback_factories, solver_cache=solver_cache,
                            visualization=visualization)
         end
     end
@@ -559,6 +565,8 @@ function run_simulation(
     if !isempty(extra_callback_factories)
         extra_callbacks = _callbacks_from_factories(extra_callbacks, extra_callback_factories, args)
     end
+    priority_callbacks = isempty(priority_callback_factories) ? () :
+        _callbacks_from_factories((), priority_callback_factories, args)
     try
         SimulationModel.ParallelPolicy.reset_policy_telemetry!()
         if SimulationModel.ParallelPolicy.persistent_hints_state_reset_requested()
@@ -618,6 +626,7 @@ function run_simulation(
         saved_values=saved_values,
         save_fields=save_fields_resolved,
         extra_callbacks=extra_callbacks,
+        priority_callbacks=priority_callbacks,
         record_saved_values=return_results
     ) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
     ephemerides_model = args.environment_model.ephemerides_model

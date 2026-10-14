@@ -198,7 +198,29 @@ function _build_results_dataframe(times::Vector{Float64}, saved_data::Vector, sa
     return results_df
 end
 
+# A saved mission record belongs to one completed result write. Invalidate only
+# its manifest association before replacing any outputs, including CSV-only and
+# partial-failure saves. Keep the history itself for inspection or recovery.
+function _invalidate_mission_history!(args)
+    manifest_path = IOConfig._results_bundle_prefix(args) * ".manifest.toml"
+    isfile(manifest_path) || return nothing
+    manifest = try
+        TOML.parsefile(manifest_path)
+    catch err
+        err isa TOML.ParserError || rethrow()
+        return nothing # an unrelated/unreadable manifest carries no owned association
+    end
+    association = get(manifest, "mission_history", nothing)
+    association isa AbstractDict && get(association, "schema", nothing) === 1 || return nothing
+    delete!(manifest, "mission_history")
+    IOSerialization._atomic_write_file(manifest_path, tmp -> open(tmp, "w") do io
+        TOML.print(io, manifest)
+    end)
+    return nothing
+end
+
 function _write_results_csv!(results_df::DataFrame, args)::String
+    _invalidate_mission_history!(args)
     primary_path = IOConfig._results_csv_path(args)
     started_s = time()
     existed_before = isfile(primary_path)

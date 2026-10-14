@@ -234,7 +234,10 @@ and `file`. An exact version is required.
 The native-free wrapper loads automatically for the preset `check` command.
 These commands do not build or initialize native GRAM. Normal Odyssey example
 startup performs preset retrieval itself, so the commands above are optional
-inspection/prefetch tools. The unqualified `assets check` remains an inventory
-of repository-local asset roots and catalogs, not proof that a grid is valid.
+inspection/prefetch tools. The unqualified `assets check` reports the readiness
+of repository-local asset roots and catalogs (usable, missing, empty, Git LFS
+pointers, or empty payloads) and exits with status 1 when a required
+entry is not usable; it confirms that payload bytes exist, not that a grid is
+valid.
 The printed `runtime_wrapper_revision` is the GRAMSuite revision used when the
 preset was generated; the environment's own pin is in its `Project.toml`.
