@@ -2,8 +2,8 @@
 #
 # P1 gate data: what the contention probe reports across the workload families.
 #
-#   julia --project=. --threads=1 scripts/dev/probe_contention_matrix.jl
-#   PCM_N=1024 julia --project=. scripts/dev/probe_contention_matrix.jl
+#   julia --project=. --threads=1 scripts/dev/diagnostics/probe_contention_matrix.jl
+#   PCM_N=1024 julia --project=. scripts/dev/diagnostics/probe_contention_matrix.jl
 #
 # The allocator's scaling law needs two workload-side inputs it cannot count:
 # allocation pressure and native-lock occupancy. This measures both on one warm
@@ -41,7 +41,7 @@ const SE = SpaceAGORA.SimulationEngine
 const PC = SM.ParallelCost
 const RS = SpaceAGORA.RuntimeServices
 
-const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
+const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
 const HARM_FILE = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
 const N_SATS = parse(Int, get(ENV, "PCM_N", "256"))
 const HARM_DEGREE = parse(Int, get(ENV, "PCM_L", "20"))
