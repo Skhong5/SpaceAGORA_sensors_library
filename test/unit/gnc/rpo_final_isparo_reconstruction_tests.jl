@@ -301,5 +301,125 @@ end
     @test_throws ArgumentError G.RPOReplanningConfig(observation_window_s=-1.)
 end
 println("HOLD_CHECKS_COMPLETE");flush(stdout)
+@testset "Canonical curved geometry is independent of the reference time grid" begin
+    geo=SM.RPOReferenceGeometry(SM.RPOStationGeometry(reshape([100.,100.,100.],3,1);keepout_radius_m=0.))
+    cc=G.rpo_pso_config(paper_config();curve_type=:bezier)
+    controls=[0. 1. 2. 3.;0. 1. -1. 0.;0. 0. 0. 0.]
+    p=G.rpo_plan_from_path(controls,geo,cc,.5,0.)
+    @test haskey(p.diagnostics,:retiming_geometry_rtn)
+    nominal=copy(p.diagnostics.retiming_geometry_rtn)
+    @test size(nominal,2)<size(p.r_ref_rtn,2)
+    @test nominal[:,1]==controls[:,1] && nominal[:,end]==controls[:,end]
+    # Replace only the time grid, retaining the same nominal geometric route.
+    thinidx=unique(vcat(1:7:length(p.t_ref_s),length(p.t_ref_s)))
+    thin=SM.RPOPlan(valid=true,t_ref_s=p.t_ref_s[thinidx],r_ref_rtn=p.r_ref_rtn[:,thinidx],
+        v_ref_rtn=p.v_ref_rtn[:,thinidx],path_rtn=p.path_rtn,diagnostics=p.diagnostics)
+    x=nominal[:,3]+[0.,0.,.0002]
+    a=G.rpo_retime_existing_plan(p,x,geo,cc,.5,1.;current_velocity_rtn=[.01,0.,0.])
+    b=G.rpo_retime_existing_plan(thin,x,geo,cc,.5,1.;current_velocity_rtn=[.01,0.,0.])
+    @test a.t_ref_s==b.t_ref_s
+    @test a.r_ref_rtn==b.r_ref_rtn
+    @test a.v_ref_rtn==b.v_ref_rtn
+    @test p.diagnostics.retiming_geometry_rtn==nominal
+    @test a.r_ref_rtn[:,1]==x
+    @test a.r_ref_rtn[:,end]≈controls[:,end]
+    @test all(iszero,a.diagnostics.retiming_geometry_rtn[3,:])
+    # Repeated measured states remain off-curve; nominal samples must not drift.
+    for k in 1:12
+        x=a.r_ref_rtn[:,min(3,end)]+[0.,0.,.00001]
+        a=G.rpo_retime_existing_plan(a,x,geo,cc,.5,1.0 + .1k;current_velocity_rtn=[.01,0.,0.])
+        @test all(iszero,a.diagnostics.retiming_geometry_rtn[3,:])
+        @test a.r_ref_rtn[:,1]==x
+        @test norm(a.r_ref_rtn[:,2]-a.r_ref_rtn[:,1])/.1>.001
+        @test maximum(norm.(eachcol(diff(a.r_ref_rtn;dims=2))))/.1<=.125+1e-9
+    end
+end
+@testset "Canonical polyline retains corners shorter than the sampling step" begin
+    geo=SM.RPOReferenceGeometry(SM.RPOStationGeometry(reshape([100.,100.,100.],3,1);keepout_radius_m=0.))
+    corners=[0. .001 .001 .002;0. 0. .001 .001;0. 0. 0. 0.]
+    for adaptive in (false,true)
+        cc=G.rpo_pso_config(paper_config();curve_type=:polyline,adaptive_sampling_enable=adaptive)
+        @test G._rpo_canonical_retiming_geometry(corners,geo,cc,.5)==corners
+        @test G._rpo_canonical_retiming_geometry(corners[:,end:end],geo,cc,.5)==corners[:,end:end]
+    end
+end
+@testset "Release retains canonical geometry for the next retime" begin
+    geo=SM.RPOReferenceGeometry(SM.RPOStationGeometry(reshape([100.,100.,100.],3,1);keepout_radius_m=0.))
+    cc=G.rpo_pso_config(paper_config();curve_type=:bezier)
+    controls=[0. 1. 2. 3.;0. 1. -1. 0.;0. 0. 0. 0.]
+    planned=G.rpo_plan_from_path(controls,geo,cc,.5,.1)
+    nominal=copy(planned.diagnostics.retiming_geometry_rtn)
+    pc=G.RPOReplanningConfig(safe_distance_m=.5,retime_clearance_m=.6)
+    m=SM.RPOGuidanceModel(goal_rtn=SVector{3}(controls[:,end]),geometry=geo,pso_config=cc,replanning_config=pc)
+    decision=(action=:replan,reason=:forced,min_clearance=1.,geometry=geo,spheres=G.RPOReplanningSphere[])
+    x=[0.,0.,.0002,0.,0.,0.]
+    G._rpo_begin_replanning_hold!(m,x[1:3],decision,0.)
+    m.replanning_phase=:planning
+    m.pending_replan=(decision=decision,plan=planned,failure=nothing,goal=m.goal_rtn,runtime_s=.2,available_at_s=.3)
+    @test G._rpo_advance_replanning_hold!(m,x,1.)
+    released=m.plan_buffer.plan
+    @test m.plan_buffer.updated_at_s==released.diagnostics.planned_at_s==1.
+    @test released.diagnostics.retiming_geometry_rtn≈nominal
+    @test released.r_ref_rtn[:,1]==x[1:3]
+    @test released.v_ref_rtn[:,1]==x[4:6]
+    next=G.rpo_retime_existing_plan(released,released.r_ref_rtn[:,2],geo,cc,.5,1.1)
+    @test all(iszero,next.diagnostics.retiming_geometry_rtn[3,:])
+    @test next.diagnostics.retiming_geometry_rtn[:,end]==controls[:,end]
+end
+
+@testset "Expired multipoint reference preserves callback completion clock" begin
+    geo=SM.RPOReferenceGeometry(SM.RPOStationGeometry(reshape([1.,.7,0.],3,1);keepout_radius_m=0.))
+    plan=SM.RPOPlan(valid=true,t_ref_s=[0.,.1],r_ref_rtn=[0. 1.;0. 0.;0. 0.],v_ref_rtn=zeros(3,2),path_rtn=[0. 1.;0. 0.;0. 0.],diagnostics=(planned_at_s=10.,))
+    pc=G.RPOReplanningConfig(safe_distance_m=.5,retime_clearance_m=.6,tracking_error_retime_m=.75,tracking_error_replan_m=1.1)
+    x=[1.,1e-6,0.,0.,0.,0.]
+    @test G.rpo_replanning_decision(plan,x[1:3],geo,pc,10.05).action==:retime
+    d=G.rpo_replanning_decision(plan,x[1:3],geo,pc,10.2)
+    @test d.action==:none && d.reason==:reference_complete
+    @test .5<=d.min_clearance<.6
+    @test G.rpo_replanning_decision(plan,[1.,0.,.9],geo,pc,10.2).action==:retime
+    @test G.rpo_replanning_decision(plan,[1.,0.,2.],geo,pc,10.2).action==:replan
+    @test G.rpo_replanning_decision(plan,[1.,.1,0.],geo,pc,10.2).reason==:unsafe_remaining_path
+    changed=G.RPOReplanningConfig(safe_distance_m=.5,retime_clearance_m=.6,desired_goal_rtn=[2.,0.,0.])
+    @test G.rpo_replanning_decision(plan,x[1:3],geo,changed,10.2).reason==:goal_changed
+    for epoch in (0.,10.,1e6)
+        shifted=SM.RPOPlan(valid=true,t_ref_s=plan.t_ref_s,r_ref_rtn=plan.r_ref_rtn,v_ref_rtn=plan.v_ref_rtn,path_rtn=plan.path_rtn,diagnostics=(planned_at_s=epoch,))
+        deadline=epoch+.1
+        @test G.rpo_replanning_decision(shifted,x[1:3],geo,pc,prevfloat(deadline)).action==:retime
+        for now in (deadline,nextfloat(deadline))
+            @test G.rpo_replanning_decision(shifted,x[1:3],geo,pc,now).reason==:reference_complete
+            @test size(G.rpo_future_reference_path(shifted,now),2)==1
+        end
+    end
+    m=SM.RPOGuidanceModel(goal_rtn=SVector(1.,0.,0.),geometry=geo,pso_config=paper_config(),replanning_config=pc)
+    G.update_rpo_plan_buffer!(m.plan_buffer,plan,10.)
+    pl=G.rpo_init_two_body_plant(x,cfg.mean_motion_radps);y=pl.state
+    u=(sc=[(pos=y[7:9],vel=y[10:12]),(pos=y[1:3],vel=y[4:6])],)
+    for t in 10.2:.1:13.
+        G.calcGuidanceEffect!(m,u,nothing,t,1)
+        @test m.plan_buffer.plan===plan
+        @test m.plan_buffer.updated_at_s==10.
+        @test m.retime_count==m.replan_count==0
+    end
+end
+@testset "Malformed or stale retained geometry cannot be released" begin
+    geo=SM.RPOReferenceGeometry(SM.RPOStationGeometry(reshape([100.,100.,100.],3,1);keepout_radius_m=0.))
+    route=[0. 1.;0. 0.;0. 0.]
+    cc=G.rpo_pso_config(paper_config();curve_type=:polyline)
+    pc=G.RPOReplanningConfig(safe_distance_m=.5,retime_clearance_m=.6)
+    for cached in (zeros(2,2),zeros(3,0),[0. NaN;0. 0.;0. 0.],zeros(3,2),[0.,1.])
+        p=SM.RPOPlan(valid=true,t_ref_s=[0.,1.],r_ref_rtn=route,v_ref_rtn=zeros(3,2),path_rtn=route,diagnostics=(retiming_geometry_rtn=cached,planned_at_s=0.))
+        @test !G._rpo_retiming_geometry_valid(p)
+        @test_throws ArgumentError G.rpo_retime_existing_plan(p,zeros(3),geo,cc,.5,.1)
+        m=SM.RPOGuidanceModel(goal_rtn=SVector(1.,0.,0.),geometry=geo,pso_config=cc,replanning_config=pc)
+        d=(action=:replan,reason=:forced,min_clearance=1.,geometry=geo,spheres=G.RPOReplanningSphere[])
+        G._rpo_begin_replanning_hold!(m,zeros(3),d,0.)
+        m.replanning_phase=:planning
+        m.pending_replan=(decision=d,plan=p,failure=nothing,goal=m.goal_rtn,runtime_s=.1,available_at_s=.1)
+        @test_logs (:warn,r"RPO replanning failed") G._rpo_advance_replanning_hold!(m,zeros(6),.2)
+        @test m.replanning_phase==:hold_failed && m.replan_count==0
+        @test last(m.replanning_events).reason==:invalid_retiming_geometry
+        @test m.plan_buffer.plan.diagnostics.replanning_action==:hold
+    end
+end
 
 end

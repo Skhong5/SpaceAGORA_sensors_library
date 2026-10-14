@@ -215,6 +215,14 @@ time samples are removed only when all removed points lie within the existing
 1e-10 m duplicate tolerance of a monotone retained segment. Genuine bends,
 reversals and coincident-endpoint excursions remain vertices. This prevents a
 small tracking offset from creating a sharp turn at the next time-grid sample.
+Newly created plans retain the geometric sampling polyline produced from the
+planner's actual curve configuration before time integration changes sample
+spacing. Replacement release and subsequent retimes preserve that nominal
+polyline separately from measured-state connectors. Explicit polyline corners
+are retained even below the usual sampling interval. Legacy plans without this
+metadata use their delivered reference as a polyline; Bezier control points are
+never inferred from timed samples. Retained geometry must be finite 3-by-N
+points ending at the reference goal, and release verifies the live goal again.
 The connector consumes traversal time; the first position is never overwritten
 after timing. The measured initial velocity is retained as boundary evidence,
 not clipped to manufacture instantaneous compliance with a newly tightened cap.
@@ -234,7 +242,8 @@ appearance assumptions and any stronger safety policy require their own
 scientific disposition; neither the safety distance nor event timing is relaxed
 by this reconstruction.
 
-A completed zero-duration point reference is not repeatedly retimed solely
+An expired reference, including a multipoint reference, is not repeatedly retimed solely
 because its clearance lies in the retiming band. This preserves its completion
 clock. Changed goals, unsafe clearance and excessive tracking error are still
-checked before this no-traversal case.
+checked before this no-traversal case. Expiry uses the absolute reference deadline
+to preserve exact callback-boundary behavior without adding an arrival tolerance.

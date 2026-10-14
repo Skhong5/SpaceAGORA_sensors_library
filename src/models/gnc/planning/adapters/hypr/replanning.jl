@@ -179,7 +179,9 @@ function rpo_future_reference_path(plan::RPOPlan, t::Real)
     elapsed = max(0.0, Float64(t) - get(plan.diagnostics, :planned_at_s, 0.0))
     times = plan.t_ref_s
     length(times) == n || throw(ArgumentError("RPO reference times and positions must match."))
-    elapsed >= last(times) && return plan.r_ref_rtn[:, end:end]
+    # Compare absolute deadlines to avoid subtraction roundoff at a callback tick.
+    (n == 1 || Float64(t) >= get(plan.diagnostics, :planned_at_s, 0.0) + last(times)) &&
+        return plan.r_ref_rtn[:, end:end]
     j = clamp(searchsortedlast(times, elapsed), 1, n - 1)
     alpha = clamp((elapsed-times[j]) / max(times[j+1]-times[j], eps(Float64)), 0.0, 1.0)
     now = (1-alpha)*plan.r_ref_rtn[:,j] + alpha*plan.r_ref_rtn[:,j+1]
@@ -243,10 +245,11 @@ function rpo_replanning_decision(plan::RPOPlan, current_rtn, geometry::RPORefere
         reason = stats.min_clearance < config.safe_distance_m ? :unsafe_remaining_path : :tracking_error
         return (action=:replan, reason=reason, min_clearance=stats.min_clearance, spheres=spheres, geometry=augmented)
     elseif stats.min_clearance < config.retime_clearance_m || tracking_error > config.tracking_error_retime_m
-        # A completed point reference has no remaining traversal to retime.
+        # An expired reference has no remaining traversal to retime.
         # Safety, goal changes and excessive tracking error are checked first.
         # Reinstalling it every tick would indefinitely reset its completion clock.
-        if length(plan.t_ref_s) == 1 && iszero(only(plan.t_ref_s)) &&
+        deadline = get(plan.diagnostics, :planned_at_s, 0.0) + last(plan.t_ref_s)
+        if Float64(t) >= deadline &&
             tracking_error <= config.tracking_error_retime_m
             return (action=:none, reason=:reference_complete, min_clearance=stats.min_clearance, spheres=spheres, geometry=augmented)
         end
@@ -256,9 +259,30 @@ function rpo_replanning_decision(plan::RPOPlan, current_rtn, geometry::RPORefere
     return (action=:none, reason=:clearance_ok, min_clearance=stats.min_clearance, spheres=spheres, geometry=augmented)
 end
 
+"""Retain geometric samples before time integration changes their spacing.
+
+The planner's actual curve representation and geometric sampling policy define
+this polyline. Never infer control points from a time-sampled reference. Keeping
+it separate prevents repeated retiming from turning tiny time steps into new
+geometric corners at the measured-state connection.
+"""
+function _rpo_canonical_retiming_geometry(path_rtn, geometry, cfg::RPOPSOConfig, safe_distance_m)
+    size(path_rtn, 2) <= 1 && return Matrix{Float64}(path_rtn)
+    # Explicit polyline vertices are geometric corners, even if separated by
+    # less than one sampling step. Do not resample them out of the route.
+    cfg.curve_type == :polyline && return _rpo_retime_route_vertices(path_rtn)
+    samples = rpo_sample_path(path_rtn, cfg, geometry;
+        safe_distance_m=safe_distance_m,
+        base_ds_m=rpo_retime_sampling_ds_m(cfg, safe_distance_m),
+        curve_type=cfg.curve_type)
+    return _rpo_retime_route_vertices(samples)
+end
+
 """Create a retimed RPO plan from a path after replanning."""
 function rpo_plan_from_path(path_rtn, geometry, cfg::RPOPSOConfig, safe_distance_m::Real, t::Real; cost=NaN, diagnostics=NamedTuple())
     t_ref, r_ref, v_ref = rpo_reference_from_path(path_rtn, geometry, cfg; safe_distance_m=safe_distance_m)
+    nominal = haskey(diagnostics, :retiming_geometry_rtn) ? diagnostics.retiming_geometry_rtn :
+        _rpo_canonical_retiming_geometry(path_rtn, geometry, cfg, safe_distance_m)
     return RPOPlan(
         valid=true,
         t_ref_s=t_ref,
@@ -266,7 +290,7 @@ function rpo_plan_from_path(path_rtn, geometry, cfg::RPOPSOConfig, safe_distance
         v_ref_rtn=v_ref,
         path_rtn=Matrix{Float64}(path_rtn),
         cost=Float64(cost),
-        diagnostics=merge(diagnostics, (planned_at_s=Float64(t),)),
+        diagnostics=merge((retiming_geometry_rtn=nominal,), diagnostics, (planned_at_s=Float64(t),)),
     )
 end
 
@@ -319,8 +343,20 @@ function _rpo_retime_route_vertices(route; tolerance_m=1.0e-10)
     return Matrix{Float64}(route[:,keep])
 end
 
+"""Check the retained route contract before retiming or releasing a plan."""
+function _rpo_retiming_geometry_valid(plan::RPOPlan)
+    route = get(plan.diagnostics, :retiming_geometry_rtn, plan.r_ref_rtn)
+    route isa AbstractMatrix || return false
+    size(route, 1) == 3 && size(route, 2) > 0 || return false
+    size(plan.r_ref_rtn, 2) > 0 || return false
+    all(x -> x isa Real && isfinite(x), route) || return false
+    return norm(route[:, end] - plan.r_ref_rtn[:, end]) <= 1.0e-10
+end
+
 """Retain the current RPO route but rebuild timing from the current state."""
 function rpo_retime_existing_plan(plan::RPOPlan, current_rtn, geometry, cfg::RPOPSOConfig, safe_distance_m::Real, t::Real; current_velocity_rtn=nothing)
+    _rpo_retiming_geometry_valid(plan) || throw(ArgumentError(
+        "Retiming geometry must be finite 3-by-N points ending at the reference goal."))
     current = SVector{3, Float64}(current_rtn)
     # Algorithm 1 retimes from geometric progress, then stitches the current
     # state. Keep this separate from its future-in-time tracking-error metric.

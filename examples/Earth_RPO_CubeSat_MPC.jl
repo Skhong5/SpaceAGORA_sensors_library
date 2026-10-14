@@ -306,6 +306,8 @@ function build_rpo_cubesat_mpc_demo(;
             iteration_timeout_phase=get(plan_result, :iteration_timeout_phase, :none),
             iteration_timeout_events=get(plan_result, :iteration_timeout_events, NamedTuple[]),
             cost_history=plan_result.cost_history,
+            retiming_geometry_rtn=SpaceAGORA.SimulationModel.GuidanceHooks._rpo_canonical_retiming_geometry(
+                plan_result.path, geometry, plan_result.config, Float64(safe_distance_m)),
             planned_at_s=0.0,
         ),
     )

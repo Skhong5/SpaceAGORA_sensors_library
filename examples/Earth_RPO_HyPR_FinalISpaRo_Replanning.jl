@@ -135,6 +135,9 @@ function full_replanning_pilot()
         statuses=Dict(string(q)=>count(==(q),log.qp_status) for q in unique(log.qp_status))
         ts=collect(0.:.05:last(sol.t));last(ts)<last(sol.t)&&push!(ts,last(sol.t))
         clearance=Inf;violations=0;before=relative(sol(0.))
+        releases=[p.t_s for p in phasehistory if p.phase==:tracking]
+        release_time=isempty(releases) ? nothing : first(releases)
+        post_release_clearance=Inf;post_release_violations=0
         for t in ts[2:end]
             next=relative(sol(t));q=G.rpo_comparison_segment_clearance(before[1:3],next[1:3],geometry)
             # An imposed displacement is instantaneous: do not invent a traveled chord through the station.
@@ -151,9 +154,14 @@ function full_replanning_pilot()
                 end
             end
             clearance=min(clearance,q);violations+=q+1e-9<.5;before=next
+            if release_time !== nothing && t-.05>=release_time
+                post_release_clearance=min(post_release_clearance,q)
+                post_release_violations+=q+1e-9<.5
+            end
         end
         error=norm(relative(last(sol.u))[1:3]-model.goal_rtn)
         row=(scenario=scenario,negative_control=scenario==:obstructed_goal_negative_control,plant=:full_spaceagora,case_id=4,success=done[]&&violations==0&&error<=.25&&all(==("Solved"),keys(statuses))&&fuel<=.2,
+            completion_reached=done[],release_time_s=release_time,post_release_min_clearance_m=post_release_clearance,post_release_violations=post_release_violations,
             fuel_g=1000fuel,final_error_m=error,min_clearance_m=clearance,violations=violations,duration_s=last(sol.t),
             retime_count=model.retime_count,replan_count=model.replan_count,safe_hold_count=model.safe_hold_count,
             phase=model.replanning_phase,phases=phasehistory,events=model.replanning_events,event_input=eventrecord[],

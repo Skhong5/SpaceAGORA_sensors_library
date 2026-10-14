@@ -52,6 +52,8 @@ function build_rpo_plan_from_start(model::RPOGuidanceModel, start_rtn, geometry,
             iteration_timeout_phase=plan_result.iteration_timeout_phase,
             iteration_timeout_events=plan_result.iteration_timeout_events,
             warmstart=plan_result.warmstart,
+            retiming_geometry_rtn=_rpo_canonical_retiming_geometry(
+                plan_result.path, geometry, plan_result.config, safe_distance),
             planned_at_s=t,
         ),
     )
@@ -162,6 +164,10 @@ function _rpo_advance_replanning_hold!(model::RPOGuidanceModel, x, t; planner=bu
         usable = false
         failure_reason = :goal_changed_during_planning
     end
+    if usable && !_rpo_retiming_geometry_valid(plan)
+        usable = false
+        failure_reason = :invalid_retiming_geometry
+    end
     if usable
         # Recheck against the current map, including the connection from the held state.
         path = hcat(x[1:3], plan.r_ref_rtn)
@@ -179,24 +185,28 @@ function _rpo_advance_replanning_hold!(model::RPOGuidanceModel, x, t; planner=bu
         @warn "RPO replanning failed; maintaining position hold." reason=failure_reason failure=pending.failure
         return false
     end
-    # The held state may have moved while the planner was working. Retain its
-    # accepted geometric polyline, reconnect at the actual state, and reset both
-    # reference clocks at release (not at the earlier planning start).
+    # Retain the planner's geometric samples through release. The time grid is
+    # an output of retiming, not a new route. Legacy/manual plans without this
+    # metadata use the explicit reference-polyline fallback in the retimer.
     cfg = model.pso_config === nothing ? RPOPSOConfig() : model.pso_config
-    path = hcat(x[1:3], plan.r_ref_rtn)
-    plan = rpo_plan_from_path(path, geometry, rpo_pso_config(cfg; curve_type=:polyline),
-        safe_distance, t; cost=plan.cost,
-        diagnostics=merge(plan.diagnostics, (replanning_action=:replan,
+    released = rpo_retime_existing_plan(plan, x[1:3], geometry, cfg, safe_distance, t;
+        current_velocity_rtn=x[4:6])
+    plan = RPOPlan(valid=released.valid, t_ref_s=released.t_ref_s,
+        r_ref_rtn=released.r_ref_rtn, v_ref_rtn=released.v_ref_rtn,
+        path_rtn=released.path_rtn, cost=released.cost,
+        diagnostics=merge(released.diagnostics, (replanning_action=:replan,
             planner_runtime_s=pending.runtime_s, release_time_s=Float64(t))))
     # Retiming is part of the replacement, so validate the actual reference
     # sent to control as well as the planner's earlier geometric output.
     reference_safe = all(rpo_comparison_segment_clearance(view(plan.r_ref_rtn,:,j),
         view(plan.r_ref_rtn,:,j+1), geometry) >= safe_distance for j in 1:size(plan.r_ref_rtn,2)-1)
-    if !reference_safe
+    reference_goal_ok = norm(plan.r_ref_rtn[:,end] - pending.goal) <= model.hold_position_tolerance_m
+    if !reference_safe || !reference_goal_ok
         model.replanning_phase = :hold_failed
         model.replan_failure_count += 1
-        _rpo_record_replanning_event!(model, :replan_failed, merge(decision, (reason=:unsafe_retimed_reference,)), t)
-        @warn "RPO replanning failed; maintaining position hold." reason=:unsafe_retimed_reference
+        reason = reference_safe ? :goal_not_reached : :unsafe_retimed_reference
+        _rpo_record_replanning_event!(model, :replan_failed, merge(decision, (reason=reason,)), t)
+        @warn "RPO replanning failed; maintaining position hold." reason=reason
         return false
     end
     update_rpo_plan_buffer!(model.plan_buffer, plan, t)
