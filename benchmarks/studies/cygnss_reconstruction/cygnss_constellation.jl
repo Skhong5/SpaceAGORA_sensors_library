@@ -27,7 +27,7 @@
 # spike.
 #
 # Force model, following the private CYGNSS reconstruction record, section 3
-# (archive link in scripts/dev/viewer_demos/README.md): EarthGGM05C gravity
+# (archive access described in benchmarks/studies/cygnss_reconstruction/README.md): EarthGGM05C gravity
 # to degree and order 50, Sun and Moon third
 # body, solar radiation pressure, and NRLMSISE-00 drag with real CelesTrak
 # space-weather indices.
@@ -40,9 +40,9 @@
 # it is a drawing override and enters no force, mass or area. No restricted
 # mission-configuration geometry is read, embedded or published here.
 #
-#   julia --project=. scripts/dev/run.jl viewer_demos/cygnss_constellation.jl
+#   julia --project=. scripts/dev/run.jl ../../benchmarks/studies/cygnss_reconstruction/cygnss_constellation.jl
 using SpaceAGORAVisualizer
-include(joinpath(@__DIR__, "common.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "scripts", "dev", "viewer_demos", "common.jl"))
 # The initial-conditions file's own loader and validator, written and owned by
 # `build_cygnss_ics.jl` alongside it: it raises rather than handing back a
 # state with no provenance, which is exactly what this page must never draw.
@@ -162,7 +162,7 @@ const _TRACKS = Ref{Any}(nothing)
 function tracks()
     _TRACKS[] === nothing || return _TRACKS[]
     isfile(TRACKS_PATH) || throw(ArgumentError(
-        "no flown-track table at $(TRACKS_PATH); build it with scripts/dev/viewer_demos/build_cygnss_ics.jl."))
+        "no flown-track table at $(TRACKS_PATH); build it with benchmarks/studies/cygnss_reconstruction/build_cygnss_ics.jl."))
     t = load_constellation_tracks(TRACKS_PATH; epoch_utc=EPOCH_UTC * "Z")
     _TRACKS[] = t
     return t

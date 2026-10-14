@@ -4,8 +4,8 @@
 # start of the 96-hour telemetry window, together with the flight track of all
 # seven spacecraft across the window.
 #
-#   python3 scripts/dev/viewer_demos/fetch_cygnss_l1_states.py   # once, network
-#   julia --project=. scripts/dev/run.jl viewer_demos/build_cygnss_ics.jl
+#   python3 benchmarks/studies/cygnss_reconstruction/fetch_cygnss_l1_states.py   # once, network
+#   julia --project=. scripts/dev/run.jl ../../benchmarks/studies/cygnss_reconstruction/build_cygnss_ics.jl
 #
 # Outputs, all under the gitignored data/telemetry/CYGNSS/:
 #
@@ -288,7 +288,7 @@ function main()
 
     isfile(ECEF_FILE) || error(string(
         "missing ", relpath(ECEF_FILE, REPO_ROOT), ".\n",
-        "Run: python3 scripts/dev/viewer_demos/fetch_cygnss_l1_states.py\n",
+        "Run: python3 benchmarks/studies/cygnss_reconstruction/fetch_cygnss_l1_states.py\n",
         "(one pass over NASA's OPeNDAP service; it needs a NASA Earthdata Login ",
         "bearer token in ~/.edl_token and caches every response so a second run is free)."))
 
@@ -516,7 +516,7 @@ function main()
                     "CelesTrak GP element set for NORAD ", e.norad, " (", e.catalog, ", ",
                     e.intldes, "), epoch ", cs.tle_epoch_utc,
                     ", from the Internet Archive capture ", previous_block,
-                    " recorded in scripts/dev/viewer_demos/cygnss_historical.tle",
+                    " recorded in benchmarks/studies/cygnss_reconstruction/cygnss_historical.tle",
                     "; SGP4 (WGS-84) to the common epoch, TEME -> J2000"),
                 "epoch_offset_s" => cs.offset_s,
             ))
@@ -691,7 +691,7 @@ function main()
         "carries the delay-Doppler map cube, so the granules were not downloaded: the eight ",
         "spacecraft-state variables were read by OPeNDAP DAP4 variable subsetting from ",
         "https://opendap.earthdata.nasa.gov/collections/C2832195379-POCLOUD/granules/. ",
-        "scripts/dev/viewer_demos/fetch_cygnss_l1_states.py, which does that fetch and reports what ",
+        "benchmarks/studies/cygnss_reconstruction/fetch_cygnss_l1_states.py, which does that fetch and reports what ",
         "it moved, moved 153 MB across the whole window and all seven spacecraft against a ",
         "whole-granule equivalent of 29.84 GB, half a percent of it, and caches every response so a ",
         "second run moves nothing. Access needs a NASA Earthdata Login bearer token.",
@@ -703,7 +703,7 @@ function main()
         "pvt_timestamp_utc is \"seconds since\" the granule's own time_coverage_start. Both position ",
         "and velocity are Int32, so the product is quantized to whole meters and whole meters per ",
         "second. The Earth-fixed to J2000 conversion is the repository's verified one ",
-        "(scripts/dev/viewer_demos/cygnss_ics.jl, earth_fixed_to_inertial): the full state transform ",
+        "(benchmarks/studies/cygnss_reconstruction/cygnss_ics.jl, earth_fixed_to_inertial): the full state transform ",
         "from SPICE sxform with earth_latest_high_prec.bpc, carrying the rotation derivative rather ",
         "than adding a spin rate expressed in the inertial frame, which is wrong by about 1 m/s at ",
         "this altitude. It reproduces the independently derived pos_ii columns in the FM04 mirror to ",
@@ -711,7 +711,7 @@ function main()
         "\n\n",
         "Velocity is fitted from the inertial position arc rather than read from the quantized ",
         "velocity column, as the reconstruction record does ",
-        "(private CYGNSS reconstruction record, section 2.1; archive link in scripts/dev/viewer_demos/README.md). The archive carries a ",
+        "(private CYGNSS reconstruction record, section 2.1; archive access described in benchmarks/studies/cygnss_reconstruction/README.md). The archive carries a ",
         "navigation solution at exactly 2025-06-06T00:00:00.000Z for all seven spacecraft, so ",
         "epoch_offset_s is zero everywhere and nothing is propagated; the fit runs forward from the ",
         "epoch and is evaluated at its own left endpoint. Across every fit span of 120, 300 and 600 s ",

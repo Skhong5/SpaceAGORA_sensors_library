@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fetch the flown CYGNSS spacecraft states for the 96-hour viewer window.
 
-    python3 scripts/dev/viewer_demos/fetch_cygnss_l1_states.py
+    python3 benchmarks/studies/cygnss_reconstruction/fetch_cygnss_l1_states.py
 
 What it does, and why it does it this way:
 

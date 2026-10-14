@@ -12,10 +12,17 @@ static-equivalent plan and requires a margin before selecting a deviation. A
 guard can narrow a mixed plan while it runs. These are safeguards around an
 approximate cost model, not a bound on actual runtime regret.
 
-The planner selects consumers and inner thread budgets. It does not alter
-scientific inputs or equations. Scheduling independence and trajectory
-reproducibility still require validation for the workload and native-model
-history involved.
+The planner selects consumers and inner thread budgets. For a plan with one
+consumer and at most one effective inner thread, dispatch also selects the
+static serial sample environment: adaptive policy and the pre-solve RHS
+calibration sweep are disabled, and density, control and thermal callbacks are
+not threaded. The environment is restored after dispatch. Larger effective
+budgets retain the existing inner policy. An explicit inner budget remains a
+ceiling; suppression does not make an undeclared budget explicit.
+
+These scheduling settings do not change configured physical models or solver
+settings. Scheduling independence and trajectory reproducibility still require
+validation for the workload and native-model history involved.
 
 ## The switch
 
@@ -85,6 +92,31 @@ loaded and traced even when a selected model does not use them. The historical
 study explains the choice of `locals` and the limitations of transferring an
 allocation-kernel fit to whole simulation samples; it does not establish that
 this mapping is accurate for another workload or host.
+
+### Fixed cost of a short process campaign
+
+The common sample-time scale cancels out of the core schedule comparison.
+Seconds-valued costs need a positive sample-time estimate for conversion; they
+are omitted when that estimate is unavailable.
+
+`PREDICTIVE_POOL_FIXED_S` adds a 25 ms process-dispatch cost in sample units,
+only when the sample count fits in one pool round and the cost is at least
+`PREDICTIVE_POOL_FIXED_MIN_SHARE` (5%) of the predicted makespan before this
+addition. Multi-round campaigns and longer single-round campaigns are unchanged
+by this term. It is distinct from cold-pool `pool_startup_s` and can apply to an
+already warm pool.
+
+Conversion uses correction `sample_time_s` when available, otherwise the last
+valid pool-worker sample mean for that workload signature in this process. The
+fallback is locked, remains active with `SPACEAGORA_CAMPAIGN_CORRECTIONS=off`,
+and neither modifies nor persists corrections. Forced process measurements also
+populate it. Without a prior observation the fixed term is zero, so an untimed
+warm-up can affect later timed route choices.
+
+The 25 ms value and 5% cutoff are heuristics informed by historical measurements.
+Unit tests establish selection rules, including protected long single rounds
+and multi-round pool choices; they do not establish a wall-time gain. Further
+TRX50 measurements are deferred for software delivery and remain unverified.
 
 ### The local-slot heap term
 
@@ -192,7 +224,7 @@ It persists bounded corrections to shared parameters, not per-plan rewards:
 |---|---|---|
 | `heap_scale` | `1` | Local-over-worker work slowdown from a guarded mixed plan that charged contention. |
 | `round_tail` | The constants file's value | A successful pure-process campaign on a warm pool; no correction when the prior is absent/zero. |
-| `sample_time_s` | Unknown, per workload | Workers' mean sample work, used to convert pool startup to sample units. |
+| `sample_time_s` | Unknown, per workload | Workers' mean sample work, used to convert pool startup and the short-campaign fixed cost to sample units. |
 
 For a parameter with a prior, evidence moves toward an observation by at most
 `step * abs(prior)` per campaign, remaining nonnegative. The applied value
@@ -227,7 +259,10 @@ to reset that evidence.
 
 For a cold-store benchmark, exclude the file from the starting snapshot and set
 corrections to `off`; otherwise the campaign can rebuild correction state while
-the benchmark is meant to remain cold. Record this choice with the results.
+the benchmark is meant to remain cold. This does not disable the transient
+sample-time fallback for the short-campaign fixed cost. Use a fresh process to
+start without that history, and record warm-ups and prior pool dispatches with
+the results.
 
 ## The calibration store: per-candidate timings and a code token
 

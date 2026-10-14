@@ -5,7 +5,7 @@ using StaticArrays
 using SpaceAGORA
 
 const CYGSL_REPO = normpath(joinpath(@__DIR__, "..", "..", ".."))
-include(joinpath(CYGSL_REPO, "scripts", "dev", "viewer_demos", "cygnss_slew_telemetry.jl"))
+include(joinpath(CYGSL_REPO, "benchmarks", "studies", "cygnss_reconstruction", "cygnss_slew_telemetry.jl"))
 using .CygnssSlewTelemetry
 
 const CYGSL_SM = SpaceAGORA.SimulationModel
