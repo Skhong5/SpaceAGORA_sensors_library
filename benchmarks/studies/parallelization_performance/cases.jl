@@ -970,7 +970,7 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
     #                instance serialised by its own instance_lock.
     #   gram_live_nbody  adds Sun/Moon NBodyGravityModel on top, i.e. a *second*
     #                serialised native library (CSPICE under SPICE_LOCK). §8.4 of
-    #                docs/architecture/parallelization_measurement_and_allocation_findings.md
+    #                benchmarks/studies/parallelization_performance/FINDINGS.md
     #                measured this configuration as the one that does produce real
     #                thread scaling where the smaller GRAM cases were flat.
     elseif startswith(case_name, "atmo256_")

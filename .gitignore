@@ -35,8 +35,8 @@ docs/site/
 docs/src/generated/
 docs/.CondaPkg/
 docs/Manifest.toml
-!test/golden/*/fixture.csv
-!test/golden/agora_earth_regression.csv
+!test/fixtures/*/fixture.csv
+!test/fixtures/agora_earth_regression.csv
 data/telemetry/CYGNSS/
 data/telemetry/GRIFEX/
 # Reference and public flight sets synced from Space-FALCON-Lab/spaceagora-verification-data

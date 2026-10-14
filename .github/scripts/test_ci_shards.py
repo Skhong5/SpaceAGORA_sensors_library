@@ -169,7 +169,7 @@ class PlanTests(unittest.TestCase):
                                         text=True, capture_output=True)
                 self.assertEqual(result.returncode, status, result.stderr)
                 self.assertEqual(arguments.read_text().splitlines(), ["--startup-file=no", "--project=.",
-                                 "test/optional_visualizer/setup.jl", str(root / "visualizer-installations")])
+                                 "test/optional/visualizer/setup.jl", str(root / "visualizer-installations")])
                 expected = "PREVIOUS=value\n"
                 if status == 0:
                     expected += f"SPACEAGORA_VISUALIZER_TEST_ENV={root / 'visualizer-installations/visualizer'}\n"
@@ -215,8 +215,8 @@ class PlanTests(unittest.TestCase):
     def test_domain_packages_use_selected_setup(self):
         wf = (ROOT / ".github/workflows/julia-ci.yml").read_text()
         job = re.search(r"^  optional-hypr-installation:\n(.*?)(?=^  \S|\Z)", wf, re.S | re.M).group(1)
-        self.assertIn("test/optional_packages_tests.jl", job)
-        setup = (ROOT / "test/optional_hypr/setup.jl").read_text()
+        self.assertIn("test/smoke/optional_packages_tests.jl", job)
+        setup = (ROOT / "test/optional/hypr/setup.jl").read_text()
         self.assertIn('OptionalPackages.setup("hypr",', setup)
         self.assertIn('with_hypr=false', setup)
         self.assertNotIn("submodules: recursive", job)
@@ -233,7 +233,7 @@ class PlanTests(unittest.TestCase):
         self.assertIn('SPACEAGORA_VISUALIZER_PATH: ""', job)
         for probe in ("installation_plan_tests.jl", "setup.jl", "core.jl",
                       "optional.jl core-first", "optional.jl visualizer-first"):
-            self.assertEqual(job.count("test/optional_visualizer/" + probe), 1, probe)
+            self.assertEqual(job.count("test/optional/visualizer/" + probe), 1, probe)
         self.assertIn("Pkg.test(\"SpaceAGORAVisualizer\")", job)
         self.assertIn("test/unit/visualization/terrain_export_tests.jl", job)
         self.assertIn('"$terrain_fixture_dir/fixtures.json" "$SPACEAGORA_VISUALIZER_DIR"', job)

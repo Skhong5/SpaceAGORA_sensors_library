@@ -2566,7 +2566,7 @@ end
 end
 
 @testset "AGORA Earth Regression (Golden)" begin
-    golden_path = joinpath(REPO_ROOT, "test", "golden", "agora_earth_regression.csv")
+    golden_path = joinpath(REPO_ROOT, "test", "fixtures", "agora_earth_regression.csv")
     if !isfile(golden_path)
         @test_skip "Golden regression fixture is not present in this checkout"
         return

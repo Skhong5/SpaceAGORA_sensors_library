@@ -375,7 +375,7 @@ Private compatibility bindings remain for existing qualified research consumers;
 they are not a new general plugin API or a promise that every internal helper is
 stable forever.
 
-`test/optional_hypr/setup.jl <scratch-directory>` creates separate installation
+`test/optional/hypr/setup.jl <scratch-directory>` creates separate installation
 projects. `core.jl` verifies the dependency graph, absence of the companion, baseline
 simulation, shared planners and robot-arm use. `optional.jl core-first` and
 `optional.jl hypr-first` run in fresh processes with `JULIA_LOAD_PATH=@:@stdlib`.

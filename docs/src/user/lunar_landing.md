@@ -44,7 +44,7 @@ window over the whole descent corridor, the LROC NAC digital terrain model
 where one exists (Apollo 11 does), and an imagery quadtree along the descent
 corridor for the viewer. Its sources, options, registration corrections,
 resolution measurements and Python requirements are documented in the
-repository's `docs/reference/lunar_imagery_sources.md`. Downloading is a
+repository's `docs/src/user/lunar_imagery_sources.md`. Downloading is a
 separate step from running the simulation:
 
 ```

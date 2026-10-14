@@ -134,7 +134,7 @@ end
 # It reuses that module's exact formula/constants and its env override
 # (SPACEAGORA_POOL_WORKER_HEAP_SIZE_HINT), rather than a third knob, since
 # these are the same kind of worker under the same per-process memory-share
-# reasoning; see docs/architecture/heap_contention.md.
+# reasoning; see benchmarks/studies/heap_contention/FINDINGS.md.
 @inline function _ppc_pool_worker_exeflags(desired::Int)::Cmd
     exeflags = String["--threads=1", "--startup-file=no", "--project=$(PPC_REPO_ROOT)"]
     hint = SpaceAGORA.ParallelProcess._pool_worker_heap_size_hint(desired)
@@ -995,7 +995,7 @@ end
 #
 # `--gcthreads` is opt-in and unset by default (`SPACEAGORA_PPC_WORKER_GCTHREADS`),
 # reproducing the pre-existing argv exactly when not given. See
-# docs/architecture/heap_contention.md ("Collector settings") for the grid
+# benchmarks/studies/heap_contention/FINDINGS.md ("Collector settings") for the grid
 # this was measured against: on a 12-core/24-thread workstation, at 8
 # threads, on the P3/P4 shapes' outer_threads route -- well below the
 # 16+-thread regime where single-heap GC contention actually shows up; see
@@ -1017,7 +1017,7 @@ function _ppc_worker_gc_flags(cfg::PPCConfig)::Vector{String}
     else
         # Default (env unset): the same derived hint the process pool uses
         # by default (see src/orchestration/parallel/process/worker_pool.jl and
-        # docs/architecture/heap_contention.md), reusing its exact formula
+        # benchmarks/studies/heap_contention/FINDINGS.md), reusing its exact formula
         # and constants rather than a second copy of them. The harness's own
         # per-point worker subprocess showed the identical unbounded-heap
         # pattern the pool diagnostic did: a 4096-sample serial point

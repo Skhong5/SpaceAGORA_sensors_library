@@ -894,23 +894,23 @@ jobs:
           gramsuite-smoke: "false"
           token: ${{ github.token }}
       - name: Check optional package checkout and setup safeguards
-        run: julia --startup-file=no test/optional_packages_tests.jl
+        run: julia --startup-file=no test/smoke/optional_packages_tests.jl
       - name: Prepare independent core and companion projects
         env:
           JULIA_PKG_PRECOMPILE_AUTO: "0"
-        run: julia --startup-file=no --project=. test/optional_hypr/setup.jl "$RUNNER_TEMP/hypr-installations"
+        run: julia --startup-file=no --project=. test/optional/hypr/setup.jl "$RUNNER_TEMP/hypr-installations"
       - name: Verify immutable installation inputs
-        run: julia --startup-file=no --project=. test/installation_contract.jl
+        run: julia --startup-file=no --project=. test/smoke/installation_contract.jl
       - name: Verify repeatable example setup without tracked changes
-        run: julia --startup-file=no --project=. test/optional_hypr/example_setup.jl
+        run: julia --startup-file=no --project=. test/optional/hypr/example_setup.jl
       - name: Example environment isolation
         env:
           JULIA_LOAD_PATH: "@:@stdlib"
-        run: julia --startup-file=no --project=. test/optional_hypr/example_routing.jl
+        run: julia --startup-file=no --project=. test/optional/hypr/example_routing.jl
       - name: Core without HYPR installed
         env:
           JULIA_LOAD_PATH: "@:@stdlib"
-        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/hypr-installations/core" test/optional_hypr/core.jl
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/hypr-installations/core" test/optional/hypr/core.jl
       - name: Precompile the complete optional stack
         env:
           JULIA_LOAD_PATH: "@:@stdlib"
@@ -919,8 +919,8 @@ jobs:
         env:
           JULIA_LOAD_PATH: "@:@stdlib"
         run: |
-          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/hypr-installations/hypr" test/optional_hypr/optional.jl core-first
-          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/hypr-installations/hypr" test/optional_hypr/optional.jl hypr-first
+          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/hypr-installations/hypr" test/optional/hypr/optional.jl core-first
+          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/hypr-installations/hypr" test/optional/hypr/optional.jl hypr-first
       - name: Retain installation coverage
         if: always()
         run: |
@@ -1025,18 +1025,18 @@ jobs:
           gramsuite-smoke: "false"
           token: ${{ github.token }}
       - name: Check immutable visualizer installation inputs
-        run: julia --startup-file=no test/optional_visualizer/installation_plan_tests.jl
+        run: julia --startup-file=no test/optional/visualizer/installation_plan_tests.jl
       - name: Prepare independent core and pinned renderer projects
         run: |
           set -euo pipefail
-          julia --startup-file=no --project=. test/optional_visualizer/setup.jl "$RUNNER_TEMP/visualizer-installations"
+          julia --startup-file=no --project=. test/optional/visualizer/setup.jl "$RUNNER_TEMP/visualizer-installations"
           printf 'SPACEAGORA_VISUALIZER_TEST_ENV=%s\n' "$RUNNER_TEMP/visualizer-installations/visualizer" >> "$GITHUB_ENV"
       - name: Core installation without a renderer
-        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/visualizer-installations/core" test/optional_visualizer/core.jl
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/visualizer-installations/core" test/optional/visualizer/core.jl
       - name: Core-first renderer integration
-        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/visualizer-installations/visualizer" test/optional_visualizer/optional.jl core-first
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/visualizer-installations/visualizer" test/optional/visualizer/optional.jl core-first
       - name: Renderer-first integration
-        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/visualizer-installations/visualizer" test/optional_visualizer/optional.jl visualizer-first
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/visualizer-installations/visualizer" test/optional/visualizer/optional.jl visualizer-first
       - name: Locate the installed pinned renderer
         run: julia --startup-file=no --project="$RUNNER_TEMP/visualizer-installations/visualizer" -e 'using SpaceAGORAVisualizer; println("SPACEAGORA_VISUALIZER_CHECKOUT=", pkgdir(SpaceAGORAVisualizer)); println("SPACEAGORA_VISUALIZER_DIR=", SpaceAGORAVisualizer.viewer_directory())' >> "$GITHUB_ENV"
       - name: Standalone companion contract tests
@@ -1092,21 +1092,23 @@ jobs:
           edg: "false"
           token: ${{ github.token }}
       - name: Installer safeguards
-        run: julia --startup-file=no test/optional_packages_tests.jl
+        run: julia --startup-file=no test/smoke/optional_packages_tests.jl
       - name: Prepare core-only and EDG environments
         env:
           JULIA_PKG_PRECOMPILE_AUTO: "0"
-        run: julia --startup-file=no --project=@stdlib test/optional_edg/setup.jl "$RUNNER_TEMP/edg-installations"
+        run: julia --startup-file=no --project=@stdlib test/optional/edg/setup.jl "$RUNNER_TEMP/edg-installations"
       - name: Core without the EDG provider
-        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/core" test/optional_edg/core.jl
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/core" test/optional/edg/core.jl
       - name: Both EDG load orders
         run: |
-          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional_edg/optional.jl core-first
-          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional_edg/optional.jl edg-first
+          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional/edg/optional.jl core-first
+          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional/edg/optional.jl edg-first
       - name: EDG CLI environment and child process
-        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional_edg/cli.jl
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional/edg/cli.jl
       - name: EDG example smoke child environment
-        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional_edg/example_smoke.jl
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional/edg/example_smoke.jl
+      - name: EDG repair contracts against the companion
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional/edg/edg_e2c_repair_tests.jl
       - name: Companion tests
         run: julia --startup-file=no --project="$RUNNER_TEMP/edg-installations/edg" -e 'using Pkg; Pkg.test("SpaceAGORAEDG")'
       - name: Retain EDG integration coverage

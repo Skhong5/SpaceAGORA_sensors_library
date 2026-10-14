@@ -167,6 +167,7 @@ makedocs(
             "Odyssey Surrogate Control Exercise" => "tutorials/odyssey_surrogate.md",
             "Plume Interaction" => "user/plume_interaction.md",
             "Lunar Landing" => "user/lunar_landing.md",
+            "Lunar Imagery Sources" => "user/lunar_imagery_sources.md",
             "Mesh Aerodynamics" => "user/mesh_aerodynamics.md",
             "Solver Configuration" => "user/solver_configuration.md",
             "Simulation Outputs" => "user/outputs.md",
