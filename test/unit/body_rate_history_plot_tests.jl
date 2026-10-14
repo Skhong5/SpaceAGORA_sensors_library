@@ -57,7 +57,7 @@ using StaticArrays
 using ..BodyRateHistoryTests: SimulationModel
 const SC = SimulationModel.SimulationCallbacks
 end
-const SLEW = source_function(joinpath(ROOT, "scripts", "dev", "viewer_demos", "cygnss_slew.jl"), :slew_save_fields)
+const SLEW = source_function(joinpath(ROOT, "benchmarks", "studies", "cygnss_reconstruction", "cygnss_slew.jl"), :slew_save_fields)
 # Read the existing getter and SaveField expression unchanged. Other demo
 # channels, telemetry loading and propagation are neither imported nor run.
 const RATE_GETTER = only(filter(SLEW.args[2].args) do expr

@@ -1,6 +1,6 @@
 module CygnssCommandReplayTests
 using Test, LinearAlgebra, StaticArrays, SpaceAGORA
-include(joinpath(@__DIR__, "../../../scripts/dev/viewer_demos/cygnss_command_replay.jl"))
+include(joinpath(@__DIR__, "../../../benchmarks/studies/cygnss_reconstruction/cygnss_command_replay.jl"))
 using .CygnssCommandReplay
 const SM = SpaceAGORA.SimulationModel
 @testset "Recorded wheel commands: momentum, sign and sampling" begin
