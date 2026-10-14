@@ -5,7 +5,7 @@ select the suites; helpers supply reusable setup and scenarios.
 
 - `test/runtests.jl`
   Default package test entrypoint. Delegates to `test/integration/runtests.jl`,
-  which raw-includes the numbered `test/suites/01..09_*.jl` legacy suites into
+  which raw-includes the numbered `test/suites/` legacy suites into
   its own shared scope (mock models, builder helpers) — this is still the
   canonical default-entrypoint path, not yet split up.
   The harness loads the package (`using SpaceAGORA`) and binds
@@ -70,7 +70,8 @@ select the suites; helpers supply reusable setup and scenarios.
   `SPACEAGORA_REQUIRE_NATIVE_GRAM_PROBES=1` and fails unless construction and
   density-service probes both finish and the child exits successfully.
 - `test/helpers/`
-  Shared native-probe reporting and parent verification live here.
+  Shared companion loaders, native-probe reporting, reference-system sandboxes
+  and reusable scenarios live here. See [the helper guide](helpers/README.md).
 
 Recommended commands:
 

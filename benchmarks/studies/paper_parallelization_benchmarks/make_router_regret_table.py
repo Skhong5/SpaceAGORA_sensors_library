@@ -10,7 +10,7 @@ route would have been the right choice -- which is only meaningful if the
 comparison is to the best one, not to a convenient one.
 
 Usage:
-  python3 scripts/make_router_regret_table.py [--label=NAME] OUT.tex RAW1.csv [RAW2.csv ...]
+  python3 benchmarks/studies/paper_parallelization_benchmarks/make_router_regret_table.py [--label=NAME] OUT.tex RAW1.csv [RAW2.csv ...]
 
 --label overrides the LaTeX label (default tab:router_regret_consolidated). It
 exists because this script now emits more than one table into the same document

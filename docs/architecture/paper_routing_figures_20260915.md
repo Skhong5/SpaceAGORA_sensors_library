@@ -21,10 +21,10 @@ alongside them. Both machines ran the same code at the same commit.
 - **Run:** `output/performance/paper_benchmarks/20260915_181642` (gitignored).
   Cold-store P3/P4 preserved in the `_cold_store` sibling directory.
 - **Tables:** regenerate with
-  `python3 scripts/make_paper_routing_tables.py <run dir> --out <dir>`;
+  `python3 benchmarks/studies/paper_parallelization_benchmarks/make_paper_routing_tables.py <run dir> --out <dir>`;
   markdown for reading, booktabs LaTeX for the manuscript.
 - **Figures:** regenerate with
-  `python3 scripts/make_paper_routing_plots.py <run dir> [<run dir> ...] --out <dir>`;
+  `python3 benchmarks/studies/paper_parallelization_benchmarks/make_paper_routing_plots.py <run dir> [<run dir> ...] --out <dir>`;
   PNG for reading, PDF for the manuscript. See "Figures" below.
 
 **Historical scope and preservation review, 14 October 2026.** The measurements
@@ -173,7 +173,7 @@ Full tables for both machines: `output/paper_routing_tables/routing_tables.md`
 and `.tex`, regenerated with
 
 ```
-python3 scripts/make_paper_routing_tables.py \
+python3 benchmarks/studies/paper_parallelization_benchmarks/make_paper_routing_tables.py \
     output/performance/paper_benchmarks/20260915_181642 \
     output/performance/paper_benchmarks_trx50/20260916_143516 \
     --cold output/performance/paper_benchmarks/20260915_181642_cold_store/cold_store_aggregated.csv \
@@ -258,7 +258,7 @@ Regenerate the regret distribution by naming two runs of identical code with
 `--noise-pair`, which is what supplies the floor:
 
 ```
-python3 scripts/make_paper_routing_plots.py <run> <run> \
+python3 benchmarks/studies/paper_parallelization_benchmarks/make_paper_routing_plots.py <run> <run> \
     --noise-pair output/performance/paper_benchmarks_trx50/20260916_143516 \
     --noise-pair output/performance/paper_benchmarks_trx50_control/20260917_141035 \
     --noise-pair output/performance/paper_benchmarks_trx50_p234_control/20260917_193014 \
@@ -269,7 +269,7 @@ Both scripts share one loader, so a figure and the table beside it cannot
 disagree about which route won a point. `make_paper_routing_plots.py` also
 reads each drawn line back off the axes and checks it against the records it
 came from, failing the run rather than writing a figure that disagrees with
-its own source data; `scripts/check_paper_routing_doc.py` does the same for
+its own source data; `benchmarks/studies/paper_parallelization_benchmarks/check_paper_routing_doc.py` does the same for
 every table cell in this document.
 
 ## Re-measured against the branch's own base
@@ -354,7 +354,7 @@ Runs, all gitignored: `paper_benchmarks_trx50_rebased/20260917_112754` and
 `paper_benchmarks_trx50_p234_new/20260917_171125` (new base);
 `paper_benchmarks_trx50_control/20260917_141035` and
 `paper_benchmarks_trx50_p234_control/20260917_193014` (old base). Compare any
-two with `scripts/compare_paper_routing_runs.py`.
+two with `benchmarks/studies/paper_parallelization_benchmarks/compare_paper_routing_runs.py`.
 
 ## Findings
 

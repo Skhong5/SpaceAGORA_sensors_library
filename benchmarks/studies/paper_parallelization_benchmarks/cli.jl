@@ -111,7 +111,7 @@ end
 # anywhere is therefore kept.
 #
 # Derived from run 20260902_153738 + 20260905_183451 + the policy-v2 worktree
-# runs, via scripts/plot_adaptive_vs_best_static.py's best_static_mode column.
+# runs, via benchmarks/studies/paper_parallelization_benchmarks/plot_adaptive_vs_best_static.py's best_static_mode column.
 # Re-derive it before trusting it on a new machine: a different core count
 # moves which route wins.
 const PPB_BEST_STATIC_WINNERS = Dict{String, Vector{String}}(

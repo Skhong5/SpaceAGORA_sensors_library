@@ -2,9 +2,9 @@
 """Bar charts of the adaptive routing profiles (R4, R5, R6) relative to the best
 static route, one figure per paper-benchmark phase.
 
-    python3 scripts/plot_adaptive_vs_best_static.py                       # every outdir
-    python3 scripts/plot_adaptive_vs_best_static.py output/performance/paper_benchmarks/20260903_2148*
-    python3 scripts/plot_adaptive_vs_best_static.py --group-by=route --phases=B7,B13
+    python3 benchmarks/studies/paper_parallelization_benchmarks/plot_adaptive_vs_best_static.py                       # every outdir
+    python3 benchmarks/studies/paper_parallelization_benchmarks/plot_adaptive_vs_best_static.py output/performance/paper_benchmarks/20260903_2148*
+    python3 benchmarks/studies/paper_parallelization_benchmarks/plot_adaptive_vs_best_static.py --group-by=route --phases=B7,B13
 
 Reads the paper harness's raw CSV from each outdir given (default: every
 directory under output/performance/paper_benchmarks) AND the per-point worker
@@ -56,7 +56,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(HERE)
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 DEFAULT_ROOT = os.path.join(REPO, "output", "performance", "paper_benchmarks")
 
 STATIC_MODES = ("serial", "outer_threads", "outer_process", "inner_only", "outer_inner_static")

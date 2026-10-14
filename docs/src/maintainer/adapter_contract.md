@@ -100,7 +100,7 @@ other; a configuration-only preflight does not certify every execution mode.
 ## Conformance and release evidence
 
 `test/unit/adapter_contract_tests.jl` checks the common facade shape, inventory
-resolution and exact version refusal for HYPR and external propagation. Domain
+resolution and exact version refusal for HYPR, external propagation and EDG. Domain
 tests remain responsible for scientific and lifecycle behavior. Every adapter
 must additionally demonstrate:
 

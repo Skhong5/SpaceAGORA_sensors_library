@@ -140,3 +140,26 @@ available.
 
 For long studies, set an explicit output directory and keep the terminal log with
 the artifacts.
+
+## Study tools and shared maintenance
+
+The paper-routing study keeps its table builders, plots, run comparison and
+acceptance checker beside its runner in
+`benchmarks/studies/paper_parallelization_benchmarks/`. Use
+`check_policy_criterion.py` with the raw per-repeat CSV when assessing failures.
+`make_paper_routing_tables.py` and `make_paper_routing_plots.py` read aggregated
+successful-run timings; the regret table and adaptive comparison use raw runs.
+Their
+different inputs serve different questions, so they are not interchangeable.
+The study's `CASES.md` lists the measurement protocol and analysis commands.
+
+`benchmarks/scripts/archive_paper_run.py` is shared by the paper harnesses. It
+copies run data to an external archive and maintains that archive's manifest,
+index and provenance record. It does not publish results into this repository.
+Select the destination with `--archive` or `SPACEAGORA_PAPER_ARCHIVE`.
+
+Shared installation, calibration and verification commands remain in `scripts/`.
+Development probes live in `scripts/dev/`, including the native-lock thread
+ladder and its contention helpers. The flat benchmark launchers used by the CLI
+remain stable entry points; their implementations stay in the corresponding
+study directories.

@@ -33,7 +33,8 @@ end
 function SpaceAGORA.calcControlMassFlowRate(
     model::ExampleControlHook,
     u::AbstractVector,
-    p,
+    # Match the engine fallback so this model-specific method is unambiguous.
+    p::SpaceAGORA.SimulationModel.ODEParams,
     i::Int64,
     t::Float64,
 )

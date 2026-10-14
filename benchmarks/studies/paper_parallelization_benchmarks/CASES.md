@@ -457,7 +457,7 @@ julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl \
     --phases=P1,P2,P3,P4,P5 --threads=1,2,4,8,12 --process-workers=12
 
 # tables (markdown + LaTeX) from one or more runs
-python3 scripts/make_paper_routing_tables.py \
+python3 benchmarks/studies/paper_parallelization_benchmarks/make_paper_routing_tables.py \
     output/performance/paper_benchmarks/<stamp> --out output/paper_routing_tables
 ```
 
@@ -659,7 +659,7 @@ curve was read and b > 1 candidates were offered, but the curve was flat
 (1.00 up to width 15, 1.01 beyond), so R7 chose the static-equivalent pool
 plan in both cases.
 
-**The criterion rule.** `scripts/check_policy_criterion.py` scores a P5f
+**The criterion rule.** `benchmarks/studies/paper_parallelization_benchmarks/check_policy_criterion.py` scores a P5f
 adaptive row against every static route at every split whose total equals its
 budget, with the bias correction every other point gets: the mean of those
 (route, split) medians when all of them lie within `--equiv-band` of the

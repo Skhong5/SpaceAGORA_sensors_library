@@ -12,7 +12,7 @@ default), `predictive` (profile R7), or `both`, which prints one table per
 mode for the modes a run actually contains.
 
 This reads the RAW per-repeat CSV (`paper_benchmarks_raw_<stamp>.csv`), not
-the aggregated one that `scripts/make_paper_routing_tables.py` reads: the
+the aggregated one that `benchmarks/studies/paper_parallelization_benchmarks/make_paper_routing_tables.py` reads: the
 harness's aggregation step drops rows with `success=false` before computing
 medians, which hides a campaign that ran 3500x slower than baseline because it
 failed outright rather than merely running slow. Working from raw repeats is
@@ -20,7 +20,7 @@ the only way to see that failure in the median and in the failed-campaign
 count.
 
 Usage:
-    python3 scripts/check_policy_criterion.py RUN_DIR [RUN_DIR ...] \
+    python3 benchmarks/studies/paper_parallelization_benchmarks/check_policy_criterion.py RUN_DIR [RUN_DIR ...] \
         [--label NAME ...] [--adaptive policy_v2|predictive|both] \
         [--tolerance 0.10] [--equiv-band 0.03] [--markdown]
 

@@ -86,7 +86,7 @@ regret is continuous and degrades gracefully.
   bottoms out at 2/2ⁿ, so 5 can never clear 0.05). Derives its env from
   `ParallelProfiles.profile_env_pairs`, which is the shipped source of truth —
   an earlier duplicated table drifted within an hour of being written.
-- `scripts/make_router_regret_table.py` — consolidated LaTeX regret table from
+- `benchmarks/studies/paper_parallelization_benchmarks/make_router_regret_table.py` — consolidated LaTeX regret table from
   paper-benchmark raw CSVs. Regret is against the best static route *observed*,
   not a nominated baseline.
 - `scripts/calibrate_machine.jl`, `scripts/validate_cost_model.jl` — cost-model

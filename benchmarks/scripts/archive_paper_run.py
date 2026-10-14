@@ -37,10 +37,10 @@ that is not in the table gets ``"unknown"``.
 
 Usage::
 
-    python3 scripts/archive_paper_run.py <run_dir> \\
+    python3 benchmarks/scripts/archive_paper_run.py <run_dir> \\
         --store converged [--machine trx50] [--notes "..."] [--dry-run]
 
-    python3 scripts/archive_paper_run.py --verify
+    python3 benchmarks/scripts/archive_paper_run.py --verify
 
 ``--store`` is required for ``ppb`` and ``targeted`` runs: the calibration
 store's state is not recorded in the CSV and only the person who launched the
@@ -729,6 +729,7 @@ def append_index(archive: str, manifest: dict) -> None:
         writer.writerows(rows)
 
 
+# Keep this serialized marker stable for existing private archives.
 PROVENANCE_MARKER = "<!-- archived runs: entries below are appended by scripts/archive_paper_run.py -->"
 
 

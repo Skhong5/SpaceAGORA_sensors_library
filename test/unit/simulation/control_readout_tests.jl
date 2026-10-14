@@ -1,5 +1,5 @@
 module ControlReadoutTests
-using Test, StaticArrays, SpaceAGORA
+using Test, StaticArrays, ComponentArrays, SpaceAGORA
 const SM = SpaceAGORA.SimulationModel
 const SE = SpaceAGORA.SimulationEngine
 const CH = SM.ControlHooks
@@ -88,6 +88,20 @@ function held_managers(n)
         SM.MagneticMomentumManagerModel(sat_idx=i,
             held_torque_body=SVector(i / 1024.0, i / 512.0, -i / 256.0))
     end
+end
+
+include(joinpath(@__DIR__, "..", "..", "..", "templates", "control_hook_template.jl"))
+
+@testset "control template dispatches through the engine parameter boundary" begin
+    model = ExampleControlHookTemplate.ExampleControlHook(
+        SVector(1.0, 2.0, 3.0), SVector(0.1, 0.2, 0.3), -0.125)
+    p = readout_params((model,); n_sats=1)
+    u = ComponentVector(mass=500.0)
+    @test SpaceAGORA.calcControlEffect!(model, u, p, 0.0, 1) === nothing
+    @test SpaceAGORA.calcControlForceTorque(model, u, p, 1, 0.0) ==
+        (model.force_n, model.torque_n_m)
+    @test SpaceAGORA.calcControlMassFlowRate(model, u, p, 1, 0.0) === -0.125
+    @test readout(p, 1) == (model.force_n, model.torque_n_m, ZERO3, -0.125)
 end
 
 @testset "control readout retains held torque ownership without updating control state" begin

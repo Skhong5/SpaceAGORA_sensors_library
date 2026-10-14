@@ -5,7 +5,7 @@ Parses the markdown tables out of docs/architecture/paper_routing_figures_202609
 and recomputes each cell from the aggregated benchmark CSVs, so the doc cannot
 drift from the measurements it cites. Exits non-zero on any mismatch.
 
-Usage: python3 scripts/check_paper_routing_doc.py [DOC]
+Usage: python3 benchmarks/studies/paper_parallelization_benchmarks/check_paper_routing_doc.py [DOC]
 """
 from __future__ import annotations
 import csv, re, sys

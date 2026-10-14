@@ -216,7 +216,7 @@ clean calibration store. B8 and B13 never reach calibration and stand.
 
 Per-phase speedup of each adaptive profile against the best static route at
 the same launch point (best static median / adaptive median; points with a
-serial baseline under 3 s excluded; `scripts/plot_adaptive_vs_best_static.py`):
+serial baseline under 3 s excluded; `benchmarks/studies/paper_parallelization_benchmarks/plot_adaptive_vs_best_static.py`):
 
 | phase | points | R4 min / median | R5 min / median | R6 min / median |
 |---|---|---|---|---|
@@ -236,7 +236,7 @@ threads) and 0.56 (B12 independent_1sat_1hr, same cause). Head to head at
 the 83 above-floor points both ran: R6 faster than R5 by more than 5% at 17,
 slower at 3, within 5% at 63; median R5/R6 = 1.019.
 
-The consolidated regret table (`scripts/make_router_regret_table.py` over
+The consolidated regret table (`benchmarks/studies/paper_parallelization_benchmarks/make_router_regret_table.py` over
 both raw CSVs, 74 workload/thread rows): R5 faster than best static at 23,
 within 2% at 16, slower at 35; R6 faster at 24, within 2% at 31, slower at 19.
 
@@ -266,7 +266,7 @@ Not yet covered, queued behind the learning-mode probes
 MC, where the unconditional process route could lose), B5, B6 (below-floor
 control), the new B15 (nested campaigns, mcgrid_ 128 spacecraft-hour rungs
 over B13's budget grid, commit f199f826), cold-cache trajectories of R6 alone
-(`scripts/r6_cold_cache_trajectory.jl`), and production-runner probes on the
+(`benchmarks/studies/paper_parallelization_benchmarks/r6_cold_cache_trajectory.jl`), and production-runner probes on the
 nested cases. reporting.jl now carries policy_v2 in its adaptive-mode set,
 so future runs' own reports include R6; the 20260903_214827 report predates
 that and omits it.

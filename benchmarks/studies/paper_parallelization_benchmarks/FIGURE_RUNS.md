@@ -716,19 +716,19 @@ Then archive each run into the benchmark-data directory, which is a plain local
 directory with no git remote — nothing in it goes into the paper repository:
 
 ```bash
-python3 scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
+python3 benchmarks/scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
   --archive "${SPACEAGORA_PAPER_ARCHIVE:-../SpaceAGORA-paper-data/data/raw}" \
   --machine trx50 --store cold      --notes 'P1-P5, 11 repeats, cold store'
 
-python3 scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
+python3 benchmarks/scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
   --archive "${SPACEAGORA_PAPER_ARCHIVE:-../SpaceAGORA-paper-data/data/raw}" \
   --machine trx50 --store converged --notes 'P1+P5, 11 repeats, converged store'
 
-python3 scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
+python3 benchmarks/scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
   --archive "${SPACEAGORA_PAPER_ARCHIVE:-../SpaceAGORA-paper-data/data/raw}" \
   --machine trx50 --store cold      --notes 'P6+P6p, 3 repeats, figure F2'
 
-python3 scripts/archive_paper_run.py --verify \
+python3 benchmarks/scripts/archive_paper_run.py --verify \
   --archive "${SPACEAGORA_PAPER_ARCHIVE:-../SpaceAGORA-paper-data/data/raw}"
 ```
 
@@ -765,7 +765,7 @@ there, which is the phase's question.
 Pull as in step 6, then:
 
 ```bash
-python3 scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
+python3 benchmarks/scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
   --archive "${SPACEAGORA_PAPER_ARCHIVE:-../SpaceAGORA-paper-data/data/raw}" \
   --machine trx50 --store cold      --notes 'P7, one spacecraft short missions, 11 repeats, cold store'
 ```
@@ -809,16 +809,16 @@ are not in the estimate.
 Pull as in step 6, then archive each arm with the store it ran under:
 
 ```bash
-python3 scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
+python3 benchmarks/scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
   --archive "${SPACEAGORA_PAPER_ARCHIVE:-../SpaceAGORA-paper-data/data/raw}" \
   --machine trx50 --store cold      --notes 'P5f, full machine, 11 repeats, cold store'
-python3 scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
+python3 benchmarks/scripts/archive_paper_run.py output/performance/paper_benchmarks/<stamp> \
   --archive "${SPACEAGORA_PAPER_ARCHIVE:-../SpaceAGORA-paper-data/data/raw}" \
   --machine trx50 --store converged --notes 'P5f, full machine, 11 repeats, converged store'
 ```
 
 Score the adaptive rows with
-`python3 scripts/check_policy_criterion.py <run dir> --adaptive predictive`,
+`python3 benchmarks/studies/paper_parallelization_benchmarks/check_policy_criterion.py <run dir> --adaptive predictive`,
 which for P5f compares each full-budget row with the best static route over
 every split of the same budget.
 

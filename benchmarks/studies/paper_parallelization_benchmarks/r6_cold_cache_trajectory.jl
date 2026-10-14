@@ -2,7 +2,7 @@
 #
 # Cold-cache trajectory of a routing profile's pre-solve RHS calibration.
 #
-#   julia --project=. --threads=8 scripts/r6_cold_cache_trajectory.jl \
+#   julia --project=. --threads=8 benchmarks/studies/paper_parallelization_benchmarks/r6_cold_cache_trajectory.jl \
 #       --cases=gravity_4096_l50,interact_256_aero --modes=policy_v2,full_smart,outer_threads --runs=6
 #
 # The paper harness runs its modes in a fixed order against one shared
@@ -28,7 +28,7 @@ using Printf
 const SM = SpaceAGORA.SimulationModel
 const SE = SpaceAGORA.SimulationEngine
 const EARTH = SM.Earth()
-const HARM = joinpath(@__DIR__, "..", "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+const HARM = joinpath(@__DIR__, "..", "..", "..", "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
 
 const _COMMON = Dict(
     "SPACEAGORA_PERF_PARALLEL_BACKEND" => "none",
