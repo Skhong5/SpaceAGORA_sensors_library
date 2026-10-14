@@ -199,7 +199,7 @@ end
     basilisk = _debug_result(support, basilisk_summary)
     stk = _debug_result(support, stk_summary)
     mktempdir() do tmp
-        csv_path = joinpath(tmp, "tb_matrix_rmse_m.csv")
+        csv_path = joinpath(tmp, "new-output-directory", "tb_matrix_rmse_m.csv")
         checks = Ref(0)
         output = _debug_with_cached_results(support, basilisk, stk) do
             _debug_capture_stdout() do

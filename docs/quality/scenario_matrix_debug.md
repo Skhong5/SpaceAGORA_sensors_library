@@ -17,7 +17,7 @@ julia --project=. scripts/dev/tb_matrix_debug.jl
 The J2 utility prints per-axis RMSE in kilometres, the combined-axis norm, and the
 five worst J2 cases. The TB utility prints both comparison targets, missing pairs
 and exactly equal third-body on/off pairs. It writes
-`scripts/dev/tb_matrix_rmse_m.csv` with the existing header, ordering, target labels,
+`output/diagnostics/tb_matrix_rmse_m.csv` with the existing header, ordering, target labels,
 full-precision metre values and empty values for incomplete axis triplets.
 Including either launcher only defines its functions; call
 `run_j2_parity_debug()` or `run_tb_matrix_debug()` explicitly after inclusion.
