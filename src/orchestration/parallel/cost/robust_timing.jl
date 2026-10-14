@@ -172,7 +172,7 @@ function paired_compare(fa::FA, fb::FB; pairs::Int = 15, alpha::Float64 = 0.05):
         # session reported it 40% FASTER at 15-0 and significant. The effect was
         # larger than the effect under test and had the opposite sign.
         #
-        # `scripts/paired_profile_probe.jl` and `paired_campaign_probe.jl` both
+        # `scripts/calibration/paired_profile_probe.jl` and `paired_campaign_probe.jl` both
         # alternate for exactly this reason and say so in their headers; this
         # function did not, so a caller reaching for the library instead of the
         # scripts got the bias silently.

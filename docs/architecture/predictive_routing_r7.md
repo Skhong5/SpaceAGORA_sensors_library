@@ -148,7 +148,7 @@ has no excess. Applying it to heap-side consumers as well as workers is an
 assumption. A cold-pool charge applies only to workers not yet used by predictive
 process dispatch in this process. It is omitted when sample time is unknown.
 
-`scripts/extract_campaign_cost_terms.py` derives these terms from archived runs
+`scripts/calibration/extract_campaign_cost_terms.py` derives these terms from archived runs
 and `--write-constants` writes the fingerprinted constants file's `[campaign]`
 table, with source provenance. `save_machine_constants` retains that table
 through recalibration. Historical fitted values are not portable defaults;

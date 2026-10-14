@@ -7,7 +7,7 @@
 #                             before the solve runs. Machine-independent, exact,
 #                             zero measurement.
 #   w_k (MachineConstants) -- rates in ns per unit of n_k. Measured once per
-#                             machine by scripts/calibrate_machine.jl, cached,
+#                             machine by scripts/calibration/calibrate_machine.jl, cached,
 #                             and reused by every run on that machine.
 #
 # That split is what makes a per-solve decision affordable: the part that varies
@@ -259,7 +259,7 @@ end
 Per-machine rates, in nanoseconds per unit of the corresponding `WorkCounts`
 field, plus the reference-kernel reading that validates them.
 
-Produced by `scripts/calibrate_machine.jl` and cached in a fingerprinted TOML.
+Produced by `scripts/calibration/calibrate_machine.jl` and cached in a fingerprinted TOML.
 Never fitted from the benchmark case catalog: the catalog is held out so that a
 predicted-versus-actual comparison over it is an out-of-sample test rather than
 a restatement of the fit.

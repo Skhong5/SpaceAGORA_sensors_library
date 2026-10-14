@@ -2,7 +2,7 @@
 #
 # Paired in-process A/B between two routing profiles.
 #
-#   julia --project=. --threads=12 scripts/paired_profile_probe.jl \
+#   julia --project=. --threads=12 scripts/calibration/paired_profile_probe.jl \
 #       --cases=gravity_4096_l50,heavy_1024_l50_6hr --a=full_smart --b=inner_only --pairs=15
 #
 # Block-ordered samples can confound profile differences with changes in machine
@@ -27,7 +27,7 @@ const SM = SpaceAGORA.SimulationModel
 const SE = SpaceAGORA.SimulationEngine
 const PC = SM.ParallelCost
 const EARTH = SM.Earth()
-const HARM = joinpath(@__DIR__, "..", "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+const HARM = joinpath(@__DIR__, "..", "..", "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
 
 # Resolve profile environments through ParallelProfiles.profile_env_pairs so
 # this probe follows the shipped definitions without maintaining a second table.

@@ -204,13 +204,13 @@ target_workstation() {
   # something other than what was intended -- and on a cross-machine figure that
   # is the difference being reported. It runs BEFORE the store is emptied, then
   # is re-run after, because emptying the store takes the constants with them.
-  run julia --project="$REPO_ROOT" --threads="$cores" "${REPO_ROOT}/scripts/calibrate_machine.jl"
+  run julia --project="$REPO_ROOT" --threads="$cores" "${REPO_ROOT}/scripts/calibration/calibrate_machine.jl"
 
   step 2 "cold calibration store"
   cold_store
 
   step 3 "re-calibrate into the now-empty store"
-  run julia --project="$REPO_ROOT" --threads="$cores" "${REPO_ROOT}/scripts/calibrate_machine.jl"
+  run julia --project="$REPO_ROOT" --threads="$cores" "${REPO_ROOT}/scripts/calibration/calibrate_machine.jl"
 
   step 4 "P3 and P5, 11 repeats"
   if [ "$EXECUTE" = "1" ]; then
@@ -253,7 +253,7 @@ target_trx50() {
 
   step 1 "machine calibration at the thread count the jobs use"
   offer "calibrate" \
-    "${remote_sh} push --remote ${REMOTE} --threads 32 -- julia --project=. --threads=32 scripts/calibrate_machine.jl"
+    "${remote_sh} push --remote ${REMOTE} --threads 32 -- julia --project=. --threads=32 scripts/calibration/calibrate_machine.jl"
 
   step 2 "targeted points — one job per POINT, store set per point"
   say "finding8 wants the converged store; the other three want it empty."
@@ -350,13 +350,13 @@ target_workstation_p5f() {
   require_quiet
 
   step 1 "machine calibration for the predictive planner (R7)"
-  run julia --project="$REPO_ROOT" --threads="$cores" "${REPO_ROOT}/scripts/calibrate_machine.jl"
+  run julia --project="$REPO_ROOT" --threads="$cores" "${REPO_ROOT}/scripts/calibration/calibrate_machine.jl"
 
   step 2 "cold calibration store"
   cold_store
 
   step 3 "re-calibrate into the now-empty store"
-  run julia --project="$REPO_ROOT" --threads="$cores" "${REPO_ROOT}/scripts/calibrate_machine.jl"
+  run julia --project="$REPO_ROOT" --threads="$cores" "${REPO_ROOT}/scripts/calibration/calibrate_machine.jl"
 
   step 4 "P5f, cold store"
   run env OPENBLAS_NUM_THREADS=1 GKSwstype=100 ${ppb_cmd}

@@ -422,7 +422,7 @@ How much longer one sample takes when `k` of them share this process's heap,
 relative to running alone: `k / S(k)` with `S` the Universal Scalability Law at
 the machine's calibrated `(usl_alpha_base, usl_beta_alloc)`.
 
-The parameters are SOURCED -- `scripts/calibrate_machine.jl` fits them on this
+The parameters are SOURCED -- `scripts/calibration/calibrate_machine.jl` fits them on this
 machine -- but their application here is ASSUMED: they were fitted on the
 allocation kernel, and what is claimed is only that a Monte Carlo sample's
 contention with its neighbors on one heap has the same SHAPE as that kernel's,
@@ -1181,7 +1181,7 @@ table of its fingerprinted machine constants file
 - `source` -- where the two numbers were measured.
 
 Both are measured from campaign dispatch traces, not by
-`scripts/calibrate_machine.jl`; `scripts/extract_campaign_cost_terms.py`
+`scripts/calibration/calibrate_machine.jl`; `scripts/calibration/extract_campaign_cost_terms.py`
 extracts them from an archived run and writes this table. A field that is
 absent is `nothing`, and the planner then charges no such term: an unmeasured
 cost is not modeled.

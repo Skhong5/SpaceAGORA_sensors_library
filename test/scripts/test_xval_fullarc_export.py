@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-SCRIPT = Path(__file__).resolve().parents[2] / 'scripts' / 'xval_fullarc_export.py'
+SCRIPT = Path(__file__).resolve().parents[2] / 'scripts' / 'xval' / 'xval_fullarc_export.py'
 spec = importlib.util.spec_from_file_location('xval_export', SCRIPT)
 export = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(export)

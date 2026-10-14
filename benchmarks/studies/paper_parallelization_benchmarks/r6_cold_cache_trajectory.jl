@@ -49,7 +49,7 @@ const _MODE_PROFILE = Dict(
     "predictive" => "R7",
 )
 
-# Same derivation as scripts/paired_profile_probe.jl: the shipped profile
+# Same derivation as scripts/calibration/paired_profile_probe.jl: the shipped profile
 # definition, not a local copy of its env table.
 function mode_env(name::String)::Dict{String, String}
     haskey(_MODE_PROFILE, name) || error("unknown mode '$name'")

@@ -3,7 +3,7 @@
 module ScenarioMatrixDebugSupport
 
 const SCENARIO_MATRIX_DEFINITIONS_ONLY = true
-include(joinpath(@__DIR__, "..", "..", "test", "gmat_scenario_matrix.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "test", "gmat_scenario_matrix.jl"))
 
 function require_matrix_inputs(; stk::Bool=false)
     _basilisk_reference_available() || throw(ArgumentError(

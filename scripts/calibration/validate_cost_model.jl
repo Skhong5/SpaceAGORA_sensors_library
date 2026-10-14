@@ -2,10 +2,10 @@
 #
 # Cold validation of the analytic cost model against the REAL harmonics kernel.
 #
-#   julia --project=. --threads=12 scripts/validate_cost_model.jl
+#   julia --project=. --threads=12 scripts/calibration/validate_cost_model.jl
 #
 # The machine constants are measured entirely from synthetic kernels
-# (scripts/calibrate_machine.jl). Nothing in this grid is fitted, which is the
+# (scripts/calibration/calibrate_machine.jl). Nothing in this grid is fitted, which is the
 # point: a good prediction here is evidence the synthetic constants transfer to
 # real code, and a bad one is a localised residual that says where the model is
 # wrong rather than being absorbed into a coefficient.
@@ -24,7 +24,7 @@ const SE = SpaceAGORA.SimulationEngine
 const PC = SM.ParallelCost
 
 const EARTH = SM.Earth()
-const HARM_FILE = joinpath(@__DIR__, "..", "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+const HARM_FILE = joinpath(@__DIR__, "..", "..", "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
 
 function make_sc(; ra_alt_m, rp_alt_m, ν_deg)
     root = SM.Link(root=true, m=500.0, ref_area=12.0)

@@ -16,7 +16,7 @@
 #
 # written by
 #
-#     julia --project=. --threads=<T> scripts/calibrate_machine.jl
+#     julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl
 #
 # run at the thread count the jobs will use. The launcher runs that ONCE on the
 # box before the first job; this script does not run it, because calibration is
@@ -32,7 +32,7 @@ export SPACEAGORA_CAMPAIGN_CORRECTIONS="${SPACEAGORA_CAMPAIGN_CORRECTIONS:-off}"
 if ! ls output/parallel_policy_state/cost_constants_*.toml >/dev/null 2>&1; then
   echo "[targeted] WARNING: no output/parallel_policy_state/cost_constants_*.toml -- the" \
        "predictive rows will run without machine calibration. Run" \
-       "'julia --project=. --threads=<T> scripts/calibrate_machine.jl' once on this box first."
+       "'julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl' once on this box first."
 fi
 OUT=output/performance/targeted_$(date -u +%Y%m%d_%H%M%S); mkdir -p "$OUT"
 run() { # case mode workers threads mc label
