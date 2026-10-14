@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 import numpy as np
 
-spec = importlib.util.spec_from_file_location("fetch", Path(__file__).with_name("fetch_cygnss_l1_states.py"))
+spec = importlib.util.spec_from_file_location("fetch", Path(__file__).resolve().parents[2] / "benchmarks" / "studies" / "cygnss_reconstruction" / "fetch_cygnss_l1_states.py")
 f = importlib.util.module_from_spec(spec); spec.loader.exec_module(f)
 
 def inventory():

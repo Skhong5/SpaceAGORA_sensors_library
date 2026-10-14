@@ -130,6 +130,7 @@ Run [GRAMSuite Setup](gramsuite_setup.md) before using GRAM-backed studies.
 | Performance support | `performance_effector_reduction_microbench.jl`, `performance_split_imex_compare.jl`, `performance_static_vs_parallel.jl`, `performance_thread_scaling_1024.jl`, `performance_thread_scaling_64_aero_gram.jl`, `performance_hybrid_scaling_64_aero_gram.jl`, `performance_mc_thread_scaling.jl`, `performance_smart_parallel_ladder_cross_machine.jl` |
 | Parallelization paper benchmarks | `paper_parallelization_benchmarks.jl`, `parallelization_performance.jl` — each has a same-named subdirectory with its own `protocol.sh`, `cli.jl`, and `CASES.md` case catalog |
 | Tuning and validation | `telemetry_hybrid_tuner.jl`, `telemetry_odyssey_tuner.jl` |
+| CYGNSS reconstruction | `cygnss_reconstruction/` contains the Earthdata state pipeline and constellation/slew research drivers. Its `README.md` distinguishes public input retrieval, private slew telemetry and synthetic tests; execution success is not physical acceptance |
 | Scenario matrix runs | `run_cygnss_96hr.jl` and `run_venus_matrix_only.jl` drive `test/gmat_scenario_matrix.jl`; `cygnss_96hr_offset_sweep_worker.jl` builds its own manifest and calls `TelemetryVerification`. The offset worker needs private telemetry; the matrix drivers use available configured reference sets and report skipped inputs |
 
 The former `SpaceAGORACalibration.jl/` campaign package and its `bin/` drivers

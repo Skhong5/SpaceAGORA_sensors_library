@@ -629,8 +629,8 @@ jobs:
         run: |
           python3 -m venv /tmp/spaceagora-cygnss-tools
           /tmp/spaceagora-cygnss-tools/bin/python -m pip install -r scripts/dev/requirements-cygnss.txt
-          /tmp/spaceagora-cygnss-tools/bin/python scripts/dev/viewer_demos/test_cygnss_fetch.py
-          /tmp/spaceagora-cygnss-tools/bin/python scripts/dev/viewer_demos/fetch_cygnss_l1_states.py --self-test
+          /tmp/spaceagora-cygnss-tools/bin/python test/scripts/test_cygnss_fetch.py
+          /tmp/spaceagora-cygnss-tools/bin/python benchmarks/studies/cygnss_reconstruction/fetch_cygnss_l1_states.py --self-test
 
       - name: README quickstart artifact checker regressions
         run: python3 -B -m unittest discover -s test/scripts -p test_readme_quickstart.py -v
