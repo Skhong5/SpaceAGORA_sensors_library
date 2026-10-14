@@ -509,7 +509,7 @@ end
         @test empty_goal_dec.action == :replan && empty_goal_dec.reason == :goal_changed
 
         none_dec = GH.rpo_replanning_decision(plan, current, geom, GH.RPOReplanningConfig(), 0.0)
-        @test none_dec.action == :none && none_dec.reason == :no_active_spheres
+        @test none_dec.action == :none && none_dec.reason == :clearance_ok
 
         track_cfg = GH.RPOReplanningConfig(; tracking_error_retime_m=1.0, tracking_error_replan_m=10.0)
         offside = SVector{3, Float64}(0.0, 3.0, 0.0)
@@ -679,27 +679,41 @@ end
         )
         GH.update_rpo_plan_buffer!(replanner.plan_buffer, _probe_straight_plan(-2.0, 2.0), 0.0)
         @test GH.maybe_update_rpo_replanning!(replanner, u, 5.0)
+        @test replanner.replan_count == 0
+        @test replanner.replanning_phase == :braking
+        @test replanner.safe_hold_count == 1
+        x = [-2.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        @test !GH._rpo_advance_replanning_hold!(replanner, x, 5.1)
+        @test replanner.replanning_phase == :planning
+        released = replanner.pending_replan.available_at_s + 0.1
+        @test GH._rpo_advance_replanning_hold!(replanner, x, released)
         @test replanner.replan_count == 1
         @test replanner.goal_rtn == SVector{3, Float64}(3.0, 0.0, 0.0)
-        @test replanner.plan_buffer.plan.diagnostics.planned_at_s == 5.0
+        @test replanner.plan_buffer.plan.diagnostics.planned_at_s == released
         @test replanner.replanning_events[end].action == :replan
         @test replanner.replanning_events[end].reason == :goal_changed
 
-        # Replan failure keeps the old plan and restores the original goal.
+        # Replan failure retains the position hold and restores the original goal.
         failer = GM.RPOGuidanceModel(
             goal_rtn=SVector{3, Float64}(2.0, 0.0, 0.0),
             geometry=geom,
-            pso_config="not a config",
+            pso_config=cfg,
             replanning_config=GH.RPOReplanningConfig(; desired_goal_rtn=(3.0, 0.0, 0.0), safe_distance_m=0.05),
         )
         old_plan = _probe_straight_plan(-2.0, 2.0)
         GH.update_rpo_plan_buffer!(failer.plan_buffer, old_plan, 0.0)
-        result = @test_logs (:warn, r"RPO replanning failed") match_mode = :any GH.maybe_update_rpo_replanning!(failer, u, 6.0)
+        @test GH.maybe_update_rpo_replanning!(failer, u, 6.0)
+        failing_planner(args...; kwargs...) = error("injected planner exception")
+        @test !GH._rpo_advance_replanning_hold!(failer, x, 6.1; planner=failing_planner)
+        result = @test_logs (:warn, r"RPO replanning failed") match_mode = :any GH._rpo_advance_replanning_hold!(
+            failer, x, failer.pending_replan.available_at_s + 0.1; planner=failing_planner)
         @test !result
         @test failer.replan_failure_count == 1
         @test failer.replan_count == 0
         @test failer.goal_rtn == SVector{3, Float64}(2.0, 0.0, 0.0)
-        @test failer.plan_buffer.plan === old_plan
+        @test failer.plan_buffer.plan !== old_plan
+        @test failer.plan_buffer.plan.diagnostics.replanning_action == :hold
+        @test failer.replanning_phase == :hold_failed
         @test failer.replanning_events[end].action == :replan_failed
     end
 
@@ -725,7 +739,8 @@ end
         @test !model.force_replan
         @test model.plan_buffer.updated_at_s == 5.0
 
-        # Valid buffer without a replanning config falls through the maybe-update path.
+        # The next tick advances the hold into planning, without an instant replacement.
+        @test model.replanning_phase == :braking
         before = model.plan_buffer.updated_at_s
         @test GH.calcGuidanceEffect!(model, u, nothing, 6.0, 1) === nothing
         @test model.plan_buffer.updated_at_s == before

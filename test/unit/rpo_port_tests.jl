@@ -384,8 +384,15 @@ end
         retime_clearance_m=0.5,
         sphere_surface_samples=160,
     )
-    decision = SM.GuidanceHooks.rpo_replanning_decision(plan, SVector{3, Float64}(1.0, 0.0, 0.0), geom, behind, 1.0)
+    # Match the measured x=1 position to its reference time. At t=1 the
+    # reference is still x=-1, so reconnecting to its remaining route correctly
+    # approaches the sphere; it is not a behind-only obstacle test.
+    decision = SM.GuidanceHooks.rpo_replanning_decision(plan, SVector{3, Float64}(1.0, 0.0, 0.0), geom, behind, 3.0)
     @test decision.action == :none
+    @test decision.reason == :clearance_ok
+    decision = SM.GuidanceHooks.rpo_replanning_decision(plan, SVector{3, Float64}(1.0, 0.0, 0.0), geom, behind, 1.0)
+    @test decision.action == :retime
+    @test decision.reason == :low_clearance_remaining_path
 
     disturbed = SM.GuidanceHooks.RPOReplanningConfig(
         safe_distance_m=0.1,
@@ -439,9 +446,10 @@ end
         safe_distance_m=0.1,
         retime_clearance_m=0.5,
     )
-    decision = SM.GuidanceHooks.rpo_replanning_decision(plan, SVector{3, Float64}(0.0, 0.0, 0.0), geom, same_goal, 1.0)
+    decision = SM.GuidanceHooks.rpo_replanning_decision(plan, SVector{3, Float64}(0.0, 0.0, 0.0), geom, same_goal, 2.0)
     @test decision.action == :none
-    @test decision.reason == :no_active_spheres
+    # The station and reference are still checked when no added sphere is active.
+    @test decision.reason == :clearance_ok
 end
 
 @testset "RPO planner comparison smoke csv-only outputs" begin
@@ -517,6 +525,12 @@ end
             write_plotly_outputs=false,
             rng_seed=cfg.rng_seed,
         )
+        if !SpaceAGORA.hypr_available()
+            # Core keeps this explicit boundary; the required optional-HYPR job
+            # runs this same file with the companion and exercises the results below.
+            @test_throws SpaceAGORA.HYPRUnavailableError SM.rpo_run_planner_comparison_batch(cases, geom, cfg)
+            return
+        end
         batch = SM.rpo_run_planner_comparison_batch(cases, geom, cfg)
         rows = SM.GuidanceHooks.rpo_flatten_planner_results(batch)
         @test SM.normalize_rpo_comparison_planner_type(:rrtconnect) == :rrt_connect
