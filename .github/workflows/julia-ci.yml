@@ -487,7 +487,9 @@ jobs:
       # rejects the whole workflow file when it is used there. Export the
       # clean depot path from a step instead.
       - name: Use a clean Julia depot
-        run: echo "JULIA_DEPOT_PATH=${RUNNER_TEMP}/julia-clean-depot" >> "$GITHUB_ENV"
+        # A trailing colon retains Julia's bundled stdlib caches while excluding
+        # the user depot. Without it, Julia needlessly recompiles REPL itself.
+        run: echo "JULIA_DEPOT_PATH=${RUNNER_TEMP}/julia-clean-depot:" >> "$GITHUB_ENV"
 
       - name: Checkout
         uses: actions/checkout@v7
@@ -497,7 +499,7 @@ jobs:
           # GRAM retrieval supplies its own scoped credential explicitly.
           persist-credentials: false
 
-      # No shared depot here: resolving and compiling from nothing is the point.
+      # No shared package depot: project dependencies still start from nothing.
       # Keep compilation outside setup so a timeout identifies the failing phase.
       - name: Setup (instantiate in clean depot)
         timeout-minutes: 10

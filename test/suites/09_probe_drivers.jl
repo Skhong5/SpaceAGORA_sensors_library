@@ -95,13 +95,12 @@ end
         "SPACEAGORA_WARN_NORMALIZE" => "0"
     )
 
-    output = IOBuffer()
-    proc = run(pipeline(ignorestatus(cmd), stdout=output, stderr=output))
-    text = String(take!(output))
-    if !success(proc)
-        println("----- begin unit suite output -----")
-        println(text)
-        println("----- end unit suite output -----")
-    end
+    # Stream progress while the child runs so a timeout retains the last item.
+    # Keep the exit-status assertion: diagnostic output never implies a pass.
+    println("unit_suite_start ", unit_script)
+    flush(stdout)
+    proc = run(pipeline(ignorestatus(cmd), stdout=stdout, stderr=stderr))
+    println("unit_suite_exit ", proc.exitcode)
+    flush(stdout)
     @test success(proc)
 end
