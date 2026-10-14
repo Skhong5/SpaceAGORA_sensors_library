@@ -11,12 +11,17 @@ This contract-level separation does not yet make the installed package independe
 of HYPR. Existing `RPOGuidanceModel`, buffer layouts and controller mathematics
 retain their compatibility route.
 
-```@docs
-SpaceAGORA.RPOPlannerInterfaces
-SpaceAGORA.DirectRPOPlanning
-SpaceAGORA.HYPRRPOPlanning
-SpaceAGORA.RPOPlannerLifecycle
-```
+The internal modules, described in their source header comments:
+
+- `SpaceAGORA.RPOPlannerInterfaces`: RPO planner contracts. This module loads
+  with Julia standard libraries alone. The opt-in public RPO pilot connects
+  them to accepted simulation updates.
+- `SpaceAGORA.DirectRPOPlanning`: internal direct-path baseline. Loads with the
+  neutral contract and standard libraries only.
+- `SpaceAGORA.HYPRRPOPlanning`: opt-in contract adapter for existing HYPR
+  planning and configured retiming.
+- `SpaceAGORA.RPOPlannerLifecycle`: run ownership and accepted-update
+  installation for opt-in RPO planners.
 
 ## Data and ownership
 

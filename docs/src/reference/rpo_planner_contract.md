@@ -93,8 +93,9 @@ its declared application.
 
 ## Extension methods
 
-A planner can subtype `AbstractRPOPlanner` and implement `planner_capabilities`,
-`initialize_planner`, `plan_rpo!` and optionally `retime_rpo!`. Planning methods
+A planner can subtype `AbstractRPOPlanner` and implement `planner_capabilities`
+and `plan_rpo!`, and optionally `initialize_planner` (the default returns
+`nothing`, for stateless planners) and `retime_rpo!`. Planning methods
 require an explicit `AbstractRNG`; there is no default global random stream.
 The initial defaults report unsupported planning/retiming and consume no RNG.
 Capabilities default to empty support. A retiming refusal does not silently
@@ -105,6 +106,40 @@ lifecycle to install validated references. The current pilot refuses checkpoint
 writing and resume because they do not restore its complete run-owned state;
 a planner capability declaration does not remove that restriction.
 
+
+## Built-in planners
+
+`DirectRPOPlanner` builds a straight segment with `s(q)=3q²-2q³`, sampled
+uniformly through the first grid time at or beyond its chosen duration. Its
+analytic maxima are `1.5*distance/duration` for speed and
+`6*distance/duration²` for acceleration; endpoints are at rest. The duration is
+chosen from the reduced limits, rounded up to the request grid, and bounded by
+`max_reference_samples` and the request lifetime before allocation. A
+stationary request receives two identical samples. The baseline requires an
+assembly-owned analytic `segment_clearance_at(start, goal, geometry)` query and
+refuses missing queries, nonfinite clearance and blocked segments; it does not
+search for an alternate route.
+
+`HYPRRPOPlanner` copies its HYPR configuration, then maps request clearance and
+sampling interval explicitly. Request limits with headroom cap configured
+retiming limits. Conflicting configured minimum/initial speeds reject. A
+requested acceleration limit requires the configured acceleration-limited
+retimer; the adapter does not silently select another retiming algorithm.
+`RPOPSOConfig()` leaves `retime_accel_limit_enable` off while the default
+`make_rpo_configuration` constraints include an acceleration limit, so pair a
+requested acceleration limit with `retime_accel_limit_enable=true`, as
+`examples/rpo_planner_env/smoke.jl` does, or omit the limit.
+`rrt_on_replan=true` explicitly enables the existing RRT warm start for a
+`:replan` request.
+
+Both planners report `:infeasible/:insufficient_reference_lifetime` when the
+absolute reference end exceeds the request lifetime, without adding a time
+tolerance to this planning budget; equality is allowed. The HYPR adapter then
+applies the unchanged validator and returns `:failed/:reference_rejected` with
+the validation record for other output failures. Optimizer exceptions
+propagate. A `:candidate` is still subject to lifecycle-owned validation before
+installation, and every non-candidate outcome reaches the run as an
+`RPOPlanningError` carrying these symbols.
 
 ## Adapter planning headroom
 

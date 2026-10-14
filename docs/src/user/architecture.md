@@ -97,8 +97,10 @@ units, frames and solver semantics described by each hook.
 
 Broader optional integrations use versioned service facades:
 
-- HYPR owns motion-planning implementations; SpaceAGORA supplies configuration,
-  shared kinematics and dynamics through [HYPR services](../reference/hypr_services.md).
+- HYPR provides the optional planner behind `HYPRRPOPlanner`; SpaceAGORA keeps
+  the planner contract, the direct baseline and the shared path geometry, and
+  supplies configuration, shared kinematics and dynamics through
+  [HYPR services](../reference/hypr_services.md).
 - External integrators, including the MuJoCo companion, use
   [External Propagation Services](../reference/external_propagation_services.md)
   with explicit state ownership and supported coupling limits.
@@ -115,3 +117,7 @@ not establish scientific acceptance for a particular application.
 Use the [Public API and compatibility](../public_api_policy.md) reference to
 check whether a name is supported. Importable internal modules are not an
 extension contract.
+
+The repository layout, the contributor checklist and the full source-owner map
+are kept with the repository in `CONTRIBUTING.md` and the contributor guide it
+links, outside this site.

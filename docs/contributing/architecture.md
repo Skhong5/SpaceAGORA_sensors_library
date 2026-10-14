@@ -347,11 +347,11 @@ are relative to the directory in the first column.
 | `data/` | Gravity and topography coefficients, references, asset manifests and the Odyssey surrogate manifest | see [Assets & Modes](../src/assets.md) |
 | `docs/` | This site: user pages under `docs/src/`, maintainer contracts under `docs/architecture/` and `docs/quality/`, the public API registry | [Contributor Guide](index.md) |
 
-The shared asset catalog supplies manifest records to command front ends:
-
-```@docs
-SpaceAGORA.AssetCatalog
-```
+The shared asset catalog, `SpaceAGORA.AssetCatalog`, supplies manifest records
+to command front ends. As its source header comment says, this internal service
+returns plain field records so command front ends retain their own public
+types; it performs no downloads and does not interpret atmosphere or geometry
+schemas.
 
 ## Where your code belongs
 
