@@ -56,6 +56,11 @@ _failed_with(result, message::String) =
     result.failure.error isa ErrorException &&
     result.failure.error.msg == message
 
+_failed_starting(result, prefix::String) =
+    result.failure isa LoadError &&
+    result.failure.error isa ErrorException &&
+    startswith(result.failure.error.msg, prefix)
+
 _reports(result, probe::String, fixture::String, fragment::String) =
     any(v -> startswith(v, relpath(probe, fixture) * ":") && occursin(fragment, v), result.violations)
 
@@ -178,6 +183,84 @@ end
                     "Missing runtime legacy-surface target: " * relpath(helpers, fixture))
             finally
                 write(helpers, helpers_source)
+            end
+            @test isnothing(run_gate().failure)
+        end
+
+        @testset "Ownership gates contain by path, not by name prefix" begin
+            for (gate, owner_file, forbidden, failure, message) in (
+                ("ci_translational_ownership_gate.jl", "translational_models.jl",
+                    "du_view.pos .= sc_view.vel\n", "Translational ownership gate failed",
+                    "forbidden inline translational dynamics pattern"),
+                ("ci_rotational_ownership_gate.jl", "rotational_models.jl",
+                    "dq = 0.5 * quat_mult(q, w)\n", "Rotational ownership gate failed",
+                    "forbidden inline rotational dynamics pattern"),
+            )
+                run_gate = _gate_runner(repo, fixture, gate)
+                @test isnothing(run_gate().failure)
+                owner_dir = dirname(_unique_source(fixture, owner_file))
+                # A sibling whose name merely starts with the owner's name is not the owner.
+                sibling = joinpath(dirname(owner_dir), basename(owner_dir) * "_outside", "probe.jl")
+                _with_probe(sibling, forbidden) do
+                    rejected = run_gate()
+                    @test _failed_with(rejected, failure)
+                    @test _reports(rejected, sibling, fixture, message)
+                end
+                rm(dirname(sibling))
+                # Nested directories inside the owner remain exempt.
+                nested = joinpath(owner_dir, "nested", "probe.jl")
+                _with_probe(nested, forbidden) do
+                    @test isnothing(run_gate().failure)
+                end
+                rm(dirname(nested))
+                # A missing owner root is an explicit failure, not an empty scan.
+                parked = owner_dir * "_parked"
+                mv(owner_dir, parked)
+                try
+                    @test _failed_with(run_gate(), "Missing " * split(basename(owner_dir), "_")[1] * " ownership root")
+                finally
+                    mv(parked, owner_dir)
+                end
+                @test isnothing(run_gate().failure)
+            end
+        end
+
+        @testset "Benchmark mode parity gate" begin
+            # The gate loads SpaceAGORA through the fixture root on LOAD_PATH; keep
+            # the process load path unchanged afterwards.
+            modes_rel = joinpath("benchmarks", "studies", "parallelization_performance", "modes.jl")
+            _copy_into!(fixture, repo, modes_rel)
+            modes = joinpath(fixture, modes_rel)
+            original = read(modes, String)
+            gate = _gate_runner(repo, fixture, "ci_ppc_mode_profile_parity_gate.jl")
+            run_gate = () -> (result = gate(); filter!(!=(fixture), LOAD_PATH); result)
+            @test isnothing(run_gate().failure)
+            disagree = "Benchmark mode table disagrees with the shipped profiles"
+            # An inline mode block that drifts from its profile.
+            inline = replace(original, "\"outer_threads\" => PPCModeSpec(\n            name=\"outer_threads\",\n            profile=\"R1a\",\n            backend=\"threads\",\n            outer_active=true,\n            policy_adaptive=false,\n            rhs_batch=\"auto\",\n            density=\"off\"" =>
+                "\"outer_threads\" => PPCModeSpec(\n            name=\"outer_threads\",\n            profile=\"R1a\",\n            backend=\"threads\",\n            outer_active=true,\n            policy_adaptive=false,\n            rhs_batch=\"auto\",\n            density=\"bogus\""; count=1)
+            @test inline != original
+            _with_text(modes, inline) do
+                @test _failed_starting(run_gate(), disagree)
+            end
+            # The serial mode is bound to a local name before it enters the table;
+            # the gate must follow that binding rather than skip the mode.
+            serial = replace(original, "    serial = PPCModeSpec(\n        name=\"serial\",\n        profile=\"R0\",\n        backend=\"none\",\n        outer_active=false,\n        policy_adaptive=false,\n        rhs_batch=\"off\",\n        density=\"off\"" =>
+                "    serial = PPCModeSpec(\n        name=\"serial\",\n        profile=\"R0\",\n        backend=\"none\",\n        outer_active=false,\n        policy_adaptive=false,\n        rhs_batch=\"off\",\n        density=\"bogus\""; count=1)
+            @test serial != original
+            _with_text(modes, serial) do
+                @test _failed_starting(run_gate(), disagree)
+            end
+            # A checked mode that disappears from the table is an explicit failure.
+            _with_text(modes, replace(original, "\"serial\" => serial," => ""; count=1)) do
+                @test _failed_starting(run_gate(), "Benchmark mode table has no PPCModeSpec for checked mode \"serial\"")
+            end
+            # A missing table is an explicit failure.
+            rm(modes)
+            try
+                @test _failed_starting(run_gate(), "modes.jl not found")
+            finally
+                write(modes, original)
             end
             @test isnothing(run_gate().failure)
         end

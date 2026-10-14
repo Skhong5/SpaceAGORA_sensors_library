@@ -33,15 +33,28 @@ const CHECKED = [
     ("policy_v2", "R6"), ("predictive", "R7"),
 ]
 
-# Pull one `key="value"` out of the PPCModeSpec block for `mode`.
-function _spec_field(mode::String, key::String)::Union{Nothing, String}
+# Locate the PPCModeSpec block for `mode`. Modes are written either inline,
+# `"mode" => PPCModeSpec(...)`, or bound to a local name first, e.g.
+# `serial = PPCModeSpec(...)` and later `"serial" => serial,`. Both forms are
+# checked; a checked mode that cannot be found at all fails the gate instead of
+# being skipped.
+function _mode_block(mode::String)::Union{Nothing, String}
     anchor = "\"$(mode)\" => PPCModeSpec("
     i = findfirst(anchor, MODES_SRC)
-    i === nothing && return nothing
+    if i === nothing
+        bound = match(Regex("\"" * mode * "\"\\s*=>\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*,"), MODES_SRC)
+        bound === nothing && return nothing
+        i = findfirst(Regex("\\b" * bound.captures[1] * "\\s*=\\s*PPCModeSpec\\("), MODES_SRC)
+        i === nothing && return nothing
+    end
     # The block ends at the next `" => PPCModeSpec(` or end of file.
     rest = MODES_SRC[last(i):end]
     nxt = findfirst("\" => PPCModeSpec(", rest[2:end])
-    block = nxt === nothing ? rest : rest[1:first(nxt)]
+    return nxt === nothing ? rest : rest[1:first(nxt)]
+end
+
+# Pull one `key="value"` out of the PPCModeSpec block for `mode`.
+function _spec_field(block::String, key::String)::Union{Nothing, String}
     m = match(Regex("\\b" * key * "\\s*=\\s*\"([^\"]*)\""), block)
     return m === nothing ? nothing : String(m.captures[1])
 end
@@ -49,6 +62,8 @@ end
 violations = String[]
 for (mode, profile) in CHECKED
     cfg = SpaceAGORA.ParallelProfiles.profile_config(profile)
+    block = _mode_block(mode)
+    block === nothing && error("Benchmark mode table has no PPCModeSpec for checked mode \"$(mode)\" in modes.jl.")
     for (field, shipped) in (
         ("thermal", cfg.thermal_mode),
         ("density", cfg.density_mode),
@@ -56,7 +71,7 @@ for (mode, profile) in CHECKED
         ("multibody", cfg.multibody_mode),
         ("effector", cfg.effector_mode),
     )
-        harness = _spec_field(mode, field)
+        harness = _spec_field(block, field)
         harness === nothing && continue
         if harness != shipped
             push!(violations,
