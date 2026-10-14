@@ -243,7 +243,7 @@ end
         pbest = copy(positions)
         pbest_cost = [1.0, 4.0, 2.0, 3.0]
         n = HM_GH.rpo_pso_cull_swarm!(positions, velocities, pbest, pbest_cost, lo_rep, hi_rep, gbest,
-            start, goal, nw, cull_cfg, 12, MersenneTwister(5))
+            start, goal, nw, cull_cfg, 10, MersenneTwister(5))
         return n, positions, pbest_cost
     end
     # Targets: q* + 0.6 (q_line - q*) + 0.4 (q_loc - q*), with q_loc the

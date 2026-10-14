@@ -1,5 +1,7 @@
 """Allocate a requested body force across six-axis thrusters."""
-function rpo_allocate_six_axis_thrusters(force_body, thrusters::SixAxisThrusterModel)
+function rpo_allocate_six_axis_thrusters(force_body, thrusters::SixAxisThrusterModel; minimum_throttle_fraction::Real=0.0)
+    isfinite(minimum_throttle_fraction) && 0 <= minimum_throttle_fraction < 1 ||
+        throw(ArgumentError("minimum_throttle_fraction must be finite in [0,1)."))
     f = zeros(6)
     desired = SVector{3, Float64}(force_body)
     @inbounds for axis in 1:3
@@ -10,6 +12,9 @@ function rpo_allocate_six_axis_thrusters(force_body, thrusters::SixAxisThrusterM
         else
             f[neg_idx] = min(-desired[axis], thrusters.max_thrust_n[neg_idx])
         end
+    end
+    for j in 1:6
+        f[j] <= minimum_throttle_fraction * thrusters.max_thrust_n[j] && (f[j] = 0.0)
     end
     return SVector{6, Float64}(f)
 end

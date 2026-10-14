@@ -25,7 +25,7 @@ function calcControlEffect!(model::RPOMPCControlModel, u, p::ODEParams, t::Float
     q = SVector{4, Float64}(u.sc[model.chaser_idx].q)
     R_i_to_b = rot(q)
     force_body_des = R_i_to_b * force_ii_des
-    thruster_forces = rpo_allocate_six_axis_thrusters(force_body_des, model.thrusters)
+    thruster_forces = rpo_allocate_six_axis_thrusters(force_body_des, model.thrusters; minimum_throttle_fraction=model.minimum_throttle_fraction)
     force_body, thruster_torque_body = rpo_thruster_wrench_body(thruster_forces, model.thrusters)
     rw_torque_body = rpo_reaction_wheel_torque_command(model, u, sat_idx)
     force_ii = R_i_to_b' * force_body

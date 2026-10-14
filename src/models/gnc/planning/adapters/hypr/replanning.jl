@@ -40,6 +40,7 @@ struct RPOReplanningConfig
     tracking_error_retime_m::Float64
     tracking_error_replan_m::Float64
     rng_seed::Int
+    observation_window_s::Float64
 end
 
 """Read a replanning field from objects or named tuples with a default fallback."""
@@ -65,7 +66,9 @@ function _rpo_replanning_sphere(value)
 end
 
 """Runtime replanning policy for dynamic RPO obstacles, goal changes, and tracking errors."""
-function RPOReplanningConfig(; enabled::Bool=true, spheres=RPOReplanningSphere[], desired_goal_rtn=nothing, goal_change_tolerance_m::Real=1.0e-6, safe_distance_m::Real=0.0, retime_clearance_m::Real=0.25, min_replan_interval_s::Real=0.0, hysteresis_samples::Integer=1, sphere_surface_samples::Integer=96, remaining_sample_ds_m::Real=0.10, tracking_error_retime_m::Real=Inf, tracking_error_replan_m::Real=Inf, rng_seed::Integer=740)
+function RPOReplanningConfig(; enabled::Bool=true, spheres=RPOReplanningSphere[], desired_goal_rtn=nothing, goal_change_tolerance_m::Real=1.0e-6, safe_distance_m::Real=0.0, retime_clearance_m::Real=0.25, min_replan_interval_s::Real=0.0, hysteresis_samples::Integer=1, sphere_surface_samples::Integer=96, remaining_sample_ds_m::Real=0.10, tracking_error_retime_m::Real=Inf, tracking_error_replan_m::Real=Inf, rng_seed::Integer=740, observation_window_s::Real=0.0)
+    window = Float64(observation_window_s)
+    isfinite(window) && window >= 0 || throw(ArgumentError("observation_window_s must be finite and nonnegative."))
     sphere_vec = RPOReplanningSphere[_rpo_replanning_sphere(s) for s in spheres]
     desired_goal = desired_goal_rtn === nothing ? nothing : SVector{3, Float64}(desired_goal_rtn)
     goal_tol = Float64(goal_change_tolerance_m)
@@ -98,6 +101,7 @@ function RPOReplanningConfig(; enabled::Bool=true, spheres=RPOReplanningSphere[]
         tracking_error_retime,
         tracking_error_replan,
         Int(rng_seed),
+        window,
     )
 end
 
@@ -113,13 +117,13 @@ function rpo_active_replanning_spheres(config::RPOReplanningConfig, t::Real)
         RPOReplanningSphere(
             rpo_replanning_sphere_center(sphere, tt),
             sphere.radius_m;
-            appear_time_s=sphere.appear_time_s,
-            disappear_time_s=sphere.disappear_time_s,
+            appear_time_s=tt,
+            disappear_time_s=sphere.disappear_time_s + config.observation_window_s,
             velocity_rtn_mps=sphere.velocity_rtn_mps,
             label=sphere.label,
         )
         for sphere in config.spheres
-        if tt >= sphere.appear_time_s && tt <= sphere.disappear_time_s
+        if tt >= sphere.appear_time_s && tt <= sphere.disappear_time_s + config.observation_window_s
     ]
 end
 
@@ -168,43 +172,50 @@ function rpo_geometry_with_replanning_spheres(geometry::RPOReferenceGeometry, sp
     return RPOReferenceGeometry(station; chaser=geometry.chaser)
 end
 
-"""Return the remaining reference path from the current chaser position."""
-function rpo_remaining_reference_path(plan::RPOPlan, current_rtn; sample_ds_m::Real=0.10)
-    current = SVector{3, Float64}(current_rtn)
-    if size(plan.r_ref_rtn, 2) == 0
-        return reshape(collect(current), 3, 1)
-    end
-    best_idx = 1
-    best_dist = Inf
-    @inbounds for j in 1:size(plan.r_ref_rtn, 2)
-        dx = plan.r_ref_rtn[1, j] - current[1]
-        dy = plan.r_ref_rtn[2, j] - current[2]
-        dz = plan.r_ref_rtn[3, j] - current[3]
-        d2 = dx * dx + dy * dy + dz * dz
-        if d2 < best_dist
-            best_dist = d2
-            best_idx = j
-        end
-    end
-    tail = plan.r_ref_rtn[:, best_idx:end]
-    path = zeros(3, size(tail, 2) + 1)
-    path[:, 1] .= current
-    path[:, 2:end] .= tail
-    return rpo_sample_path_polyline(path, sample_ds_m)
+"""Unexpired reference, including the interpolated position at the current time."""
+function rpo_future_reference_path(plan::RPOPlan, t::Real)
+    n = size(plan.r_ref_rtn, 2)
+    n == 0 && return zeros(3, 0)
+    elapsed = max(0.0, Float64(t) - get(plan.diagnostics, :planned_at_s, 0.0))
+    times = plan.t_ref_s
+    length(times) == n || throw(ArgumentError("RPO reference times and positions must match."))
+    elapsed >= last(times) && return plan.r_ref_rtn[:, end:end]
+    j = clamp(searchsortedlast(times, elapsed), 1, n - 1)
+    alpha = clamp((elapsed-times[j]) / max(times[j+1]-times[j], eps(Float64)), 0.0, 1.0)
+    now = (1-alpha)*plan.r_ref_rtn[:,j] + alpha*plan.r_ref_rtn[:,j+1]
+    return hcat(now, plan.r_ref_rtn[:,j+1:end])
 end
 
-"""Compute the distance from the current chaser position to the active reference path."""
-function rpo_reference_tracking_error(plan::RPOPlan, current_rtn)
-    current = SVector{3, Float64}(current_rtn)
-    size(plan.r_ref_rtn, 2) == 0 && return Inf
-    best_dist = Inf
-    @inbounds for j in 1:size(plan.r_ref_rtn, 2)
-        dx = plan.r_ref_rtn[1, j] - current[1]
-        dy = plan.r_ref_rtn[2, j] - current[2]
-        dz = plan.r_ref_rtn[3, j] - current[3]
-        best_dist = min(best_dist, sqrt(dx * dx + dy * dy + dz * dz))
+"""Return the unexpired path connected to the current position."""
+function rpo_remaining_reference_path(plan::RPOPlan, current_rtn; sample_ds_m::Real=0.10, t::Real=get(plan.diagnostics, :planned_at_s, 0.0))
+    tail = rpo_future_reference_path(plan, t)
+    current = SVector{3,Float64}(current_rtn)
+    size(tail,2)==0 && return reshape(collect(current),3,1)
+    isfinite(sample_ds_m) && sample_ds_m > 0 || throw(ArgumentError("sample_ds_m must be positive and finite."))
+    # Resampling the complete chain at uniform arc lengths can omit a corner
+    # and create a shortcut through an obstacle. Subdivide each segment instead.
+    chain = hcat(current, tail)
+    pieces = Matrix{Float64}[]
+    for j in 1:size(chain,2)-1
+        segment = rpo_sample_path_polyline(chain[:,j:j+1], sample_ds_m)
+        push!(pieces, j==1 ? segment : segment[:,2:end])
     end
-    return best_dist
+    return hcat(pieces...)
+end
+
+"""Minimum distance to the future piecewise-linear reference (paper Algorithm 1)."""
+function rpo_reference_tracking_error(plan::RPOPlan, current_rtn; t::Real=get(plan.diagnostics, :planned_at_s, 0.0))
+    tail = rpo_future_reference_path(plan, t)
+    n = size(tail, 2)
+    n == 0 && return Inf
+    p = SVector{3,Float64}(current_rtn)
+    best = norm(p - tail[:,1])
+    for j in 1:n-1
+        a = SVector{3,Float64}(tail[:,j]); d = SVector{3,Float64}(tail[:,j+1]) - a
+        alpha = clamp(dot(p-a,d) / max(dot(d,d), eps(Float64)), 0.0, 1.0)
+        best = min(best, norm(p-a-alpha*d))
+    end
+    return best
 end
 
 """Decide whether to keep, retime, or replan the active RPO path."""
@@ -225,22 +236,22 @@ function rpo_replanning_decision(plan::RPOPlan, current_rtn, geometry::RPORefere
             return (action=:replan, reason=:goal_changed, min_clearance=Inf, spheres=spheres, geometry=augmented)
         end
     end
-    if isempty(spheres)
-        tracking_error = rpo_reference_tracking_error(plan, current_rtn)
-        if tracking_error > config.tracking_error_replan_m
-            return (action=:replan, reason=:tracking_error, min_clearance=Inf, spheres=spheres, geometry=geometry)
-        end
-        if tracking_error > config.tracking_error_retime_m
-            return (action=:retime, reason=:tracking_error, min_clearance=Inf, spheres=spheres, geometry=geometry)
-        end
-        return (action=:none, reason=:no_active_spheres, min_clearance=Inf, spheres=spheres, geometry=geometry)
-    end
-    remaining = rpo_remaining_reference_path(plan, current_rtn; sample_ds_m=config.remaining_sample_ds_m)
+    tracking_error = rpo_reference_tracking_error(plan, current_rtn; t=t)
+    remaining = rpo_remaining_reference_path(plan, current_rtn; sample_ds_m=config.remaining_sample_ds_m, t=t)
     stats = rpo_path_clearance_stats(remaining, augmented; safe_distance_m=config.safe_distance_m)
-    if stats.min_clearance < config.safe_distance_m
-        return (action=:replan, reason=:unsafe_remaining_path, min_clearance=stats.min_clearance, spheres=spheres, geometry=augmented)
-    elseif stats.min_clearance < config.retime_clearance_m
-        return (action=:retime, reason=:low_clearance_remaining_path, min_clearance=stats.min_clearance, spheres=spheres, geometry=augmented)
+    if stats.min_clearance < config.safe_distance_m || tracking_error > config.tracking_error_replan_m
+        reason = stats.min_clearance < config.safe_distance_m ? :unsafe_remaining_path : :tracking_error
+        return (action=:replan, reason=reason, min_clearance=stats.min_clearance, spheres=spheres, geometry=augmented)
+    elseif stats.min_clearance < config.retime_clearance_m || tracking_error > config.tracking_error_retime_m
+        # A completed point reference has no remaining traversal to retime.
+        # Safety, goal changes and excessive tracking error are checked first.
+        # Reinstalling it every tick would indefinitely reset its completion clock.
+        if length(plan.t_ref_s) == 1 && iszero(only(plan.t_ref_s)) &&
+            tracking_error <= config.tracking_error_retime_m
+            return (action=:none, reason=:reference_complete, min_clearance=stats.min_clearance, spheres=spheres, geometry=augmented)
+        end
+        reason = stats.min_clearance < config.retime_clearance_m ? :low_clearance_remaining_path : :tracking_error
+        return (action=:retime, reason=reason, min_clearance=stats.min_clearance, spheres=spheres, geometry=augmented)
     end
     return (action=:none, reason=:clearance_ok, min_clearance=stats.min_clearance, spheres=spheres, geometry=augmented)
 end
@@ -259,20 +270,88 @@ function rpo_plan_from_path(path_rtn, geometry, cfg::RPOPSOConfig, safe_distance
     )
 end
 
-"""Retain the current RPO route but rebuild timing from the current state."""
-function rpo_retime_existing_plan(plan::RPOPlan, current_rtn, geometry, cfg::RPOPSOConfig, safe_distance_m::Real, t::Real)
-    current = SVector{3, Float64}(current_rtn)
-    tail = rpo_remaining_reference_path(plan, current; sample_ds_m=cfg.sample_ds_m)
-    if size(tail, 2) >= 2
-        tail[:, 1] .= current
+"""Remove only monotone collinear sampling points, within the duplicate tolerance.
+
+Time samples are not geometric waypoints. Retiming must not create a new turn
+at the next time sample when that sample lies inside a straight route segment.
+Every retained chord is checked against all removed points; reversals and bends
+larger than the existing 1e-10 m duplicate tolerance remain explicit vertices.
+"""
+function _rpo_retime_route_vertices(route; tolerance_m=1.0e-10)
+    n = size(route, 2)
+    n <= 2 && return Matrix{Float64}(route)
+    keep = falses(n)
+    keep[1] = keep[end] = true
+    intervals = [(1, n)]
+    while !isempty(intervals)
+        lo, hi = pop!(intervals)
+        hi <= lo + 1 && continue
+        a = SVector{3,Float64}(route[:,lo])
+        d = SVector{3,Float64}(route[:,hi]) - a
+        length2 = dot(d,d)
+        split = 0
+        if length2 <= tolerance_m^2
+            # Coincident endpoints can enclose an excursion; never erase it.
+            split = lo + argmax([norm(route[:,j] - a) for j in lo+1:hi-1])
+            norm(route[:,split] - a) <= tolerance_m && continue
+        else
+            worst = tolerance_m
+            last_alpha = 0.0
+            for j in lo+1:hi-1
+                q = SVector{3,Float64}(route[:,j]) - a
+                alpha = dot(q,d) / length2
+                deviation = norm(q - clamp(alpha,0.0,1.0)*d)
+                if deviation > worst
+                    worst = deviation
+                    split = j
+                end
+                if alpha < last_alpha || alpha > 1.0
+                    split = j
+                    break
+                end
+                last_alpha = alpha
+            end
+            split == 0 && continue
+        end
+        keep[split] = true
+        push!(intervals, (lo,split), (split,hi))
     end
-    return rpo_plan_from_path(
-        tail,
-        geometry,
-        cfg,
-        safe_distance_m,
-        t;
-        cost=plan.cost,
-        diagnostics=merge(plan.diagnostics, (replanning_action=:retime,)),
-    )
+    return Matrix{Float64}(route[:,keep])
+end
+
+"""Retain the current RPO route but rebuild timing from the current state."""
+function rpo_retime_existing_plan(plan::RPOPlan, current_rtn, geometry, cfg::RPOPSOConfig, safe_distance_m::Real, t::Real; current_velocity_rtn=nothing)
+    current = SVector{3, Float64}(current_rtn)
+    # Algorithm 1 retimes from geometric progress, then stitches the current
+    # state. Keep this separate from its future-in-time tracking-error metric.
+    route = _rpo_retime_route_vertices(get(plan.diagnostics, :retiming_geometry_rtn, plan.r_ref_rtn))
+    n=size(route,2)
+    n>0 || throw(ArgumentError("Cannot retime an empty reference."))
+    best=Inf;segment=1;projection=copy(route[:,1])
+    for j in 1:n-1
+        a=SVector{3,Float64}(route[:,j]);d=SVector{3,Float64}(route[:,j+1])-a
+        alpha=clamp(dot(current-a,d)/max(dot(d,d),eps(Float64)),0.,1.)
+        q=a+alpha*d;distance=norm(current-q)
+        if distance<best
+            best=distance;segment=j;projection=collect(q)
+        end
+    end
+    tail=n==1 ? Matrix{Float64}(route) : hcat(projection,route[:,segment+1:end])
+    # The connection from the measured position consumes reference time too.
+    # Overwriting only the first sample after retiming would compress an entire
+    # displacement into one update. Keep the projected route separately so a
+    # later retime never incorporates this temporary connector recursively.
+    # The projection locates progress; it is not a waypoint to visit first.
+    # Replace that synthetic first point before retiming, retaining every
+    # subsequent geometric route vertex. Collinear time samples are not turns.
+    # Visiting the projection explicitly can
+    # create an artificial sharp corner at every update and stall progress.
+    connected = norm(current - tail[:, 1]) <= 1.0e-10 ? tail :
+        (size(tail, 2) == 1 ? hcat(current, tail) : hcat(current, tail[:, 2:end]))
+    retimed=rpo_plan_from_path(connected,geometry,rpo_pso_config(cfg;curve_type=:polyline),safe_distance_m,t;
+        cost=plan.cost,diagnostics=merge(plan.diagnostics,(replanning_action=:retime,retiming_geometry_rtn=tail)))
+    if size(retimed.r_ref_rtn,2)>1
+        current_velocity_rtn !== nothing && (retimed.v_ref_rtn[:,1] .= current_velocity_rtn)
+    end
+    return retimed
 end

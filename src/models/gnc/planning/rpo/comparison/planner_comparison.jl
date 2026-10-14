@@ -1,3 +1,5 @@
+include("two_body_plant.jl")
+
 """Settings for LQ-MPC path tracking metrics in RPO planner comparisons."""
 Base.@kwdef struct RPOLQMPCTrackingSettings
     dt_s::Float64 = 0.1
@@ -15,6 +17,10 @@ Base.@kwdef struct RPOLQMPCTrackingSettings
     qf_vel::Float64 = 5.0
     settle_time_s::Float64 = 20.0
     final_position_tol_m::Float64 = 0.25
+    plant::Symbol = :hcw
+    actuator_frame::Symbol = :inertial
+    minimum_throttle_fraction::Float64 = 0.0
+    max_thrust_n::Float64 = 0.05
 end
 
 """Single start-goal case definition for planner comparison batches."""
@@ -263,6 +269,7 @@ function rpo_plan_comparison_path(
     cfg::RPOPlannerComparisonConfig;
     rng=Random.default_rng(),
     runtime_limit_s::Real=Inf,
+    warmstart_path=nothing,
 )
     HYPRSupport.require_hypr()
     cfg = _rpo_comparison_config_with_fixed_safe_distance(cfg)
@@ -286,7 +293,10 @@ function rpo_plan_comparison_path(
             planner_iteration_count=iterations,
         ))
     elseif planner == :pso_unrefined
-        unrefined_cfg = rpo_pso_config(base_cfg; refinement_enable=false)
+        unrefined_cfg = rpo_pso_config(base_cfg; refinement_enable=false,
+            adaptive_enable=false, schedule_enable=false, stagnation_learning_enable=false,
+            rrt_warmstart_enable=false,
+            cull_enable=false, reexplore_enable=false)
         plan = rpo_pso_plan_path(start_rtn, goal_rtn, geometry, unrefined_cfg; safe_distance_m=cfg.safe_distance_m, rng=rng)
         elapsed = (time_ns() - t0) / 1.0e9
         iterations = length(plan.cost_history)
@@ -368,7 +378,7 @@ function rpo_plan_comparison_path(
             gradient_eps=cfg.chomp.gradient_eps,
             w_smooth=cfg.chomp.w_smooth,
         )
-        initial_path = _rpo_comparison_rrt_connect_seed_path(
+        initial_path = warmstart_path === nothing ? _rpo_comparison_rrt_connect_seed_path(
             start_rtn,
             goal_rtn,
             geometry,
@@ -377,7 +387,7 @@ function rpo_plan_comparison_path(
             runtime_limited_iters(cfg.rrt_connect.n_iters);
             runtime_limit_s=runtime_limit_s,
             rng=rng,
-        )
+        ) : Matrix{Float64}(warmstart_path)
         plan = rpo_chomp_plan_path(
             start_rtn,
             goal_rtn,
@@ -407,7 +417,7 @@ function rpo_plan_comparison_path(
             update_step=cfg.stomp.update_step,
             w_smooth=cfg.stomp.w_smooth,
         )
-        initial_path = _rpo_comparison_rrt_connect_seed_path(
+        initial_path = warmstart_path === nothing ? _rpo_comparison_rrt_connect_seed_path(
             start_rtn,
             goal_rtn,
             geometry,
@@ -416,7 +426,7 @@ function rpo_plan_comparison_path(
             runtime_limited_iters(cfg.rrt_connect.n_iters);
             runtime_limit_s=runtime_limit_s,
             rng=rng,
-        )
+        ) : Matrix{Float64}(warmstart_path)
         plan = rpo_stomp_plan_path(
             start_rtn,
             goal_rtn,
@@ -464,6 +474,8 @@ end
 """Track a retimed RPO path with LQ-MPC and report tracking/fuel metrics."""
 function rpo_track_retimed_path_lqmpc(path_rtn, goal_rtn, geometry, pso_cfg::RPOPSOConfig, tracking::RPOLQMPCTrackingSettings; safe_distance_m::Real=0.0)
     HYPRSupport.require_hypr()
+    tracking.plant === :two_body && return rpo_track_two_body_path(path_rtn, goal_rtn, geometry, pso_cfg, tracking; safe_distance_m=safe_distance_m)
+    tracking.plant === :hcw || throw(ArgumentError("Unknown RPO comparison plant."))
     retime_cfg = rpo_pso_config(
         pso_cfg;
         retime_dt_s=tracking.dt_s,
@@ -649,3 +661,5 @@ function rpo_run_planner_comparison_batch(cases, geometry, cfg::RPOPlannerCompar
 end
 
 include("reporting_compat.jl")
+
+include("executed_tracking.jl")

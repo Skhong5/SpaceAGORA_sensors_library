@@ -85,8 +85,9 @@ reference validation, seed mapping and the information returned by
 
 ## Relating a run to the paper
 
-The September 23 manuscript describes a 500-case static comparison and 900
-dynamic cases. Its static comparison uses MersenneTwister seeds `740 + i`, a
+The selected final author-shared iSpaRo paper describes a 500-case static
+comparison and 100 baseline paths under eight additional scenarios, or 800
+dynamic cases per planner. The earlier September 23 draft described 900. Its static comparison uses MersenneTwister seeds `740 + i`, a
 0.5 m safety distance, a 0.1 s controller update and a 60-step MPC horizon. The
 controller weights are `Q = diag(20,20,20,2,2,2)`, `R = 0.1I` and `Qf = 20Q`.
 The study gives competing planners a per-case time budget based on HYPR's
@@ -144,3 +145,96 @@ failure policy remain part of the application. The
 [planner contract](../maintainer/rpo_planner_contract.md) and
 [HYPR service reference](../maintainer/hypr_services.md) describe those boundaries
 for developers extending the integration.
+
+
+## Final iSpaRo reconstruction candidate
+
+`examples/Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl` records a newly generated
+experiment through the full SpaceAGORA simulator. It uses the final paper's
+0.5 m clearance, 10 Hz control, 60-step horizon and controller weights, with
+5 kg interpreted as initial wet mass and 0.2 kg of propellant. Exact original
+case coordinates, geometry draws and the paper-producing source revision have
+not been recovered. This example is a reconstruction, not an original-run replay.
+
+The example defaults to five cases for all seven methods. Set `HYPR_CASES=500`
+for the static campaign size. Write evidence outside the repository and any
+cloud-synced vault, for example:
+
+```sh
+HYPR_CASES=5 HYPR_OUTPUT_ROOT="$HOME/AgentScratch/hypr_final_isparo" \
+  JULIA_NUM_THREADS=2 julia --project=examples/rpo_planner_env \
+  examples/Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl
+```
+
+Both candidate source patches must be installed in the optional environment.
+The example records cases, each planner's path/reference, successful and failed
+outcomes, and actual delivered-force fuel consumption. Failed cases remain in
+success/runtime accounting and must be excluded from fuel means. Comparisons
+against HyPR must use the intersection of successful case IDs. Hardware and
+thread count are part of the experiment; this local run does not reproduce the
+paper's 16-thread AMD planning times.
+
+The full demo holds a fixed inertial attitude and samples clearance along
+0.05 s swept chords against the buffered point cloud. This does not certify
+watertight CAD collision geometry. The 20% activation option suppresses small
+average-throttle commands; it does not establish resolved PWM valve behavior.
+The reduced two-body evaluator remains diagnostic until its fuel agreement with
+the full simulator is established for the experiment being reported.
+
+The legacy RPO guidance model now brakes and holds before replanning. It consumes
+measured planner time in simulation time, checks the current map before release,
+and leaves failed replacements in hold. Its position/speed release tolerances
+(0.02 m and 0.002 m/s) are explicit reconstruction settings recovered from the
+later source, not numerical tolerances specified by the final paper. Retiming
+retains the remaining geometric route. `RPOReplanningConfig.observation_window_s` optionally
+retains detections after their last observation; a reconstruction can set it to
+0.02 times the original reference duration. The separate public `PlannerGuidance`
+lifecycle is not upgraded to this dynamic policy by this patch.
+
+The companion `Earth_RPO_HyPR_FinalISpaRo_Replanning.jl` consumes a saved case
+record via `HYPR_BASELINE_RECORD`. It exercises a baseline plus the eight
+reconstructed disturbance families in the full simulator, and keeps a separate
+obstructed-goal negative control. It uses existing callback ordering: the
+scenario input arrives before control; control runs before guidance. Fixed
+endpoints that already violate clearance are rejected before search, and the
+vehicle remains in hold. A failed hold is not a claim that an already unsafe
+position has become safe. The original obstacle placements and disturbance draws
+are missing, so these generated cases cannot be attributed to the final table.
+
+Remaining-route resampling subdivides each original segment so that a coarse
+sampling interval cannot remove a corner and create a new shortcut. Replacement
+release checks both the earlier planned route and the final retimed reference.
+These checks preserve the 0.5 m limit; passing them does not qualify a complete
+maneuver or its runtime. The reconstruction records unsuccessful and interrupted
+runs separately from successful tracking.
+
+Retiming follows Algorithm 1 lines 14-15: project onto the retained geometric
+route, connect the measured position to the next geometric vertex, and time the
+entire connected path with the existing clearance/curvature speed law. Collinear
+time samples are removed only when all removed points lie within the existing
+1e-10 m duplicate tolerance of a monotone retained segment. Genuine bends,
+reversals and coincident-endpoint excursions remain vertices. This prevents a
+small tracking offset from creating a sharp turn at the next time-grid sample.
+The connector consumes traversal time; the first position is never overwritten
+after timing. The measured initial velocity is retained as boundary evidence,
+not clipped to manufacture instantaneous compliance with a newly tightened cap.
+Previous connectors are excluded from later geometric-progress calculations.
+The future-time distance in line 7 remains the tracking-error criterion. Unsafe
+stitched references trigger braking/replanning instead of being installed.
+
+Replacement release checks the effective live goal, including the model goal
+when no desired-goal override is set. A goal changed while planning, or an
+override removed during that interval, cannot silently release the stale plan.
+
+Dynamic appearance may create a state from which the clearance requirement is
+physically infeasible under the available thrust. Such a case remains a failed
+maneuver in unconditional success accounting. Braking and replanning do not
+imply that every obstacle appearance admits a safe response. Operational
+appearance assumptions and any stronger safety policy require their own
+scientific disposition; neither the safety distance nor event timing is relaxed
+by this reconstruction.
+
+A completed zero-duration point reference is not repeatedly retimed solely
+because its clearance lies in the retiming band. This preserves its completion
+clock. Changed goals, unsafe clearance and excessive tracking error are still
+checked before this no-traversal case.
