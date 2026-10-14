@@ -76,6 +76,11 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "spacecraft", 
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "spacecraft", "model.jl"))
 @reexport using .SpacecraftModels
 
+include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "spacecraft", "interlink_graph.jl"))
+@reexport using .InterLinkModels
+include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "control", "interlink_scheduling.jl"))
+@reexport using .SchedulingPolicies
+
 # 4. Functions for building the model (add_...!)
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "spacecraft", "assembly.jl"))
 @reexport using .Assembly

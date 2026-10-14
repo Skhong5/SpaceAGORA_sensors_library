@@ -12,4 +12,5 @@ include(joinpath(@__DIR__, "control_callbacks.jl"))
 include(joinpath(@__DIR__, "state_anchor_callbacks.jl"))
 include(joinpath(@__DIR__, "external_propagation_callbacks.jl"))
 include(joinpath(@__DIR__, "plume_callbacks.jl"))
+include(joinpath(@__DIR__, "interlink_scheduler.jl"))
 end # module SimulationCallbacks
