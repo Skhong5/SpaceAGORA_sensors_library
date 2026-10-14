@@ -279,7 +279,7 @@ check that flag before accepting a path. Direct safe paths bypass refinement,
 as before. A runtime budget is best-effort wall-clock termination, so seeded
 numerical comparisons use an infinite budget and fixed iteration counts.
 
-HYPR's own `rrt_adapters.jl` extension file (under `rpo` in that repository's `ext` folder) retains the existing four-argument configuration
+HYPR's `ext/rpo/rrt_adapters.jl` retains the existing four-argument configuration
 methods and result fields, including `config`. HYPR owns its search-box policy,
 objective, optional refinement, Bezier fitting, and the decision to request an
 RRT warm start. Existing public access and comparison callers remain intact.

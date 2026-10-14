@@ -330,7 +330,7 @@ are relative to the directory in the first column.
 | `ext/` | Optional package connections for GRAMSuite, the visualizer and EDG | Each extension activates when its package pair is loaded; see [GRAMSuite Setup](gramsuite_setup.md) and the [optional adapter standard](../maintainer/adapter_contract.md). |
 | `packages/robotics/` | Pinned submodules for HYPR and SpaceAGORAMuJoCo; each remains an independently maintained repository | `scripts/optional_packages.jl` selects and verifies source, then delegates to its installer; see [Optional package commands](installation_environment.md#Optional-package-commands). |
 | `packages/gnc/` | Optional guidance-domain packages, including experimental SpaceAGORAEDG | The companion owns numerical kernels; core retains model types, lifecycle and physics through [EDGServices](../maintainer/edg_adapter_boundary.md). |
-| `packages/SpaceAGORAHYPR/` | Compatibility package and source pin for external HYPR | `packages/SpaceAGORAHYPR/src/SpaceAGORAHYPR.jl` checks and aliases the external adapter; `HYPRSource.toml` pins its revision. Core services are defined in `src/models/gnc/planning/adapters/hypr/services.jl`. Install and load with the [RPO planner guide](rpo_planner_pilot.md#Installing-optional-HYPR). |
+| `packages/SpaceAGORAHYPR/` | Compatibility package and source pin for external HYPR | `src/SpaceAGORAHYPR.jl` checks and aliases the external adapter; `HYPRSource.toml` pins its revision. Core services are defined in `src/models/gnc/planning/adapters/hypr/services.jl`. Install and load with the [RPO planner guide](rpo_planner_pilot.md#Installing-optional-HYPR). |
 | `examples/` | Runnable scenarios; `common.jl` is the shared bootstrap | primary scenario entrypoints; development viewer demos also live in `scripts/dev/viewer_demos/`; see the [Examples Catalog](examples_catalog.md) |
 | `templates/` | Starting files for a force/torque model, a density model and a control hook, plus the interactive `startup.jl` template | copy one of these to begin an extension |
 | `test/` | Unit, integration, smoke and stress suites, CI gates under `test/gates/`, contract checks under `test/contracts/`, review artifacts under `test/ai_reviews/` | the gates enforce the ownership rules on this page |
@@ -377,7 +377,7 @@ Its integration should use the public API, with a small package extension only
 where conditional integration is needed. The algorithm source belongs in its
 own package, with its simulator-specific adapter kept distinct from standalone
 search. HYPR now follows that split: its `src/` owns standalone search and swarm
-policy, while its own extensions (`HYPRSpaceAGORAExt` plus the `rpo` and `robot` extension folders in that repository) provide
+policy, while its `ext/HYPRSpaceAGORAExt.jl`, `ext/rpo/` and `ext/robot/` provide
 configured SpaceAGORA execution. These paths are in
 [HYPR.jl at the pinned revision](https://github.com/Space-FALCON-Lab/HYPR.jl/tree/39e4cb9648fa94b15712d00017f12c3aad451e69),
 which has its own tests, examples and documentation.
@@ -438,7 +438,7 @@ description of the current code.
   generated `scripts/dev/tb_matrix_debug_defs_only.jl` copy with a compatibility
   loader through `scripts/dev/scenario_matrix_debug_support.jl`, which loads
   `test/gmat_scenario_matrix.jl` in definitions-only mode, repaired the debug runners,
-  and retired the one-time test-reorganisation migration script.
+  and retired the one-time `scripts/dev/test_reorg_b1.sh` migration.
 - [#194](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/194) consolidated
   results loading and vector-sample extraction in the aerobraking plot helpers.
   The broader responsibility split remains a separate review item below.
@@ -507,6 +507,6 @@ description of the current code.
 
 - Move the responsibility table above into a CI-checked owner registry so the
   gates and this page cannot drift apart.
-- Add a guidance-hook template under `templates/` beside the existing control
+- Add a `templates/guidance_hook_template.jl` beside the existing control
   hook template, for students building a guidance model.
 - Repeat the definition scan when later changes justify it.

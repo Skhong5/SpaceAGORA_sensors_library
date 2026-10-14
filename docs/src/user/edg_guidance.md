@@ -29,7 +29,7 @@ using SpaceAGORA, SpaceAGORAEDG
 The [EDG package boundary](../maintainer/edg_adapter_boundary.md) describes its
 versioned queries and state ownership. Selecting an EDG model without loading
 the provider gives a setup error before the simulation starts. The companion's
-own `analytic_atmosphere.jl` example (in that repository's `examples` folder) is a short installed-package demonstration;
+`examples/analytic_atmosphere.jl` is a short installed-package demonstration;
 it is not a reproduction of either paper or a targeting-accuracy benchmark.
 
 ## What the guidance and controller do

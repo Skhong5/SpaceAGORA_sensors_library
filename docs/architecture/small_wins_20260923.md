@@ -17,7 +17,7 @@ WS11 common contract). They are not absolute benchmarks.
 **Status: already shipped, re-verified, one stale comment fixed.**
 
 The kernel this item targets, `_harmonics_flat_batch_kernel!`, lives in
-`src/models/dynamics/coupled/perturbations.jl`, not under
+`src/dynamics/coupled/perturbations.jl`, not under
 `src/environment/gravity/` as the WS11f contract's file list says (that list
 predates a refactor, or was written against an older layout; the small
 `GravityEffectors`/`gravity_models.jl` files under `src/environment/gravity/`
@@ -50,7 +50,7 @@ What this session did instead:
    there is no loop-carried dependency and no reduction across `b` for the
    annotation to reassociate).
 
-No other change. `git diff` on `src/models/dynamics/coupled/perturbations.jl` is
+No other change. `git diff` on `src/dynamics/coupled/perturbations.jl` is
 comment-only.
 
 ### Proof: dump/cmp, this tip, `@simd` present vs. temporarily removed
@@ -97,7 +97,7 @@ just the raw kernel call.
 **Status: fixed, values unchanged, allocation reduced from 4272 B/call to
 192 B/call (22.3x).**
 
-`sample_third_body_ephemerides` (`src/orchestration/simulation/engine/effector_sampling.jl`)
+`sample_third_body_ephemerides` (`src/simulation/engine/effector_sampling.jl`)
 still allocated after WS10c's `map`-over-`body_names` fix
 (`docs/architecture/third_body_cost.md`, "Deliverable 1"). Root cause, found
 with `Profile.Allocs` (not guessed): the `do`-block closure passed to `map`

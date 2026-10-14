@@ -254,8 +254,8 @@ folder; full before/after table in the handoff doc's Finding 6.
 | Adaptive routing `:process` wiring | parent repo | **committed** (`1ba63a82`) |
 | New/extended benchmarks (this folder) | parent repo | **committed** (`1ba63a82`) |
 | `export`/`@doc`/`checkdocs`/generated-API-page entries for `ParallelProcess` | parent repo (`src/SpaceAGORA.jl`, `docs/make.jl`, `docs/public_api_symbols.jl`) | **committed** (`1ba63a82`), verified (`docs/make.jl` builds clean) |
-| Density-callback lock-free auto-gate | parent repo (`src/orchestration/parallel/policy/env_config.jl`, `src/orchestration/simulation/state/runtime_types.jl`, `src/orchestration/simulation/callbacks/density_callbacks/config.jl`) | **committed** (`1ba63a82`), verified |
-| Phase 3 fix: `outer_parallel_active` gating for `_rhs_execution_plan`'s 3 multi-worker branches | parent repo (`src/orchestration/simulation/engine/setup.jl`, `src/orchestration/simulation/state/runtime_types.jl`) | **committed** (`1ba63a82`), verified (direct repro + full test suite) |
+| Density-callback lock-free auto-gate | parent repo (`src/orchestration/parallel/policy/env_config.jl`, `src/foundation/core/types/runtime_types.jl`, `src/orchestration/simulation/callbacks/density_callbacks/config.jl`) | **committed** (`1ba63a82`), verified |
+| Phase 3 fix: `outer_parallel_active` gating for `_rhs_execution_plan`'s 3 multi-worker branches | parent repo (`src/orchestration/simulation/engine/setup.jl`, `src/foundation/core/types/runtime_types.jl`) | **committed** (`1ba63a82`), verified (direct repro + full test suite) |
 | Golden regression fixture (`test/golden/agora_earth_regression.csv`) for the previously-`@test_skip`'d "AGORA Earth Regression (Golden)" test | parent repo | **committed** (`1ba63a82`) |
 
 `test/suites/01_contract_and_api_tests.jl` had the user's own unrelated
