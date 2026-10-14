@@ -27,3 +27,6 @@ include(joinpath(@__DIR__, "..", "gates", "ci_gnc_typed_command_boundary_gate.jl
 include(joinpath(@__DIR__, "..", "gates", "ci_project_compat_gate.jl"))
 include(joinpath(@__DIR__, "..", "gates", "ci_runtime_legacy_surface_gate.jl"))
 include(joinpath(@__DIR__, "..", "gates", "ci_translational_ownership_gate.jl"))
+include(joinpath(@__DIR__, "..", "gates", "ci_runtime_any_hotpath_gate.jl"))
+include(joinpath(@__DIR__, "..", "gates", "ci_ppc_mode_profile_parity_gate.jl"))
+include(joinpath(@__DIR__, "..", "gates", "ci_runtime_analysis_copy_overhead_gate.jl"))

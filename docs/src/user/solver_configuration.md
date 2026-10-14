@@ -158,12 +158,27 @@ All other fields take their struct defaults when not specified.
 
 ## Solver policy and partitioning
 
-The solver automatically selects between explicit, IMEX (implicit-explicit),
-and multirate strategies based on the dynamics model and profile. The solver
-partition hooks on force/torque effectors (`solver_partition`) determine
-whether an effector goes on the explicit or implicit side of `split_imex`. For
-most users this is transparent; see [Extensibility](../extensibility.md) if you
-are building a custom effector and need to control partitioning explicitly.
+The integration mode is a setting, not an automatic choice. The default is
+`solver_mode = :tsit5`, the explicit route. An explicit solver configuration on
+the simulation configuration wins:
+
+```julia
+args = SimulationConfiguration(...; solver_config=SolverConfig(solver_mode=:split_imex))
+```
+
+When `solver_config` is left as `nothing`, `run_simulation` reads the effective
+engine settings at call time, so `SPACEAGORA_SOLVER_MODE` (or a
+`SimulationEngineConfig` override) applies. Accepted modes are `:tsit5`,
+`:symplectic`, `:gravity_backbone_split`, `:dp8`, `:auto_stiff`, `:rodas5p`,
+`:split_imex` and `:multirate`. IMEX (`:split_imex`) and multirate integration
+run only when selected this way; nothing in the dynamics model or routing
+profile switches a run to them.
+
+Within `:split_imex`, the solver partition hooks on force/torque effectors
+(`solver_partition`) determine whether an effector goes on the explicit or
+implicit side of the split. They do not select the mode. See
+[Extensibility](../extensibility.md) if you are building a custom effector and
+need to control partitioning explicitly.
 
 ### Nonlinear solves in split IMEX mode
 
