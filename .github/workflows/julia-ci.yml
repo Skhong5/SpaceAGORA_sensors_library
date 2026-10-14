@@ -1128,6 +1128,8 @@ jobs:
     needs: depot
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
     env:
       JULIA_LOAD_PATH: "@:@stdlib"
       JULIA_NUM_THREADS: "2"
