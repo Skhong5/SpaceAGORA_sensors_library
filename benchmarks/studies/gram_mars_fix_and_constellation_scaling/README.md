@@ -60,8 +60,8 @@ julia --project=. --threads=4 benchmarks/studies/gram_mars_fix_and_constellation
 
 All 33 `(N_SATS, mode)` points for one thread count run back-to-back in ONE
 process (`leo_constellation_size_scaling_point.jl`'s `run_scaling_point`) --
-`ODEParams`/`SharedBuffers`'s `N_sats` is a runtime field
-(`src/foundation/core/types/runtime_types.jl`), so every `N_sats` value for a given mode
+`ODEParams`/`SharedBuffers`'s `n_sats` is a runtime field
+(`src/orchestration/simulation/state/runtime_types.jl`), so every `N_sats` value for a given mode
 shares one compiled specialization and only the 3 modes still differ in
 type. Thread count, however, is fixed at Julia process startup, so each
 thread count in the ladder still runs as its own subprocess (this script
