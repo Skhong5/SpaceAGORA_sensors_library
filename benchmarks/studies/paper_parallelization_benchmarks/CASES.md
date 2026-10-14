@@ -1,169 +1,68 @@
-# Paper Parallelization Benchmarks — Test Cases
+# Paper parallelization benchmark cases
 
-This study (`benchmarks/studies/paper_parallelization_benchmarks/`) runs the
-benchmark suite backing the parallelization paper. It wraps the lower-level
-`parallelization_performance` study (`main.jl`, `cli.jl`, `cases.jl`,
-`modes.jl` in `benchmarks/studies/parallelization_performance/`), grouping its
-cases and routing profiles into phases (B1–B8). Each phase isolates a
-specific axis of SpaceAGORA's parallelization stack so the paper can make a
-narrow, defensible claim per figure/table.
+This harness groups the case and mode definitions in
+`benchmarks/studies/parallelization_performance/` into B and P phases. Use
+`cli.jl` and the underlying `cases.jl`/`modes.jl` as the executable definitions.
+The catalog below describes the axes, settings and reporting conventions;
+it does not promise a scaling result on a new revision or machine. Historical
+tables, phase-sizing investigations and figure runs follow the
+[research-record policy](../../../docs/src/user/studies_benchmarks.md#research-records-and-generated-results).
 
-Two measurement properties are load-bearing for every phase below:
+## Measurement conventions
 
-- **Warm-up is mandatory.** Each `(case, mode, threads, mc_samples)` point runs
-  in a fresh Julia subprocess, so without a warm-up solve the timed run is the
-  process's *first* run and its wall time is dominated by JIT compilation of the
-  RHS/solver stack, not by the simulation (measured: 21.4 s first solve vs
-  0.017 s steady-state solve for `gravity_16sat_l20_vacuum`). Phase `warmup`
-  counts are forwarded to the worker via `--warmup`; process-pool provisioning
-  and per-worker warm-up likewise happen before the clock starts.
-- **Repeats run inside one worker process, not one process each.** A worker
-  spends ~80 s on Julia startup plus JIT of the RHS/solver stack before it can
-  time anything — measured at 79 s per row for a case whose solve is 0.016 s — so
-  a subprocess per repeat paid that cost `repeats` times to collect `repeats`
-  samples of the same point, which at three repeats was two thirds of the whole
-  run. The controller now launches one subprocess per
-  `(case, mode, threads, mc_samples)` point and the worker loops the repeats
-  inside it (`PPCConfig.worker_repeats`), re-running warm-up before each so every
-  repeat is measured identically. Two consequences: `--resume` granularity is now
-  a whole point rather than a single repeat, and worker CSVs are named
-  `perf_<case>_<mode>_t<N>_mc<M>.csv` with no `_r<n>` suffix.
+Each `(case, mode, threads, mc_samples)` point runs in a fresh Julia subprocess.
+Its repeats stay inside that worker, with the requested warm-up before each
+repeat. Process-pool provisioning and warm-up precede the timed region. Resume
+granularity is a whole point; worker CSV names are
+`perf_<case>_<mode>_t<N>_mc<M>.csv`. Record both startup and timed work when the
+research question includes end-to-end throughput.
 
-  This also *improves* measurement validity, which was not the motivation.
-  A single warm-up solve does not fully warm the stack: in a worker running three
-  repeats of `stack32_e5_6dof` after one warm-up, repeat 1 measured 0.139 s
-  against 0.019 s and 0.016 s for repeats 2 and 3. Under per-repeat subprocesses
-  *every* row was a "repeat 1" and carried that residue, and the median of three
-  cold subprocesses inherited it wholesale; a median over three in-process
-  repeats does not. B9–B14 use `warmup = 2` so even repeat 1 is clean.
-- **The router ladder stops at 32 threads** (`PPB_ROUTER_LADDER_MAX_THREADS`),
-  even on a 64-core host. B9–B14 are about which route the router picks, not how
-  far the machine scales — that is B1/B2/B7's job, and they run the full ladder.
-  A top rung that spends every core mostly measures oversubscription: §9 of the
-  findings doc records every workload regressing past the physical-core count,
-  and the benchmark host is shared with other users' jobs, so the widest rung is
-  the one most likely to be contending with something else rather than measuring
-  routing. B13's budget grid is rebased to the same 32-core total.
-- **Thread ladders are in physical cores.** The RHS hot path is SIMD/FP-bound,
-  gains nothing from SMT, and regresses sharply when SMT siblings are
-  oversubscribed, so a ladder topped out at `Sys.CPU_THREADS` puts its worst
-  data point at the end of the curve. See `SPACEAGORA_PPC_PHYSICAL_CORES`.
+The router ladder is capped at 32 threads by
+`PPB_ROUTER_LADDER_MAX_THREADS`; scaling phases use their full machine ladder.
+Thread ladders use physical cores (`SPACEAGORA_PPC_PHYSICAL_CORES`), and B13
+uses a 32-core declared budget grid. Record host load and the resolved budget;
+physical-core selection does not eliminate contention.
 
-Pre-solve RHS-plan auto-calibration (`SPACEAGORA_RHS_CALIBRATE`) follows each
-mode's own adaptive flag: `off` for the static profiles R0–R3, `auto` for the
-adaptive ones R4/R5. It was previously forced off for *every* mode, on the
-reasoning that pinning a plan via `rhs_plan_override` short-circuits the routing
-policy the profile ladder exists to compare. That holds for the static profiles,
-which are meant to measure one fixed route, but applying it to R4/R5 disabled the
-mechanism those profiles are defined by — calibration is part of the adaptive
-policy SpaceAGORA ships with. The correction is worth a factor of five: on
-`heavy_1024sat_fullstack_1hr` at 12 threads, 29.90 s with calibration off vs
-5.71 s with it on. Every "multi-effector constellations do not scale" number
-taken under the blanket-off setting understates the shipped configuration by
-that factor. See `modes.jl` and §8b of
-`docs/architecture/parallelization_measurement_and_allocation_findings.md`.
+`SPACEAGORA_RHS_CALIBRATE` follows each mode's adaptive flag: static profiles
+use `off`, adaptive profiles use `auto`. The requested `rhs_execution_mode` is
+not evidence of the selected route; read the telemetry columns below.
+Trajectory output is controlled by `simulation_settings.results` and the saving
+callback's `data_rate`. Varying `num_steps_to_save` does not create a cadence
+comparison in this harness.
 
-**Two things that do not measure what their names suggest**, both relevant when
-reading older results:
-
-- `num_steps_to_save` is inert. Nothing outside
-  `analysis/verification/telemetry_verification/` reads it, and the solve runs
-  `save_everystep` with no `saveat`, so varying it changes no work at all. The
-  case built on it (`gravity_16sat_l20_vacuum_sparse_output`) has been removed
-  rather than repaired. Output cadence is really controlled by
-  `simulation_settings.results`, which gates `get_data_saving_callback`'s
-  `SavingCallback(...; saveat=data_rate)` — and this harness hardcoded
-  `results=false`, so no benchmark case before B14 produced any trajectory
-  output. `ppc_build_config` now takes `results` and `data_rate`.
-- `rhs_execution_mode` in the raw CSV is the mode *requested*, always `"auto"`,
-  not the route selected. The selected route now appears separately in the
-  `rhs_plan_*` and `policy_*` columns (see "Router-selection telemetry" below).
-
-## LaTeX table for the paper
-
-```latex
-\begin{table}[htbp]
-\centering
-\caption{Summary of the paper parallelization benchmark phases (B1--B14) and the parallelization axis each isolates.}
-\label{tab:paper_benchmark_phases}
-\begin{tabular}{lp{6.0cm}p{4.4cm}}
-\toprule
-Phase & Workload & Axis exercised \\
-\midrule
-B1 & Gravity-only constellation scaling, 1--1024 sat, inverse-square gravity & Outer-loop thread parallelism with minimal RHS cost (scaling baseline) \\
-B2 & Constellation scaling with L20 spherical harmonics gravity, 1--1024 sat & Outer-loop parallelism combined with a harmonics-batched inner RHS \\
-B3 & Atmosphere and GRAMTrackCache surrogate, 16 and 64 sat, drag plus density & Density-callback parallelism and surrogate caching under scaling \\
-B4 & Monte Carlo throughput, single-spacecraft aerobraking and high-accuracy trials, 1--1024 samples & Process-level throughput scaling across 1--32 workers \\
-B5 & Routing profile comparison on three representative workloads at a fixed thread budget & Full routing-profile ladder as the independent variable \\
-B6 & Small-workload control: sub-second constellation and MC cases & Demonstrates that below $\sim$3\,s serial no routing profile is distinguishable \\
-B7 & Heavy constellation scaling, 256--4096 sat, multi-hour missions, $\sim$8\,s serial baselines & Thread ladder on workloads large enough for scaling to be observable \\
-B8 & Heavy Monte Carlo throughput, seconds-long aerobraking arcs, 1--64 process workers & Process-level throughput free of per-worker startup bias \\
-B9 & Spacecraft count 256--4096, L50 harmonics, vacuum, 1\,h & Router regret vs.\ satellites per RHS call \\
-B10 & Atmosphere fidelity at $N{=}256$: none, exponential, GRAM surrogate, live GRAM, live GRAM + third-body & Router regret vs.\ native-library serialisation \\
-B11 & Force/actuator model count, models added one at a time; separate $N{=}32$ sub-ladder for the actuator rung & Router regret vs.\ effector-tuple heterogeneity \\
-B12 & Interacting $N$-satellite propagation vs.\ $N$ independent trials at matched work & Router regret vs.\ workload coupling \\
-B13 & One fixed 32-core budget split six ways between processes and threads & Router regret vs.\ the shape of the parallel budget \\
-B14 & Mission duration 15\,min--6\,h and trajectory output off/10\,s/1\,s & Router regret vs.\ duration and the serial output spine \\
-\bottomrule
-\end{tabular}
-\end{table}
-```
-
-## Phases (B1–B14)
+## Phases B1–B14
 
 ### B1 — Constellation Scaling, Gravity-Only Baseline
+
 Cases: `single_inverse_square_vacuum` through `gravity_1024sat_inverse_square_vacuum`
 (1, 4, 16, 64, 256, 1024 spacecraft, inverse-square gravity, no atmosphere).
 Modes: `serial`, `outer_threads`, `full_smart`. Thread ladder: full
 machine-scaled ladder.
 
-Exercises **outer-loop (across-spacecraft) parallelism** in isolation, using
-the cheapest possible right-hand side (a single `1/r²` gravity term) so the
-per-satellite work is minimal and any speedup is attributable almost entirely
-to outer-loop scheduling overhead/efficiency rather than to inner-loop or
-callback parallelism. This is the scaling baseline every other phase is
-compared against.
-
 ### B2 — Constellation Scaling, L20 Harmonics
+
 Cases: `single_harmonics_l20_vacuum` through `gravity_1024sat_l20_vacuum`
 (same constellation sizes as B1, but gravity is a degree/order-20 spherical
 harmonics model instead of inverse-square). Modes: `serial`, `outer_threads`,
 `outer_inner_adaptive`, `full_smart`.
 
-Exercises **outer-loop parallelism combined with a heavier, harmonics-batched
-inner right-hand side**. L20 harmonics evaluation is the first case where
-inner-loop (within-satellite RHS) batching/parallelism has real work to do,
-so this phase is what shows whether `outer_inner_adaptive`/`full_smart`
-routing beats pure outer-thread parallelism once the RHS itself is
-non-trivial.
-
 ### B3 — Constellation Scaling, Atmosphere and GRAMTrackCache Surrogate
+
 Cases: `multi_16_aero_surrogate_cached` (16 sat, aerodynamic drag with a
 cached/surrogate exponential density model) and `multi_64_high_fidelity` (64
 sat, harmonics + SRP + aero + density). Modes: `serial`, `outer_threads`,
 `full_smart`.
 
-Exercises **atmosphere/density-callback parallelism and the
-`GRAMTrackCache` surrogate path** under constellation scaling — i.e. whether
-caching/parallelizing the density callback keeps pace once drag effectors and
-a non-trivial density model are added on top of gravity.
-
 ### B4 — Monte Carlo Throughput Scaling
+
 Cases: `montecarlo_mars_aerobraking`, `montecarlo_high_accuracy` (single
 spacecraft, MC-jittered initial conditions). Modes: `serial`,
 `outer_process`, `full_smart`. MC sample ladder: 1, 4, 16, 64, 256, 1024.
 Thread mode: `:single` (1 thread per Julia process — all parallelism comes
 from process count). Worker ladder: 1, 2, 4, 8, 16, 32 process workers.
 
-Exercises **process-level (multi-process) throughput scaling for
-independent Monte Carlo trials**, separate from thread-based parallelism.
-Each worker count is a distinct controller run, producing a
-throughput-vs-workers curve; this is the phase that validates SpaceAGORA's
-ability to farm out embarrassingly-parallel MC ensembles across processes
-(relevant to aerobraking/uncertainty-quantification workloads) rather than
-across threads within one process.
-
 ### B5 — Routing Profile Comparison, R0–R5
+
 Cases: `gravity_16sat_l20_vacuum`, `multi_16_aero_surrogate_cached`,
 `articulated_1sat_fullstack` (three representative workloads: pure gravity,
 gravity+aero, and a fully articulated single spacecraft with harmonics, aero,
@@ -173,13 +72,8 @@ thermal, and attitude). Modes: all six routing profiles — `serial`,
 maximum thread count for every mode, so all profiles are compared at the
 same total thread budget).
 
-Exercises **the full routing-profile ladder itself** — this is the phase
-that isolates the *policy* (which combination of outer/inner/callback
-parallelism is active, and whether routing is static or adaptive) as the
-independent variable, holding thread budget and workload fixed. It is the
-basis for the paper's "which profile should you actually use" comparison.
-
 ### B6 — Small-Workload Control
+
 Cases: the `many_sat_high_fidelity` spacecraft-count ladder (`multi_4`,
 `multi_16`, `multi_64`, `multi_256`), `gravity_16sat_l20_vacuum`,
 `montecarlo_mars_gram_live`, `montecarlo_multi_sat`,
@@ -188,199 +82,67 @@ Cases: the `many_sat_high_fidelity` spacecraft-count ladder (`multi_4`,
 `outer_process`, `outer_inner_adaptive`, `full_smart`. Thread mode:
 `:low_high` (1 and the machine maximum). MC samples: 1 and 8.
 
-**This was the first attempt at the expanded router evaluation, and its numbers
-are not reportable as router performance.** Every case it draws on resolves in
-0.017–2.9 s post-warm-up, so fixed per-solve setup dominates and no route can
-distinguish itself: the run of 2026-08-18 measured 1.0× speedup on 9 of 11 cases
-and regret of 0.0–3.3%, all of it inside the ~16% run-to-run variance §7.4 of
-the findings doc records for measurements that size. B9–B14 are the actual
-expanded evaluation.
-
-It is retained because "below roughly a 3 s serial baseline no routing profile
-is distinguishable" is a real boundary on the paper's claim and this phase is
-the evidence for it. Reporting flags its rows `below_noise_floor` and excludes
-them from the per-axis regret statistics.
-
-`multi_16_gram_live` is defined in `cases.jl` but excluded here for a historical
-unbounded native memory leak. §8.1 of the findings doc reports that neither that
-leak nor `multi_4_gram_live`'s step-size collapse reproduces on the current
-branch after the ephemeris-sharing fixes; B10's GRAM rungs are the replacement
-either way, and are sized to be measurable where these were not.
-
-### Running order of B9–B14
-
-`--phases` is order-respecting: the phases run in the order named on the command
-line, and fall back to catalog order only when the flag is omitted. The expanded
-set is roughly 20 h of wall clock on a 12-core box against an overnight budget,
-so which phases run first decides which axes exist if the run is stopped early
-(`--resume` picks up the rest). The default order for a short session is
-
-```
---phases=B9,B10,B12,B11,B13,B14
-```
-
-which is by evidence-per-hour rather than by phase number:
-
-| Order | Phase | Est. wall clock | Why here |
-|---|---|---:|---|
-| 1 | B9 | ~1.3 h | Cheapest phase, and it exercises the whole pipeline (six modes, three budgets, parity, regret, telemetry) on real data before anything expensive starts. A harness fault shows up in the first 20 min instead of two hours into a GRAM rung. |
-| 2 | B10 | ~3.5 h | The load-bearing axis. Review point 7's "R5 is ~25 % slower than the best static route on GRAM" is the strongest argument against the contribution, and this is the only phase that isolates density-model fidelity. |
-| 3 | B12 | ~2.3 h | The manuscript's third contribution (coupled multi-spacecraft vs. process-isolable campaigns) at matched satellite-hours. |
-| 4 | B11 | ~3.9 h | Model-count axis. Valuable but the most expensive per rung, and §7.1 already characterises the effector-tuple cost qualitatively. |
-| 5 | B13 | ~2 h | Budget-split axis. Self-contained (one case), so it can be run on its own later at no loss. |
-| 6 | B14 | ~7 h | Last because calibration already answered half of it: cadence is flat (`_10s` vs `_1s` differ by 3 %, both 62x `_none`), so the two most expensive rungs in the whole set are confirming a known-null result. The duration half is the part worth the time. |
-
-Within each phase the case list is already ordered cheapest-first, so a phase cut
-off part-way still yields its low rungs.
-
 ### B9 — Router Evaluation: Spacecraft Count
+
 Cases: `gravity_{64,256,1024,4096}sat_l50_vacuum_1hr`. All six modes.
 Thread mode: `:router_ladder` (`[1, 8, 32]`).
 
-Varies satellites per RHS call at fixed physics (L50 harmonics, vacuum, no
-callbacks) and fixed 1 h duration, so outer-loop routing is the only thing that
-can move the number. The ladder straddles the measurability floor on purpose —
-64 satellites solve in ~0.15 s serial and 4096 in ~8 s — because *where* routing
-stops being decidable is part of the answer.
-
 ### B10 — Router Evaluation: Atmosphere and GRAM Usage
+
 Cases: `atmo256_vacuum_10min`, `atmo256_exponential_10min`,
 `atmo256_gram_surrogate_10min`, `atmo256_gram_live_10min`,
 `atmo256_gram_live_nbody_10min`. All six modes. Thread mode: `:router_ladder` (`[1, 8, 32]`).
 
-Five rungs of increasing native-library serialisation at fixed N=256, fixed
-600 s duration and fixed L50 harmonics: no atmosphere → analytic exponential →
-precomputed GRAM surrogate table → live native GRAM (one shared instance,
-serialised by its own `instance_lock`) → live GRAM plus Sun/Moon third-body
-gravity, which adds CSPICE under `SPICE_LOCK` as a second serialisation point.
-
-This is the load-bearing phase. Review point 7 reports R5 running ~25% slower
-than the best tested route on the GRAM workload and slower than serial; nothing
-in the harness previously swept GRAM fidelity as an isolated variable, so that
-finding could be measured but not localised. 600 s rather than 1 h because that
-is the duration the `heavy_<N>sat_gram_nbody_l50` family is validated at up to
-N=256.
-
 ### B11 — Router Evaluation: Force and Actuator Model Count
+
 Cases: the `stack<N>_e1..e6` ladder. All six modes. Thread mode:
 `:router_ladder`.
 
-Six rungs at fixed N and fixed 600 s duration, each adding exactly one model:
-L20 harmonics → +SRP → +aero and exponential density → +Sun/Moon third body →
-attitude propagation on → +LVLH controller and per-satellite magnetorquer
-actuators. §7.1 of the findings doc identifies the heterogeneous effector tuple
-as a first-order scheduling cost, but no previous case swept model count in
-isolation. `e5` and `e6` are split so that enabling attitude propagation and
-adding the actuator path are measured separately rather than confounded.
-
-**The ladder runs at a smaller N than the other axes because the actuator rung
-is quadratic in satellite count.** `get_control_callbacks` builds one
-`PeriodicCallback` per control effector and each loops over *all* satellites, so
-N per-satellite `MagneticMomentumManagerModel`s cost N² `calcControlEffect!`
-calls per tick — N intended, N(N−1) against a `sat_idx` the model does not own.
-Measured post-warm-up: `stack256_e6_actuated` takes 33.4 s for a *10 s* mission
-against 0.13 s for the otherwise identical `stack256_e5_6dof`. That is a real
-defect in the control path (the shared-model-with-per-spacecraft-vectors shape
-`BaseThrusterModel` enforces avoids it), not a benchmark artifact, but fixing it
-is out of scope; the ladder is sized so every rung is measurable and the
-quadratic is reported instead.
-
 ### B12 — Router Evaluation: Interacting vs. Independent Propagation
+
 Cases: `interact_{16,64,256}sat_1hr` and `independent_1sat_1hr`. Modes: the
 static ladder plus `outer_process`, minus `inner_only`. MC samples: 16/64/256.
 Thread mode: `:router_ladder` (`[1, 8, 32]`).
 
-A matched pair at equal satellite-hours: `interact_<N>sat_1hr` propagates N
-satellites as one coupled simulation, `independent_1sat_1hr` at `mc_samples=N`
-propagates the same work as N independent solves. Same planet, orbit, effectors,
-density model, tolerances and duration, so coupling is the only variable. B6
-gestured at this axis by putting constellation and Monte Carlo cases in one
-phase, but those differ in physics, duration and size as well, so nothing there
-isolated coupling. This pair is the direct test of the manuscript's third
-contribution.
-
-`independent_1sat_1hr` is deliberately *not* jittered the way the `montecarlo_*`
-cases are: an initial-condition spread gives each sample a different step count,
-which appears as load imbalance and would confound the comparison.
-
 ### B13 — Router Evaluation: Thread vs. Process Budget Split
+
 Case: `montecarlo_heavy_aerobraking` at 64 samples. Modes: `outer_process`,
 `outer_threads`, `outer_inner_adaptive`, `full_smart`. Budget grid:
 `(workers, threads)` ∈ {(1,32), (2,16), (4,8), (8,4), (16,2), (32,1)}.
 
-Every entry multiplies out to 32 cores, so the sweep varies the *shape* of the
-parallelism and not its amount. Nothing else in the harness tests hybrid splits:
-B4 and B8 both pin `thread_mode = :single` and vary workers alone, and every
-constellation phase runs one process. The nested case is what
-`SPACEAGORA_OUTER_PARALLEL_ACTIVE` / `SPACEAGORA_INNER_THREAD_BUDGET` exist to
-arbitrate — and §3 of the findings doc records asserting `outer_active`
-unconditionally pinning the RHS to one worker — which makes it the configuration
-the router is most likely to get wrong and the least covered by evidence. Uses
-the `budget_grid` phase field rather than `worker_ladder`, whose cross product
-with the thread ladder would also vary the total budget.
-
 ### B14 — Router Evaluation: Mission Duration and Output Cadence
+
 Cases: `gravity_1024sat_l50_vacuum_15min`, `gravity_1024sat_l50_vacuum_1hr`,
 `heavy_1024sat_l50_6hr` (duration), and `cadence_1024sat_{none,60s,10s,1s}`
 (cadence). All six modes. Thread mode: `:router_ladder` (`[1, 8, 32]`).
 
-Two sub-ladders at N=1024, L50, vacuum, sharing the 1 h rung. The cadence half
-is new work rather than a re-run of B6's: that case varied `num_steps_to_save`,
-which reaches nothing, and this harness had trajectory output switched off
-entirely. The real path is `simulation_settings.results` gating
-`get_data_saving_callback`'s `SavingCallback(...; saveat=data_rate)`, both now
-exposed through `ppc_build_config`. At 1024 satellites the callback's
-per-satellite snapshot is a genuinely serial spine, so this ladder measures an
-Amdahl term the router has no visibility into — which is the result either way
-it comes out.
-
 ### B7 — Heavy Constellation Scaling
+
 Cases: `heavy_1024sat_l50_6hr`, `heavy_4096sat_l50_1hr`,
 `heavy_1024sat_fullstack_1hr`, `heavy_256sat_coupled6dof_2hr`. Modes:
 `serial`, `outer_threads`, `outer_inner_adaptive`, `full_smart`. Thread ladder:
 full machine-scaled ladder (physical cores).
 
-Exercises **the thread ladder on workloads that are actually large enough to
-scale**. Every case B1–B6 draws on resolves in a fraction of a second of real
-integration once JIT compilation is excluded — measured post-warm-up on a
-12-physical-core box: 0.017 s for `gravity_16sat_l20_vacuum`, 0.18 s for
-`multi_64_high_fidelity`, 2.9 s for `multi_256_high_fidelity`. At that size the
-wall time is fixed per-solve setup plus the integrator's serial spine, so the
-ladder is flat by construction and no routing profile can distinguish itself.
-B7's cases have ~8 s serial baselines with the parallelisable RHS as the
-majority of that.
-
-The four cases are a contrast rather than a sweep: `heavy_1024sat_l50_6hr` is a
-single heavy effector with no callbacks (cleanest read on outer-loop scaling);
-`heavy_4096sat_l50_1hr` is the same physics with 4× the satellites per RHS call
-(reference measurement on 12 physical cores: 1024 satellites saturate at ~4
-workers / 3.9×, 4096 keeps scaling past 12 / 5.1×, which localises where
-per-RHS fork/join overhead stops being amortised); `heavy_1024sat_fullstack_1hr`
-adds a heterogeneous effector mix plus density and thermal callbacks at scale;
-`heavy_256sat_coupled6dof_2hr` is the only many-satellite case in the catalog
-that propagates attitude.
-
 ### B8 — Heavy Monte Carlo Process Throughput
+
 Case: `montecarlo_heavy_aerobraking`. Modes: `serial`, `outer_process`,
 `full_smart`. MC sample ladder: 16, 64. Thread mode: `:single`. Worker
 ladder: 1, 2, 4, 8, 16, 32, 64.
 
-Same axis as B4, but each sample is a 12× longer aerobraking arc — ~1.05 s of
-integration per trial (measured), against which pmap dispatch is roughly a 1%
-term. B4's samples are short enough that its throughput-vs-workers curve was
-largely per-worker process startup and JIT rather than the trials themselves.
+B6 is a small-workload control; rows below the serial-baseline floor are
+excluded from router-performance summaries. B9–B14 isolate spacecraft count,
+atmosphere, effector/control count, interacting versus independent propagation,
+worker/thread split, and mission duration/output cadence. B11 separates attitude
+propagation from actuators; its workload is defined by the catalog, not by a
+claim that callback cost is linear. `independent_1sat_1hr` has no initial-state
+jitter so that the comparison does not add a sample-dependent step count.
 
-The sample ladder stops at 64 because every worker-ladder entry is a separate
-controller run that re-executes the whole mode × sample × repeat grid, and
-`serial`/`full_smart` produce identical numbers at every worker count (both run
-the batch in-process at `thread_mode = :single`), so their cost is paid seven
-times over. 64 samples across 64 workers is already exactly one dispatch round.
+`--phases` preserves the requested order. For example,
+`--phases=B9,B10,B12,B11,B13,B14` runs those phases in that sequence; use
+`--resume` to continue completed points. Wall time depends on the host and
+configuration, so an old session estimate is not a run budget.
 
-## Paper routing figures (P1–P5)
-
-The four comparisons the parallelization paper reports, each one a table of
-**R6 (`policy_v2`) against the serial baseline and against the best static
-route** at the same point, with raw medians and the ratio to serial:
+## Paper routing phases P1–P5
 
 | Phase | Axis | Cases | Modes |
 |---|---|---|---|
@@ -396,67 +158,36 @@ because the same five phases run on each paper machine: 12 cores gives a
 `[1, 2, 4, 8, 12]` budget ladder and the six splits of 12, while 64 cores gives
 `[1, 2, 4, 8, 16, 32]` and the six splits of 32.
 
-**Every point is above the measurability floor, and P1 pays for that with an
-iso-work ladder.** A constellation-size ladder at one fixed mission length is
-unmeasurable at its small end: one spacecraft over an hour of L50 vacuum is
-~10 ms of solve, five of the six rungs sit under the harness's 3 s floor, and
-what those points measure is dispatch overhead and scheduler noise. So the
-mission length moves with N instead — `PPC_L50_ISO_MISSION_S` in `cases.jl`
-carries one duration per rung, calibrated by measurement on the 12-core
-reference box, and the case name carries the duration:
+P1 uses `PPC_L50_ISO_MISSION_S` to vary duration with constellation size.
+The duration is part of the case name and must remain a table column; these are
+not the same mission repeated at each N. The configured durations are:
 
-| N | mission | serial baseline |
-|---:|---:|---:|
-| 1 | 4 150 000 s (1153 h) | 8.95 s |
-| 16 | 514 000 s (143 h) | 11.18 s |
-| 64 | 415 000 s (115 h) | 11.85 s |
-| 256 | 124 000 s (34 h) | 12.77 s |
-| 1024 | 24 600 s (6.8 h) | 12.27 s |
-| 4096 | 5 800 s (1.6 h) | 12.53 s |
+| Spacecraft | Mission duration (s) |
+|---:|---:|
+| 1 | 4,150,000 |
+| 16 | 514,000 |
+| 64 | 415,000 |
+| 256 | 124,000 |
+| 1024 | 24,600 |
+| 4096 | 5,800 |
 
-A row is therefore "the same quantity of propagation spread over N spacecraft",
-and the speedup column isolates how much of a fixed workload each route
-parallelises at that width, rather than mixing that in with the workload growing
-by a factor of 4096 down the column. The mission length is a table column
-because the rows are no longer the same mission. Recalibrate the table on a new
-machine with `bash calibrate_iso_ladder.sh` in this directory, which runs each
-registered rung once in `serial` mode and prints the duration that would put it
-at the target (~10 min, wants an idle machine). Scaling is linear in mission
-length to within a few percent *above* the floor; a rung measuring well under
-3 s is extrapolating from mostly fixed per-solve cost and will land short, which
-is why the first calibration of this ladder aimed at ~10 s rather than 3.
+Use `bash benchmarks/studies/paper_parallelization_benchmarks/calibrate_iso_ladder.sh`
+to inspect timing on a new host. Do not silently replace configured durations
+inside a recorded comparison.
 
-P3 clears the floor by campaign size rather than duration: 256 samples, matching
-B12, where 64 leaves the serial baseline at ~2.4 s.
+P3/P4 vary budget; P5 varies its split. A P3 grid entry `(b, b)` offers b
+process workers and b threads, allowing each route to use its own resource.
+P5's fixed-total splits explore outer and inner parallelism together.
+`budget_grid_fixed` preserves already host-sized grids instead of rescaling
+them as a grid declared against a reference host.
 
-**P3/P4 sweep the budget; P5 sweeps the split.** A P3 grid entry is `(b, b)`:
-`b` worker processes *and* `b` threads, so each route gets `b` units of the
-resource it actually spends and the routes are comparable at every rung — the
-question is how a campaign scales as the budget grows, and which route the
-router picks at each size. B13's grid holds the total fixed and varies where it
-is spent, which is the right axis only once the samples themselves carry
-constellations (P5) and both levels of parallelism are live at once. Phases
-sized this way set `budget_grid_fixed`, which exempts them from the rescale in
-`_ppb_budget_grid` and the `w * t <= max_workers` filter in
-`_ppb_cap_worker_counts`; both exist to fit a grid *declared* against a 32-core
-reference box onto a smaller machine, and applied to an already host-sized grid
-they would replace it with divisor pairs of the worker cap.
-
-Serial is in every P phase's mode list, at every grid entry. It is
-budget-independent, so those runs are redundant as measurements — but the
-aggregation joins the serial baseline on
-`(phase_id, case, mc_samples, process_workers)`, and a point with no serial row
-at its own worker count gets no `speedup` and no ratio column at all. That is
-why L15 reports `serial_median_s = 0`.
-
-Run and tabulate:
+Every point needs its matching serial row. Aggregation joins the baseline on
+`(phase_id, case, mc_samples, process_workers)`; without it a ratio is missing,
+not zero-cost or infinite-speedup evidence.
 
 ```bash
-# 12-core machine (~5 h)
 julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl \
     --phases=P1,P2,P3,P4,P5 --threads=1,2,4,8,12 --process-workers=12
-
-# tables (markdown + LaTeX) from one or more runs
 python3 benchmarks/studies/paper_parallelization_benchmarks/make_paper_routing_tables.py \
     output/performance/paper_benchmarks/<stamp> --out output/paper_routing_tables
 ```
@@ -499,46 +230,13 @@ arrangements do the same total physics; what differs is where the parallelism
 can go and how many native GRAM images the machine must hold at once, which is
 the trade the figure exists to show. Always run and archive P6 and P6p together.
 
-**The density path is selected by environment, not by configuration.** Which of
-the two ways of reading one shared native `GRAMAtmosphereModel` a run uses lives
-in `SPACEAGORA_*` env read at density-callback assembly time, so neither the
-case builder nor the phase can express it. `_ppc_p6_gram_density_env!` in
-`cases.jl` sets it from the `--case=` argument at include time, the same way
-`ppc_ensure_gramsuite_loaded!` decides whether to load GRAMSuite. The values are
-S2's: the look-ahead trace puts the cache horizon past the end of the mission and
-the deviation threshold past anything the mission can reach, so only the
-initial (proven-safe) build ever runs — a workaround for the native
-cache-rebuild hang with two or more satellites, not a tuning choice — and the
-process trace freezes density per accepted step, without which per-RK-stage
-perturbation noise collapses the adaptive step size.
+The native-GRAM density path is selected by `_ppc_p6_gram_density_env!` in
+`cases.jl`. Inspect that configuration before running or comparing archived
+rows: cache, freeze and perturbation settings are part of the experiment.
+They are not interchangeable implementations of an assumed identical density
+history. Keep mission duration and step cap with each row.
 
-**Mission length is per trace, and it is a prediction.** A single duration across
-stacks this different puts the light traces under the 3 s measurability floor and
-the GRAM traces into the hours, so each trace is sized against trace 2's measured
-serial baseline instead, exactly as `PPC_L50_ISO_MISSION_S` sizes the
-constellation-count ladder, and the duration is a column of the figure's table.
-The derivations, and the CSV behind each number, are in `FIGURE_RUNS.md`;
-the short version, all against trace 2's measured TRX50 serial baseline of
-**11.86 s**
-(`paper_benchmarks_trx50_cold11/20260918_162845`, phase P2, 11 repeats):
-
-| Trace | Mission | Predicted serial baseline on the TRX50 | Derived from |
-|---|---:|---:|---|
-| 1 | 19 700 s | 7.0–11.9 s | S1's degree-50/degree-20 serial ratio at 4096 spacecraft (3.39), bracketed against the batched kernel's term-count ratio (5.74) |
-| 2 | 5 800 s | 11.86 s (measured) | — |
-| 3 | 5 800 s | 13–15 s | ≥ trace 2 by construction; `atmo256_gram_live_nbody`/`atmo256_gram_live` puts the third body at +10% |
-| 4 | 100 s | 12.9 s | `atmo256_exponential_10min` serial 4.854 s, scaled ×16 in spacecraft and ×100/600 in duration |
-| 5 | 100 s | 112 s | `atmo256_gram_live_10min` serial 42.06 s, same scaling |
-| 6 | 100 s | ~356 s over 4096 samples | S2 `process_members`, 87 ms per one-spacecraft sample |
-
-Trace 5 is nine times trace 2's baseline and dominates P6's wall clock. That is
-deliberate and is the shortest mission at which the GRAM traces are still
-simulations rather than measurements of per-solve setup: sizing trace 5 to
-11.86 s the way the others are sized would demand a 10 s mission at 4096
-spacecraft.
-
-Recalibrate on a host these were not derived for before quoting anything from a
-run there:
+Recalibrate timing on the target host with:
 
 ```bash
 bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh calibrate-p6 --execute
@@ -547,9 +245,8 @@ bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh ca
 ## P7 — one spacecraft, short missions
 
 P1's one-spacecraft rung is a 4 150 000 s pure-gravity mission, sized so its
-serial baseline clears the 3 s floor, and every route resolved to serial
-execution there. P7 measures the opposite end: one spacecraft over about one
-orbit, at the full thread budget, where a route's fixed setup (planning, the
+serial baseline is intended to clear the 3 s floor. P7 measures the opposite
+end: one spacecraft over about one orbit, at the full thread budget, where a route's fixed setup (planning, the
 campaign machinery, calibration probes) is a large share of the run. Its serial
 baselines are under the floor by design; what the phase reports is each route's
 wall time against serial in seconds, not a speedup.
@@ -649,15 +346,9 @@ sweeps; so even from a cold store the timed campaigns see a curve, and a
 converged store adds the rows of earlier adaptive runs of the same stem.
 `SPACEAGORA_PREDICTIVE_INNER_CURVE=0` disables it. With a curve, the plan space
 gains `threads@W` at `b = fld(T, W)`, one sample on the whole pool, and mixed
-local slots at `b` threads, each of which must beat the best static plan by
-the 15% margin. On TRX50 at budget 32 the static plans leave cores idle
-(8 samples on 32 cores), so a curve with speedup of about 1.18 at 4 threads
-would be enough, by round count alone, for `threads@8+b4` to win; on the
-12-core workstation every b > 1 plan needs more rounds and so a speedup the
-RHS does not have. In the 2026-09-25 TRX50 preview smoke (cold store) the
-curve was read and b > 1 candidates were offered, but the curve was flat
-(1.00 up to width 15, 1.01 beyond), so R7 chose the static-equivalent pool
-plan in both cases.
+local slots at `b` threads, each subject to the existing 15% decision margin.
+Inspect the dispatch trace and recorded allocation instead of assuming the
+planner used the widest candidate.
 
 **The criterion rule.** `benchmarks/studies/paper_parallelization_benchmarks/check_policy_criterion.py` scores a P5f
 adaptive row against every static route at every split whose total equals its
@@ -668,7 +359,7 @@ unchanged. `make_paper_routing_tables.py` writes one row per workload with the
 winning static route and its split; the plot script draws the two workloads on
 one categorical axis.
 
-Run it on its own, cold or converged (see `FIGURE_RUNS.md`):
+Run it on its own, recording whether the calibration store is cold or converged:
 
 ```bash
 julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl \
@@ -710,8 +401,8 @@ The phases above draw from a shared case catalog, grouped into families:
   gram_live,gram_live_nbody}_10min`. N=256, 600 s, L50 harmonics held fixed;
   only the density path varies. B10.
 - **`effector_ladder`** — `stack<N>_e1..e6` for N ∈ {32, 64, 256}. Fixed N and
-  duration; one model added per rung. Registered at several N because the
-  actuator rung is quadratic in N (see B11); a phase picks one per sub-ladder.
+  duration; one model added per rung, with separate attitude and actuator
+  workloads (see B11). A phase picks one N per sub-ladder.
 - **`coupling_mode`** — `interact_{16,64,256}sat_1hr` and
   `independent_1sat_1hr`. Matched satellite-hours, arranged as one coupled
   simulation or as N independent trials. B12.
@@ -738,40 +429,10 @@ The phases above draw from a shared case catalog, grouped into families:
   S = `PPC_P7_MISSION_S` (5 702 s). The P1 and P6 patterns at one spacecraft,
   built by the same `ppc_single_config` branches. P7.
 
-### Measured case costs (space-falcon-1, serial, post-warm-up)
-
-Seconds of solve per 10 s of simulated mission, which is what the phase sizing
-above was derived from. Multiply by `mission_seconds / 10` for the full-profile
-serial baseline.
-
-| Case | s / 10 s mission | Case | s / 10 s mission |
-|---|---:|---|---:|
-| `atmo256_vacuum_10min` | 0.010 | `stack32_e1_harm` | 0.0009 |
-| `atmo256_exponential_10min` | 0.063 | `stack32_e3_aero` | 0.0045 |
-| `atmo256_gram_surrogate_10min` | 0.239 | `stack32_e5_6dof` | 0.016 |
-| `atmo256_gram_live_10min` | 0.623 | `stack32_e6_actuated` | 0.583 |
-| `interact_16sat_1hr` | 0.0035 | `stack64_e5_6dof` | 0.031 |
-| `interact_64sat_1hr` | 0.016 | `stack64_e6_actuated` | 2.728 |
-| `interact_256sat_1hr` | 0.063 | `stack256_e5_6dof` | 0.130 |
-| `independent_1sat_1hr` | 0.0006 | `stack256_e6_actuated` | 33.4 |
-| `gravity_1024sat_l50_vacuum_15min` | 0.077 | `cadence_1024sat_none` | 0.051 |
-| `cadence_1024sat_10s` | 3.09 | `cadence_1024sat_1s` | 3.17 |
-
-Two things this table is load-bearing for:
-
-- **The actuator rung is O(N^2.2).** `stack{32,64,256}_e6_actuated` at
-  0.583 / 2.728 / 33.4 s is a 4.7× step for each doubling of N, against a
-  near-linear `e5`. That is why B11 runs two sub-ladders instead of one.
-- **Output cadence is flat.** `cadence_1024sat_10s` and `_1s` differ by 3%
-  while both are 62× `_none`. Turning output on is the variable; how often it
-  saves is not.
-
 ## Router-selection telemetry
 
-The raw CSV records what the router *did*, not just what it was asked for. Until
-B9–B14 the only routing column was `rhs_execution_mode`, hardcoded to `"auto"`,
-which meant a finding like review point 8's "the router selects poorly for the
-GRAM case" could be measured but never attributed to a decision.
+The raw CSV includes both requested settings and selected-route telemetry.
+Read the latter when attributing an observed route choice.
 
 | Column | Meaning |
 |---|---|
@@ -799,60 +460,31 @@ columns are only informative for the in-process (serial/threads) routes.
 
 ## Outer-backend resolution for the adaptive profiles
 
-`ppc_run_sample_batch` dispatches the outer split itself, branching on the
-mode's `backend` string. R4 (`outer_inner_adaptive`) and R5 (`full_smart`) were
-declared with `backend="threads"`, which meant the two profiles whose purpose is
-to *choose* an outer route never reached `select_outer_route!` — the harness
-answered the question it existed to ask. The shipped profile definitions say
-otherwise: `profile_definitions.jl` declares `outer_backend=:auto` for R3, R4 and
-R5.
-
-R4/R5 now declare `backend="auto"`, and `ppc_resolve_outer_backend` builds
-`OuterRouteFeatures` from the case's own `SimulationConfiguration` (via the
-shipped `campaign_route_features`), calls `select_outer_route!`, and substitutes
-the answer before warm-up so warm-up, the recorded env and the timed dispatch all
-agree. R3 keeps its explicit `threads` pin on purpose: it is the fixed hybrid
-baseline the adaptive profiles are scored against, so it must not move with the
-router.
-
-Single-sample batches resolve to `"threads"` unconditionally — with one
-simulation there is no outer split to route, so the resolution is moot and the
-literal string stays comparable with the constellation phases measured before the
-change.
-
-**What this invalidated.** Only phases with `mc_samples > 1` have an outer route
-to select, so B12 and B13 were affected and B9/B10/B11/B14 were not. The
-2026-08-23 B12 results were discarded (see
-`output/performance/paper_benchmarks/20260823_130939_invalidated/README.md`): on
-`independent_1sat_1hr` at 256 samples the router selects `:process` (8.12x) while
-the pin forced `:threads` (2.03x), so the "+301% router regret" read off those
-rows described the mode table rather than the router.
+R4/R5 declare `backend="auto"`. `ppc_resolve_outer_backend` constructs
+`OuterRouteFeatures` from the configuration, selects a route before warm-up,
+and uses that choice for the recorded environment and timed dispatch. R3
+retains its explicit thread pin as the fixed hybrid baseline. A single-sample
+batch resolves to threads because there is no outer campaign split.
 
 ## Effective core budget in regret
 
 Regret is only comparable between points given the same machine, and
 `thread_count` is the wrong proxy for that on the process route:
 `ppc_run_sample_batch` spreads it across `min(mc_samples, process_workers)`
-single-threaded worker processes regardless of `thread_count`, so an
-`outer_process` row recorded at `thread_count=1` actually ran on 12 cores.
+single-threaded worker processes regardless of `thread_count`. An
+`outer_process` row with `thread_count=1` can therefore use more than one core;
+its actual worker count determines the effective budget.
 
-`_ppb_add_effective_cores!` therefore adds `effective_cores` — `1` for `serial`,
-`min(process_workers, mc_samples)` for a point whose `outer_backend_actual` is
-`process`, and `thread_count` otherwise — and both regret figures key on it
-instead of on `thread_count`. Thread-backed points are unchanged, because there
-`effective_cores == thread_count`; B9's and B10's numbers are identical before
-and after.
-
-Without it the metric charged the router for losing races it entered with a
-twelfth of the hardware, which is where the discarded "+1428%" on
-`independent_1sat_1hr` came from.
+`_ppb_add_effective_cores!` records `1` for serial,
+`min(process_workers, mc_samples)` for a process-backed point, and
+`thread_count` otherwise. Regret comparisons use this effective budget.
 
 ## Reported regret
 
 Two definitions, both in the aggregated CSV and the report:
 
 - `regret_vs_best_static` — best static route at the **same** thread/worker/MC
-  point. This is review point 8's formula literally.
+  point.
 - `regret_vs_best_static_oracle` — best static route at **any** budget tested
   for that case. R4/R5 pick the parallel width as well as the route, so the
   matched-budget figure credits them for a budget someone else chose; the oracle
@@ -877,8 +509,8 @@ combination of outer-loop backend and inner-loop/callback parallelism:
 | `outer_process` | R1_b | process | off | no | Outer-loop (across-spacecraft/trial) process parallelism only |
 | `inner_only` | R2 | none | auto (density/control/thermal/multibody/effector) | no | Inner-loop/callback parallelism only, no outer parallelism |
 | `outer_inner_static` | R3 | threads | auto, statically scheduled | no | Combined outer+inner parallelism with a fixed (static) schedule |
-| `outer_inner_adaptive` | R4 | threads | auto, dynamically scheduled | yes | Combined outer+inner parallelism with adaptive/dynamic routing |
-| `full_smart` | R5 | threads | auto + thermal always on, persistent hints | yes | The full adaptive routing policy SpaceAGORA ships with, including persistent scheduling hints and control-tail guarding |
+| `outer_inner_adaptive` | R4 | auto | auto, dynamically scheduled | yes | Combined outer+inner parallelism with adaptive/dynamic routing |
+| `full_smart` | R5 | auto | auto + thermal always on, persistent hints | yes | The full adaptive routing policy SpaceAGORA ships with, including persistent scheduling hints and control-tail guarding |
 
 ## Preview mode
 

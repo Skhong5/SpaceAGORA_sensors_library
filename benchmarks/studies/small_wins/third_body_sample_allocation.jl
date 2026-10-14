@@ -1,10 +1,8 @@
 # The third-body sample's remaining per-call allocation (WS11f item 2).
 #
-# After WS10c's `map`-over-`body_names` fix (docs/architecture/third_body_cost.md,
-# "Deliverable 1"), `sample_third_body_ephemerides` still allocated about
-# 4.3 KB per call. Root cause: two of the `do`-block closure's captured
-# variables were not hoisted to locals the way `et`/`primary_body_name`/
-# `spice_rhs_memo`/etc. already were.
+# This probe measures `sample_third_body_ephemerides` on the current tree.
+# The historical investigation identified two closure captures that created
+# avoidable allocations:
 #
 #   1. `p.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls`
 #      was read from inside the closure, which captures the whole
@@ -26,18 +24,12 @@
 #
 # Run: `julia --project=. --threads=1 benchmarks/studies/small_wins/third_body_sample_allocation.jl`
 #
-# Measured on space-falcon-1, 1 thread, back to back in one process (this
-# script), 200000-call loops, warmed up first:
-#
-#   before (WS10c tip, adb343566)  4272.0 B/call
-#   after (this change)              192.0 B/call   (22.3x fewer bytes)
-#
-# The "before" row above is a historical point (this script measures the
-# current tree only); reproduce it by checking out
-# src/orchestration/simulation/engine/effector_sampling.jl at adb343566 and re-running.
-# Values (positions, order, cache-then-backend fallback) are unchanged --
-# see the SRP + third-body dump/cmp evidence in
-# docs/architecture/small_wins_20260923.md.
+# Historical allocation measurements and dump/cmp evidence are in the private
+# `third_body_cost.md` and `small_wins_20260923.md` records in
+# gfalcon2/spaceagora-private-telemetry,
+# retained_studies/2026-10-14-repository-cleanup/docs/architecture/.
+# Those records retain the earlier revision and measurement conditions; this
+# script does not recreate the historical result by measuring the current tree.
 
 using Test
 using StaticArrays

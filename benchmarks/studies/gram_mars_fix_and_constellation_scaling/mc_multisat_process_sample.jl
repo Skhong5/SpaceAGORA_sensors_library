@@ -3,9 +3,10 @@
 # worker (outer_process route). Each process independently constructs its own
 # config/model -- safe even for the GRAM surrogate because process isolation
 # means no shared native GRAM/CSPICE global state to race on, unlike
-# Threads.@spawn-based outer parallelism (see
-# project_gram_concurrent_construction_crash memory / Finding 4 in
-# THREAD_ALLOCATION_AND_GRAM_CONCURRENCY_HANDOFF.md).
+# Threads.@spawn-based outer parallelism. Historical construction-race evidence
+# is Finding 4 in the private THREAD_ALLOCATION_AND_GRAM_CONCURRENCY_HANDOFF.md,
+# gfalcon2/spaceagora-private-telemetry, retained_studies/2026-10-14-repository-cleanup/
+# benchmarks/studies/gram_mars_fix_and_constellation_scaling/.
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
 include(joinpath(REPO_ROOT, "examples", "common.jl"))

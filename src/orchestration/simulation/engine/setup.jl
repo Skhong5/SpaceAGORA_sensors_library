@@ -940,29 +940,14 @@ end
 # answers a different question -- not "is the slice wide enough for a SIMD
 # iteration" but "is there enough work per RHS call to pay for the flat route".
 #
-# The flat route's cost is a fixed charge per RHS call, not a per-worker one:
-# on the 8-thread ladder every narrower flat plan is SLOWER than flat@8 at the
-# same size (128 spacecraft: flat@8 1.24x behind the best plan, flat@4 1.32x,
-# flat@2 1.68x). So this gates the route, not its width -- below the floor the
-# default takes the satellite batch, above it the flat route at the width it
-# always had.
+# The flat route has a dispatch cost per RHS call. This floor gates the
+# route, not its width: below it the default takes the satellite batch;
+# above it the flat route keeps its existing width decision.
 #
-# Default 64, SOURCED from two measurements
-# (docs/architecture/rhs_heuristic_defaults.md):
-#   - benchmarks/studies/rhs_heuristic_defaults, 8 threads, 3 repeats, L50
-#     vacuum: the satellite batch is the best plan at 16 satellites per worker
-#     (128 spacecraft) and below, flat@8 the best at 64 per worker (512) and
-#     above; at 32 per worker (256) flat@8 is best and the batch 1.18x behind.
-#     The L50 + aerodynamics stack puts the same crossover between 32 per worker
-#     (batch best, flat 1.33x behind) and 128 (flat best, batch 1.07x behind).
-#   - the archived TRX50 P1 cold run (trx50_ppb_cold_20260922_002429), 32
-#     threads: flat@32 is 2.5x behind the satellite batch at 32 per worker
-#     (1024 spacecraft) and the best plan at 128 per worker (4096).
-# Any floor in (32, 64] fits every point in both; 64 is the smallest
-# satellites-per-worker at which the flat route was measured to be the best
-# plan, and the one value that misses a measured flat win by the least (the
-# 8-thread 256-spacecraft point, 1.18x, is the only point in the data where the
-# new default is not within the repeat spread of the best plan).
+# The default is 64 satellites per worker. It is a heuristic admission
+# threshold, not a guarantee that one route is fastest on every machine.
+# See docs/architecture/rhs_heuristic_defaults.md for the current controls
+# and the private archive reference for the original measurements.
 @inline function _rhs_harmonics_flat_min_sats_per_worker()::Int
     return SimulationModel.ParallelPolicy.parse_thread_threshold_env(
         "SPACEAGORA_HARMONICS_FLAT_MIN_SATS_PER_WORKER", 64
@@ -995,18 +980,13 @@ end
     return sb.spin_barrier_tuner.on
 end
 
-# Unlike _dynamic_effector_thread_decision and the density/control/thermal
-# callback paths, the harmonics-batch flat-constellation route did not
-# previously consult outer_parallel_active() at all -- it fires on every
-# RHS/ODE step (not once per sample), so an outer worker already blocked in
-# Threads.@sync/Base.@sync repeatedly spawned its own nested batch of workers
-# throughout the whole integration. That's the mechanism behind the severe,
-# livelock-like nested outer+inner contention documented in
-# THREAD_ALLOCATION_AND_GRAM_CONCURRENCY_HANDOFF.md Finding 3 (some points
-# ranged from ~1x overhead to a multi-minute hang on identical repeated
-# runs). Default false, matching _effector_allow_with_outer's default and
-# this codebase's own documented recommendation to never split the thread
-# budget between outer and inner parallelism.
+# The harmonics batch can dispatch on every RHS evaluation, so enabling it
+# inside an outer threaded campaign creates repeated nested worker teams.
+# Default false, matching _effector_allow_with_outer, keeps that nesting an
+# explicit choice. Historical contention evidence is in the private
+# THREAD_ALLOCATION_AND_GRAM_CONCURRENCY_HANDOFF.md record (Finding 3),
+# gfalcon2/spaceagora-private-telemetry, retained_studies/2026-10-14-repository-cleanup/
+# benchmarks/studies/gram_mars_fix_and_constellation_scaling/.
 @inline function _harmonics_batch_allow_with_outer()::Bool
     return SimulationModel.ParallelPolicy.parse_bool_env("SPACEAGORA_HARMONICS_BATCH_ALLOW_WITH_OUTER", false)
 end
@@ -1522,9 +1502,9 @@ end
     # coefficient sweep -- each (degree, order) loaded once for a slice of
     # spacecraft instead of once per spacecraft -- and the shared Sun/third-body
     # samples that `_accumulate_nbody_flat_batch!` and `_accumulate_srp_flat_batch!`
-    # read once per derivative evaluation. Measured at 3.5x on a 256-spacecraft
-    # degree-50 vacuum rung, where adding any second effector was enough to lose
-    # the batched kernel (docs/architecture/third_body_cost.md).
+    # read once per derivative evaluation. Keeping eligible stacks on this
+    # route preserves that shared work when a second pre-passed effector is added.
+    # See docs/architecture/third_body_cost.md for the current routing constraints.
     #
     # `env.flat_min_sats` gates this for the same reason it gates the
     # single-harmonics branch: below it the batched sweep has too few
@@ -1565,14 +1545,10 @@ end
     # A pre-pass-only stack is exempt, for the reason the budget-one branch
     # above takes the flat route: its effectors are all served by the flat
     # route's pre-passes, so the per-(satellite, effector) queue whose overhead
-    # this floor exists for is never built. Without the exemption budgets 2 and
-    # 3 were the only ones at which such a stack lost the batched kernels --
-    # budget 1 takes the branch above, budget 4 and up the generic branch below
-    # -- and on the 4096-spacecraft P6 traces that made two threads slower than
-    # one (docs/architecture/rhs_heuristic_defaults.md, "Budgets below the flat
-    # queue's thread floor"). The stack still has to pass the generic branch's
-    # own admission (work estimate, satellites-per-worker floor), exactly as it
-    # does at budget 4.
+    # this floor exists for is never built. The exemption keeps those batched
+    # kernels available below the queue's thread floor. The stack still has to
+    # pass the generic branch's work and satellites-per-worker admission checks.
+    # See docs/architecture/rhs_heuristic_defaults.md for the current controls.
     if budget < env.flat_min_thread_budget && !_rhs_all_prepass_effectors(dynamic_effectors)
         return (
             mode=:satellite_batch,

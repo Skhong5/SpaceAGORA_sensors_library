@@ -9,13 +9,12 @@
 # hit a pathological non-convergent integration on some seed (17+ CPU-minutes
 # on one sample) and was abandoned in favor of this safer axis.
 #
-# Follow-up to mc_multisat_thread_allocation.jl: that study found every
-# outer_workers>=2 combo (Threads.@spawn-based) crashes for the GRAM
-# surrogate/native models, root-caused to unlocked GRAM model *construction*
-# racing across threads that share one process's address space (Finding 4,
-# THREAD_ALLOCATION_AND_GRAM_CONCURRENCY_HANDOFF.md /
-# project_gram_concurrent_construction_crash memory). Separate OS processes
-# don't share that native global state, so this script routes outer
+# Follow-up to mc_multisat_thread_allocation.jl. The historical construction
+# race investigation is Finding 4 in the private
+# THREAD_ALLOCATION_AND_GRAM_CONCURRENCY_HANDOFF.md record,
+# gfalcon2/spaceagora-private-telemetry, retained_studies/2026-10-14-repository-cleanup/
+# benchmarks/studies/gram_mars_fix_and_constellation_scaling/.
+# Separate OS processes do not share native global state, so this script routes outer
 # parallelism through Distributed.addprocs instead of Threads.@spawn --
 # the `outer_process` pattern already used in
 # benchmarks/studies/parallelization_performance/execution.jl.

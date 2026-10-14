@@ -23,10 +23,9 @@
 # `@inbounds @simd ivdep for b = 1:B` in `_harmonics_flat_batch_kernel!` with
 # `@inbounds for b = 1:B` (three occurrences), re-run this script into a
 # second `<outdir>`, restore the file, and `cmp` the two `*_vacuum.bin` pairs.
-# That is exactly how the numbers in
-# benchmarks/studies/small_wins/results/harmonics_simd_ratio.csv were made;
-# see docs/architecture/small_wins_20260923.md for the measured bytes and
-# cmp results.
+# Historical measurements and dump/cmp evidence are in the private
+# `small_wins_20260923.md` record in gfalcon2/spaceagora-private-telemetry,
+# retained_studies/2026-10-14-repository-cleanup/docs/architecture/.
 
 outdir = length(ARGS) >= 1 ? ARGS[1] : joinpath(@__DIR__, "results", "harmonics_simd_dump")
 mkpath(outdir)

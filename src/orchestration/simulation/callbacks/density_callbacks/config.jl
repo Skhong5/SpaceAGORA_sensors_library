@@ -119,11 +119,11 @@ The batch evaluator then retains the locked route. The pinned wrapper's default
 wind mode is perturbed; nominal winds must be selected explicitly for wind
 queries to use the automatic pool. Calls with `wind=false` remain eligible.
 
-The nominal-wind measurements in `docs/architecture/gram_thread_scaling.md` and
-`benchmarks/studies/gram_thread_scaling/results/` found bit identity and speedups
-of 1.90x at 8 threads and 1.65x at 4 for 1024 spacecraft. These claims do not
-cover perturbed winds. Explicit `on` permits independent stochastic histories;
-its wind results can depend on pool width and thread count.
+Explicit `on` permits independent stochastic histories; its wind results can
+depend on pool width and thread count. Nominal-wind identity checks do not
+establish identity under perturbed winds. See
+`docs/architecture/gram_thread_scaling.md` for the current mode constraints and
+the private archive reference for the historical measurements.
 """
 @inline function _gram_isolated_pool_mode()::Symbol
     return ParallelPolicy.parse_parallel_mode_env("SPACEAGORA_GRAM_ISOLATED_POOL"; default="auto")
@@ -132,16 +132,13 @@ end
 """
     _gram_isolated_pool_threshold() -> Int
 
-How many items must really reach native GRAM before the pool is worth building.
+Minimum native-GRAM items in one callback batch for automatic pooling.
 
-1024, SOURCED from `benchmarks/studies/gram_thread_scaling/results/gram_pool_scaling_*`:
-at 256 spacecraft the pool is slower than the locked path at every thread count
-and every width measured, down to 0.49x at 8 threads and width 8; at 1024 it is
-faster at 4 and 8 threads in both density paths. The mission-length control in
-the same directory shows the 256 loss is not the pool's build cost waiting to be
-amortized -- ten times the mission moves it from 0.68x only to 0.80x -- so the
-axis that decides is the number of native GRAM calls per callback, not the
-length of the run.
+Defaults to 1024; override with `SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD`.
+The count applies to items that reach native GRAM in that invocation, not the
+mission length or total number of spacecraft. It is an automatic-routing
+threshold, not a performance guarantee. The original measurements are linked
+from `docs/architecture/gram_thread_scaling.md` in the private archive.
 """
 @inline function _gram_isolated_pool_threshold()::Int
     return ParallelPolicy.parse_thread_threshold_env("SPACEAGORA_GRAM_ISOLATED_POOL_THRESHOLD", 1024)
@@ -150,14 +147,13 @@ end
 """
     _gram_isolated_pool_max_workers() -> Int
 
-The most native GRAM instances the pool will build.
+Maximum native GRAM instances requested for the pool.
 
-Capped at 4, SOURCED from the same CSVs: four is the fastest width measured in
-all four winning cells -- 1.90x against 1.76x at width 8 and 1.64x at width 2
-(8 threads, freeze-per-step), 1.65x against 1.41x and 1.37x (4 threads), and the
-same ordering in both look-ahead rows. Each further instance is also a further
-native GRAM image resident in the process, so the cap is the cheap side of the
-trade in memory as well as in time.
+Defaults to the smaller of 4 and the available Julia thread count, with a
+minimum of 1. Override with `SPACEAGORA_GRAM_ISOLATED_POOL_MAX_WORKERS`.
+Each additional instance occupies native memory; a wider pool is not
+necessarily faster. See `docs/architecture/gram_thread_scaling.md` for current
+pool controls and the private archive reference for the original comparisons.
 """
 @inline function _gram_isolated_pool_max_workers()::Int
     return ParallelPolicy.parse_thread_threshold_env(
@@ -459,8 +455,10 @@ end
     # fighting for that lock -- the :density_callback source's 16-thread floor
     # exists for that case. A lock-free model (e.g. GRAMAtmosphereModelSurrogate)
     # has no such cost, so it gets the general default floor instead via a
-    # separate source category, rather than being held to the same 16-thread gate
-    # for no reason (see PARALLELIZATION_CURRENT_STATE.md / Finding 1).
+    # separate source category. The historical rationale is Finding 1 in the
+    # private PARALLELIZATION_CURRENT_STATE.md record, gfalcon2/spaceagora-private-telemetry,
+    # retained_studies/2026-10-14-repository-cleanup/benchmarks/studies/
+    # gram_mars_fix_and_constellation_scaling/.
     source = (model isa EnvironmentModels.GRAMAtmosphereModel && !lock_free) ?
         :density_callback : :density_callback_lockfree
     # heavy_only is passed unconditionally: the guard only bites when the caller

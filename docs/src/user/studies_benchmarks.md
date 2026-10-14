@@ -126,7 +126,7 @@ Run [GRAMSuite Setup](gramsuite_setup.md) before using GRAM-backed studies.
 | Area | Scripts |
 |---|---|
 | GRAM fidelity | `gram_full_vs_trajectory_density_compare.jl`, `gram_interpolation_vs_point_to_point_analysis.jl`, `gram_single_call_vs_point_to_point_analysis.jl`, `gram_offline_db_accuracy_study.jl`, `gram_planet_rho_altitude_sweep.jl`, `gram_real_sim_runtime_compare.jl`, `gram_real_sim_surrogate_matrix.jl`, `gram_real_sim_surrogate_decision_table.jl`, `gram_trajectory_lookahead_fidelity/main.jl` |
-| GRAM Mars fix and constellation scaling | `gram_mars_fix_and_constellation_scaling/{mars_150km_gram_scaling.jl, earth_standard_gram_scaling.jl, earth_surrogate_gram_scaling.jl, leo_constellation_size_scaling.jl, leo_ensemble_outer_backend_scaling.jl, leo_thread_scaling_by_mode.jl, mc_multisat_process_backend.jl, mc_multisat_thread_allocation.jl}` — see the directory's `README.md` for the Mars ephemeris-bypass fix background and `PARALLELIZATION_CURRENT_STATE.md` for current constellation-scaling findings |
+| GRAM Mars fix and constellation scaling | `gram_mars_fix_and_constellation_scaling/{mars_150km_gram_scaling.jl, earth_standard_gram_scaling.jl, earth_surrogate_gram_scaling.jl, leo_constellation_size_scaling.jl, leo_ensemble_outer_backend_scaling.jl, leo_thread_scaling_by_mode.jl, mc_multisat_process_backend.jl, mc_multisat_thread_allocation.jl}` — see the directory's `README.md` for the Mars ephemeris-bypass fix background and the run procedures and interpretation limits |
 | Performance support | `performance_effector_reduction_microbench.jl`, `performance_split_imex_compare.jl`, `performance_static_vs_parallel.jl`, `performance_thread_scaling_1024.jl`, `performance_thread_scaling_64_aero_gram.jl`, `performance_hybrid_scaling_64_aero_gram.jl`, `performance_mc_thread_scaling.jl`, `performance_smart_parallel_ladder_cross_machine.jl` |
 | Parallelization paper benchmarks | `paper_parallelization_benchmarks.jl`, `parallelization_performance.jl` — each has a same-named subdirectory with its own `protocol.sh`, `cli.jl`, and `CASES.md` case catalog |
 | Tuning and validation | `telemetry_hybrid_tuner.jl`, `telemetry_odyssey_tuner.jl` |
@@ -141,16 +141,32 @@ available.
 For long studies, set an explicit output directory and keep the terminal log with
 the artifacts.
 
+## Research records and generated results
+
+The public repository keeps runnable studies, their inputs, measurement methods
+and interpretation limits. Session notes, timing tables, profiler captures and
+generated plots belong with the research record rather than the source tree.
+Keep the source revision, configuration, host, logs and raw outputs together
+when recording a new result; a historical result does not validate current code.
+
+The originals removed during the October 14, 2026 cleanup are retained in the
+private research archive, `gfalcon2/spaceagora-private-telemetry`, at commit
+`0cb7ad12f69d8c6da24e9fdd05ab819e16858935` in
+`retained_studies/2026-10-14-repository-cleanup`,
+under their original repository paths. Access requires permission to that private
+repository. The archive identifies its source revision and any unavailable
+underlying inputs; a copied report is not a replacement for missing raw data.
+The public procedures remain usable without access to those historical records.
+
 ## Study tools and shared maintenance
 
-The paper-routing study keeps its table builders, plots, run comparison and
-acceptance checker beside its runner in
+The paper-routing study keeps its table builders, plots, raw-run policy checks and
+run comparison beside its runner in
 `benchmarks/studies/paper_parallelization_benchmarks/`. Use
 `check_policy_criterion.py` with the raw per-repeat CSV when assessing failures.
 `make_paper_routing_tables.py` and `make_paper_routing_plots.py` read aggregated
 successful-run timings; the regret table and adaptive comparison use raw runs.
-Their
-different inputs serve different questions, so they are not interchangeable.
+Their different inputs serve different questions, so they are not interchangeable.
 The study's `CASES.md` lists the measurement protocol and analysis commands.
 
 `benchmarks/scripts/archive_paper_run.py` is shared by the paper harnesses. It

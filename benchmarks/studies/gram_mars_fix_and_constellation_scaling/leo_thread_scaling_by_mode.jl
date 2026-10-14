@@ -4,15 +4,16 @@
 #
 #   no_gram   -- NoAtmosphereModel, gravity-only (no shared native library, no lock)
 #   surrogate -- GRAM offline surrogate (precomputed interpolation, no native calls, no lock)
-#   standard  -- real/native GRAM, no lookahead cache (single global lock inside the
-#                vendored native library -- see LEO_GRAM_CONSTELLATION_HANDOFF.md)
+#   standard  -- real/native GRAM, no lookahead cache; native state requires
+#                the configured serialization or isolated-instance ownership.
 #
-# Purpose: isolate how much of the "threads don't help much" finding from the
-# 2048-sat/1hr native-GRAM benchmark (LEO_GRAM_CONSTELLATION_HANDOFF.md) is
-# specific to native GRAM's global lock vs. a general property of constellation
-# parallelism in this codebase. Julia's thread count is fixed at process
+# Compare density modes to distinguish native-GRAM costs from other
+# constellation scaling costs. Julia's thread count is fixed at process
 # startup, so each (mode, threads) point is its own subprocess via the existing
 # leo_constellation_size_scaling_worker.jl.
+# Historical results are in the private LEO_GRAM_CONSTELLATION_HANDOFF.md record,
+# gfalcon2/spaceagora-private-telemetry,
+# retained_studies/2026-10-14-repository-cleanup/benchmarks/studies/.
 #
 # Each point also records the worker subprocess's own resource footprint --
 # peak RSS and mean/peak CPU%, sampled by pid via `ps` (resource_monitor.jl)

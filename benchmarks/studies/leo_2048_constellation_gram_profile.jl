@@ -1,19 +1,14 @@
-# Re-profile of the 1024-satellite LEO GRAM constellation scenario (see
-# LEO_GRAM_CONSTELLATION_HANDOFF.md) AFTER the routing/sort/hot-path fixes landed.
-# The pre-fix profile (in the handoff doc) showed 51% utilization, ~90% of samples
-# waiting on the persistent-worker dispatch channel -- caused by the 2-effector
-# flat-queue routing bug, since fixed. This script re-runs the same scenario
-# (8 threads, parallel/flat mode) under Profile to see whether utilization improved
-# and what the next-largest remaining cost is.
+# Profile the 1024-satellite LEO GRAM constellation scenario on the current
+# tree. Historical profiles are in the private LEO_GRAM_CONSTELLATION_HANDOFF.md
+# record in gfalcon2/spaceagora-private-telemetry,
+# retained_studies/2026-10-14-repository-cleanup/benchmarks/studies/.
 #
-# Root cause found in that re-profile: `auto_thread_min_budget(:density_callback)`
-# (src/orchestration/parallel/policy/env_config.jl) hardcodes a 16-thread minimum before
-# SPACEAGORA_DENSITY_CALLBACK_PARALLEL=auto will ever enable threading, so at
-# --threads=8 the entire per-satellite GRAM atmosphere sample loop
-# (_prefill_environment_samples!, dynamics_rhs.jl) runs serially on the calling
-# thread regardless of satellite count. Pass "on" as the first arg to validate the
-# fix (SPACEAGORA_DENSITY_CALLBACK_PARALLEL=on bypasses that gate); omit/pass "auto"
-# to reproduce the original (broken) baseline.
+# `auto_thread_min_budget(:density_callback)` defaults to a 16-thread floor
+# for the locked density source; it is configurable in
+# src/orchestration/parallel/policy/env_config.jl. Compare the automatic route
+# with explicit "on", which bypasses its automatic budget gate. Other routing
+# and ownership checks still apply. This comparison measures current behavior;
+# it does not recreate the archived profile or establish a speedup in advance.
 #
 #   julia --project=. --threads=8 benchmarks/studies/leo_2048_constellation_gram_profile.jl auto
 #   julia --project=. --threads=8 benchmarks/studies/leo_2048_constellation_gram_profile.jl on

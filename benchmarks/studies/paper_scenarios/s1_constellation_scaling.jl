@@ -1,10 +1,9 @@
 # Scenario 1 — Constellation scaling baseline (Earth LEO, L20 harmonics, vacuum).
 #
-# Claim it backs: outer thread routing scales a coupled multi-satellite propagation
-# near-linearly with constellation size on a single workstation, and the marginal
-# memory cost per satellite is a state vector, not a process image. This is the
-# clean-room curve every other scenario is interpreted against: no atmosphere, no
-# native-library locks — any deviation from linear is parallelization overhead.
+# Measures wall-time and memory scaling for a coupled multi-satellite
+# propagation, comparing serial and flat/batched RHS routes. The default
+# vacuum case excludes atmosphere and native-library locks; it does not
+# assume linear scaling or assign every scaling loss to parallel dispatch.
 #
 #   julia --project=. benchmarks/studies/paper_scenarios/s1_constellation_scaling.jl
 #
@@ -31,7 +30,7 @@
 # PS_GRAVITY/PS_DENSITY exist to isolate per-satellite work cost as a variable:
 # the default (l20, vacuum) is deliberately cheap per RHS call, so fixed
 # per-call overhead (Polyester.@batch dispatch, the flat work-item queue
-# rebuild -- see FABLE_FINDINGS.md D1) is a large fraction of wall time at
+# rebuild) can matter at
 # small N, especially right where SPACEAGORA_RHS_BATCH_THREAD_THRESHOLD
 # (default 16) flips batched RHS threading on. A heavier force model (e.g.
 # PS_GRAVITY=l50, or a GRAM density mode) grows the numerator (real work per
@@ -39,6 +38,9 @@
 # efficiency dip is overhead-dominated cost or a fixed step in the routing
 # policy. Non-default combinations write to a suffixed CSV/label set so they
 # never clobber the (l20, none) paper-baseline results already on disk.
+# Historical D1 investigation: private FABLE_FINDINGS.md in
+# gfalcon2/spaceagora-private-telemetry, retained_studies/2026-10-14-repository-cleanup/
+# benchmarks/studies/paper_scenarios/.
 
 include(joinpath(@__DIR__, "common.jl"))
 
