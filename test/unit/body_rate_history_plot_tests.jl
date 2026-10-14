@@ -38,7 +38,7 @@ end
 savefig(figure, path) = push!(figure.saves, path)
 display(args...) = error("The explicit saver must not open a plot window.")
 end
-Core.eval(RenderBoundary, source_function(joinpath(ROOT, "examples", "aerobraking_mission_plot_utils.jl"),
+Core.eval(RenderBoundary, source_function(joinpath(ROOT, "examples", "support", "aerobraking_mission_plot_utils.jl"),
                                           :_save_body_rate_history_plot))
 
 module LegacyBoundary

@@ -280,6 +280,6 @@ Related scripts:
 Support files included by examples:
 
 - `common.jl`
-- `aerobraking_mission_plot_utils.jl`
+- `support/aerobraking_mission_plot_utils.jl` (mission setup, event extraction and plotting used by the aerobraking examples)
 - `support/aerobraking_result_tables.jl` (saved-table access used by the mission plotting helper)
 - `support/aerobraking_plot_errors.jl` (absolute RTN error components for mission plots)
