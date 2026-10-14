@@ -1,8 +1,6 @@
-"""
-Repository asset manifest and readiness operations. This internal service
-returns plain field records so command front ends retain their own public types.
-It performs no downloads and does not interpret atmosphere or geometry schemas.
-"""
+# Repository asset manifest and readiness operations. This internal service
+# returns plain field records so command front ends retain their own public types.
+# It performs no downloads and does not interpret atmosphere or geometry schemas.
 module AssetCatalog
 
 using TOML

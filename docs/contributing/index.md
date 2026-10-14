@@ -42,7 +42,8 @@ pages.
 
 Use this checklist for a new contribution or an incoming research branch before
 review. Existing adapter-specific requirements remain in the
-[optional adapter standard](../src/reference/adapter_contract.md).
+[optional adapter standard](../src/reference/adapter_contract.md) and the
+[adapter maintenance notes](adapter_maintenance.md).
 
 1. **Identify the change.** Record the base and candidate revisions, affected
    source owners, intended behavior changes and existing behavior to preserve.
