@@ -1,7 +1,7 @@
 using DataFrames
 using Statistics
 
-const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
+const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
 include(joinpath(@__DIR__, "tb_matrix_debug_defs_only.jl"))
 
@@ -19,7 +19,7 @@ function run_tb_matrix_debug(;
     basilisk_runner=ScenarioMatrixDebugSupport._run_basilisk_scenario_matrix_result_once,
     stk_runner=ScenarioMatrixDebugSupport._run_stk_scenario_matrix_result_once,
     check_inputs=() -> ScenarioMatrixDebugSupport.require_matrix_inputs(; stk=true),
-    csv_path::AbstractString=joinpath(REPO_ROOT, "output", "diagnostics", "tb_matrix_rmse_m.csv")
+    csv_path::AbstractString=joinpath(REPO_ROOT, "scripts", "tb_matrix_rmse_m.csv")
 )
     # Check both reference sets before either potentially expensive solve.
     check_inputs()
@@ -61,7 +61,6 @@ function run_tb_matrix_debug(;
 
     # Machine-readable CSV, in meters, full precision, for downstream reuse
     # (paper table + any future re-derivation) without rerunning the matrix.
-    mkpath(dirname(csv_path))
     open(csv_path, "w") do io
         println(io, "planet,gravity,target,third_body,rmse_m")
         for body in bodies, gtag in gravity_tags, tbtag in tb_tags, target in ["GMAT", "STK"]

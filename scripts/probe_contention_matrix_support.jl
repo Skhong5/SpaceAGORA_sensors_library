@@ -5,7 +5,7 @@
 # recorded a probe that reported a regression which had been fixed an hour
 # earlier because it carried its own copy of the profile table.
 
-const _SUPPORT_REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
+const _SUPPORT_REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 const _SUPPORT_HARM_FILE =
     joinpath(_SUPPORT_REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
 const _SUPPORT_N = parse(Int, get(ENV, "PCM_N", "256"))
@@ -151,7 +151,7 @@ const PROBE_CASES = Dict(
 # against, which is enough to make a non-reproduction meaningless. This builds
 # the harness's configuration with the harness's own code.
 function build_harness_case(case_name::String; profile::String = "full")
-    root = normpath(joinpath(@__DIR__, "..", "..", "benchmarks", "studies",
+    root = normpath(joinpath(@__DIR__, "..", "benchmarks", "studies",
                              "parallelization_performance"))
     isdefined(Main, :ppc_single_config) || begin
         Base.include(Main, joinpath(root, "cli.jl"))
@@ -171,7 +171,7 @@ end
 # unreachable. Two probe scripts hit that separately.
 function ensure_gramsuite_for_probe!()
     isdefined(SpaceAGORA, :GRAMSuite) && return true
-    vendored = normpath(joinpath(@__DIR__, "..", "..", "data", "GRAMSuite.jl"))
+    vendored = normpath(joinpath(@__DIR__, "..", "data", "GRAMSuite.jl"))
     try
         if Base.find_package("GRAMSuite") === nothing && isdir(vendored)
             pushfirst!(LOAD_PATH, vendored)

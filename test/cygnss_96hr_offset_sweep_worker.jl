@@ -15,7 +15,7 @@ using StaticArrays
 using LinearAlgebra
 using Statistics
 
-const _REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
+const _REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
 
 using SpaceAGORA
 

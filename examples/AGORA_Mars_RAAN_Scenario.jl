@@ -1,5 +1,5 @@
 include(joinpath(@__DIR__, "common.jl"))
-include(joinpath(@__DIR__, "support", "aerobraking_mission_plot_utils.jl"))
+include(joinpath(@__DIR__, "aerobraking_mission_plot_utils.jl"))
 
 using Printf
 using DiffEqBase: ContinuousCallback, terminate!

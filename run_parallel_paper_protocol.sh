@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Always run from the repo root (three levels above this script).
+# Always run from the repo root (script location).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-cd "$REPO_ROOT"
+cd "$SCRIPT_DIR"
 
 if [[ ! -f "Project.toml" || ! -f "benchmarks/studies/performance_smart_parallel_ladder.jl" ]]; then
-  echo "[error] run_parallel_paper_protocol.sh must live in benchmarks/studies/performance_smart_parallel_ladder/ of the SpaceAGORA repo."
+  echo "[error] run_parallel_paper_protocol.sh must live in the SpaceAGORA repo root."
   exit 1
 fi
 
@@ -36,8 +35,8 @@ julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
 export OPENBLAS_NUM_THREADS=1
 export SPACEAGORA_PERF_MACHINE_LABEL="${SPACEAGORA_PERF_MACHINE_LABEL:-tower_9985WX}"
 export JULIA_NUM_THREADS="$THREADS_MAIN"
-export SPACEAGORA_SMART_LADDER_PROJECT="$REPO_ROOT"
-export SPACEAGORA_PERF_WORKER_PROJECT="$REPO_ROOT"
+export SPACEAGORA_SMART_LADDER_PROJECT="$SCRIPT_DIR"
+export SPACEAGORA_PERF_WORKER_PROJECT="$SCRIPT_DIR"
 # export JULIA_EXCLUSIVE=1   # enable only on a dedicated machine
 
 # Freeze solver axis for parallel-only claims.
