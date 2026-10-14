@@ -1,25 +1,20 @@
 #!/usr/bin/env julia
 #
-# Does the native lock explain the multi-effector thread ceiling?
+# Compare RHS timing across interleaved execution widths in one Julia process.
 #
-#   for t in 1 2 4 8 12; do julia --project=. --threads=$t \
-#       scripts/dev/diagnostics/probe_lock_thread_ladder.jl; done
+#   julia --project=. --threads=12 scripts/dev/diagnostics/probe_lock_thread_ladder.jl
+#   PLT_WIDTHS=1,2,4 julia --project=. --threads=4 scripts/dev/diagnostics/probe_lock_thread_ladder.jl
 #
-# scripts/dev/diagnostics/probe_contention_matrix.jl measures occupancy rho at one thread, which
-# gives the Amdahl ceiling 1/rho but cannot show contention: with one worker
-# nothing ever waits. This runs the same workload across a thread ladder and
-# reads wait/hold, which is the quantity that says whether the width in use is
-# already past what the lock admits.
+# Start Julia with enough threads for the requested PLT_WIDTHS. The probe warms
+# every width, rotates their measurement order between repeats and discards
+# timing blocks in which the collector ran. It reports the minimum retained
+# time per RHS call, speedup relative to the first requested width, spread and
+# the number of discarded blocks. A width with no retained block is explicit.
 #
-# The prediction under test, on the fullstack shape (harmonics + SRP + aero over
-# a SPICE-backed planet -- the configuration `heavy_1024sat_fullstack_1hr` uses):
-# rho ~ 0.48 at one thread caps speedup near 2.1x, and wait/hold should climb
-# with the thread count. If it stays near zero the lock is not the ceiling and
-# this line of explanation is dead.
-#
-# §7.4 of the parallelization findings ruled out GC thread count, false sharing,
-# dispatch mechanism, allocation and route choice, and left the root cause open.
-# Native-lock occupancy was never on that list because nothing could measure it.
+# This is a timing comparison, not a lock-contention diagnosis: it does not
+# report native-lock wait/hold. The separate probe_contention_matrix.jl reports
+# allocation pressure and lock statistics by workload family. Both tools use
+# probe_contention_matrix_support.jl so their workload construction stays shared.
 
 using SpaceAGORA
 using StaticArrays
@@ -45,13 +40,9 @@ const WIDTHS = [parse(Int, w) for w in split(get(ENV, "PLT_WIDTHS", "1,2,4,8,12"
 
 # Widths are INTERLEAVED, with the order rotating between repeats.
 #
-# The previous shape of this sweep measured width 1 to convergence, then width
-# 2, and so on. That is blocked sampling on the axis under test: anything
-# drifting over the sweep -- thermal state, frequency, a co-tenant, the
-# allocator settling -- lands on the width axis and reads as scaling. It is the
-# same defect that made a fresh-process-per-width sweep untrustworthy, moved
-# inside one process rather than removed, and this project has now produced
-# three retracted results from exactly that family of error.
+# Measuring each width to completion in sequence can confound width with
+# thermal state, frequency, a co-tenant or allocator settling. Interleaving
+# spreads those effects across the widths being compared.
 #
 # Rotating the order additionally spreads first-position and last-position bias
 # across widths instead of accumulating it on whichever width is measured first.
@@ -63,13 +54,9 @@ function sweep(case, du, widths, passes, repeats)
     for rep in 1:repeats
         for w in order
             case.p.shared_buffers.rhs_plan_override[] = SE._make_calib_flat_plan(w, :static)
-            # Blocks in which the collector ran are DISCARDED, not minimised
-            # over. The fullstack RHS allocates ~790 KiB per pass, so a sweep of
-            # this length turns over hundreds of MB and GC lands on blocks at
-            # random -- measured spreads of +139% to +1559% across widths, which
-            # is an order of magnitude more than the effect under test. Taking a
-            # minimum hopes some block escaped; checking the collector's own
-            # counter knows which ones did.
+            # Discard blocks in which the collector ran before taking a minimum.
+            # Comparing its counter before and after each block makes that
+            # exclusion explicit rather than assuming the fastest block escaped.
             gc0 = Base.gc_num().total_time
             t0 = time_ns()
             for i in 1:passes

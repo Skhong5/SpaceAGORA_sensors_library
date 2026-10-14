@@ -1,7 +1,7 @@
 # HyPR relocation around the ISS: the Earth_RPO_CubeSat_MPC example with
 # NASA's ISS display model in its +XVV flight attitude held in LVLH (forward
 # along the velocity, truss along the orbit normal, zenith up), planned by HyPR
-# in its `:manuscript` mode, retimed with an acceleration limit, tracked by
+# in its `:manuscript` mode, geometrically retimed with a speed limit, tracked by
 # LQ-MPC and exported as a standalone viewer page with the plan overlaid on the
 # model. The epoch is a date on which the Sun stays above the station's horizon
 # for the whole relocation.

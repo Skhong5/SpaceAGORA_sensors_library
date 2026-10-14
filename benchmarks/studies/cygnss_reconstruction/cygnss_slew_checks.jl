@@ -2,11 +2,11 @@
 # than asserted. Each check prints the numbers behind one claim in the
 # `CygnssSlewTelemetry` docstring, and each ends in PASS or FAIL.
 #
-#   julia --project=. scripts/dev/run.jl viewer_demos/cygnss_slew_checks.jl
+#   julia --project=. scripts/dev/run.jl ../../benchmarks/studies/cygnss_reconstruction/cygnss_slew_checks.jl
 #
 # It needs the gitignored FM01 telemetry under data/telemetry/CYGNSS/ and, for
 # the epoch check, SPICE and the historical element sets in this directory.
-include(joinpath(@__DIR__, "common.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "scripts", "dev", "viewer_demos", "common.jl"))
 include(joinpath(@__DIR__, "cygnss_slew_telemetry.jl"))
 using .CygnssSlewTelemetry
 using Arrow

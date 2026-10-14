@@ -7,10 +7,10 @@ using Arrow
 using DataFrames
 
 const CYGIC_REPO = normpath(joinpath(@__DIR__, "..", "..", ".."))
-include(joinpath(CYGIC_REPO, "scripts", "dev", "viewer_demos", "cygnss_ics.jl"))
+include(joinpath(CYGIC_REPO, "benchmarks", "studies", "cygnss_reconstruction", "cygnss_ics.jl"))
 using .CygnssICs
 
-const CYGIC_TLE_FILE = joinpath(CYGIC_REPO, "scripts", "dev", "viewer_demos", "cygnss_historical.tle")
+const CYGIC_TLE_FILE = joinpath(CYGIC_REPO, "benchmarks", "studies", "cygnss_reconstruction", "cygnss_historical.tle")
 const CYGIC_ICS_FILE = joinpath(CYGIC_REPO, "data", "telemetry", "CYGNSS", "constellation_ics_20250606.json")
 const CYGIC_SPICE_PATH = joinpath(CYGIC_REPO, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
 const CYGIC_FM04_FEATHER = joinpath(CYGIC_REPO, "data", "telemetry", "CYGNSS", "cyg04_nasa_pvt_96hr.feather")
@@ -338,7 +338,7 @@ cygic_drz(θ) = SMatrix{3, 3, Float64}(-sin(θ), -cos(θ), 0.0, cos(θ), -sin(θ
     # =======================================================================
     @testset "generated constellation file" begin
         if !isfile(CYGIC_ICS_FILE)
-            @test_skip "constellation_ics_20250606.json absent (run scripts/dev/viewer_demos/build_cygnss_ics.jl)"
+            @test_skip "constellation_ics_20250606.json absent (run benchmarks/studies/cygnss_reconstruction/build_cygnss_ics.jl)"
         else
             ics = load_constellation_ics(CYGIC_ICS_FILE)
             @test ics.epoch_utc == CYGNSS_EPOCH_UTC

@@ -16,7 +16,7 @@ expressed in the spacecraft body frame. `N` is the one-based position in the
 spacecraft list, not `SpacecraftModel.id`.
 
 This schema has a tracked producer: `slew_save_fields` in
-`scripts/dev/viewer_demos/cygnss_slew.jl` records `u.sc[1].ω` through
+`benchmarks/studies/cygnss_reconstruction/cygnss_slew.jl` records `u.sc[1].ω` through
 `SaveField(:body_rate_rad_s, ...; per_satellite=true, column_prefix="body_rate")`.
 The same script reads `sc1_body_rate_1..3` and labels them `rad/s`.
 `_assign_orientation_rhs!` in `src/orchestration/simulation/engine/dynamics_rhs.jl` uses

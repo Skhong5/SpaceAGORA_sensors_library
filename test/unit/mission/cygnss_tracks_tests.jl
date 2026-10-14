@@ -14,9 +14,9 @@ const CYGTR_REPO = normpath(joinpath(@__DIR__, "..", "..", ".."))
 # `CYGNSS_MU_EARTH` -- ambiguous in `Main` and undefined at the call site. The
 # guard keeps this file runnable on its own as well as inside the suite.
 isdefined(@__MODULE__, :CygnssICs) ||
-    include(joinpath(CYGTR_REPO, "scripts", "dev", "viewer_demos", "cygnss_ics.jl"))
+    include(joinpath(CYGTR_REPO, "benchmarks", "studies", "cygnss_reconstruction", "cygnss_ics.jl"))
 isdefined(@__MODULE__, :CygnssTracks) ||
-    include(joinpath(CYGTR_REPO, "scripts", "dev", "viewer_demos", "cygnss_tracks.jl"))
+    include(joinpath(CYGTR_REPO, "benchmarks", "studies", "cygnss_reconstruction", "cygnss_tracks.jl"))
 using .CygnssICs
 using .CygnssTracks
 
@@ -272,7 +272,7 @@ end
     @testset "generated flight tracks" begin
         if !isfile(CYGTR_TRACKS_FILE)
             @test_skip "cygnss_constellation_tracks_20250606_96hr.feather absent " *
-                       "(run scripts/dev/viewer_demos/build_cygnss_ics.jl)"
+                       "(run benchmarks/studies/cygnss_reconstruction/build_cygnss_ics.jl)"
         else
             tracks = load_constellation_tracks(CYGTR_TRACKS_FILE)
             names = track_names(tracks)
@@ -322,7 +322,7 @@ end
     # through it. Skipped where the interpreter or pyarrow is missing.
     # =======================================================================
     @testset "level 1 fetcher self-test" begin
-        script = joinpath(CYGTR_REPO, "scripts", "dev", "viewer_demos",
+        script = joinpath(CYGTR_REPO, "benchmarks", "studies", "cygnss_reconstruction",
                           "fetch_cygnss_l1_states.py")
         @test isfile(script)
         have_python = try
@@ -345,7 +345,7 @@ end
     @testset "catalog versus flown comparison" begin
         if !isfile(CYGTR_COMPARISON_FILE)
             @test_skip "catalog_vs_flown_20250606.json absent " *
-                       "(run scripts/dev/viewer_demos/build_cygnss_ics.jl)"
+                       "(run benchmarks/studies/cygnss_reconstruction/build_cygnss_ics.jl)"
         else
             doc = JSON.parsefile(CYGTR_COMPARISON_FILE)
             @test doc["epoch_utc"] == CYGNSS_EPOCH_UTC

@@ -54,7 +54,7 @@ const wheels = SM.ReactionWheelMomentumModel(KNOTS,
 ω_of(u) = SVector{3, Float64}(u.sc[1].ω)
 end
 
-const SLEW = source_function(joinpath(ROOT, "scripts", "dev", "viewer_demos", "cygnss_slew.jl"),
+const SLEW = source_function(joinpath(ROOT, "benchmarks", "studies", "cygnss_reconstruction", "cygnss_slew.jl"),
                              :slew_save_fields)
 const MOMENTUM_FIELD = Core.eval(PrescribedBoundary, only(save_field_call(SLEW, :wheel_momentum_nms)))
 const TORQUE_MAGNITUDE_FIELD = Core.eval(PrescribedBoundary, only(save_field_call(SLEW, :wheel_torque_nm)))
