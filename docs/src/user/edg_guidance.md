@@ -17,10 +17,20 @@ the implementation currently shipped in SpaceAGORA, including the places
 where a software setting, a prediction, and an accepted physical result must
 be distinguished.
 
-EDG is currently part of SpaceAGORA itself. There is no separate EDG package
-to install. Its proposed future adapter boundary is documented in the
-[EDG ownership and lifecycle plan](../maintainer/edg_adapter_boundary.md);
-that plan does not change the configuration described here.
+The numerical implementation lives in the optional, experimental
+`SpaceAGORAEDG.jl` package. SpaceAGORA retains the public configuration/model
+constructors, physical dynamics, lifecycle and actuation. Install the supported
+pair with the [optional EDG setup](installation_environment.md), then load both:
+
+```julia
+using SpaceAGORA, SpaceAGORAEDG
+```
+
+The [EDG package boundary](../maintainer/edg_adapter_boundary.md) describes its
+versioned queries and state ownership. Selecting an EDG model without loading
+the provider gives a setup error before the simulation starts. The companion's
+`examples/analytic_atmosphere.jl` is a short installed-package demonstration;
+it is not a reproduction of either paper or a targeting-accuracy benchmark.
 
 ## What the guidance and controller do
 

@@ -52,6 +52,7 @@ function _edg_initialize_state!(s::AerobrakingEnergyDepletionState)
 end
 
 function _edg_preflight(model, args)
+    EDGServices.require_provider()
     n = length(args.dynamics_model.spacecraft)
     for field in fieldnames(AerobrakingEnergyDepletionState)
         field == :control_clock_origin_s && continue

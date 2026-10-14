@@ -3,6 +3,7 @@
 # fixtures, so this does not qualify the complete simulation, shooting model or native images.
 module EDGE2cRepairTests
 using Test, StaticArrays, LinearAlgebra
+import SpaceAGORAEDG
 
 const ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
 const HEAT = "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl"
@@ -13,11 +14,20 @@ const GUIDANCE = "src/models/gnc/guidance/aerobraking/typed_edg/guidance_decisio
 function load_definitions!(target, path, names)
     # The override allows the same tests to discriminate the pinned parent revision.
     revision = get(ENV, "EDG_REPAIR_SOURCE_REVISION", "")
-    source = isempty(revision) ? read(joinpath(ROOT, path), String) :
+    source = isempty(revision) ? read(joinpath(pkgdir(SpaceAGORAEDG), "src", basename(path)), String) :
         read(`git -C $ROOT show $revision:$path`, String)
     # These deterministic fixtures provide the pure decision inputs directly.
     for typename in (:AerobrakingEnergyDepletionConfig, :AerobrakingEnergyDepletionState)
         isdefined(target, typename) || Core.eval(target, :(const $typename = Any))
+    end
+    if isempty(revision)
+        # Deterministic fixture capabilities supply the same values as before the
+        # package move; they do not expose a production engine or replace methods.
+        isdefined(target, :AbstractPredictionContext) ||
+            Core.eval(target, :(const AbstractPredictionContext = ODEParams))
+        Core.eval(target, :(planet_constants(p) = p.args.environment_model.planet))
+        Core.eval(target, :(entry_altitude_m(p) = 1e3 * Float64(p.args.environment_model.EI)))
+        Core.eval(target, :(spacecraft_geometry(p, i) = p.args.dynamics_model.spacecraft[i]))
     end
     definitions = Meta.parseall(source)
     for name in names
@@ -115,6 +125,7 @@ function _edg_orbit_metrics_from_rv(r, v, mass, planet)
 end
 _edg_ephemeris_time(p, t) = t
 r_intor_p!(r, v, planet, t, ephemerides) = (r, v)
+frame_state(p, r, v, t) = (r, v)
 rtolatlong(r, planet) = (norm(r) - planet.Rp, 0.0, 0.0)
 end
 load_definitions!(VacuumFixture, CONTROL, [:_edg_prediction_step, :_edg_prediction_advance, :_edg_prediction_event, :_edg_vacuum_drag_passage_exit, :_edg_vacuum_apoapsis_correction])

@@ -3,11 +3,12 @@ module OptionalPackages
 
 using TOML
 const ROOT = normpath(joinpath(@__DIR__, ".."))
-const NAMES = ("hypr", "mujoco")
+const NAMES = ("hypr", "mujoco", "edg")
+const DOMAINS = Dict("hypr" => "robotics", "mujoco" => "robotics", "edg" => "gnc")
 const HELP = """Usage: julia --startup-file=no scripts/optional_packages.jl status
-       julia --startup-file=no scripts/optional_packages.jl checkout <hypr|mujoco>
-       julia --startup-file=no scripts/optional_packages.jl check <hypr|mujoco>
-       julia --startup-file=no scripts/optional_packages.jl setup <hypr|mujoco> <environment-directory>
+       julia --startup-file=no scripts/optional_packages.jl checkout <hypr|mujoco|edg>
+       julia --startup-file=no scripts/optional_packages.jl check <hypr|mujoco|edg>
+       julia --startup-file=no scripts/optional_packages.jl setup <hypr|mujoco|edg> <environment-directory>
 Use a Git clone of SpaceAGORA; source ZIPs omit linked repository contents.
 Setup environments must be outside the source checkout."""
 
@@ -42,17 +43,19 @@ end
 
 """Read the index gitlink pin and check the accompanying installation metadata."""
 function spec(name; root=ROOT)
-    name in NAMES || fail("Unknown optional package '$name'. Choose hypr or mujoco; EDG is not extracted.")
+    name in NAMES || fail("Unknown optional package '$name'. Choose hypr, mujoco or edg.")
     root = source_root(root)
     item = TOML.parsefile(joinpath(root, "packages", "OptionalPackages.toml"))[name]
     relative = item["path"]
-    startswith(relative, "packages/robotics/") && normpath(relative) == relative &&
-        !isabspath(relative) || fail("Optional package path must stay under packages/robotics.")
+    domain = joinpath("packages", DOMAINS[name])
+    length(splitpath(relative)) == 3 && startswith(relative, domain * "/") &&
+        normpath(relative) == relative && !isabspath(relative) ||
+        fail("The $name optional package path must stay directly under $domain.")
     no_symlinks(root, relative)
     fields = split(gitread(root, "ls-files", "--stage", "--", relative))
     length(fields) == 4 && fields[1] == "160000" && fields[3] == "0" &&
         fields[4] == relative && occursin(r"^[0-9a-f]{40}$", fields[2]) ||
-        fail("Missing or conflicted gitlink for $relative; use a complete Git clone.")
+        fail("Missing or conflicted gitlink for $relative. Installation requires an immutable published package pin; use a complete, qualified Git clone.")
     revision = fields[2]
     for (key, expected) in (("path", relative), ("url", item["url"]))
         actual = gitread(root, "config", "--file", ".gitmodules", "--get", "submodule.$(item["name"]).$key")
@@ -164,7 +167,7 @@ function installation_command(name, environment; root=ROOT)
             "JULIA_LOAD_PATH" => "@:@stdlib")
     end
     script = joinpath(path, "scripts", "setup_env.jl")
-    isfile(script) || fail("Missing MuJoCo companion installer.")
+    isfile(script) || fail("Missing $(name) companion installer.")
     return addenv(`$(Base.julia_cmd()) --startup-file=no --project=@stdlib $script $env`,
         "SPACEAGORA_CORE_PATH" => root, "SPACEAGORA_CORE_REV" => "", "JULIA_LOAD_PATH" => "@:@stdlib")
 end

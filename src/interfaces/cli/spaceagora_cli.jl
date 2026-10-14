@@ -88,6 +88,30 @@ function _visualizer_project()::String
     return project
 end
 
+function _edg_project(selected::AbstractString=get(ENV, "SPACEAGORA_EDG_ENV", ""))::String
+    if isempty(selected)
+        active = Base.active_project()
+        active === nothing && throw(ArgumentError("EDG requires a prepared project. Run scripts/optional_packages.jl setup edg <environment> and start Julia with --project=<environment>."))
+        selected = dirname(active)
+    end
+    project = abspath(selected)
+    file = joinpath(project, "Project.toml")
+    isfile(file) || throw(ArgumentError("EDG project is missing: $file."))
+    dependencies = get(TOML.parsefile(file), "deps", Dict{String, Any}())
+    for (name, uuid) in (("SpaceAGORA", "afbfb69f-5c0b-4832-b760-43725dff8540"),
+                         ("SpaceAGORAEDG", "a782e8ee-96d7-4dd6-8231-bb64649e6ad4"))
+        get(dependencies, name, nothing) == uuid || throw(ArgumentError(
+            "EDG project $project must declare $name. Prepare a separate project and select it with --project or SPACEAGORA_EDG_ENV."))
+    end
+    return project
+end
+
+function _edg_example(script::String)::Bool
+    path = realpath(script)
+    return any(name -> path == realpath(joinpath(EXAMPLES_DIR, name)),
+        ("AGORA_Odyssey_Energy_Depletion_Control_Test.jl", "odyssey_surrogate.jl"))
+end
+
 function _child_command(script::String, script_args::Vector{String};
                         project::String=CHILD_PROJECT, visualize::Bool=false)::Cmd
     if visualize
@@ -152,7 +176,14 @@ function _run_example(args::Vector{String}; io::IO=stdout, errio::IO=stderr)::In
     # The example scripts call run_simulation themselves; the environment switch
     # turns on the scene sidecar and builds the viewer page after the run.
     visualize && push!(env_pairs, "SPACEAGORA_VISUALIZATION" => "1")
-    project = visualize ? _visualizer_project() : CHILD_PROJECT
+    project = if visualize
+        selected = _visualizer_project()
+        _edg_example(script) ? _edg_project(selected) : selected
+    elseif _edg_example(script)
+        _edg_project()
+    else
+        CHILD_PROJECT
+    end
     return _run_subprocess(script, String[]; env_pairs=env_pairs, print_only=print_only,
         project, visualize, io=io, errio=errio)
 end

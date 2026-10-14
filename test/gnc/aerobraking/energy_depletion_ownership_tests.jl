@@ -288,6 +288,12 @@ end
 @testset "Architecture negative controls" begin
     sources=EDGOwnershipChecks.source_map(root)
     @test isempty(EDGOwnershipChecks.violations(sources))
+    foreign_include = copy(sources)
+    service_path = EDGOwnershipChecks.OWNER * "services.jl"
+    foreign_include[service_path] = replace(sources[service_path],
+        "include(joinpath(@__DIR__, \"adapter_queries.jl\"))" => "include(joinpath(@__DIR__, \"other_owner.jl\"))")
+    @test any(message -> occursin("only the reviewed adapter_queries.jl include", message),
+        EDGOwnershipChecks.violations(foreign_include))
     function refused(path,extra)
         bad=copy(sources);bad[path]=get(bad,path,"")*"\n"*extra
         return !isempty(EDGOwnershipChecks.violations(bad))
@@ -327,10 +333,10 @@ end
     @test !EDGOwnershipChecks.has_control_include("message = \"include(control) is forbidden\"")
     aggregator = sources[EDGOwnershipChecks.OWNER * "algorithms.jl"]
     @test !isempty(EDGOwnershipChecks.aggregator_violations(
-        replace(aggregator, "heat_rate.jl" => "other.jl")))
+        replace(aggregator, "_invoke_kernel(:_edg_at_control_tick" => "_invoke_kernel(:_edg_wrong_kernel")))
     @test !isempty(EDGOwnershipChecks.aggregator_violations(
         aggregator * "\ninclude(joinpath(@__DIR__, \"heat_rate.jl\"))"))
-    missing=copy(sources);delete!(missing,EDGOwnershipChecks.OWNER*"targeting.jl")
+    missing=copy(sources);delete!(missing,EDGOwnershipChecks.OWNER*"algorithms.jl")
     @test !isempty(EDGOwnershipChecks.violations(missing))
 end
 

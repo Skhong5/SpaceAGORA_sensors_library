@@ -92,10 +92,38 @@ class PlanTests(unittest.TestCase):
                     self.assertIn("needs.optional-mujoco-installation.result", agg.group(1))
                 expected_needs.append("optional-visualizer-installation")
                 self.assertIn("needs.optional-visualizer-installation.result", agg.group(1))
+                expected_needs.append("optional-edg-installation")
+                self.assertIn("needs.optional-edg-installation.result", agg.group(1))
             needs = re.search(r"needs: \[(.*?)\]", agg.group(1))
             self.assertIsNotNone(needs, aggregator)
             self.assertEqual([x.strip() for x in needs.group(1).split(",")], expected_needs)
             self.assertIn(f"SHARD_MATRIX: ${{{{ needs.plan.outputs.{output} }}}}", agg.group(1), aggregator)
+
+    def test_edg_preparation_fails_before_export_on_installation_failure(self):
+        action = (ROOT / ".github/actions/setup/action.yml").read_text()
+        step = action.split("    - name: Prepare mandatory EDG provider for runtime tests\n", 1)[1].split("    - name:", 1)[0]
+        script = textwrap.dedent(step.split("      run: |\n", 1)[1]).strip()
+        with tempfile.TemporaryDirectory(prefix="edg workflow ") as temporary:
+            root = Path(temporary)
+            executable = root / "julia"
+            executable.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$STUB_JULIA_ARGS"\nexit "$STUB_JULIA_STATUS"\n')
+            executable.chmod(0o755)
+            exported, arguments = root / "GitHub environment", root / "Julia arguments"
+            env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ["PATH"],
+                       RUNNER_TEMP=str(root), GITHUB_ENV=str(exported), STUB_JULIA_ARGS=str(arguments))
+            for status in (0, 23):
+                exported.write_text("PREVIOUS=value\n")
+                result = subprocess.run(["bash", "-c", script], env=dict(env, STUB_JULIA_STATUS=str(status)),
+                                        text=True, capture_output=True)
+                self.assertEqual(result.returncode, status, result.stderr)
+                self.assertEqual(arguments.read_text().splitlines(), ["--startup-file=no", "--project=@stdlib",
+                                 "scripts/setup_edg.jl", str(root / "spaceagora-edg-env")])
+                expected = "PREVIOUS=value\n"
+                if status == 0:
+                    expected += f"SPACEAGORA_EDG_TEST_ENV={root / 'spaceagora-edg-env'}\n"
+                    expected += f"SPACEAGORA_EDG_ENV={root / 'spaceagora-edg-env'}\n"
+                    expected += f"JULIA_LOAD_PATH=@:{root / 'spaceagora-edg-env'}:@stdlib\n"
+                self.assertEqual(exported.read_text(), expected)
 
     def test_job_environment_rejects_runner_context(self):
         valid = """jobs:

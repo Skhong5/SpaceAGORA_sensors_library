@@ -7,7 +7,7 @@ for other caps and the output directory. Include it to use
 """
 module OdysseySurrogateExample
 
-using SpaceAGORA, GRAMSuite, StaticArrays, LinearAlgebra, TOML, CSV, Printf, Libdl
+using SpaceAGORA, SpaceAGORAEDG, GRAMSuite, StaticArrays, LinearAlgebra, TOML, CSV, Printf, Libdl
 import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft
 
 const SM = SpaceAGORA.SimulationModel

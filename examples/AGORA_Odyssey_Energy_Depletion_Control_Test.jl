@@ -1,4 +1,6 @@
+using SpaceAGORAEDG
 include(joinpath(@__DIR__, "common.jl"))
+SpaceAGORA.EDGServices.require_provider()
 using CSV
 using DataFrames
 using LinearAlgebra

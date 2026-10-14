@@ -143,4 +143,6 @@ function _edg_targeting_control_clock(config, p::ODEParams)
     return (period=first(periods), origin=first(origins))
 end
 
+include(joinpath(@__DIR__, "adapter_queries.jl"))
+
 end # module EDGServices

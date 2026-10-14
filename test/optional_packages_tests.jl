@@ -7,6 +7,8 @@ const OPTIONAL_FIXTURE_PACKAGES = (
           uuid="342c8629-b435-4bda-9d24-004c735fb297", version="0.1.1"),
     mujoco=(name="SpaceAGORAMuJoCo", path="packages/robotics/SpaceAGORAMuJoCo.jl",
             uuid="a46e04e1-adb7-43c3-a03b-26575bf4fb67", version="0.1.0"),
+    edg=(name="SpaceAGORAEDG", path="packages/gnc/SpaceAGORAEDG.jl",
+         uuid="a782e8ee-96d7-4dd6-8231-bb64649e6ad4", version="0.1.0"),
 )
 
 function fixture_git(args...)
@@ -45,7 +47,7 @@ function optional_fixture(f)
         revisions = Dict{String,String}()
         next_revisions = Dict{String,String}()
         modules = IOBuffer()
-        for key in (:hypr, :mujoco)
+        for key in (:hypr, :mujoco, :edg)
             package = getproperty(OPTIONAL_FIXTURE_PACKAGES, key)
             label = String(key)
             origin = joinpath(temporary, label * "-origin")
@@ -115,7 +117,7 @@ end
 
 @testset "Optional package metadata and source archives" begin
     optional_fixture() do fixture
-        for name in ("hypr", "mujoco")
+        for name in ("hypr", "mujoco", "edg")
             expected = getproperty(OPTIONAL_FIXTURE_PACKAGES, Symbol(name))
             resolved = OptionalPackages.spec(name; root=fixture.root)
             @test resolved.name == expected.name
@@ -129,7 +131,7 @@ end
             @test_throws Exception OptionalPackages.check(name; root=fixture.root)
             @test fixture_snapshot(fixture.root) == before
         end
-        for unknown in ("edg", "all", "../hypr", "")
+        for unknown in ("all", "../hypr", "")
             @test_throws Exception OptionalPackages.spec(unknown; root=fixture.root)
         end
         archive = joinpath(fixture.temporary, "source-zip")
@@ -143,7 +145,7 @@ end
 end
 
 @testset "Only the selected pinned repository is initialized" begin
-    for name in ("hypr", "mujoco")
+    for name in ("hypr", "mujoco", "edg")
         optional_fixture() do fixture
             package = getproperty(OPTIONAL_FIXTURE_PACKAGES, Symbol(name))
             other = name == "hypr" ? "mujoco" : "hypr"
@@ -264,12 +266,13 @@ end
     optional_fixture() do fixture
         hypr = OptionalPackages.checkout("hypr"; root=fixture.root)
         mujoco = OptionalPackages.checkout("mujoco"; root=fixture.root)
+        edg = OptionalPackages.checkout("edg"; root=fixture.root)
         root_alias = joinpath(fixture.temporary, "core-alias")
         symlink(fixture.root, root_alias; dir_target=true)
         before = fixture_snapshot(fixture.root)
-        for name in ("hypr", "mujoco")
+        for name in ("hypr", "mujoco", "edg")
             for environment in (fixture.root, fixture.root * "/", joinpath(fixture.root, "."),
-                                joinpath(fixture.root, "generated", "environment"), hypr, mujoco,
+                                joinpath(fixture.root, "generated", "environment"), hypr, mujoco, edg,
                                 root_alias, joinpath(root_alias, "not-created", "environment"))
                 @test_throws Exception OptionalPackages.installation_command(name, environment; root=fixture.root)
             end
@@ -287,7 +290,7 @@ end
                 @test any(argument -> occursin("HYPRInstallation.setup", argument) &&
                             occursin("local_path=ARGS[4]", argument), command.exec)
             else
-                @test joinpath(mujoco, "scripts", "setup_env.jl") in command.exec
+                @test joinpath(name == "edg" ? edg : mujoco, "scripts", "setup_env.jl") in command.exec
                 @test "SPACEAGORA_CORE_PATH=$(fixture.root)" in command.env
                 @test "SPACEAGORA_CORE_REV=" in command.env
             end
@@ -310,5 +313,28 @@ end
         @test !ispath(environment)
         @test fixture_snapshot(fixture.root) == before
         @test Base.active_project() == active
+    end
+end
+
+@testset "Optional package domains and unpublished EDG are fail closed" begin
+    optional_fixture() do fixture
+        registry_path = joinpath(fixture.root, "packages", "OptionalPackages.toml")
+        original = TOML.parsefile(registry_path)
+        for (name, invalid) in (("edg", "packages/robotics/SpaceAGORAEDG.jl"),
+                                ("edg", "packages/gnc/../SpaceAGORAEDG.jl"),
+                                ("edg", "packages/gnc/nested/SpaceAGORAEDG.jl"),
+                                ("mujoco", "packages/gnc/SpaceAGORAMuJoCo.jl"))
+            modified = deepcopy(original)
+            modified[name]["path"] = invalid
+            fixture_toml(registry_path, modified)
+            before = fixture_snapshot(fixture.root)
+            @test_throws ArgumentError OptionalPackages.spec(name; root=fixture.root)
+            @test fixture_snapshot(fixture.root) == before
+        end
+        fixture_toml(registry_path, original)
+        fixture_run("-C", fixture.root, "update-index", "--force-remove", OPTIONAL_FIXTURE_PACKAGES.edg.path)
+        before = fixture_snapshot(fixture.root)
+        @test_throws ArgumentError OptionalPackages.checkout("edg"; root=fixture.root)
+        @test fixture_snapshot(fixture.root) == before
     end
 end

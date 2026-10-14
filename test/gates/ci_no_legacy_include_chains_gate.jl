@@ -49,8 +49,9 @@ const ALLOWED_RAW_INCLUDE_FILES = Set([
     joinpath("src", "models", "gnc", "control", "propulsive_maneuvers.jl"),
     joinpath("src", "models", "gnc", "guidance", "guidance_models.jl"),
     joinpath("src", "models", "gnc", "guidance", "guidance_hooks.jl"),
-    # Typed EDG module includes only its own numerical/decision source files.
-    joinpath("src", "models", "gnc", "guidance", "aerobraking", "typed_edg", "algorithms.jl"),
+    # EDG physical services include only their reviewed capability wrapper file.
+    # The ownership gate checks that exact include; algorithms.jl has none.
+    joinpath("src", "models", "gnc", "guidance", "aerobraking", "typed_edg", "services.jl"),
     # Existing helper module now loads its shared and RRT source owners.
     joinpath("src", "models", "gnc", "planning", "adapters", "hypr", "hypr_utils.jl"),
     joinpath("src", "models", "gnc", "navigation", "navigation_hooks.jl"),

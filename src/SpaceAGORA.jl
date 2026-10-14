@@ -27,6 +27,8 @@ include(joinpath(@__DIR__, "foundation", "assets", "asset_catalog.jl"))
 include(joinpath(@__DIR__, "interfaces", "cli", "spaceagora_cli.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "external_propagation_services.jl"))
 public ExternalPropagationServices
+include(joinpath(@__DIR__, "models", "gnc", "guidance", "adapters", "edg", "services.jl"))
+public EDGServices
 
 
 
@@ -55,6 +57,9 @@ export HYPRUnavailableError, hypr_available
 using .SimulationModel: RPOPSOConfig, rpo_pso_config, SimulationSettings
 export SimulationSettings
 # --- Simulation setup API: `using SpaceAGORA` alone is enough to configure a run ---
+using .SimulationModel: AerodynamicCoefficientfM
+export AerodynamicCoefficientfM
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.AerodynamicCoefficientfM) AerodynamicCoefficientfM
 using .SimulationModel: SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, make_example_config, make_three_body_spacecraft
 export SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, make_example_config, make_three_body_spacecraft
 @doc (@doc SimulationModel.ExampleConfiguration.make_example_config) make_example_config

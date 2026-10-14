@@ -14,6 +14,8 @@ using Test
         joinpath("packages", "SpaceAGORAHYPR", "src", "rpo"),
     )
     gates = (
+        ("ci_src_completeness_contract_gate.jl", "boundary_stub() = nothing\n",
+            "Source completeness contract gate failed", "contains forbidden silent stub pattern"),
         ("ci_no_legacy_include_chains_gate.jl", "__legacy_probe = nothing\n",
             "Legacy include-chain gate failed", "contains forbidden legacy token '__legacy_'"),
         ("ci_no_guidance_control_cross_include_gate.jl", "include(\"control/probe.jl\")\n",
@@ -42,14 +44,8 @@ using Test
         # The aerobraking gate also verifies the complete typed EDG owner.
         "src/models/gnc/guidance/aerobraking/typed_edg/algorithms.jl",
         "src/models/gnc/guidance/aerobraking/typed_edg/services.jl",
-        "src/models/gnc/guidance/aerobraking/typed_edg/targeting.jl",
-        "src/models/gnc/guidance/aerobraking/typed_edg/targeting_plan.jl",
-        "src/models/gnc/guidance/aerobraking/typed_edg/pass_heat.jl",
-        "src/models/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-        "src/models/gnc/guidance/aerobraking/typed_edg/heat_rate.jl",
-        "src/models/gnc/guidance/aerobraking/typed_edg/structural_load.jl",
-        "src/models/gnc/guidance/aerobraking/typed_edg/guidance_decision.jl",
-        "src/models/gnc/guidance/aerobraking/typed_edg/angle_decision.jl",
+        "src/models/gnc/guidance/aerobraking/typed_edg/adapter_queries.jl",
+        "src/models/gnc/guidance/adapters/edg/services.jl",
     )
     mktempdir() do fixture
         for rel in required
@@ -117,6 +113,21 @@ using Test
                         rejected.violations)
                 finally
                     rm(probe)
+                end
+                @test isnothing(run_gate().failure)
+            end
+            if gate == "ci_src_completeness_contract_gate.jl"
+                dispatcher = joinpath(fixture, "src", "models", "gnc", "guidance",
+                    "aerobraking", "typed_edg", "algorithms.jl")
+                original = read(dispatcher, String)
+                try
+                    write(dispatcher, replace(original,
+                        "_invoke_kernel(:_edg_at_control_tick" => "_invoke_kernel(:_edg_wrong_kernel"))
+                    rejected = run_gate()
+                    @test rejected.failure isa LoadError
+                    @test any(v -> occursin("must be an exact package forwarder", v), rejected.violations)
+                finally
+                    write(dispatcher, original)
                 end
                 @test isnothing(run_gate().failure)
             end
