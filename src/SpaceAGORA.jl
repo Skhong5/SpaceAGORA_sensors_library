@@ -4,25 +4,47 @@ module SpaceAGORA
 
 ## 1. Include package modules
 # Internal contract only; runtime guidance still uses its existing path.
-include(joinpath(@__DIR__, "gnc", "interfaces", "rpo_planner.jl"))
-include(joinpath(@__DIR__, "gnc", "interfaces", "simulation_lifecycle.jl"))
-include(joinpath(@__DIR__, "parallel", "routing", "parallel_profiles.jl"))
-include(joinpath(@__DIR__, "parallel", "process", "parallel_process.jl"))
-include(joinpath(@__DIR__, "simulation", "runtime_services.jl"))
-include(joinpath(@__DIR__, "core", "simulation_model.jl"))
-include(joinpath(@__DIR__, "gnc", "direct_rpo", "direct_rpo_planner.jl"))
-include(joinpath(@__DIR__, "gnc", "hypr", "rpo_planner_adapter.jl"))
-include(joinpath(@__DIR__, "gnc", "guidance", "rpo", "rpo_planner_module.jl"))
-include(joinpath(@__DIR__, "gnc", "hypr", "services.jl"))
-include(joinpath(@__DIR__, "simulation", "engine", "simulation_engine.jl"))
-include(joinpath(@__DIR__, "simulation", "campaigns", "simulation_campaigns.jl"))
-include(joinpath(@__DIR__, "analysis", "verification", "telemetry_verification.jl"))
-include(joinpath(@__DIR__, "assets", "rpo_station_assets.jl"))
-include(joinpath(@__DIR__, "assets", "odyssey_surrogate_assets.jl"))
-include(joinpath(@__DIR__, "analysis", "visualization", "rpo", "rpo_visualization.jl"))
-include(joinpath(@__DIR__, "cli", "spaceagora_cli.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "interfaces", "rpo_planner.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "interfaces", "simulation_lifecycle.jl"))
+include(joinpath(@__DIR__, "orchestration", "parallel", "routing", "parallel_profiles.jl"))
+include(joinpath(@__DIR__, "orchestration", "parallel", "process", "parallel_process.jl"))
+include(joinpath(@__DIR__, "interfaces", "analysis", "visualization", "visualizer_services.jl"))
+include(joinpath(@__DIR__, "orchestration", "simulation", "runtime_services.jl"))
+include(joinpath(@__DIR__, "orchestration", "simulation", "callback_services.jl"))
+include(joinpath(@__DIR__, "orchestration", "simulation", "composition", "simulation_model.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "direct_planner.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "planning", "adapters", "hypr", "rpo_planner_adapter.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "lifecycle.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "planning", "adapters", "hypr", "services.jl"))
+include(joinpath(@__DIR__, "orchestration", "simulation", "engine", "simulation_engine.jl"))
+include(joinpath(@__DIR__, "orchestration", "simulation", "campaigns", "simulation_campaigns.jl"))
+include(joinpath(@__DIR__, "orchestration", "mission", "mission_workflow.jl"))
+include(joinpath(@__DIR__, "interfaces", "analysis", "verification", "telemetry_verification.jl"))
+include(joinpath(@__DIR__, "foundation", "assets", "rpo_station_assets.jl"))
+include(joinpath(@__DIR__, "foundation", "assets", "odyssey_surrogate_assets.jl"))
+include(joinpath(@__DIR__, "interfaces", "analysis", "visualization", "rpo", "rpo_visualization.jl"))
+include(joinpath(@__DIR__, "foundation", "assets", "asset_catalog.jl"))
+include(joinpath(@__DIR__, "interfaces", "cli", "spaceagora_cli.jl"))
+include(joinpath(@__DIR__, "orchestration", "simulation", "external_propagation_services.jl"))
+public ExternalPropagationServices
+include(joinpath(@__DIR__, "models", "gnc", "guidance", "adapters", "edg", "services.jl"))
+public EDGServices
 
 
+
+using .MissionWorkflow: MissionPlan, MissionPhase, MissionEvent, MissionRun, run_mission, MissionSegment, MissionDeadline, MissionDuration, MissionCondition
+export MissionPlan, MissionPhase, MissionEvent, MissionRun, run_mission, MissionSegment, MissionDeadline, MissionDuration, MissionCondition
+for name in (:MissionPlan, :MissionPhase, :MissionEvent, :MissionRun, :run_mission, :MissionSegment, :MissionDeadline, :MissionDuration, :MissionCondition)
+    @eval @doc (@doc MissionWorkflow.$name) $name
+end
+using .VisualizerServices: VisualizerUnavailableError
+const visualizer_available = VisualizerServices.available
+export VisualizerUnavailableError, visualizer_available
+@doc (@doc VisualizerServices.VisualizerUnavailableError) VisualizerUnavailableError
+@doc "Return whether a compatible optional SpaceAGORAVisualizer is loaded in this environment." visualizer_available
+using .SimulationModel.SceneVisualization: export_viewer_payload
+export export_viewer_payload
+@doc (@doc SimulationModel.SceneVisualization.export_viewer_payload) export_viewer_payload
 
 # Opt-in public RPO planner pilot.
 using .RPOPlannerInterfaces: AbstractRPOPlanner, RPOPlanningConstraints, RPOValidationSettings, RPOPlanningRequest, RPOReference, RPOPlanningResult, RPOPlannerCapabilities, RPOValidationResult, RPOPlanningHeadroom, planner_capabilities, initialize_planner, plan_rpo!, retime_rpo!, validate_rpo_result, validate_rpo_capabilities, rpo_reference_is_current
@@ -35,6 +57,9 @@ export HYPRUnavailableError, hypr_available
 using .SimulationModel: RPOPSOConfig, rpo_pso_config, SimulationSettings
 export SimulationSettings
 # --- Simulation setup API: `using SpaceAGORA` alone is enough to configure a run ---
+using .SimulationModel: AerodynamicCoefficientfM
+export AerodynamicCoefficientfM
+@doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.AerodynamicCoefficientfM) AerodynamicCoefficientfM
 using .SimulationModel: SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, make_example_config, make_three_body_spacecraft
 export SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, make_example_config, make_three_body_spacecraft
 @doc (@doc SimulationModel.ExampleConfiguration.make_example_config) make_example_config
@@ -114,6 +139,41 @@ using .SimulationModel.AbstractTypes: AbstractControlEffectorModel, AbstractEphe
 using .SimulationModel.AbstractTypes: AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
 using .SimulationModel: StateSample, PlanetFrameSample, AtmosphereSample, SolarEphemerisSample
 using .SimulationModel: ThirdBodyEphemerisSample, EnvironmentSample, EffectorEnvironmentRequirements
+# Compliant multibody dynamics and robot kinematics. Historical Cloth names below
+# remain aliases to the same objects for script, HYPR, and serialization compatibility.
+using .SimulationModel: CompliantMultibody, CompliantRobotArmDynamics
+public CompliantMultibody, CompliantRobotArmDynamics
+@doc "Compliant lumped-body dynamics for bodies connected by joints with stiffness and damping. The historical module alias remains available as `SimulationModel.ClothMultibody`." CompliantMultibody
+@doc "Compliant robot-arm realization, simulation, and spacecraft coupling. The historical module alias remains available as `SimulationModel.ClothRobotArmDynamics`." CompliantRobotArmDynamics
+using .SimulationModel: RobotArmBasePose, RobotArmLink, RobotArmJoint, RobotArmModel, RobotArmPose, RobotArmState, default_robot_arm_model, robot_arm_fk, robot_arm_fk_state, robot_arm_end_effector_pose, robot_arm_ik, robot_arm_total_reach
+export RobotArmBasePose, RobotArmLink, RobotArmJoint, RobotArmModel, RobotArmPose, RobotArmState, default_robot_arm_model, robot_arm_fk, robot_arm_fk_state, robot_arm_end_effector_pose, robot_arm_ik, robot_arm_total_reach
+@doc (@doc SimulationModel.RobotArmBasePose) RobotArmBasePose
+@doc (@doc SimulationModel.RobotArmLink) RobotArmLink
+@doc (@doc SimulationModel.RobotArmJoint) RobotArmJoint
+@doc (@doc SimulationModel.RobotArmModel) RobotArmModel
+@doc (@doc SimulationModel.RobotArmPose) RobotArmPose
+@doc (@doc SimulationModel.RobotArmState) RobotArmState
+@doc (@doc SimulationModel.default_robot_arm_model) default_robot_arm_model
+@doc (@doc SimulationModel.robot_arm_fk) robot_arm_fk
+@doc (@doc SimulationModel.robot_arm_fk_state) robot_arm_fk_state
+@doc (@doc SimulationModel.robot_arm_end_effector_pose) robot_arm_end_effector_pose
+@doc (@doc SimulationModel.robot_arm_ik) robot_arm_ik
+@doc (@doc SimulationModel.robot_arm_total_reach) robot_arm_total_reach
+using .SimulationModel: CompliantRobotArmReferenceState, CompliantRobotArmSimulation, compliant_robot_arm_reference_state, compliant_robot_arm_multibody, compliant_robot_arm_initial_state, compliant_robot_arm_rest_quaternions, compliant_robot_arm_end_effector, compliant_robot_arm_actuators, coupled_compliant_robot_arm_state_shape, initialize_coupled_compliant_robot_arm_state!, assign_coupled_compliant_robot_arm_rhs!, simulate_compliant_robot_arm_plan
+export CompliantRobotArmReferenceState, CompliantRobotArmSimulation, compliant_robot_arm_reference_state, compliant_robot_arm_multibody, compliant_robot_arm_initial_state, compliant_robot_arm_rest_quaternions, compliant_robot_arm_end_effector, compliant_robot_arm_actuators, coupled_compliant_robot_arm_state_shape, initialize_coupled_compliant_robot_arm_state!, assign_coupled_compliant_robot_arm_rhs!, simulate_compliant_robot_arm_plan
+@doc (@doc SimulationModel.CompliantRobotArmReferenceState) CompliantRobotArmReferenceState
+@doc (@doc SimulationModel.CompliantRobotArmSimulation) CompliantRobotArmSimulation
+@doc (@doc SimulationModel.compliant_robot_arm_reference_state) compliant_robot_arm_reference_state
+@doc (@doc SimulationModel.compliant_robot_arm_multibody) compliant_robot_arm_multibody
+@doc (@doc SimulationModel.compliant_robot_arm_initial_state) compliant_robot_arm_initial_state
+@doc (@doc SimulationModel.compliant_robot_arm_rest_quaternions) compliant_robot_arm_rest_quaternions
+@doc (@doc SimulationModel.compliant_robot_arm_end_effector) compliant_robot_arm_end_effector
+@doc (@doc SimulationModel.compliant_robot_arm_actuators) compliant_robot_arm_actuators
+@doc (@doc SimulationModel.coupled_compliant_robot_arm_state_shape) coupled_compliant_robot_arm_state_shape
+@doc (@doc SimulationModel.initialize_coupled_compliant_robot_arm_state!) initialize_coupled_compliant_robot_arm_state!
+@doc (@doc SimulationModel.assign_coupled_compliant_robot_arm_rhs!) assign_coupled_compliant_robot_arm_rhs!
+@doc (@doc SimulationModel.simulate_compliant_robot_arm_plan) simulate_compliant_robot_arm_plan
+
 using .SimulationModel: ClothArmBasePose, ClothArmLink, ClothArmJoint, ClothArmModel, ClothArmPose, ClothArmState
 using .SimulationModel: default_cloth_arm_model, cloth_fk, cloth_fk_state, cloth_end_effector_pose
 using .SimulationModel: cloth_ik, cloth_total_reach, closest_surface_target
@@ -124,7 +184,7 @@ using .SimulationModel: robot_arm_clearance_stats_from_samples, robot_arm_hypr_p
 using .SimulationModel: ClothRobotArmReferenceState, cloth_reference_state
 using .SimulationModel: CompliantBody, CompliantJoint, CompliantMultibodyModel, CompliantMultibodyTrajectory
 using .SimulationModel: CompliantTopologyNode, CompliantTopologyEdge, CompliantTopologyBuild
-using .SimulationModel: CompliantJointActuator, CompliantJointLoad
+using .SimulationModel: CompliantJointActuator, CompliantJointLoad, CompliantAttachment
 using .SimulationModel: rectangular_prism_inertia, thin_panel_inertia
 using .SimulationModel: build_compliant_topology, build_rectangular_compliant_grid
 using .SimulationModel: compliant_state_vector, compliant_state_parts, compliant_multibody_dynamics
@@ -278,6 +338,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.CompliantTopologyBuild) CompliantTopologyBuild
 @doc (@doc SimulationModel.CompliantJointActuator) CompliantJointActuator
 @doc (@doc SimulationModel.CompliantJointLoad) CompliantJointLoad
+@doc (@doc SimulationModel.CompliantAttachment) CompliantAttachment
 @doc (@doc SimulationModel.rectangular_prism_inertia) rectangular_prism_inertia
 @doc (@doc SimulationModel.thin_panel_inertia) thin_panel_inertia
 @doc (@doc SimulationModel.build_compliant_topology) build_compliant_topology
@@ -472,7 +533,7 @@ export cloth_robot_arm_rest_quaternions, cloth_robot_arm_end_effector, simulate_
 export cloth_robot_arm_actuators
 export CompliantBody, CompliantJoint, CompliantMultibodyModel, CompliantMultibodyTrajectory
 export CompliantTopologyNode, CompliantTopologyEdge, CompliantTopologyBuild
-export CompliantJointActuator, CompliantJointLoad
+export CompliantJointActuator, CompliantJointLoad, CompliantAttachment
 export rectangular_prism_inertia, thin_panel_inertia
 export build_compliant_topology, build_rectangular_compliant_grid
 export compliant_state_vector, compliant_state_parts, compliant_multibody_dynamics, compliant_joint_loads

@@ -81,7 +81,7 @@ simulation. It does not require:
 The equivalent command-line path is:
 
 ```text
-julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_run
+julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_run
 ```
 
 `--output-dir` is what keeps this run's files apart from the script run above:

@@ -37,7 +37,7 @@ julia --project=. examples/AGORA_Earth_NoGRAM.jl
 If you prefer the CLI wrapper:
 
 ```text
-julia --project=. src/cli/main.jl run --example=AGORA_Earth_NoGRAM.jl --output-dir=output/earth_no_gram
+julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Earth_NoGRAM.jl --output-dir=output/earth_no_gram
 ```
 
 After any of these commands, read [Simulation Outputs](outputs.md) to understand
@@ -55,6 +55,20 @@ julia --project=. examples/AGORA_Basic_Quickstart.jl
 julia --project=. examples/AGORA_Earth_NoGRAM.jl
 julia --project=. examples/AGORA_Earth_MonteCarlo.jl
 ```
+
+### Reusable mission and viewer output
+
+`AGORA_Mission_Workflow.jl` defines a named mission with a fresh configuration
+builder and saves a portable viewer payload. It uses no GRAM or SPICE assets.
+Choose an absent or empty output directory for each run:
+
+```text
+julia --project=. examples/AGORA_Mission_Workflow.jl output/coast-001
+```
+
+See [Mission Workflows](mission_workflows.md) for the returned table, descriptive
+phase windows and event factories. The standalone viewer opens the exported
+payload without rerunning the simulation.
 
 ### Guidance and control with a frozen atmosphere
 
@@ -100,7 +114,7 @@ julia --project=. examples/AGORA_Basic_GRAMEarth.jl
 For a longer Earth aerobraking case, start in smoke mode:
 
 ```text
-julia --project=. src/cli/main.jl run --example=AGORA_Earth_Aerobraking.jl --smoke --output-dir=output/aerobraking_smoke
+julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Earth_Aerobraking.jl --smoke --output-dir=output/aerobraking_smoke
 ```
 
 Related mission scripts:
@@ -113,6 +127,33 @@ Related mission scripts:
 - `AGORA_Titan.jl`
 - `AGORA_Magellan.jl`
 - `AGORA_LOFTID.jl`
+
+### Articulated spacecraft
+
+`Articulated_Panels_Demo.jl` flies the standard bus with two solar panels that
+hang on spring-damper `:hinge` joints, starts them off their rest angle, and
+saves a plot of the hinge angles and the bus roll reaction. It needs no GRAM and
+no SPICE. See [Joint types](simulation_configuration.md#Joint-types-and-articulated-spacecraft).
+
+```text
+julia --project=. examples/Articulated_Panels_Demo.jl
+```
+
+### Compliant attachments
+
+`Cloth_Panel_Attachment_Demo.jl` runs the four-panel compliant solar array deployment of
+`Solar_Panel_Cloth_Deployment_Demo.jl` inside `run_simulation`: the 48-tile mesh is a
+`CompliantAttachment` on a bus (deployment schedule as `rest_schedule`, hinge motors as
+`joint_actuators`). A 1e8 kg bus in free space is compared with the standalone RK4 stepping of the
+same model (about 7e-6 m with the rest schedule evaluated mid-step; the standalone demo's per-step rest
+lags the engine by about 1e-3 m), and a 100 kg bus in a circular orbit shows the reaction on the bus.
+It writes a 3D HTML from the saved `attachment_pose` columns, a comparison HTML and a CSV under
+`output/cloth_panel_attachment_demo/`. No GRAM and no SPICE; `SPACEAGORA_EXAMPLE_SMOKE=1` runs 3 s.
+See [Compliant attachments](simulation_configuration.md#Compliant-attachments).
+
+```text
+julia --project=. examples/Cloth_Panel_Attachment_Demo.jl
+```
 
 ### Controls, torque, and navigation checks
 
@@ -205,13 +246,13 @@ For a planner-comparison smoke run:
 SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl --runs 1
 ```
 
-For the robot-arm and Cloth dynamics batch:
+For the robot-arm and compliant multibody dynamics batch:
 
 ```text
 SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Robot_Arm_Planner_Cloth_Demo.jl
 ```
 
-For the solar-panel cloth deployment demo:
+For the solar-panel compliant multibody deployment demo:
 
 ```text
 julia --project=. examples/Solar_Panel_Cloth_Deployment_Demo.jl
@@ -223,6 +264,7 @@ Related scripts:
 - `Earth_RPO_CubeSat_MPC_Replanning.jl`
 - `Robot_Arm_Planner_Cloth_Demo.jl`
 - `Solar_Panel_Cloth_Deployment_Demo.jl`
+- `Cloth_Panel_Attachment_Demo.jl`
 
 ## Full script list
 
@@ -233,11 +275,11 @@ Related scripts:
 | Frozen-atmosphere guidance and control (own environment) | `odyssey_surrogate.jl` |
 | GRAM and missions | `AGORA_Basic_GRAMEarth.jl`, `AGORA_Earth.jl`, `AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `AGORA_Mars_RAAN_Scenario.jl`, `AGORA_Mars_NoGRAM.jl`, `AGORA_Titan.jl`, `AGORA_Magellan.jl`, `AGORA_LOFTID.jl`, `CYGNSS_test.jl`, `GRIFEX_test.jl` |
 | Controls and torques | `AGORA_Earth_GG_Test.jl`, `AGORA_Earth_SRP_Test.jl`, `AGORA_Earth_const_torque.jl`, `Earth_Torque_Free_Test.jl`, `Earth_RW_Test.jl`, `Earth_Navigation.jl`, `AGORA_Earth_Control_Test.jl`, `AGORA_Odyssey_Control_Test.jl`, `AGORA_Titan_Control_Test.jl`, `AGORA_Vex_Control_Test.jl` |
-| RPO and robotics | `Earth_RPO_CubeSat_MPC.jl`, `Earth_RPO_CubeSat_MPC_Batch.jl`, `Earth_RPO_CubeSat_MPC_PlannerComparison.jl`, `Earth_RPO_CubeSat_MPC_Replanning.jl`, `Robot_Arm_Planner_Cloth_Demo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl` |
+| RPO and robotics | `Earth_RPO_CubeSat_MPC.jl`, `Earth_RPO_CubeSat_MPC_Batch.jl`, `Earth_RPO_CubeSat_MPC_PlannerComparison.jl`, `Earth_RPO_CubeSat_MPC_Replanning.jl`, `Robot_Arm_Planner_Cloth_Demo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl`, `Cloth_Panel_Attachment_Demo.jl` |
 
 Support files included by examples:
 
 - `common.jl`
-- `aerobraking_mission_plot_utils.jl`
+- `support/aerobraking_mission_plot_utils.jl` (mission setup, event extraction and plotting used by the aerobraking examples)
 - `support/aerobraking_result_tables.jl` (saved-table access used by the mission plotting helper)
 - `support/aerobraking_plot_errors.jl` (absolute RTN error components for mission plots)

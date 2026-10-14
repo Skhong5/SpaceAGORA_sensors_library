@@ -1,3 +1,4 @@
+Base.include(@__MODULE__, joinpath(@__DIR__, "..", "helpers", "load_edg.jl"))
 Base.include(@__MODULE__, joinpath(@__DIR__, "..", "helpers", "load_hypr.jl"))
 using Test
 using CSV
@@ -56,7 +57,7 @@ const quat_mult = SimulationModel.quat_mult
 # to SimulationEngine.run_simulation); do not rebind exported names here.
 
 # Frame-transform helpers the suites call unqualified. They are defined in
-# src/core/interfaces/reference_system.jl, which SimulationEngine carries.
+# src/foundation/core/interfaces/reference_system.jl, which SimulationEngine carries.
 const rtolatlong = SimulationEngine.rtolatlong
 const orbitalelemtorv = SimulationEngine.orbitalelemtorv
 const rvtoorbitalelement = SimulationEngine.rvtoorbitalelement
@@ -66,7 +67,7 @@ const orbital_elements_to_lvlh_quaternion = SimulationEngine.orbital_elements_to
 
 # The firing-plan tables are not part of the package; suite 01 and
 # examples/AGORA_Odyssey.jl still consume them by path.
-include(joinpath(REPO_ROOT, "src", "mission", "operations", "maneuver_plans.jl"))
+include(joinpath(REPO_ROOT, "src", "orchestration", "mission", "operations", "maneuver_plans.jl"))
 
 # GRAM-backed behaviour comes from the SpaceAGORAGRAMSuiteExt package
 # extension, which Julia loads on its own once GRAMSuite is importable. The
@@ -99,6 +100,12 @@ if !isdefined(@__MODULE__, :make_example_config)
 end
 
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "energy_depletion_gnc_tests.jl"))
+include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_e2c_repair_tests.jl"))
+include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_feasibility_tests.jl"))
+include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_pass_heat_tests.jl"))
+include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_heat_observer_tests.jl"))
+include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_journal_contract_tests.jl"))
+include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_replan_callback_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "energy_depletion_lifecycle_tests.jl"))
 include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "energy_depletion_ownership_tests.jl"))
 

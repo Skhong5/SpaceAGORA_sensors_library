@@ -34,8 +34,9 @@ populated are significantly faster.
 
 ## GRAM assets not found
 
-**Symptom:** `julia --project=. src/cli/main.jl assets check` reports `gram_root` or
-`spice_directory` as missing, or a GRAM-backed example errors on load.
+**Symptom:** `julia --project=. src/interfaces/cli/main.jl assets check` reports `gram_root` or
+`spice_directory` as missing, empty or pointer-only, or a GRAM-backed example
+errors on load.
 
 **Cause:** The official NASA GRAM Suite files have not been copied into the
 expected local path.
@@ -45,7 +46,7 @@ expected local path.
 
 1. Pull the `GRAMSuite.jl` submodule:
    ```text
-   git submodule update --init --recursive --remote
+   git submodule update --init --recursive -- data/GRAMSuite.jl
    ```
 2. Copy the official GRAM Suite distribution into:
    ```text
@@ -57,7 +58,7 @@ expected local path.
    ```
 4. Confirm with:
    ```text
-   julia --project=. src/cli/main.jl assets check
+   julia --project=. src/interfaces/cli/main.jl assets check
    ```
 
 If the submodule checkout fails with Git LFS `no space left on device`, free
@@ -244,7 +245,7 @@ setup_gram_example!()
 
 ## Verification study threshold failures
 
-**Symptom:** `julia --project=. src/cli/main.jl telemetry quick --enforce=1` exits non-zero and
+**Symptom:** `julia --project=. src/interfaces/cli/main.jl telemetry quick --enforce=1` exits non-zero and
 reports threshold violations.
 
 **Cause:** Either the simulation output diverges from the reference telemetry,
@@ -257,4 +258,4 @@ or tolerance thresholds are set tighter than the current model accuracy.
 3. If you changed integration tolerances, reset them to the defaults in
    `make_example_config` and re-run.
 4. If GRAM is involved, verify the asset layout with
-   `julia --project=. src/cli/main.jl assets check`.
+   `julia --project=. src/interfaces/cli/main.jl assets check`.

@@ -31,7 +31,7 @@ isolated from SpaceAGORA's own `SPICE.jl` CSPICE instance at the OS
 symbol-export level (`nm -gU` shows shared symbol names) -- two separate
 locks (`GRAM_LOCK`, `SPICE_LOCK`) were silently protecting against two
 threads racing on what is, underneath, the *same* global CSPICE state.
-`src/simulation/runtime_services.jl` now defines `const GRAM_LOCK = SPICE_LOCK`
+`src/orchestration/simulation/runtime_services.jl` now defines `const GRAM_LOCK = SPICE_LOCK`
 so every GRAM density call and every SPICE ephemeris call serialize against
 each other, not just against their own kind.
 
@@ -82,7 +82,7 @@ GRAM density model to cross a `Distributed` process boundary at all.
 Unrelated to the GRAM/CSPICE work above, but the same "parallelization
 correctness/tuning" family. `SPACEAGORA_DENSITY_CALLBACK_PARALLEL=auto`'s
 16-thread floor (`auto_thread_min_budget(:density_callback)`,
-`src/parallel/policy/env_config.jl`) applied uniformly regardless of density
+`src/orchestration/parallel/policy/env_config.jl`) applied uniformly regardless of density
 model, gating the lock-free GRAM surrogate for no reason (native GRAM's
 process-wide lock is the actual reason the floor exists; the surrogate has no
 such lock). Fixed with a new `:density_callback_lockfree` source category
@@ -97,7 +97,7 @@ unconditional 16-thread floor).
 ## 2. What's new: `SpaceAGORA.ParallelProcess`
 
 A shared, auto-bootstrapping `Distributed` worker pool
-(`src/parallel/process/`, committed: parent `1ba63a82`), wired into `run_monte_carlo` and
+(`src/orchestration/parallel/process/`, committed: parent `1ba63a82`), wired into `run_monte_carlo` and
 `run_constellation_ensemble`'s adaptive `threads=:auto` routing as a real
 `:process` outer-parallel route -- separate OS processes, so there's no
 shared native GRAM/CSPICE global state to contend over in the first place.
@@ -198,7 +198,7 @@ Was characterized as a "genuine scheduler-level, out of scope" livelock in the
 prior write-up of this document. A follow-up session found it is not that --
 `outer_parallel_active()` is supposed to be a uniform kill-switch against
 nested outer+inner parallelism, but three multi-worker routing branches inside
-`_rhs_execution_plan` (`src/simulation/engine/setup.jl`) -- including the
+`_rhs_execution_plan` (`src/orchestration/simulation/engine/setup.jl`) -- including the
 harmonics-batch/flat-constellation route this study's own env config enables
 by default -- never checked it, unlike every other call site in the codebase.
 Fixed by adding the same guard already used elsewhere in the same file to all
@@ -250,12 +250,12 @@ folder; full before/after table in the handoff doc's Finding 6.
 | GRAM constructor lock | submodule | **committed** (`c7b66e0`, bundled with the row below) |
 | World-age/`invokelatest` fixes | submodule | **committed** (`c7b66e0`), **not pushed** (`origin/main` for the submodule is 1 commit behind) |
 | Serialization for GRAM models (both submodule and `ext/SpaceAGORAGRAMSuiteExt.jl` wrapper layers) | submodule + parent | **committed** (submodule `c7b66e0`, parent `1ba63a82`) |
-| `SpaceAGORA.ParallelProcess`, `warmup_fn` cold-start fix | parent repo (`src/parallel/process/`) | **committed** (`1ba63a82`) |
+| `SpaceAGORA.ParallelProcess`, `warmup_fn` cold-start fix | parent repo (`src/orchestration/parallel/process/`) | **committed** (`1ba63a82`) |
 | Adaptive routing `:process` wiring | parent repo | **committed** (`1ba63a82`) |
 | New/extended benchmarks (this folder) | parent repo | **committed** (`1ba63a82`) |
 | `export`/`@doc`/`checkdocs`/generated-API-page entries for `ParallelProcess` | parent repo (`src/SpaceAGORA.jl`, `docs/make.jl`, `docs/public_api_symbols.jl`) | **committed** (`1ba63a82`), verified (`docs/make.jl` builds clean) |
-| Density-callback lock-free auto-gate | parent repo (`src/parallel/policy/env_config.jl`, `src/core/types/runtime_types.jl`, `src/simulation/callbacks/density_callbacks/config.jl`) | **committed** (`1ba63a82`), verified |
-| Phase 3 fix: `outer_parallel_active` gating for `_rhs_execution_plan`'s 3 multi-worker branches | parent repo (`src/simulation/engine/setup.jl`, `src/core/types/runtime_types.jl`) | **committed** (`1ba63a82`), verified (direct repro + full test suite) |
+| Density-callback lock-free auto-gate | parent repo (`src/orchestration/parallel/policy/env_config.jl`, `src/foundation/core/types/runtime_types.jl`, `src/orchestration/simulation/callbacks/density_callbacks/config.jl`) | **committed** (`1ba63a82`), verified |
+| Phase 3 fix: `outer_parallel_active` gating for `_rhs_execution_plan`'s 3 multi-worker branches | parent repo (`src/orchestration/simulation/engine/setup.jl`, `src/foundation/core/types/runtime_types.jl`) | **committed** (`1ba63a82`), verified (direct repro + full test suite) |
 | Golden regression fixture (`test/golden/agora_earth_regression.csv`) for the previously-`@test_skip`'d "AGORA Earth Regression (Golden)" test | parent repo | **committed** (`1ba63a82`) |
 
 `test/suites/01_contract_and_api_tests.jl` had the user's own unrelated

@@ -40,6 +40,9 @@ jobs:
       - name: Offline GRAM loading preparation regression
         run: python3 -B test/scripts/test_prepare_gram_loading_environment.py
 
+      - name: Offline remote-job transport regressions
+        run: python3 -B test/scripts/test_remote_jobs.py
+
       - name: Shard plan, matrix shape and verifier self-test
         run: python3 -B .github/scripts/test_ci_shards.py
 
@@ -195,7 +198,7 @@ jobs:
 
   tests:
     if: always()
-    needs: [plan, test-shards, optional-hypr-installation]
+    needs: [plan, test-shards, optional-hypr-installation, optional-mujoco-installation, optional-visualizer-installation, optional-edg-installation]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -221,7 +224,7 @@ jobs:
       - name: Enforce test shard success
         run: |
           echo "test-shards result=${{ needs.test-shards.result }}"
-          if [ "${{ needs.test-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ]; then
+          if [ "${{ needs.test-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ] || [ "${{ needs.optional-mujoco-installation.result }}" != "success" ] || [ "${{ needs.optional-visualizer-installation.result }}" != "success" ] || [ "${{ needs.optional-edg-installation.result }}" != "success" ]; then
             echo "Test shards failed or were cancelled."
             exit 1
           fi
@@ -284,12 +287,12 @@ jobs:
         if: always()
         run: |
           shard_no=$(printf '%02d' "${SHARD##*-}")
-          find src packages/SpaceAGORAHYPR/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
+          find src packages/SpaceAGORAHYPR/src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
             mv "$f" "$(printf '%s' "$f" | sed -E "s/\.([0-9]+)\.cov\$/.9${shard_no}\1.cov/")"
           done
-          echo "coverage files: $(find src packages/SpaceAGORAHYPR/src -name '*.cov' | wc -l)"
+          echo "coverage files: $(find src packages/SpaceAGORAHYPR/src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' | wc -l)"
           mkdir -p "$SPACEAGORA_CI_SHARD_REPORT_DIR"
-          find src packages/SpaceAGORAHYPR/src -name '*.cov' -print0 | tar --null -czf "$SPACEAGORA_CI_SHARD_REPORT_DIR/coverage.tgz" -T -
+          find src packages/SpaceAGORAHYPR/src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | tar --null -czf "$SPACEAGORA_CI_SHARD_REPORT_DIR/coverage.tgz" -T -
         env:
           SHARD: ${{ matrix.shard }}
 
@@ -304,7 +307,7 @@ jobs:
 
   coverage-quality-gate:
     if: always()
-    needs: [plan, coverage-shards, optional-hypr-installation]
+    needs: [plan, coverage-shards, optional-hypr-installation, optional-visualizer-installation, optional-edg-installation]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -326,6 +329,14 @@ jobs:
           # GRAM retrieval supplies its own scoped credential explicitly.
           persist-credentials: false
 
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - name: Verify pinned EDG coverage source
+        run: julia --startup-file=no scripts/optional_packages.jl checkout edg
+
       - name: Download shard reports
         uses: actions/download-artifact@v8
         with:
@@ -338,15 +349,30 @@ jobs:
         run: python3 .github/scripts/ci_shard_verify.py tests shard-reports
 
       - name: Download optional installation coverage
+        if: always()
         uses: actions/download-artifact@v8
         with:
           name: hypr-installation-coverage
           path: hypr-installation-coverage
 
+      - name: Download visualizer installation coverage
+        if: always()
+        uses: actions/download-artifact@v8
+        with:
+          name: visualizer-installation-coverage
+          path: visualizer-installation-coverage
+
+      - name: Download EDG installation coverage
+        if: always()
+        uses: actions/download-artifact@v8
+        with:
+          name: edg-installation-coverage
+          path: edg-installation-coverage
+
       - name: Enforce coverage shard success
         run: |
           echo "coverage-shards result=${{ needs.coverage-shards.result }}"
-          if [ "${{ needs.coverage-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ]; then
+          if [ "${{ needs.coverage-shards.result }}" != "success" ] || [ "${{ needs.optional-hypr-installation.result }}" != "success" ] || [ "${{ needs.optional-visualizer-installation.result }}" != "success" ] || [ "${{ needs.optional-edg-installation.result }}" != "success" ]; then
             echo "Coverage shards failed or were cancelled."
             exit 1
           fi
@@ -361,13 +387,9 @@ jobs:
             tar -xzmf "$archive"
           done
           tar -xzmf hypr-installation-coverage/coverage.tgz
-          echo "coverage files: $(find src packages/SpaceAGORAHYPR/src -name '*.cov' | wc -l)"
-
-      - name: Setup Julia
-        if: always()
-        uses: julia-actions/setup-julia@v2
-        with:
-          version: "1.12"
+          tar -xzmf visualizer-installation-coverage/coverage.tgz
+          tar -xzmf edg-installation-coverage/coverage.tgz
+          echo "coverage files: $(find src packages/SpaceAGORAHYPR/src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' | wc -l)"
 
       - name: Coverage quality gate
         if: always()
@@ -581,26 +603,11 @@ jobs:
           # GRAM retrieval supplies its own scoped credential explicitly.
           persist-credentials: false
 
-      - name: Viewer JavaScript regressions
-        run: node test/unit/visualization/viewer_channels_models_tests.mjs
-      - name: Viewer external-host page builder tests
-        run: python3 -m unittest discover -s test/scripts -p 'test_build_cdn_page.py' -v
-
       # Its Instantiate step is the README's `Pkg.instantiate()` command.
       - name: Setup (README instantiate command)
         uses: ./.github/actions/setup
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
-
-      - name: Terrain exporter Julia-to-JavaScript regression
-        shell: bash
-        run: |
-          set -euo pipefail
-          terrain_fixture_dir="$(mktemp -d "$RUNNER_TEMP/spaceagora-terrain.XXXXXX")"
-          trap 'rm -rf "$terrain_fixture_dir"' EXIT
-          export SPACEAGORA_TERRAIN_TEST_FIXTURE_DIR="$terrain_fixture_dir"
-          julia --startup-file=no --depwarn=error --project=. test/unit/visualization/terrain_export_tests.jl
-          node test/unit/visualization/terrain_sampling_tests.mjs "$terrain_fixture_dir/fixtures.json"
 
       - name: Terrain producer tests
         shell: bash
@@ -874,6 +881,8 @@ jobs:
           gram: none
           gramsuite-smoke: "false"
           token: ${{ github.token }}
+      - name: Check optional package checkout and setup safeguards
+        run: julia --startup-file=no test/optional_packages_tests.jl
       - name: Prepare independent core and companion projects
         env:
           JULIA_PKG_PRECOMPILE_AUTO: "0"
@@ -903,15 +912,203 @@ jobs:
       - name: Retain installation coverage
         if: always()
         run: |
-          find src packages/SpaceAGORAHYPR/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
+          find src packages/SpaceAGORAHYPR/src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
             mv "$f" "$(printf '%s' "$f" | sed -E 's/\.([0-9]+)\.cov$/.88\1.cov/')"
           done
           mkdir -p hypr-installation-coverage
-          find src packages/SpaceAGORAHYPR/src -name '*.cov' -print0 | tar --null -czf hypr-installation-coverage/coverage.tgz -T -
+          find src packages/SpaceAGORAHYPR/src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | tar --null -czf hypr-installation-coverage/coverage.tgz -T -
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: hypr-installation-coverage
           path: hypr-installation-coverage/coverage.tgz
+          retention-days: 3
+          if-no-files-found: error
+
+  # Qualify the independent companion against this core checkout on every PR.
+  # Keep the companion revision immutable; upgrades also require its standalone
+  # installation/native CI. The tests aggregate requires this job to pass.
+  # MuJoCo's public artifact may be cached; Pkg still verifies its declared hashes.
+  optional-mujoco-installation:
+    needs: depot
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SPACEAGORA_MUJOCO_REQUIRED: "1"
+      JULIA_LOAD_PATH: "@:@stdlib"
+      JULIA_NUM_THREADS: "4"
+      OPENBLAS_NUM_THREADS: "1"
+      JULIA_PKG_PRECOMPILE_AUTO: "0"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Read the pinned MuJoCo gitlink
+        id: mujoco-source
+        run: |
+          revision="$(git rev-parse HEAD:packages/robotics/SpaceAGORAMuJoCo.jl)"
+          [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+      - name: Checkout the pinned MuJoCo companion
+        uses: actions/checkout@v7
+        with:
+          repository: Space-FALCON-Lab/SpaceAGORAMuJoCo.jl
+          ref: ${{ steps.mujoco-source.outputs.revision }}
+          path: packages/robotics/SpaceAGORAMuJoCo.jl
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          gram: none
+          gramsuite-smoke: "false"
+          token: ${{ github.token }}
+      - name: Cache the MuJoCo artifact
+        uses: actions/cache@v4
+        with:
+          path: ~/.julia/artifacts/6a34a368d528ad0332f9da97de3d2f105977bac8
+          key: mujoco-artifact-${{ runner.os }}-${{ hashFiles('packages/robotics/SpaceAGORAMuJoCo.jl/Artifacts.toml') }}
+      - name: Verify companion identity and clean source
+        run: julia --startup-file=no scripts/optional_packages.jl check mujoco
+      - name: Check companion installation inputs
+        run: julia --startup-file=no packages/robotics/SpaceAGORAMuJoCo.jl/test/installation_plan_tests.jl
+      - name: Check exact core source acquisition
+        run: julia --startup-file=no packages/robotics/SpaceAGORAMuJoCo.jl/test/source_acquisition_tests.jl
+      - name: Build the current core plus pinned companion environment
+        env:
+          SPACEAGORA_CORE_PATH: ${{ github.workspace }}
+          SPACEAGORA_CORE_REV: ""
+        run: julia --startup-file=no scripts/optional_packages.jl setup mujoco "$RUNNER_TEMP/mujoco-env"
+      - name: Core-only import and compatibility isolation
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" packages/robotics/SpaceAGORAMuJoCo.jl/test/core_only.jl
+      - name: Reject incompatible core before defining adapter methods
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" packages/robotics/SpaceAGORAMuJoCo.jl/test/incompatible_core.jl
+      - name: Core-first adapter load and conformance
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" packages/robotics/SpaceAGORAMuJoCo.jl/test/load_order.jl core-first
+      - name: Companion-first adapter load and conformance
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" packages/robotics/SpaceAGORAMuJoCo.jl/test/load_order.jl companion-first
+      - name: Mandatory native tests with four threads
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" -e '@assert Threads.nthreads() == 4; include("packages/robotics/SpaceAGORAMuJoCo.jl/test/runtests.jl")'
+      - name: Verify tracked installation inputs were not changed
+        run: |
+          git diff --exit-code
+          git -C packages/robotics/SpaceAGORAMuJoCo.jl diff --exit-code
+
+  # The renderer is independent of core installation. This job qualifies the
+  # exact source pin against this checkout, including both extension load orders.
+  optional-visualizer-installation:
+    needs: depot
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      JULIA_LOAD_PATH: "@:@stdlib"
+      JULIA_NUM_THREADS: "2"
+      JULIA_PKG_PRECOMPILE_AUTO: "0"
+      SPACEAGORA_VISUALIZER_PATH: ""
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          gram: none
+          gramsuite-smoke: "false"
+          token: ${{ github.token }}
+      - name: Check immutable visualizer installation inputs
+        run: julia --startup-file=no test/optional_visualizer/installation_plan_tests.jl
+      - name: Prepare independent core and pinned renderer projects
+        run: |
+          set -euo pipefail
+          julia --startup-file=no --project=. test/optional_visualizer/setup.jl "$RUNNER_TEMP/visualizer-installations"
+          printf 'SPACEAGORA_VISUALIZER_TEST_ENV=%s\n' "$RUNNER_TEMP/visualizer-installations/visualizer" >> "$GITHUB_ENV"
+      - name: Core installation without a renderer
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/visualizer-installations/core" test/optional_visualizer/core.jl
+      - name: Core-first renderer integration
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/visualizer-installations/visualizer" test/optional_visualizer/optional.jl core-first
+      - name: Renderer-first integration
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/visualizer-installations/visualizer" test/optional_visualizer/optional.jl visualizer-first
+      - name: Locate the installed pinned renderer
+        run: julia --startup-file=no --project="$RUNNER_TEMP/visualizer-installations/visualizer" -e 'using SpaceAGORAVisualizer; println("SPACEAGORA_VISUALIZER_CHECKOUT=", pkgdir(SpaceAGORAVisualizer)); println("SPACEAGORA_VISUALIZER_DIR=", SpaceAGORAVisualizer.viewer_directory())' >> "$GITHUB_ENV"
+      - name: Standalone companion contract tests
+        run: julia --startup-file=no --project="$RUNNER_TEMP/visualizer-installations/visualizer" -e 'using Pkg; Pkg.test("SpaceAGORAVisualizer")'
+      - name: Viewer JavaScript regressions
+        run: node "$SPACEAGORA_VISUALIZER_CHECKOUT/test/unit/visualization/viewer_channels_models_tests.mjs"
+      - name: Viewer external-host page builder tests
+        run: python3 -B -m unittest discover -s "$SPACEAGORA_VISUALIZER_CHECKOUT/test/scripts" -p 'test_*.py' -v
+      - name: Terrain exporter Julia-to-JavaScript regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          terrain_fixture_dir="$(mktemp -d "$RUNNER_TEMP/spaceagora-terrain.XXXXXX")"
+          trap 'rm -rf "$terrain_fixture_dir"' EXIT
+          export SPACEAGORA_TERRAIN_TEST_FIXTURE_DIR="$terrain_fixture_dir"
+          julia --startup-file=no --depwarn=error --project="$RUNNER_TEMP/visualizer-installations/visualizer" test/unit/visualization/terrain_export_tests.jl
+          node test/unit/visualization/terrain_sampling_tests.mjs "$terrain_fixture_dir/fixtures.json" "$SPACEAGORA_VISUALIZER_DIR"
+      - name: Verify core installation inputs were not changed
+        run: git diff --exit-code
+      - name: Retain visualizer integration coverage
+        if: always()
+        run: |
+          find src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
+            mv "$f" "$(printf '%s' "$f" | sed -E 's/\.([0-9]+)\.cov$/.89\1.cov/')"
+          done
+          mkdir -p visualizer-installation-coverage
+          find src -name '*.cov' -print0 | tar --null -czf visualizer-installation-coverage/coverage.tgz -T -
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: visualizer-installation-coverage
+          path: visualizer-installation-coverage/coverage.tgz
+          retention-days: 3
+          if-no-files-found: error
+
+  # Absence is exercised only in the dedicated core-only environment. Existing
+  # runtime/native/coverage suites above continue to execute every EDG test.
+  optional-edg-installation:
+    needs: depot
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      JULIA_NUM_THREADS: "2"
+      JULIA_LOAD_PATH: "@:@stdlib"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          gram: none
+          gramsuite-smoke: "false"
+          edg: "false"
+          token: ${{ github.token }}
+      - name: Installer safeguards
+        run: julia --startup-file=no test/optional_packages_tests.jl
+      - name: Prepare core-only and EDG environments
+        env:
+          JULIA_PKG_PRECOMPILE_AUTO: "0"
+        run: julia --startup-file=no --project=@stdlib test/optional_edg/setup.jl "$RUNNER_TEMP/edg-installations"
+      - name: Core without the EDG provider
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/core" test/optional_edg/core.jl
+      - name: Both EDG load orders
+        run: |
+          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional_edg/optional.jl core-first
+          julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional_edg/optional.jl edg-first
+      - name: EDG CLI environment and child process
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional_edg/cli.jl
+      - name: EDG example smoke child environment
+        run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional_edg/example_smoke.jl
+      - name: Companion tests
+        run: julia --startup-file=no --project="$RUNNER_TEMP/edg-installations/edg" -e 'using Pkg; Pkg.test("SpaceAGORAEDG")'
+      - name: Retain EDG integration coverage
+        if: always()
+        run: |
+          find src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
+            mv "$f" "$(printf '%s' "$f" | sed -E 's/\.([0-9]+)\.cov$/.66\1.cov/')"
+          done
+          mkdir -p edg-installation-coverage
+          find src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | tar --null -czf edg-installation-coverage/coverage.tgz -T -
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: edg-installation-coverage
+          path: edg-installation-coverage/coverage.tgz
           retention-days: 3
           if-no-files-found: error

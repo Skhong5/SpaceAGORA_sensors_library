@@ -282,10 +282,11 @@ end
 @testset "Named near-surface preset versions" begin
     catalog_template = TOML.parsefile(PRESET_ENV._SURROGATE_CATALOG)
     near=filter(p->p["id"]=="mars_global_near_surface_p20_frozen_v1",catalog_template["presets"])
-    @test sort([p["version"] for p in near])==["1.0.0","1.1.0"]
+    @test sort([p["version"] for p in near])==["1.0.0","1.1.0","1.2.0"]
     v100=only(filter(p->p["version"]=="1.0.0",near)); v110=only(filter(p->p["version"]=="1.1.0",near))
+    v120=only(filter(p->p["version"]=="1.2.0",near))
     listed=SpaceAGORA.available_surrogate_presets()
-    @test all(v->any(x->x["id"]=="mars_global_near_surface_p20_frozen_v1" && x["version"]==v,listed),("1.0.0","1.1.0"))
+    @test all(v->any(x->x["id"]=="mars_global_near_surface_p20_frozen_v1" && x["version"]==v,listed),("1.0.0","1.1.0","1.2.0"))
     # 1.0.0 keeps its published identities; 1.1.0 extends it to 81 km with two added levels and has its own identities.
     @test v100["domain"]["top_areoid_height_m"]==75000.0 && length(v100["required_metadata"]["levels_km"])==29
     @test v100["distribution"]["archive_sha256"]=="f0fa4a4cd05b747cef77f723bdb2a1a9697d8b824ee8b6159095c0bcb9212b37"
@@ -303,9 +304,28 @@ end
     @test v110["distribution"]["git_tree_sha1"]=="19bd3b55915f05b4e437510d1d66dc751852fb07"
     @test all(u->occursin("/surrogate-mars-global-near-surface-p20-1.1.0/",u),v110["distribution"]["urls"])
     @test v110["generation_provenance"]["runtime_evaluator_sha256"]=="1aa2c8f7244d7459208f301cdd7dd39f4f05723559ef91a4d4a0ac3941d8afb5"
+    # 1.2.0 keeps 1.1.0's scalar contract and adds the stored winds (format 2), with its own identities.
+    @test v120["kind"]=="gram_near_surface_scalars" && v120["release_enabled"] && !haskey(v120,"axes")
+    @test v120["required_metadata"]["format"]==v120["payload"]["format"]=="spaceagora_mars_near_surface_v2"
+    for k in ("levels_km","lattice","support","generation_config","epoch_utc","planet","elapsed_time_s")
+        @test v120["required_metadata"][k]==v110["required_metadata"][k]
+    end
+    @test v120["domain"]==merge(v110["domain"],Dict("unavailable_winds"=>v120["domain"]["unavailable_winds"]))
+    @test v120["required_metadata"]["wind_rules"]==Dict("clip_fraction"=>0.7,"composition_switch_km"=>80.0,"switch_band_km"=>1e-9)
+    atm=v120["atmosphere"]
+    @test atm["winds_available"]===true && atm["wind_returned"]=="stored_components" && atm["wind_convention"]=="stored_nominal_local_ENU"
+    @test atm["wind_boolean_suppresses_stored_components"]===false && all(in(atm["fields"]),("wind_ew_ms","wind_ns_ms","wind_up_ms"))
+    @test v120["artifact_name"]=="mars_global_near_surface_p20_frozen_v1_1_2_0" && !(v120["artifact_name"] in (v100["artifact_name"],v110["artifact_name"]))
+    @test v120["payload"]["sha256"]=="1bb74ca6eb5b2495350e68f1d38653b1a82e0c43ab54ce1fa8fd3781dfdea632"
+    @test v120["distribution"]["archive_sha256"]=="fb2be94b84f6690d53ef7bb48048b2c01dafd2930a01ae9ec76e732d5ba4b342"
+    @test v120["distribution"]["git_tree_sha1"]=="31b3ac96ca736c821dc2d63426082ab2d9dea3f2"
+    @test all(u->occursin("/surrogate-mars-global-near-surface-p20-1.2.0/",u),v120["distribution"]["urls"])
+    @test v120["generation_provenance"]["base_payload_sha256"]==v110["payload"]["sha256"]
+    @test v120["generation_provenance"]["runtime_evaluator_sha256"]=="6aafc4cadcf83298b430e3f1beb9f1d31b6b41f33a81d3799f0da5856793c558"
+    @test v120["generation_provenance"]["runtime_wind_evaluator_sha256"]=="37f1e27326a0d89e02ac1b83104166ef98a75c039d8155890be301939e8919aa"
     # Each version's Artifacts.toml binding matches its catalog entry.
     bindings=TOML.parsefile(PRESET_ENV._SURROGATE_ARTIFACTS)
-    for e in (v100,v110)
+    for e in (v100,v110,v120)
         b=bindings[e["artifact_name"]]; d=only(b["download"])
         @test b["git-tree-sha1"]==e["distribution"]["git_tree_sha1"] && b["lazy"]===true
         @test d["sha256"]==e["distribution"]["archive_sha256"] && d["url"] in e["distribution"]["urls"]
@@ -346,6 +366,124 @@ end
         @test SpaceAGORA.atmosphere_provenance(model)["preset_version"]=="1.1.0"
         # The same payload does not satisfy the 1.0.0 contract (levels, top and distribution version differ).
         @test_throws ArgumentError SpaceAGORA.surrogate_preset_model("synthetic_near_surface";opts("1.0.0")...)
+    end
+end
+
+@testset "Named near-surface presets with stored winds (format 2)" begin
+    catalog_template = TOML.parsefile(PRESET_ENV._SURROGATE_CATALOG)
+    near=filter(p->p["id"]=="mars_global_near_surface_p20_frozen_v1",catalog_template["presets"])
+    # Versions 1.0.0 and 1.1.0 keep format 1 payloads and their zero-wind declarations; 1.2.0 stores winds (format 2).
+    @test all(p->p["required_metadata"]["format"]=="spaceagora_mars_near_surface_scalars_v1" && p["atmosphere"]["winds_available"]===false &&
+        p["atmosphere"]["wind_returned"]=="zero_vector",filter(p->p["version"] in ("1.0.0","1.1.0"),near))
+    v110=only(filter(p->p["version"]=="1.1.0",near)); v2="spaceagora_mars_near_surface_v2"
+    mktempdir() do dir
+        file=joinpath(dir,"fixture.jls"); catalog_file=joinpath(dir,"catalog.toml"); artifacts_file=joinpath(dir,"Artifacts.toml")
+        catalog=deepcopy(catalog_template); entry=deepcopy(v110); catalog["presets"]=[entry]
+        entry["id"]="synthetic_near_surface_winds";entry["version"]="1.2.0";entry["release_enabled"]=false;entry["artifact_name"]="synthetic_near_surface_winds_1_2_0"
+        entry["payload"]["format"]=v2; entry["required_metadata"]["format"]=v2
+        haskey(entry,"generation_provenance") && haskey(entry["generation_provenance"],"payload_format") && (entry["generation_provenance"]["payload_format"]=v2)
+        atm=entry["atmosphere"]; atm["fields"]=vcat(atm["fields"],["wind_ew_ms","wind_ns_ms","wind_up_ms"])
+        atm["winds_available"]=true; atm["wind_returned"]="stored_components"
+        atm["wind_convention"]="stored_nominal_local_ENU"; atm["wind_boolean_suppresses_stored_components"]=false
+        entry["support"]["winds"]="stored east, north and vertical winds; horizontal components clipped at 0.7 times the speed of sound"
+        # Synthetic analytic payload to the 1.1.0 scalar contract plus a constant wind layer (not Mars data): flat 0.5 km
+        # terrain, linear level states, east wind 5 m/s and north wind -3 m/s everywhere, zero sound offsets.
+        payload=deepcopy(entry["required_metadata"]); lev=payload["levels_km"]; g=payload["lattice"]
+        nl,ni,nj=length(lev),g["nlat"],g["nlon"]
+        payload["radii_km"]=(payload["generation_config"]["equatorial_radius_km"],payload["generation_config"]["polar_radius_km"])
+        payload["terrain"]=Dict{String,Any}("lat0_deg"=>-86.25,"lon0_deg"=>0.488,"step_deg"=>0.5,
+            "surface_height_km"=>fill(0.5,346,720),"areoid_radius_km"=>fill(3390.0,346,720))
+        payload["level_T_K"]=[220.0-2lev[a] for a in 1:nl, i in 1:ni, j in 1:nj]
+        payload["level_R"]=fill(191.0,nl,ni,nj); payload["level_lnp"]=[log(700.0)-lev[a]/11 for a in 1:nl, i in 1:ni, j in 1:nj]
+        payload["level_source"]=ones(UInt8,nl,ni,nj); payload["surface_T30_K"]=fill(214.0,ni,nj); payload["surface_T5_K"]=fill(216.0,ni,nj)
+        keys_=[(b,c) for b in -12:11 for c in 0:39]; n=length(keys_)
+        payload["q_models"]=Dict{String,Any}("band"=>first.(keys_),"cell"=>last.(keys_),"L"=>fill(1,n),"order"=>fill(1,n),
+            "phic_center"=>[7.5b+3.75 for (b,_) in keys_],"lam_center"=>[9.0c+4.5 for (_,c) in keys_],
+            "coef"=>hcat(fill(20.0,n),zeros(n,5)),"n_points"=>fill(1,n),"status"=>fill("qualified",n))
+        scalar_payload=deepcopy(payload)
+        ulat=Float64[]; usides=Int[]
+        for φ in sort(vcat(collect(-85.5:1.5:85.5),78.75))
+            φ in (78.75,82.5) ? (append!(ulat,(φ,φ)); append!(usides,(-1,1))) : (push!(ulat,φ); push!(usides,0))
+        end
+        vlat=collect(-86.25:1.5:86.25); mt=collect(-87.5:5.0:87.5); nu,nv=length(ulat),length(vlat)
+        payload["wind_level_U"]=fill(5.0,29,nu,nj); payload["wind_level_V"]=fill(-3.0,29,nv,nj)
+        payload["wind_mtgcm_U"]=fill(5.0,2,36,nj); payload["wind_mtgcm_V"]=fill(-3.0,2,36,nj)
+        payload["wind_surface_U"]=fill(5.0,2,nu,nj+1); payload["wind_surface_V"]=fill(-3.0,2,nv,nj)
+        payload["sound_offset_level"]=zeros(nl,ni,nj); payload["sound_offset_surface"]=zeros(2,ni,nj)
+        for k in ("wind_level_U","wind_level_V","wind_mtgcm_U","wind_mtgcm_V","sound_offset_level")
+            payload[k*"_source"]=ones(UInt8,size(payload[k]))
+        end
+        payload["wind_meta"]=Dict{String,Any}("levels_km"=>lev[1:29],"longitudes_deg"=>[g["step_deg"]*(j-1) for j in 1:nj],
+            "s_knots_deg"=>[g["lat0_deg"]+g["step_deg"]*(i-1) for i in 1:ni],"u_knots_deg"=>ulat,"u_sides"=>usides,"v_knots_deg"=>vlat,
+            "mtgcm_rows_deg"=>mt,"ho_km"=>0.032315452903639574,"solar_offset_h"=>12.480809170349387)
+        payload["sound_reference"]=Dict{String,Any}("K"=>fill(3.5,56),"undetermined"=>Int[],"nrows"=>1,
+            "temperature_levels_K"=>[50.0,100.0,150.0,200.0,250.0,300.0,350.0],"pressure_levels_Pa"=>[1e-2,1e-1,1.0,10.0,100.0,1000.0,1e4,1e5])
+        payload["sound_composition"]=Dict{String,Any}("knee_kgkmol"=>43.5,"slope_per_kgkmol"=>[NaN,0.023,0.028,0.041,NaN,NaN,NaN],
+            "slope_levels_K"=>[50.0,100.0,150.0,200.0,250.0,300.0,350.0],"undetermined"=>Int[],"R_u"=>8314.46261815324)
+        payload["wind_rules"]=Dict{String,Any}("clip_fraction"=>0.7,"composition_switch_km"=>80.0,"switch_band_km"=>1e-9)
+        function save!(p)
+            serialize(file,p);entry["payload"]["sha256"]=preset_sha(file);entry["payload"]["bytes"]=filesize(file);preset_write_toml(catalog_file,catalog)
+        end
+        save!(payload); preset_write_toml(artifacts_file,Dict())
+        opts=(version="1.2.0",catalog_file=catalog_file,artifacts_file=artifacts_file,file=file,allow_unreleased=true)
+        @test any(x->x["id"]=="synthetic_near_surface_winds" && x["version"]=="1.2.0",SpaceAGORA.available_surrogate_presets(;catalog_file))
+        # Contradictory wind declarations and unsupported formats fail when the catalog is read.
+        for breakit in (e->e["atmosphere"]["winds_available"]=false, e->e["atmosphere"]["wind_returned"]="zero_vector",
+                        e->e["atmosphere"]["fields"]=filter(f->!startswith(f,"wind"),e["atmosphere"]["fields"]),
+                        e->e["atmosphere"]["wind_boolean_suppresses_stored_components"]=true, e->delete!(e["atmosphere"],"wind_convention"),
+                        e->(e["required_metadata"]["format"]=e["payload"]["format"]="spaceagora_mars_near_surface_v3"),
+                        e->(e["required_metadata"]["format"]=e["payload"]["format"]="spaceagora_mars_near_surface_scalars_v1"))
+            broken=deepcopy(catalog);breakit(only(broken["presets"]));preset_write_toml(catalog_file,broken)
+            @test_throws ArgumentError SpaceAGORA.available_surrogate_presets(;catalog_file)
+        end
+        preset_write_toml(catalog_file,catalog)
+        if !isdefined(GRAMSuite, :near_surface_wind_state)
+            @test_skip "stored-wind near-surface checks need a GRAMSuite with the near-surface wind layer"
+            return
+        end
+        model=SpaceAGORA.surrogate_preset_model("synthetic_near_surface_winds";opts...)
+        @test model isa SpaceAGORA.GRAMNearSurfaceAtmosphereModel && PRESET_ENV._near_surface_model_has_winds(model)
+        rho,T,wind=SpaceAGORA.getDensity(model,3000.,deg2rad(10.),deg2rad(40.),0.,true)
+        @test (rho,T,wind)==GRAMSuite.density_state(model.core,3000.,deg2rad(10.),deg2rad(40.),0.,true)
+        @test isapprox(wind[1],5.0;rtol=1e-12) && isapprox(wind[2],-3.0;rtol=1e-12) && abs(wind[3])<1e-12 && rho>0
+        # As for grid presets' stored winds, the boolean does not suppress them; the engine masks winds itself.
+        @test SpaceAGORA.getDensity(model,3000.,deg2rad(10.),deg2rad(40.),1e9,false)==(rho,T,wind)
+        w=GRAMSuite.near_surface_wind_state(model.core,10.,40.,3000.)
+        @test w.sound_speed_ms>0 && !w.wind_clipped && w.wind_regime==:D3 && w.composition_side==:dry
+        provenance=SpaceAGORA.atmosphere_provenance(model)
+        @test provenance["atmosphere"]["winds_available"]===true && provenance["atmosphere"]["wind_returned"]=="stored_components"
+        # Catalog and payload must agree: a format 1 payload under this entry, or this payload under a format 1 entry, fails.
+        old=deepcopy(scalar_payload); old["format"]="spaceagora_mars_near_surface_scalars_v1"; save!(old)
+        @test_throws ArgumentError SpaceAGORA.surrogate_preset_model("synthetic_near_surface_winds";opts...)
+        save!(payload)
+        legacy=deepcopy(catalog); e1=only(legacy["presets"])
+        e1["payload"]["format"]=e1["required_metadata"]["format"]="spaceagora_mars_near_surface_scalars_v1"
+        e1["atmosphere"]=deepcopy(v110["atmosphere"]); preset_write_toml(catalog_file,legacy)
+        @test_throws ArgumentError SpaceAGORA.surrogate_preset_model("synthetic_near_surface_winds";opts...)
+        preset_write_toml(catalog_file,catalog)
+        # The published 1.2.0 contract accepts the same synthetic winds once the payload carries 1.2.0's status and
+        # distribution record, and serves them unchanged.
+        v120=only(filter(p->p["version"]=="1.2.0",near)); e12=deepcopy(v120)
+        e12["id"]="synthetic_near_surface_winds_1_2_0"; e12["release_enabled"]=false; e12["artifact_name"]="synthetic_near_surface_winds_1_2_0"
+        p12=merge(deepcopy(payload),Dict(k=>deepcopy(v120["required_metadata"][k]) for k in ("status","distribution")))
+        file12=joinpath(dir,"fixture_1_2_0.jls"); serialize(file12,p12)
+        e12["payload"]["sha256"]=preset_sha(file12); e12["payload"]["bytes"]=filesize(file12)
+        catalog12=deepcopy(catalog_template); catalog12["presets"]=[e12]; catalog12_file=joinpath(dir,"catalog_1_2_0.toml")
+        preset_write_toml(catalog12_file,catalog12)
+        m12=SpaceAGORA.surrogate_preset_model("synthetic_near_surface_winds_1_2_0";version="1.2.0",catalog_file=catalog12_file,
+            artifacts_file=artifacts_file,file=file12,allow_unreleased=true)
+        @test SpaceAGORA.getDensity(m12,3000.,deg2rad(10.),deg2rad(40.),0.,true)===(rho,T,wind)
+        @test SpaceAGORA.atmosphere_provenance(m12)["preset_version"]=="1.2.0"
+        # Below the handover the combined model returns the near-surface component's stored winds, and the grid's above.
+        grid=deepcopy(only(filter(p->p["id"]=="odyssey_p20_frozen_v1",catalog_template["presets"]))["required_metadata"])
+        grid["grid"]=Dict("alt_km"=>[40.,260.],"lat_deg"=>[-90.,90.],"lon_deg"=>[0.,180.])
+        grid["fields"]=Dict(k=>fill(v,2,2,2) for (k,v) in zip(("density_kgm3","temperature_K","wind_ew_ms","wind_ns_ms","wind_up_ms"),(2e-9,150.,2.,3.,4.)))
+        upper_file=joinpath(dir,"grid.jls"); serialize(upper_file,grid)
+        combined=SpaceAGORA.CombinedAtmosphereModel(model,SpaceAGORA.GRAMGridAtmosphereModel(planet="Mars",surrogate_file=upper_file);handover_height_m=60e3)
+        below=SpaceAGORA.getDensity(combined,59999.,deg2rad(10.),deg2rad(40.),0.,true); at=SpaceAGORA.getDensity(combined,60000.,deg2rad(10.),deg2rad(40.),0.,true)
+        @test below===SpaceAGORA.getDensity(model,59999.,deg2rad(10.),deg2rad(40.),0.,true) && isapprox(below[3][1],5.0;rtol=1e-12)
+        @test at[3]==[2.,3.,4.]
+        @test !any(x->occursin("libgram",lowercase(basename(x))),Libdl.dllist())
     end
 end
 
@@ -497,4 +635,267 @@ SpaceAGORA.SimulationModel.ControlHooks.calcControlForceTorque(::CombinedDescent
             @test !any(x->occursin("libgram",lowercase(basename(x))),Libdl.dllist())
         end
     end
+end
+
+@testset "Named composite presets" begin
+    callbacks=SpaceAGORA.SimulationModel.SimulationCallbacks
+    catalog_template=TOML.parsefile(PRESET_ENV._SURROGATE_CATALOG)
+    # The published composite names near-surface 1.2.0 below 80 km above the ellipsoid and upper 1.0.0 at and above it,
+    # and has no payload of its own.
+    descent=only(filter(p->p["id"]=="mars_global_descent_p20_frozen_v1",catalog_template["presets"]))
+    @test descent["version"]=="1.0.0" && descent["kind"]=="composite_by_height" && descent["release_enabled"]===true
+    @test sort([(c["role"],c["id"],c["version"]) for c in descent["components"]])==
+        [("lower","mars_global_near_surface_p20_frozen_v1","1.2.0"),("upper","mars_global_upper_p20_frozen_v1","1.0.0")]
+    @test descent["handover"]==Dict("height_m"=>80000.0,"reference"=>"ellipsoidal","rule"=>"lower_below_upper_at_or_above")
+    @test !any(k->haskey(descent,k),PRESET_ENV._PAYLOAD_KEYS)
+    @test descent["domain"]["height_top_m"]==365000.0 && descent["atmosphere"]["winds_available"]===true
+    @test endswith(catalog_template["catalog_revision"],"+mars-global-descent-p20-1.0.0")
+    @test any(x->x["id"]=="mars_global_descent_p20_frozen_v1" && x["version"]=="1.0.0" && x["release_enabled"],SpaceAGORA.available_surrogate_presets())
+    # Resolution and an explicit file are refused before anything is downloaded.
+    err=try SpaceAGORA.resolve_surrogate_preset("mars_global_descent_p20_frozen_v1";version="1.0.0") catch e e end
+    @test err isa ArgumentError && occursin("is a composite of mars_global_near_surface_p20_frozen_v1@1.2.0 (lower) and " *
+        "mars_global_upper_p20_frozen_v1@1.0.0 (upper) and has no payload of its own",err.msg)
+    for call in (()->SpaceAGORA.surrogate_preset_model("mars_global_descent_p20_frozen_v1";version="1.0.0",file="local.jls"),
+                 ()->SpaceAGORA.run_cli(["assets","fetch","--preset=mars_global_descent_p20_frozen_v1","--version=1.0.0","--file=local.jls"]))
+        err=try call() catch e e end
+        @test err isa ArgumentError && occursin("explicit file cannot select it",err.msg)
+    end
+    # Offline in an empty store, fetch and check reach the components and report the first missing one.
+    Artifacts.with_artifacts_directory(mktempdir()) do
+        for command in ("fetch","check")
+            err=try SpaceAGORA.run_cli(["assets",command,"--preset=mars_global_descent_p20_frozen_v1","--version=1.0.0","--offline"];io=devnull) catch e e end
+            @test err isa ArgumentError && occursin("mars_global_near_surface_p20_frozen_v1@1.2.0 is not installed and offline=true",err.msg)
+        end
+    end
+    if !isdefined(GRAMSuite,:near_surface_wind_state)
+        @test_skip "composite construction needs a GRAMSuite with the near-surface wind layer"
+    else
+        mktempdir() do dir
+            catalog_file=joinpath(dir,"catalog.toml"); artifacts_file=joinpath(dir,"Artifacts.toml")
+            # Synthetic analytic components (not Mars data), as in the test sets above. The lower one follows the 1.2.0
+            # contract: flat 0.5 km terrain, linear level states, a constant 5 m/s east and -3 m/s north wind layer.
+            v120=only(filter(p->p["id"]=="mars_global_near_surface_p20_frozen_v1" && p["version"]=="1.2.0",catalog_template["presets"]))
+            lower=deepcopy(v120); lower["id"]="synthetic_descent_lower"; lower["artifact_name"]="synthetic_descent_lower_1_2_0"
+            payload=deepcopy(lower["required_metadata"]); lev=payload["levels_km"]; g=payload["lattice"]
+            nl,ni,nj=length(lev),g["nlat"],g["nlon"]
+            payload["radii_km"]=(payload["generation_config"]["equatorial_radius_km"],payload["generation_config"]["polar_radius_km"])
+            payload["terrain"]=Dict{String,Any}("lat0_deg"=>-86.25,"lon0_deg"=>0.488,"step_deg"=>0.5,
+                "surface_height_km"=>fill(0.5,346,720),"areoid_radius_km"=>fill(3390.0,346,720))
+            payload["level_T_K"]=[220.0-2lev[a] for a in 1:nl, i in 1:ni, j in 1:nj]
+            payload["level_R"]=fill(191.0,nl,ni,nj); payload["level_lnp"]=[log(700.0)-lev[a]/11 for a in 1:nl, i in 1:ni, j in 1:nj]
+            payload["level_source"]=ones(UInt8,nl,ni,nj); payload["surface_T30_K"]=fill(214.0,ni,nj); payload["surface_T5_K"]=fill(216.0,ni,nj)
+            keys_=[(b,c) for b in -12:11 for c in 0:39]; n=length(keys_)
+            payload["q_models"]=Dict{String,Any}("band"=>first.(keys_),"cell"=>last.(keys_),"L"=>fill(1,n),"order"=>fill(1,n),
+                "phic_center"=>[7.5b+3.75 for (b,_) in keys_],"lam_center"=>[9.0c+4.5 for (_,c) in keys_],
+                "coef"=>hcat(fill(20.0,n),zeros(n,5)),"n_points"=>fill(1,n),"status"=>fill("qualified",n))
+            ulat=Float64[]; usides=Int[]
+            for φ in sort(vcat(collect(-85.5:1.5:85.5),78.75))
+                φ in (78.75,82.5) ? (append!(ulat,(φ,φ)); append!(usides,(-1,1))) : (push!(ulat,φ); push!(usides,0))
+            end
+            vlat=collect(-86.25:1.5:86.25); mt=collect(-87.5:5.0:87.5); nu,nv=length(ulat),length(vlat)
+            payload["wind_level_U"]=fill(5.0,29,nu,nj); payload["wind_level_V"]=fill(-3.0,29,nv,nj)
+            payload["wind_mtgcm_U"]=fill(5.0,2,36,nj); payload["wind_mtgcm_V"]=fill(-3.0,2,36,nj)
+            payload["wind_surface_U"]=fill(5.0,2,nu,nj+1); payload["wind_surface_V"]=fill(-3.0,2,nv,nj)
+            payload["sound_offset_level"]=zeros(nl,ni,nj); payload["sound_offset_surface"]=zeros(2,ni,nj)
+            for k in ("wind_level_U","wind_level_V","wind_mtgcm_U","wind_mtgcm_V","sound_offset_level")
+                payload[k*"_source"]=ones(UInt8,size(payload[k]))
+            end
+            payload["wind_meta"]=Dict{String,Any}("levels_km"=>lev[1:29],"longitudes_deg"=>[g["step_deg"]*(j-1) for j in 1:nj],
+                "s_knots_deg"=>[g["lat0_deg"]+g["step_deg"]*(i-1) for i in 1:ni],"u_knots_deg"=>ulat,"u_sides"=>usides,"v_knots_deg"=>vlat,
+                "mtgcm_rows_deg"=>mt,"ho_km"=>0.032315452903639574,"solar_offset_h"=>12.480809170349387)
+            payload["sound_reference"]=Dict{String,Any}("K"=>fill(3.5,56),"undetermined"=>Int[],"nrows"=>1,
+                "temperature_levels_K"=>[50.0,100.0,150.0,200.0,250.0,300.0,350.0],"pressure_levels_Pa"=>[1e-2,1e-1,1.0,10.0,100.0,1000.0,1e4,1e5])
+            payload["sound_composition"]=Dict{String,Any}("knee_kgkmol"=>43.5,"slope_per_kgkmol"=>[NaN,0.023,0.028,0.041,NaN,NaN,NaN],
+                "slope_levels_K"=>[50.0,100.0,150.0,200.0,250.0,300.0,350.0],"undetermined"=>Int[],"R_u"=>8314.46261815324)
+            lower_file=joinpath(dir,"lower.jls"); serialize(lower_file,payload)
+            # The upper one: a constant global grid from 40 to 260 km on the Odyssey preset's contract.
+            upper=deepcopy(only(filter(p->p["id"]=="odyssey_p20_frozen_v1",catalog_template["presets"])))
+            upper["id"]="synthetic_descent_upper"; upper["artifact_name"]="synthetic_descent_upper_1_0_0"
+            upper["axes"]=Dict("altitude"=>Dict("start"=>40.,"step"=>220.,"count"=>2),"latitude"=>Dict("start"=>-90.,"step"=>180.,"count"=>2),
+                "longitude"=>Dict("start"=>0.,"step"=>180.,"count"=>2))
+            upper["domain"]["height_m"]=[40000.,260000.]; upper["domain"]["latitude_deg"]=[-90.,90.]
+            grid=deepcopy(upper["required_metadata"])
+            grid["grid"]=Dict("alt_km"=>[40.,260.],"lat_deg"=>[-90.,90.],"lon_deg"=>[0.,180.])
+            grid["fields"]=Dict(k=>fill(v,2,2,2) for (k,v) in zip(("density_kgm3","temperature_K","wind_ew_ms","wind_ns_ms","wind_up_ms"),(2e-9,150.,2.,3.,4.)))
+            upper_file=joinpath(dir,"upper.jls"); serialize(upper_file,grid)
+            composite=deepcopy(descent); composite["id"]="synthetic_descent"
+            composite["components"]=[Dict("role"=>"lower","id"=>"synthetic_descent_lower","version"=>"1.2.0"),
+                                     Dict("role"=>"upper","id"=>"synthetic_descent_upper","version"=>"1.0.0")]
+            composite["handover"]["height_m"]=60000.0; composite["domain"]["height_top_m"]=260000.0
+            catalog=deepcopy(catalog_template); catalog["presets"]=[composite,lower,upper]   # a composite may precede its components
+            preset_write_toml(artifacts_file,Dict())
+            Artifacts.with_artifacts_directory(joinpath(dir,"artifact_store")) do
+                hashes=Dict{String,Any}()
+                for (entry,file) in ((lower,lower_file),(upper,upper_file))
+                    entry["payload"]["sha256"]=preset_sha(file); entry["payload"]["bytes"]=filesize(file)
+                    hash=Pkg.Artifacts.create_artifact() do target; cp(file,joinpath(target,entry["payload"]["file"]));end
+                    archive=joinpath(dir,entry["artifact_name"]*".tar.gz"); archive_sha=Pkg.Artifacts.archive_artifact(hash,archive)
+                    entry["release_enabled"]=true
+                    entry["distribution"]=Dict("status"=>"synthetic_test_only","git_tree_sha1"=>string(hash),"archive_sha256"=>archive_sha,"urls"=>["file://"*archive])
+                    Pkg.Artifacts.bind_artifact!(artifacts_file,entry["artifact_name"],hash;lazy=true,download_info=[("file://"*archive,archive_sha)],force=true)
+                    hashes[entry["id"]]=hash
+                end
+                preset_write_toml(catalog_file,catalog)
+                opts=(version="1.0.0",catalog_file=catalog_file,artifacts_file=artifacts_file)
+                @test length(SpaceAGORA.available_surrogate_presets(;catalog_file))==3
+                model=SpaceAGORA.surrogate_preset_model("synthetic_descent";opts...,offline=true)
+                @test model isa SpaceAGORA.CombinedAtmosphereModel && model.handover_height_m===60000.0
+                @test model isa PRESET_ENV._NativeFreeSnapshotModel && callbacks.density_model_threadsafe(model)
+                # The named composite answers exactly as the composition of the same two presets.
+                manual=SpaceAGORA.CombinedAtmosphereModel(
+                    SpaceAGORA.surrogate_preset_model("synthetic_descent_lower";version="1.2.0",catalog_file,artifacts_file,offline=true),
+                    SpaceAGORA.surrogate_preset_model("synthetic_descent_upper";version="1.0.0",catalog_file,artifacts_file,offline=true);
+                    handover_height_m=60e3)
+                for h in (3000.,59999.,60000.,150000.), (lat,lon) in ((10.,40.),(-30.,300.))
+                    @test SpaceAGORA.getDensity(model,h,deg2rad(lat),deg2rad(lon),0.,true)===SpaceAGORA.getDensity(manual,h,deg2rad(lat),deg2rad(lon),0.,true)
+                end
+                @test isapprox(SpaceAGORA.getDensity(model,59999.,deg2rad(10.),deg2rad(40.),0.,true)[3][1],5.0;rtol=1e-12)
+                @test SpaceAGORA.getDensity(model,60000.,deg2rad(10.),deg2rad(40.),0.,true)[3]==[2.,3.,4.]
+                @test_throws DomainError SpaceAGORA.getDensity(model,30000.,deg2rad(86.),0.,0.,true)
+                @test_throws DomainError SpaceAGORA.getDensity(model,261000.,deg2rad(10.),0.,0.,true)
+                # Provenance: the composition's record, the components' named records, and the composite's own.
+                prov=SpaceAGORA.atmosphere_provenance(model)
+                @test prov["backend"]=="combined_native_free_snapshot" && prov["handover_height_m"]==60000.0
+                @test prov["preset_kind"]=="composite_by_height" && prov["preset_id"]=="synthetic_descent" && prov["preset_version"]=="1.0.0"
+                @test prov["components"]==[Dict("role"=>"lower","id"=>"synthetic_descent_lower","version"=>"1.2.0"),
+                                           Dict("role"=>"upper","id"=>"synthetic_descent_upper","version"=>"1.0.0")]
+                @test prov["lower"]==SpaceAGORA.atmosphere_provenance(model.lower) && prov["lower"]["preset_id"]=="synthetic_descent_lower"
+                @test prov["upper"]["source_sha256"]==preset_sha(upper_file) && prov["upper"]["resolution"]=="julia_artifact"
+                @test prov["catalog_sha256"]==preset_sha(catalog_file) && prov["public_release"]===true && !prov["local_development"]
+                @test prov["support"]==composite["support"] && prov["atmosphere"]==composite["atmosphere"]
+                prov["support"]["evidence"]="changed"
+                @test SpaceAGORA.atmosphere_provenance(model)["support"]==composite["support"]
+                @test SpaceAGORA.atmosphere_provenance(deepcopy(model))==SpaceAGORA.atmosphere_provenance(model)
+                @test !haskey(SpaceAGORA.atmosphere_provenance(manual),"preset_id")
+                # The results-bundle manifest carries it.
+                output=mktempdir()
+                args=(; environment_model=(; density_model=model), mission_configuration=(; mission_time=1.0, orientation_sim=false),
+                    dynamics_model=(; spacecraft=(nothing,)), simulation_settings=(; save_csv=false, results_directory=output))
+                table=SpaceAGORA.SimulationModel.DataFrames.DataFrame(time=[0.0,1.0])
+                SpaceAGORA.SimulationModel.IOOutputs._write_results_bundle!(table,[0.0,1.0],args,1)
+                @test TOML.parsefile(joinpath(output,"simulation_results.manifest.toml"))["atmosphere"]==SpaceAGORA.atmosphere_provenance(model)
+                # A released composite ignores allow_unreleased; an unreleased one is refused, as is a file.
+                @test SpaceAGORA.getDensity(SpaceAGORA.surrogate_preset_model("synthetic_descent";opts...,offline=true,allow_unreleased=true),
+                    3000.,deg2rad(10.),deg2rad(40.),0.,true)===SpaceAGORA.getDensity(model,3000.,deg2rad(10.),deg2rad(40.),0.,true)
+                err=try SpaceAGORA.surrogate_preset_model("synthetic_descent";opts...,offline=true,file=lower_file) catch e e end
+                @test err isa ArgumentError && occursin("explicit file cannot select it",err.msg)
+                unreleased=deepcopy(catalog); unreleased["presets"][1]["release_enabled"]=false; preset_write_toml(catalog_file,unreleased)
+                err=try SpaceAGORA.surrogate_preset_model("synthetic_descent";opts...,offline=true,allow_unreleased=true) catch e e end
+                @test err isa ArgumentError && occursin("is not published",err.msg)
+                preset_write_toml(catalog_file,catalog)
+                # Offline before installation names the missing component; online, both components install from their archives.
+                rm(Artifacts.artifact_path(hashes["synthetic_descent_upper"]);recursive=true)
+                err=try SpaceAGORA.surrogate_preset_model("synthetic_descent";opts...,offline=true) catch e e end
+                @test err isa ArgumentError && occursin("synthetic_descent_upper@1.0.0 is not installed and offline=true",err.msg)
+                withenv("JULIA_PKG_SERVER"=>"") do
+                    installed=@test_logs (:info,r"^Installing atmosphere preset synthetic_descent_upper@1\.0\.0") (:info,r"^Installed atmosphere preset synthetic_descent_upper@1\.0\.0") SpaceAGORA.surrogate_preset_model("synthetic_descent";opts...)
+                    @test SpaceAGORA.getDensity(installed,150000.,deg2rad(10.),deg2rad(40.),0.,true)===SpaceAGORA.getDensity(model,150000.,deg2rad(10.),deg2rad(40.),0.,true)
+                end
+                @test PRESET_ENV._composite_preset_components("synthetic_descent","1.0.0";catalog_file)==
+                    [(role="lower",id="synthetic_descent_lower",version="1.2.0"),(role="upper",id="synthetic_descent_upper",version="1.0.0")]
+                @test PRESET_ENV._composite_preset_components("synthetic_descent_lower","1.2.0";catalog_file)===nothing
+                # Each catalog rule, broken alone, fails when the catalog is read.
+                rules=Pair{String,Function}[
+                    "cannot declare payload"=>c->(c["presets"][1]["payload"]=deepcopy(lower["payload"])),
+                    "release_enabled must be explicit"=>c->delete!(c["presets"][1],"release_enabled"),
+                    "needs its support"=>c->delete!(c["presets"][1],"support"),
+                    "exactly two components"=>c->pop!(c["presets"][1]["components"]),
+                    "exactly two components"=>c->(c["presets"][1]["components"][2]["role"]="lower"),
+                    "which is not in the catalog"=>c->(c["presets"][1]["components"][1]["version"]="1.1.0"),
+                    "composites do not nest"=>c->(c["presets"][1]["components"][1]=Dict("role"=>"lower","id"=>"synthetic_descent","version"=>"1.0.0")),
+                    "is released, but its component"=>c->(c["presets"][2]["release_enabled"]=false),
+                    "is for earth, but its component"=>c->(c["presets"][1]["planet"]="earth"),
+                    "needs a near-surface preset as its lower component and a grid preset as its upper one"=>
+                        c->(c["presets"][1]["components"][1]["role"]="upper"; c["presets"][1]["components"][2]["role"]="lower"),
+                    "declares the frozen instant"=>c->(c["presets"][1]["atmosphere"]["epoch_utc"]="2001-11-07T11:52:04.794789Z"),
+                    "reference-ellipsoid radii"=>c->(c["presets"][1]["atmosphere"]["polar_radius_m"]=3376000.0),
+                    "needs stored winds on both sides"=>c->delete!(c["presets"][3]["atmosphere"],"wind_convention"),
+                    "returns its components' stored winds"=>c->(c["presets"][1]["atmosphere"]["wind_returned"]="zero_vector"),
+                    "finite, positive handover height_m"=>c->(c["presets"][1]["handover"]["height_m"]=-1.0),
+                    "measured above the reference ellipsoid"=>c->(c["presets"][1]["handover"]["reference"]="areoid"),
+                    "handover rule of composite preset 'synthetic_descent@1.0.0' must be"=>c->(c["presets"][1]["handover"]["rule"]="blend"),
+                    "outside the range of its upper component"=>c->(c["presets"][1]["handover"]["height_m"]=30000.0),
+                    "outside the range of its upper component"=>c->(c["presets"][1]["handover"]["height_m"]=260000.0),
+                    "not below the top of its lower component"=>c->(c["presets"][1]["handover"]["height_m"]=81000.0),
+                    "require errors outside their supported domain"=>c->(c["presets"][1]["domain"]["outside"]="clamp"),
+                    "domain top of composite preset 'synthetic_descent@1.0.0' differs"=>c->(c["presets"][1]["domain"]["height_top_m"]=365000.0)]
+                for (message,breakit) in rules
+                    broken=deepcopy(catalog); breakit(broken); preset_write_toml(catalog_file,broken)
+                    err=try SpaceAGORA.available_surrogate_presets(;catalog_file) catch e e end
+                    @test err isa ArgumentError && occursin(message,err.msg)
+                end
+                preset_write_toml(catalog_file,catalog)
+                @test length(SpaceAGORA.available_surrogate_presets(;catalog_file))==3
+            end
+        end
+    end
+    @test !any(x->occursin("libgram",lowercase(basename(x))),Libdl.dllist())
+end
+
+@testset "Malformed preset catalogs fail with ArgumentErrors" begin
+    # A catalog fails when it is read, with an ArgumentError that names the problem, whatever is malformed: a missing or
+    # mistyped table or field of any preset kind. Each case breaks one field of a copy of the shipped catalog.
+    template=TOML.parsefile(PRESET_ENV._SURROGATE_CATALOG)
+    at(id,version)=findfirst(p->p["id"]==id && p["version"]==version,template["presets"])
+    grid=at("odyssey_p20_frozen_v1","1.0.0"); near=at("mars_global_near_surface_p20_frozen_v1","1.2.0")
+    comp=at("mars_global_descent_p20_frozen_v1","1.0.0")
+    cases=Pair{String,Function}[
+        "Every surrogate catalog preset entry must be a table"=>c->(c["presets"][grid]="not a table"),
+        "needs a catalog_revision string"=>c->delete!(c,"catalog_revision"),
+        "needs a catalog_revision string"=>c->(c["catalog_revision"]=7),
+        "is malformed: KeyError: key \"planet\""=>c->delete!(c["presets"][grid],"planet"),
+        "is malformed: MethodError"=>c->(c["presets"][grid]["planet"]=7),
+        "is malformed: KeyError: key \"payload\""=>c->delete!(c["presets"][grid],"payload"),
+        "is malformed: MethodError"=>c->(c["presets"][grid]["payload"]="payload"),
+        "is malformed: KeyError: key \"sha256\""=>c->delete!(c["presets"][grid]["payload"],"sha256"),
+        "is malformed: MethodError"=>c->(c["presets"][grid]["atmosphere"]=[1,2]),
+        "is malformed: KeyError: key \"generation_config\""=>c->delete!(c["presets"][grid]["required_metadata"],"generation_config"),
+        "is malformed: KeyError: key \"step\""=>c->delete!(c["presets"][grid]["axes"]["altitude"],"step"),
+        "is malformed: KeyError: key \"distribution\""=>c->delete!(c["presets"][grid],"distribution"),
+        "require complete artifact publication identities"=>c->(c["presets"][grid]["distribution"]["urls"]="https://example.org/a.tar.gz"),
+        "needs its artifact_name"=>c->delete!(c["presets"][grid],"artifact_name"),
+        "needs its support table"=>c->delete!(c["presets"][grid],"support"),
+        "needs its support table"=>c->(c["presets"][grid]["support"]="validated"),
+        "is malformed: KeyError: key \"minimum_clearance_m\""=>c->delete!(c["presets"][near]["domain"],"minimum_clearance_m"),
+        "atmosphere fields of preset 'mars_global_near_surface_p20_frozen_v1@1.2.0' must be a list of field names"=>c->(c["presets"][near]["atmosphere"]["fields"]="density_kgm3"),
+        "returns its stored winds"=>c->delete!(c["presets"][near]["atmosphere"],"winds_available"),
+        "needs its atmosphere table"=>c->(c["presets"][comp]["atmosphere"]=[1,2]),
+        "needs its support table"=>c->(c["presets"][comp]["support"]=["validated"]),
+        "needs exactly two components"=>c->(c["presets"][comp]["components"][1]["role"]=1),
+        "returns its components' stored winds"=>c->delete!(c["presets"][comp]["atmosphere"],"winds_available"),
+        "atmosphere fields of preset 'mars_global_descent_p20_frozen_v1@1.0.0' must be a list of field names"=>c->(c["presets"][comp]["atmosphere"]["fields"]="density_kgm3")]
+    mktempdir() do dir
+        file=joinpath(dir,"catalog.toml")
+        for (message,breakit) in cases
+            broken=deepcopy(template); breakit(broken); preset_write_toml(file,broken)
+            err=try SpaceAGORA.available_surrogate_presets(;catalog_file=file) catch e e end
+            @test err isa ArgumentError && occursin(message,err.msg)
+        end
+        # A malformed entry is named by its position and identity.
+        broken=deepcopy(template); delete!(broken["presets"][grid],"payload"); preset_write_toml(file,broken)
+        err=try SpaceAGORA.available_surrogate_presets(;catalog_file=file) catch e e end
+        @test err isa ArgumentError && occursin("Surrogate catalog entry $grid ('odyssey_p20_frozen_v1@1.0.0') is malformed",err.msg)
+        # An unpublished preset may have no distribution record yet: it resolves from an explicit file, and its
+        # provenance records an empty distribution.
+        entry=deepcopy(template["presets"][grid]); delete!(entry,"distribution")
+        entry["id"]="synthetic_unpublished"; entry["release_enabled"]=false
+        entry["axes"]=Dict("altitude"=>Dict("start"=>100.,"step"=>160.,"count"=>2),"latitude"=>Dict("start"=>40.,"step"=>50.,"count"=>2),
+            "longitude"=>Dict("start"=>0.,"step"=>180.,"count"=>2))
+        payload=deepcopy(entry["required_metadata"])
+        payload["grid"]=Dict("alt_km"=>[100.,260.],"lat_deg"=>[40.,90.],"lon_deg"=>[0.,180.])
+        payload["fields"]=Dict(k=>fill(v,2,2,2) for (k,v) in zip(("density_kgm3","temperature_K","wind_ew_ms","wind_ns_ms","wind_up_ms"),(1e-8,180.,2.,3.,4.)))
+        payload_file=joinpath(dir,"payload.jls"); serialize(payload_file,payload)
+        entry["payload"]["sha256"]=preset_sha(payload_file); entry["payload"]["bytes"]=filesize(payload_file)
+        catalog=deepcopy(template); catalog["presets"]=[entry]; preset_write_toml(file,catalog)
+        artifacts_file=joinpath(dir,"Artifacts.toml"); preset_write_toml(artifacts_file,Dict())
+        resolved=SpaceAGORA.resolve_surrogate_preset("synthetic_unpublished";version="1.0.0",catalog_file=file,artifacts_file,
+            file=payload_file,allow_unreleased=true)
+        @test resolved.file==payload_file && resolved.provenance["distribution"]==Dict{String,Any}()
+        # A distribution record that is present must be a table.
+        entry["distribution"]="not yet"; preset_write_toml(file,catalog)
+        err=try SpaceAGORA.available_surrogate_presets(;catalog_file=file) catch e e end
+        @test err isa ArgumentError && occursin("distribution record of preset 'synthetic_unpublished@1.0.0' must be a table",err.msg)
+    end
+    # The shipped catalog is unchanged and still reads.
+    @test length(SpaceAGORA.available_surrogate_presets())==length(template["presets"])
 end

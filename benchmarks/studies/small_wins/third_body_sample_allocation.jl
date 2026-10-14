@@ -18,7 +18,7 @@
 #      concrete result type: `positions_ii` came back `Tuple{Any, Any}`,
 #      boxing both `SVector{3, Float64}` positions on every call.
 #
-# The fix (src/simulation/engine/effector_sampling.jl): hoist the counter to
+# The fix (src/orchestration/simulation/engine/effector_sampling.jl): hoist the counter to
 # a local before the closure, exactly like every other shared-buffer read
 # already did, and take the `cache_entry isa NBodyEphemerisCache` branch
 # OUTSIDE the `map`, once, so each of the two closures below it captures a
@@ -34,7 +34,7 @@
 #
 # The "before" row above is a historical point (this script measures the
 # current tree only); reproduce it by checking out
-# src/simulation/engine/effector_sampling.jl at adb343566 and re-running.
+# src/orchestration/simulation/engine/effector_sampling.jl at adb343566 and re-running.
 # Values (positions, order, cache-then-backend fallback) are unchanged --
 # see the SRP + third-body dump/cmp evidence in
 # docs/architecture/small_wins_20260923.md.

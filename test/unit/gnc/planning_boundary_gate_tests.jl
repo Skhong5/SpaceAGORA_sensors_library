@@ -3,10 +3,19 @@ using Test
 @testset "Planning owners retain architecture enforcement" begin
     repo = normpath(joinpath(@__DIR__, "..", "..", ".."))
     # Include a nested owner so the fixtures also enforce recursive scanning.
-    owner_paths = (joinpath("src", "gnc", "shared"), joinpath("src", "gnc", "hypr"),
-        joinpath("src", "gnc", "rrt"), joinpath("src", "gnc", "shared", "rpo"),
-        joinpath("packages", "SpaceAGORAHYPR", "src"), joinpath("packages", "SpaceAGORAHYPR", "src", "rpo"))
+    owner_paths = (
+        joinpath("src", "models", "gnc", "planning", "common"),
+        joinpath("src", "models", "gnc", "planning", "adapters", "hypr"),
+        joinpath("src", "models", "gnc", "planning", "rpo"),
+        joinpath("src", "models", "gnc", "planning", "robot_arm"),
+        joinpath("src", "models", "gnc", "planning", "rpo", "nested_probe"),
+        joinpath("src", "interfaces", "analysis", "planning"),
+        joinpath("packages", "SpaceAGORAHYPR", "src"),
+        joinpath("packages", "SpaceAGORAHYPR", "src", "rpo"),
+    )
     gates = (
+        ("ci_src_completeness_contract_gate.jl", "boundary_stub() = nothing\n",
+            "Source completeness contract gate failed", "contains forbidden silent stub pattern"),
         ("ci_no_legacy_include_chains_gate.jl", "__legacy_probe = nothing\n",
             "Legacy include-chain gate failed", "contains forbidden legacy token '__legacy_'"),
         ("ci_no_guidance_control_cross_include_gate.jl", "include(\"control/probe.jl\")\n",
@@ -19,28 +28,24 @@ using Test
     # Only copy the small source files required by these gates. Each fixture is
     # isolated, so a forbidden source file never enters the working checkout.
     required = (
-        "src/gnc/command_types.jl",
-        "src/gnc/guidance/guidance_hooks.jl",
-        "src/gnc/guidance/thruster_guidance/thruster_guidance_functions.jl",
-        "src/gnc/control/control_hooks.jl",
-        "src/gnc/control/propulsive_maneuvers.jl",
-        "src/gnc/guidance/aerobraking/interfaces.jl",
-        "src/gnc/guidance/aerobraking/dispatcher.jl",
-        "src/gnc/guidance/aerobraking/e_edg/e_edg_strategy.jl",
-        "src/gnc/guidance/aerobraking/t_edg/t_edg_strategy.jl",
-        "src/gnc/control/aerobraking/tracking_executor.jl",
-        "src/gnc/control/aerobraking/control_commands.jl",
-        "src/gnc/control/aerobraking/constraint_tracking.jl",
-        "src/mission/operations/aerobraking_policy/policy_types.jl",
+        "src/models/gnc/command_types.jl",
+        "src/models/gnc/guidance/guidance_hooks.jl",
+        "src/models/gnc/guidance/thruster_guidance/thruster_guidance_functions.jl",
+        "src/models/gnc/control/control_hooks.jl",
+        "src/models/gnc/control/propulsive_maneuvers.jl",
+        "src/models/gnc/guidance/aerobraking/interfaces.jl",
+        "src/models/gnc/guidance/aerobraking/dispatcher.jl",
+        "src/models/gnc/guidance/aerobraking/e_edg/e_edg_strategy.jl",
+        "src/models/gnc/guidance/aerobraking/t_edg/t_edg_strategy.jl",
+        "src/models/gnc/control/aerobraking/tracking_executor.jl",
+        "src/models/gnc/control/aerobraking/control_commands.jl",
+        "src/models/gnc/control/aerobraking/constraint_tracking.jl",
+        "src/orchestration/mission/operations/aerobraking_policy/policy_types.jl",
         # The aerobraking gate also verifies the complete typed EDG owner.
-        "src/gnc/guidance/aerobraking/typed_edg/algorithms.jl",
-        "src/gnc/guidance/aerobraking/typed_edg/services.jl",
-        "src/gnc/guidance/aerobraking/typed_edg/targeting.jl",
-        "src/gnc/guidance/aerobraking/typed_edg/heat_load.jl",
-        "src/gnc/guidance/aerobraking/typed_edg/heat_rate.jl",
-        "src/gnc/guidance/aerobraking/typed_edg/structural_load.jl",
-        "src/gnc/guidance/aerobraking/typed_edg/guidance_decision.jl",
-        "src/gnc/guidance/aerobraking/typed_edg/angle_decision.jl",
+        "src/models/gnc/guidance/aerobraking/typed_edg/algorithms.jl",
+        "src/models/gnc/guidance/aerobraking/typed_edg/services.jl",
+        "src/models/gnc/guidance/aerobraking/typed_edg/adapter_queries.jl",
+        "src/models/gnc/guidance/adapters/edg/services.jl",
     )
     mktempdir() do fixture
         for rel in required
@@ -48,7 +53,22 @@ using Test
             mkpath(dirname(target))
             cp(joinpath(repo, rel), target)
         end
-        for owner in owner_paths
+        # The gates require every scan root to exist so a source move cannot
+        # silently disable a scan. Unrelated owners can be empty in this fixture;
+        # the copied source and injected probes remain the only files inspected.
+        scan_roots = (
+            joinpath("src", "foundation", "core"),
+            joinpath("src", "orchestration", "simulation", "composition"),
+            joinpath("src", "orchestration", "simulation", "state"),
+            joinpath("src", "orchestration", "simulation", "config", "presets"),
+            joinpath("src", "models", "environment"),
+            joinpath("src", "models", "gnc", "control"),
+            joinpath("src", "models", "gnc", "guidance"),
+            joinpath("src", "orchestration", "simulation", "engine"),
+            joinpath("src", "orchestration", "simulation", "callbacks"),
+            joinpath("src", "orchestration", "parallel"),
+        )
+        for owner in (owner_paths..., scan_roots...)
             mkpath(joinpath(fixture, owner))
         end
         for (gate, forbidden, failure_message, violation_message) in gates
@@ -96,13 +116,28 @@ using Test
                 end
                 @test isnothing(run_gate().failure)
             end
+            if gate == "ci_src_completeness_contract_gate.jl"
+                dispatcher = joinpath(fixture, "src", "models", "gnc", "guidance",
+                    "aerobraking", "typed_edg", "algorithms.jl")
+                original = read(dispatcher, String)
+                try
+                    write(dispatcher, replace(original,
+                        "_invoke_kernel(:_edg_at_control_tick" => "_invoke_kernel(:_edg_wrong_kernel"))
+                    rejected = run_gate()
+                    @test rejected.failure isa LoadError
+                    @test any(v -> occursin("must be an exact package forwarder", v), rejected.violations)
+                finally
+                    write(dispatcher, original)
+                end
+                @test isnothing(run_gate().failure)
+            end
         end
     end
 end
 
 @testset "Shared metric boundary rejects an algorithm configuration dependency" begin
     repo = normpath(joinpath(@__DIR__, "..", "..", ".."))
-    path = joinpath(repo, "src", "gnc", "shared", "rpo", "path_metrics.jl")
+    path = joinpath(repo, "src", "models", "gnc", "planning", "rpo", "path_metrics.jl")
     source = read(path, String)
     function load_metric_source(text)
         isolated = Module(gensym(:MetricBoundary))

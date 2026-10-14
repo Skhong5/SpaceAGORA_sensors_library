@@ -7,7 +7,7 @@ using CSV
 using SHA
 
 const _DEBUG_PROBE_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const _DEBUG_PROBE_SCRIPTS = joinpath(_DEBUG_PROBE_ROOT, "scripts")
+const _DEBUG_PROBE_SCRIPTS = joinpath(_DEBUG_PROBE_ROOT, "scripts", "dev")
 const _DEBUG_PROBE_MATRIX = joinpath(_DEBUG_PROBE_ROOT, "test", "gmat_scenario_matrix.jl")
 
 module DebugProbeDefinitions end
@@ -199,7 +199,7 @@ end
     basilisk = _debug_result(support, basilisk_summary)
     stk = _debug_result(support, stk_summary)
     mktempdir() do tmp
-        csv_path = joinpath(tmp, "tb_matrix_rmse_m.csv")
+        csv_path = joinpath(tmp, "new-output-directory", "tb_matrix_rmse_m.csv")
         checks = Ref(0)
         output = _debug_with_cached_results(support, basilisk, stk) do
             _debug_capture_stdout() do
@@ -305,7 +305,7 @@ end
 @testset "Full-arc entrypoint uses the maintained definition boundary" begin
     # A separate process checks the command entrypoint. Empty arguments must
     # reach its usage check before any campaign or output write.
-    script = joinpath(_DEBUG_PROBE_SCRIPTS, "xval_fullarc.jl")
+    script = joinpath(_DEBUG_PROBE_ROOT, "scripts", "xval_fullarc.jl")
     code = """
         using Test
         err = try

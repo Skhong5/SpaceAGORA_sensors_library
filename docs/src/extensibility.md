@@ -29,6 +29,13 @@ The rule is simple:
 Do not build new extensions by importing internal modules directly unless you
 are intentionally working on SpaceAGORA internals.
 
+Optional packages with a broader integration use a named, versioned facade.
+See the [Optional Adapter Standard](maintainer/adapter_contract.md) for shared
+ownership, compatibility, installation and conformance requirements, and
+[External Propagation Services](maintainer/external_propagation_services.md) for
+external spacecraft integrators. HYPR uses its existing
+[versioned planning services](maintainer/hypr_services.md).
+
 ## Add a force or torque model
 
 Stable interface:
@@ -188,8 +195,8 @@ hook function to implement (thermal models are consumed inside the
 force/torque and heat-load machinery, thruster models inside control
 effectors, and guidance models inside the GNC control hooks). Treat them as
 advanced extension points — subtype the abstract type and follow an existing
-implementation in `src/vehicle/thermal/`, `src/vehicle/actuators/thruster/`,
-or `src/gnc/guidance/` as a model rather than a documented recipe.
+implementation in `src/models/vehicle/thermal/`, `src/models/vehicle/actuators/thruster/`,
+or `src/models/gnc/guidance/` as a model rather than a documented recipe.
 
 ## Design guidance
 

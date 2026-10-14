@@ -11,7 +11,7 @@ user-facing surfaces are:
 
 Cross-platform command conventions used below:
 
-- `julia --project=. src/cli/main.jl ...` works on Windows, Linux, and macOS
+- `julia --project=. src/interfaces/cli/main.jl ...` works on Windows, Linux, and macOS
 - `julia --project=. scripts/ensure_gram_native.jl ...` works on Windows,
   Linux, and macOS
 - `./bin/spaceagora` and `./scripts/ensure_gram_native.sh` remain available as
@@ -49,13 +49,27 @@ need GRAM or SPICE to run the first quickstart example, and there is no bootstra
 Helpful first checks:
 
 ```text
-julia --project=. src/cli/main.jl assets check
-julia --project=. src/cli/main.jl assets setup-open
+julia --project=. src/interfaces/cli/main.jl assets check
+julia --project=. src/interfaces/cli/main.jl assets setup-open
 ```
 
-`assets check` reports which optional local assets are present.
+`assets check` reports whether each local asset root has payload bytes, is missing or empty, or still contains Git LFS pointers. It exits with status 1 when a required entry is not usable; this inventory does not validate payload contents.
 `assets setup-open` summarizes the baseline repo-only path and which licensed
 external assets remain user-provided.
+
+## Optional MuJoCo scenes
+
+MuJoCo proximity scenes are provided by the independent
+[SpaceAGORAMuJoCo.jl companion](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl).
+It owns the native binding, scene dynamics, adapter tests and Basilisk comparison
+harness. Native scenes support Linux x86_64 with MuJoCo 3.11.0.
+
+Install the companion in a separate environment and explicitly load it when
+needed; see [installation and environment](docs/src/user/installation_environment.md#optional-mujoco-companion).
+Its connection to SpaceAGORA follows the same
+[versioned adapter standard](docs/src/maintainer/adapter_contract.md) as other
+optional integrations. Loading SpaceAGORA alone does not load the companion or
+download MuJoCo.
 
 ## Guidance and control with a surrogate atmosphere
 
@@ -137,7 +151,7 @@ julia --project=. examples/AGORA_Basic_Quickstart.jl
 Or through the CLI:
 
 ```text
-julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl
+julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl
 ```
 
 That example is intentionally simple:
@@ -151,7 +165,7 @@ That example is intentionally simple:
 If you only want to verify the end-to-end path with a short run, use:
 
 ```text
-julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --smoke
+julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --smoke
 ```
 
 ## Basic Example
@@ -202,7 +216,7 @@ Before running it, verify:
 Useful commands:
 
 ```text
-julia --project=. src/cli/main.jl assets check
+julia --project=. src/interfaces/cli/main.jl assets check
 julia --project=. scripts/ensure_gram_native.jl
 julia --project=. examples/AGORA_Basic_GRAMEarth.jl
 ```
@@ -215,17 +229,62 @@ If you want fuller mission examples after that, start with:
 Both of those use the same GRAM access pattern as the basic GRAM example, but
 add mission-specific guidance, maneuvers, and higher-fidelity dynamics.
 
+## Reusable missions and viewing results
+
+A `MissionPlan` builds a fresh configuration for each run. `run_mission` saves
+results into a new directory and returns the table, configuration and portable
+viewer payload together. Named phases describe observation windows; named events
+construct fresh callbacks against the configuration that actually runs.
+See the [mission workflow guide](docs/src/user/mission_workflows.md) and
+`examples/AGORA_Mission_Workflow.jl` for a complete example.
+
+The browser viewer is the independent
+[SpaceAGORAVisualizer.jl package](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl).
+Install the tested pair with `julia --project=. scripts/setup_visualizer.jl .visualizer-env`,
+then load both packages in that environment. A saved viewer JSON can also be
+opened with the companion alone, after moving the output directory or closing
+the simulation process. See the [visualization guide](docs/src/user/visualization.md).
+
 ## CLI and docs
 
 - Docs site: [space-falcon-lab.github.io/SpaceAGORA.jl](https://space-falcon-lab.github.io/SpaceAGORA.jl)
-- Cross-platform CLI entrypoint: `julia --project=. src/cli/main.jl`
+- Cross-platform CLI entrypoint: `julia --project=. src/interfaces/cli/main.jl`
 - Linux/macOS wrapper: `./bin/spaceagora`
 - Windows wrapper: `bin\spaceagora.bat`
-- Run an example: `julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl`
-- Asset check: `julia --project=. src/cli/main.jl assets check`
-- Verification study: `julia --project=. src/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1`
+- Run an example: `julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl`
+- Asset check: `julia --project=. src/interfaces/cli/main.jl assets check`
+- Verification study: `julia --project=. src/interfaces/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1`
 
 ## For contributors
+
+Choose a location by what the code is responsible for. The repository has these
+main entry points:
+
+| Location | What belongs here |
+| --- | --- |
+| [src/](src/README.md) | Installed implementation, grouped into interfaces, orchestration, models and foundation. |
+| [examples/](docs/src/user/examples_catalog.md) | Runnable scenarios that demonstrate supported usage, with their shared support code and any separate environments. |
+| [templates/](docs/src/extensibility.md) | Starting points to copy and complete when implementing an extension. |
+| [benchmarks/](docs/src/user/studies_benchmarks.md) | Evaluation procedures, comparison studies and their analysis tools. |
+| [scripts/](scripts/) | Installation, maintenance, diagnostics and operational tools. |
+| [test/](test/README.md) | Automated verification, test helpers and required fixtures. |
+| [docs/](docs/) | User guides, reference documentation and maintained design contracts. |
+| [data/](docs/src/assets.md) | Declared input assets and external-data setup, including the GRAMSuite checkout. |
+| [packages/](packages/README.md) | Optional companion checkouts, installation metadata and the HYPR compatibility loader. |
+| [ext/](ext/) | Julia package extensions owned by SpaceAGORA. |
+| [bin/](bin/) | Thin command launchers for users. |
+| [build/](build/) | The separate environment and driver for building a system image. |
+| [.github/](.github/) | Repository automation and contribution templates. |
+
+`experimental/` remains a separate research area. Browser rendering is maintained in
+[SpaceAGORAVisualizer.jl](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl),
+with installation and usage linked above.
+
+Keep related files together and reuse an existing home before creating another
+folder. The [topology contract](docs/architecture/canonical_topology_contract.md)
+describes the placement and retirement rules. The
+[source directory guide](src/README.md) explains the four source groups and the
+composition loader; the groups do not introduce new Julia namespaces.
 
 - User docs live in `docs/src/` and are built with `julia --project=. docs/make.jl`
 - Generated API pages come from `docs/public_api_symbols.jl`

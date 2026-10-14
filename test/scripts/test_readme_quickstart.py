@@ -174,7 +174,7 @@ class RunnerTests(unittest.TestCase):
         launch = json.loads(self.record.read_text())
         self.assertEqual(result["rows"], 3)
         self.assertEqual(launch["argv"], ["--startup-file=no", "--compiled-modules=existing",
-                         f"--project={self.repo}", str(self.repo / "src/cli/main.jl"),
+                         f"--project={self.repo}", str(self.repo / "src/interfaces/cli/main.jl"),
                          "run", "--example=AGORA_Basic_Quickstart.jl", "--smoke"])
         self.assertNotEqual(launch["cwd"], str(self.repo))
         self.assertFalse(Path(launch["cwd"]).exists())
@@ -184,7 +184,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(launch["duration"], "120.0")
         self.assertEqual(launch["parallel"], "0")
         self.assertTrue((self.repo / "output/simulation_results.csv").is_file())
-        documented = "julia --project=. src/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --smoke"
+        documented = "julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --smoke"
         self.assertIn(documented, (ROOT / "README.md").read_text())
 
     def test_success_without_outputs_rejects_stale_repository_files(self):

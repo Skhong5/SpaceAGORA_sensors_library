@@ -23,9 +23,7 @@ using SpaceAGORA.SimulationModel: GRAMAtmosphereModel, GRAMAtmosphereModelSurrog
 function ppc_ensure_gramsuite_loaded!()
     isdefined(SpaceAGORA, :GRAMSuite) && return nothing
     vendored_gramsuite = joinpath(PPC_REPO_ROOT, "data", "GRAMSuite.jl")
-    if Base.find_package("GRAMSuite") === nothing && isdir(vendored_gramsuite)
-        pushfirst!(LOAD_PATH, vendored_gramsuite)
-    end
+    SpaceAGORA.RuntimeServices._prepare_gramsuite_load_path!(vendored_gramsuite; prepend=true)
     @eval import GRAMSuite
     return nothing
 end
@@ -81,7 +79,7 @@ the command line.
 Which of the two ways of reading one shared native `GRAMAtmosphereModel` a run
 uses is not part of `SimulationConfiguration` -- it is read from `SPACEAGORA_*`
 env when the density callback is assembled
-(`src/simulation/callbacks/density_callbacks/vacuum_predicted_gram.jl` for the
+(`src/orchestration/simulation/callbacks/density_callbacks/vacuum_predicted_gram.jl` for the
 look-ahead cache, `.../density_callbacks/config.jl` for the freeze-per-accepted-
 step switch). So the case builder cannot express it and the phase definition
 cannot either; the case name has to.
@@ -432,10 +430,10 @@ function ppc_build_config(;
     # analysis/verification/telemetry_verification/ reads it, and the solver runs
     # on save_everystep with no saveat, so varying it changes literally nothing
     # about the work performed. The real mechanism is
-    # get_data_saving_callback (src/simulation/callbacks/event_callbacks.jl),
+    # get_data_saving_callback (src/orchestration/simulation/callbacks/event_callbacks.jl),
     # which builds `SavingCallback(...; saveat=data_rate)` -- but it is only
     # installed when `simulation_settings.results` is true
-    # (src/simulation/callbacks/density_callbacks/assembly.jl), and this harness
+    # (src/orchestration/simulation/callbacks/density_callbacks/assembly.jl), and this harness
     # hardcoded results=false, so every benchmark case to date has done no
     # trajectory output at all. Setting results=true both installs that callback
     # and (via `needs_full_solution` in simulation/engine/execution.jl) turns on
@@ -1033,7 +1031,7 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
     #
     # SATELLITE COUNT IS IN THE CASE NAME, and the ladder is deliberately run at a
     # smaller N than the other axes, because the actuator rung is quadratic in N.
-    # get_control_callbacks (src/simulation/callbacks/control_callbacks.jl) builds
+    # get_control_callbacks (src/orchestration/simulation/callbacks/control_callbacks.jl) builds
     # one PeriodicCallback per control effector and each one loops over *all*
     # num_sats, so N per-satellite MagneticMomentumManagerModels cost N^2
     # calcControlEffect! calls per tick -- of which N are the intended ones and
@@ -1057,7 +1055,14 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
         # At N>=128 a 1 h mission puts the model-count rungs at roughly 3-47 s;
         # at N<128 a 600 s mission puts the actuator rung at ~35 s. Each
         # sub-ladder is internally single-variable, which is what the axis needs.
-        stack_time = stack_n >= 128 ?
+        #
+        # `stack<N>_e6_actuated_saved` is the coupled comparison case
+        # (benchmarks/studies/coupled_local_comparison): e6 with trajectory output
+        # on, flown for the same mission at every N so a spacecraft-count sweep
+        # varies only N. Its smoke duration, 120 s, is the duration of the
+        # 32-spacecraft coupled experiment it reproduces.
+        stack_saved = endswith(case_name, "_saved")
+        stack_time = (stack_n >= 128 && !stack_saved) ?
             ppc_mission_time(cfg.profile; test=10.0, smoke=300.0, full=3600.0) :
             ppc_mission_time(cfg.profile; test=10.0, smoke=120.0, full=600.0)
         stack_harmonics = ppc_harmonics_model(planet, 20)
@@ -1065,7 +1070,7 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
         stack_nbody = NBodyGravityModel(
             body_names=("Sun", "Moon"), primary_body_name="Earth", planet=planet
         )
-        stack_rung = match(r"^stack[0-9]+_(e[0-9]+_[a-z0-9]+)$", case_name)
+        stack_rung = match(r"^stack[0-9]+_(e[0-9]+_[a-z0-9]+)(?:_saved)?$", case_name)
         stack_rung === nothing &&
             throw(ArgumentError("Unknown effector-ladder case '$case_name'."))
         stack_rung = stack_rung.captures[1]
@@ -1117,9 +1122,13 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
                 density_model=stack_density,
                 control_effectors=Tuple(stack_mgr),
                 control_rates=fill(1.0, stack_n),
-                dt_max_orbit=10.0
+                dt_max_orbit=10.0,
+                # ASSUMED: ppc_build_config's default 10 s data_rate; the
+                # reproduced experiment's saving cadence is not recorded.
+                results=stack_saved
             )
         end
+        stack_saved && throw(ArgumentError("'_saved' is defined only for the e6_actuated rung: '$case_name'."))
         return ppc_build_config(
             planet=planet,
             spacecraft=stack_spacecraft,
@@ -1768,6 +1777,11 @@ function ppc_case_catalog()::Dict{String, PPCCaseSpec}
         add!("stack$(n)_e4_nbody", "effector_ladder", "$(n) spacecraft, harmonics + SRP + third-body + aero (4 effectors)")
         add!("stack$(n)_e5_6dof", "effector_ladder", "$(n) spacecraft, same 4 effectors with attitude propagation on", orientation=true)
         add!("stack$(n)_e6_actuated", "effector_ladder", "$(n) spacecraft, 6-DOF plus LVLH controller and per-satellite magnetorquer actuators", orientation=true)
+    end
+    # Coupled comparison case (benchmarks/studies/coupled_local_comparison): e6
+    # with trajectory output and an N-independent mission length.
+    for n in (32, 64, 128, 256)
+        add!("stack$(n)_e6_actuated_saved", "coupled_comparison", "$(n) spacecraft, e6_actuated with saved trajectories, 120 s smoke mission at every N", orientation=true)
     end
 
     # Interacting vs. independent propagation at matched work (B12).

@@ -1,3 +1,4 @@
+Base.include(@__MODULE__, joinpath(@__DIR__, "..", "..", "helpers", "load_visualizer.jl"))
 using Test
 using SpaceAGORA
 using StaticArrays
@@ -390,7 +391,7 @@ end
         @test isnan(y[1]) && isnan(y[3]) && y[2] == 1001f0
         payload = SV.viewer_payload(fleet, df; include_textures=false, channels=specs)
         @test only(payload["frames"]["channels"])["name"] == "error_deg"
-        html = SV.render_viewer_html(payload)
+        html = SpaceAGORAVisualizer.render_viewer_html(payload)
         @test !occursin("<script>label</script>", html)
         @test occursin("<script>label<\\/script>", html)
     end
@@ -649,9 +650,9 @@ end
         df = _synthetic_results(scene)
         payload = SV.viewer_payload(scene, df; include_textures=false, references=[(t_s=t, pos_m=pos)])
         @test length(payload["references"]) == 1
-        @test haskey(SV.viewer_import_map()["imports"], "viewer/references.js")
-        @test haskey(SV.viewer_import_map()["imports"], "viewer/plots.js")
-        @test haskey(SV.viewer_import_map()["imports"], "viewer/terrain.js")
+        @test haskey(SpaceAGORAVisualizer.viewer_import_map()["imports"], "viewer/references.js")
+        @test haskey(SpaceAGORAVisualizer.viewer_import_map()["imports"], "viewer/plots.js")
+        @test haskey(SpaceAGORAVisualizer.viewer_import_map()["imports"], "viewer/terrain.js")
     end
 
     @testset "STL overrides" begin
@@ -682,12 +683,12 @@ end
     end
 
     @testset "import map and HTML assembly" begin
-        imports = SV.viewer_import_map()["imports"]
+        imports = SpaceAGORAVisualizer.viewer_import_map()["imports"]
         for key in ("three", "three/addons/controls/OrbitControls.js", "three/addons/loaders/STLLoader.js", "three/addons/loaders/OBJLoader.js", "three/addons/loaders/GLTFLoader.js", "three/addons/utils/BufferGeometryUtils.js", "viewer/main.js", "viewer/globe.js", "viewer/data.js", "viewer/spacecraft.js", "viewer/lod.js", "viewer/timeline.js", "viewer/ui.js")
             @test haskey(imports, key)
             @test startswith(imports[key], "data:text/javascript;base64,")
         end
-        @test_throws ArgumentError SV.viewer_import_map(mktempdir())
+        @test_throws ArgumentError SpaceAGORAVisualizer.viewer_import_map(mktempdir())
 
         dir = mktempdir()
         args = _viewer_config(results_directory=dir)
@@ -696,7 +697,7 @@ end
         payload = SV.viewer_payload(scene, df; texture_resolution="4k", options=Dict("frame" => "planet_fixed", "title" => "a</script>b"))
         @test haskey(payload["textures"], "mars")
         @test payload["textures"]["mars"]["resolution"] == "4k"
-        html = SV.render_viewer_html(payload; title="T<1>")
+        html = SpaceAGORAVisualizer.render_viewer_html(payload; title="T<1>")
         @test occursin("<title>T&lt;1&gt;</title>", html)
         @test occursin("window.SPACEAGORA_VIEWER = {", html)
         @test occursin("\"planet_fixed\"", html)
@@ -708,7 +709,7 @@ end
 
         no_tex = SV.viewer_payload(scene, df; include_textures=false)
         @test isempty(no_tex["textures"])
-        @test_throws ArgumentError SV.render_viewer_html(payload; viewer_dir=mktempdir())
+        @test_throws ArgumentError SpaceAGORAVisualizer.render_viewer_html(payload; viewer_dir=mktempdir())
     end
 
     @testset "end-to-end export from a flagged run" begin
@@ -787,7 +788,9 @@ end
         @test_throws ArgumentError run_cli(["visualize"]; io=devnull)
         @test_throws ArgumentError run_cli(["visualize", "--run=$(dir)", "--bogus"]; io=devnull)
         print_out = IOBuffer()
-        @test run_cli(["run", "--example=AGORA_Basic_Quickstart.jl", "--visualize", "--print-only"]; io=print_out) == 0
+        withenv("SPACEAGORA_VISUALIZER_ENV" => ENV["SPACEAGORA_VISUALIZER_TEST_ENV"]) do
+            @test run_cli(["run", "--example=AGORA_Basic_Quickstart.jl", "--visualize", "--print-only"]; io=print_out) == 0
+        end
         @test occursin("SPACEAGORA_VISUALIZATION=1", replace(String(take!(print_out)), " => " => "="))
 
         # A run without the flag has no sidecar to export.
@@ -826,11 +829,11 @@ end
     # The module is registered in every list that has to carry it, in the same
     # relative position: the bundler, the development harness, the standalone
     # builder. Each shipped entrypoint must carry the same module.
-    @test "groundtrack.js" in SV.VIEWER_MODULES
-    @test isfile(joinpath(SV.VIEWER_DIR, "src", "groundtrack.js"))
+    @test "groundtrack.js" in SpaceAGORAVisualizer.VIEWER_MODULES
+    @test isfile(joinpath(SpaceAGORAVisualizer.viewer_directory(), "src", "groundtrack.js"))
     for (path, needle) in (
-        (joinpath(REPO, "viewer", "dev.html"), "\"viewer/groundtrack.js\""),
-        (joinpath(REPO, "viewer", "build_standalone.py"), "\"groundtrack.js\""),
+        (joinpath(SpaceAGORAVisualizer.viewer_directory(), "dev.html"), "\"viewer/groundtrack.js\""),
+        (joinpath(SpaceAGORAVisualizer.viewer_directory(), "build_standalone.py"), "\"groundtrack.js\""),
     )
         @test occursin(needle, read(path, String))
     end

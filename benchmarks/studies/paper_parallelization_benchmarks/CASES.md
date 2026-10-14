@@ -632,9 +632,9 @@ inner-speedup curve the planner read and the reason for its choice.
 
 **Can R7 give a sample more than one thread?** Only when the planner has an
 inner-speedup curve for the workload (`_predictive_inner_candidates!` in
-`src/simulation/campaigns/predictive_planner.jl`); without one every concurrent
+`src/orchestration/simulation/campaigns/predictive_planner.jl`); without one every concurrent
 plan runs its samples at budget 1. The curve (`rhs_inner_speedup_curve`,
-`src/simulation/engine/rhs_calibration.jl`) is assembled from RHS calibration
+`src/orchestration/simulation/engine/rhs_calibration.jl`) is assembled from RHS calibration
 store rows that match the workload's signature stem: machine, spacecraft
 bucket, effector set, density model and the code token
 (`_RHS_CALIB_CODE_TOKEN`, currently `2026-09-23`), whatever budget or
@@ -786,7 +786,7 @@ GRAM case" could be measured but never attributed to a decision.
 
 The selected plan lives in per-solve `shared_buffers.rhs_plan_override` and is
 gone once the solve returns, so `record_rhs_plan_selection!`
-(`src/parallel/policy/policy_telemetry.jl`) copies it into the process-level
+(`src/orchestration/parallel/policy/policy_telemetry.jl`) copies it into the process-level
 policy telemetry, which `ppc_policy_snapshot` reads back after the timed batch.
 Telemetry is reset immediately before the timed region so warm-up decisions are
 not mixed in.

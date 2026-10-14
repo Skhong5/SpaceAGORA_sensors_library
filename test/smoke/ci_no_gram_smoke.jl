@@ -16,7 +16,7 @@ lock(RuntimeServices.SPICE_LOCK) do
     kclear()
 end
 # kclear() wipes CSPICE's kernel pool but not the furnished-kernel /
-# planet-instance caches in src/environment/ephemerides/planets.jl; without
+# planet-instance caches in src/models/environment/ephemerides/planets.jl; without
 # this, a subsequent Earth(...)/Mars(...) call with a previously-seen key
 # (e.g. from ci_clean_depot_smoke.jl / ci_threaded_smoke.jl running earlier
 # in the same process via test/smoke/runtests.jl) silently skips

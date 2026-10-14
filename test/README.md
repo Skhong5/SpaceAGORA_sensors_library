@@ -1,7 +1,7 @@
 # Test Layout
 
-Current layout (flat, CI-oriented — a prior purpose-oriented restructure was
-reverted to keep this repo mergeable with its upstream):
+Test folders follow their execution and dependency boundaries. Shared drivers
+select the suites; helpers supply reusable setup and scenarios.
 
 - `test/runtests.jl`
   Default package test entrypoint. Delegates to `test/integration/runtests.jl`,
@@ -12,9 +12,14 @@ reverted to keep this repo mergeable with its upstream):
   `SimulationModel`, `SimulationEngine`, `TelemetryVerification`, the parallel
   modules and a handful of frame helpers as aliases into it, so there is one
   copy of every module in the process. It does not include `src/`; the one
-  exception is `src/mission/operations/maneuver_plans.jl`, which is not part
+  exception is `src/orchestration/mission/operations/maneuver_plans.jl`, which is not part
   of the package. Suites 01 and 03 deliberately raw-include source files into
   throwaway sandbox modules to test standalone loading — keep those.
+  Reference-system sandboxes use `test/helpers/reference_system_sandbox.jl`:
+  it raw-loads the canonical Geodesy and OrbitalGeometry numeric sources before
+  the frame leaf, without importing SpaceAGORA or RuntimeServices. This preserves
+  includer-local `args` and the cold missing-lock probe while keeping dependency
+  orchestration out of the internal `reference_system.jl` leaf.
 - `test/unit/`
   A smaller, standalone (`using SpaceAGORA`, no shared-scope dependency) set of
   domain tests, runnable on their own via `test/unit/runtests.jl`. The default
@@ -22,9 +27,9 @@ reverted to keep this repo mergeable with its upstream):
   dispatched from `test/suites/09_probe_drivers.jl` with the coverage flag
   forwarded, so their line data reaches the coverage gate.
 - `test/integration/`
-  Current home of the legacy end-to-end harness (mock models, builder helpers,
-  `test/suites/` includes) plus example, persistence, CLI, and telemetry-facing
-  tests.
+  The shared integration harness (mock models, builder helpers and `test/suites/`
+  includes), plus the `examples/` regression entrypoint. Domain folders are added
+  when they contain tests, rather than reserved in advance.
 - `test/smoke/`
   Environment and startup smokes such as clean-depot, threaded, and no-GRAM checks.
 - `test/grid_atmosphere/`

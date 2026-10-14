@@ -612,8 +612,8 @@ end
         return join(no_line, "\n")
     end
 
-    run_src = strip_comments(read(joinpath(REPO_ROOT, "src", "simulation", "engine", "execution.jl"), String))
-    legacy_elements_path = joinpath(REPO_ROOT, "src", "simulation", "execution", "simulation_elements.jl")
+    run_src = strip_comments(read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "execution.jl"), String))
+    legacy_elements_path = joinpath(REPO_ROOT, "src", "orchestration", "simulation", "execution", "simulation_elements.jl")
 
     # Canonical engine path should stay SI-native.
     @test !occursin("cnf.DU", run_src)
@@ -991,7 +991,7 @@ end
         using LinearAlgebra
         using StaticArrays
         args = :legacy_topography_args
-        include(joinpath(Main.REPO_ROOT, "src", "core", "interfaces", "reference_system.jl"))
+        include(joinpath(Main.REPO_ROOT, "test", "helpers", "reference_system_sandbox.jl"))
     end))
     topo_sandbox = getfield(Main, topo_module_name)
     lla_topo = topo_sandbox.rtolatlong(rp_topo, planet_topo, true)
