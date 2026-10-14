@@ -89,7 +89,7 @@ const CYGNSS_SRP_CR = 1.3                  # ASSUMPTION: a generic small-satelli
 # --- the drawn vehicle ------------------------------------------------------
 # NASA's own 3D model of the observatory (NASA 3D Resources, "Cyclone Global
 # Navigation Satellite System (CYGNSS)"), decompressed for the viewer; see
-# `data/models/README.md` for the provenance. It replaces the link boxes in the
+# `data/scene/models/README.md` for the provenance. It replaces the link boxes in the
 # page only. The SIMULATED vehicle is unchanged: drag, SRP and mass properties
 # still come from the generic public box above, so the trajectory does not
 # depend on the model and no restricted geometry is read, embedded or drawn.

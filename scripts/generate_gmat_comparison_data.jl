@@ -45,10 +45,10 @@ mkpath(OUTPUT_DIR)
 
 # Harmonics coefficient files used in the GMAT comparison matrix
 const HARMONICS = Dict{String, String}(
-    "Earth" => joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "egm96.csv"),
-    "Mars"  => joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "Mars50c.csv"),
-    "Venus" => joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "MGNP180U.csv"),
-    "Luna"  => joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "LP165P.csv"),
+    "Earth" => joinpath(REPO_ROOT, "data", "planets", "gravity", "egm96.csv"),
+    "Mars"  => joinpath(REPO_ROOT, "data", "planets", "gravity", "Mars50c.csv"),
+    "Venus" => joinpath(REPO_ROOT, "data", "planets", "gravity", "MGNP180U.csv"),
+    "Luna"  => joinpath(REPO_ROOT, "data", "planets", "gravity", "LP165P.csv"),
 )
 
 # Third-body perturbers per central body, matching GMAT Python script

@@ -320,8 +320,8 @@ SM.FilePaths(
     results              = "Results",
     GRAM                 = "data/GRAMSuite.jl/GRAM Suite 2.0",
     SPICE                = "data/GRAMSuite.jl/GRAM Suite 2.0/SPICE",
-    topography_harmonics = "data/Topography_harmonics_data",
-    gravity_harmonics    = "data/Gravity_harmonics_data"
+    topography_harmonics = "data/planets/topography",
+    gravity_harmonics    = "data/planets/gravity"
 )
 ```
 

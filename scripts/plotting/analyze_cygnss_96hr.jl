@@ -14,7 +14,7 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const OUTDIR = joinpath(REPO_ROOT, "output", "cygnss_96hr_analysis")
 const CYGNSS_48HR_PATH = joinpath(REPO_ROOT, "data", "telemetry", "CYGNSS", "cygnss_data_48hr.feather")
 const CYG04_96HR_PATH = joinpath(REPO_ROOT, "data", "telemetry", "CYGNSS", "cyg04_nasa_pvt_96hr.feather")
-const EARTH_HARMONICS_FILE = "data/Gravity_harmonics_data/EarthGGM05C.csv"
+const EARTH_HARMONICS_FILE = "data/planets/gravity/EarthGGM05C.csv"
 
 Base.@kwdef struct TrajectorySeries
     name::String

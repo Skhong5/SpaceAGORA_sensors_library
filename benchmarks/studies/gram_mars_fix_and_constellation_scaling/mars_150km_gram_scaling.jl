@@ -50,7 +50,7 @@ const N_REPEATS = 1
 function build_constellation_config()
     planet = Mars("", SPICE_PATH)
     harmonics = GravitationalHarmonicsModel(
-        20, 20, joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "Mars50c.csv"), planet
+        20, 20, joinpath(REPO_ROOT, "data", "planets", "gravity", "Mars50c.csv"), planet
     )
 
     spacecraft = SpacecraftModel[]

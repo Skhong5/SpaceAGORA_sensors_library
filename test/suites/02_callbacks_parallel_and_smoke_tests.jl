@@ -1389,7 +1389,7 @@ end
 
 @testset "Effector Cost Probe" begin
     PC = SimulationModel.ParallelCost
-    harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_file = joinpath(REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv")
     harmonics = GravitationalHarmonicsModel(4, 4, harmonics_file, EARTH)
     cheap = _ProbeWorkEffector(64)
     dear  = _ProbeWorkEffector(16_384)
@@ -1576,7 +1576,7 @@ end
     # to take a solve down.
     Threads.nthreads() > 1 || return
 
-    harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_file = joinpath(REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv")
     args_sweep = build_config_multi(
         spacecraft=[
             make_spacecraft(ra_alt_m=500e3 + 10e3 * i, rp_alt_m=480e3 + 5e3 * i,
@@ -1639,7 +1639,7 @@ end
     # optimisation silently altered trajectories.
     Threads.nthreads() > 1 || return
 
-    harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_file = joinpath(REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv")
     args_red = build_config_multi(
         spacecraft=[
             make_spacecraft(ra_alt_m=500e3 + 10e3 * (i % 7), rp_alt_m=480e3 + 5e3 * (i % 5),
@@ -1898,7 +1898,7 @@ end
     end
 
     # ── Calibration guard: SPACEAGORA_RHS_CALIBRATE=off skips entirely ───────
-    harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_file = joinpath(REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv")
     harmonics_model = GravitationalHarmonicsModel(4, 4, harmonics_file, EARTH)
 
     args_calib = build_config_multi(

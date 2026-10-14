@@ -46,7 +46,7 @@ function _validated_mission_history(mission)
     return mission
 end
 
-const TEXTURES_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "..", "data", "textures"))
+const TEXTURES_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "..", "data", "scene", "textures"))
 # Plume-surface interaction block of the frames payload: one Float32 array per
 # quantity, frame-major then spacecraft, from the `sc{i}_plume_*` result columns.
 const PLUME_FRAME_FIELDS = ("height_m", "shear_pa", "pressure_pa", "erosion_kg_s", "eroded_kg", "ejecta_mps", "ground_effect_n")
@@ -64,7 +64,7 @@ const DEFAULT_DATA_BUDGET_MB = 150.0
 """
     texture_manifest(dir=TEXTURES_DIR) -> Dict{String, Dict{String, Dict{String, Any}}}
 
-Entries of `data/textures/manifest.toml` keyed by body (lowercase planet
+Entries of `data/scene/textures/manifest.toml` keyed by body (lowercase planet
 name) and then by resolution tier (`"4k"`, `"8k"`, ...; an entry without a
 `resolution` field is treated as `"4k"`), each with an absolute `path` added.
 Empty when the manifest is absent.

@@ -108,7 +108,7 @@ end
     @test PC._cost_aero_prepass_effector === SE._aero_prepass_effector === ER.aero_prepass_effector
     E = SM.Earth()
     harm_file = joinpath(@__DIR__, "..", "..", "..", "data",
-                         "Gravity_harmonics_data", "EarthGGM05C.csv")
+                         "planets", "gravity", "EarthGGM05C.csv")
 
     effectors = Any[
         SM.InverseSquaredGravityModel(),

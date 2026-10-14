@@ -32,4 +32,4 @@ bytes = 53621
 name = "Mars50c.csv"
 path = "gravity/Mars50c.csv"
 sha256 = "2dc04ee568486e80865325c453744c9819d2135e474b26653aa17e1db3847089"
-source = "https://raw.githubusercontent.com/Space-FALCON-Lab/SpaceAGORA.jl/62d56d8b2cf440922ae9f013deb9d8a77b3aeed4/data/Gravity_harmonics_data/Mars50c.csv"
+source = "https://raw.githubusercontent.com/Space-FALCON-Lab/SpaceAGORA.jl/62d56d8b2cf440922ae9f013deb9d8a77b3aeed4/data/planets/gravity/Mars50c.csv"

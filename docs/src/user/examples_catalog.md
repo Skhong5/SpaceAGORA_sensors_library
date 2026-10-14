@@ -130,7 +130,7 @@ julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Earth_Aerobraki
 
 Related native-GRAM scripts are `AGORA_Earth_Aerobraking.jl`,
 `AGORA_Odyssey.jl`, `AGORA_Vex.jl` and `AGORA_Mars_RAAN_Scenario.jl`.
-These also use gravity coefficient files under `data/Gravity_harmonics_data/`.
+These also use gravity coefficient files under `data/planets/gravity/`.
 Odyssey and Venus Express need their mission SPICE kernels for initial conditions
 and reference plots. A full Venus Express run additionally reads the local
 `data/Maneuver_plans/vex.csv`; when that file is absent, smoke mode uses a small
@@ -187,7 +187,7 @@ julia --project=. examples/Cloth_Panel_Attachment_Demo.jl
 Use these when the question is about one force, torque, control, or navigation
 surface rather than a full mission case. Every script in this table needs the
 SPICE files, but none needs the native GRAM library. `Earth_Navigation.jl` also
-reads `data/Gravity_harmonics_data/EarthGGM05C.csv`. The descriptions reflect
+reads `data/planets/gravity/EarthGGM05C.csv`. The descriptions reflect
 the configured model, including files whose historical names say “Control”:
 
 | Script | Checks |
@@ -218,7 +218,7 @@ the root project. Baseline examples continue to use `--project=.`.
 The RPO examples need the SPICE kernels from the `data/GRAMSuite.jl` submodule
 ([GRAMSuite Setup](gramsuite_setup.md)); they do not need the native GRAM
 library. Their default station also uses the repository asset
-`data/rpo/station_geometry/gateway/Gateway_Core.stl`. Start with one RPO case:
+`data/scene/models/gateway_core.stl`. Start with one RPO case:
 
 ```text
 julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC.jl

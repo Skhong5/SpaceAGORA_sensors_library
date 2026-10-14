@@ -23,7 +23,7 @@ Run these scripts from the repository with its Julia environment instantiated.
 The four basic demonstrations below use analytic ephemerides and either no
 atmosphere or an exponential model.
 Native GRAM, SPICE kernels and private telemetry are not required. The ISS display
-uses the tracked NASA model in `data/models/`; it is display geometry, not the
+uses the tracked NASA model in `data/scene/models/`; it is display geometry, not the
 physical mass or aerodynamic mesh.
 
 | Script | Default simulated time | What it demonstrates |
@@ -129,7 +129,7 @@ starting 2.5 hours before the searched closest approach. All accept
 bounded run. Existing nonempty outputs are refused, never reused or removed.
 `SPACEAGORA_DEMO_FORCE` no longer overrides that protection.
 
-These drivers use the tracked mission display models in `data/models/` and
+These drivers use the tracked mission display models in `data/scene/models/` and
 require existing SPICE kernels (`SPACEAGORA_SPICE_PATH`). Magellan, Odyssey and
 Cassini require installed native GRAM support; each wrapper is constructed explicitly
 at the simulation's initial epoch. This does not validate native time-system,

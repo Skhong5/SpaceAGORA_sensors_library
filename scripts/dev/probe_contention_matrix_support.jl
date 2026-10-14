@@ -7,7 +7,7 @@
 
 const _SUPPORT_REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const _SUPPORT_HARM_FILE =
-    joinpath(_SUPPORT_REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+    joinpath(_SUPPORT_REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv")
 const _SUPPORT_N = parse(Int, get(ENV, "PCM_N", "256"))
 const _SUPPORT_L = parse(Int, get(ENV, "PCM_L", "20"))
 # One hour, matching heavy_1024sat_fullstack_1hr. The span matters: the

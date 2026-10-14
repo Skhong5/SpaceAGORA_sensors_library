@@ -24,7 +24,7 @@ const SE = SpaceAGORA.SimulationEngine
 const PC = SM.ParallelCost
 
 const EARTH = SM.Earth()
-const HARM_FILE = joinpath(@__DIR__, "..", "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+const HARM_FILE = joinpath(@__DIR__, "..", "data", "planets", "gravity", "EarthGGM05C.csv")
 
 function make_sc(; ra_alt_m, rp_alt_m, ν_deg)
     root = SM.Link(root=true, m=500.0, ref_area=12.0)

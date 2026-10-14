@@ -198,7 +198,7 @@ Large tables are written as both `.csv` and `.feather`:
   combined single-file outputs rebuilt from the orbit chunks after each case
 
 The `harmonics_low` case uses 20x20 gravity harmonics for Mars, Earth, and
-Venus. Titan uses `data/Gravity_harmonics_data/titan5.csv`, capped at degree and
+Venus. Titan uses `data/planets/gravity/titan5.csv`, capped at degree and
 order 5. Titan third-body cases include Saturn and the Sun.
 
 Generate perturbing-force ratio summaries and plots after a run:

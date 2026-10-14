@@ -1,8 +1,8 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
 const DEFAULT_OUTPUT_DIR = joinpath(REPO_ROOT, "output", "performance")
 const SPICE_PATH = joinpath(REPO_ROOT, "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
-const EARTH_HARMONICS_FILE = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
-const EARTH_GRAM_SURROGATE_FILE = joinpath(REPO_ROOT, "data", "GRAM_surrogate", "earth_surrogate.jls")
+const EARTH_HARMONICS_FILE = joinpath(REPO_ROOT, "data/planets/gravity", "EarthGGM05C.csv")
+const EARTH_GRAM_SURROGATE_FILE = joinpath(REPO_ROOT, "data", "planets", "gram_surrogate", "earth_surrogate.jls")
 const PERF_BASELINE_SCENARIO = "single_j2"
 const _PERF_POLICY_ENV_NAMES = (
     "SPACEAGORA_OUTER_PARALLEL_ACTIVE",

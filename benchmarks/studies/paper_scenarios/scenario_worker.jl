@@ -80,7 +80,7 @@ function _ps_gravity_effector(planet)
     PS_GRAVITY == "invsq" && return InverseSquaredGravityModel()
     lm = PS_GRAVITY == "l50" ? 50 : 20
     return GravitationalHarmonicsModel(
-        lm, lm, joinpath(PS_REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv"), planet
+        lm, lm, joinpath(PS_REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv"), planet
     )
 end
 
@@ -179,7 +179,7 @@ function _ps_mc_sample_defn_expr()::Expr
                 lm = $(gravity) == "l50" ? 50 : 20
                 GravitationalHarmonicsModel(
                     lm, lm,
-                    joinpath($(PS_REPO_ROOT), "data", "Gravity_harmonics_data", "EarthGGM05C.csv"),
+                    joinpath($(PS_REPO_ROOT), "data", "planets", "gravity", "EarthGGM05C.csv"),
                     planet,
                 )
             end
