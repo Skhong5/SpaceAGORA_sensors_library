@@ -1,12 +1,12 @@
 # CYGNSS FM01: measured-wheel diagnostic and recorded-command reconstruction.
 # Run with scripts/dev/run.jl. The private CYGNSS reconstruction record is
-# linked from scripts/dev/viewer_demos/README.md.
+# described in benchmarks/studies/cygnss_reconstruction/README.md.
 # Raw telemetry, fitted/memo constants, generated pages and scores remain private.
 # The wheels-only adequacy check is deliberately independent of execution success.
 # Demands are not automatically executed torques. The rwCmd and tqDmdCtrl comparisons
 # retain the same initial state and constants; neither includes a torque-rod model.
 using SpaceAGORAVisualizer
-include(joinpath(@__DIR__, "common.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "scripts", "dev", "viewer_demos", "common.jl"))
 include(joinpath(@__DIR__, "cygnss_slew_telemetry.jl"))
 using .CygnssSlewTelemetry
 include(joinpath(@__DIR__, "cygnss_command_replay.jl"))
