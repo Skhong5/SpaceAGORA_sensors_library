@@ -351,7 +351,9 @@ function _save_simulation_results_if_enabled!(
     results_df = _build_results_dataframe(results_times, results_data, save_fields_resolved, args)
     csv_path = nothing
     if args.simulation_settings.results
-        csv_path = _write_results_csv!(results_df, args)
+        if args.simulation_settings.save_csv
+            csv_path = _write_results_csv!(results_df, args)
+        end
         if _typed_save_bundle_enabled()
             _write_results_bundle!(results_df, results_times, args; csv_path=csv_path)
         end
