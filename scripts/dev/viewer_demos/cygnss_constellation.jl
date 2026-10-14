@@ -26,8 +26,9 @@
 # product's own bad navigation fixes, which a ghost would otherwise draw as a
 # spike.
 #
-# Force model, following `docs/spaceagora_cygnss_reconstruction_record.md`
-# section 3: EarthGGM05C gravity to degree and order 50, Sun and Moon third
+# Force model, following the private CYGNSS reconstruction record, section 3
+# (archive link in scripts/dev/viewer_demos/README.md): EarthGGM05C gravity
+# to degree and order 50, Sun and Moon third
 # body, solar radiation pressure, and NRLMSISE-00 drag with real CelesTrak
 # space-weather indices.
 #

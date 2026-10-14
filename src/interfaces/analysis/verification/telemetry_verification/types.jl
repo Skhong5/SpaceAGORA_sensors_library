@@ -149,10 +149,11 @@ Base.@kwdef struct OrbitEventsScenarioConfig <: AbstractScenarioConfig
     # Explicit override for the central-body GM (m^3/s^2) used by the harmonics
     # model, bypassing both the file's declared `gm_m3s2` header and the
     # generic `planet.μ` fallback. Used when a scenario must match a specific
-    # reference tool's own GM convention for a body (e.g. GMAT's vs. STK's own
-    # J0 defaults, which do not always agree with each other -- see
-    # spaceagora_j0_gm_parity_investigation.md). `nothing` preserves the
-    # existing degree/file-driven behavior.
+    # reference tool's own GM convention for a body. `nothing` preserves the
+    # existing degree/file-driven behavior. Historical GMAT/STK comparison:
+    # private `spaceagora_j0_gm_parity_investigation.md` in
+    # the private research archive,
+    # October 14, 2026 cleanup snapshot, original path docs/.
     gravity_harmonics_gm_override_m3s2::Union{Nothing, Float64} = nothing
     nbody_bodies::Vector{String} = String[]
     srp_enabled::Bool = false
@@ -255,10 +256,11 @@ Base.@kwdef struct TimeAlignedScenarioConfig <: AbstractScenarioConfig
     # Explicit override for the central-body GM (m^3/s^2) used by the harmonics
     # model, bypassing both the file's declared `gm_m3s2` header and the
     # generic `planet.μ` fallback. Used when a scenario must match a specific
-    # reference tool's own GM convention for a body (e.g. GMAT's vs. STK's own
-    # J0 defaults, which do not always agree with each other -- see
-    # spaceagora_j0_gm_parity_investigation.md). `nothing` preserves the
-    # existing degree/file-driven behavior.
+    # reference tool's own GM convention for a body. `nothing` preserves the
+    # existing degree/file-driven behavior. Historical GMAT/STK comparison:
+    # private `spaceagora_j0_gm_parity_investigation.md` in
+    # the private research archive,
+    # October 14, 2026 cleanup snapshot, original path docs/.
     gravity_harmonics_gm_override_m3s2::Union{Nothing, Float64} = nothing
     nbody_bodies::Vector{String} = String[]
     srp_enabled::Bool = false

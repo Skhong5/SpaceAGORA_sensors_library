@@ -210,9 +210,11 @@ leap-second calendar fields to the general `InitialTime` API.
 
 ## CYGNSS research tools
 
-Use the [reconstruction record](../../../docs/spaceagora_cygnss_reconstruction_record.md)
-for the separate development environment, seven-spacecraft Earthdata fetch,
+Use the private reconstruction record, originally
+`docs/spaceagora_cygnss_reconstruction_record.md`, for the separate development
+environment, seven-spacecraft Earthdata fetch,
 private-input access, and the distinction between the wheels-only diagnostic
-and recorded-command reconstruction. Generated flight pages remain private.
+and recorded-command reconstruction. Generated flight pages remain private. Authorized collaborators can obtain the
+October 14, 2026 archive snapshot from the maintainers.
 The wheels-only physical-adequacy check is currently failing, even when the
 demo completes. Do not report execution success as physical acceptance.

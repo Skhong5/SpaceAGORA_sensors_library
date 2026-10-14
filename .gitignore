@@ -146,6 +146,8 @@ viewer/dev_data.js
 
 # Optional terrain asset tooling environment
 .venv-terrain/
+# Fetched terrain site bundles (scripts/dev/terrain/fetch_moon_site.py writes here)
+data/terrain/
 
 # Reproducible public Odyssey example environment resolves on each platform.
 examples/odyssey_surrogate_env/Manifest.toml
@@ -171,3 +173,14 @@ benchmarks/studies/small_wins/results/
 
 # Optional viewer installation environment
 .visualizer-env/
+
+# Generated study reports and captures; historical copies belong in the research archive.
+/benchmarks/studies/edl_aerocapture_gp_uncertainty/RESULTS.md
+/benchmarks/studies/third_body_cost/profile_*.txt
+/benchmarks/studies/aero_batch/profile_*.txt
+/benchmarks/studies/gram_multisat_harness/*.mem
+/benchmarks/studies/gram_multisat_harness/*.out
+/benchmarks/studies/gram_multisat_harness/b6_fixed.json
+/benchmarks/studies/gram_multisat_harness/b6_nominal.json
+/benchmarks/studies/gram_multisat_harness/mars_patch/patched_mars.txt
+/benchmarks/studies/gram_multisat_harness/mars_patch/stock_mars.txt

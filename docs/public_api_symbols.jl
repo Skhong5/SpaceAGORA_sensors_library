@@ -100,6 +100,25 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "Constellation Interlinks",
+        items = [
+            (owner = :SpaceAGORA, symbol = :ConstellationInterLinkModel, rendered = "SpaceAGORA.ConstellationInterLinkModel"),
+            (owner = :SpaceAGORA, symbol = :InterLinkGraph, rendered = "SpaceAGORA.InterLinkGraph"),
+            (owner = :SpaceAGORA, symbol = :InterLinkParameters, rendered = "SpaceAGORA.InterLinkParameters"),
+            (owner = :SpaceAGORA, symbol = :InterLinkKey, rendered = "SpaceAGORA.InterLinkKey"),
+            (owner = :SpaceAGORA, symbol = :InterLinkHistory, rendered = "SpaceAGORA.InterLinkHistory"),
+            (owner = :SpaceAGORA, symbol = :SchedulingPolicyModel, rendered = "SpaceAGORA.SchedulingPolicyModel"),
+            (owner = :SpaceAGORA, symbol = :register_allowed_link!, rendered = "SpaceAGORA.register_allowed_link!"),
+            (owner = :SpaceAGORA, symbol = :update_availability!, rendered = "SpaceAGORA.update_availability!"),
+            (owner = :SpaceAGORA, symbol = :score_candidates!, rendered = "SpaceAGORA.score_candidates!"),
+            (owner = :SpaceAGORA, symbol = :select_interlinks!, rendered = "SpaceAGORA.select_interlinks!"),
+            (owner = :SpaceAGORA, symbol = :schedule_interlinks!, rendered = "SpaceAGORA.schedule_interlinks!"),
+            (owner = :SpaceAGORA, symbol = :interlink_scheduler_callback, rendered = "SpaceAGORA.interlink_scheduler_callback"),
+            (owner = :SpaceAGORA, symbol = :force_on_endpoint, rendered = "SpaceAGORA.force_on_endpoint"),
+            (owner = :SpaceAGORA, symbol = :laser_force_on_spacecraft, rendered = "SpaceAGORA.laser_force_on_spacecraft")
+        ]
+    ),
+    (
         title = "Runtime Configuration",
         items = [
             (owner = :SpaceAGORA, symbol = :SimulationSettings, rendered = "SpaceAGORA.SimulationSettings"),
@@ -392,6 +411,7 @@ const PUBLIC_API_SECTIONS = [
         title = "Process Workers",
         items = [
             (owner = :ParallelProcess, symbol = :ProcessPool, rendered = "SpaceAGORA.ProcessPool"),
+            (owner = :ParallelProcess, symbol = :PROCESS_WARMUP, rendered = "SpaceAGORA.PROCESS_WARMUP"),
             (owner = :ParallelProcess, symbol = :campaign_process_pool, rendered = "SpaceAGORA.campaign_process_pool"),
             (owner = :ParallelProcess, symbol = :ensure_process_workers!, rendered = "SpaceAGORA.ensure_process_workers!"),
             (owner = :ParallelProcess, symbol = :shutdown_process_pool!, rendered = "SpaceAGORA.shutdown_process_pool!"),

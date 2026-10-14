@@ -1,6 +1,7 @@
 """
-CYGNSS private telemetry conventions and loader. See
-`docs/spaceagora_cygnss_reconstruction_record.md` for provenance and limits.
+CYGNSS private telemetry conventions and loader. The private CYGNSS
+reconstruction record documents provenance and limits; its archive link is in
+`scripts/dev/viewer_demos/README.md`.
 
 The flight counter is read as ET, converted to UTC through SPICE. Quaternion
 mapping is scalar-first telemetry to scalar-last `(-q1,-q2,-q3,q0)`; body rates

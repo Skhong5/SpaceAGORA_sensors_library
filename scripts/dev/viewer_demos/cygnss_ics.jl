@@ -14,7 +14,8 @@ telemetry. `build_cygnss_ics.jl` supplies the SPICE-derived rotations.
 Frames, named once:
 
   * **ITRF93** — the Earth-fixed frame the CYGNSS Level-1 PVT columns are
-    reported in. `docs/spaceagora_cygnss_reconstruction_record.md`, section 2.1:
+    reported in. The private CYGNSS reconstruction record, section 2.1
+    (archive link in `scripts/dev/viewer_demos/README.md`), states:
     "The PVT positions are reported in WGS84 Earth-fixed coordinates. They must
     be converted from ITRF93 to J2000 before they can be compared with a
     SpaceAGORA trajectory."

@@ -5,28 +5,16 @@
 #   julia --project=. --threads=12 scripts/paired_profile_probe.jl \
 #       --cases=gravity_4096_l50,heavy_1024_l50_6hr --a=full_smart --b=inner_only --pairs=15
 #
-# Exists because the benchmark harness cannot resolve the differences that are
-# left. It spawns a fresh Julia process per (case, mode, thread) point -- ~40 s
-# of startup against a few seconds of solving -- and runs each mode as a block,
-# so drift between blocks is free to masquerade as effect. On this machine the
-# per-solve spread is 15-45% while the residuals under investigation are 3-10%,
-# and medians of block-ordered samples cannot separate those.
+# Block-ordered samples can confound profile differences with changes in machine
+# state. This probe interleaves the profiles and reports per-pair timing ratios.
+# Nearby samples help reduce slow drift from thermal state, frequency or other
+# processes; reversing the order within successive pairs helps reduce consistent
+# first-position or second-position bias.
 #
-# Two changes fix that without needing more samples:
-#
-#   INTERLEAVING. Profiles alternate A,B,A,B and the reduction is over per-pair
-#   ratios, so anything that drifts slowly -- thermal state, frequency, a
-#   background process -- scales both halves of a pair together and cancels. The
-#   order within each pair alternates too, so a systematic first-position or
-#   second-position bias cancels across pairs rather than accumulating. This is
-#   not a refinement: the same thermal-callback comparison measured 11.1% block
-#   ordered and 1.7% paired, and the 11.1% was entirely ordering.
-#
-#   A SIGNIFICANCE VERDICT. The reduction is a two-sided sign test on pair wins,
-#   not a difference of medians. It needs no distributional assumption, is
-#   immune to a single wild pair, and -- the point -- can return "too close to
-#   call", which a median cannot. A point estimate of +6% invites a fix; "not
-#   distinguishable from zero at n=15" correctly does not.
+# A two-sided sign test uses pair wins rather than the magnitude of each timing
+# difference. It can report that the profiles are not distinguishable at the
+# chosen significance threshold; a small observed difference alone is not enough
+# to establish a winner.
 #
 # One process, so setup is paid once. Thread count is fixed at process start, so
 # run once per budget rather than passing a ladder.
@@ -41,19 +29,10 @@ const PC = SM.ParallelCost
 const EARTH = SM.Earth()
 const HARM = joinpath(@__DIR__, "..", "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
 
-# Profile environments come from the shipped definition, not a local copy.
-#
-# The first version of this file duplicated the env table from
-# benchmarks/studies/parallelization_performance/modes.jl, on the reasoning that
-# importing that file drags in the harness's PPCConfig machinery and the point
-# here is a process that starts fast. That duplication drifted within the hour:
-# R5's scheduler was changed in profile_definitions.jl and this probe kept
-# measuring the old value, reporting a regression that had already been fixed.
-#
-# ParallelProfiles.profile_env_pairs is what the shipped profile actually
-# resolves to, so deriving from it cannot drift. preserve_existing=false so the
-# profile's own values win rather than inheriting whatever the caller's shell
-# happens to have set.
+# Resolve profile environments through ParallelProfiles.profile_env_pairs so
+# this probe follows the shipped definitions without maintaining a second table.
+# preserve_existing=false makes the profile's own values take precedence over
+# values inherited from the caller's shell.
 const _COMMON = Dict(
     "SPACEAGORA_PERF_PARALLEL_BACKEND" => "none",
     "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0",

@@ -4,7 +4,10 @@ Use this page when you want to run an example but do not know which script to
 start with.
 
 This page is for users who have completed the quickstart and want a practical
-next command.
+next command. The scripts under `examples/` construct and run scenarios;
+[templates](../extensibility.md) are starting files for writing a model or hook.
+Run the commands below from the repository root after installing its Julia
+dependencies. Additional packages and data are listed with each group.
 
 Shortest successful command:
 
@@ -48,12 +51,13 @@ the CSV, Feather, and manifest files under `output/`.
 ### First no-GRAM run
 
 Use this path when you want something runnable without GRAM, SPICE, or licensed
-assets. These three run on a fresh clone with nothing but `Pkg.instantiate()`:
+assets. These four use built-in models and the root Julia environment:
 
 ```text
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 julia --project=. examples/AGORA_Earth_NoGRAM.jl
 julia --project=. examples/AGORA_Earth_MonteCarlo.jl
+julia --project=. examples/AGORA_Mars_NoGRAM.jl
 ```
 
 ### Reusable mission and viewer output
@@ -67,16 +71,16 @@ julia --project=. examples/AGORA_Mission_Workflow.jl output/coast-001
 ```
 
 See [Mission Workflows](mission_workflows.md) for the returned table, descriptive
-phase windows and event factories. The standalone viewer opens the exported
-payload without rerunning the simulation.
+phase windows, operational segments and event factories. The standalone viewer
+opens the exported payload without rerunning the simulation.
 
 ### Guidance and control with a frozen atmosphere
 
 `odyssey_surrogate.jl` runs Mars Odyssey's P20 aerobraking passage with a named,
 checksum-verified frozen atmosphere and compares two solar-panel angle caps. It
-uses its own environment, which installs the public `GRAMSuite` Julia wrapper;
-native GRAM and the GRAMSuite submodule are not needed. The first run downloads
-the grid and the public scenario assets.
+uses its own environment, which installs the public `GRAMSuite` Julia wrapper
+and the optional EDG provider; native GRAM and the GRAMSuite submodule are not
+needed. The first run downloads the grid and the public scenario assets.
 
 ```text
 julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate_env/setup.jl
@@ -90,9 +94,9 @@ outputs and supported domain.
 
 `Earth_Thruster_Test.jl` and `AGORA_Keplerian.jl` use no atmosphere but build
 their planet with `Earth("", SPICE_PATH)` / `Mars("", SPICE_PATH)`, which loads
-the SPICE kernels shipped in the `data/GRAMSuite.jl` submodule. On a fresh clone
+the SPICE kernels under `data/GRAMSuite.jl`. Without those files
 they stop with "Required SPICE kernel not found: .../GRAM Suite 2.0/SPICE/...".
-Initialise the submodule first ([GRAMSuite Setup](gramsuite_setup.md)); the
+Prepare the SPICE files using [GRAMSuite Setup](gramsuite_setup.md); the
 native GRAM library is not needed for these two.
 
 ```text
@@ -100,12 +104,19 @@ julia --project=. examples/Earth_Thruster_Test.jl
 julia --project=. examples/AGORA_Keplerian.jl
 ```
 
+The same SPICE prerequisite applies to `AGORA_Earth.jl`, `AGORA_Titan.jl`,
+`AGORA_Magellan.jl`, `AGORA_LOFTID.jl` and the controls listed below. Their
+atmospheres are disabled or use built-in constant-density models.
+`CYGNSS_test.jl` and `GRIFEX_test.jl` also belong here: they build synthetic
+spacecraft and initial conditions and do not read flight telemetry. They are
+scenario demonstrations, not comparisons with measured CYGNSS or GRIFEX data.
+
 ### GRAM-backed atmosphere run
 
 Use this path only after [GRAMSuite Setup](gramsuite_setup.md) succeeds. The
-scripts call `setup_gram_example!()`, which loads the vendored `GRAMSuite`
-package; without the submodule they stop with "GRAM-backed examples require
-loading `GRAMSuite`", and that includes the `--smoke` form below.
+scripts call `setup_gram_example!()`, which loads `GRAMSuite` and activates its
+SpaceAGORA extension. Smoke mode does not remove the package or native-data
+prerequisites.
 
 ```text
 julia --project=. examples/AGORA_Basic_GRAMEarth.jl
@@ -117,16 +128,32 @@ For a longer Earth aerobraking case, start in smoke mode:
 julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Earth_Aerobraking.jl --smoke --output-dir=output/aerobraking_smoke
 ```
 
-Related mission scripts:
+Related native-GRAM scripts are `AGORA_Earth_Aerobraking.jl`,
+`AGORA_Odyssey.jl`, `AGORA_Vex.jl` and `AGORA_Mars_RAAN_Scenario.jl`.
+These also use gravity coefficient files under `data/Gravity_harmonics_data/`.
+Odyssey and Venus Express need their mission SPICE kernels for initial conditions
+and reference plots. A full Venus Express run additionally reads the local
+`data/Maneuver_plans/vex.csv`; when that file is absent, smoke mode uses a small
+synthetic maneuver schedule. A successful smoke run therefore does not establish
+that the full mission's inputs are installed. See [Assets & Modes](../assets.md).
 
-- `AGORA_Earth.jl`
-- `AGORA_Earth_Aerobraking.jl`
-- `AGORA_Odyssey.jl`
-- `AGORA_Vex.jl`
-- `AGORA_Mars_RAAN_Scenario.jl`
-- `AGORA_Titan.jl`
-- `AGORA_Magellan.jl`
-- `AGORA_LOFTID.jl`
+### Energy-depletion guidance with native GRAM
+
+`AGORA_Odyssey_Energy_Depletion_Control_Test.jl` exercises the experimental EDG
+provider on a Mars aerobraking scenario. Prepare the paired environment using
+[Optional EDG setup](installation_environment.md) and complete the native Mars
+GRAM and SPICE setup before running:
+
+```text
+julia --project=/path/to/edg-env examples/AGORA_Odyssey_Energy_Depletion_Control_Test.jl
+```
+
+The default phase is `heat_load`; `SPACEAGORA_EDG_PHASE` also accepts
+`constraints` and `targeting`. The script saves panel commands and guidance
+status alongside the trajectory. Use the [EDG guide](edg_guidance.md) to interpret
+constraints and unsupported cases; running the example is not, by itself,
+validation against the papers. For a run without native GRAM, use the frozen
+atmosphere example above.
 
 ### Articulated spacecraft
 
@@ -158,7 +185,10 @@ julia --project=. examples/Cloth_Panel_Attachment_Demo.jl
 ### Controls, torque, and navigation checks
 
 Use these when the question is about one force, torque, control, or navigation
-surface rather than a full mission case:
+surface rather than a full mission case. Every script in this table needs the
+SPICE files, but none needs the native GRAM library. `Earth_Navigation.jl` also
+reads `data/Gravity_harmonics_data/EarthGGM05C.csv`. The descriptions reflect
+the configured model, including files whose historical names say “Control”:
 
 | Script | Checks |
 |---|---|
@@ -166,12 +196,13 @@ surface rather than a full mission case:
 | `AGORA_Earth_SRP_Test.jl` | Solar-radiation pressure |
 | `AGORA_Earth_const_torque.jl` | Constant applied torque |
 | `Earth_Torque_Free_Test.jl` | Torque-free attitude propagation |
-| `Earth_RW_Test.jl` | Reaction-wheel control |
+| `Earth_RW_Test.jl` | Quaternion PD attitude control using an ideal body torque; no explicit wheel dynamics |
+| `Earth_Momentum_Manager_Test.jl` | Magnetic unloading of accumulated wheel momentum, with accounting-only and solver-tolerance comparisons |
 | `Earth_Navigation.jl` | Navigation and observer flow |
-| `AGORA_Earth_Control_Test.jl` | Earth control case |
-| `AGORA_Odyssey_Control_Test.jl` | Odyssey control case |
-| `AGORA_Titan_Control_Test.jl` | Titan control case |
-| `AGORA_Vex_Control_Test.jl` | Venus Express control case |
+| `AGORA_Earth_Control_Test.jl` | Earth attitude propagation with J2 gravity and no active controller |
+| `AGORA_Odyssey_Control_Test.jl` | Mars body-rate damping with a discrete control hook |
+| `AGORA_Titan_Control_Test.jl` | Titan attitude propagation with J2 gravity and no active controller |
+| `AGORA_Vex_Control_Test.jl` | Venus aerodynamics in a constant-density atmosphere with no active controller |
 
 ### RPO and robotics
 
@@ -186,7 +217,8 @@ the root project. Baseline examples continue to use `--project=.`.
 
 The RPO examples need the SPICE kernels from the `data/GRAMSuite.jl` submodule
 ([GRAMSuite Setup](gramsuite_setup.md)); they do not need the native GRAM
-library. Start with one RPO case:
+library. Their default station also uses the repository asset
+`data/rpo/station_geometry/gateway/Gateway_Core.stl`. Start with one RPO case:
 
 ```text
 julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC.jl
@@ -246,7 +278,9 @@ For a planner-comparison smoke run:
 SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl --runs 1
 ```
 
-For the robot-arm and compliant multibody dynamics batch:
+The robot-arm batch uses the same HYPR environment but does not need SPICE or
+native GRAM. Its compliant multibody dynamics are implemented in SpaceAGORA;
+this example does not use MuJoCo contacts. Run it with:
 
 ```text
 SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Robot_Arm_Planner_Cloth_Demo.jl
@@ -268,18 +302,37 @@ Related scripts:
 
 ## Full script list
 
-| Group | Scripts |
-|---|---|
-| First runs (no assets) | `AGORA_Basic_Quickstart.jl`, `AGORA_Earth_NoGRAM.jl`, `AGORA_Earth_MonteCarlo.jl` |
-| First runs (SPICE kernels from the GRAMSuite submodule) | `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl` |
-| Frozen-atmosphere guidance and control (own environment) | `odyssey_surrogate.jl` |
-| GRAM and missions | `AGORA_Basic_GRAMEarth.jl`, `AGORA_Earth.jl`, `AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `AGORA_Mars_RAAN_Scenario.jl`, `AGORA_Mars_NoGRAM.jl`, `AGORA_Titan.jl`, `AGORA_Magellan.jl`, `AGORA_LOFTID.jl`, `CYGNSS_test.jl`, `GRIFEX_test.jl` |
-| Controls and torques | `AGORA_Earth_GG_Test.jl`, `AGORA_Earth_SRP_Test.jl`, `AGORA_Earth_const_torque.jl`, `Earth_Torque_Free_Test.jl`, `Earth_RW_Test.jl`, `Earth_Navigation.jl`, `AGORA_Earth_Control_Test.jl`, `AGORA_Odyssey_Control_Test.jl`, `AGORA_Titan_Control_Test.jl`, `AGORA_Vex_Control_Test.jl` |
-| RPO and robotics | `Earth_RPO_CubeSat_MPC.jl`, `Earth_RPO_CubeSat_MPC_Batch.jl`, `Earth_RPO_CubeSat_MPC_PlannerComparison.jl`, `Earth_RPO_CubeSat_MPC_Replanning.jl`, `Robot_Arm_Planner_Cloth_Demo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl`, `Cloth_Panel_Attachment_Demo.jl` |
+Each runnable top-level script appears once below. “Root” means the repository's
+Julia environment (`--project=.`). SPICE and native GRAM preparation are separate
+requirements: having the kernels does not install the native atmosphere library.
+Historical filenames containing `Cloth` or `_Test` remain valid script and CLI
+names; they do not define a separate backend or a flight-validation claim.
 
-Support files included by examples:
+| Group | Scripts | Additional prerequisites |
+|---|---|---|
+| Built-in orbit models | `AGORA_Basic_Quickstart.jl`, `AGORA_Earth_NoGRAM.jl`, `AGORA_Earth_MonteCarlo.jl`, `AGORA_Mars_NoGRAM.jl` | Root; no external data |
+| Mission workflow | `AGORA_Mission_Workflow.jl` | Root; an absent or empty output directory |
+| Articulated and compliant bodies | `Articulated_Panels_Demo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl`, `Cloth_Panel_Attachment_Demo.jl` | Root; no external data |
+| SPICE orbit and mission scenarios | `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl`, `AGORA_Earth.jl`, `AGORA_Titan.jl`, `AGORA_Magellan.jl`, `AGORA_LOFTID.jl`, `CYGNSS_test.jl`, `GRIFEX_test.jl` | Root and SPICE; no native GRAM |
+| Controls, torque and navigation | `AGORA_Earth_GG_Test.jl`, `AGORA_Earth_SRP_Test.jl`, `AGORA_Earth_const_torque.jl`, `Earth_Torque_Free_Test.jl`, `Earth_RW_Test.jl`, `Earth_Momentum_Manager_Test.jl`, `Earth_Navigation.jl`, `AGORA_Earth_Control_Test.jl`, `AGORA_Odyssey_Control_Test.jl`, `AGORA_Titan_Control_Test.jl`, `AGORA_Vex_Control_Test.jl` | Root and SPICE; Earth navigation also needs its gravity coefficients |
+| Native atmosphere missions | `AGORA_Basic_GRAMEarth.jl`, `AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `AGORA_Mars_RAAN_Scenario.jl` | Root, native GRAM, SPICE and the mission inputs described above |
+| Native atmosphere EDG | `AGORA_Odyssey_Energy_Depletion_Control_Test.jl` | Paired EDG environment, native Mars GRAM and SPICE |
+| Frozen-atmosphere EDG | `odyssey_surrogate.jl` | `odyssey_surrogate_env` setup; downloads public scenario assets on first run |
+| RPO planning | `Earth_RPO_CubeSat_MPC.jl`, `Earth_RPO_CubeSat_MPC_Batch.jl`, `Earth_RPO_CubeSat_MPC_PlannerComparison.jl`, `Earth_RPO_CubeSat_MPC_Replanning.jl` | `rpo_planner_env` setup, SPICE and Gateway geometry; no native GRAM |
+| Robot-arm planning | `Robot_Arm_Planner_Cloth_Demo.jl` | `rpo_planner_env` setup; no external data |
 
-- `common.jl`
-- `aerobraking_mission_plot_utils.jl`
-- `support/aerobraking_result_tables.jl` (saved-table access used by the mission plotting helper)
-- `support/aerobraking_plot_errors.jl` (absolute RTN error components for mission plots)
+The setup files under `rpo_planner_env/` and `odyssey_surrogate_env/` prepare the
+two documented environments. The planner environment also has an installed-API
+smoke test. These files are not additional mission entry points.
+
+Support files are included by examples rather than run on their own:
+
+- `common.jl` activates the repository environment, binds public model names and provides optional GRAM setup.
+- `support/aerobraking_mission_plot_utils.jl` owns shared mission setup, event extraction, reference comparison and plotting.
+- `support/aerobraking_result_tables.jl` reads saved result tables for the plotting helper.
+- `support/aerobraking_plot_errors.jl` calculates the RTN error components used by those plots.
+
+The general CI example suite discovers the runnable scripts at the top of
+`examples/`, excluding `common.jl` and `odyssey_surrogate.jl`. The latter has its
+own atmosphere-surrogate workflow. Discovery does not imply that every script
+runs in a bare root environment: HYPR and EDG examples use their prepared projects.

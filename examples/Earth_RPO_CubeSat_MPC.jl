@@ -74,6 +74,13 @@ caps the reference speed without changing the geometric plan. Defaults keep
 the Gateway geometry, mass and reference area; the returned `station` record
 states what was used.
 
+`precomputed_plan` executes a retained, endpoint-matched geometric plan without
+running another optimizer. `chaser_dry_mass_kg` defaults to 5.0 kg, plus the
+existing 0.2 kg propellant; pass 4.8 kg to reconstruct a 5 kg wet-mass experiment.
+`minimum_throttle_fraction` defaults to zero. A value of 0.2 suppresses commands
+at or below 20% of the rated thrust, then holds the remaining average thrust.
+This does not model individual valve pulses or establish the paper's exact PWM.
+
 The planner always receives the orbit's mean motion (`mean_motion_radps`),
 which the `:manuscript` HyPR mode uses in its HCW fuel proxy.
 `retime_accel_mps2` sets the retiming acceleration (default half the per-axis
@@ -95,6 +102,7 @@ function build_rpo_cubesat_mpc_demo(;
     pso_n_particles::Integer=120,
     pso_n_iters::Integer=35,
     pso_config=nothing,
+    precomputed_plan=nothing,
     pso_configurator=nothing,
     n_station_points::Integer=10000,
     station_geometry_seed::Integer=seed,
@@ -113,6 +121,8 @@ function build_rpo_cubesat_mpc_demo(;
     pso_iteration_runtime_limit_s=nothing,
     pso_iteration_callback=nothing,
     retime_accel_mps2=nothing,
+    chaser_dry_mass_kg::Real=5.0,
+    minimum_throttle_fraction::Real=0.0,
     mpc_terminal_weight_scale::Real=10.0,
     mpc_horizon::Integer=12,
     post_reference_hold_s::Real=20.0,
@@ -175,7 +185,7 @@ function build_rpo_cubesat_mpc_demo(;
 
     chaser_root = Link(
         root=true,
-        m=5.0,
+        m=Float64(chaser_dry_mass_kg),
         dims=MVector{3, Float64}(0.1, 0.1, 0.3),
         ref_area=0.03,
     )
@@ -260,7 +270,7 @@ function build_rpo_cubesat_mpc_demo(;
     pso_cfg = rpo_pso_config(pso_cfg; mean_motion_radps=n)
 
     plan_buffer = RPOPlanBuffer()
-    plan_result = rpo_pso_plan_path(
+    plan_result = precomputed_plan === nothing ? rpo_pso_plan_path(
         r0_rel_rtn,
         goal_rtn,
         geometry,
@@ -268,7 +278,11 @@ function build_rpo_cubesat_mpc_demo(;
         safe_distance_m=Float64(safe_distance_m),
         rng=MersenneTwister(seed),
         iteration_callback=pso_iteration_callback,
-    )
+    ) : precomputed_plan
+    size(plan_result.path,1) == 3 && size(plan_result.path,2) >= 2 ||
+        throw(ArgumentError("Precomputed RPO path must contain at least two 3D points."))
+    norm(plan_result.path[:,1]-r0_rel_rtn) <= 1e-8 && norm(plan_result.path[:,end]-goal_rtn) <= 1e-8 ||
+        throw(ArgumentError("Precomputed RPO path endpoints must match the scenario."))
     t_ref, r_ref, v_ref = rpo_reference_from_path(
         plan_result.path,
         geometry,
@@ -287,11 +301,13 @@ function build_rpo_cubesat_mpc_demo(;
             components=plan_result.components,
             adaptive=plan_result.adaptive,
             refinement_improved=plan_result.refinement_improved,
-            iteration_timed_out=plan_result.iteration_timed_out,
-            iteration_timeout_iter=plan_result.iteration_timeout_iter,
-            iteration_timeout_phase=plan_result.iteration_timeout_phase,
-            iteration_timeout_events=plan_result.iteration_timeout_events,
+            iteration_timed_out=get(plan_result, :iteration_timed_out, false),
+            iteration_timeout_iter=get(plan_result, :iteration_timeout_iter, 0),
+            iteration_timeout_phase=get(plan_result, :iteration_timeout_phase, :none),
+            iteration_timeout_events=get(plan_result, :iteration_timeout_events, NamedTuple[]),
             cost_history=plan_result.cost_history,
+            retiming_geometry_rtn=SpaceAGORA.SimulationModel.GuidanceHooks._rpo_canonical_retiming_geometry(
+                plan_result.path, geometry, plan_result.config, Float64(safe_distance_m)),
             planned_at_s=0.0,
         ),
     )
@@ -323,6 +339,7 @@ function build_rpo_cubesat_mpc_demo(;
         chaser_idx=1,
         target_idx=2,
         thrusters=thrusters,
+        minimum_throttle_fraction=Float64(minimum_throttle_fraction),
         controller=controller,
         plan_buffer=plan_buffer,
         control_dt_s=pso_cfg.retime_dt_s,

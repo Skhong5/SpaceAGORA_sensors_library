@@ -711,7 +711,7 @@ function main()
         "\n\n",
         "Velocity is fitted from the inertial position arc rather than read from the quantized ",
         "velocity column, as the reconstruction record does ",
-        "(docs/spaceagora_cygnss_reconstruction_record.md, section 2.1). The archive carries a ",
+        "(private CYGNSS reconstruction record, section 2.1; archive link in scripts/dev/viewer_demos/README.md). The archive carries a ",
         "navigation solution at exactly 2025-06-06T00:00:00.000Z for all seven spacecraft, so ",
         "epoch_offset_s is zero everywhere and nothing is propagated; the fit runs forward from the ",
         "epoch and is evaluated at its own left endpoint. Across every fit span of 120, 300 and 600 s ",

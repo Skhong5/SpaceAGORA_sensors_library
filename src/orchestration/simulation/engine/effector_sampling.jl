@@ -307,22 +307,16 @@ end
     spice_rhs_memo = p.shared_buffers.spice_rhs_memo
     cache_entry = p.shared_buffers.nbody_ephemeris_cache[]
     perturbation_effectors = SimulationModel.DynamicEffectors.PerturbationEffectors
-    # Pulled out of the closure below, same as `et`/`primary_body_name`/etc.:
-    # referencing `p.shared_buffers...` from inside the do-block instead of a
-    # local would capture the whole `p::ODEParams{...}` (an inlinable immutable
-    # holding the entire SimulationConfiguration), which forces the compiler to
-    # materialize a full boxed copy of `p` once per spacecraft per derivative
-    # evaluation just to build the closure — 2 KB+ that has nothing to do with
-    # the two Float64s this path actually needs.
+    # Read the counter before creating the closure so the do-block captures
+    # that reference rather than the whole `p::ODEParams{...}` and its
+    # SimulationConfiguration.
     nbody_spkpos_runtime_calls = p.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls
     # `map` over the model's own body-name tuple, not `ntuple` over its length:
     # the length is part of `NBodyGravityModel`'s type, so mapping the tuple
     # gives the compiler a concrete result type, while `ntuple(f, n::Int)` with
-    # a runtime `n` does not — it boxed the closure and built the tuple
-    # dynamically once per spacecraft per derivative evaluation, which is where
-    # most of this path's allocation went (docs/architecture/third_body_cost.md).
-    # Body order and values are unchanged; `positions_ii[k]` still belongs to
-    # `model.body_names[k]`.
+    # a runtime `n` does not. Body order is preserved: `positions_ii[k]`
+    # belongs to `model.body_names[k]`.
+    # See docs/architecture/third_body_cost.md for the current routing constraints.
     #
     # The `cache_entry isa ...` branch is taken outside the `map`, not inside
     # a single shared closure, so each closure below captures `cache_entry`

@@ -127,16 +127,12 @@ end
 # Solar radiation pressure belongs here with the gravity models: its
 # acceleration is a smooth function of position everywhere except at the umbra
 # and penumbra boundaries of the conical shadow model (`eclipse_area_calc`),
-# where the shadow fraction has a kink rather than a discontinuity. An explicit
-# integrator crosses that with step rejections at worst, which is cheaper than
-# what excluding it costs -- a 256-spacecraft harmonics + SRP + third-body
-# constellation was committing AutoTsit5 to Rodas5P and paying 5.58x the
-# derivative evaluations plus the whole Rosenbrock W path for dynamics that are
-# not stiff (docs/architecture/third_body_cost.md). A configuration that does
-# need the implicit solver still gets it by setting
+# where the shadow fraction has a kink rather than a discontinuity. Eligible
+# configurations use Tsit5 on this smooth-gravity route. Setting
 # `SolverConfig.auto_stiff_gravity_tsit5=false`
-# (`SPACEAGORA_AUTO_STIFF_GRAVITY_TSIT5=0`), which disables this whole fast
-# path.
+# (`SPACEAGORA_AUTO_STIFF_GRAVITY_TSIT5=0`) disables the route and retains
+# automatic stiff-solver selection.
+# See docs/architecture/third_body_cost.md for the current routing constraints.
 @inline function _auto_stiff_smooth_gravity_effector(effector)::Bool
     return effector isa SimulationModel.InverseSquaredGravityModel ||
            effector isa SimulationModel.InverseSquaredJ2GravityModel ||
