@@ -10,7 +10,7 @@ using SHA
 
 const SM = SpaceAGORA.SimulationModel
 
-function configuration(directory; results=true, save_csv=true)
+function configuration(directory; results=true, save_csv=true, save_scene=false)
     planet = make_no_gram_planet(:earth)
     spacecraft = make_three_body_spacecraft(
         bus_dims=(2.0, 2.0, 2.0), panel_dims=(0.02, 2.0, 1.0),
@@ -27,7 +27,7 @@ function configuration(directory; results=true, save_csv=true)
     fields = fieldnames(typeof(settings))
     values = NamedTuple{fields}(map(n -> getfield(settings, n), fields))
     return SM.SimConfig._with_configuration(config;
-        simulation_settings=SimulationSettings(; merge(values, (; save_csv))...))
+        simulation_settings=SimulationSettings(; merge(values, (; save_csv, save_visualization_scene=save_scene))...))
 end
 
 @testset "Output switches govern files without changing the returned table" begin
@@ -120,6 +120,38 @@ end
             @test read(history) == history_bytes
             @test !isfile(prefix * ".csv")
         end
+    end
+end
+
+@testset "Scene-only simulation replacement drops old mission ownership" begin
+    mktempdir() do directory
+        output = joinpath(directory, "mission")
+        plan = MissionPlan("coast", () -> configuration(output; save_csv=false);
+            segments=(MissionSegment(:coast),))
+        mission = withenv("SPACEAGORA_SAVE_BUNDLE" => "1") do
+            run_mission(plan; output_dir=output, save_scene=true, save_payload=false)
+        end
+        manifest_path = mission.prefix * ".manifest.toml"
+        @test haskey(TOML.parsefile(manifest_path), "mission_history")
+        history = read(mission.history_path)
+        feather = read(mission.prefix * ".feather")
+        withenv("SPACEAGORA_SAVE_BUNDLE" => "0") do
+            memory = run_simulation(configuration(output; results=false, save_csv=false, save_scene=true);
+                return_results=true)
+            @test isempty(memory.files)
+            @test haskey(TOML.parsefile(manifest_path), "mission_history")
+            no_outputs = run_simulation(configuration(output; save_csv=false, save_scene=false);
+                return_results=true)
+            @test isempty(no_outputs.files)
+            @test haskey(TOML.parsefile(manifest_path), "mission_history")
+            scene_only = run_simulation(configuration(output; save_csv=false, save_scene=true);
+                return_results=true)
+            @test scene_only.files == [mission.prefix * "_scene.json"]
+        end
+        @test !haskey(TOML.parsefile(manifest_path), "mission_history")
+        @test read(mission.history_path) == history
+        @test read(mission.prefix * ".feather") == feather
+        @test !isfile(mission.prefix * ".csv")
     end
 end
 

@@ -41,8 +41,9 @@ The manifest records
 `spacecraft_count`, and SHA-256 hashes for each data file.
 
 The developer override `SPACEAGORA_SAVE_BUNDLE=0` disables Feather and manifest
-output. With this override, `save_csv=false` leaves the table in memory only;
-use `return_results=true` to receive it.
+output. With this override and `save_csv=false`, use `return_results=true` to
+receive the table in memory. Explicitly enabled scene sidecars and checkpoints
+can still be written.
 
 ## Getting the results in memory
 
