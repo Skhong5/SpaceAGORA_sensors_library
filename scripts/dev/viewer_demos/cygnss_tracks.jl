@@ -57,8 +57,9 @@ Why fit at all, rather than read a velocity column: the CYGNSS Level 1 position
 and velocity variables are `Int32` in meters and meters per second, so a single
 velocity sample is quantized at 1 m/s, while the same instant fitted from three
 hundred position samples moves by only a few tenths of a meter per second as the
-arc length is varied. `docs/spaceagora_cygnss_reconstruction_record.md`
-section 2.1 reaches the same conclusion and fits its own initial states "from
+arc length is varied. The private CYGNSS reconstruction record, section 2.1
+(archive link in `scripts/dev/viewer_demos/README.md`), reaches the same
+conclusion and fits its own initial states "from
 position over an arc rather than taken from a single quantized velocity sample".
 The improvement is a few times, not orders of magnitude: what limits the fit is
 the choice of arc and order, not the quantization it averages down, and

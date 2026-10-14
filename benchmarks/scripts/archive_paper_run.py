@@ -37,10 +37,10 @@ that is not in the table gets ``"unknown"``.
 
 Usage::
 
-    python3 scripts/archive_paper_run.py <run_dir> \\
+    python3 benchmarks/scripts/archive_paper_run.py <run_dir> \\
         --store converged [--machine trx50] [--notes "..."] [--dry-run]
 
-    python3 scripts/archive_paper_run.py --verify
+    python3 benchmarks/scripts/archive_paper_run.py --verify
 
 ``--store`` is required for ``ppb`` and ``targeted`` runs: the calibration
 store's state is not recorded in the CSV and only the person who launched the
@@ -72,6 +72,10 @@ except ModuleNotFoundError:  # pragma: no cover - older interpreters
 # `cpu_threads` is deliberately absent here: every harness records it per row,
 # so it is derived from the data instead.  Each entry names where the value was
 # read from, and that source string is copied into the manifest.
+# The historical docs paths in these serialized strings identify originals in
+# the private research archive (October 14, 2026 cleanup snapshot);
+# they are provenance labels, not local files read
+# by this tool. Keep the strings unchanged for existing archive compatibility.
 # --------------------------------------------------------------------------
 HOST_FACTS = {
     "space-falcon-1": {
@@ -729,6 +733,7 @@ def append_index(archive: str, manifest: dict) -> None:
         writer.writerows(rows)
 
 
+# Keep this serialized marker stable for existing private archives.
 PROVENANCE_MARKER = "<!-- archived runs: entries below are appended by scripts/archive_paper_run.py -->"
 
 

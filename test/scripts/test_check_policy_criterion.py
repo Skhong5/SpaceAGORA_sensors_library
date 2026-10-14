@@ -1,4 +1,4 @@
-"""Tests for scripts/check_policy_criterion.py's full-budget (P5f) rule, on
+"""Tests for benchmarks/studies/paper_parallelization_benchmarks/check_policy_criterion.py's full-budget (P5f) rule, on
 fabricated raw CSVs. The numbers below are invented to exercise the rule; none
 is a measurement."""
 import importlib.util
@@ -14,7 +14,7 @@ from contextlib import redirect_stdout
 import pandas as pd
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
-TOOL = REPO / "scripts" / "check_policy_criterion.py"
+TOOL = REPO / "benchmarks" / "studies" / "paper_parallelization_benchmarks" / "check_policy_criterion.py"
 spec = importlib.util.spec_from_file_location("check_policy_criterion", TOOL)
 cpc = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cpc)

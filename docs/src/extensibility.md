@@ -209,13 +209,16 @@ When adding a new model:
 5. document the model through the root `SpaceAGORA` hook surface, not by telling
    users to import internal modules
 
-## Repository-owned examples
+## Templates and runnable examples
 
-The templates above are intentionally small and live in the repository root:
+The three files under `templates/` define different extension contracts: a force
+or torque, an atmosphere density model and a control hook. They define model
+types and methods; they do not construct or run a mission. Copy the relevant
+file into your model's owning package and add tests for the behavior you implement.
+The force/torque template demonstrates the `calcForceTorque` compatibility hook;
+for a new typed `wrench` implementation, follow
+[Adding a Force or Torque of Your Own](user/custom_effector.md).
 
-- `templates/force_torque_model_template.jl`
-- `templates/density_model_template.jl`
-- `templates/control_hook_template.jl`
-
-Use them as starting points, then add subsystem-specific tests close to the code
-that owns the new model.
+Use the [Examples Catalog](user/examples_catalog.md) when you want a complete
+scenario to run or adapt. Helpers under `examples/support/` serve those scenarios
+and are not extension contracts.

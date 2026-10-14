@@ -1,5 +1,6 @@
 # CYGNSS FM01: measured-wheel diagnostic and recorded-command reconstruction.
-# Run with scripts/dev/run.jl; see docs/spaceagora_cygnss_reconstruction_record.md.
+# Run with scripts/dev/run.jl. The private CYGNSS reconstruction record is
+# linked from scripts/dev/viewer_demos/README.md.
 # Raw telemetry, fitted/memo constants, generated pages and scores remain private.
 # The wheels-only adequacy check is deliberately independent of execution success.
 # Demands are not automatically executed torques. The rwCmd and tqDmdCtrl comparisons

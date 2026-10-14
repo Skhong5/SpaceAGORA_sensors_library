@@ -13,7 +13,7 @@ behind the best-static line, because at several points their near-coincidence is
 itself the result (see finding 2).
 
 Usage:
-    python3 scripts/make_paper_routing_plots.py RUN_DIR_OR_CSV [...] \
+    python3 benchmarks/studies/paper_parallelization_benchmarks/make_paper_routing_plots.py RUN_DIR_OR_CSV [...] \
         [--out DIR] [--label NAME] [--format png,pdf] \
         [--adaptive policy_v2|predictive]
 """

@@ -51,7 +51,7 @@ STORE_DIR="${REPO_ROOT}/output/parallel_policy_state"
 # takes it with it; every figure has to stay regenerable from a directory that
 # outlives the worktree. Override with PAPER_DATA_RAW.
 PAPER_DATA_RAW="${PAPER_DATA_RAW:-/home/space-falcon-1/Documents/SpaceAGORA-paper-data/data/raw}"
-ARCHIVE="${REPO_ROOT}/scripts/archive_paper_run.py"
+ARCHIVE="${REPO_ROOT}/benchmarks/scripts/archive_paper_run.py"
 
 # The remote, and where its releases live. Both are properties of
 # scripts/remote/remotes.conf, repeated here only so the rsync line below can be

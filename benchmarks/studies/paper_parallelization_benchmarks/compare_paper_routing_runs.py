@@ -15,7 +15,7 @@ between two runs of identical code on this harness (median 1.6%); pass
 --band to set your own.
 
 Usage:
-    python3 scripts/compare_paper_routing_runs.py OLD NEW [--band 0.08]
+    python3 benchmarks/studies/paper_parallelization_benchmarks/compare_paper_routing_runs.py OLD NEW [--band 0.08]
         [--phases P1,P5] [--label-old NAME --label-new NAME]
 """
 from __future__ import annotations

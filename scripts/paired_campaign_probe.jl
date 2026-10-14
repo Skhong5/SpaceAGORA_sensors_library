@@ -6,42 +6,21 @@
 #       --cases=montecarlo_mars_aerobraking --a=full_smart --b=outer_inner_static \
 #       --mc-samples=64 --pairs=15
 #
-# scripts/paired_profile_probe.jl does this for a single simulation and settled
-# the single-simulation questions to about one percent. It cannot run a campaign:
-# it builds one SimulationConfiguration and calls run_simulation, so the outer
-# axis -- which is the whole of the Monte Carlo question -- is never exercised.
-# The benchmark harness does run campaigns, but it runs modes in BLOCKS with a
-# fresh process per point, which is the ordering this project's own methodology
-# notes say fakes effects, and on short campaigns its floor is around +/-15%.
+# scripts/paired_profile_probe.jl compares single simulations. This probe runs
+# complete Monte Carlo campaigns, including the outer dispatch dimension that
+# a single run_simulation call does not exercise.
 #
-# That gap is why the Monte Carlo residuals could not be read. Across fourteen
-# measured points the adaptive profiles scatter roughly +/-9% around zero, R4 and
-# R5 disagree in SIGN between adjacent thread counts on the same case, and
-# per-sample cost does not predict the regret -- all signatures of noise rather
-# than mechanism. Deciding whether Monte Carlo warrants its own policy needs an
-# instrument that can tell a real few-percent effect from that scatter.
+# Interleaving profiles and reporting per-pair timing ratios helps reduce slow
+# drift from thermal state, frequency, background processes or allocator state.
+# Reversing the order within successive pairs helps reduce consistent first-
+# position or second-position bias. A two-sided sign test uses pair wins rather
+# than timing magnitudes and can report that the profiles are not distinguishable
+# at the chosen significance threshold.
 #
-# The two changes that make it one, both borrowed from the single-simulation
-# probe:
-#
-#   INTERLEAVING. Profiles alternate A,B,A,B and the reduction is over per-pair
-#   ratios, so anything that drifts slowly -- thermal state, frequency, a
-#   background process, the allocator settling -- scales both halves of a pair
-#   together and cancels. The order within each pair alternates too, so a
-#   first-position or second-position bias cancels across pairs instead of
-#   accumulating.
-#
-#   A SIGNIFICANCE VERDICT. A two-sided sign test on pair wins, not a difference
-#   of medians. It needs no distributional assumption, is immune to a single wild
-#   pair, and can return "too close to call" -- which is the answer the Monte
-#   Carlo residuals may well deserve, and which a median cannot express.
-#
-# The campaign itself is run by ppc_run_sample_batch from the shipped harness
-# rather than reimplemented here. That function already resolves the outer route,
-# applies the profile's environment, provisions and warms the Distributed pool
-# outside the timed region, and returns the batch wall time. Duplicating any of
-# it would drift, which is exactly what the single-simulation probe's header
-# records happening to a copied env table within an hour.
+# The default path reuses ppc_run_sample_batch from the shipped harness. It
+# resolves the outer route, applies the profile environment, provisions and warms
+# the Distributed pool outside the timed region, and returns the batch wall time.
+# Reusing that dispatcher keeps its setup and routing behavior in one place.
 
 const PPC_DIR = normpath(joinpath(@__DIR__, "..", "benchmarks", "studies",
                                   "parallelization_performance"))
@@ -71,10 +50,9 @@ procs      = 2
 # numbers must pass --profile=full, or it measures a 36x shorter campaign in
 # which per-sample dispatch is most of the time.
 profile    = "smoke"
-# Untimed campaigns per arm before the pairs. One is not enough for a process
-# arm on a freshly built case: measured on independent_1sat_1hr at (12, 12),
-# the first three timed process campaigns ran 0.55-0.75 s before settling at
-# 0.27 s, and the sign test counted them as losses.
+# Untimed campaigns per arm before the pairs. Initialization effects can persist
+# after one warm-up, particularly for process routes. Use --warm-campaigns to
+# assess settling before interpreting the timed pairs as steady-state routing.
 warm_campaigns = 1
 # --src-runner dispatches each campaign through the SHIPPED campaign runner,
 # SimulationCampaigns.run_monte_carlo(threads=:auto), instead of the harness's
@@ -291,8 +269,8 @@ for case in cases
     calib_a = isolate ? _arm_calib_path("a_" * string(getpid())) : nothing
     calib_b = isolate ? _arm_calib_path("b_" * string(getpid())) : nothing
 
-    # Warm both arms once. The first campaign in a process pays cold JIT of the
-    # whole RHS/solver stack and, on the process route, worker startup; neither
+    # Warm both arms before timing. The first campaign in a process pays cold JIT
+    # of the whole RHS/solver stack and, on the process route, worker startup; neither
     # belongs in a comparison of steady-state routing.
     for _ in 1:max(1, warm_campaigns)
         run_campaign(case, a_name, calib_a)

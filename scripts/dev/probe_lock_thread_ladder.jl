@@ -3,7 +3,7 @@
 # Does the native lock explain the multi-effector thread ceiling?
 #
 #   for t in 1 2 4 8 12; do julia --project=. --threads=$t \
-#       scripts/probe_lock_thread_ladder.jl; done
+#       scripts/dev/probe_lock_thread_ladder.jl; done
 #
 # scripts/dev/probe_contention_matrix.jl measures occupancy rho at one thread, which
 # gives the Amdahl ceiling 1/rho but cannot show contention: with one worker
@@ -29,7 +29,7 @@ const SM = SpaceAGORA.SimulationModel
 const SE = SpaceAGORA.SimulationEngine
 const RS = SpaceAGORA.RuntimeServices
 
-include(joinpath(@__DIR__, "dev", "probe_contention_matrix_support.jl"))
+include(joinpath(@__DIR__, "probe_contention_matrix_support.jl"))
 
 const PASSES = parse(Int, get(ENV, "PLT_PASSES", "40"))
 const REPEATS = parse(Int, get(ENV, "PLT_REPEATS", "7"))

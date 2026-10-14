@@ -14,7 +14,7 @@ at the same point -- serial is reported in its own column, so including it in
 the minimum would hide the comparison the table exists to make.
 
 Usage:
-    python3 scripts/make_paper_routing_tables.py RUN_DIR_OR_CSV [...] \
+    python3 benchmarks/studies/paper_parallelization_benchmarks/make_paper_routing_tables.py RUN_DIR_OR_CSV [...] \
         [--out DIR] [--label NAME] [--adaptive policy_v2|predictive]
 
 Each positional argument is either an aggregated CSV or a run directory holding
