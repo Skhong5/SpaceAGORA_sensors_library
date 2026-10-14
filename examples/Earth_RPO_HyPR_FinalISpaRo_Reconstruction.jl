@@ -3,16 +3,18 @@
 # Default: one HyPR case in the full nonlinear SpaceAGORA simulator.
 # HYPR_CASE_IDS selects explicit generated cases; comparisons are optional.
 # HYPR_OUTPUT_ROOT must be outside cloud-synced research folders.
-using SpaceAGORA, SpaceAGORAHYPR, HYPR, JSON, SHA, Random, LinearAlgebra, StaticArrays, Statistics, Dates, Test
-const OUT = get(ENV,"HYPR_OUTPUT_ROOT",joinpath(homedir(),"AgentScratch","hypr_final_isparo"))
-mkpath(OUT)
+# Load the optional packages before common.jl activates core and its dependencies.
+using SpaceAGORAHYPR, HYPR
 const ROOT = normpath(joinpath(@__DIR__,".."))
 include(joinpath(ROOT,"examples","Earth_RPO_CubeSat_MPC_Batch.jl"))
+using SpaceAGORA, JSON, SHA, Random, LinearAlgebra, StaticArrays, Statistics, Dates, Test
+const OUT = get(ENV,"HYPR_OUTPUT_ROOT",joinpath(homedir(),"AgentScratch","hypr_final_isparo"))
 const G = SM.GuidanceHooks
 const C = SM.ControlHooks
 include(joinpath(@__DIR__, "support", "hypr_paper_comparison.jl"))
 BLAS.set_num_threads(1)
 function savejson(name,x)
+    mkpath(OUT)
     open(joinpath(OUT,name),"w") do io; JSON.print(io,x,2);end
 end
 function paper_config()
@@ -189,5 +191,13 @@ function main()
 end
 
 if abspath(PROGRAM_FILE)==@__FILE__
-    main()
+    if _rpo_batch_smoke_mode()
+        # CI checks real imports/configuration; full scientific runs remain explicit.
+        tracking_config(paper_config())
+        paper_case_ids()
+        paper_planners()
+        println("hypr_paper_startup_smoke_ok reconstruction")
+    else
+        main()
+    end
 end

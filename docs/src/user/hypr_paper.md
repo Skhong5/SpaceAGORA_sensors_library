@@ -35,6 +35,16 @@ after valid HYPR planning retains the measured planning allowance. CHOMP and STO
 Their wall-clock budgets depend on the machine. Large paper-sized comparisons
 are optional and are not needed to try or verify the implementation.
 
+## CI smoke scope
+
+The example suite launches both paper entry points in the dedicated HYPR
+example environment. With `SPACEAGORA_EXAMPLE_SMOKE=1`, they load the actual
+packages and configuration, and the dynamic entry point checks the structure of its saved baseline,
+without running a numerical experiment or writing scientific results. Missing files, malformed JSON and structurally invalid saved baseline inputs fail. The optional HYPR integration job separately exercises
+the planner, replanning contracts and failed-run evidence handling. A smoke pass
+does not establish maneuver success or paper-table reproduction. Leave the smoke
+flag unset for the scientific runs above and below.
+
 ## Run the original reconstructed dynamic case
 
 The repository includes the saved baseline used for the reconstructed case 4:

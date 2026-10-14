@@ -1,8 +1,8 @@
 # Reconstruct the final paper's disturbance families from one saved baseline.
 # Original obstacle draws are unavailable; placements below are explicit choices.
 # The obstructed-goal case is an extra negative control, outside Table III.
-using DiffEqCallbacks, SciMLBase
 include(joinpath(@__DIR__,"Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl"))
+using DiffEqCallbacks, SciMLBase
 function config_from_json(d)
     defaults=paper_config()
     vals=Pair{Symbol,Any}[]
@@ -180,6 +180,39 @@ function full_replanning_pilot()
         println("FULL_DYNAMIC_RESULT ",JSON.json((scenario=scenario,success=row.success,fuel_g=row.fuel_g,phase=row.phase,replans=row.replan_count)));flush(stdout)
     end
 end
+# Bounded structural qualification of the saved input, not trajectory validation.
+function check_paper_baseline_structure(d)
+    config_from_json(d["config"])
+    finite3(v) = v isa AbstractVector && length(v)==3 && all(x->x isa Real && isfinite(x),v)
+    all(k->finite3(d["case"][k]),("start_rtn","goal_rtn")) ||
+        throw(ArgumentError("Saved baseline endpoints must be finite 3-vectors"))
+    t=d["reference_time"]
+    t isa AbstractVector && length(t)>=2 && all(x->x isa Real && isfinite(x),t) &&
+        first(t)==0 && all(>(0),diff(t)) ||
+        throw(ArgumentError("Saved reference time must increase from zero"))
+    for key in ("reference_position","reference_velocity")
+        columns=d[key]
+        columns isa AbstractVector && length(columns)==length(t) && all(finite3,columns) ||
+            throw(ArgumentError("Saved $key must contain one finite 3-vector per time"))
+    end
+    path=d["path"]
+    path isa AbstractVector && length(path)>=2 && all(finite3,path) ||
+        throw(ArgumentError("Saved path must contain at least two finite 3-vectors"))
+    costs=d["cost_history"]
+    costs isa AbstractVector && !isempty(costs) && all(x->x isa Real && isfinite(x),costs) ||
+        throw(ArgumentError("Saved cost history must be finite and nonempty"))
+    d["adaptive"] isa AbstractDict || throw(ArgumentError("Missing saved adaptation record"))
+    paper_dynamic_budget(last(t))
+    return nothing
+end
+
 if abspath(PROGRAM_FILE)==@__FILE__
-    full_replanning_pilot()
+    if _rpo_batch_smoke_mode()
+        # Load the actual saved input without starting the multi-scenario experiment.
+        d=JSON.parsefile(get(ENV,"HYPR_BASELINE_RECORD",joinpath(@__DIR__,"support","hypr_final_isparo_case4.json")))
+        check_paper_baseline_structure(d)
+        println("hypr_paper_startup_smoke_ok replanning")
+    else
+        full_replanning_pilot()
+    end
 end
