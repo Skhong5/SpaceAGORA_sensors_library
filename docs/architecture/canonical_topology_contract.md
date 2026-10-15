@@ -60,8 +60,9 @@ routes. Source grouping does not move companion implementations into core.
 4. Domain dynamics ownership is:
    - `src/models/dynamics/translational/*`
    - `src/models/dynamics/rotational/*`
-   - `src/models/dynamics/coupled/*`
-   - `src/models/dynamics/compliant_multibody/*`
+   - `src/models/dynamics/effectors/*` (every force and torque the simulator applies)
+   - `src/models/dynamics/multibody/*` (articulated and compliant multibody dynamics)
+   - `src/models/dynamics/external_propagation.jl` (the external-propagator hook)
    and `src/models/dynamics/models/` is retired.
 5. Mission configuration ownership: initial-state definitions live with the
    spacecraft model (`src/models/vehicle/spacecraft/model.jl`); plans, schedules, and
@@ -92,7 +93,7 @@ routes. Source grouping does not move companion implementations into core.
 11. Externally propagated spacecraft (shadow entries held in the state vector while an
     optional package integrates them) are owned in four places, none of which
     knows any concrete integrator:
-    - `src/models/dynamics/coupled/external_propagation.jl`: the `SimulationModel.ExternalPropagation`
+    - `src/models/dynamics/external_propagation.jl`: the `SimulationModel.ExternalPropagation`
       hook implementation identities. Optional adapters use the supported facade below;
       default hooks throw `Not implemented`, except for the accepting preflight default.
     - `src/orchestration/simulation/engine/external_propagation.jl`: setup-time refusals, per-run runtimes
@@ -113,7 +114,7 @@ routes. Source grouping does not move companion implementations into core.
 1. `src/orchestration/simulation/engine/public_api.jl`
 2. `src/orchestration/simulation/engine/execution.jl`
 3. `src/orchestration/simulation/runtime_services.jl`
-4. `src/models/dynamics/coupled/force_torque_models.jl`
+4. `src/models/dynamics/effectors/force_torque_models.jl`
 5. `src/models/vehicle/actuators/thruster/thruster_hooks.jl`
 6. `src/models/vehicle/structure/structure_models.jl`
 7. `src/models/vehicle/structure/assembly_graph.jl`

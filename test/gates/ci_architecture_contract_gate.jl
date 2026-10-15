@@ -22,12 +22,12 @@ engine_public_api_src = _read(joinpath("src", "orchestration", "simulation", "en
 engine_execution_src = _read(joinpath("src", "orchestration", "simulation", "engine", "execution.jl"))
 telemetry_src = _read(joinpath("src", "interfaces", "analysis", "verification", "telemetry_verification.jl"))
 rhs_src = _read(joinpath("src", "orchestration", "simulation", "engine", "dynamics_rhs.jl"))
-force_torque_src = _read(joinpath("src", "models", "dynamics", "coupled", "force_torque_models.jl"))
-gravity_effectors_src = _read(joinpath("src", "models", "dynamics", "coupled", "force_torque_models", "gravity_effectors.jl"))
-aerodynamic_effectors_src = _read(joinpath("src", "models", "dynamics", "coupled", "force_torque_models", "aerodynamic_effectors.jl"))
-perturbation_effectors_src = _read(joinpath("src", "models", "dynamics", "coupled", "force_torque_models", "perturbation_effectors.jl"))
-thruster_models_src = _read(joinpath("src", "models", "dynamics", "coupled", "force_torque_models", "thruster_models.jl"))
-guidance_models_src = _read(joinpath("src", "models", "dynamics", "coupled", "force_torque_models", "guidance_models.jl"))
+force_torque_src = _read(joinpath("src", "models", "dynamics", "effectors", "force_torque_models.jl"))
+gravity_effectors_src = _read(joinpath("src", "models", "dynamics", "effectors", "force_torque_models", "gravity_effectors.jl"))
+aerodynamic_effectors_src = _read(joinpath("src", "models", "dynamics", "effectors", "force_torque_models", "aerodynamic_effectors.jl"))
+perturbation_effectors_src = _read(joinpath("src", "models", "dynamics", "effectors", "force_torque_models", "perturbation_effectors.jl"))
+thruster_models_src = _read(joinpath("src", "models", "dynamics", "effectors", "force_torque_models", "thruster_models.jl"))
+guidance_models_src = _read(joinpath("src", "models", "dynamics", "effectors", "force_torque_models", "guidance_models.jl"))
 guidance_hooks_src = _read(joinpath("src", "models", "gnc", "guidance", "guidance_hooks.jl"))
 control_hooks_src = _read(joinpath("src", "models", "gnc", "control", "control_hooks.jl"))
 callback_registry_src = _read(joinpath("src", "orchestration", "simulation", "callbacks", "registry.jl"))
@@ -120,16 +120,16 @@ occursin("module GuidanceModels", top_level_guidance_models_src) ||
 occursin("include(joinpath(@__DIR__, \"thruster_guidance\", \"thruster_guidance_models.jl\"))", top_level_guidance_models_src) ||
     error("Top-level GuidanceModels owner is not including the thruster guidance model definitions.")
 findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"vehicle\", \"actuators\", \"thruster\", \"thruster_models_module.jl\"))", simulation_model_src) <
-    findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"dynamics\", \"coupled\", \"force_torque_models.jl\"))", simulation_model_src) ||
+    findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"dynamics\", \"effectors\", \"force_torque_models.jl\"))", simulation_model_src) ||
     error("SimulationModel is not loading ThrusterModels before DynamicEffectors.")
 findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"guidance\", \"guidance_models.jl\"))", simulation_model_src) <
-    findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"dynamics\", \"coupled\", \"force_torque_models.jl\"))", simulation_model_src) ||
+    findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"dynamics\", \"effectors\", \"force_torque_models.jl\"))", simulation_model_src) ||
     error("SimulationModel is not loading GuidanceModels before DynamicEffectors.")
 occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"environment\", \"gravity\", \"gravity_effectors.jl\"))", simulation_model_src) ||
     error("SimulationModel does not include the top-level GravityEffectors boundary module.")
 occursin("module GravityEffectors", top_level_gravity_effectors_src) ||
     error("Top-level GravityEffectors boundary module is missing.")
-findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"dynamics\", \"coupled\", \"force_torque_models.jl\"))", simulation_model_src) <
+findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"dynamics\", \"effectors\", \"force_torque_models.jl\"))", simulation_model_src) <
     findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"environment\", \"gravity\", \"gravity_effectors.jl\"))", simulation_model_src) ||
     error("SimulationModel is not loading the top-level GravityEffectors boundary after DynamicEffectors.")
 occursin("using ..SimulationModel", engine_src) ||
@@ -262,7 +262,7 @@ for rel in (
     joinpath("src", "models", "vehicle", "structure", "assembly_graph.jl"),
     joinpath("src", "models", "vehicle", "structure", "mass_properties.jl"),
     joinpath("src", "models", "vehicle", "structure", "geometry_properties.jl"),
-    joinpath("src", "models", "dynamics", "coupled", "force_torque_models.jl"),
+    joinpath("src", "models", "dynamics", "effectors", "force_torque_models.jl"),
     joinpath("src", "models", "gnc", "guidance", "aerobraking", "interfaces.jl"),
     joinpath("src", "models", "gnc", "guidance", "aerobraking", "dispatcher.jl"),
     joinpath("src", "models", "gnc", "guidance", "aerobraking", "e_edg", "e_edg_strategy.jl"),
@@ -281,11 +281,11 @@ for relative in (
     "src/models/environment/gravity/encke_and_j2.jl",
     "src/models/environment/gravity/secular_rates.jl",
     "src/models/environment/gravity/gravity_gradient.jl",
-    "src/models/dynamics/coupled/gravity/models.jl",
-    "src/models/dynamics/coupled/gravity/runtime_force_helpers.jl",
-    "src/models/dynamics/coupled/gravity/sampled_gravity_gradient.jl",
-    "src/models/dynamics/coupled/gravity/wrenches.jl",
-    "src/models/dynamics/coupled/gravity/gravity_gradient_effector.jl",
+    "src/models/dynamics/effectors/gravity/models.jl",
+    "src/models/dynamics/effectors/gravity/runtime_force_helpers.jl",
+    "src/models/dynamics/effectors/gravity/sampled_gravity_gradient.jl",
+    "src/models/dynamics/effectors/gravity/wrenches.jl",
+    "src/models/dynamics/effectors/gravity/gravity_gradient_effector.jl",
 )
     isfile(joinpath(REPO_ROOT, relative)) || error("Missing gravity kernel/adapter owner: $relative")
 end
