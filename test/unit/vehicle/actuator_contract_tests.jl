@@ -735,6 +735,35 @@ end
         table = held_run(sc2, [0.002]; mission_time=5.0, return_results=true).table
         @test table.sc1_actuator_power ≈ 1.0 .+ 0.0004 .* table.time rtol=1e-9
     end
+
+    @testset "energy-depletion panels move through a mounted hinge" begin
+        function panel_craft(hinge)
+            root = SM.Link(root=true, m=100.0, dims=MVector(1.0, 1.0, 1.0))
+            panel = SM.Link(m=5.0, r=MVector(0.0, 1.5, 0.0), dims=MVector(0.02, 2.0, 1.0))
+            sc = SM.SpacecraftModel(links=[root, panel], root=root, prop_mass=1.0, inertia_tensor=root.inertia, id=1)
+            hinge === nothing || add_actuator!(sc, panel, hinge)
+            return sc, panel
+        end
+        aoa = SM.SolarPanelAngleOfAttackControlModel(controlled_panel_links=(2,))
+        apply!(sc, alpha, t) = SM.ControlHooks._apply_solar_panel_aoa!(aoa, sc, alpha, t)
+        plain, plain_panel = panel_craft(nothing)
+        hinged, hinged_panel = panel_craft(PanelHinge(axis=SVector(0.0, 1.5, 0.0)))   # the axis the panels turn about, no limits
+        for (t, alpha) in ((0.0, 0.3), (1.0, 1.1), (2.0, 0.05))
+            apply!(plain, alpha, t)
+            apply!(hinged, alpha, t)
+            @test hinged_panel.q == plain_panel.q && hinged_panel.α === plain_panel.α === alpha   # bit for bit
+        end
+        limited, limited_panel = panel_craft(PanelHinge(axis=SVector(0.0, 1.0, 0.0), max_rate_rad_s=0.1,
+            min_angle_rad=0.0, max_angle_rad=π / 2, angle_rad=π / 2 - 0.3))
+        apply!(limited, 0.3, 10.0)                       # the first tick holds the angle and records the time
+        apply!(limited, 1.2, 12.0)                       # commanded to π/2 - 1.2; 0.1 rad/s for 2 s
+        @test limited_panel.hinges[1].angle_rad ≈ π / 2 - 0.3 - 0.2
+        @test limited_panel.α ≈ 0.5                      # the angle of attack it reached, not the command
+        @test limited_panel.q ≈ [0.0, sin((π / 2 - 0.5) / 2), 0.0, cos((π / 2 - 0.5) / 2)]
+        SM.ControlHooks._apply_solar_panel_aoa!(aoa, plain, 0.7)          # without a hinge the tick time is not needed
+        @test plain_panel.α == 0.7
+        @test_throws ArgumentError SM.ControlHooks._apply_solar_panel_aoa!(aoa, limited, 0.7)
+    end
 end
 
 end # module ActuatorContractTests

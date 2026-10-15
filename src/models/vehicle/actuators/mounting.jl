@@ -29,7 +29,7 @@ using ..Components: Thruster, ReactionWheel, wheel_momentum_saturate, wheel_powe
 using ..SpacecraftModels: Link, SpacecraftModel
 using ..Assembly: add_thruster!
 
-export add_actuator!, mounted_actuators, mounted_actuator_count, mounted_thruster_count, mounted_wheel_count, mounted_magnetorquer_count, mounted_laser_count, mounted_hinge_count, apply_hinge_levels!
+export add_actuator!, mounted_actuators, mounted_actuator_count, mounted_thruster_count, mounted_wheel_count, mounted_magnetorquer_count, mounted_laser_count, mounted_hinge_count, apply_hinge_levels!, move_hinge!
 export actuator_context, allocation_matrix, mounted_wrench, mounted_thruster_fractions
 export mounted_requirements, applied_actuator_levels, mounted_power
 
@@ -191,12 +191,24 @@ function apply_hinge_levels!(model::SpacecraftModel, levels::AbstractVector, t::
     k = mounted_thruster_count(model) + mounted_wheel_count(model) + mounted_magnetorquer_count(model) + mounted_laser_count(model)
     for link in model.links, hinge in link.hinges
         k += 1
-        angle = hinge_step(hinge, levels[k], t)
-        _set_hinge_attitude!(link, hinge, angle)
-        hinge.angle_rad = angle
-        hinge.last_update_s = Float64(t)
+        move_hinge!(link, hinge, levels[k], t)
     end
     return model
+end
+
+"""
+    move_hinge!(link::Link, hinge::PanelHinge, level, t) -> Float64
+
+Move `hinge`, mounted on `link`, toward the angle `level` at a control tick at
+time `t`, within its angle and rate limits (see `hinge_step`), set the link's
+attitude to the angle reached and record the tick. Returns the angle reached.
+"""
+function move_hinge!(link::Link, hinge::PanelHinge, level::Real, t::Real)::Float64
+    angle = hinge_step(hinge, level, t)
+    _set_hinge_attitude!(link, hinge, angle)
+    hinge.angle_rad = angle
+    hinge.last_update_s = Float64(t)
+    return angle
 end
 
 """

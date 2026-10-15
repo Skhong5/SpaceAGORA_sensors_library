@@ -8,7 +8,7 @@ module ControlHooks
     using ..ThrusterModels: BaseThrusterModel, SixAxisThrusterModel
     import ..Actuators: actuation_mode, actuator_levels
     using ..Actuators: propellant_mass_rate
-    using ..ActuatorMounting: mounted_actuator_count, mounted_thruster_count, mounted_wheel_count, mounted_magnetorquer_count, actuator_context
+    using ..ActuatorMounting: mounted_actuator_count, mounted_thruster_count, mounted_wheel_count, mounted_magnetorquer_count, actuator_context, move_hinge!
     using ..CommandTypes: PropulsiveManeuverCommand, PropulsiveBurnPlan
     using ..GuidanceModels: RPOPlan, RPOPlanBuffer
     using ..GravityEffectors: aerobraking_gravity_force_ii
