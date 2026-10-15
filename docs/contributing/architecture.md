@@ -225,7 +225,7 @@ the file that performs each step.
    `src/models/dynamics/effectors/gravity/`, while the mathematical field kernels
    live in `src/models/environment/gravity/`. The compatibility composition file
    `gravity_models.jl` preserves their definition order inside the existing
-   `GravityEffectors` module. The ordered files under `coupled/perturbations/`
+   `GravityEffectors` module. The ordered files under `effectors/perturbations/`
    retain the existing perturbation models, including continuous torque laws.
    These source boundaries do not introduce new evaluations or equations. The
    hook contract is on the [Extensibility](../src/extensibility.md) page.
@@ -329,7 +329,7 @@ are relative to the directory in the first column.
 | `src/orchestration/parallel/` | Parallel profiles and routing, cost models, worker process pools and in-process policy | route selection and process pools; owned by the parallelization work |
 | `src/models/vehicle/` | Spacecraft components and assembly, structure and mass properties, mesh readers, thrusters, thermal models, kinematics and robotics | vehicle boundary per the [topology contract](../architecture/canonical_topology_contract.md): `spacecraft/` composes, `structure/` computes mass, inertia and geometry, `actuators/thruster/thruster_hooks.jl` owns thruster hooks |
 | `src/models/environment/` | Planets and ephemerides, atmosphere models and presets, gravity fields and terrain grids | density sampling: `atmosphere/density_models.jl`; terrain queries: `terrain/terrain_models.jl` |
-| `src/models/dynamics/` | Translational and rotational equations, coupled force/torque models, compliant multibody dynamics under `compliant_multibody/`, and articulated-body dynamics | effector evaluation: `coupled/force_torque_models.jl`; gravity adapters: `coupled/gravity/`; other perturbations: `coupled/perturbations/`; articulated solver: `coupled/articulated_body.jl` |
+| `src/models/dynamics/` | Translational and rotational equations, force and torque effectors under `effectors/`, compliant and articulated multibody dynamics under `multibody/` | effector evaluation: `effectors/force_torque_models.jl`; gravity adapters: `effectors/gravity/`; other perturbations: `effectors/perturbations/`; articulated solver: `multibody/articulated_body.jl` |
 | `src/models/gnc/` | Guidance, navigation and control hooks, planner contracts and lifecycle, shared calculations, baseline algorithms and HYPR compatibility types | the three hook files named above; planner contracts: `interfaces/`; planning and lifecycle: `planning/rpo/`; arm references: `planning/robot_arm/`; shared kernels: `planning/common/`; optional-adapter services: `planning/adapters/`; aerobraking bridges: `internal/` |
 | `src/foundation/core/` | Abstract types and shared model contracts, reference frames, geodesy, orbital geometry and quaternions | frames: `interfaces/reference_system.jl`; shared geometry: `numerics/geodesy.jl` and `numerics/orbital_geometry.jl`; canonical quaternions: `numerics/quaternion_utils.jl`; robotics/compliant orientation policy: `numerics/orientation_quaternion_utils.jl`; run buffers and composition belong to simulation orchestration |
 | `src/foundation/assets/` | Manifest lookup and availability checks, RPO station assets and the Odyssey surrogate | reusable manifest records and local checks: `asset_catalog.jl`; CLI report types and presentation remain in the CLI; see [Assets & Modes](../src/assets.md) |
