@@ -120,10 +120,9 @@ routes. Source grouping does not move companion implementations into core.
 4. `src/models/dynamics/effectors/force_torque_models.jl`
 5. `src/models/vehicle/actuators/thruster_hooks.jl`
 6. `src/models/vehicle/structure/structure_models.jl`
-7. `src/models/vehicle/structure/assembly_graph.jl`
-8. `src/models/vehicle/structure/mass_properties.jl`
-8a. `src/models/vehicle/structure/mesh_geometry.jl`
-9. `src/models/vehicle/structure/geometry_properties.jl`
+7. `src/models/vehicle/structure/mass_properties.jl`
+7a. `src/models/vehicle/structure/mesh_geometry.jl`
+8. `src/models/vehicle/structure/geometry_properties.jl`
 
 ## Path Policy
 1. This contract documents canonical owners only.
