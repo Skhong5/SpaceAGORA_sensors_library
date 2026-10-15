@@ -249,6 +249,29 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "Actuators",
+        items = [
+            (owner = :SpaceAGORA, symbol = :AbstractActuator, rendered = "SpaceAGORA.AbstractActuator"),
+            (owner = :SpaceAGORA, symbol = :Thruster, rendered = "SpaceAGORA.Thruster"),
+            (owner = :SpaceAGORA, symbol = :ActuatorContext, rendered = "SpaceAGORA.ActuatorContext"),
+            (owner = :SpaceAGORA, symbol = :actuator_wrench, rendered = "SpaceAGORA.actuator_wrench"),
+            (owner = :SpaceAGORA, symbol = :actuator_limits, rendered = "SpaceAGORA.actuator_limits"),
+            (owner = :SpaceAGORA, symbol = :actuator_saturate, rendered = "SpaceAGORA.actuator_saturate"),
+            (owner = :SpaceAGORA, symbol = :actuator_consumption, rendered = "SpaceAGORA.actuator_consumption"),
+            (owner = :SpaceAGORA, symbol = :actuator_fraction, rendered = "SpaceAGORA.actuator_fraction"),
+            (owner = :SpaceAGORA, symbol = :actuator_unit_wrench, rendered = "SpaceAGORA.actuator_unit_wrench"),
+            (owner = :SpaceAGORA, symbol = :actuation_mode, rendered = "SpaceAGORA.actuation_mode"),
+            (owner = :SpaceAGORA, symbol = :actuator_levels, rendered = "SpaceAGORA.actuator_levels"),
+            (owner = :SpaceAGORA, symbol = :add_actuator!, rendered = "SpaceAGORA.add_actuator!"),
+            (owner = :SpaceAGORA, symbol = :mounted_actuators, rendered = "SpaceAGORA.mounted_actuators"),
+            (owner = :SpaceAGORA, symbol = :actuator_context, rendered = "SpaceAGORA.actuator_context"),
+            (owner = :SpaceAGORA, symbol = :allocation_matrix, rendered = "SpaceAGORA.allocation_matrix"),
+            (owner = :SpaceAGORA, symbol = :mounted_wrench, rendered = "SpaceAGORA.mounted_wrench"),
+            (owner = :SpaceAGORA, symbol = :allocate_actuators, rendered = "SpaceAGORA.allocate_actuators"),
+            (owner = :SpaceAGORA, symbol = :six_axis_thrusters, rendered = "SpaceAGORA.six_axis_thrusters")
+        ]
+    ),
+    (
         title = "Robotics and Planning",
         items = [
             (owner = :SpaceAGORA, symbol = :RobotArmBasePose, rendered = "SpaceAGORA.RobotArmBasePose"),

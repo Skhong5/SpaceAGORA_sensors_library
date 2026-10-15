@@ -55,6 +55,15 @@ function calcControlForceTorque(model::RPOMPCControlModel, u::AbstractVector, p:
     return model.held.force_ii, model.held.torque_body
 end
 
+function actuation_mode(model::RPOMPCControlModel)
+    model.actuation === :ideal || model.actuation === :mounted ||
+        throw(ArgumentError("RPOMPCControlModel actuation must be :ideal or :mounted, got $(repr(model.actuation))."))
+    return model.actuation
+end
+
+"""The six allocated thruster forces (N) held for the chaser: its mounted thrusters' levels in `:mounted` actuation."""
+actuator_levels(model::RPOMPCControlModel, i::Int) = i == model.chaser_idx ? model.held.thruster_forces_n : nothing
+
 """Return the held reaction-wheel-attributable torque, held constant (ZOH) between control ticks like `calcControlForceTorque`."""
 function calcReactionWheelTorque(model::RPOMPCControlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
     i == model.chaser_idx || return nothing

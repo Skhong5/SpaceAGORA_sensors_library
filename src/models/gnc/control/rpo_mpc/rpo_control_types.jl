@@ -25,7 +25,17 @@ Base.@kwdef mutable struct RPOControlCommandLog
     q_chaser::Vector{SVector{4, Float64}} = SVector{4, Float64}[]
 end
 
-"""RPO control effector that tracks guidance references with LQ-MPC and allocates actuators."""
+"""
+RPO control effector that tracks guidance references with LQ-MPC and allocates
+actuators.
+
+`actuation = :ideal` (the default) applies the allocated force, rotated to the
+inertial frame at the control tick and held there, with the jets' and the
+wheels' torque. `actuation = :mounted` drives the chaser's mounted thrusters at
+the six allocated forces instead, so the thrust turns with the vehicle between
+ticks; mount `six_axis_thrusters(model.thrusters)` on the chaser for that. The
+wheel torque is applied as in `:ideal`.
+"""
 Base.@kwdef mutable struct RPOMPCControlModel <: AbstractControlEffectorModel
     chaser_idx::Int = 1
     target_idx::Int = 2
@@ -39,4 +49,5 @@ Base.@kwdef mutable struct RPOMPCControlModel <: AbstractControlEffectorModel
     rate_kd::Float64 = 0.0
     max_rw_torque_nm::Float64 = Inf
     command_log::Union{Nothing, RPOControlCommandLog} = nothing
+    actuation::Symbol = :ideal
 end

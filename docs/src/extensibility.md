@@ -176,6 +176,50 @@ types) cannot belong to one, so both stay at configuration level. Built in: the
 momentum manager, the robot-arm control effector and the Apollo descent guidance and control
 models bind.
 
+## Add an actuator
+
+An actuator is hardware mounted on a spacecraft link that acts on the vehicle
+when commanded. You describe the hardware once; the engine derives the force,
+the torque, the propellant use and the `thruster_level` result columns from the
+actuators mounted on the vehicle.
+
+Stable interface:
+
+- `SpaceAGORA.AbstractActuator`
+- `SpaceAGORA.actuator_wrench` and `SpaceAGORA.actuator_limits` (required)
+- `SpaceAGORA.actuator_consumption`, `SpaceAGORA.actuator_saturate`,
+  `SpaceAGORA.actuator_fraction`, `SpaceAGORA.actuator_unit_wrench` (optional,
+  with defaults)
+- `SpaceAGORA.add_actuator!`, `SpaceAGORA.mounted_actuators`,
+  `SpaceAGORA.allocation_matrix`, `SpaceAGORA.allocate_actuators`
+
+Typical methods:
+
+```julia
+SpaceAGORA.actuator_limits(a::MyActuator) = (lower, upper)          # level bounds, the kind's unit
+SpaceAGORA.actuator_wrench(a::MyActuator, level, ctx) = (force_body, torque_body)
+SpaceAGORA.actuator_consumption(a::MyActuator, level, ctx) = (mass_rate_kg_s = ..., power_w = ...)
+```
+
+The wrench is in the spacecraft body frame, the torque about the body
+reference point; `ctx` (an `ActuatorContext`) gives the mounting link's pose
+in the body frame and the vehicle's mass, attitude and rate. `Thruster` is the
+built-in kind: its level is a thrust in newtons and its `direction` is the
+thrust direction.
+
+Registration: `add_actuator!(spacecraft, link, actuator)`.
+
+A control effector drives the mounted actuators by declaring
+`SpaceAGORA.actuation_mode(c) = :mounted` and returning one level per mounted
+actuator, in mounting order, from `SpaceAGORA.actuator_levels(c, i)`; it
+computes the levels in `calcControlEffect!` and writes no force or mass-flow
+hook. Effectors in the default `:ideal` mode keep applying their own hooks.
+The built-in RPO and Apollo descent controllers accept `actuation=:mounted`.
+
+Template:
+
+- `templates/actuator_template.jl`
+
 ## Planet, ephemerides, thermal, thruster, and guidance extensions
 
 Stable interfaces:
@@ -210,8 +254,8 @@ When adding a new model:
 
 ## Templates and runnable examples
 
-The three files under `templates/` define different extension contracts: a force
-or torque, an atmosphere density model and a control hook. They define model
+The four files under `templates/` define different extension contracts: a force
+or torque, an atmosphere density model, a control hook and an actuator. They define model
 types and methods; they do not construct or run a mission. Copy the relevant
 file into your model's owning package and add tests for the behavior you implement.
 The force/torque template demonstrates the `calcForceTorque` compatibility hook;

@@ -1,6 +1,7 @@
 module AbstractTypes
 
 export AbstractTerrainModel, AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractThermalModel, AbstractThrusterModel, AbstractControlEffectorModel, AbstractEphemeridesModel, AbstractGuidanceModel
+export AbstractActuator
 
 """
     AbstractForceTorqueModel
@@ -56,6 +57,16 @@ Stable extension interface for thruster hardware models used by actuator and
 control layers.
 """
 abstract type AbstractThrusterModel end
+
+"""
+    AbstractActuator
+
+Stable extension interface for a piece of hardware mounted on a spacecraft link
+that acts on the vehicle when commanded: a thruster, and the kinds added after
+it. A kind implements `actuator_wrench` and `actuator_limits`; the other
+actuator methods have defaults. Mount it with `add_actuator!`.
+"""
+abstract type AbstractActuator end
 
 """
     AbstractGuidanceModel

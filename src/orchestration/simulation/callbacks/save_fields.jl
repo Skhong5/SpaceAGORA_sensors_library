@@ -278,14 +278,27 @@ end
     return n
 end
 
+# The firing levels an effector reports for spacecraft `i`: its own
+# `control_thruster_levels`, or, for an effector in `:mounted` actuation that
+# does not report them, the mounted thrusters' fractions at the levels it holds.
+@inline function _effector_thruster_levels(effector, i::Int, spacecraft)
+    reported = control_thruster_levels(effector, i)
+    reported === nothing || return reported
+    actuation_mode(effector) === :mounted || return nothing
+    levels = actuator_levels(effector, i)
+    levels === nothing && return nothing
+    return mounted_thruster_fractions(spacecraft, levels)
+end
+
 @inline function _save_thruster_levels(num_sats::Int, counts::Vector{Int}, u, t, integrator)
     effectors = integrator.p.args.control_model.control_effectors
+    spacecraft = integrator.p.args.dynamics_model.spacecraft
     out = Vector{Vector{Float64}}(undef, num_sats)
     @inbounds for i in 1:num_sats
         levels = zeros(Float64, counts[i])
         if counts[i] > 0
             for effector in effectors
-                reported = control_thruster_levels(effector, i)
+                reported = _effector_thruster_levels(effector, i, spacecraft[i])
                 reported === nothing && continue
                 for k in 1:min(counts[i], length(reported))
                     value = Float64(reported[k])
@@ -314,7 +327,7 @@ function thruster_level_counts(args::SimulationConfiguration)::Vector{Int}
     for i in eachindex(spacecraft)
         n = _thruster_count(spacecraft[i])
         n == 0 && continue
-        any(effector -> control_thruster_levels(effector, i) !== nothing, effectors) || continue
+        any(effector -> _effector_thruster_levels(effector, i, spacecraft[i]) !== nothing, effectors) || continue
         counts[i] = n
     end
     return counts

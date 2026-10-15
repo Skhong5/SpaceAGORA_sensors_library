@@ -73,7 +73,10 @@ routes. Source grouping does not move companion implementations into core.
    identity. Physical spacecraft assembly remains under vehicle.
 6. Simulation execution ownership belongs to `src/orchestration/simulation/engine/*`; legacy `src/orchestration/simulation/events/*`, `src/orchestration/simulation/execution/*`, and `src/orchestration/simulation/solver_orchestration/*` are retired.
 7. Shared runtime serialization services are owned by `src/orchestration/simulation/runtime_services.jl`, not by `SimulationModel`.
-8. Actuator ownership: thruster-specific hooks live in
+8. Actuator ownership: the actuator contract lives in
+   `src/models/vehicle/actuators/actuators.jl`, mounting and the evaluation of a
+   mounted set in `src/models/vehicle/actuators/mounting.jl`, and each actuator
+   kind in one file beside them (`thruster.jl`); thruster firing dynamics live in
    `src/models/vehicle/actuators/thruster_hooks.jl`.
 9. Vehicle boundary is:
    - `src/models/vehicle/spacecraft/*` for composition/integration

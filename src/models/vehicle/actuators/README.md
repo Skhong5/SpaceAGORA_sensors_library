@@ -1,18 +1,24 @@
 # Actuators
 
-Hardware that acts on the vehicle. One file per actuator kind; the thruster is
-the template.
+Hardware mounted on a spacecraft link that acts on the vehicle when commanded.
+Each kind describes its hardware once; the engine derives the force, torque,
+propellant use and firing levels from the actuators mounted on the vehicle.
+The extensibility page and `templates/actuator_template.jl` show how to add a
+kind.
 
 | File | Holds |
 |---|---|
-| `thruster_record.jl` | `Thruster`: one mounted jet (location, exhaust direction, rating, Isp, firing dynamics constants) |
-| `thruster_models.jl` | `BaseThrusterModel` (burn schedule per spacecraft) and `SixAxisThrusterModel` (six fixed jets) |
+| `actuators.jl` | the contract (`Actuators`): the methods every kind implements, the evaluation context, the controller hooks `actuation_mode` and `actuator_levels`, and `allocate_actuators` |
+| `mounting.jl` | mounting and the mounted set (`ActuatorMounting`): `add_actuator!`, the mounting order, `allocation_matrix`, `mounted_wrench` |
+| `thruster.jl` | the thruster kind: the `Thruster` record (its `direction` is the thrust direction), its contract methods and `six_axis_thrusters` |
+| `thruster_models.jl` | `BaseThrusterModel` (a burn schedule per spacecraft) and `SixAxisThrusterModel` (six fixed jets) |
 | `thruster_models_module.jl` | the `ThrusterModels` owner module |
-| `thruster_hooks.jl` | torque allocation over mounted jets, Schmitt trigger and impulse integration |
-| `thruster_allocation.jl` | per-axis allocation of a body force over six fixed jets and its wrench |
+| `thruster_hooks.jl` | thruster firing dynamics over a link's jets: torque allocation, Schmitt trigger, impulse integration |
+| `thruster_allocation.jl` | the RPO six-axis force allocation and its wrench |
 | `reaction_wheel_record.jl` | `ReactionWheelAssembly`: wheel Jacobian, limits and stored momentum |
 | `magnetorquer_record.jl` | `Magnet`: a body-fixed dipole |
 
-The records are included and exported by `Components`
-(`src/models/vehicle/spacecraft/components.jl`) until the actuator contract
-lands; see the actuator-layer plan.
+Records stay owned by `Components` (`src/models/vehicle/spacecraft/components.jl`),
+which includes the kind files, so serialized spacecraft keep their type
+identity. The reaction wheel and the torque rod join the contract in later
+steps of the actuator plan; until then their records are data only.
