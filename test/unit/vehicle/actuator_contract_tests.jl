@@ -822,6 +822,16 @@ end
         # The engine runs exactly the window: 1 N for 100 s at 300 s of specific impulse; so does the ideal burn.
         @test 110.0 - pointed.solution.u[end].sc[1].mass ≈ 100.0 / (300.0 * G0) rtol=1e-6
         @test 110.0 - ideal.solution.u[end].sc[1].mass ≈ 100.0 / (300.0 * G0) rtol=1e-6
+        # A burn already on when the run starts: the first step thrusts too.
+        at_start = SM.BaseThrusterModel(thrust=[1.0], direction=[0.0], Δv=[0.0], start_burn_time=[0.0],
+            stop_burn_time=[100.0], Isp=[300.0])
+        start_base = make_example_config(planet=SM.Earth(), spacecraft=orbit_spacecraft(id=26), mission_time=150.0,
+            initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+            dynamic_effectors=(SM.InverseSquaredGravityModel(),), ephemerides_model=SM.SimpleEphemeridesModel(),
+            orientation_sim=true, keplerian=false, EI_km=1.0, verbose=false, results=false)
+        start_args = SM.SimConfig._with_configuration(start_base;
+            control_model=SM.ControlModel(control_effectors=(at_start,), control_rates=[1.0]))
+        @test 110.0 - run_simulation(start_args; return_solution=true).u[end].sc[1].mass ≈ 100.0 / (300.0 * G0) rtol=1e-6
         ideal_mass_at(t) = ideal.solution(t).sc[1].mass
         @test ideal_mass_at(300.5) == ideal_mass_at(300.0) && ideal_mass_at(300.9) < ideal_mass_at(300.5) - 0.3 / (300.0 * G0)
         @test isapprox(ideal_mass_at(449.0), ideal_mass_at(400.5); atol=1e-12)

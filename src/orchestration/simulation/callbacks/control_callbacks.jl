@@ -92,17 +92,17 @@ function _mounted_burn_tick_callback(control_model::BaseThrusterModel, period::F
 end
 
 # A burn switches only between integration steps: the solver stops at the
-# window's ends (registered as stops when the burn is set), this callback
-# switches the burn there and marks the derivative discontinuous, so the next
-# step starts from a derivative evaluated with the new thrust.
+# window's ends (registered as stops when the burn is set) and this callback
+# switches the burn there. A discrete callback counts as a derivative
+# discontinuity unless it clears the flag, so the solver evaluates the
+# derivative again, with the new thrust, before the next step; the callback
+# must not call `derivative_discontinuity!(integrator, false)`, which would keep
+# the stale one.
 function _burn_edge_callback(control_model::BaseThrusterModel, num_sats::Int)
     condition = (u, t, integrator) -> burn_edge(control_model, t)
     affect! = integrator -> begin
         @inbounds for sat_idx in 1:num_sats
             refresh_burn!(control_model, integrator.p, sat_idx, integrator.t)
-        end
-        if applicable(DiffEqBase.derivative_discontinuity!, integrator, false)
-            DiffEqBase.derivative_discontinuity!(integrator, false)
         end
         return nothing
     end
@@ -140,8 +140,8 @@ function _thruster_schedule_callbacks(control_model::BaseThrusterModel, num_sats
         initialize=(cb, u, t, integrator) -> begin
             schedule_all!(integrator)
             # A burn already on at the start: the first derivative must thrust.
-            if any(control_model.burning) && applicable(DiffEqBase.derivative_discontinuity!, integrator, false)
-                DiffEqBase.derivative_discontinuity!(integrator, false)
+            if any(control_model.burning) && applicable(DiffEqBase.derivative_discontinuity!, integrator, true)
+                DiffEqBase.derivative_discontinuity!(integrator, true)
             end
         end,
         save_positions=(false, false)
