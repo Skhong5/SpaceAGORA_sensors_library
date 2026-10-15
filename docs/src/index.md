@@ -67,6 +67,12 @@ viewer each need their own package installation; each page says which.
 - [Energy Depletion Guidance](user/edg_guidance.md)
 - [Interactive Visualization](user/visualization.md)
 
+## How a run fits together
+
+![Run flow: scenario configuration contains the spacecraft collection; individual spacecraft contain rigid, articulated or compliant assemblies. Environment, spacecraft and GNC supply the repeated dynamics and solver loop; callbacks update commands and save values for outputs.](assets/architecture_run_flow.svg)
+
+[How a Simulation Fits Together](user/architecture.md) explains this flow and where each part lives.
+
 ## How these pages are organized
 
 - **Get Started**: installation and the first run.

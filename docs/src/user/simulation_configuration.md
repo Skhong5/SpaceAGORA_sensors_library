@@ -24,6 +24,10 @@ What to read next:
 
 ## The components at a glance
 
+![How a configuration nests: make_example_config or a MissionPlan builder produces a SimulationConfiguration. It holds InitialTime, MissionConfiguration, SimulationSettings and FilePaths; the EnvironmentModel with planet, atmosphere, ephemerides and thermal model; the guidance, navigation and control models; the DynamicsModel with its force and torque models and one SpacecraftModel per vehicle, each with an initial condition, links joined by joints and hardware mounted on the links; and the solver settings. run_simulation or run_mission turns it into results.](../assets/figures/configuration_anatomy.svg)
+
+The table lists the same components with the section that describes each.
+
 | Component | What it sets | Section |
 | --- | --- | --- |
 | `InitialTime` | the simulation epoch | [InitialTime](#InitialTime) |
