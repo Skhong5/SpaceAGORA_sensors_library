@@ -5,6 +5,9 @@ run.
 
 This page is for first-time users who do not need GRAM or SPICE on day one.
 
+The root environment is the canonical committed execution environment for
+the repository-owned quickstart path.
+
 This default quickstart baseline is the Earth vacuum path:
 `NoAtmosphereModel()` plus `SimpleEphemeridesModel()`.
 
