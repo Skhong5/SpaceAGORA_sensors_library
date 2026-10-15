@@ -39,9 +39,13 @@ end
 # Spacecraft with a battery, whose stored energy is a state.
 _battery_spacecraft(args) = [i for i in eachindex(args.dynamics_model.spacecraft) if has_battery(args.dynamics_model.spacecraft[i])]
 
-@inline function _mark_power_discontinuity!(integrator)
-    if applicable(DiffEqBase.derivative_discontinuity!, integrator, false)
-        DiffEqBase.derivative_discontinuity!(integrator, false)
+# A discrete or event callback counts as a derivative discontinuity unless it
+# clears the flag: declare one when the power state changed (the solver then
+# evaluates the derivative again) and clear it otherwise, so the step-end
+# update costs no re-evaluation when nothing switched.
+@inline function _mark_discontinuity!(integrator, changed::Bool)
+    if applicable(DiffEqBase.derivative_discontinuity!, integrator, changed)
+        DiffEqBase.derivative_discontinuity!(integrator, changed)
     end
     return nothing
 end
@@ -55,8 +59,8 @@ function _update_power_states!(integrator, sats::Vector{Int})
         snap = _power_snapshot(sc_view, spacecraft[i], integrator.p, i, integrator.t)
         changed |= update_power_state!(spacecraft[i], sc_view.battery_wh, snap.generation_w, snap.by_tier)
     end
-    changed && _mark_power_discontinuity!(integrator)
-    return nothing
+    _mark_discontinuity!(integrator, changed)
+    return changed
 end
 
 """
@@ -88,9 +92,9 @@ function get_power_callbacks(num_sats::Int, args::SimulationConfiguration)
             i = sats[(e + 1) ÷ 2]
             hit |= battery_boundary!(integrator.p.args.dynamics_model.spacecraft[i], integrator.u.sc[i].battery_wh)
         end
-        hit || return nothing
+        hit || (_mark_discontinuity!(integrator, false); return nothing)
         _update_power_states!(integrator, sats)
-        _mark_power_discontinuity!(integrator)
+        _mark_discontinuity!(integrator, true)
         return nothing
     end
     boundary = VectorContinuousCallback(condition!, boundary!, 2 * length(sats); save_positions=(false, false))   # both crossing directions
@@ -104,7 +108,7 @@ function get_power_callbacks(num_sats::Int, args::SimulationConfiguration)
             b.shed_tier = 0
         end
         _update_power_states!(integrator, sats)
-        _mark_power_discontinuity!(integrator)
+        _mark_discontinuity!(integrator, true)
         return nothing
     end
     step_end = DiscreteCallback((u, t, integrator) -> true, integrator -> _update_power_states!(integrator, sats);
