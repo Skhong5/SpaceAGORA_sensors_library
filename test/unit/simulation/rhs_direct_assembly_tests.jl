@@ -293,7 +293,7 @@ end
 @testset "Fused harmonics RHS matches the unfused route bit for bit" begin
     planet = Earth()
     gravity_file = joinpath(normpath(joinpath(@__DIR__, "..", "..", "..")),
-        "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+        "data", "planets", "gravity", "EarthGGM05C.csv")
     model = GravitationalHarmonicsModel(20, 20, gravity_file, planet)
     n = 37
     args = _rhs_direct_assembly_config(n_sats=n, effectors=(model,))
@@ -409,7 +409,7 @@ end
 @testset "Per-region width search leaves the RHS bit-identical" begin
     planet = Earth()
     gravity_file = joinpath(normpath(joinpath(@__DIR__, "..", "..", "..")),
-        "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+        "data", "planets", "gravity", "EarthGGM05C.csv")
     model = GravitationalHarmonicsModel(20, 20, gravity_file, planet)
     n = 37
     args = _rhs_direct_assembly_config(n_sats=n, effectors=(model, InverseSquaredGravityModel()))
@@ -581,7 +581,7 @@ end
     PP = SpaceAGORA.SimulationModel.ParallelPolicy
     planet = Earth()
     gravity_file = joinpath(normpath(joinpath(@__DIR__, "..", "..", "..")),
-        "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+        "data", "planets", "gravity", "EarthGGM05C.csv")
     model = GravitationalHarmonicsModel(20, 20, gravity_file, planet)
     n = 37
     args = _rhs_direct_assembly_config(n_sats=n, effectors=(model,))

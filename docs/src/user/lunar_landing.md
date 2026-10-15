@@ -187,8 +187,8 @@ julia --project=. scripts/dev/viewer_demos/apollo11_landing.jl --output-dir outp
 ```
 
 The demo needs the site bundle (or `SPACEAGORA_TERRAIN_SITE`), the tracked
-lunar module display model in `data/models/`, the LP165P gravity coefficients
-in `data/Gravity_harmonics_data/` and the SPICE starter assets
+lunar module display model in `data/scene/models/`, the LP165P gravity coefficients
+in `data/planets/gravity/` and the SPICE starter assets
 (`SPACEAGORA_SPICE_PATH`) for the lunar orientation; it needs no atmosphere and
 no native GRAM. `--duration-s` is only a cap: the touchdown event ends the run.
 An existing nonempty output directory is refused. The run prints the PDI state,

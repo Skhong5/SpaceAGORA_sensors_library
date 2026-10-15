@@ -117,7 +117,7 @@ gravity/RHS costs and constellation scaling without aero or attitude coupling.
 | `gravity_256sat_l20_vacuum` | 256 | L20 gravity harmonics | Very large constellation with expensive gravity. |
 | `gravity_1024sat_l20_vacuum` | 1024 | L20 gravity harmonics | Extreme expensive-gravity scheduling case. |
 
-The harmonics cases use `data/Gravity_harmonics_data/EarthGGM05C.csv` when it is
+The harmonics cases use `data/planets/gravity/EarthGGM05C.csv` when it is
 available. If that file is missing, the builder falls back to J2 gravity.
 
 ### Few-Spacecraft High-Fidelity Cases

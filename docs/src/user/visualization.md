@@ -163,13 +163,13 @@ STL, OBJ and uncompressed GLB models can replace link boxes:
 
 ```julia
 export_visualization("output/viewer-earth/simulation_results";
-    models=Dict(1 => "data/models/iss_nasa_3d_resources_b.glb"),
+    models=Dict(1 => "data/scene/models/iss_nasa_3d_resources_b.glb"),
     model_scale=2.4, model_rotation_deg=Dict(1 => (-90, 0, -90)))
 ```
 
 Match the spacecraft ID, scale and orientation to your model. The model is
 display geometry; it does not replace the aerodynamic or structural model.
-`data/models/README.md` and `data/textures/manifest.toml` record asset sources.
+`data/scene/models/README.md` and `data/scene/textures/manifest.toml` record asset sources.
 Bundled mission display meshes include Apollo Lunar Module, Cassini with and
 without Huygens, CYGNSS, Magellan and Mars Odyssey, in addition to ISS. Supply
 the corresponding GLB path through `models`; models are embedded only when
@@ -240,7 +240,7 @@ agree:
 
 ```julia
 export_visualization("output/viewer-earth/simulation_results";
-    models=Dict(1 => "data/models/iss_nasa_3d_resources_b.glb"), model_scale=2.4,
+    models=Dict(1 => "data/scene/models/iss_nasa_3d_resources_b.glb"), model_scale=2.4,
     model_articulations=Dict(1 => [
         (region=(x_min=10.0,), axis=(0.0, 1.0, 0.0), angle_deg=90.0, pivot=:centroid)]))
 ```

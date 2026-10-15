@@ -32,7 +32,7 @@ end
 const TV = TelemetryVerification
 
 const _96HR_FEATHER   = joinpath(_REPO_ROOT, "data", "telemetry", "CYGNSS", "cyg01_nasa_pvt_96hr.feather")
-const _HARMONICS_FILE = "data/Gravity_harmonics_data/EarthGGM05C.csv"
+const _HARMONICS_FILE = "data/planets/gravity/EarthGGM05C.csv"
 
 # ---------------------------------------------------------------------------
 # Convert an integer second offset from the base epoch (2025-06-05 00:00:00 UTC)

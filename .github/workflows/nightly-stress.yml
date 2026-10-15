@@ -29,7 +29,7 @@ on:
       - ".github/actions/setup/action.yml"
       - "data/GRAMSuite.jl"
       - "data/telemetry/**"
-      - "data/Gravity_harmonics_data/**"
+      - "data/planets/gravity/**"
       - "test/telemetry_benchmark_manifest.toml"
       - "test/stress/**"
       - "benchmarks/studies/telemetry_orbit_accuracy_study.jl"

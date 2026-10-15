@@ -48,7 +48,7 @@ using StaticArrays
 const DEMO_OUT_ROOT = get(ENV, "SPACEAGORA_VIEWER_DEMO_OUT", joinpath(REPO_ROOT, "output", "viewer_demos"))
 const DEMO_SMOKE = get(ENV, "SPACEAGORA_DEMO_SMOKE", "0") == "1"
 const PLAN_ONLY = get(ENV, "SPACEAGORA_ISS_HYPR_PLAN_ONLY", "0") == "1"
-const ISS_MODEL = joinpath(REPO_ROOT, "data", "models", "iss_nasa_3d_resources_b.glb")
+const ISS_MODEL = joinpath(REPO_ROOT, "data", "scene", "models", "iss_nasa_3d_resources_b.glb")
 const ISS_SCALE = 2.4                           # meters per model unit; truss near 109 m
 # The ISS flies +XVV: body +X (forward, toward Harmony) along the velocity,
 # +Y (starboard truss) and +Z (nadir). The model's own axes run along the

@@ -42,7 +42,7 @@ spacecraft = make_three_body_spacecraft(
     id=1
 )
 
-earth_harmonics_file = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+earth_harmonics_file = joinpath(REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv")
 sun_moon_gravity = NBodyGravityModel(body_names=("Sun", "Moon"), primary_body_name="Earth", planet=planet)
 solar_radiation_pressure = SolarRadiationPressureModel(
     spacecraft.root.reflection_coefficient,

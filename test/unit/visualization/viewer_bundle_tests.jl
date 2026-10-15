@@ -488,7 +488,7 @@ end
         @test_throws ArgumentError SV.model_payloads(scene; models=Dict(1 => joinpath(dir, "x.fbx")))
 
         # The shipped NASA ISS model embeds as GLB.
-        iss = joinpath(REPO, "data", "models", "iss_nasa_3d_resources_b.glb")
+        iss = joinpath(REPO, "data", "scene", "models", "iss_nasa_3d_resources_b.glb")
         @test isfile(iss)
         @test read(iss, 4) == Vector{UInt8}("glTF")
         @test SV.gltf_required_extensions(iss) == String[]   # shipped decompressed; the NASA original needs Draco
@@ -513,7 +513,7 @@ end
         @test size(load_model_triangles(stl)) == (3, 3)
         @test model_bounding_box(stl)[2] == SVector(1.0, 1.0, 0.0)
 
-        iss = joinpath(REPO, "data", "models", "iss_nasa_3d_resources_b.glb")
+        iss = joinpath(REPO, "data", "scene", "models", "iss_nasa_3d_resources_b.glb")
         iss_tris = load_model_triangles(iss)
         @test size(iss_tris, 2) > 100_000 && size(iss_tris, 2) % 3 == 0
         lo, hi = model_bounding_box(iss)
@@ -745,7 +745,7 @@ end
         @test _decode_f32(only(channel_payload["frames"]["channels"])["data"]) ==
             _decode_f32(channel_payload["frames"]["mass_kg"])
 
-        iss = joinpath(REPO, "data", "models", "iss_nasa_3d_resources_b.glb")
+        iss = joinpath(REPO, "data", "scene", "models", "iss_nasa_3d_resources_b.glb")
         iss_page = export_visualization(args; out=joinpath(dir, "iss.html"), textures=false, models=Dict(1 => iss), model_scale=2.4, model_rotation_deg=Dict(1 => (-90, 0, -90)))
         iss_html = read(iss_page, String)
         @test occursin("data:model/gltf-binary;base64,", iss_html)
@@ -855,7 +855,7 @@ end
         craft = only(raw["spacecraft"])
         raw["spacecraft"] = [merge(copy(craft), Dict("id" => i, "name" => "mission $(i)")) for i in eachindex(files)]
         scene = SV._scene_from_dict(raw)
-        models = Dict(i => joinpath(REPO, "data", "models", file) for (i, file) in enumerate(files))
+        models = Dict(i => joinpath(REPO, "data", "scene", "models", file) for (i, file) in enumerate(files))
         payload = SV.model_payloads(scene; models=models)
         @test length(payload) == length(files)
         for (i, file) in enumerate(files)

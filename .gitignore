@@ -17,15 +17,18 @@ output/*
 GRAMpy/*
 *.pdf
 *.csv
-# ...but gravity-coefficient assets are versioned (see test/gmat_scenario_matrix.jl)
-!data/Gravity_harmonics_data/*.csv
-# Viewer surface textures: public-domain NASA/USGS mosaics registered in data/textures/manifest.toml
-!data/textures/
-!data/textures/*.jpg
-!data/textures/manifest.toml
-# 3D models for the viewer (public-domain NASA assets, see data/models/README.md)
-!data/models/
-!data/models/README.md
+# ...but gravity and topography coefficient assets are versioned (see test/gmat_scenario_matrix.jl)
+!data/planets/gravity/*.csv
+!data/planets/topography/*.csv
+# SPICE pole/orientation overrides shipped with the planet inputs
+!data/planets/spice_overrides/*.tpc
+# Viewer surface textures: public-domain NASA/USGS mosaics registered in data/scene/textures/manifest.toml
+!data/scene/textures/
+!data/scene/textures/*.jpg
+!data/scene/textures/manifest.toml
+# 3D models for the viewer and the RPO station geometry (see data/scene/models/README.md)
+!data/scene/models/
+!data/scene/models/README.md
 *.png
 *.tex
 .DS_Store
@@ -111,8 +114,10 @@ CLAUDE.md
 *.[fF][bB][xX]
 *.[dD][aA][eE]
 *.[gG][lL][bB]
-# ...except the viewer models registered in data/models/README.md (this must follow the *.glb rule)
-!data/models/*.glb
+# ...except the viewer models registered in data/scene/models/README.md (this must follow the *.glb rule)
+!data/scene/models/*.glb
+# ...and the RPO station mesh registered in the same README (this must follow the *.stl rule)
+!data/scene/models/*.stl
 *.[gG][lL][tT][fF]
 *.[pP][lL][yY]
 *.[wW][rR][lL]

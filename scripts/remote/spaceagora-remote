@@ -13,10 +13,10 @@ declare -A REMOTES
 
 DEFAULT_DATA_ALLOWLIST=(
   "data/GRAMSuite.jl"
-  "data/GRAM_surrogate"
-  "data/Topography_harmonics_data"
-  "data/Gravity_harmonics_data"
-  "data/spice.txt"
+  "data/planets/gram_surrogate"
+  "data/planets/topography"
+  "data/planets/gravity"
+  "data/planets/spice_overrides/spice.txt"
 )
 DEFAULT_PULL_PATHS=("output" "results")
 DEFAULT_POLL_INTERVAL=30

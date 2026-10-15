@@ -1311,7 +1311,7 @@ def main(argv=None):
     ap.add_argument("--fine-lod-factor", type=float, default=2.5, help="the same for the levels that no longer span the corridor")
     ap.add_argument("--detail-std", type=float, default=3.2, help="amplitude each level's own detail band is normalized to, 0..255")
     ap.add_argument("--detail-max-gain", type=float, default=2.2, help="cap on amplifying a level whose source has little detail left")
-    ap.add_argument("--match-texture", default=str(pathlib.Path(__file__).resolve().parents[3] / "data" / "textures" / "moon_lroc_wac_4k.jpg"),
+    ap.add_argument("--match-texture", default=str(pathlib.Path(__file__).resolve().parents[3] / "data" / "scene" / "textures" / "moon_lroc_wac_4k.jpg"),
                     help="global texture the root level is matched to, so the covered region is not a box on the globe")
     ap.add_argument("--quality-ramp-level", type=int, default=12,
                     help="level at which the JPEG quality reaches --quality-fine; deeper levels keep it")

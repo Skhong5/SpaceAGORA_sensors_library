@@ -28,7 +28,7 @@ using Printf
 const SM = SpaceAGORA.SimulationModel
 const SE = SpaceAGORA.SimulationEngine
 const EARTH = SM.Earth()
-const HARM = joinpath(@__DIR__, "..", "..", "..", "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+const HARM = joinpath(@__DIR__, "..", "..", "..", "data", "planets", "gravity", "EarthGGM05C.csv")
 
 const _COMMON = Dict(
     "SPACEAGORA_PERF_PARALLEL_BACKEND" => "none",

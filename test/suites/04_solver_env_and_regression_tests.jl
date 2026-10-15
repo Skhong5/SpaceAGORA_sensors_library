@@ -258,7 +258,7 @@
         @test isapprox(du_flat_rhs.sc[i].heat_loads, du_serial_rhs.sc[i].heat_loads; atol=1e-12, rtol=1e-12)
     end
 
-    harmonics_file_flat = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_file_flat = joinpath(REPO_ROOT, "data/planets/gravity", "EarthGGM05C.csv")
     harmonics_flat_model = GravitationalHarmonicsModel(8, 8, harmonics_file_flat, EARTH)
     args_harmonics_flat = build_config_multi(
         spacecraft=[
@@ -1426,7 +1426,7 @@
     @test p_nbody_srp.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls[] == 1
 
     dyn = SimulationModel.DynamicEffectors
-    harmonics_file = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_file = joinpath(REPO_ROOT, "data/planets/gravity", "EarthGGM05C.csv")
     @test_throws ArgumentError GravitationalHarmonicsModel(-1, 0, harmonics_file, EARTH)
     @test_throws ArgumentError GravitationalHarmonicsModel(10_000, 0, harmonics_file, EARTH)
 

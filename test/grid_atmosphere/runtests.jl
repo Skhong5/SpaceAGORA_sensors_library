@@ -32,6 +32,10 @@ using SpaceAGORA, GRAMSuite
 include("interface_tests.jl")
 end
 
+module GridDiscoveryTests
+include("discovery_tests.jl")
+end
+
 module GridSchemaTests
 using SpaceAGORA, GRAMSuite
 include("schema_tests.jl")

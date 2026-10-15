@@ -55,7 +55,7 @@ function _lepp_worker_fn_expr(n_sats::Int, alt_m::Float64, mission_time_s::Float
         function _lepp_worker_run(sat_idx::Int)::Nothing
             planet = Earth("", SPICE_PATH)
             harmonics = GravitationalHarmonicsModel(
-                20, 20, joinpath($_LEPP_REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv"), planet
+                20, 20, joinpath($_LEPP_REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv"), planet
             )
             root = Link(root=true, m=500.0, ref_area=12.0)
             jitter = 50.0 * (sat_idx - 1) / $n_sats
