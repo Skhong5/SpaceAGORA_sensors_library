@@ -30,6 +30,8 @@ GRAMpy/*
 !data/scene/models/
 !data/scene/models/README.md
 *.png
+# Documentation figures are committed; scripts/docs_figures/ regenerates them
+!docs/src/assets/figures/*.png
 *.tex
 .DS_Store
 *.cov

@@ -232,6 +232,10 @@ savefig(plot(drag, height; layout=(2, 1), size=(800, 700)),
     joinpath(dir, "passages.png"))
 ```
 
+For the default comparison the saved figure looks like this:
+
+![Two plots against elapsed time for panel caps of 90 and 30 degrees. Drag peaks at periapsis, at about 14 N with the 90-degree cap and about 9 N with the 30-degree cap. The two height curves, from 250 km down to about 111 km and back, lie on top of each other.](../assets/figures/odyssey_panel_cap_comparison.png)
+
 For another pair of caps, change the directory and the two `cap_*_deg` folder
 names to the ones your run printed.
 

@@ -100,6 +100,12 @@ its x-y projection is close to a line, and its ground track runs along the top
 and bottom edges of the map while it passes the poles, where all longitudes
 meet.
 
+The first two plots from a run of this example:
+
+![Three plots against time since the start. Geodetic altitude falls from about 50,000 km to a periapsis near 200 km and climbs again; the osculating periapsis altitude stays near 200 km with a small disturbance around periapsis; inertial speed peaks at about 10 km/s at periapsis.](../assets/figures/quickstart_altitude_speed.png)
+
+![The trajectory projected on the inertial x-y and x-z planes, centred on the planet, whose equatorial radius is drawn as a circle, with the start and end points marked.](../assets/figures/quickstart_inertial_trajectory.png)
+
 On Windows the variable is set in a separate statement, and the remaining
 three lines of the path above then run unchanged. Terminal, Windows
 PowerShell:
