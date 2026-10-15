@@ -7,6 +7,7 @@ module ControlHooks
     using ..RobotArmPlanning: RobotArmPlan, robot_arm_plan_sample
     using ..ThrusterModels: BaseThrusterModel, SixAxisThrusterModel
     import ..Actuators: actuation_mode, actuator_levels
+    using ..ActuatorMounting: mounted_actuator_count, mounted_thruster_count
     using ..CommandTypes: PropulsiveManeuverCommand, PropulsiveBurnPlan
     using ..GuidanceModels: RPOPlan, RPOPlanBuffer
     using ..GravityEffectors: aerobraking_gravity_force_ii

@@ -167,10 +167,25 @@ include(joinpath(@__DIR__, "..", "..", "..", "templates", "actuator_template.jl"
         end
         @test mismatches == 0
 
+        # Jets on a rotated, offset link: the descent layout's torque arms are
+        # the mounted jets' torques at full thrust, so its levels act as allocated.
+        tilted = SM.Link(r=MVector(0.4, -0.3, 1.2), q=MVector(normalize([0.1, 0.3, -0.2, 0.9])...),
+            thrusters=[jet((0.5, 0.0, 0.0), (0.0, 1.0, 0.0), 12.0), jet((0.0, 0.5, 0.0), (0.0, 0.0, 1.0), 14.0),
+                       jet((0.0, 0.0, 0.5), (1.0, 0.0, 0.0), 16.0)])
+        engine_link = SM.Link(root=true, thrusters=[jet((0.0, 0.0, 0.0), (0.0, 0.0, -1.0), 100.0)])
+        posed = SM.SpacecraftModel(links=[engine_link, tilted], root=engine_link, id=98)
+        posed_layout = CH.descent_thruster_layout(posed)
+        B_posed = allocation_matrix(posed)
+        ratings = [12.0, 14.0, 16.0]
+        @test posed_layout.jets == [2, 3, 4]
+        @test posed_layout.torque_arms_nm ≈ B_posed[4:6, 2:4] .* ratings' atol=1e-12
+
         # A feasible wrench is reproduced by the least-norm levels.
         full = allocation_matrix(spacecraft_with(SM.Link(root=true; thrusters=six_axis_thrusters(SM.SixAxisThrusterModel(max_thrust_n=SVector{6}(fill(5.0, 6)))))))
         target = vcat(SVector(0.2, -0.1, 0.3), ZERO3)
         @test full * allocate_actuators(full, target, -Inf, Inf) ≈ target
+        floor_levels = allocate_actuators(full, target, 0.05, 5.0; method=:axis_clamp)
+        @test all(>=(0.05), floor_levels) && all(<=(5.0), floor_levels)       # both bounds hold, idle jets included
         @test_throws ArgumentError allocate_actuators(full, target, 0.0, 1.0; method=:nearest)
         @test_throws ArgumentError allocate_actuators(full[:, [2, 1, 3, 4, 5, 6]], target, 0.0, 1.0; method=:axis_clamp)
         @test_throws DimensionMismatch allocate_actuators(full, target, zeros(3), 1.0)
@@ -216,6 +231,7 @@ include(joinpath(@__DIR__, "..", "..", "..", "templates", "actuator_template.jl"
             f_body, tq_body = SM.rpo_thruster_wrench_body(forces, six)
             model.held = SM.ControlHooks.RPOHeldActuation(force_ii=f_body, torque_body=tq_body + rw,
                 thruster_forces_n=forces, rw_torque_body=rw)          # held at an identity attitude
+            actuation === :mounted && CH._rpo_fill_mounted_levels!(model, chaser, forces)   # what a control tick does
             return model
         end
         ideal, mounted = held_model(:ideal), held_model(:mounted)
@@ -234,7 +250,14 @@ include(joinpath(@__DIR__, "..", "..", "..", "templates", "actuator_template.jl"
         @test readout(p_ideal, 1, body_state(q; mass=12.0))[1] == fi
         @test readout(p_mounted, 1, body_state(q; mass=12.0))[1] ≈ SM.rot(q)' * fm atol=1e-15
         @test SpaceAGORA.actuator_levels(mounted, 2) === nothing
+        @test SpaceAGORA.actuator_levels(SM.RPOMPCControlModel(actuation=:mounted), 1) === nothing   # before the first tick
         @test_throws ArgumentError SpaceAGORA.actuation_mode(SM.RPOMPCControlModel(actuation=:bogus))
+        # Other hardware on the chaser stays idle rather than failing the evaluation.
+        add_actuator!(chaser, root, ColdGasPuck(SVector(0.0, 1.0, 0.0), ZERO3, 0.5, 50.0))
+        CH._rpo_fill_mounted_levels!(mounted, chaser, forces)
+        @test SpaceAGORA.actuator_levels(mounted, 1) == vcat(collect(forces), 0.0)
+        @test readout(p_mounted, 1, body_state(identity; mass=12.0))[1] ≈ fm atol=1e-15
+        @test_throws ArgumentError CH._rpo_fill_mounted_levels!(mounted, spacecraft_with(SM.Link(root=true)), forces)
     end
 
     @testset "mounted controllers fill the thruster_level columns" begin

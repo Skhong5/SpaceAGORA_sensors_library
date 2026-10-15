@@ -33,8 +33,9 @@ actuators.
 inertial frame at the control tick and held there, with the jets' and the
 wheels' torque. `actuation = :mounted` drives the chaser's mounted thrusters at
 the six allocated forces instead, so the thrust turns with the vehicle between
-ticks; mount `six_axis_thrusters(model.thrusters)` on the chaser for that. The
-wheel torque is applied as in `:ideal`.
+ticks: the forces go to the first six mounted thrusters, so mount
+`six_axis_thrusters(model.thrusters)` on the chaser first; any other mounted
+actuator stays idle. The wheel torque is applied as in `:ideal`.
 """
 Base.@kwdef mutable struct RPOMPCControlModel <: AbstractControlEffectorModel
     chaser_idx::Int = 1
@@ -50,4 +51,6 @@ Base.@kwdef mutable struct RPOMPCControlModel <: AbstractControlEffectorModel
     max_rw_torque_nm::Float64 = Inf
     command_log::Union{Nothing, RPOControlCommandLog} = nothing
     actuation::Symbol = :ideal
+    # `:mounted` actuation: one level per actuator mounted on the chaser, refreshed each tick.
+    mounted_levels::Vector{Float64} = Float64[]
 end

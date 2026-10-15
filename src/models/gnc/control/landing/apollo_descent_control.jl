@@ -36,9 +36,9 @@ order): the descent engine is the highest-rated one, every other thruster is
 an RCS jet. `torque_to_levels` is the least-norm map from a commanded body
 torque to the jets' firing levels, `pinv(A)` of the 3 x n matrix whose column
 j is the torque a jet produces at full thrust about the spacecraft reference
-point. This diagnostic allocation assumes those locations and directions are
-already expressed in the spacecraft body frame; articulated/gimbaled jets
-need a separate allocator. In `:ideal` actuation the dynamics apply the bounded
+point. Each jet's location and direction are taken to the spacecraft body
+frame through its link's configured pose, as the mounted wrench does;
+articulated/gimbaled jets need a separate allocator. In `:ideal` actuation the dynamics apply the bounded
 body torque directly; in `:mounted` actuation the jets' allocated levels act.
 """
 struct DescentThrusterLayout
@@ -155,10 +155,24 @@ function descent_thruster_layout(model)::Union{Nothing, DescentThrusterLayout}
     locations = SVector{3, Float64}[]
     directions = SVector{3, Float64}[]
     max_thrust = Float64[]
-    for link in model.links, thruster in link.thrusters
-        push!(locations, SVector{3, Float64}(thruster.location))
-        push!(directions, SVector{3, Float64}(thruster.direction))
-        push!(max_thrust, Float64(thruster.max_thrust))
+    for link in model.links
+        # The link-to-body map of the mounted wrench (ActuatorMounting.actuator_context).
+        # A root link at the body origin needs none; skipping it keeps that
+        # arithmetic, and so every existing layout, bit for bit unchanged.
+        offset = SVector{3, Float64}(link.r)
+        identity_pose = link.root && iszero(offset)
+        to_body = link.root ? nothing : SMatrix{3, 3, Float64, 9}(rot(SVector{4, Float64}(link.q))')
+        for thruster in link.thrusters
+            location = SVector{3, Float64}(thruster.location)
+            direction = SVector{3, Float64}(thruster.direction)
+            if !identity_pose
+                location = (to_body === nothing ? location : to_body * location) + offset
+                direction = to_body === nothing ? direction : to_body * direction
+            end
+            push!(locations, location)
+            push!(directions, direction)
+            push!(max_thrust, Float64(thruster.max_thrust))
+        end
     end
     isempty(max_thrust) && return nothing
     engine = argmax(max_thrust)

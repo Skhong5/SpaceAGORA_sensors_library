@@ -183,6 +183,8 @@ within `lower` and `upper` (scalars, or one bound per actuator).
   +z, -z, in that order. Each body axis of the force `command` (its first
   three entries) is served by the jet on its side, up to that jet's upper
   bound; jets below `minimum_fraction` of their upper bound are turned off.
+  Every level is then clamped to its bounds, so a positive lower bound keeps
+  an idle jet at that bound.
 """
 function allocate_actuators(
     B::AbstractMatrix{<:Real},
@@ -204,7 +206,7 @@ function allocate_actuators(
         isfinite(minimum_fraction) && 0 <= minimum_fraction < 1 ||
             throw(ArgumentError("allocate_actuators: minimum_fraction must be finite in [0, 1)."))
         length(command) >= 3 || throw(DimensionMismatch("allocate_actuators: :axis_clamp needs a force command of three entries."))
-        return _axis_clamp_levels(command, hi, Float64(minimum_fraction))
+        return _axis_clamp_levels(command, lo, hi, Float64(minimum_fraction))
     end
     throw(ArgumentError("allocate_actuators: method must be :least_norm or :axis_clamp, got $(repr(method))."))
 end
@@ -239,8 +241,9 @@ function _check_axis_pairs(B::AbstractMatrix{<:Real})
     return nothing
 end
 
-# Same arithmetic as the RPO six-axis allocator.
-function _axis_clamp_levels(command::AbstractVector{<:Real}, hi::Vector{Float64}, minimum_fraction::Float64)::Vector{Float64}
+# Same arithmetic as the RPO six-axis allocator, then each level clamped to
+# both bounds (with the allocator's zero lower bounds this changes nothing).
+function _axis_clamp_levels(command::AbstractVector{<:Real}, lo::Vector{Float64}, hi::Vector{Float64}, minimum_fraction::Float64)::Vector{Float64}
     f = zeros(Float64, 6)
     desired = SVector{3, Float64}(command[1], command[2], command[3])
     @inbounds for axis in 1:3
@@ -254,6 +257,7 @@ function _axis_clamp_levels(command::AbstractVector{<:Real}, hi::Vector{Float64}
     end
     for j in 1:6
         f[j] <= minimum_fraction * hi[j] && (f[j] = 0.0)
+        f[j] = clamp(f[j], lo[j], hi[j])
     end
     return f
 end
