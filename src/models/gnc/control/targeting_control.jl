@@ -28,6 +28,13 @@ using ..EDGServices: _edg_control_sat_state,
 Control effector that articulates the listed solar-panel links to realize a
 commanded angle of attack during aerobraking passes. Link indices must be
 positive and at least one link is required.
+
+A panel link turns at once to the commanded angle of attack α (a rotation by
+π/2 - α about the absolute value of its offset `r`), unless a `PanelHinge` is
+mounted on it with `add_actuator!`: then the hinge moves toward π/2 - α at
+each control tick within its angle and rate limits, and the panel's angle of
+attack is the one it reached. With the hinge's axis along the absolute value
+of the link's offset and no limits, the panel moves exactly as without one.
 """
 struct SolarPanelAngleOfAttackControlModel <: AbstractControlEffectorModel
     controlled_panel_links::Tuple{Vararg{Int}}
@@ -107,15 +114,26 @@ function _apply_solar_panel_aoa!(
     effector::SolarPanelAngleOfAttackControlModel,
     spacecraft,
     alpha::Float64,
+    t::Float64=NaN,
 )
     links = spacecraft.links
     for idx in effector.controlled_panel_links
         1 <= idx <= length(links) || throw(ArgumentError("Controlled panel link index $(idx) is out of bounds for spacecraft with $(length(links)) links."))
         link = links[idx]
         link.root && throw(ArgumentError("Controlled panel link $(idx) is a root link and cannot be rotated."))
-        axis = SVector{3, Float64}(abs.(link.r))
-        rotate_link(link, axis, pi / 2 - alpha)
-        link.α = alpha
+        if isempty(link.hinges)
+            axis = SVector{3, Float64}(abs.(link.r))
+            rotate_link(link, axis, pi / 2 - alpha)
+            link.α = alpha
+        else
+            # A mounted hinge moves the panel within its limits; the angle of
+            # attack is the one it reached (exactly `alpha` when it got there).
+            isfinite(t) || throw(ArgumentError(
+                "Controlled panel link $(idx) carries a hinge, which moves at control ticks: pass the tick time."))
+            target = pi / 2 - alpha
+            angle = move_hinge!(link, link.hinges[1], target, t)
+            link.α = angle == target ? alpha : pi / 2 - angle
+        end
     end
     return nothing
 end
@@ -131,7 +149,7 @@ function calcControlEffect!(
         model.config, model.state, model.aoa_effector.controlled_panel_links, u, p, t, i,
     )
     decision.apply || return nothing
-    _apply_solar_panel_aoa!(model.aoa_effector, p.args.dynamics_model.spacecraft[i], decision.command.alpha_command)
+    _apply_solar_panel_aoa!(model.aoa_effector, p.args.dynamics_model.spacecraft[i], decision.command.alpha_command, t)
     return nothing
 end
 

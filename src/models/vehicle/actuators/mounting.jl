@@ -25,11 +25,11 @@ using StaticArrays
 using ..AbstractTypes: AbstractActuator
 using ..QuaternionMath: rot
 using ..Actuators
-using ..Components: Thruster, ReactionWheel, wheel_momentum_saturate, Magnetorquer, LaserTerminal, PanelHinge, hinge_step
+using ..Components: Thruster, ReactionWheel, wheel_momentum_saturate, wheel_power, Magnetorquer, LaserTerminal, PanelHinge, hinge_step
 using ..SpacecraftModels: Link, SpacecraftModel
 using ..Assembly: add_thruster!
 
-export add_actuator!, mounted_actuators, mounted_actuator_count, mounted_thruster_count, mounted_wheel_count, mounted_magnetorquer_count, mounted_laser_count, mounted_hinge_count, apply_hinge_levels!
+export add_actuator!, mounted_actuators, mounted_actuator_count, mounted_thruster_count, mounted_wheel_count, mounted_magnetorquer_count, mounted_laser_count, mounted_hinge_count, apply_hinge_levels!, move_hinge!
 export actuator_context, allocation_matrix, mounted_wrench, mounted_thruster_fractions
 export mounted_requirements, applied_actuator_levels, mounted_power
 
@@ -77,7 +77,6 @@ function add_actuator!(model::SpacecraftModel, link::Link, wheel::ReactionWheel)
     push!(assembly.h_dot_wheels, 0.0)
     push!(assembly.wheels, wheel)
     push!(assembly.mounted_rates, 0.0)
-    model.n_reaction_wheels += 1
     return wheel
 end
 
@@ -192,12 +191,24 @@ function apply_hinge_levels!(model::SpacecraftModel, levels::AbstractVector, t::
     k = mounted_thruster_count(model) + mounted_wheel_count(model) + mounted_magnetorquer_count(model) + mounted_laser_count(model)
     for link in model.links, hinge in link.hinges
         k += 1
-        angle = hinge_step(hinge, levels[k], t)
-        _set_hinge_attitude!(link, hinge, angle)
-        hinge.angle_rad = angle
-        hinge.last_update_s = Float64(t)
+        move_hinge!(link, hinge, levels[k], t)
     end
     return model
+end
+
+"""
+    move_hinge!(link::Link, hinge::PanelHinge, level, t) -> Float64
+
+Move `hinge`, mounted on `link`, toward the angle `level` at a control tick at
+time `t`, within its angle and rate limits (see `hinge_step`), set the link's
+attitude to the angle reached and record the tick. Returns the angle reached.
+"""
+function move_hinge!(link::Link, hinge::PanelHinge, level::Real, t::Real)::Float64
+    angle = hinge_step(hinge, level, t)
+    _set_hinge_attitude!(link, hinge, angle)
+    hinge.angle_rad = angle
+    hinge.last_update_s = Float64(t)
+    return angle
 end
 
 """
@@ -467,14 +478,25 @@ end
 
 The electrical power (W) the mounted actuators draw at their applied levels
 (see [`applied_actuator_levels`](@ref)): the sum of each one's
-`actuator_consumption(...).power_w`, evaluated without a sampled environment.
-It fills the `actuator_power` result column.
+`actuator_consumption(...).power_w`, evaluated without a sampled environment,
+except the reaction wheels, whose power `wheel_power` computes from their
+stored momenta in `wheel_momentum` (the root assembly's integrated `h_wheels`)
+when it is given. It fills the `actuator_power` result column.
 """
 function mounted_power(model::SpacecraftModel, levels::AbstractVector; wheel_momentum=nothing)::Float64
     applied = applied_actuator_levels(model, levels; wheel_momentum=wheel_momentum)
+    assembly = model.root.rw_assembly
+    first_mounted = assembly.n_wheels - length(assembly.wheels)
     total = 0.0
+    j = 0
     for (k, entry) in enumerate(mounted_actuators(model))
-        total += Float64(actuator_consumption(entry.actuator, applied[k], actuator_context(entry.link)).power_w)
+        if entry.actuator isa ReactionWheel
+            j += 1
+            h = wheel_momentum === nothing ? NaN : Float64(wheel_momentum[first_mounted + j])
+            total += wheel_power(entry.actuator, applied[k], h)
+        else
+            total += Float64(actuator_consumption(entry.actuator, applied[k], actuator_context(entry.link)).power_w)
+        end
     end
     return total
 end

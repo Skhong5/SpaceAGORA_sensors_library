@@ -390,7 +390,7 @@ _declares_gnc(sc) = !(isempty(sc.guidance.guidance_effectors) &&
 # Spacecraft copy without its per-spacecraft GNC (links, joints and the rest are shared).
 _without_gnc(sc::SimulationModel.SpacecraftModel) = SimulationModel.SpacecraftModel(
     sc.joints, sc.links, sc.root, sc.instant_actuation, sc.dry_mass, sc.prop_mass, sc.inertia_tensor,
-    sc.n_reaction_wheels, sc.n_thrusters, sc.initial_condition, sc.id,
+    sc.initial_condition, sc.id,
     SimulationModel.GuidanceModel((), Float64[]), SimulationModel.NavigationModel((), Float64[]),
     SimulationModel.ControlModel((), Float64[]), sc.attachments,
     sc.n_terminal, sc.battery_energy_index, sc.tempurature_index)

@@ -1,10 +1,49 @@
-@kwdef struct BaseThrusterModel <: AbstractThrusterModel
+"""
+    BaseThrusterModel(; thrust, direction, Δv, start_burn_time, stop_burn_time, Isp,
+                      actuation=:ideal, engine=1, pointing_frequency_rad_s=0.05, pointing_damping=0.7)
+
+The orbit-maneuver burn scheduler: one entry per spacecraft in each vector.
+A burn of `thrust` newtons and specific impulse `Isp` seconds runs between
+`start_burn_time` and `stop_burn_time` (seconds into the run), prograde when
+`direction` is 0 and retrograde when it is π. With a guidance maneuver
+command, or a nonzero `Δv`, the scheduler plans the burn itself, symmetric
+about the next apoapsis, after the spacecraft leaves the atmosphere.
+
+`actuation = :ideal` (the default) applies the burn as a force along the
+velocity, whatever the attitude. `actuation = :mounted` fires a thruster
+mounted on the spacecraft instead: the `engine`-th mounted thruster (mounting
+order) runs at the burn's thrust during the window, so the force follows the
+vehicle's attitude and the propellant follows the engine's own `Isp`. From
+the moment a burn is planned until it ends, the scheduler also points the
+engine along the burn with the spacecraft's mounted reaction wheels, at each
+control tick: a proportional-derivative law on the angle between the
+engine's thrust direction and the burn direction, with natural frequency
+`pointing_frequency_rad_s` and damping ratio `pointing_damping`, scaled by the
+spacecraft's inertia and tracking the turn of the velocity along the orbit. A
+spacecraft without mounted wheels is not pointed. Give the engine the
+scheduler's thrust and specific impulse so the planned burn delivers its Δv.
+The engine switches on and off exactly at the window's ends: the solver stops
+there and a callback flips the engine between steps, so no integration step
+straddles an edge.
+"""
+struct BaseThrusterModel <: AbstractThrusterModel
     thrust::Vector{Float64}
     direction::Vector{Float64}
     Δv::Vector{Float64}
     start_burn_time::Vector{Float64}
     stop_burn_time::Vector{Float64}
     Isp::Vector{Float64}
+    actuation::Symbol
+    engine::Int
+    pointing_frequency_rad_s::Float64
+    pointing_damping::Float64
+    # `:mounted` state, one entry per spacecraft: the levels of every mounted
+    # actuator (the wheels' refreshed at each control tick, the engine's when
+    # it switches), the window with its thrust (start, stop, thrust), and
+    # whether the engine is burning, flipped only at the window's ends.
+    mounted_levels::Vector{Vector{Float64}}
+    burn_windows::Vector{NTuple{3, Float64}}
+    burning::Vector{Bool}
 
     function BaseThrusterModel(
         thrust::Vector{Float64},
@@ -12,16 +51,38 @@
         Δv::Vector{Float64},
         start_burn_time::Vector{Float64},
         stop_burn_time::Vector{Float64},
-        Isp::Vector{Float64}
+        Isp::Vector{Float64},
+        actuation::Symbol,
+        engine::Integer,
+        pointing_frequency_rad_s::Real,
+        pointing_damping::Real,
     )
         n = length(thrust)
         if length(direction) != n || length(Δv) != n || length(start_burn_time) != n || length(stop_burn_time) != n || length(Isp) != n
             throw(ArgumentError("BaseThrusterModel vector lengths must match; got (thrust=$(length(thrust)), direction=$(length(direction)), Δv=$(length(Δv)), start_burn_time=$(length(start_burn_time)), stop_burn_time=$(length(stop_burn_time)), Isp=$(length(Isp)))"))
         end
+        (actuation === :ideal || actuation === :mounted) ||
+            throw(ArgumentError("BaseThrusterModel actuation must be :ideal or :mounted, got $(repr(actuation))."))
+        engine >= 1 || throw(ArgumentError("BaseThrusterModel engine must be a positive mounted-thruster index, got $(engine)."))
+        (isfinite(pointing_frequency_rad_s) && pointing_frequency_rad_s > 0.0) ||
+            throw(ArgumentError("BaseThrusterModel pointing_frequency_rad_s must be finite and positive, got $(pointing_frequency_rad_s)."))
+        (isfinite(pointing_damping) && pointing_damping > 0.0) ||
+            throw(ArgumentError("BaseThrusterModel pointing_damping must be finite and positive, got $(pointing_damping)."))
 
-        return new(thrust, direction, Δv, start_burn_time, stop_burn_time, Isp)
+        return new(thrust, direction, Δv, start_burn_time, stop_burn_time, Isp, actuation, Int(engine),
+                   Float64(pointing_frequency_rad_s), Float64(pointing_damping),
+                   [Float64[] for _ in 1:n], fill((NaN, NaN, 0.0), n), fill(false, n))
     end
 end
+
+BaseThrusterModel(thrust::Vector{Float64}, direction::Vector{Float64}, Δv::Vector{Float64},
+                  start_burn_time::Vector{Float64}, stop_burn_time::Vector{Float64}, Isp::Vector{Float64}) =
+    BaseThrusterModel(thrust, direction, Δv, start_burn_time, stop_burn_time, Isp, :ideal, 1, 0.05, 0.7)
+
+BaseThrusterModel(; thrust, direction, Δv, start_burn_time, stop_burn_time, Isp,
+                  actuation::Symbol=:ideal, engine::Integer=1, pointing_frequency_rad_s::Real=0.05, pointing_damping::Real=0.7) =
+    BaseThrusterModel(thrust, direction, Δv, start_burn_time, stop_burn_time, Isp, actuation, engine,
+                      pointing_frequency_rad_s, pointing_damping)
 
 """
     SixAxisThrusterModel

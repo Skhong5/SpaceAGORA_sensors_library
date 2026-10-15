@@ -7,8 +7,8 @@ module ControlHooks
     using ..RobotArmPlanning: RobotArmPlan, robot_arm_plan_sample
     using ..ThrusterModels: BaseThrusterModel, SixAxisThrusterModel
     import ..Actuators: actuation_mode, actuator_levels
-    using ..Actuators: propellant_mass_rate
-    using ..ActuatorMounting: mounted_actuator_count, mounted_thruster_count, mounted_wheel_count, mounted_magnetorquer_count, actuator_context
+    using ..Actuators: propellant_mass_rate, allocate_actuators
+    using ..ActuatorMounting: mounted_actuator_count, mounted_thruster_count, mounted_wheel_count, mounted_magnetorquer_count, actuator_context, move_hinge!
     using ..CommandTypes: PropulsiveManeuverCommand, PropulsiveBurnPlan
     using ..GuidanceModels: RPOPlan, RPOPlanBuffer
     using ..GravityEffectors: aerobraking_gravity_force_ii
@@ -33,7 +33,7 @@ module ControlHooks
     const config = Structure
 
     export calcControlForceTorque, calcControlEffect!, calcControlMassFlowRate, calcReactionWheelTorque
-    export control_thruster_levels, touchdown_spec
+    export control_thruster_levels, touchdown_spec, refresh_burn!, mounted_burn_tick!, burn_edge
     export AerobrakingEnergyDepletionControlModel, SolarPanelAngleOfAttackControlModel
     export ApolloDescentControlConfig, ApolloDescentControlModel, ApolloDescentControlState, attitude_error_vector
     export RpoLQMPCController, init_rpo_lqmpc, rpo_lqmpc_control

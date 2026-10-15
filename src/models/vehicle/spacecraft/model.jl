@@ -236,7 +236,6 @@ mutable struct Link
     net_torque::MVector{3, Float64} # Net torque acting on the link, to be updated at each simulation step
     attitude_control_rate::Float64 # Rate at which the attitude control function is called, in seconds
     SRP_facets::Vector{Facet}
-    J_thruster::Matrix{Float64} # Thruster Jacobian matrix
     thrusters::Vector{Thruster}
     magnets::Vector{Magnet} # List of magnetic dipoles attached to the link
     cop_offset_b::MVector{3, Float64} # Aerodynamic center-of-pressure offset from the link COM (link frame, m); lever arm for the aero wrench torque, zeros = no intrinsic aero torque
@@ -273,7 +272,7 @@ mutable struct Link
         net_torque=MVector{3, Float64}(zeros(3)),
         attitude_control_rate=0.1,
         SRP_facets=Facet[],
-        J_thruster=Matrix{Float64}(zeros(3, 1)),
+        J_thruster=nothing,   # accepted for compatibility; ignored (see allocation_matrix)
         thrusters=Thruster[],
         magnets=Magnet[],
         cop_offset_b=MVector{3, Float64}(0, 0, 0),
@@ -292,7 +291,7 @@ mutable struct Link
             h_dot_wheels=zeros(Float64, n_rw),
             tau_body_net=MVector{3, Float64}(zeros(3))      # tau_body_net
         )
-        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, reflection_coefficient, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, J_thruster, thrusters, magnets, cop_offset_b, Vector{Magnetorquer}(magnetorquers), Vector{LaserTerminal}(laser_terminals), Vector{PanelHinge}(hinges), Vector{AbstractActuator}(custom_actuators))
+        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, reflection_coefficient, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, thrusters, magnets, cop_offset_b, Vector{Magnetorquer}(magnetorquers), Vector{LaserTerminal}(laser_terminals), Vector{PanelHinge}(hinges), Vector{AbstractActuator}(custom_actuators))
     end
 end
 
@@ -564,8 +563,6 @@ mutable struct SpacecraftModel
     dry_mass::Float64 # Dry mass of the spacecraft
     prop_mass::Float64 # Fuel mass available for maneuvers
     inertia_tensor::SMatrix{3, 3, Float64} # Inertia tensor of the spacecraft in the body frame
-    n_reaction_wheels::Int64 # Number of reaction wheels in the spacecraft model
-    n_thrusters::Int64 # Number of thrusters in the spacecraft model
     initial_condition::AbstractInitialCondition # Initial conditions for the simulation (orbit, attitude, etc.)
     id::Int64 # Unique identifier for the spacecraft (useful for multi-spacecraft simulations)
     # Optional per-spacecraft GNC. Empty by default. `flatten_spacecraft_gnc` folds these into the
@@ -585,36 +582,67 @@ _empty_guidance() = GuidanceModel((), Float64[])
 _empty_navigation() = NavigationModel((), Float64[])
 _empty_control() = ControlModel((), Float64[])
 
-# Positional form before interlink metadata was added.
+# The spacecraft once stored its thruster and reaction-wheel counts, which
+# nothing read. The mounted hardware is now the record (`mounted_thruster_count`,
+# `mounted_wheel_count`, `root.rw_assembly.n_wheels`). The positional forms that
+# take the two counts after the inertia tensor stay for compatibility, and
+# ignore them.
 SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
-                n_reaction_wheels, n_thrusters, initial_condition, id,
+                n_reaction_wheels::Integer, n_thrusters::Integer, initial_condition, id,
+                guidance::GuidanceModel, navigation::NavigationModel, control::ControlModel,
+                attachments::Vector{CompliantAttachment}, n_terminal, battery_energy_index, tempurature_index) =
+    SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
+                    initial_condition, id, guidance, navigation, control, attachments,
+                    n_terminal, battery_energy_index, tempurature_index)
+
+SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
+                n_reaction_wheels::Integer, n_thrusters::Integer, initial_condition, id,
                 guidance::GuidanceModel, navigation::NavigationModel, control::ControlModel,
                 attachments::Vector{CompliantAttachment}) =
     SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
-                    n_reaction_wheels, n_thrusters, initial_condition, id,
-                    guidance, navigation, control, attachments, 1, 100.0, 100.0)
+                    initial_condition, id, guidance, navigation, control, attachments)
 
-# Positional form with GNC but no attachments (kept for existing callers).
 SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
-                n_reaction_wheels, n_thrusters, initial_condition, id,
+                n_reaction_wheels::Integer, n_thrusters::Integer, initial_condition, id,
                 guidance::GuidanceModel, navigation::NavigationModel, control::ControlModel) =
     SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
-                    n_reaction_wheels, n_thrusters, initial_condition, id,
+                    initial_condition, id, guidance, navigation, control)
+
+SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
+                n_reaction_wheels::Integer, n_thrusters::Integer, initial_condition, id) =
+    SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
+                    initial_condition, id)
+
+# Positional form before interlink metadata was added.
+SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
+                initial_condition, id,
+                guidance::GuidanceModel, navigation::NavigationModel, control::ControlModel,
+                attachments::Vector{CompliantAttachment}) =
+    SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
+                    initial_condition, id,
+                    guidance, navigation, control, attachments, 1, 100.0, 100.0)
+
+# Positional form with GNC but no attachments.
+SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
+                initial_condition, id,
+                guidance::GuidanceModel, navigation::NavigationModel, control::ControlModel) =
+    SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
+                    initial_condition, id,
                     guidance, navigation, control, CompliantAttachment[])
 
-# Positional form without GNC (kept for existing callers): declares no per-spacecraft GNC.
+# Positional form without GNC: declares no per-spacecraft GNC.
 SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
-                n_reaction_wheels, n_thrusters, initial_condition, id) =
+                initial_condition, id) =
     SpacecraftModel(joints, links, root, instant_actuation, dry_mass, prop_mass, inertia_tensor,
-                    n_reaction_wheels, n_thrusters, initial_condition, id,
+                    initial_condition, id,
                     _empty_guidance(), _empty_navigation(), _empty_control(), CompliantAttachment[])
 
 function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::AbstractVector{<:Link}=Link[], root::Link=Link(root=true),
                             instant_actuation::Bool=true,
                             prop_mass::Float64=0.0,
                             inertia_tensor::SMatrix{3,3,Float64}=SMatrix{3, 3, Float64}(zeros(3,3)),
-                            n_reaction_wheels::Int64=0,
-                            n_thrusters::Int64=0,
+                            n_reaction_wheels::Integer=0,   # accepted for compatibility; ignored
+                            n_thrusters::Integer=0,         # accepted for compatibility; ignored
                             initial_condition::AbstractInitialCondition=InitialCondition(),
                             id::Int64=1,
                             guidance::GuidanceModel=_empty_guidance(),
@@ -643,7 +671,7 @@ function SpacecraftModel(; joints::AbstractVector{<:Joint}=Joint[], links::Abstr
             throw(ArgumentError("Attachment $k is mounted on a link that is not one of the spacecraft's links (or its root)."))
     end
 
-    return SpacecraftModel(joints_vec, links_vec, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, n_reaction_wheels, n_thrusters, initial_condition, id,
+    return SpacecraftModel(joints_vec, links_vec, root, instant_actuation, dry_mass, prop_mass, inertia_tensor, initial_condition, id,
                            guidance, navigation, control, Vector{CompliantAttachment}(attachments),
                            n_terminal, Float64(battery_energy_index), Float64(tempurature_index))
 end

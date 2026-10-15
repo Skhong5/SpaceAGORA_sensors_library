@@ -131,6 +131,37 @@ function held_run(sc, levels; mission_time=2.0, rate=1.0, kw...)
     return run_simulation(args; isolate_state=false, kw...)
 end
 
+# A 110 kg spacecraft in a 7000 km circular orbit, attitude at the identity
+# (body x radial, so an engine along body x points 90 degrees off prograde),
+# with a 1 N, 300 s engine along body x and, optionally, three wheels.
+function orbit_spacecraft(; id, wheels=true)
+    root = SM.Link(root=true, m=100.0, dims=MVector(1.0, 1.0, 1.0))
+    speed = sqrt(SM.Earth().μ / 7.0e6)
+    ic = SM.CartesianInitialCondition(SVector(7.0e6, 0.0, 0.0), SVector(0.0, speed, 0.0); q=SVector(0.0, 0.0, 0.0, 1.0))
+    sc = SM.SpacecraftModel(links=[root], root=root, prop_mass=10.0, inertia_tensor=root.inertia, initial_condition=ic, id=id)
+    add_actuator!(sc, root, Thruster(max_thrust=1.0, direction=MVector(1.0, 0.0, 0.0), Isp=300.0))
+    if wheels
+        for axis in (SVector(1.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(0.0, 0.0, 1.0))
+            add_actuator!(sc, root, ReactionWheel(spin_axis=axis))
+        end
+    end
+    return sc
+end
+
+# A prograde 1 N burn from 300.5 s to 400.5 s, applied ideally or through the
+# mounted engine; the window's ends fall between the 1 s control ticks.
+function burn_run(sc, actuation; mission_time=450.0)
+    model = SM.BaseThrusterModel(thrust=[1.0], direction=[0.0], Δv=[0.0], start_burn_time=[300.5],
+        stop_burn_time=[400.5], Isp=[300.0], actuation=actuation)
+    base = make_example_config(planet=SM.Earth(), spacecraft=sc, mission_time=mission_time,
+        initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+        dynamic_effectors=(SM.InverseSquaredGravityModel(),), ephemerides_model=SM.SimpleEphemeridesModel(),
+        orientation_sim=true, keplerian=false, EI_km=1.0, verbose=false, results=false)
+    args = SM.SimConfig._with_configuration(base;
+        control_model=SM.ControlModel(control_effectors=(model,), control_rates=[1.0]))
+    return run_simulation(args; return_results=true, return_solution=true)
+end
+
 @testset "Actuator contract" begin
     @testset "a thruster's wrench, limits and propellant follow from its record" begin
         root = SM.Link(root=true, m=10.0)
@@ -170,9 +201,7 @@ end
         b = add_actuator!(sc, pod, Thruster(max_thrust=2.0, direction=MVector(0.0, 1.0, 0.0)))
         c = add_actuator!(sc, root, Thruster(max_thrust=3.0, location=MVector(1.0, 0.0, 0.0), direction=MVector(0.0, 0.0, 1.0)))
         @test a.direction == [1.0, 0.0, 0.0]                  # normalized on mounting
-        @test size(root.J_thruster) == (3, 2)                 # add_thruster! now builds the Jacobian
-        @test root.J_thruster[:, 1] == cross(Vector(a.location), Vector(a.direction))
-        @test sc.n_thrusters == 3
+        @test !hasfield(SM.Link, :J_thruster) && !hasfield(SM.SpacecraftModel, :n_thrusters)   # the mounted hardware is the record
         @test SM.mounted_thruster_count(sc) == 3 && SM.mounted_actuator_count(sc) == 4
         order = [entry.actuator for entry in mounted_actuators(sc)]
         @test order[1] === a && order[2] === c && order[3] === b && order[4] === puck   # links in order, thrusters first
@@ -361,7 +390,7 @@ end
         @test wheel.spin_axis == SVector(0.0, 0.0, 1.0)
         @test add_actuator!(sc, root, wheel) === wheel
         @test root.rw_assembly.n_wheels == 1 && root.rw_assembly.J_rw == reshape([0.0, 0.0, 1.0], 3, 1)
-        @test root.rw_assembly.h_wheels == [0.0] && sc.n_reaction_wheels == 1 && SM.mounted_wheel_count(sc) == 1
+        @test root.rw_assembly.h_wheels == [0.0] && SM.mounted_wheel_count(sc) == 1 && !hasfield(SM.SpacecraftModel, :n_reaction_wheels)
         @test_throws ArgumentError add_actuator!(sc, SM.Link(m=1.0), ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0)))
         @test actuator_limits(wheel) == (-0.01, 0.01)
         @test actuator_saturate(wheel, 1.0) == 0.01 && actuator_saturate(wheel, -1.0) == -0.01
@@ -707,6 +736,111 @@ end
         @test all(==(4.0), table.sc1_actuator_level_1)
         @test all(==(0.5), table.sc1_actuator_level_2)
         @test all(==(8.0), table.sc1_actuator_power)
+    end
+
+    @testset "wheels and torque rods draw power" begin
+        wheel = ReactionWheel(spin_axis=SVector(0.0, 0.0, 1.0), spin_inertia_kgm2=0.02, base_power_w=1.5,
+            motor_efficiency=0.8, regenerative_efficiency=0.25)
+        @test SM.wheel_power(wheel, -0.01, 2.0) ≈ 1.5 + 0.01 * 100.0 / 0.8      # speeding up: 1 W into the wheel at 100 rad/s
+        @test SM.wheel_power(wheel, 0.01, 2.0) ≈ 1.5 - 0.25 * 1.0               # slowing down: a quarter of 1 W returns
+        @test SM.wheel_power(wheel, 0.01, NaN) == 1.5                            # stored momentum unknown: base power
+        @test SM.wheel_power(ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0)), 0.01, 2.0) == 0.0   # no power model by default
+        ctx = actuator_context(SM.Link(root=true))
+        @test actuator_consumption(wheel, 0.01, ctx) == (mass_rate_kg_s = 0.0, power_w = 1.5)
+        rod = Magnetorquer(axis=SVector(1.0, 0.0, 0.0), max_dipole_am2=2.0, power_at_max_dipole_w=0.8)
+        @test actuator_consumption(rod, 1.0, ctx).power_w ≈ 0.2 && actuator_consumption(rod, -2.0, ctx).power_w ≈ 0.8
+        @test actuator_consumption(Magnetorquer(axis=SVector(1.0, 0.0, 0.0)), 5.0, ctx).power_w == 0.0
+        @test_throws ArgumentError Magnetorquer(axis=SVector(1.0, 0.0, 0.0), power_at_max_dipole_w=1.0)   # needs a finite dipole limit
+        @test_throws ArgumentError ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0), motor_efficiency=0.0)
+        @test_throws ArgumentError ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0), spin_inertia_kgm2=-1.0)
+        @test ReactionWheel(SVector(1.0, 0.0, 0.0), 0.1, 0.2).max_momentum_nms == 0.2 && Magnetorquer(SVector(1.0, 0.0, 0.0), 3.0).max_dipole_am2 == 3.0
+        root = SM.Link(root=true, m=50.0)
+        sc = spacecraft_with(root)
+        add_actuator!(sc, root, wheel)
+        add_actuator!(sc, root, rod)
+        @test mounted_power(sc, [-0.01, 1.0]; wheel_momentum=[2.0]) ≈ 1.5 + 0.01 * 100.0 / 0.8 + 0.2
+        @test mounted_power(sc, [-0.01, 1.0]) ≈ 1.5 + 0.2
+        # In a run the column follows the spin-up: h = -0.002 t, so 1 W plus 0.0004 t.
+        sc2, root2 = far_spacecraft(id=12)
+        add_actuator!(sc2, root2, ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0), spin_inertia_kgm2=0.01, base_power_w=1.0))
+        table = held_run(sc2, [0.002]; mission_time=5.0, return_results=true).table
+        @test table.sc1_actuator_power ≈ 1.0 .+ 0.0004 .* table.time rtol=1e-9
+    end
+
+    @testset "energy-depletion panels move through a mounted hinge" begin
+        function panel_craft(hinge)
+            root = SM.Link(root=true, m=100.0, dims=MVector(1.0, 1.0, 1.0))
+            panel = SM.Link(m=5.0, r=MVector(0.0, 1.5, 0.0), dims=MVector(0.02, 2.0, 1.0))
+            sc = SM.SpacecraftModel(links=[root, panel], root=root, prop_mass=1.0, inertia_tensor=root.inertia, id=1)
+            hinge === nothing || add_actuator!(sc, panel, hinge)
+            return sc, panel
+        end
+        aoa = SM.SolarPanelAngleOfAttackControlModel(controlled_panel_links=(2,))
+        apply!(sc, alpha, t) = SM.ControlHooks._apply_solar_panel_aoa!(aoa, sc, alpha, t)
+        plain, plain_panel = panel_craft(nothing)
+        hinged, hinged_panel = panel_craft(PanelHinge(axis=SVector(0.0, 1.5, 0.0)))   # the axis the panels turn about, no limits
+        for (t, alpha) in ((0.0, 0.3), (1.0, 1.1), (2.0, 0.05))
+            apply!(plain, alpha, t)
+            apply!(hinged, alpha, t)
+            @test hinged_panel.q == plain_panel.q && hinged_panel.α === plain_panel.α === alpha   # bit for bit
+        end
+        limited, limited_panel = panel_craft(PanelHinge(axis=SVector(0.0, 1.0, 0.0), max_rate_rad_s=0.1,
+            min_angle_rad=0.0, max_angle_rad=π / 2, angle_rad=π / 2 - 0.3))
+        apply!(limited, 0.3, 10.0)                       # the first tick holds the angle and records the time
+        apply!(limited, 1.2, 12.0)                       # commanded to π/2 - 1.2; 0.1 rad/s for 2 s
+        @test limited_panel.hinges[1].angle_rad ≈ π / 2 - 0.3 - 0.2
+        @test limited_panel.α ≈ 0.5                      # the angle of attack it reached, not the command
+        @test limited_panel.q ≈ [0.0, sin((π / 2 - 0.5) / 2), 0.0, cos((π / 2 - 0.5) / 2)]
+        SM.ControlHooks._apply_solar_panel_aoa!(aoa, plain, 0.7)          # without a hinge the tick time is not needed
+        @test plain_panel.α == 0.7
+        @test_throws ArgumentError SM.ControlHooks._apply_solar_panel_aoa!(aoa, limited, 0.7)
+    end
+
+    @testset "a mounted burn points its engine with the wheels and fires it in the window" begin
+        @test_throws ArgumentError SM.BaseThrusterModel(thrust=[1.0], direction=[0.0], Δv=[0.0], start_burn_time=[0.0],
+            stop_burn_time=[1.0], Isp=[300.0], actuation=:bogus)
+        legacy = SM.BaseThrusterModel([1.0], [0.0], [0.0], [0.0], [1.0], [300.0])
+        @test SpaceAGORA.actuation_mode(legacy) === :ideal && SpaceAGORA.actuator_levels(legacy, 1) === nothing
+        mounted = SM.BaseThrusterModel(thrust=[1.0], direction=[0.0], Δv=[0.0], start_burn_time=[0.0],
+            stop_burn_time=[1.0], Isp=[300.0], actuation=:mounted)
+        @test SM.ControlHooks.control_thruster_levels(mounted, 1) === nothing      # the mounted engine reports its own level
+        # The engine switches only at the window's ends, through the flag the edge callback flips.
+        flag_model = SM.BaseThrusterModel(thrust=[1.0], direction=[0.0], Δv=[0.0], start_burn_time=[300.0],
+            stop_burn_time=[400.0], Isp=[300.0], actuation=:mounted)
+        p_flag = readout_params(SM.SpacecraftModel[orbit_spacecraft(id=25)], (flag_model,))
+        for (t, on) in ((299.999, false), (300.0, true), (350.0, true), (400.0, false))
+            SM.ControlHooks.refresh_burn!(flag_model, p_flag, 1, t)
+            @test flag_model.burning[1] == on && SpaceAGORA.actuator_levels(flag_model, 1)[1] == (on ? 1.0 : 0.0)
+        end
+        @test SM.ControlHooks.burn_edge(flag_model, 300.0) && SM.ControlHooks.burn_edge(flag_model, 400.0)
+        @test !SM.ControlHooks.burn_edge(flag_model, 350.0) && !SM.ControlHooks.burn_edge(legacy, 0.0)
+
+        ideal = burn_run(orbit_spacecraft(id=21), :ideal)
+        pointed = burn_run(orbit_spacecraft(id=22), :mounted)
+        unpointed = burn_run(orbit_spacecraft(id=23; wheels=false), :mounted)
+        speed(result) = norm(result.solution.u[end].sc[1].vel)
+        # The engine runs exactly the window: 1 N for 100 s at 300 s of specific impulse.
+        @test 110.0 - pointed.solution.u[end].sc[1].mass ≈ 100.0 / (300.0 * G0) rtol=1e-6
+        # ... and lights and stops at the window's ends, between the control ticks.
+        mass_at(t) = pointed.solution(t).sc[1].mass
+        mdot = 1.0 / (300.0 * G0)
+        @test mass_at(300.5) == mass_at(300.0) && mass_at(300.9) < mass_at(300.5) - 0.3 * mdot
+        @test isapprox(mass_at(400.9), mass_at(400.5); atol=1e-12) && mass_at(400.5) < mass_at(400.1) - 0.3 * mdot
+        # Pointed: the speed gained matches the ideal burn's to a small fraction of the burn's Δv.
+        dv_burn = 1.0 / 110.0 * 100.0
+        @test abs(speed(pointed) - speed(ideal)) < 0.01 * dv_burn
+        # Not pointed: the engine fires 90 degrees off, and the orbit does not speed up the same way.
+        @test abs(speed(unpointed) - speed(ideal)) > 0.2 * dv_burn
+        # At ignition the engine (body +x) is on the velocity.
+        k = findfirst(t -> t >= 300.5, pointed.solution.t)
+        state = pointed.solution.u[k].sc[1]
+        engine_ii = SM.rot(SVector{4}(state.q))' * SVector(1.0, 0.0, 0.0)
+        @test acos(clamp(dot(engine_ii, normalize(SVector{3}(state.vel))), -1.0, 1.0)) < deg2rad(0.5)
+        # The engine's level is the burn's thrust in the window and zero outside it.
+        table = pointed.table
+        inside = (table.time .> 300.5) .& (table.time .< 400.5)
+        @test any(inside) && all(==(1.0), table.sc1_actuator_level_1[inside])
+        @test all(==(0.0), table.sc1_actuator_level_1[.!inside .& ((table.time .< 300.5) .| (table.time .> 400.5))])
     end
 end
 

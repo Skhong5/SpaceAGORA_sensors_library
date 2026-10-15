@@ -224,15 +224,18 @@ The built-in kinds:
   tick, and the vehicle feels the resulting average thrust until the next one.
 - `ReactionWheel`: its level is the torque on the body about its spin axis; it
   mounts on the root link and its momentum is integrated, with torque and
-  momentum limits.
+  momentum limits. Given a spin inertia, a base power and a motor efficiency,
+  it reports the power it draws.
 - `Magnetorquer`: its level is the commanded dipole along its axis; it acts in
-  the run's magnetic field.
+  the run's magnetic field. Given its power at full dipole, it reports a power
+  that grows with the square of the dipole.
 - `LaserTerminal`: its level is the transmitted optical power; the vehicle
   recoils with power over the speed of light, and it draws power over its
   efficiency.
 - `PanelHinge`: its level is the angle of the non-root link it turns, with
   angle and rate limits; the engine applies it at the commanding effector's
-  control ticks.
+  control ticks. The energy-depletion controller also moves its panels through
+  a hinge mounted on them.
 
 Registration: `add_actuator!(spacecraft, link, actuator)`.
 
@@ -242,8 +245,11 @@ actuator, in mounting order, from `SpaceAGORA.actuator_levels(c, i)`; it
 computes the levels in `calcControlEffect!` and writes no force or mass-flow
 hook. Effectors in the default `:ideal` mode keep applying their own hooks.
 The built-in RPO and Apollo descent controllers and the magnetic momentum
-manager accept `actuation=:mounted`. A run with a mounted effector writes the
-`sc{i}_actuator_level_{k}` and `sc{i}_actuator_power` columns (see
+manager accept `actuation=:mounted`. So does the orbit-maneuver burn scheduler
+`BaseThrusterModel`: it fires a mounted engine during the burn window and
+points it along the burn with the mounted reaction wheels; the engine switches
+exactly at the window's ends, between integration steps. A run with a mounted
+effector writes the `sc{i}_actuator_level_{k}` and `sc{i}_actuator_power` columns (see
 [Output Columns](user/output_columns.md#Mounted-actuators)); `applied_actuator_levels` and
 `mounted_power` compute the same values from a spacecraft and its levels.
 

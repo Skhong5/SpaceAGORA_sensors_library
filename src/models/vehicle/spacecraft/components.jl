@@ -7,7 +7,7 @@ using ..ThrusterModels: SixAxisThrusterModel
 using ..Actuators: ActuatorContext, ActuatorRequirements, STANDARD_GRAVITY_MPS2, actuator_saturate, propellant_mass_rate
 import ..Actuators: actuator_wrench, actuator_limits, actuator_consumption, actuator_requirements
 export Facet, Thruster, Magnet, ReactionWheelAssembly, create_facet_list
-export six_axis_thrusters, ReactionWheel, wheel_momentum_saturate, Magnetorquer, LaserTerminal, PanelHinge, hinge_step
+export six_axis_thrusters, ReactionWheel, wheel_momentum_saturate, wheel_power, Magnetorquer, LaserTerminal, PanelHinge, hinge_step
 
 const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 
