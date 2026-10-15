@@ -373,7 +373,7 @@ function _save_actuator_levels(num_sats::Int, counts::Vector{Int}, u, t, integra
     @inbounds for i in 1:num_sats
         levels = counts[i] == 0 ? nothing : _mounted_effector_levels(effectors, i, counts[i])
         out[i] = levels === nothing ? zeros(Float64, counts[i]) :
-            applied_actuator_levels(spacecraft[i], levels; wheel_momentum=_saved_wheel_momentum(u, i))
+            applied_actuator_levels(spacecraft[i], shed_levels(spacecraft[i], levels); wheel_momentum=_saved_wheel_momentum(u, i))
     end
     return out
 end
@@ -385,7 +385,7 @@ function _save_actuator_power(num_sats::Int, counts::Vector{Int}, u, t, integrat
     @inbounds for i in 1:num_sats
         levels = counts[i] == 0 ? nothing : _mounted_effector_levels(effectors, i, counts[i])
         out[i] = levels === nothing ? 0.0 :
-            mounted_power(spacecraft[i], levels; wheel_momentum=_saved_wheel_momentum(u, i))
+            mounted_power(spacecraft[i], shed_levels(spacecraft[i], levels); wheel_momentum=_saved_wheel_momentum(u, i))
     end
     return out
 end
@@ -636,6 +636,7 @@ function default_save_fields(args::SimulationConfiguration)
     append!(fields, attachment_save_fields(args))
     append!(fields, plume_save_fields(args))
     append!(fields, actuator_save_fields(args))
+    append!(fields, power_save_fields(args))
     for field in visualization_save_fields(args)
         push!(fields, field)
     end

@@ -1,0 +1,150 @@
+# The power budget during a run (see PowerSystems): the snapshot that the
+# battery derivative, the battery events and the result columns share; the
+# events that mark the battery full or empty and the step-end update of its
+# shedding; and the power result columns.
+
+const _NO_SUN = SVector{3, Float64}(NaN, NaN, NaN)
+
+# Generation, load and net power of spacecraft `sat_idx` in state `sc_view` at
+# time `t`: the arrays lit by the Sun of the run's ephemerides (none when they
+# cannot place it), the constant loads, and the mounted actuators at the levels
+# of the first control effector in `:mounted` actuation that holds them.
+function _power_snapshot(sc_view, spacecraft, p, sat_idx::Int, t::Float64)
+    args = p.args
+    planet = args.environment_model.planet
+    generation = 0.0
+    if any(link -> !isempty(link.solar_arrays), spacecraft.links)
+        et = p.shared_buffers.et_start[] + t
+        sun_dir = ephemerides_sun_direction_ii(planet, et, args.environment_model.ephemerides_model)
+        if sun_dir !== nothing
+            pos = SVector{3, Float64}(sc_view.pos[1], sc_view.pos[2], sc_view.pos[3])
+            sun_ii = SVector{3, Float64}(sun_dir) * mean_solar_distance_m(planet)
+            lit = Float64(eclipse_area_calc(pos, sun_ii, Float64(planet.Rp_e)))
+            to_sun = sun_ii - pos
+            distance = norm(to_sun)
+            q = hasproperty(sc_view, :q) ?
+                SVector{4, Float64}(sc_view.q[1], sc_view.q[2], sc_view.q[3], sc_view.q[4]) :
+                SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
+            generation = solar_generation_w(spacecraft, rot(q) * (to_sun / distance), solar_flux_w_m2(distance), lit)
+        end
+    end
+    n = mounted_actuator_count(spacecraft)
+    levels = n == 0 ? nothing : _mounted_effector_levels(args.control_model.control_effectors, sat_idx, n)
+    wheel_momentum = hasproperty(sc_view, :h_wheels) ? sc_view.h_wheels : nothing
+    balance = power_balance(spacecraft, levels, generation; wheel_momentum=wheel_momentum)
+    return (generation_w = generation, load_w = balance.load_w, unshed_load_w = balance.unshed_load_w,
+            by_tier = balance.by_tier, net_w = balance.net_w)
+end
+
+# Spacecraft with a battery, whose stored energy is a state.
+_battery_spacecraft(args) = [i for i in eachindex(args.dynamics_model.spacecraft) if has_battery(args.dynamics_model.spacecraft[i])]
+
+@inline function _mark_power_discontinuity!(integrator)
+    if applicable(DiffEqBase.derivative_discontinuity!, integrator, false)
+        DiffEqBase.derivative_discontinuity!(integrator, false)
+    end
+    return nothing
+end
+
+# Step-end update of every battery's flags and shedding tier.
+function _update_power_states!(integrator, sats::Vector{Int})
+    spacecraft = integrator.p.args.dynamics_model.spacecraft
+    changed = false
+    for i in sats
+        sc_view = integrator.u.sc[i]
+        snap = _power_snapshot(sc_view, spacecraft[i], integrator.p, i, integrator.t)
+        changed |= update_power_state!(spacecraft[i], sc_view.battery_wh, snap.generation_w, snap.by_tier)
+    end
+    changed && _mark_power_discontinuity!(integrator)
+    return nothing
+end
+
+"""
+    get_power_callbacks(num_sats, args) -> Tuple
+
+For runs with a battery: an event on each battery reaching zero or its
+capacity, which marks it empty or full, and a step-end update of its flags and
+shedding tier (see `PowerSystems.update_power_state!`). Both mark the
+derivative discontinuous when they change anything, so no integration step
+sees the battery's state change. Empty for runs without a battery.
+"""
+function get_power_callbacks(num_sats::Int, args::SimulationConfiguration)
+    sats = _battery_spacecraft(args)
+    isempty(sats) && return ()
+    spacecraft = args.dynamics_model.spacecraft
+    function condition!(out, u, t, integrator)
+        @inbounds for (k, i) in enumerate(sats)
+            energy = u.sc[i].battery_wh
+            out[2k - 1] = energy
+            out[2k] = battery(spacecraft[i]).capacity_wh - energy
+        end
+        return nothing
+    end
+    # `events` holds one crossing direction per condition (0: no crossing).
+    function boundary!(integrator, events)
+        hit = false
+        for e in eachindex(events)
+            events[e] == 0 && continue
+            i = sats[(e + 1) ÷ 2]
+            hit |= battery_boundary!(integrator.p.args.dynamics_model.spacecraft[i], integrator.u.sc[i].battery_wh)
+        end
+        hit || return nothing
+        _update_power_states!(integrator, sats)
+        _mark_power_discontinuity!(integrator)
+        return nothing
+    end
+    boundary = VectorContinuousCallback(condition!, boundary!, 2 * length(sats); save_positions=(false, false))   # both crossing directions
+    function initialize!(cb, u, t, integrator)
+        for i in sats
+            sc = integrator.p.args.dynamics_model.spacecraft[i]
+            b = battery(sc)
+            energy = u.sc[i].battery_wh
+            b.full = energy >= b.capacity_wh * (1.0 - 1.0e-9)
+            b.empty = energy <= 1.0e-9 * b.capacity_wh
+            b.shed_tier = 0
+        end
+        _update_power_states!(integrator, sats)
+        _mark_power_discontinuity!(integrator)
+        return nothing
+    end
+    step_end = DiscreteCallback((u, t, integrator) -> true, integrator -> _update_power_states!(integrator, sats);
+        initialize=initialize!, save_positions=(false, false))
+    return (boundary, step_end)
+end
+
+function _save_power(num_sats::Int, u, t, integrator, which::Symbol)
+    spacecraft = integrator.p.args.dynamics_model.spacecraft
+    out = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        sc = spacecraft[i]
+        if !has_power_parts(sc)
+            out[i] = NaN
+        elseif which === :battery_wh || which === :battery_soc
+            b = battery(sc)
+            out[i] = b === nothing ? NaN :
+                (which === :battery_wh ? Float64(u.sc[i].battery_wh) : Float64(u.sc[i].battery_wh) / b.capacity_wh)
+        else
+            snap = _power_snapshot(u.sc[i], sc, integrator.p, i, Float64(t))
+            out[i] = which === :power_generated_w ? snap.generation_w :
+                     which === :power_load_w ? snap.load_w :
+                     which === :power_net_w ? snap.net_w : snap.unshed_load_w - snap.load_w
+        end
+    end
+    return out
+end
+
+"""
+    power_save_fields(args) -> Vector{SaveField}
+
+The power columns, when a spacecraft carries power-system parts: per
+spacecraft `battery_wh` and `battery_soc` (NaN without a battery),
+`power_generated_w`, `power_load_w` (with the shedding applied),
+`power_shed_w` and `power_net_w` (generation minus load; negative while the
+battery cannot cover the load). NaN for a spacecraft without power parts.
+"""
+function power_save_fields(args::SimulationConfiguration)
+    any(has_power_parts, args.dynamics_model.spacecraft) || return SaveField[]
+    num_sats = length(args.dynamics_model.spacecraft)
+    return SaveField[SaveField(name, (u, t, integrator) -> _save_power(num_sats, u, t, integrator, name); per_satellite=true)
+                     for name in (:battery_wh, :battery_soc, :power_generated_w, :power_load_w, :power_shed_w, :power_net_w)]
+end

@@ -89,6 +89,9 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "spacecraft", 
 # Mounting actuators on links and evaluating the mounted set (needs the spacecraft types).
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "actuators", "mounting.jl"))
 @reexport using .ActuatorMounting
+# The power budget: solar arrays, the battery, loads and load shedding (needs ActuatorMounting).
+include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "power", "power_system.jl"))
+@reexport using .PowerSystems
 
 # Articulated-body dynamics library (needs only the spacecraft model types; the runtime
 # types below hold its per-spacecraft run data).
