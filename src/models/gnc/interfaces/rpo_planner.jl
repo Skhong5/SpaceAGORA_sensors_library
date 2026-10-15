@@ -1,7 +1,5 @@
-"""
-RPO planner contracts. This module loads with Julia standard libraries alone.
-The opt-in public RPO pilot connects them to accepted simulation updates.
-"""
+# RPO planner contracts. This module loads with Julia standard libraries alone.
+# The opt-in public RPO pilot connects them to accepted simulation updates.
 module RPOPlannerInterfaces
 
 using LinearAlgebra: norm, cross

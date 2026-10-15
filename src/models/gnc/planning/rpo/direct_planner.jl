@@ -1,4 +1,4 @@
-"""Internal direct-path baseline. Loads with the neutral contract and standard libraries only."""
+# Internal direct-path baseline. Loads with the neutral contract and standard libraries only.
 module DirectRPOPlanning
 using LinearAlgebra: norm
 using ..RPOPlannerInterfaces

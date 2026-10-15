@@ -5,7 +5,7 @@ implementation. The shared optional-package command installs its reviewed source
 pair in a separate environment; the companion remains an independent repository.
 Load both packages before selecting an EDG model. See the
 [installation guide](../../docs/src/user/installation_environment.md) for the
-`edg` target and the [package boundary](../../docs/src/maintainer/edg_adapter_boundary.md)
+`edg` target and the [package boundary](../../docs/src/reference/edg_adapter_boundary.md)
 for ownership, compatibility and scientific limits.
 
 SpaceAGORA retains public configuration/model types, physical dynamics, lifecycle

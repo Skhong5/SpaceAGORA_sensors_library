@@ -1,11 +1,8 @@
 # SpaceAGORA Documentation
 
 SpaceAGORA is a Julia toolkit for spacecraft orbit and atmospheric-flight
-simulation. This site is organized for three audiences:
-
-- users who want a first successful run
-- users who need command, API, or extension reference material
-- maintainers working on package surface, documentation, and repository rules
+simulation. Use this site to run a first example, configure a study, understand
+saved results or extend a model through the supported API.
 
 ## Start in under a minute
 
@@ -69,12 +66,3 @@ exact command surface, extension hooks, or generated API details.
 - [Public API](generated/public_api.md)
 - [Publications](publications.md)
 - [Extensibility](extensibility.md)
-
-### Maintainer Guide
-
-Use the maintainer section when you are changing docs, public API shape, repo
-structure, or CI-backed documentation rules.
-
-- [Maintainer Overview](maintainer/index.md)
-- [Documentation Policy](documentation_policy.md)
-- [Contracts](contracts.md)

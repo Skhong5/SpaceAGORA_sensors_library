@@ -26,7 +26,7 @@ pair with the [optional EDG setup](installation_environment.md), then load both:
 using SpaceAGORA, SpaceAGORAEDG
 ```
 
-The [EDG package boundary](../maintainer/edg_adapter_boundary.md) describes its
+The [EDG package boundary](../reference/edg_adapter_boundary.md) describes its
 versioned queries and state ownership. Selecting an EDG model without loading
 the provider gives a setup error before the simulation starts. The companion's
 `examples/analytic_atmosphere.jl` is a short installed-package demonstration;

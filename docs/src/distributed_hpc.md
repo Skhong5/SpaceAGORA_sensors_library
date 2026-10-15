@@ -17,7 +17,6 @@ What to read next:
 - [CLI](cli.md)
 - [Parallel Execution](user/parallel_execution.md)
 - [Recipes](user/recipes.md)
-- [Maintainer Overview](maintainer/index.md)
 
 SpaceAGORA's supported distributed execution surface today is centered on
 multi-process benchmark and study workflows, self-bootstrapping process-backend

@@ -1,7 +1,7 @@
 # Concepts
 
 Use this page when you want the mental model behind the main workflows without
-digging into maintainer-only architecture documents.
+reading the contributor documentation kept in the repository.
 
 This page is for users who can already run commands and now want to understand
 which route, mode, or surface is appropriate for their work.
