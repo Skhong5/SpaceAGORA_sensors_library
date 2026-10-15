@@ -197,7 +197,7 @@ or simulation is started by the plotting helper.
 ### Visualization fields
 
 These columns are added automatically when `simulation_settings.save_visualization_scene = true`
-and the run can supply them; see the [sidecar section](#Visualization-scene-sidecar-(opt-in))
+and the run can supply them; see the [sidecar section](outputs.md#Visualization-scene-sidecar-(opt-in))
 for the conditions:
 
 | Column | Unit | Description |

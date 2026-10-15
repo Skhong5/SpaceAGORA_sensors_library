@@ -160,7 +160,7 @@ scene.planet.name, length(scene.spacecraft), scene.spacecraft[1].bounding_radius
 ```
 
 The flag adds four more fields when the run can supply them, each listed in
-the [CSV column reference](#Visualization-fields) below:
+on [Output Columns](output_columns.md#Visualization-fields):
 
 - `thruster_level`: `sc{N}_thruster_level_{k}`, the firing level of thruster
   `k` from 0 to 1, for a spacecraft with thrusters whose control effector

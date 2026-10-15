@@ -24,6 +24,11 @@ Command Prompt `set GIT_LFS_SKIP_SMUDGE=1`) and run the same `git clone` line
 without the prefix; the [Quickstart](user/quickstart.md) shows both forms and
 a checkpoint that confirms the setup before the first run.
 
+SpaceAGORA has two working modes. The no-GRAM path, built on
+`NoAtmosphereModel()` and `SimpleEphemeridesModel()`, covers first runs, smoke
+runs and lightweight studies. The higher-fidelity path needs GRAM and SPICE
+assets on the local machine. You do not need it for a first successful run.
+
 ## Choose your route
 
 ### Run something now

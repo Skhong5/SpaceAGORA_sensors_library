@@ -71,7 +71,7 @@ Requirements and behavior:
 - `run_monte_carlo(...; parallel=true)` only sees your function, so it
   does not send samples to process workers unless you describe the
   workload with `route_features` (see
-  [Internal and benchmark controls](#internal-and-benchmark-controls)).
+  [Internal and benchmark controls](#Internal-and-benchmark-controls)).
   A process worker is a separate Julia process: a function defined in your
   script, anything it reaches in your script's `Main`, and SPICE kernels
   you furnished yourself exist there only if you load them there. Pass
@@ -92,7 +92,7 @@ Requirements and behavior:
 
 Parallel runs are not bit-for-bit reproducible across thread counts in
 every configuration (see
-[Internal and benchmark controls](#internal-and-benchmark-controls) for the
+[Internal and benchmark controls](#Internal-and-benchmark-controls) for the
 route that is). Validate a study against a run with the flag off before
 relying on it.
 
@@ -349,7 +349,7 @@ planner picks `:process` itself for workload shapes where it wins,
 auto-bootstrapping a `Distributed` worker pool via `ensure_process_workers!` —
 no manual `addprocs` call or cluster setup is required for this
 library-level path. See
-[Process-backend outer parallelism](#process-backend-outer-parallelism)
+[Process-backend outer parallelism](#Process-backend-outer-parallelism)
 below. Multi-node/scheduler launches for benchmark and study scripts are a
 separate, explicit-`addprocs` path — see
 [Distributed and HPC](../distributed_hpc.md).
