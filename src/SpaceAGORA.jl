@@ -258,6 +258,7 @@ using .SimulationModel: actuator_wrench, actuator_limits, actuator_saturate, act
 using .SimulationModel: add_actuator!, mounted_actuators, actuator_context, allocation_matrix, mounted_wrench, six_axis_thrusters
 using .SimulationModel: propellant_mass_rate, ActuatorRequirements, actuator_requirements, applied_actuator_levels, mounted_power
 using .SimulationModel: SolarArray, Battery, PowerLoad, add_power!
+using .SimulationModel: ActuatorFault, add_fault!
 using .SimulationLifecycle: bind_spacecraft
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
@@ -369,6 +370,8 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.Battery) Battery
 @doc (@doc SimulationModel.PowerLoad) PowerLoad
 @doc (@doc SimulationModel.add_power!) add_power!
+@doc (@doc SimulationModel.ActuatorFault) ActuatorFault
+@doc (@doc SimulationModel.add_fault!) add_fault!
 @doc (@doc SimulationModel.AbstractTypes.AbstractGuidanceModel) AbstractGuidanceModel
 @doc (@doc SimulationModel.StateSample) StateSample
 @doc (@doc SimulationModel.PlanetFrameSample) PlanetFrameSample
@@ -638,6 +641,7 @@ export actuator_wrench, actuator_limits, actuator_saturate, actuator_consumption
 export add_actuator!, mounted_actuators, actuator_context, allocation_matrix, mounted_wrench, six_axis_thrusters
 export propellant_mass_rate, ActuatorRequirements, actuator_requirements, applied_actuator_levels, mounted_power
 export SolarArray, Battery, PowerLoad, add_power!
+export ActuatorFault, add_fault!
 export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 export SolarPanelAngleOfAttackControlModel

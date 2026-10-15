@@ -385,8 +385,9 @@ end
     zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
     levels = SimulationModel.actuator_levels(effector, sat_idx)
     levels === nothing && return (zero3, zero3, 0.0, zero3)
-    # Actuators an empty battery sheds act at level zero.
-    levels = SimulationModel.shed_levels(p.args.dynamics_model.spacecraft[sat_idx], levels)
+    # Active faults change the levels, then actuators an empty battery sheds act at level zero.
+    levels = SimulationModel.shed_levels(p.args.dynamics_model.spacecraft[sat_idx],
+        SimulationModel.faulted_levels(p.args.dynamics_model.spacecraft[sat_idx], levels))
     hasproperty(sc_view, :q) || throw(ArgumentError(
         "Mounted actuation needs the attitude state: set orientation_sim=true (spacecraft $(sat_idx))."))
     q = SVector{4, Float64}(sc_view.q[1], sc_view.q[2], sc_view.q[3], sc_view.q[4])

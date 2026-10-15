@@ -30,7 +30,7 @@ end
     mounted_hinge_count(spacecraft) == 0 && return nothing
     levels = actuator_levels(control_model, sat_idx)
     levels === nothing && return nothing
-    apply_hinge_levels!(spacecraft, levels, t)
+    apply_hinge_levels!(spacecraft, faulted_levels(spacecraft, levels), t)
     return nothing
 end
 
@@ -44,6 +44,7 @@ function _apply_mounted_thruster_firing!(control_model, p, sat_idx::Int, t, peri
     any(link -> any(th -> th.firing_dynamics, link.thrusters), spacecraft.links) || return nothing
     levels = actuator_levels(control_model, sat_idx)
     (levels === nothing || length(levels) != mounted_actuator_count(spacecraft)) && return nothing
+    levels = faulted_levels(spacecraft, levels)
     k = 0
     for link in spacecraft.links, thruster in link.thrusters
         k += 1

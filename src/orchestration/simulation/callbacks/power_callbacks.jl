@@ -30,6 +30,7 @@ function _power_snapshot(sc_view, spacecraft, p, sat_idx::Int, t::Float64)
     end
     n = mounted_actuator_count(spacecraft)
     levels = n == 0 ? nothing : _mounted_effector_levels(args.control_model.control_effectors, sat_idx, n)
+    levels === nothing || (levels = faulted_levels(spacecraft, levels))
     wheel_momentum = hasproperty(sc_view, :h_wheels) ? sc_view.h_wheels : nothing
     balance = power_balance(spacecraft, levels, generation; wheel_momentum=wheel_momentum)
     return (generation_w = generation, load_w = balance.load_w, unshed_load_w = balance.unshed_load_w,

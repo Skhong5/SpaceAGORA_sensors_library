@@ -9,6 +9,7 @@ import ..Actuators: actuator_wrench, actuator_limits, actuator_consumption, actu
 export Facet, Thruster, Magnet, ReactionWheelAssembly, create_facet_list
 export six_axis_thrusters, ReactionWheel, wheel_momentum_saturate, wheel_power, Magnetorquer, LaserTerminal, PanelHinge, hinge_step
 export SolarArray, Battery, PowerLoad
+export ActuatorFault, FaultSet
 
 const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 
@@ -20,6 +21,8 @@ include(joinpath(@__DIR__, "..", "actuators", "laser.jl"))
 include(joinpath(@__DIR__, "..", "actuators", "hinge.jl"))
 # Power-system records (mounted with PowerSystems.add_power!).
 include(joinpath(@__DIR__, "..", "power", "power_components.jl"))
+# The actuator-fault record (mounted with ActuatorFaults.add_fault!).
+include(joinpath(@__DIR__, "..", "actuators", "fault.jl"))
 
 @kwdef mutable struct Facet
     area::Float64 = 0.0 # Area of the facet
