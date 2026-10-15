@@ -6,6 +6,11 @@ export Facet, Thruster, Magnet, ReactionWheelAssembly, create_facet_list
 
 const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 
+# Actuator hardware records live beside the actuator layer.
+include(joinpath(@__DIR__, "..", "actuators", "thruster_record.jl"))
+include(joinpath(@__DIR__, "..", "actuators", "reaction_wheel_record.jl"))
+include(joinpath(@__DIR__, "..", "actuators", "magnetorquer_record.jl"))
+
 @kwdef mutable struct Facet
     area::Float64 = 0.0 # Area of the facet
     attitude::MVector{4, Float64} = @MVector [0.0, 0.0, 0.0, 1.0] # Attitude of the facet relative to the body frame
@@ -14,72 +19,6 @@ const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
     ρ::Float64 = 0.0 # Diffuse coefficient
     δ::Float64 = 0.0 # Specular coefficient
     name::String = "" # Identifying name
-end
-
-@kwdef mutable struct Thruster
-    max_thrust::Float64 = 1.0 # Maximum thrust, N
-    location::MVector{3, Float64} = MVector{3, Float64}(zeros(3)) # Location in the link frame, relative to the CoM of the link, m
-    direction::MVector{3, Float64} = MVector{3, Float64}(zeros(3)) # Unit vector direction of thrust in the link frame, n/d
-    Isp::Float64 = 0.0 # Specific impulse of the thruster, s
-    cutoff_frequency::Float64 = 1.0 # Governing parameter for thruster ramp-up/ramp-down, rad/s.
-    min_firing_time::Float64 = 0.0 # Minimum time for the thruster to be firing, s.
-    level_on::Float64 = 0.75 # Upper threshold for the Schmitt trigger, nd
-    level_off::Float64 = 0.25 # Lower threshold for the Schmitt trigger, nd
-    κ::Float64 = 0.0 # Thrust factor, nd.
-    thrust::Float64 = 0.0 # Current thrust magnitude, to be updated during simulation.
-    stop_firing_time::Float64 = 0.0 # Time at which the thruster should stop firing, s.
-end
-
-@kwdef mutable struct Magnet
-    m::MVector{3, Float64} = MVector{3, Float64}(zeros(3)) # Magnetic dipole moment in the body frame, A*m^2
-    location::MVector{3, Float64} = MVector{3, Float64}(zeros(3)) # Location in the link frame, relative to the CoM of the link, m
-end
-
-"""
-    ReactionWheelAssembly
-
-A struct to hold the parameters and state of a
-reaction wheel assembly. The wheel count is a runtime field, not a type
-parameter; see the note on the struct for why.
-"""
-# Deliberately NOT parameterised on the wheel count. The parameter existed only
-# to size J_rw/h_wheels statically, but it propagated outward as Link{N_RW},
-# which made `Link` an abstract UnionAll and therefore made
-# SpacecraftModel.links::Vector{Link} and .root::Link abstract fields. Every
-# read of a link field in the RHS was then a dynamic lookup that boxed a
-# Float64: measured at ~835 bytes allocated per satellite per RHS call, which
-# accounted for essentially all of the 1.53 GB a 10000-satellite run allocated,
-# and a 35.7x slowdown on field access in isolation. The wheel arrays are
-# touched once per satellite per attitude step; the link fields are touched
-# constantly, so the static sizing was being bought at far too high a price.
-@kwdef mutable struct ReactionWheelAssembly
-    # --- Parameters (Fixed) ---
-    n_wheels::Int = 0 # Number of reaction wheels in the assembly
-
-    "Jacobian mapping wheel angular velocity to body angular momentum"
-    J_rw::Matrix{Float64} = zeros(Float64, 3, 0)
-
-    "Precomputed pseudo-inverse of J_rw, mapping a desired body torque/momentum onto per-wheel values"
-    J_rw_pinv::Matrix{Float64} = Matrix{Float64}(pinv(J_rw))
-
-    "Maximum torque (Nm) *each* wheel can produce"
-    max_wheel_torque::Float64 = 0.1
-    
-    "Maximum angular momentum (Nms) *each* wheel can store"
-    max_wheel_h::Float64 = 0.1
-
-    "Attitude control algorithm associated with this RW assembly"
-    attitude_control_function::Function = (m, b, root_index, vel_pp_rw, h_pp_hat, aerobraking_phase, t) -> nothing
-
-    # --- State (Mutable) ---
-    "Angular momentum (h) of each wheel"
-    h_wheels::Vector{Float64} = zeros(Float64, n_wheels)
-
-    "Derivative of wheel angular momentum (h_dot)"
-    h_dot_wheels::Vector{Float64} = zeros(Float64, n_wheels)
-    
-    "Net torque (τ) applied to the body *by* the RW assembly"
-    tau_body_net::MVector{3, Float64} = MVector{3, Float64}(zeros(3))
 end
 
 function create_facet_list(area_list::Vector{Float64}, attitude_list::Vector{SVector{4, Float64}}, normal_vector_list::Vector{SVector{3, Float64}},

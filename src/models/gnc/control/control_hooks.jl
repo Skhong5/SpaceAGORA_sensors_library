@@ -86,7 +86,7 @@ module ControlHooks
     include(joinpath(@__DIR__, "energy_depletion_lifecycle.jl"))
     include(joinpath(@__DIR__, "rpo_mpc", "lqmpc.jl"))
     include(joinpath(@__DIR__, "rpo_mpc", "rpo_control_types.jl"))
-    include(joinpath(@__DIR__, "rpo_mpc", "thruster_allocator.jl"))
+    include(joinpath(@__DIR__, "..", "..", "vehicle", "actuators", "thruster_allocation.jl"))
     include(joinpath(@__DIR__, "rpo_mpc", "reaction_wheel_allocator.jl"))
     include(joinpath(@__DIR__, "rpo_mpc", "rpo_mpc_control_model.jl"))
     include(joinpath(@__DIR__, "robot_arm_control.jl"))

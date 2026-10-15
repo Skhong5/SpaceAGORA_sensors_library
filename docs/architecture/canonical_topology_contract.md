@@ -74,7 +74,7 @@ routes. Source grouping does not move companion implementations into core.
 6. Simulation execution ownership belongs to `src/orchestration/simulation/engine/*`; legacy `src/orchestration/simulation/events/*`, `src/orchestration/simulation/execution/*`, and `src/orchestration/simulation/solver_orchestration/*` are retired.
 7. Shared runtime serialization services are owned by `src/orchestration/simulation/runtime_services.jl`, not by `SimulationModel`.
 8. Actuator ownership: thruster-specific hooks live in
-   `src/models/vehicle/actuators/thruster/thruster_hooks.jl`.
+   `src/models/vehicle/actuators/thruster_hooks.jl`.
 9. Vehicle boundary is:
    - `src/models/vehicle/spacecraft/*` for composition/integration
    - `src/models/vehicle/structure/*` for mass/inertia/geometry/structure analysis,
@@ -115,7 +115,7 @@ routes. Source grouping does not move companion implementations into core.
 2. `src/orchestration/simulation/engine/execution.jl`
 3. `src/orchestration/simulation/runtime_services.jl`
 4. `src/models/dynamics/effectors/force_torque_models.jl`
-5. `src/models/vehicle/actuators/thruster/thruster_hooks.jl`
+5. `src/models/vehicle/actuators/thruster_hooks.jl`
 6. `src/models/vehicle/structure/structure_models.jl`
 7. `src/models/vehicle/structure/assembly_graph.jl`
 8. `src/models/vehicle/structure/mass_properties.jl`
