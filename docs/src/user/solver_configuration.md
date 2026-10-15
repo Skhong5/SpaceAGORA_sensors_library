@@ -112,7 +112,7 @@ that subsolve. Previously, a crossing inside a reused subsolve carried its phase
 settings into later subsolves, so physical multirate runs with atmospheric
 crossings change.
 
-Fixed-step symplectic and gravity-backbone drivers are exempt from adaptive
+The fixed-step gravity-backbone driver is exempt from adaptive
 phase updates. This exemption does not establish support for atmospheric
 gravity-backbone runs: the density callback currently requires the ordinary
 spacecraft state layout.
@@ -169,10 +169,20 @@ args = SimulationConfiguration(...; solver_config=SolverConfig(solver_mode=:spli
 When `solver_config` is left as `nothing`, `run_simulation` reads the effective
 engine settings at call time, so `SPACEAGORA_SOLVER_MODE` (or a
 `SimulationEngineConfig` override) applies. Accepted modes are `:tsit5`,
-`:symplectic`, `:gravity_backbone_split`, `:dp8`, `:auto_stiff`, `:rodas5p`,
-`:split_imex` and `:multirate`. IMEX (`:split_imex`) and multirate integration
-run only when selected this way; nothing in the dynamics model or routing
-profile switches a run to them.
+`:gravity_backbone_split`, `:dp8`, `:auto_stiff`, `:rodas5p`, `:split_imex`
+and `:multirate`. IMEX (`:split_imex`) and multirate integration run only when
+selected this way; nothing in the dynamics model or routing profile switches a
+run to them.
+
+`SolverConfig` checks its settings when it is built: an unknown `solver_mode`,
+`split_imex_solver` or `multirate_*_solver` name, or a non-positive
+`maxiters`, `multirate_fast_substeps` or step size, throws an `ArgumentError`
+that names the accepted values. The matching environment variables
+(`SPACEAGORA_SOLVER_MODE`, `SPACEAGORA_SPLIT_IMEX_SOLVER`,
+`SPACEAGORA_MULTIRATE_SLOW_SOLVER`, `SPACEAGORA_MULTIRATE_FAST_SOLVER`) accept
+the same names plus a few alternative spellings. `:symplectic` is refused:
+`run_simulation` has no path for it. Use `:gravity_backbone_split`, which
+integrates the gravity core with the fixed-step KahanLi8 symplectic method.
 
 Within `:split_imex`, the solver partition hooks on force/torque effectors
 (`solver_partition`) determine whether an effector goes on the explicit or

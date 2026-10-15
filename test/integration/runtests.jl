@@ -124,8 +124,6 @@ if !isdefined(@__MODULE__, :_solver_policy_mode)
     const _rhs_execution_plan = SimulationEngine._rhs_execution_plan
     const _retcode_is_stiff_symptom = SimulationEngine._retcode_is_stiff_symptom
     const _split_imex_solver_spec = SimulationEngine._split_imex_solver_spec
-    const _symplectic_conservative_eligible = SimulationEngine._symplectic_conservative_eligible
-    const _symplectic_fixed_dt_s = SimulationEngine._symplectic_fixed_dt_s
     const _gravity_backbone_fixed_dt_s = SimulationEngine._gravity_backbone_fixed_dt_s
     const _gravity_backbone_eligible = SimulationEngine._gravity_backbone_eligible
     const _gravity_backbone_reject_reason = SimulationEngine._gravity_backbone_reject_reason
