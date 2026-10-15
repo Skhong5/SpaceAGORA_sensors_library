@@ -136,10 +136,10 @@ function _periapsis_altitude_m(planet_id::String, regime::String)::Float64
 end
 
 function _harmonics_file(planet_id::String)::String
-    planet_id == "mars" && return joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "Mars50c.csv")
-    planet_id == "earth" && return joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
-    planet_id == "venus" && return joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "MGNP180U.csv")
-    planet_id == "titan" && return joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "titan5.csv")
+    planet_id == "mars" && return joinpath(REPO_ROOT, "data", "planets", "gravity", "Mars50c.csv")
+    planet_id == "earth" && return joinpath(REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv")
+    planet_id == "venus" && return joinpath(REPO_ROOT, "data", "planets", "gravity", "MGNP180U.csv")
+    planet_id == "titan" && return joinpath(REPO_ROOT, "data", "planets", "gravity", "titan5.csv")
     throw(ArgumentError("No harmonics file configured for '$planet_id'."))
 end
 

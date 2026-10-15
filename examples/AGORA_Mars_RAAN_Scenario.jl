@@ -69,7 +69,7 @@ function _make_mars_raan_scenario(raan_deg::Float64, results_directory::String)
         id=110
     )
 
-    mars_harmonics_file = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "Mars50c.csv")
+    mars_harmonics_file = joinpath(REPO_ROOT, "data/planets/gravity", "Mars50c.csv")
     sun_gravity = NBodyGravityModel(body_names=("Sun",), primary_body_name="Mars", planet=planet)
     solar_radiation_pressure = SolarRadiationPressureModel(
         spacecraft.root.reflection_coefficient,

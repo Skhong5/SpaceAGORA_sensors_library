@@ -231,7 +231,7 @@ const PPC_L50_ISO_MISSION_S = [
     (4096, 5800),
 ]
 
-const PPC_EARTH_HARMONICS_FILE = joinpath(PPC_REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+const PPC_EARTH_HARMONICS_FILE = joinpath(PPC_REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv")
 
 # Internal (non-exported) home of `_lvlh_cascade_torque`, reached the same way
 # the CYGNSS closed-loop-twin driver reaches it

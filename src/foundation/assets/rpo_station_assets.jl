@@ -7,11 +7,11 @@ using ..SimulationModel.Structure: _stl_binary_triangles
 export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 
 const _ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
-const _STATION_GEOMETRY_ROOT = joinpath(_ROOT, "data", "rpo", "station_geometry")
+const _STATION_GEOMETRY_ROOT = joinpath(_ROOT, "data", "scene", "models")
 
 function station_geometry_path(kind::Symbol=:demo)
     if kind == :demo
-        return joinpath(_STATION_GEOMETRY_ROOT, "demo", "station_pointcloud.csv")
+        return joinpath(_STATION_GEOMETRY_ROOT, "station_pointcloud_demo.csv")
     elseif kind in (:gateway, :gateway_core)
         return station_cad_path(kind)
     end
@@ -20,7 +20,7 @@ end
 
 function station_cad_path(kind::Symbol=:gateway)
     if kind in (:gateway, :gateway_core)
-        return joinpath(_STATION_GEOMETRY_ROOT, "gateway", "Gateway_Core.stl")
+        return joinpath(_STATION_GEOMETRY_ROOT, "gateway_core.stl")
     end
     throw(ArgumentError("Unknown RPO station CAD kind $(kind). Use :gateway or add an artifact-backed loader."))
 end

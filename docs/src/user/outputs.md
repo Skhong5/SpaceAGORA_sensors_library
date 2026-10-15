@@ -212,7 +212,7 @@ output/
   simulation_results_viewer.html  ← three.js viewer: textured globe, markers, trails, timeline
 ```
 
-The page embeds three.js, the surface texture from `data/textures/`
+The page embeds three.js, the surface texture from `data/scene/textures/`
 (Earth, Mars, Venus, Titan, Moon are registered in `manifest.toml`), the
 sidecar and a decimated copy of the trajectory, so it opens from disk in any
 modern browser without a server. `max_frames` and `data_budget_mb` bound the

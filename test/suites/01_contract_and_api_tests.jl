@@ -904,7 +904,7 @@ end
     @test all(isfinite, force_nbody)
     @test torque_nbody == SVector{3, Float64}(0.0, 0.0, 0.0)
 
-    harmonics_file = joinpath(REPO_ROOT, "data/Gravity_harmonics_data", "EarthGGM05C.csv")
+    harmonics_file = joinpath(REPO_ROOT, "data/planets/gravity", "EarthGGM05C.csv")
     harmonics_l20 = GravitationalHarmonicsModel(20, 20, harmonics_file, EARTH)
     @test size(harmonics_l20.C) == (21, 21)
     @test size(harmonics_l20.S) == (21, 21)

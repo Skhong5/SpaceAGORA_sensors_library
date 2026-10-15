@@ -42,7 +42,7 @@ const PC = SM.ParallelCost
 const RS = SpaceAGORA.RuntimeServices
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const HARM_FILE = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+const HARM_FILE = joinpath(REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv")
 const N_SATS = parse(Int, get(ENV, "PCM_N", "256"))
 const HARM_DEGREE = parse(Int, get(ENV, "PCM_L", "20"))
 # Epoch step between probe passes. Non-zero so that epoch-memoised samples

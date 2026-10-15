@@ -68,8 +68,8 @@ end # struct InitialTime
     results::String = "Results" # Directory to save results
     GRAM::String = "data/GRAMSuite.jl/GRAM Suite 2.0" # Directory for GRAM atmospheric model data
     SPICE::String = "data/GRAMSuite.jl/GRAM Suite 2.0/SPICE" # Directory for SPICE kernels
-    topography_harmonics::String = "data/Topography_harmonics_data" # Directory for topography harmonics data (move to planet?)
-    gravity_harmonics::String = "data/Gravity_harmonics_data" # Directory for gravity harmonics data (move to planet?)
+    topography_harmonics::String = "data/planets/topography" # Directory for topography harmonics data
+    gravity_harmonics::String = "data/planets/gravity" # Directory for gravity harmonics data
 end # struct FilePaths
 
 # 2.5. Simulation Settings

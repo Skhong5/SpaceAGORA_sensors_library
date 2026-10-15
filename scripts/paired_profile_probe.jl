@@ -27,7 +27,7 @@ const SM = SpaceAGORA.SimulationModel
 const SE = SpaceAGORA.SimulationEngine
 const PC = SM.ParallelCost
 const EARTH = SM.Earth()
-const HARM = joinpath(@__DIR__, "..", "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+const HARM = joinpath(@__DIR__, "..", "data", "planets", "gravity", "EarthGGM05C.csv")
 
 # Resolve profile environments through ParallelProfiles.profile_env_pairs so
 # this probe follows the shipped definitions without maintaining a second table.

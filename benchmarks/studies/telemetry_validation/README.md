@@ -115,7 +115,7 @@ the sentinel configuration.
 ## Data prerequisites
 
 - `data/telemetry/Odyssey/*.feather`, `data/telemetry/VEx/*.feather` — in-tree.
-- `data/Gravity_harmonics_data/{Mars50c,MGNP180U}.csv` — in-tree.
+- `data/planets/gravity/{Mars50c,MGNP180U}.csv` — in-tree.
 - Native GRAM build under `data/GRAMSuite.jl/GRAM Suite 2.0` (see
   `scripts/ensure_gram_native.jl`) — required by `odyssey_marsgram`,
   `vex_venusgram`, and `density_compare.jl` only.
