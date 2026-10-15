@@ -409,7 +409,10 @@ seconds. Return a tuple of 3D force and torque vectors in newtons and
 newton-meters. During the effective burn window, thrust is parallel or
 antiparallel to the inertial velocity according to the configured direction;
 torque is zero. Outside the burn window or for invalid thrust inputs, both
-vectors are zero.
+vectors are zero. At the window's ends, where the run stops, the thrust
+follows the burn's state, which the run switches between integration steps
+(see `refresh_burn!`): a step that ends at the start coasts, a step that ends
+at the stop burns.
 """
 function calcControlForceTorque(controlModel::BaseThrusterModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     # Calculate the control force and torque based on the thruster model and current state
@@ -417,7 +420,7 @@ function calcControlForceTorque(controlModel::BaseThrusterModel, u::AbstractVect
         return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     end
     start_time, stop_time = _effective_burn_window(controlModel, p, i)
-    if t >= start_time && t <= stop_time
+    if _burn_active(controlModel, i, t, start_time, stop_time)
         thrust_mag, _ = _effective_thrust_isp(controlModel, p, i)
         vel_vec = SVector{3, Float64}(u.vel)
         vel_mag = norm(vel_vec)
@@ -444,7 +447,7 @@ function calcControlMassFlowRate(controlModel::BaseThrusterModel, u::AbstractVec
     end
 
     start_time, stop_time = _effective_burn_window(controlModel, p, i)
-    if !(t >= start_time && t <= stop_time)
+    if !_burn_active(controlModel, i, t, start_time, stop_time)
         return 0.0
     end
 
@@ -641,16 +644,35 @@ end
 """
     refresh_burn!(model::BaseThrusterModel, p, i, t) -> Nothing
 
-For a scheduler in `:mounted` actuation: size spacecraft `i`'s level vector to
-its mounted actuators, record the effective burn window and thrust, and set
-whether the engine burns at time `t` (inside `[start, stop)`) with its level.
-Called when burns are scheduled, at each control tick and at the window's
-ends, where the solver stops; between those calls the engine's level holds,
-so no integration step sees it change.
+Record spacecraft `i`'s effective burn window and thrust and set whether the
+burn is on at time `t` (inside `[start, stop)`). Called when burns are
+scheduled, at the window's ends, where the solver stops, and, in `:mounted`
+actuation, at each control tick, where it also sizes the level vector to the
+mounted actuators and sets the engine's level. Between those calls the burn's
+state holds, so no integration step sees it change.
 """
 function refresh_burn!(model::BaseThrusterModel, p, i::Int, t::Real)
-    model.actuation === :mounted || return nothing
-    (1 <= i <= length(model.mounted_levels)) || return nothing
+    (1 <= i <= length(model.burning)) || return nothing
+    start_s, stop_s = _effective_burn_window(model, p, i)
+    thrust_n, _ = _effective_thrust_isp(model, p, i)
+    direction_rad = _effective_direction_rad(model, p, i)
+    valid = isfinite(start_s) && isfinite(stop_s) && stop_s > start_s &&
+            isfinite(thrust_n) && thrust_n > 0.0 && isfinite(direction_rad)
+    model.burn_windows[i] = valid ? (Float64(start_s), Float64(stop_s), Float64(thrust_n)) : (NaN, NaN, 0.0)
+    burning = valid && start_s <= t < stop_s
+    model.burning[i] = burning
+    model.actuation === :mounted && _refresh_mounted_engine!(model, p, i, burning ? Float64(thrust_n) : 0.0)
+    return nothing
+end
+
+# Inside the window the burn is on and outside it off; at an end, where the
+# solver stops, it follows the flag `refresh_burn!` keeps, so the step that
+# ends there and the step after it each see one thrust.
+@inline _burn_active(model::BaseThrusterModel, i::Int, t, start_s, stop_s)::Bool =
+    (start_s < t < stop_s) || ((t == start_s || t == stop_s) && model.burning[i])
+
+# `:mounted`: the level vector sized to the mounted actuators, the engine at `engine_level`.
+function _refresh_mounted_engine!(model::BaseThrusterModel, p, i::Int, engine_level::Float64)
     spacecraft = p.args.dynamics_model.spacecraft[i]
     n_thrusters = mounted_thruster_count(spacecraft)
     model.engine <= n_thrusters || throw(ArgumentError(
@@ -662,26 +684,17 @@ function refresh_burn!(model::BaseThrusterModel, p, i::Int, t::Real)
         resize!(levels, n)
         fill!(levels, 0.0)
     end
-    start_s, stop_s = _effective_burn_window(model, p, i)
-    thrust_n, _ = _effective_thrust_isp(model, p, i)
-    direction_rad = _effective_direction_rad(model, p, i)
-    valid = isfinite(start_s) && isfinite(stop_s) && stop_s > start_s &&
-            isfinite(thrust_n) && thrust_n > 0.0 && isfinite(direction_rad)
-    model.burn_windows[i] = valid ? (Float64(start_s), Float64(stop_s), Float64(thrust_n)) : (NaN, NaN, 0.0)
-    burning = valid && start_s <= t < stop_s
-    model.burning[i] = burning
-    levels[model.engine] = burning ? Float64(thrust_n) : 0.0
+    levels[model.engine] = engine_level
     return nothing
 end
 
 """
     burn_edge(model::BaseThrusterModel, t) -> Bool
 
-Whether `t` is an end of a spacecraft's burn window, for a scheduler in
-`:mounted` actuation: the instant the solver stops at for the engine to switch.
+Whether `t` is an end of a spacecraft's burn window: an instant the solver
+stops at for the burn to switch.
 """
-burn_edge(model::BaseThrusterModel, t::Real)::Bool =
-    model.actuation === :mounted && any(w -> t == w[1] || t == w[2], model.burn_windows)
+burn_edge(model::BaseThrusterModel, t::Real)::Bool = any(w -> t == w[1] || t == w[2], model.burn_windows)
 
 # The engine (the `engine`-th mounted thruster) and its link.
 function _mounted_engine(model::BaseThrusterModel, spacecraft)
