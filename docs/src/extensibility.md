@@ -14,6 +14,7 @@ templates/force_torque_model_template.jl
 What to read next:
 
 - [Adding a Force or Torque of Your Own](user/custom_effector.md) (a complete, tested walkthrough of the force/torque hook)
+- [Adding an Actuator of Your Own](user/custom_actuator.md) (a complete, tested walkthrough of the actuator contract)
 - [Public API](generated/public_api.md)
 - [Concepts](user/concepts.md)
 
@@ -226,6 +227,8 @@ The built-in RPO and Apollo descent controllers accept `actuation=:mounted`.
 Template:
 
 - `templates/actuator_template.jl`
+
+Walkthrough: [Adding an Actuator of Your Own](user/custom_actuator.md).
 
 ## Planet, ephemerides, thermal, thruster, and guidance extensions
 

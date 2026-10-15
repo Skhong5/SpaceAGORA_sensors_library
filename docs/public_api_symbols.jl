@@ -272,7 +272,8 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :allocation_matrix, rendered = "SpaceAGORA.allocation_matrix"),
             (owner = :SpaceAGORA, symbol = :mounted_wrench, rendered = "SpaceAGORA.mounted_wrench"),
             (owner = :SpaceAGORA, symbol = :allocate_actuators, rendered = "SpaceAGORA.allocate_actuators"),
-            (owner = :SpaceAGORA, symbol = :six_axis_thrusters, rendered = "SpaceAGORA.six_axis_thrusters")
+            (owner = :SpaceAGORA, symbol = :six_axis_thrusters, rendered = "SpaceAGORA.six_axis_thrusters"),
+            (owner = :SpaceAGORA, symbol = :propellant_mass_rate, rendered = "SpaceAGORA.propellant_mass_rate")
         ]
     ),
     (

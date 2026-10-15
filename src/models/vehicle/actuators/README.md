@@ -15,7 +15,7 @@ kind.
 | `hinge.jl` | the hinge kind: the `PanelHinge` record (level: the commanded angle of the link it turns; angle and rate limits), applied at control ticks |
 | `thruster_models.jl` | `BaseThrusterModel` (a burn schedule per spacecraft) and `SixAxisThrusterModel` (six fixed jets) |
 | `thruster_models_module.jl` | the `ThrusterModels` owner module |
-| `thruster_hooks.jl` | thruster firing dynamics over a link's jets: torque allocation, Schmitt trigger, impulse integration |
+| `thruster_hooks.jl` | thruster firing dynamics over a link's jets: Schmitt trigger, impulse integration, ramp factor |
 | `thruster_allocation.jl` | the RPO six-axis force allocation and its wrench |
 | `reaction_wheel.jl` | the reaction-wheel kind: the `ReactionWheel` record (level: the torque on the body about its spin axis; torque and momentum limits, unlimited by default), its contract methods, and the root link's `ReactionWheelAssembly` whose momenta the engine integrates |
 | `magnetorquer.jl` | `Magnet`, a permanent dipole the torque-rod effector applies, and the torque-rod kind: the `Magnetorquer` record (level: the commanded dipole along its axis), its contract methods |

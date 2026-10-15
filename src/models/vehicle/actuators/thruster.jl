@@ -69,7 +69,7 @@ Propellant use at a thrust of `level` newtons, `level / (Isp g0)`; zero when
     isp = Float64(thruster.Isp)
     thrust = Float64(level)
     rate = (isfinite(isp) && isp > 0.0 && isfinite(thrust) && thrust > 0.0) ?
-        thrust / (isp * STANDARD_GRAVITY_MPS2) : 0.0
+        propellant_mass_rate(thrust, isp) : 0.0
     return (mass_rate_kg_s = rate, power_w = 0.0)
 end
 

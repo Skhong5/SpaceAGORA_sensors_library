@@ -160,6 +160,7 @@ makedocs(
             "Interactive Visualization" => "user/visualization.md",
             "The Integrated State" => "user/integrated_state.md",
             "Adding a Force or Torque" => "user/custom_effector.md",
+            "Adding an Actuator" => "user/custom_actuator.md",
             "Stopping on a Condition" => "user/stop_conditions.md",
             "Parallel Execution" => "user/parallel_execution.md",
             "Verification Study" => "user/verification_study.md",
