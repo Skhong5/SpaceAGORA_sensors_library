@@ -21,7 +21,7 @@ const V=SpaceAGORAVisualizer
     @test dependency.version == v"0.1.0"
     override=get(ENV,"SPACEAGORA_VISUALIZER_PATH","")
     if isempty(override)
-        pin=TOML.parsefile(joinpath(@__DIR__,"..","..","packages","VisualizerSource.toml"))
+        pin=TOML.parsefile(joinpath(@__DIR__,"..","..","..","packages","VisualizerSource.toml"))
         @test dependency.is_tracking_repo
         @test dependency.git_revision == pin["rev"]
         @test dependency.git_source == pin["url"]

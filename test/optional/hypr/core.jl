@@ -98,7 +98,7 @@ end
     @test_throws HYPRUnavailableError plan_robot_arm_motion(model,base,q0,target;planner=:hypr)
     @test !hypr_available()
 end
-include(joinpath(@__DIR__,"..","unit","gnc","rpo_planner_contract_tests.jl"))
-include(joinpath(@__DIR__,"..","unit","gnc","direct_rpo_planner_tests.jl"))
-include(joinpath(@__DIR__,"..","unit","gnc","rrt_boundary_tests.jl"))
-include(joinpath(@__DIR__,"..","unit","gnc","shared_retiming_tests.jl"))
+include(joinpath(@__DIR__,"..","..","unit","gnc","rpo_planner_contract_tests.jl"))
+include(joinpath(@__DIR__,"..","..","unit","gnc","direct_rpo_planner_tests.jl"))
+include(joinpath(@__DIR__,"..","..","unit","gnc","rrt_boundary_tests.jl"))
+include(joinpath(@__DIR__,"..","..","unit","gnc","shared_retiming_tests.jl"))

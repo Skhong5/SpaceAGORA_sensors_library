@@ -1,5 +1,5 @@
 using Test, JSON
-const smoke=joinpath(@__DIR__,"..","smoke","ci_examples_suite_smoke.jl")
+const smoke=joinpath(@__DIR__,"..","..","smoke","ci_examples_suite_smoke.jl")
 const routing=Module(:ExampleRoutingWitness)
 Base.include(ex -> ex == :(examples = list_examples()) ? :(examples = String[]) : ex,
     routing,smoke)

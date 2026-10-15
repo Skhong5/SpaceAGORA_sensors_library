@@ -36,7 +36,7 @@ const saved=Dict{String,Any}()
 savejson(name,x)=(saved[name]=deepcopy(x);nothing)
 generate_rpo_seeded_batch_cases(;kwargs...)=[(start_rtn=(-1.,0.,0.),goal_rtn=(1.,0.,0.))]
 const USE_FULL_SIM=true
-source=joinpath(@__DIR__,"..","..","examples","Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl")
+source=joinpath(@__DIR__,"..","..","..","examples","Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl")
 for expression in Meta.parseall(read(source,String)).args
     if expression isa Expr && expression.head==:function && expression.args[1] == :(main())
         eval(expression)

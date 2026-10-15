@@ -20,7 +20,7 @@ include(joinpath(@__DIR__, "..", "..", "..", "examples", "support", "hypr_paper_
     for value in ("0", "-1", "Inf", "NaN")
         @test_throws ArgumentError paper_dynamic_budget(84.4, Dict("HYPR_DYNAMIC_MAX_TIME_S"=>value))
     end
-    fixture=joinpath(@__DIR__,"..","..","examples","support","hypr_final_isparo_case4.json")
+    fixture=joinpath(@__DIR__,"..","..","..","examples","support","hypr_final_isparo_case4.json")
     @test bytes2hex(sha256(read(fixture))) == "889c2df68edf946d7c097a7b95068f40809afb90aa003fe6af984393293843f5"
     d=JSON.parsefile(fixture)
     @test d["case"]["case_id"] == 4

@@ -125,7 +125,7 @@ The producer's named registries record product URLs and source metadata:
 
 - [LOLA elevation convention](https://pds-geosciences.wustl.edu/missions/lro/lola_faq.htm): each integer sample is multiplied by 0.5 to obtain metres above the 1,737,400 m sphere.
 - [LOLA GDR archive](https://pds-geosciences.wustl.edu/lro/lro-l-lola-3-rdr-v1/lrolol_1xxx/data/lola_gdr/): the `LDEM_128` cylindrical elevation raster.
-- [NASA PDS LROC archive](https://pds.mcp.nasa.gov/data/store/img/lunar_reconnaissance_orbiter/pds4/lroc/): the Apollo 11 NAC DTM and `NAC_PHO_E010N0230_M175124932R` browse imagery.
+- [NASA PDS cloud archive](https://pds.mcp.nasa.gov/), LROC PDS4 products under `data/store/img/lunar_reconnaissance_orbiter/pds4/lroc/` (the directory itself does not serve a listing): the Apollo 11 NAC DTM and `NAC_PHO_E010N0230_M175124932R` browse imagery.
 - [NASA Moon Trek](https://trek.nasa.gov/moon/): the configured WAC, Kaguya and Apollo 11 imagery layers.
 - [LROC terms and attribution](https://lroc.im-ldi.com/about/terms): consult the applicable product terms before redistributing an imagery bundle. Preserve the producer's product URLs, credits and citations.
 
