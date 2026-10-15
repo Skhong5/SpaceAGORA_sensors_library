@@ -110,4 +110,7 @@ why.
 
     "Wheels mounted with add_actuator!, the last columns of J_rw; wheels given through J_rw directly come first"
     wheels::Vector{ReactionWheel} = ReactionWheel[]
+
+    "Momentum rate of each mounted wheel (N m) commanded in the current right-hand-side evaluation: minus its saturated level, written by the engine"
+    mounted_rates::Vector{Float64} = Float64[]
 end

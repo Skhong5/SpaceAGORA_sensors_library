@@ -82,6 +82,24 @@ function wheel_spin_up(max_momentum)
     return run_simulation(args; return_solution=true).u[end].sc[1], inertia
 end
 
+
+function pyramid_run(levels)
+    s2 = 1 / sqrt(2)
+    axes = (SVector(s2, 0.0, s2), SVector(-s2, 0.0, s2), SVector(0.0, s2, s2), SVector(0.0, -s2, s2))
+    inertia = SMatrix{3, 3, Float64}(2.0, 0, 0, 0, 3.0, 0, 0, 0, 4.0)
+    root = SM.Link(root=true, m=100.0, dims=MVector(1.0, 1.0, 1.0))
+    ic = SM.CartesianInitialCondition(SVector(4.0e9, 0.0, 0.0), ZERO3; q=SVector(0.0, 0.0, 0.0, 1.0))
+    sc = SM.SpacecraftModel(links=[root], root=root, prop_mass=1.0, inertia_tensor=inertia, initial_condition=ic, id=7)
+    foreach(a -> add_actuator!(sc, root, ReactionWheel(spin_axis=a)), axes)
+    base = make_example_config(planet=SM.Earth(), spacecraft=sc, mission_time=5.0,
+        initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+        dynamic_effectors=(), ephemerides_model=SM.SimpleEphemeridesModel(), orientation_sim=true,
+        keplerian=false, EI_km=1.0, verbose=false, results=false)
+    args = SM.SimConfig._with_configuration(base;
+        control_model=SM.ControlModel(control_effectors=(HoldLevels(1, collect(levels)),), control_rates=[1.0]))
+    return run_simulation(args; return_solution=true).u[end].sc[1], inertia, hcat(collect.(axes)...)
+end
+
 @testset "Actuator contract" begin
     @testset "a thruster's wrench, limits and propellant follow from its record" begin
         root = SM.Link(root=true, m=10.0)
@@ -508,6 +526,36 @@ end
         @test 0.1 - 1e-12 <= hinge.angle_rad <= 0.3 + 1e-12                  # 0.1 rad/s from the first tick
         @test hinge.angle_rad < 0.5                                          # still on its way
         @test panel.q ≈ [0.0, sin(hinge.angle_rad / 2), 0.0, cos(hinge.angle_rad / 2)]
+    end
+
+    @testset "redundant mounted wheels each integrate their own command" begin
+        # A pure null-space command: the four torques cancel on the body, yet
+        # every wheel spins up at minus its own level.
+        null_cmd = [0.01, 0.01, -0.01, -0.01]
+        final, inertia, J = pyramid_run(null_cmd)
+        @test collect(final.h_wheels) ≈ -5.0 .* null_cmd atol=1e-12
+        @test collect(final.ω) ≈ zeros(3) atol=1e-14
+        # A mixed command: a body torque about x plus a null-space part.
+        mixed = [0.02, 0.0, -0.01, -0.01]
+        final, inertia, J = pyramid_run(mixed)
+        @test collect(final.h_wheels) ≈ -5.0 .* mixed atol=1e-12
+        @test collect(final.ω) ≈ inertia \ (J * mixed .* 5.0) rtol=1e-8
+        @test inertia * collect(final.ω) + J * collect(final.h_wheels) ≈ zeros(3) atol=1e-12   # angular momentum conserved
+    end
+
+    @testset "actuators mount only on the spacecraft's own links" begin
+        root = SM.Link(root=true, m=10.0)
+        sc = spacecraft_with(root)
+        stray = SM.Link(m=1.0)                                       # not in sc.links
+        for actuator in (Thruster(direction=MVector(1.0, 0.0, 0.0)), Magnetorquer(axis=SVector(1.0, 0.0, 0.0)),
+                         LaserTerminal(boresight=SVector(1.0, 0.0, 0.0), max_power_w=1.0), PanelHinge(axis=SVector(1.0, 0.0, 0.0)),
+                         ColdGasPuck(SVector(1.0, 0.0, 0.0), ZERO3, 0.5, 50.0))
+            @test_throws ArgumentError add_actuator!(sc, stray, actuator)
+        end
+        @test isempty(stray.thrusters) && isempty(stray.magnetorquers) && isempty(stray.laser_terminals) &&
+              isempty(stray.hinges) && isempty(stray.custom_actuators)
+        @test stray.q == [0.0, 0.0, 0.0, 1.0]                           # a refused hinge leaves the link alone
+        @test SM.mounted_actuator_count(sc) == 0
     end
 
     @testset "a mounted run moves the vehicle and uses propellant as its jets say" begin

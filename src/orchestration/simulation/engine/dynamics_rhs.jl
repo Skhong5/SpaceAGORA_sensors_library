@@ -344,14 +344,16 @@ function _accumulate_control_effectors_from_tuple!(
     control_effectors::CE,
 )::Float64 where {CE <: Tuple}
     mass_rate = 0.0
+    # The mounted wheels' momentum rates are rebuilt by every evaluation.
+    wheels = p.args.dynamics_model.spacecraft[sat_idx].root.rw_assembly
+    isempty(wheels.mounted_rates) || fill!(wheels.mounted_rates, 0.0)
     @inbounds for control_effector in control_effectors
         mounted = SimulationModel.actuation_mode(control_effector) === :mounted
         if mounted
-            control_force, control_torque, control_mass_rate, mounted_wheel_torque = _mounted_control_effect(control_effector, sc_view, p, sat_idx)
+            control_force, control_torque, control_mass_rate, _ = _mounted_control_effect(control_effector, sc_view, p, sat_idx)
         else
             control_force, control_torque = SimulationModel.calcControlForceTorque(control_effector, sc_view, p, sat_idx, t)
             control_mass_rate = SimulationModel.calcControlMassFlowRate(control_effector, sc_view, p, sat_idx, t)
-            mounted_wheel_torque = SVector{3, Float64}(0.0, 0.0, 0.0)
         end
         rw_torque = SimulationModel.calcReactionWheelTorque(control_effector, sc_view, p, sat_idx, t)
         # A mounted wrench holds only the mounted actuators; a wheel torque the
@@ -364,7 +366,6 @@ function _accumulate_control_effectors_from_tuple!(
         forces .+= control_force
         torques .+= control_torque
         rw_torque === nothing || (rw_torque_body .+= rw_torque)
-        mounted && (rw_torque_body .+= mounted_wheel_torque)   # integrated into the mounted wheels' momentum
         mass_rate += isfinite(control_mass_rate) ? control_mass_rate : 0.0
     end
     return mass_rate
@@ -393,8 +394,12 @@ end
     field = SimulationModel.mounted_magnetorquer_count(spacecraft) == 0 ? SVector{3, Float64}(NaN, NaN, NaN) :
         SimulationModel.rod_field_body(_rod_field_source(p.args.dynamics_model.dynamic_effectors),
             SVector{3, Float64}(sc_view.pos[1], sc_view.pos[2], sc_view.pos[3]), q, p)
+    # Each mounted wheel's momentum rate goes to the orientation right-hand side
+    # wheel by wheel (through the assembly's `mounted_rates`), not through the
+    # least-norm split of a summed torque, so redundant wheels integrate exactly.
     force_body, torque_body, mass_rate, wheel_torque =
-        SimulationModel.mounted_wrench(spacecraft, levels, Float64(sc_view.mass), q, ω, wheel_momentum, field)
+        SimulationModel.mounted_wrench(spacecraft, levels, Float64(sc_view.mass), q, ω, wheel_momentum, field,
+            spacecraft.root.rw_assembly.mounted_rates)
     force_ii = SimulationModel.rot(q)' * force_body          # rot(q) maps inertial to body
     return (force_ii, torque_body, -mass_rate, wheel_torque)
 end
@@ -2718,6 +2723,14 @@ end
         mul!(rw_h_body_scratch, rw_assembly.J_rw, sc_view.h_wheels)
         h_wheel_body = SVector{3, Float64}(rw_h_body_scratch)
         mul!(du_view.h_wheels, rw_assembly.J_rw_pinv, -rw_torque_body)
+        # Mounted wheels: each one's own commanded rate (written by the control
+        # accumulation of this evaluation); they are not part of `rw_torque_body`.
+        if !isempty(rw_assembly.mounted_rates)
+            first_mounted = rw_assembly.n_wheels - length(rw_assembly.mounted_rates)
+            @inbounds for j in eachindex(rw_assembly.mounted_rates)
+                du_view.h_wheels[first_mounted + j] += rw_assembly.mounted_rates[j]
+            end
+        end
     end
 
     du_view.ω .= SimulationModel.DynamicsRotational.angular_acceleration(

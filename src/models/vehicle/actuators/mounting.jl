@@ -37,10 +37,19 @@ const _IDENTITY3 = SMatrix{3, 3, Float64, 9}(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 
 const _IDENTITY_Q = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
 const _NAN3 = SVector{3, Float64}(NaN, NaN, NaN)
 
+# Actuators mount only on the spacecraft's own links: the dynamics traverse
+# `model.links`, so an actuator on any other link would be silently ignored.
+@inline function _check_own_link(model::SpacecraftModel, link::Link)
+    any(l -> l === link, model.links) || throw(ArgumentError(
+        "add_actuator!: the link is not one of spacecraft $(model.id)'s links; mount actuators on a link in `model.links`."))
+    return nothing
+end
+
 """
     add_actuator!(model::SpacecraftModel, link::Link, actuator) -> actuator
 
-Mount `actuator` on `link`, one of `model`'s links. A [`Thruster`](@ref) joins
+Mount `actuator` on `link`, which must be one of `model.links` (any other
+link is refused, since the dynamics would never see it). A [`Thruster`](@ref) joins
 `link.thrusters` (its direction is normalized and the link's thruster torque
 Jacobian gains its column). A [`ReactionWheel`](@ref) mounts on the root link
 only and joins its wheel assembly, whose momentum the engine integrates. A
@@ -50,6 +59,7 @@ link, and sets that link's attitude to its current angle. An actuator of any oth
 `link.custom_actuators`. Returns the actuator.
 """
 function add_actuator!(model::SpacecraftModel, link::Link, thruster::Thruster)
+    _check_own_link(model, link)
     add_thruster!(model, link, thruster)
     return thruster
 end
@@ -57,6 +67,7 @@ end
 function add_actuator!(model::SpacecraftModel, link::Link, wheel::ReactionWheel)
     link === model.root || throw(ArgumentError(
         "Reaction wheels mount on the spacecraft's root link, whose wheel assembly the engine integrates."))
+    _check_own_link(model, link)
     assembly = link.rw_assembly
     assembly.J_rw = hcat(assembly.J_rw, Vector{Float64}(wheel.spin_axis))
     assembly.J_rw_pinv = Matrix{Float64}(pinv(assembly.J_rw))
@@ -64,21 +75,25 @@ function add_actuator!(model::SpacecraftModel, link::Link, wheel::ReactionWheel)
     push!(assembly.h_wheels, 0.0)
     push!(assembly.h_dot_wheels, 0.0)
     push!(assembly.wheels, wheel)
+    push!(assembly.mounted_rates, 0.0)
     model.n_reaction_wheels += 1
     return wheel
 end
 
 function add_actuator!(model::SpacecraftModel, link::Link, rod::Magnetorquer)
+    _check_own_link(model, link)
     push!(link.magnetorquers, rod)
     return rod
 end
 
 function add_actuator!(model::SpacecraftModel, link::Link, terminal::LaserTerminal)
+    _check_own_link(model, link)
     push!(link.laser_terminals, terminal)
     return terminal
 end
 
 function add_actuator!(model::SpacecraftModel, link::Link, hinge::PanelHinge)
+    _check_own_link(model, link)
     link.root && throw(ArgumentError("A hinge turns a non-root link; the root link carries the body frame."))
     isempty(link.hinges) || throw(ArgumentError("This link already has a hinge; mount at most one per link."))
     push!(link.hinges, hinge)
@@ -95,6 +110,7 @@ end
 end
 
 function add_actuator!(model::SpacecraftModel, link::Link, actuator::AbstractActuator)
+    _check_own_link(model, link)
     push!(link.custom_actuators, actuator)
     return actuator
 end
@@ -275,7 +291,7 @@ end
 
 """
     mounted_wrench(model::SpacecraftModel, levels; mass_kg=NaN, q_ib=identity, ω_body=zero, wheel_momentum=nothing,
-                   magnetic_field_body=NaN)
+                   magnetic_field_body=NaN, wheel_rates=nothing)
         -> (force_body, torque_body, mass_rate_kg_s, wheel_torque_body)
 
 The wrench of every actuator mounted on `model` at its level in `levels` (one
@@ -286,16 +302,19 @@ part of the torque the reaction wheels produce, which the engine integrates
 into their momentum. `wheel_momentum` holds the root wheel assembly's stored
 momenta (the integrated `h_wheels` state); with it, a wheel at its momentum
 limit produces no torque that would store more. Torque rods act in
-`magnetic_field_body`, the local field in the body frame (T).
+`magnetic_field_body`, the local field in the body frame (T). When
+`wheel_rates` is given (one entry per mounted wheel), each mounted wheel's own
+momentum rate, minus its saturated level, is subtracted into it: the engine
+integrates the mounted wheels from these, wheel by wheel.
 """
 mounted_wrench(model::SpacecraftModel, levels::AbstractVector; mass_kg::Real=NaN, q_ib=_IDENTITY_Q, ω_body=_ZERO3, wheel_momentum=nothing,
-               magnetic_field_body=_NAN3) =
+               magnetic_field_body=_NAN3, wheel_rates=nothing) =
     mounted_wrench(model, levels, Float64(mass_kg), SVector{4, Float64}(q_ib), SVector{3, Float64}(ω_body), wheel_momentum,
-                   SVector{3, Float64}(magnetic_field_body))
+                   SVector{3, Float64}(magnetic_field_body), wheel_rates)
 
 function mounted_wrench(model::SpacecraftModel, levels::AbstractVector, mass_kg::Float64,
                         q_ib::SVector{4, Float64}, ω_body::SVector{3, Float64}, wheel_momentum=nothing,
-                        magnetic_field_body::SVector{3, Float64}=_NAN3)
+                        magnetic_field_body::SVector{3, Float64}=_NAN3, wheel_rates=nothing)
     n = mounted_actuator_count(model)
     length(levels) == n || throw(ArgumentError(
         "Mounted actuation: $(length(levels)) actuator levels for the $(n) actuators mounted on spacecraft $(model.id)."))
@@ -325,6 +344,7 @@ function mounted_wrench(model::SpacecraftModel, levels::AbstractVector, mass_kg:
             _, tq = actuator_wrench(wheel, x, ctx)
             torque = torque + tq
             wheel_torque = wheel_torque + tq
+            wheel_rates === nothing || (wheel_rates[j] -= x)    # the wheel stores the opposite of what it gives the body
         end
     end
     @inbounds for link in model.links
