@@ -53,7 +53,7 @@ base. By default, existing loads act on the root body and gravity is evaluated
 per body. With `SimulationSettings(articulated_live_pose_loads=true)`,
 aerodynamics and facet SRP are evaluated per link at its live pose, and the
 gravity gradient becomes per body. Spacecraft without a non-fixed joint do not
-use this articulated path. See [Joint types](simulation_configuration.md#Joint-types-and-articulated-spacecraft).
+use this articulated path. See [Joint types](articulated_compliant.md#Joint-types-and-articulated-spacecraft).
 
 ### Compliant assemblies
 
@@ -70,7 +70,7 @@ beside the spacecraft and exchange forces and torques with that link in both
 directions. The compliant robot-arm coupling keeps a separate supported path.
 In that path, each arm link feels the run's position-only gravity at its own
 inertial position, so joint springs carry the loads that differ from the bus's
-free fall. See [Compliant attachments](simulation_configuration.md#Compliant-attachments)
+free fall. See [Compliant attachments](articulated_compliant.md#Compliant-attachments)
 and the [Compliant Multibody API](../generated/compliant_multibody_api.md).
 The [API migration note](../public_api_policy.md#Compliant-multibody-and-robot-arm-names)
 explains compatibility names. These names do not add MuJoCo contact coupling.

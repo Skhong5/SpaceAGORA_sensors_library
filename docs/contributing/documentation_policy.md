@@ -4,7 +4,7 @@ Use this page when you are changing the docs site, the generated API surface,
 or the process rules that keep documentation current.
 
 This page is for maintainers. If you are trying to run SpaceAGORA or find a
-command, see the [User Guide](../src/getting_started.md).
+command, see the [User Guide](../src/index.md).
 
 Quickest maintainer check:
 
@@ -124,6 +124,15 @@ julia --project=. docs/make.jl
 
 Generated documentation stays local under the ignored `docs/build/`,
 `docs/site/` and `docs/src/generated/` directories.
+
+## Figures
+
+Figures live in `docs/src/assets/figures/` and are committed; the documentation
+build does not regenerate them. The scripts in `scripts/docs_figures/` reproduce
+each one, and its README lists the page that uses each figure and what each
+script needs. When a change alters what a figure shows, rerun its script and
+commit the result. Diagrams are SVG, plots PNG and viewer screenshots JPEG, to
+keep them small. Every image needs alt text that says what it shows.
 
 ## Regenerate common local artifacts
 

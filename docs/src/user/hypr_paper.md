@@ -1,5 +1,9 @@
 # Run the HyPR paper algorithm
 
+!!! note "Optional package"
+    Requires the optional `SpaceAGORAHYPR` package and the HYPR planner; see
+    [Install and run](#Install-and-run).
+
 These examples implement the algorithm described in the final author-shared
 2026 iSpaRo paper, *HyPR: Safety- and Fuel-Aware Motion Planning and Replanning
 for Autonomous SmallSat Servicing*. They run through SpaceAGORA's nonlinear

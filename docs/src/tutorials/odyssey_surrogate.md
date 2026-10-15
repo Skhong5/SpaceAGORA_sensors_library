@@ -232,6 +232,10 @@ savefig(plot(drag, height; layout=(2, 1), size=(800, 700)),
     joinpath(dir, "passages.png"))
 ```
 
+For the default comparison the saved figure looks like this:
+
+![Two plots against elapsed time for panel caps of 90 and 30 degrees. Drag peaks at periapsis, at about 14 N with the 90-degree cap and about 9 N with the 30-degree cap. The two height curves, from 250 km down to about 111 km and back, lie on top of each other.](../assets/figures/odyssey_panel_cap_comparison.png)
+
 For another pair of caps, change the directory and the two `cap_*_deg` folder
 names to the ones your run printed.
 
@@ -287,7 +291,7 @@ The arguments are ellipsoidal height in metres, geodetic latitude and east
 longitude in radians, elapsed time in seconds and a `Bool` wind flag. This
 frozen snapshot ignores the elapsed time, and the flag does not remove its
 stored winds. The call returns density in kg/m³, temperature in kelvin and the
-east, north and up wind components in m/s. [Atmosphere Models](../user/atmosphere_models.md#Fixed-GRAM-grid-snapshot)
+east, north and up wind components in m/s. [Atmosphere Models](../user/gram_grid_surrogates.md#Fixed-GRAM-grid-snapshot)
 gives the domain policy, and [Extensibility](../extensibility.md) the full
 interface.
 
@@ -295,7 +299,7 @@ interface.
 
 The grid stores density, temperature and east/north/up winds. Its atmosphere is frozen at `2001-11-07T11:51:04.794789Z` (`epoch_utc` in `summary.toml`), with the recorded Mars-GRAM TES Mapping Year 2 configuration. Advancing simulation time does not change these fields. The example starts near `2001-11-07T11:45:45.690115Z`; the initial state is queried from the identified Odyssey kernel at the engine's resolved start time.
 
-The stored domain is 100 to 260 km ellipsoidal altitude, 40 to 90 degrees geodetic north latitude, and periodic east longitude. The Mars equatorial and polar radii are 3,396,190 and 3,376,200 metres. A query outside the height or latitude bounds fails. A named preset fixes this policy: `surrogate_preset_model` rejects grid options such as `above_grid=:vacuum` with an `ArgumentError`. [Atmosphere Models](../user/atmosphere_models.md#Fixed-GRAM-grid-snapshot) shows the generic grid model for other policies; queries below the floor fail with either model. The example uses nominal stored winds; `wind=false` is not a supported way to remove winds from this preset.
+The stored domain is 100 to 260 km ellipsoidal altitude, 40 to 90 degrees geodetic north latitude, and periodic east longitude. The Mars equatorial and polar radii are 3,396,190 and 3,376,200 metres. A query outside the height or latitude bounds fails. A named preset fixes this policy: `surrogate_preset_model` rejects grid options such as `above_grid=:vacuum` with an `ArgumentError`. [Atmosphere Models](../user/gram_grid_surrogates.md#Fixed-GRAM-grid-snapshot) shows the generic grid model for other policies; queries below the floor fail with either model. The example uses nominal stored winds; `wind=false` is not a supported way to remove winds from this preset.
 
 Exact-pole winds retain the native longitude-label convention, which does not define a unique physical horizontal vector there. The retained P20 passage avoids the exact pole, and the example records its maximum latitude. A new algorithm must keep its resulting trajectory inside the supported domain and address pole winds if it uses them.
 
@@ -306,4 +310,4 @@ orbit/atmosphere relative tolerance `1e-7` and absolute tolerance `1e-9`.
 This is an independent usability exercise, not a replay of the reference's
 automatic stiff-solver configuration.
 
-This frozen snapshot is useful for repeatable algorithm development. It does not model other dates, uncertain forcing, atmospheric variability or the accuracy of a flight mission. For advanced atmospheric investigations, configure native GRAM explicitly ([Compare a surrogate with native GRAM](../user/atmosphere_models.md#Compare-a-surrogate-with-native-GRAM)), or generate and validate a new mission-specific snapshot before using it in repeated runs ([Prepare another frozen snapshot](../user/atmosphere_models.md#Prepare-another-frozen-snapshot)). Application-specific accuracy and robustness requirements remain separate from this example.
+This frozen snapshot is useful for repeatable algorithm development. It does not model other dates, uncertain forcing, atmospheric variability or the accuracy of a flight mission. For advanced atmospheric investigations, configure native GRAM explicitly ([Compare a surrogate with native GRAM](../user/gram_grid_surrogates.md#Compare-a-surrogate-with-native-GRAM)), or generate and validate a new mission-specific snapshot before using it in repeated runs ([Prepare another frozen snapshot](../user/gram_grid_surrogates.md#Prepare-another-frozen-snapshot)). Application-specific accuracy and robustness requirements remain separate from this example.

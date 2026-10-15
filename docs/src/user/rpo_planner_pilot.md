@@ -1,5 +1,10 @@
 # Run an RPO case with interchangeable planners
 
+!!! note "Optional package"
+    The direct baseline planner runs with SpaceAGORA alone. The HYPR planner
+    requires the optional `SpaceAGORAHYPR` package; see
+    [Installing optional HYPR](#Installing-optional-HYPR).
+
 The opt-in RPO pilot connects a planner to the existing simulation and LQ-MPC
 controller. It supports truth observations, a passive target on a circular Earth
 orbit, and a static station point cloud aligned with the target's rotating RTN

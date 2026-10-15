@@ -74,7 +74,7 @@ process worker runs with
 `shutdown_process_pool!(pool)` tears the pool down; campaign code otherwise
 leaves it warm across calls by design.
 
-See [Parallel Execution: Process-backend outer parallelism](user/parallel_execution.md#process-backend-outer-parallelism)
+See [Parallel Execution: Process-backend outer parallelism](user/parallel_execution.md#Process-backend-outer-parallelism)
 for the full walkthrough. This path is entirely separate from the
 scheduler/`addprocs`-based benchmark path documented above — it needs no
 `SPACEAGORA_PERF_PROCS` or worker-project configuration, since the pool

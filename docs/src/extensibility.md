@@ -250,7 +250,7 @@ manager accept `actuation=:mounted`. So does the orbit-maneuver burn scheduler
 points it along the burn with the mounted reaction wheels; the engine switches
 exactly at the window's ends, between integration steps. A run with a mounted
 effector writes the `sc{i}_actuator_level_{k}` and `sc{i}_actuator_power` columns (see
-[Outputs](user/outputs.md#Mounted-actuators)); `applied_actuator_levels` and
+[Output Columns](user/output_columns.md#Mounted-actuators)); `applied_actuator_levels` and
 `mounted_power` compute the same values from a spacecraft and its levels.
 
 Template:

@@ -1,5 +1,9 @@
 # Interactive Visualization
 
+!!! note "Optional package"
+    Requires the optional `SpaceAGORAVisualizer` package; see
+    [Install the optional viewer](#Install-the-optional-viewer).
+
 The viewer turns saved results into an HTML page: orbit the central body,
 scrub through time, select a spacecraft and inspect its trajectory. The page
 opens from disk and can be shared with someone who does not have Julia.
@@ -55,6 +59,10 @@ The same directory contains the normal results and
 `simulation_results_scene.json`. Repeating the command overwrites those files.
 Choose another `--output-dir` to keep an earlier run. See
 [Simulation Outputs](outputs.md) for the full output behavior.
+
+![The viewer page for that run: Earth in the centre with the spacecraft's elliptical orbit drawn as a trail coloured by altitude, the run summary at the top left, and the playback controls and overlay checkboxes along the bottom.](../assets/figures/viewer_overview.jpg)
+
+In this screenshot the trail is coloured by altitude with the trail-colour selector. The run has no atmosphere, so the default heat-rate colouring has nothing to show.
 
 For a configuration you already built:
 
@@ -252,7 +260,7 @@ point on the axis in model units, or `:centroid` for the centre of the selected
 vertices' bounding box. Vertices inside the region rotate.
 
 Thruster firing levels saved with the run (the `thruster_level` field, see
-[Simulation Outputs](outputs.md#Visualization-fields)) drive a plume on every
+[Simulation Outputs](output_columns.md#Visualization-fields)) drive a plume on every
 thruster: an additive, flickering cone pair along the thruster's direction,
 long and orange-white for a main engine and short and blue-white for an
 attitude jet, with reach and brightness set by the rated thrust and by the
@@ -273,12 +281,18 @@ Faces turned away from the flow stay cold. The legend reads W/cm². This is a vi
 built from the saved density and the drawn geometry, not the simulation's
 thermal solution; `sc1_heat_rate` remains the saved stagnation value.
 
+![Close-up of the Mars Odyssey model at periapsis of an aerobraking pass, its faces coloured by the heating overlay, with the Martian limb behind it and the selection panel listing altitude, speed, density, dynamic pressure, heat rate and drag.](../assets/figures/viewer_heating_closeup.jpg)
+
+A Mars aerobraking pass with drag, drawn with the NASA Mars Odyssey model from `data/scene/models/` (NASA/JPL/Eyes on the Solar System, NASA 3D Resources).
+
 Click a face of a drawn assembly to inspect it. The face panel reports the
 incidence θ in degrees, the local heat flux ½ρV³cosθ in W/cm², the ram
 pressure ρV²cos²θ in Pa, the airspeed, the flow direction in body axes, the
 face normal in body axes and the spacecraft's inertial position and velocity,
 all updating as the timeline plays. Each row plots like any other channel.
 Escape clears the face selection before the spacecraft selection.
+
+![The same close-up with one face of the model selected: the face panel lists its incidence, local heat flux, ram pressure, airspeed, flow direction and face normal in body axes, and the spacecraft's inertial position, velocity and attitude.](../assets/figures/viewer_face_inspection.jpg)
 
 ## Sun lighting and path tracing
 
@@ -350,7 +364,7 @@ without the body rotation, because the poses are already inertial.
 
 With the default save-field list, a run with the plume-surface effector saves
 the seven `sc{i}_plume_*` columns described in [Plume interaction](plume_interaction.md) and listed in
-[Simulation Outputs](outputs.md#Plume-interaction). The page reads them into
+[Simulation Outputs](output_columns.md#Plume-interaction). The page reads them into
 its plume block and, with the **dust** toggle, draws regolith blown off the
 surface by the descent engine: a particle sheet fed by the saved erosion rate,
 ejecta speed, eroded mass and engine height, a ground haze disk and a scour
