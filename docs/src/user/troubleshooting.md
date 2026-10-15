@@ -152,6 +152,10 @@ populated are significantly faster.
 - The Odyssey surrogate example shows the same effect inside one run: its
   first passage includes compilation and reports a much longer run time than
   the second, whatever the panel caps are.
+- Lines such as `WARNING: Imported binding Logging.termlength was undeclared at
+  import time during import to WebSockets.` can appear while dependencies
+  precompile. They come from a dependency, not from your setup, and the run
+  continues; only an `ERROR:` line needs action (see Precompilation errors).
 
 ---
 
@@ -315,20 +319,12 @@ make_example_config(
 **Cause:** Multiple `run_simulation` calls are writing to the same
 `results_directory`.
 
-**Resolution:** Give each run a unique `results_directory`:
-
-```julia
-for (i, config) in enumerate(configs)
-    config_i = SM.SimulationConfiguration(
-        config;
-        simulation_settings=SM.SimulationSettings(
-            config.simulation_settings;
-            results_directory = "output/run_$(i)"
-        )
-    )
-    run_simulation(config_i)
-end
-```
+**Resolution:** Give each run its own `results_directory` when you build its
+configuration: pass `results_directory=` to `make_example_config`, or set it in
+the `SimulationSettings` you construct for that run. The simplest pattern is a
+function that builds the configuration for a given directory and is called
+once per run; [Mission Workflows](mission_workflows.md) shows a complete one,
+and its `run_mission` refuses a directory that already holds results.
 
 The collision file (`*_collision_*`) is written as a safety net when two
 concurrent writes to the same path are detected.

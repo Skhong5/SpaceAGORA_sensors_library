@@ -1,7 +1,10 @@
 # First Simulation
 
 Use this page to run the quickstart's Earth scenario without generating plots,
-or to choose between a script and the command-line launcher.
+or to choose between a script and the command-line launcher. The
+[Quickstart](quickstart.md) runs `AGORA_Basic_Quickstart.jl`, which adds four
+plots; this page runs `AGORA_Earth_NoGRAM.jl`, the same scenario without them,
+and uses it as the starting point for your own script.
 
 This page is for users who already have the repository environment instantiated
 and want a concrete next command.

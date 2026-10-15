@@ -84,6 +84,19 @@ compatibility. The model uses compliant multibody dynamics. See the
 [API migration note](../public_api_policy.md#Compliant-multibody-and-robot-arm-names)
 when updating application code.
 
+## Reuse a mission and keep each run's results
+
+Build the mission with a function and give every call its own, absent or empty
+output directory; a populated one is refused so an earlier result cannot be
+overwritten. The complete builder and the recovery from a refused directory are
+in [Mission Workflows](mission_workflows.md).
+
+## Stop a run when a condition is met
+
+End the run when, for example, the altitude crosses a limit, and keep the
+saved samples up to that point. The complete script, which needs no external
+data, is in [Stopping on a Condition](stop_conditions.md).
+
 ## Attach guidance, navigation or control to one spacecraft
 
 Declare the effector on the spacecraft instead of in the configuration-level `ControlModel`;

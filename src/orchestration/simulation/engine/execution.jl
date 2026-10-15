@@ -505,6 +505,26 @@ julia> length(sol.t) > 1
 true
 ```
 """
+# Print the initial state as labelled SI values, one line per spacecraft, rather
+# than the state array's full type. Field names follow `u.sc[i]` (see the
+# integrated-state documentation); other top-level components print by name.
+function _print_initial_conditions(io::IO, u0::ComponentVector)
+    println(io, "Initial conditions:")
+    _plain(value) = value isa AbstractArray ? collect(value) : value
+    for name in keys(u0)
+        component = getproperty(u0, name)
+        if name === :sc && component isa AbstractVector
+            for (i, sc) in enumerate(component)
+                fields = (string(field, " = ", _plain(getproperty(sc, field))) for field in keys(sc))
+                println(io, "  spacecraft ", i, ": ", join(fields, ", "))
+            end
+        else
+            println(io, "  ", name, " = ", _plain(component))
+        end
+    end
+    return nothing
+end
+
 function run_simulation(
     args::SimulationConfiguration;
     isolate_state::Bool=true,
@@ -589,10 +609,7 @@ function run_simulation(
 
     # Set up the model and initial conditions
     initial_conditions = build_initial_conditions(args)
-    if args.simulation_settings.verbose
-        println("Initial conditions:")
-        println(initial_conditions)
-    end
+    args.simulation_settings.verbose && _print_initial_conditions(stdout, initial_conditions)
 
     # Define the ODE parameters and callbacks
     p = SimulationModel.ODEParams(n_sats=length(args.dynamics_model.spacecraft), args=args) # Define the parameters for the ODE problem, including the shared buffers for the callbacks

@@ -58,8 +58,9 @@ common messages to their causes. The Julia REPL form of this check is on
 
 Installation time depends on your connection and which Julia packages are
 already installed. The first run also compiles code, so allow more time for
-it than for later runs. The run prints the initial state, the number of
-saved samples and the computational time, and writes:
+it than for later runs. The run prints the initial state of each spacecraft (position, velocity, mass
+and heat loads, in SI units), the number of saved samples and the
+computational time, and writes:
 
 ```text
 output/
@@ -76,6 +77,14 @@ output/
 `output/` is the repository root's `output/` directory (gitignored). Running
 this example again overwrites its previous files; see
 [Simulation Outputs](outputs.md) for keeping runs apart.
+
+The plots show the geodetic altitude, the osculating periapsis altitude and the
+inertial speed against time; the trajectory projected on the inertial x-y and
+x-z planes, with the planet's equatorial radius drawn for scale; the same
+trajectory in 3D; and the ground track. The example's orbit is nearly polar, so
+its x-y projection is close to a line, and its ground track runs along the top
+and bottom edges of the map while it passes the poles, where all longitudes
+meet.
 
 On Windows the variable is set in a separate statement, and the remaining
 three lines of the path above then run unchanged. Terminal, Windows

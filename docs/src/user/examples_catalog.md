@@ -74,6 +74,9 @@ See [Mission Workflows](mission_workflows.md) for the returned table, descriptiv
 phase windows, operational segments and event factories. The standalone viewer
 opens the exported payload without rerunning the simulation.
 
+To end a run on a condition, such as an altitude limit, use the complete script
+in [Stopping on a Condition](stop_conditions.md); it needs no external data.
+
 ### Guidance and control with a frozen atmosphere
 
 `odyssey_surrogate.jl` runs Mars Odyssey's P20 aerobraking passage with a named,
