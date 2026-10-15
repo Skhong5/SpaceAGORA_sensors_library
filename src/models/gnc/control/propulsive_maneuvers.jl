@@ -458,7 +458,7 @@ function calcControlMassFlowRate(controlModel::BaseThrusterModel, u::AbstractVec
         return 0.0
     end
 
-    return -applied_thrust / (Isp * _STANDARD_GRAVITY_MPS2)
+    return -propellant_mass_rate(applied_thrust, Isp)
 end
 
 """

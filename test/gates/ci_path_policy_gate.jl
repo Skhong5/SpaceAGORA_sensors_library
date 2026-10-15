@@ -92,6 +92,8 @@ const RETIRED_PATHS = (
     joinpath("src", "orchestration", "simulation", "execution"),
     joinpath("src", "orchestration", "simulation", "solver_orchestration"),
     joinpath("src", "models", "vehicle", "actuators", "laser_terminal"),
+    # the laser-terminal placeholder; the kind is src/models/vehicle/actuators/laser.jl
+    joinpath("experimental", "vehicle", "laser_terminal"),
     joinpath("src", "models", "vehicle", "resources"),
     joinpath("src", "models", "vehicle", "sensors"),
     joinpath("src", "models", "gnc", "guidance", "targeting_control"),

@@ -148,6 +148,7 @@ makedocs(
             "Simulation Outputs" => "user/outputs.md",
             "The Integrated State" => "user/integrated_state.md",
             "Adding a Force or Torque" => "user/custom_effector.md",
+            "Adding an Actuator" => "user/custom_actuator.md",
             "Stopping on a Condition" => "user/stop_conditions.md",
             "Mission Workflows" => "user/mission_workflows.md",
             "Solver Configuration" => "user/solver_configuration.md",

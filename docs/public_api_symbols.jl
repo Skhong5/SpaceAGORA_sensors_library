@@ -255,6 +255,10 @@ const PUBLIC_API_SECTIONS = [
         items = [
             (owner = :SpaceAGORA, symbol = :AbstractActuator, rendered = "SpaceAGORA.AbstractActuator"),
             (owner = :SpaceAGORA, symbol = :Thruster, rendered = "SpaceAGORA.Thruster"),
+            (owner = :SpaceAGORA, symbol = :ReactionWheel, rendered = "SpaceAGORA.ReactionWheel"),
+            (owner = :SpaceAGORA, symbol = :Magnetorquer, rendered = "SpaceAGORA.Magnetorquer"),
+            (owner = :SpaceAGORA, symbol = :LaserTerminal, rendered = "SpaceAGORA.LaserTerminal"),
+            (owner = :SpaceAGORA, symbol = :PanelHinge, rendered = "SpaceAGORA.PanelHinge"),
             (owner = :SpaceAGORA, symbol = :ActuatorContext, rendered = "SpaceAGORA.ActuatorContext"),
             (owner = :SpaceAGORA, symbol = :actuator_wrench, rendered = "SpaceAGORA.actuator_wrench"),
             (owner = :SpaceAGORA, symbol = :actuator_limits, rendered = "SpaceAGORA.actuator_limits"),
@@ -270,7 +274,8 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :allocation_matrix, rendered = "SpaceAGORA.allocation_matrix"),
             (owner = :SpaceAGORA, symbol = :mounted_wrench, rendered = "SpaceAGORA.mounted_wrench"),
             (owner = :SpaceAGORA, symbol = :allocate_actuators, rendered = "SpaceAGORA.allocate_actuators"),
-            (owner = :SpaceAGORA, symbol = :six_axis_thrusters, rendered = "SpaceAGORA.six_axis_thrusters")
+            (owner = :SpaceAGORA, symbol = :six_axis_thrusters, rendered = "SpaceAGORA.six_axis_thrusters"),
+            (owner = :SpaceAGORA, symbol = :propellant_mass_rate, rendered = "SpaceAGORA.propellant_mass_rate")
         ]
     ),
     (

@@ -113,7 +113,7 @@ function calcControlMassFlowRate(model::RPOMPCControlModel, u::AbstractVector, p
     @inbounds for j in 1:6
         thrust = model.held.thruster_forces_n[j]
         if thrust > 0.0
-            mdot -= thrust / (model.thrusters.isp_s[j] * 9.80665)
+            mdot -= propellant_mass_rate(thrust, model.thrusters.isp_s[j])
         end
     end
     return mdot

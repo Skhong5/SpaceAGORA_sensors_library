@@ -70,7 +70,6 @@ This contract defines how canonical source files are classified and what is forb
 5. `experimental/vehicle/resources/loads/load_model.jl`
 6. `experimental/mission/constellation/network/network.jl`
 7. `experimental/gnc/estimation/estimation.jl`
-8. `experimental/vehicle/laser_terminal/laser_terminal.jl`
 
 ## Enforced Gates
 1. `test/gates/ci_src_completeness_contract_gate.jl`

@@ -77,6 +77,11 @@ integrates, or stop a run when a condition is met:
   [The Integrated State](user/integrated_state.md) and
   [Stopping a Simulation on a Condition](user/stop_conditions.md)
 
+If your spacecraft carries hardware a controller should command (a nozzle, a
+wheel, a torque rod, a hinge):
+
+- go to [Adding an Actuator of Your Own](user/custom_actuator.md)
+
 If a command failed and you need a diagnostic page:
 
 - go to [Troubleshooting](user/troubleshooting.md)

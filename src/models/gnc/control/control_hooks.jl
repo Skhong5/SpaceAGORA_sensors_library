@@ -7,7 +7,8 @@ module ControlHooks
     using ..RobotArmPlanning: RobotArmPlan, robot_arm_plan_sample
     using ..ThrusterModels: BaseThrusterModel, SixAxisThrusterModel
     import ..Actuators: actuation_mode, actuator_levels
-    using ..ActuatorMounting: mounted_actuator_count, mounted_thruster_count
+    using ..Actuators: propellant_mass_rate
+    using ..ActuatorMounting: mounted_actuator_count, mounted_thruster_count, mounted_wheel_count, mounted_magnetorquer_count, actuator_context
     using ..CommandTypes: PropulsiveManeuverCommand, PropulsiveBurnPlan
     using ..GuidanceModels: RPOPlan, RPOPlanBuffer
     using ..GravityEffectors: aerobraking_gravity_force_ii
@@ -103,6 +104,7 @@ module ControlHooks
         m.sat_idx == sat_idx && return m
         b = SimulationLifecycle._shallow_copy(m)
         b.sat_idx = sat_idx
+        b.mounted_levels = Float64[]          # its own buffer, not the template's
         return b
     end
     function SimulationLifecycle.bind_spacecraft(m::RobotArmControlEffector, sat_idx::Int)

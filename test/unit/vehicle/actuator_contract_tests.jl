@@ -64,6 +64,42 @@ spacecraft_with(root; id=1, links=[root]) = SM.SpacecraftModel(links=links, root
 
 include(joinpath(@__DIR__, "..", "..", "..", "templates", "actuator_template.jl"))
 
+function wheel_spin_up(max_momentum)
+    inertia = SMatrix{3, 3, Float64}(2.0, 0, 0, 0, 3.0, 0, 0, 0, 4.0)
+    root = SM.Link(root=true, m=100.0, dims=MVector(1.0, 1.0, 1.0))
+    ic = SM.CartesianInitialCondition(SVector(4.0e9, 0.0, 0.0), ZERO3; q=SVector(0.0, 0.0, 0.0, 1.0))
+    sc = SM.SpacecraftModel(links=[root], root=root, prop_mass=1.0, inertia_tensor=inertia, initial_condition=ic, id=4)
+    for axis in (SVector(1.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(0.0, 0.0, 1.0))
+        add_actuator!(sc, root, ReactionWheel(spin_axis=axis, max_torque_nm=0.02, max_momentum_nms=max_momentum))
+    end
+    control = HoldLevels(1, [0.01, 0.0, 0.0])                # 0.01 N m on the body about +x
+    base = make_example_config(planet=SM.Earth(), spacecraft=sc, mission_time=5.0,
+        initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+        dynamic_effectors=(), ephemerides_model=SM.SimpleEphemeridesModel(), orientation_sim=true,
+        keplerian=false, EI_km=1.0, verbose=false, results=false)
+    args = SM.SimConfig._with_configuration(base;
+        control_model=SM.ControlModel(control_effectors=(control,), control_rates=[1.0]))
+    return run_simulation(args; return_solution=true).u[end].sc[1], inertia
+end
+
+
+function pyramid_run(levels)
+    s2 = 1 / sqrt(2)
+    axes = (SVector(s2, 0.0, s2), SVector(-s2, 0.0, s2), SVector(0.0, s2, s2), SVector(0.0, -s2, s2))
+    inertia = SMatrix{3, 3, Float64}(2.0, 0, 0, 0, 3.0, 0, 0, 0, 4.0)
+    root = SM.Link(root=true, m=100.0, dims=MVector(1.0, 1.0, 1.0))
+    ic = SM.CartesianInitialCondition(SVector(4.0e9, 0.0, 0.0), ZERO3; q=SVector(0.0, 0.0, 0.0, 1.0))
+    sc = SM.SpacecraftModel(links=[root], root=root, prop_mass=1.0, inertia_tensor=inertia, initial_condition=ic, id=7)
+    foreach(a -> add_actuator!(sc, root, ReactionWheel(spin_axis=a)), axes)
+    base = make_example_config(planet=SM.Earth(), spacecraft=sc, mission_time=5.0,
+        initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+        dynamic_effectors=(), ephemerides_model=SM.SimpleEphemeridesModel(), orientation_sim=true,
+        keplerian=false, EI_km=1.0, verbose=false, results=false)
+    args = SM.SimConfig._with_configuration(base;
+        control_model=SM.ControlModel(control_effectors=(HoldLevels(1, collect(levels)),), control_rates=[1.0]))
+    return run_simulation(args; return_solution=true).u[end].sc[1], inertia, hcat(collect.(axes)...)
+end
+
 @testset "Actuator contract" begin
     @testset "a thruster's wrench, limits and propellant follow from its record" begin
         root = SM.Link(root=true, m=10.0)
@@ -285,6 +321,241 @@ include(joinpath(@__DIR__, "..", "..", "..", "templates", "actuator_template.jl"
         @test force == SVector(0.25, 0.0, 0.0)
         @test torque == cross(SVector(0.0, 0.2, 0.0), SVector(0.25, 0.0, 0.0))
         @test rate == -0.25 / (60.0 * 9.80665)
+    end
+
+    @testset "a reaction wheel mounts on the root link and its torque and momentum are limited" begin
+        root = SM.Link(root=true, m=50.0)
+        sc = spacecraft_with(root)
+        wheel = ReactionWheel(spin_axis=SVector(0.0, 0.0, 2.0), max_torque_nm=0.01, max_momentum_nms=0.05)
+        @test wheel.spin_axis == SVector(0.0, 0.0, 1.0)
+        @test add_actuator!(sc, root, wheel) === wheel
+        @test root.rw_assembly.n_wheels == 1 && root.rw_assembly.J_rw == reshape([0.0, 0.0, 1.0], 3, 1)
+        @test root.rw_assembly.h_wheels == [0.0] && sc.n_reaction_wheels == 1 && SM.mounted_wheel_count(sc) == 1
+        @test_throws ArgumentError add_actuator!(sc, SM.Link(m=1.0), ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0)))
+        @test actuator_limits(wheel) == (-0.01, 0.01)
+        @test actuator_saturate(wheel, 1.0) == 0.01 && actuator_saturate(wheel, -1.0) == -0.01
+        @test actuator_wrench(wheel, 0.005, actuator_context(root)) == (ZERO3, SVector(0.0, 0.0, 0.005))
+        @test SM.wheel_momentum_saturate(wheel, 0.005, -0.05) == 0.0       # at the limit, storing more (dh/dt = -level)
+        @test SM.wheel_momentum_saturate(wheel, -0.005, -0.05) == -0.005   # unloading is allowed
+        @test SM.wheel_momentum_saturate(wheel, 0.005, -0.04) == 0.005
+        @test_throws ArgumentError ReactionWheel(spin_axis=ZERO3)
+        @test_throws ArgumentError ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0), max_torque_nm=0.0)
+        @test isinf(ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0)).max_momentum_nms)   # unlimited by default
+        # Mounting order: thrusters, then wheels, then user-defined kinds.
+        puck = add_actuator!(sc, root, ColdGasPuck(SVector(1.0, 0.0, 0.0), ZERO3, 0.5, 50.0))
+        jet = add_actuator!(sc, root, Thruster(max_thrust=1.0, direction=MVector(0.0, 1.0, 0.0)))
+        order = [entry.actuator for entry in mounted_actuators(sc)]
+        @test order[1] === jet && order[2] === wheel && order[3] === puck
+        force, torque, _, wheel_torque = mounted_wrench(sc, [0.0, 0.004, 0.0]; wheel_momentum=[0.0])
+        @test force == ZERO3 && wheel_torque == SVector(0.0, 0.0, 0.004) && torque == wheel_torque
+        @test mounted_wrench(sc, [0.0, 0.004, 0.0]; wheel_momentum=[-0.05])[4] == ZERO3      # saturated
+        @test allocation_matrix(sc)[:, 2] == [0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    end
+
+    @testset "mounted wheels spin the body up and store the opposite momentum" begin
+        final, inertia = wheel_spin_up(Inf)
+        @test final.ω[1] ≈ 0.01 * 5.0 / 2.0 rtol=1e-8              # τ T / I_xx
+        @test final.h_wheels ≈ [-0.05, 0.0, 0.0] atol=1e-12
+        @test inertia * collect(final.ω) + collect(final.h_wheels) ≈ zeros(3) atol=1e-12   # angular momentum conserved
+        limited, _ = wheel_spin_up(0.03)
+        @test limited.h_wheels[1] ≈ -0.03 atol=2e-4                 # stops storing at the limit
+        @test limited.ω[1] ≈ 0.03 / 2.0 rtol=1e-2
+    end
+
+    @testset "the momentum manager reads the integrated wheel momentum when the vehicle carries wheels" begin
+        root = SM.Link(root=true, m=50.0)
+        sc = spacecraft_with(root)
+        for axis in (SVector(1.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(0.0, 0.0, 1.0))
+            add_actuator!(sc, root, ReactionWheel(spin_axis=axis))
+        end
+        manager = SM.MagneticMomentumManagerModel(sat_idx=1, mu_gain=0.01, h_wheels_0=SVector(9.0, 9.0, 9.0),
+            commanded_torque=(t, r, v, q, w) -> SVector(0.0, 0.0, 0.0), b_field_ii=(t, r) -> SVector(0.0, 0.0, 3.0e-5))
+        p = readout_params(SM.SpacecraftModel[sc], (manager,))
+        u = (sc=[(pos=[7.0e6, 0.0, 0.0], vel=[0.0, 7.5e3, 0.0], q=[0.0, 0.0, 0.0, 1.0], ω=zeros(3), h_wheels=[0.02, -0.01, 0.0])],)
+        CH.calcControlEffect!(manager, u, p, 0.0, 1)
+        @test manager.h_wheels == SVector(0.02, -0.01, 0.0)       # not the configured h_wheels_0
+        bare = SM.MagneticMomentumManagerModel(sat_idx=1, h_wheels_0=SVector(9.0, 9.0, 9.0),
+            commanded_torque=(t, r, v, q, w) -> SVector(0.0, 0.0, 0.0), b_field_ii=(t, r) -> SVector(0.0, 0.0, 3.0e-5))
+        CH.calcControlEffect!(bare, (sc=[(pos=[7.0e6, 0.0, 0.0], vel=[0.0, 7.5e3, 0.0], q=[0.0, 0.0, 0.0, 1.0], ω=zeros(3))],),
+            readout_params(SM.SpacecraftModel[spacecraft_with(SM.Link(root=true, m=50.0))], (bare,)), 0.0, 1)
+        @test bare.h_wheels == SVector(9.0, 9.0, 9.0)               # no wheels: its own accumulator
+    end
+
+    @testset "a torque rod's torque is its dipole crossed with the field" begin
+        root = SM.Link(root=true, m=20.0)
+        rod = Magnetorquer(axis=SVector(0.0, 0.0, 2.0), max_dipole_am2=1.5)
+        @test rod.axis == SVector(0.0, 0.0, 1.0)
+        @test actuator_limits(rod) == (-1.5, 1.5) && actuator_saturate(rod, -4.0) == -1.5
+        field = SVector(2.0e-5, -1.0e-5, 3.0e-5)
+        @test actuator_wrench(rod, 1.0, actuator_context(root; magnetic_field_body=field)) == (ZERO3, cross(SVector(0.0, 0.0, 1.0), field))
+        @test actuator_wrench(rod, 1.0, actuator_context(root)) == (ZERO3, ZERO3)      # no field, no torque
+        @test_throws ArgumentError Magnetorquer(axis=ZERO3)
+        @test_throws ArgumentError Magnetorquer(axis=SVector(1.0, 0.0, 0.0), max_dipole_am2=-1.0)
+        sc = spacecraft_with(root)
+        @test add_actuator!(sc, root, rod) === rod && root.magnetorquers == [rod]
+        wheel = add_actuator!(sc, root, ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0)))
+        puck = add_actuator!(sc, root, ColdGasPuck(SVector(1.0, 0.0, 0.0), ZERO3, 0.5, 50.0))
+        jet = add_actuator!(sc, root, Thruster(max_thrust=1.0, direction=MVector(0.0, 1.0, 0.0)))
+        @test [e.actuator for e in mounted_actuators(sc)] == AbstractActuator[jet, wheel, rod, puck]   # thrusters, wheels, rods, user kinds
+        @test SM.mounted_magnetorquer_count(sc) == 1 && SM.mounted_actuator_count(sc) == 4
+        @test mounted_wrench(sc, [0.0, 0.0, 1.0, 0.0]; magnetic_field_body=field)[2] == cross(SVector(0.0, 0.0, 1.0), field)
+        @test isempty(SM.Link().magnetorquers)
+    end
+
+    @testset "a mounted rod acts in the run's field, as an equal permanent dipole does" begin
+        q = normalize(SVector(0.1, 0.2, 0.3, 0.9))
+        x = ComponentVector(pos=[7.0e6, 1.0e6, 2.0e5], vel=[0.0, 7.5e3, 0.0], mass=50.0, q=collect(q), ω=zeros(3))
+        passive_root = SM.Link(root=true, m=50.0)
+        push!(passive_root.magnets, SM.Magnet(m=MVector(0.3, -0.2, 0.8)))
+        _, torque_passive = SM.calcForceTorque(SM.MagneticTorqueRodModel(), x,
+            readout_params(SM.SpacecraftModel[spacecraft_with(passive_root)], ()), 1)
+        rod_root = SM.Link(root=true, m=50.0)
+        rods = spacecraft_with(rod_root)
+        for axis in (SVector(1.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(0.0, 0.0, 1.0))
+            add_actuator!(rods, rod_root, Magnetorquer(axis=axis))
+        end
+        _, torque_rods, _, _ = readout(readout_params(SM.SpacecraftModel[rods], (HoldLevels(1, [0.3, -0.2, 0.8]),)), 1, x)
+        @test torque_rods ≈ torque_passive rtol=1e-12
+        @test norm(torque_rods) > 0.0
+    end
+
+    @testset "the momentum manager drives mounted torque rods with its dipole command" begin
+        root = SM.Link(root=true, m=50.0)
+        sc = spacecraft_with(root)
+        for axis in (SVector(1.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(0.0, 0.0, 1.0))
+            add_actuator!(sc, root, Magnetorquer(axis=axis))
+        end
+        estimate(t, r) = SVector(1.0e-5, -2.0e-5, 3.0e-5)
+        manager = SM.MagneticMomentumManagerModel(sat_idx=1, mu_gain=0.01, h_wheels_0=SVector(0.02, 0.0, 0.01),
+            commanded_torque=(t, r, v, q, w) -> ZERO3, b_field_ii=estimate, actuation=:mounted)
+        p = readout_params(SM.SpacecraftModel[sc], (manager,))
+        u = (sc=[(pos=[7.0e6, 0.0, 0.0], vel=[0.0, 7.5e3, 0.0], q=[0.0, 0.0, 0.0, 1.0], ω=zeros(3))],)
+        @test SpaceAGORA.actuator_levels(manager, 1) === nothing                  # before the first tick
+        CH.calcControlEffect!(manager, u, p, 0.0, 1)
+        @test SpaceAGORA.actuation_mode(manager) === :mounted
+        @test SpaceAGORA.actuator_levels(manager, 1) ≈ collect(manager.held_dipole_am2) atol=1e-15   # orthogonal rods carry its components
+        x = ComponentVector(pos=[7.0e6, 0.0, 0.0], vel=[0.0, 7.5e3, 0.0], mass=50.0, q=[0.0, 0.0, 0.0, 1.0], ω=zeros(3))
+        _, torque, _, _ = readout(p, 1, x)
+        truth = SM.rod_field_body(SM.MagneticTorqueRodModel(), SVector(7.0e6, 0.0, 0.0), SVector(0.0, 0.0, 0.0, 1.0), p)
+        @test torque ≈ cross(manager.held_dipole_am2, truth) rtol=1e-12          # the run's field, not the estimate
+        bound = SpaceAGORA.bind_spacecraft(manager, 2)
+        @test bound.mounted_levels !== manager.mounted_levels && isempty(bound.mounted_levels)
+        rodless = SM.MagneticMomentumManagerModel(sat_idx=1, h_wheels_0=SVector(0.02, 0.0, 0.0),
+            commanded_torque=(t, r, v, q, w) -> ZERO3, b_field_ii=estimate, actuation=:mounted)
+        @test_throws ArgumentError CH.calcControlEffect!(rodless, u,
+            readout_params(SM.SpacecraftModel[spacecraft_with(SM.Link(root=true, m=50.0))], (rodless,)), 0.0, 1)
+        @test_throws ArgumentError SpaceAGORA.actuation_mode(SM.MagneticMomentumManagerModel(actuation=:bogus))
+    end
+
+    @testset "a laser terminal recoils with its transmitted power over c" begin
+        c = 299_792_458.0
+        root = SM.Link(root=true, m=30.0)
+        laser = LaserTerminal(boresight=SVector(2.0, 0.0, 0.0), location=SVector(0.0, 0.5, 0.0), max_power_w=1.0e4,
+            magnification=50.0, range_m=1.0e5, efficiency=0.4)
+        @test laser.boresight == SVector(1.0, 0.0, 0.0)
+        force, torque = actuator_wrench(laser, 3.0e3, actuator_context(root))
+        @test force == SVector(-3.0e3 / c, 0.0, 0.0)                         # opposite the beam
+        @test torque == cross(SVector(0.0, 0.5, 0.0), force)
+        @test actuator_consumption(laser, 3.0e3, actuator_context(root)) == (mass_rate_kg_s = 0.0, power_w = 3.0e3 / 0.4)
+        @test actuator_limits(laser) == (0.0, 1.0e4) && actuator_fraction(laser, 2.5e3) == 0.25
+        @test_throws ArgumentError LaserTerminal(boresight=ZERO3, max_power_w=1.0)
+        @test_throws ArgumentError LaserTerminal(boresight=SVector(1.0, 0.0, 0.0), max_power_w=1.0, efficiency=1.5)
+        link_parameters = SM.InterLinkParameters(laser)
+        @test (link_parameters.P, link_parameters.B, link_parameters.range) == (1.0e4, 50.0, 1.0e5)
+        mixed = spacecraft_with(SM.Link(root=true, m=30.0))
+        rod = add_actuator!(mixed, mixed.root, Magnetorquer(axis=SVector(0.0, 0.0, 1.0)))
+        puck = add_actuator!(mixed, mixed.root, ColdGasPuck(SVector(1.0, 0.0, 0.0), ZERO3, 0.5, 50.0))
+        beam = add_actuator!(mixed, mixed.root, LaserTerminal(boresight=SVector(1.0, 0.0, 0.0), max_power_w=10.0))
+        @test mixed.root.laser_terminals == [beam] && SM.mounted_laser_count(mixed) == 1
+        @test [e.actuator for e in mounted_actuators(mixed)] == AbstractActuator[rod, beam, puck]   # rods, lasers, user kinds
+        sc = spacecraft_with(root)
+        add_actuator!(sc, root, laser)
+        p = readout_params(SM.SpacecraftModel[sc], (HoldLevels(1, [2.0e4]),))   # saturates at 1e4 W
+        q = normalize(SVector(0.0, 0.0, sin(0.3), cos(0.3)))
+        f_ii, tq_body, _, rate = readout(p, 1, body_state(q))
+        @test f_ii ≈ SM.rot(q)' * SVector(-1.0e4 / c, 0.0, 0.0) rtol=1e-14
+        @test tq_body == cross(SVector(0.0, 0.5, 0.0), SVector(-1.0e4 / c, 0.0, 0.0))
+        @test rate == 0.0                                                  # no propellant
+    end
+
+    @testset "a hinge turns its link within its angle and rate limits at control ticks" begin
+        root = SM.Link(root=true, m=50.0)
+        panel = SM.Link(m=5.0, r=MVector(0.0, 1.5, 0.0))
+        sc = SM.SpacecraftModel(links=[root, panel], root=root, prop_mass=1.0, inertia_tensor=root.inertia, id=5)
+        hinge = PanelHinge(axis=SVector(0.0, 2.0, 0.0), min_angle_rad=-1.0, max_angle_rad=1.0, max_rate_rad_s=0.1, angle_rad=0.2)
+        @test hinge.axis == SVector(0.0, 1.0, 0.0)
+        @test add_actuator!(sc, panel, hinge) === hinge
+        @test panel.q ≈ [0.0, sin(0.1), 0.0, cos(0.1)]                       # the link takes the hinge's angle
+        @test_throws ArgumentError add_actuator!(sc, root, PanelHinge(axis=SVector(1.0, 0.0, 0.0)))   # not the root
+        @test_throws ArgumentError add_actuator!(sc, panel, PanelHinge(axis=SVector(1.0, 0.0, 0.0)))  # one per link
+        @test_throws ArgumentError PanelHinge(axis=SVector(1.0, 0.0, 0.0), min_angle_rad=1.0, max_angle_rad=0.0)
+        @test actuator_wrench(hinge, 0.5, actuator_context(panel)) == (ZERO3, ZERO3)
+        @test actuator_limits(hinge) == (-1.0, 1.0)
+        @test SM.hinge_step(hinge, 5.0, 0.0) == 0.2                         # first tick: holds, rate-limited
+        SM.apply_hinge_levels!(sc, [5.0], 0.0)
+        @test hinge.angle_rad == 0.2 && hinge.last_update_s == 0.0
+        SM.apply_hinge_levels!(sc, [5.0], 2.0)
+        @test hinge.angle_rad ≈ 0.4                                          # 0.1 rad/s for 2 s toward the limit
+        SM.apply_hinge_levels!(sc, [5.0], 100.0)
+        @test hinge.angle_rad == 1.0                                          # the angle limit
+        @test panel.q ≈ [0.0, sin(0.5), 0.0, cos(0.5)]
+        @test SM.hinge_step(PanelHinge(axis=SVector(1.0, 0.0, 0.0)), 0.7, 0.0) == 0.7   # unlimited: at once
+        @test [e.actuator for e in mounted_actuators(sc)] == AbstractActuator[hinge]
+        # After the commanding effector's tick the engine applies its hinge levels.
+        control = HoldLevels(1, [0.3])
+        p = readout_params(SM.SpacecraftModel[sc], (control,))
+        SM.SimulationCallbacks._apply_mounted_hinges!(control, p, 1, 110.0)
+        @test hinge.angle_rad ≈ 0.3
+        @test SM.SimulationCallbacks._apply_mounted_hinges!(SM.MagneticMomentumManagerModel(), p, 1, 120.0) === nothing
+        @test hinge.angle_rad ≈ 0.3                                          # ideal effectors leave hinges alone
+    end
+
+    @testset "a mounted run moves the hinge at the controller's ticks" begin
+        root = SM.Link(root=true, m=100.0, dims=MVector(1.0, 1.0, 1.0))
+        panel = SM.Link(m=5.0, r=MVector(0.0, 1.5, 0.0), dims=MVector(0.02, 2.0, 1.0))
+        ic = SM.CartesianInitialCondition(SVector(4.0e9, 0.0, 0.0), ZERO3; q=SVector(0.0, 0.0, 0.0, 1.0))
+        sc = SM.SpacecraftModel(links=[root, panel], root=root, prop_mass=1.0, inertia_tensor=root.inertia, initial_condition=ic, id=6)
+        hinge = add_actuator!(sc, panel, PanelHinge(axis=SVector(0.0, 1.0, 0.0), max_rate_rad_s=0.1))
+        base = make_example_config(planet=SM.Earth(), spacecraft=sc, mission_time=3.0,
+            initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+            dynamic_effectors=(), ephemerides_model=SM.SimpleEphemeridesModel(), orientation_sim=true,
+            keplerian=false, EI_km=1.0, verbose=false, results=false)
+        args = SM.SimConfig._with_configuration(base;
+            control_model=SM.ControlModel(control_effectors=(HoldLevels(1, [0.5]),), control_rates=[1.0]))
+        run_simulation(args; isolate_state=false)
+        @test 0.1 - 1e-12 <= hinge.angle_rad <= 0.3 + 1e-12                  # 0.1 rad/s from the first tick
+        @test hinge.angle_rad < 0.5                                          # still on its way
+        @test panel.q ≈ [0.0, sin(hinge.angle_rad / 2), 0.0, cos(hinge.angle_rad / 2)]
+    end
+
+    @testset "redundant mounted wheels each integrate their own command" begin
+        # A pure null-space command: the four torques cancel on the body, yet
+        # every wheel spins up at minus its own level.
+        null_cmd = [0.01, 0.01, -0.01, -0.01]
+        final, inertia, J = pyramid_run(null_cmd)
+        @test collect(final.h_wheels) ≈ -5.0 .* null_cmd atol=1e-12
+        @test collect(final.ω) ≈ zeros(3) atol=1e-14
+        # A mixed command: a body torque about x plus a null-space part.
+        mixed = [0.02, 0.0, -0.01, -0.01]
+        final, inertia, J = pyramid_run(mixed)
+        @test collect(final.h_wheels) ≈ -5.0 .* mixed atol=1e-12
+        @test collect(final.ω) ≈ inertia \ (J * mixed .* 5.0) rtol=1e-8
+        @test inertia * collect(final.ω) + J * collect(final.h_wheels) ≈ zeros(3) atol=1e-12   # angular momentum conserved
+    end
+
+    @testset "actuators mount only on the spacecraft's own links" begin
+        root = SM.Link(root=true, m=10.0)
+        sc = spacecraft_with(root)
+        stray = SM.Link(m=1.0)                                       # not in sc.links
+        for actuator in (Thruster(direction=MVector(1.0, 0.0, 0.0)), Magnetorquer(axis=SVector(1.0, 0.0, 0.0)),
+                         LaserTerminal(boresight=SVector(1.0, 0.0, 0.0), max_power_w=1.0), PanelHinge(axis=SVector(1.0, 0.0, 0.0)),
+                         ColdGasPuck(SVector(1.0, 0.0, 0.0), ZERO3, 0.5, 50.0))
+            @test_throws ArgumentError add_actuator!(sc, stray, actuator)
+        end
+        @test isempty(stray.thrusters) && isempty(stray.magnetorquers) && isempty(stray.laser_terminals) &&
+              isempty(stray.hinges) && isempty(stray.custom_actuators)
+        @test stray.q == [0.0, 0.0, 0.0, 1.0]                           # a refused hinge leaves the link alone
+        @test SM.mounted_actuator_count(sc) == 0
     end
 
     @testset "a mounted run moves the vehicle and uses propellant as its jets say" begin

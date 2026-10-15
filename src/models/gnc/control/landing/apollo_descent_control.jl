@@ -318,7 +318,7 @@ function calcControlMassFlowRate(model::ApolloDescentControlModel, u::AbstractVe
     n = length(model.actuators.thrust_n)
     (i in model.spacecraft_indices && p.is_active[i]) || return 0.0
     cfg = model.config
-    dps = model.actuators.thrust_n[i] / (cfg.dps_isp_s * _DESCENT_G0)
+    dps = propellant_mass_rate(model.actuators.thrust_n[i], cfg.dps_isp_s)
     τ = model.actuators.torque_nm[i]
     rcs = (abs(τ[1]) + abs(τ[2]) + abs(τ[3])) / (cfg.rcs_moment_arm_m * cfg.rcs_isp_s * _DESCENT_G0)
     return -(dps + rcs)

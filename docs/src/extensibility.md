@@ -14,6 +14,7 @@ templates/force_torque_model_template.jl
 What to read next:
 
 - [Adding a Force or Torque of Your Own](user/custom_effector.md) (a complete, tested walkthrough of the force/torque hook)
+- [Adding an Actuator of Your Own](user/custom_actuator.md) (a complete, tested walkthrough of the actuator contract)
 - [Public API](generated/public_api.md)
 - [Concepts](user/concepts.md)
 
@@ -203,9 +204,16 @@ SpaceAGORA.actuator_consumption(a::MyActuator, level, ctx) = (mass_rate_kg_s = .
 
 The wrench is in the spacecraft body frame, the torque about the body
 reference point; `ctx` (an `ActuatorContext`) gives the mounting link's pose
-in the body frame and the vehicle's mass, attitude and rate. `Thruster` is the
-built-in kind: its level is a thrust in newtons and its `direction` is the
-thrust direction.
+in the body frame and the vehicle's mass, attitude and rate. The built-in kinds are
+`Thruster` (its level is a thrust in newtons and its `direction` is the thrust
+direction) and `ReactionWheel` (its level is the torque on the body about its
+spin axis; it mounts on the root link and its momentum is integrated, with
+torque and momentum limits), `Magnetorquer` (its level is the commanded
+dipole along its axis; it acts in the run's magnetic field) and `LaserTerminal`
+(its level is the transmitted optical power; the vehicle recoils with power
+over the speed of light) and `PanelHinge` (its level is the angle of the
+non-root link it turns, with angle and rate limits; the engine applies it at
+the commanding effector's control ticks).
 
 Registration: `add_actuator!(spacecraft, link, actuator)`.
 
@@ -219,6 +227,8 @@ The built-in RPO and Apollo descent controllers accept `actuation=:mounted`.
 Template:
 
 - `templates/actuator_template.jl`
+
+Walkthrough: [Adding an Actuator of Your Own](user/custom_actuator.md).
 
 ## Planet, ephemerides, thermal, thruster, and guidance extensions
 
