@@ -25,7 +25,7 @@ using StaticArrays
 using ..AbstractTypes: AbstractActuator
 using ..QuaternionMath: rot
 using ..Actuators
-using ..Components: Thruster, ReactionWheel, wheel_momentum_saturate, Magnetorquer, LaserTerminal, PanelHinge, hinge_step
+using ..Components: Thruster, ReactionWheel, wheel_momentum_saturate, wheel_power, Magnetorquer, LaserTerminal, PanelHinge, hinge_step
 using ..SpacecraftModels: Link, SpacecraftModel
 using ..Assembly: add_thruster!
 
@@ -466,14 +466,25 @@ end
 
 The electrical power (W) the mounted actuators draw at their applied levels
 (see [`applied_actuator_levels`](@ref)): the sum of each one's
-`actuator_consumption(...).power_w`, evaluated without a sampled environment.
-It fills the `actuator_power` result column.
+`actuator_consumption(...).power_w`, evaluated without a sampled environment,
+except the reaction wheels, whose power `wheel_power` computes from their
+stored momenta in `wheel_momentum` (the root assembly's integrated `h_wheels`)
+when it is given. It fills the `actuator_power` result column.
 """
 function mounted_power(model::SpacecraftModel, levels::AbstractVector; wheel_momentum=nothing)::Float64
     applied = applied_actuator_levels(model, levels; wheel_momentum=wheel_momentum)
+    assembly = model.root.rw_assembly
+    first_mounted = assembly.n_wheels - length(assembly.wheels)
     total = 0.0
+    j = 0
     for (k, entry) in enumerate(mounted_actuators(model))
-        total += Float64(actuator_consumption(entry.actuator, applied[k], actuator_context(entry.link)).power_w)
+        if entry.actuator isa ReactionWheel
+            j += 1
+            h = wheel_momentum === nothing ? NaN : Float64(wheel_momentum[first_mounted + j])
+            total += wheel_power(entry.actuator, applied[k], h)
+        else
+            total += Float64(actuator_consumption(entry.actuator, applied[k], actuator_context(entry.link)).power_w)
+        end
     end
     return total
 end

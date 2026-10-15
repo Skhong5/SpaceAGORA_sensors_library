@@ -706,6 +706,35 @@ end
         @test all(==(0.5), table.sc1_actuator_level_2)
         @test all(==(8.0), table.sc1_actuator_power)
     end
+
+    @testset "wheels and torque rods draw power" begin
+        wheel = ReactionWheel(spin_axis=SVector(0.0, 0.0, 1.0), spin_inertia_kgm2=0.02, base_power_w=1.5,
+            motor_efficiency=0.8, regenerative_efficiency=0.25)
+        @test SM.wheel_power(wheel, -0.01, 2.0) ≈ 1.5 + 0.01 * 100.0 / 0.8      # speeding up: 1 W into the wheel at 100 rad/s
+        @test SM.wheel_power(wheel, 0.01, 2.0) ≈ 1.5 - 0.25 * 1.0               # slowing down: a quarter of 1 W returns
+        @test SM.wheel_power(wheel, 0.01, NaN) == 1.5                            # stored momentum unknown: base power
+        @test SM.wheel_power(ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0)), 0.01, 2.0) == 0.0   # no power model by default
+        ctx = actuator_context(SM.Link(root=true))
+        @test actuator_consumption(wheel, 0.01, ctx) == (mass_rate_kg_s = 0.0, power_w = 1.5)
+        rod = Magnetorquer(axis=SVector(1.0, 0.0, 0.0), max_dipole_am2=2.0, power_at_max_dipole_w=0.8)
+        @test actuator_consumption(rod, 1.0, ctx).power_w ≈ 0.2 && actuator_consumption(rod, -2.0, ctx).power_w ≈ 0.8
+        @test actuator_consumption(Magnetorquer(axis=SVector(1.0, 0.0, 0.0)), 5.0, ctx).power_w == 0.0
+        @test_throws ArgumentError Magnetorquer(axis=SVector(1.0, 0.0, 0.0), power_at_max_dipole_w=1.0)   # needs a finite dipole limit
+        @test_throws ArgumentError ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0), motor_efficiency=0.0)
+        @test_throws ArgumentError ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0), spin_inertia_kgm2=-1.0)
+        @test ReactionWheel(SVector(1.0, 0.0, 0.0), 0.1, 0.2).max_momentum_nms == 0.2 && Magnetorquer(SVector(1.0, 0.0, 0.0), 3.0).max_dipole_am2 == 3.0
+        root = SM.Link(root=true, m=50.0)
+        sc = spacecraft_with(root)
+        add_actuator!(sc, root, wheel)
+        add_actuator!(sc, root, rod)
+        @test mounted_power(sc, [-0.01, 1.0]; wheel_momentum=[2.0]) ≈ 1.5 + 0.01 * 100.0 / 0.8 + 0.2
+        @test mounted_power(sc, [-0.01, 1.0]) ≈ 1.5 + 0.2
+        # In a run the column follows the spin-up: h = -0.002 t, so 1 W plus 0.0004 t.
+        sc2, root2 = far_spacecraft(id=12)
+        add_actuator!(sc2, root2, ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0), spin_inertia_kgm2=0.01, base_power_w=1.0))
+        table = held_run(sc2, [0.002]; mission_time=5.0, return_results=true).table
+        @test table.sc1_actuator_power ≈ 1.0 .+ 0.0004 .* table.time rtol=1e-9
+    end
 end
 
 end # module ActuatorContractTests

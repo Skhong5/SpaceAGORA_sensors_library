@@ -6,7 +6,8 @@
 # ---- Record ---------------------------------------------------------------
 
 """
-    ReactionWheel(; spin_axis, max_torque_nm=Inf, max_momentum_nms=Inf)
+    ReactionWheel(; spin_axis, max_torque_nm=Inf, max_momentum_nms=Inf,
+                  spin_inertia_kgm2=NaN, base_power_w=0.0, motor_efficiency=1.0, regenerative_efficiency=0.0)
 
 One reaction wheel, mounted on the spacecraft's root link with
 `add_actuator!`. Its level is the torque it puts on the vehicle about
@@ -14,24 +15,48 @@ its spin axis, in newton-metres; the wheel's own angular momentum along that
 axis changes at minus the same rate. `spin_axis` is in the root-link (body)
 frame. `max_torque_nm` bounds the level and `max_momentum_nms` stops a torque
 that would store more momentum; both default to unlimited.
+
+Power (see `wheel_power`): the wheel draws `base_power_w` (electronics, bearing
+losses) plus the mechanical power its motor puts into the wheel, divided by
+`motor_efficiency`. The mechanical power is the motor torque on the wheel
+(minus the level) times the wheel speed, its stored momentum over
+`spin_inertia_kgm2`; without a spin inertia (the default) only the base power
+counts. While the motor slows the wheel, `regenerative_efficiency` of the
+mechanical power returns to the bus (zero by default: nothing returns, nothing
+extra is drawn).
 """
 struct ReactionWheel <: AbstractActuator
     spin_axis::SVector{3, Float64}
     max_torque_nm::Float64
     max_momentum_nms::Float64
+    spin_inertia_kgm2::Float64
+    base_power_w::Float64
+    motor_efficiency::Float64
+    regenerative_efficiency::Float64
 
-    function ReactionWheel(spin_axis, max_torque_nm::Real, max_momentum_nms::Real)
+    function ReactionWheel(spin_axis, max_torque_nm::Real, max_momentum_nms::Real, spin_inertia_kgm2::Real,
+                           base_power_w::Real, motor_efficiency::Real, regenerative_efficiency::Real)
         axis = SVector{3, Float64}(spin_axis)
         n = norm(axis)
         (isfinite(n) && n > 0.0) || throw(ArgumentError("ReactionWheel spin_axis must be finite and nonzero, got $(axis)."))
         (max_torque_nm > 0.0 && !isnan(max_torque_nm)) || throw(ArgumentError("ReactionWheel max_torque_nm must be positive, got $(max_torque_nm)."))
         (max_momentum_nms > 0.0 && !isnan(max_momentum_nms)) || throw(ArgumentError("ReactionWheel max_momentum_nms must be positive, got $(max_momentum_nms)."))
-        return new(axis / n, Float64(max_torque_nm), Float64(max_momentum_nms))
+        (isnan(spin_inertia_kgm2) || (isfinite(spin_inertia_kgm2) && spin_inertia_kgm2 > 0.0)) ||
+            throw(ArgumentError("ReactionWheel spin_inertia_kgm2 must be positive and finite (or NaN for none), got $(spin_inertia_kgm2)."))
+        (isfinite(base_power_w) && base_power_w >= 0.0) || throw(ArgumentError("ReactionWheel base_power_w must be finite and nonnegative, got $(base_power_w)."))
+        (0.0 < motor_efficiency <= 1.0) || throw(ArgumentError("ReactionWheel motor_efficiency must be in (0, 1], got $(motor_efficiency)."))
+        (0.0 <= regenerative_efficiency <= 1.0) || throw(ArgumentError("ReactionWheel regenerative_efficiency must be in [0, 1], got $(regenerative_efficiency)."))
+        return new(axis / n, Float64(max_torque_nm), Float64(max_momentum_nms), Float64(spin_inertia_kgm2),
+                   Float64(base_power_w), Float64(motor_efficiency), Float64(regenerative_efficiency))
     end
 end
 
-ReactionWheel(; spin_axis, max_torque_nm::Real=Inf, max_momentum_nms::Real=Inf) =
-    ReactionWheel(spin_axis, max_torque_nm, max_momentum_nms)
+ReactionWheel(spin_axis, max_torque_nm::Real, max_momentum_nms::Real) =
+    ReactionWheel(spin_axis, max_torque_nm, max_momentum_nms, NaN, 0.0, 1.0, 0.0)
+
+ReactionWheel(; spin_axis, max_torque_nm::Real=Inf, max_momentum_nms::Real=Inf, spin_inertia_kgm2::Real=NaN,
+              base_power_w::Real=0.0, motor_efficiency::Real=1.0, regenerative_efficiency::Real=0.0) =
+    ReactionWheel(spin_axis, max_torque_nm, max_momentum_nms, spin_inertia_kgm2, base_power_w, motor_efficiency, regenerative_efficiency)
 
 # ---- Methods of the actuator contract --------------------------------------
 
@@ -46,6 +71,35 @@ in the body frame; no force.
 @inline function actuator_wrench(wheel::ReactionWheel, level::Real, ctx::ActuatorContext)
     return SVector{3, Float64}(0.0, 0.0, 0.0), ctx.link_to_body * (Float64(level) * wheel.spin_axis)
 end
+
+"""
+    wheel_power(wheel::ReactionWheel, level, h_nms) -> Float64
+
+The electrical power (W) a wheel storing `h_nms` along its spin axis draws
+while it puts a torque of `level` N m on the vehicle: its base power, plus the
+mechanical power into the wheel, `-level * h_nms / spin_inertia_kgm2`, over the
+motor efficiency while the motor speeds the wheel up, minus the regenerated
+share of it while the motor slows the wheel down. A NaN `h_nms`, or a wheel
+without a spin inertia, gives the base power.
+"""
+function wheel_power(wheel::ReactionWheel, level::Real, h_nms::Real)::Float64
+    power = wheel.base_power_w
+    (isfinite(wheel.spin_inertia_kgm2) && isfinite(h_nms) && isfinite(level)) || return power
+    mechanical = -Float64(level) * (Float64(h_nms) / wheel.spin_inertia_kgm2)
+    return mechanical >= 0.0 ? power + mechanical / wheel.motor_efficiency :
+        power + wheel.regenerative_efficiency * mechanical
+end
+
+"""
+    actuator_consumption(wheel::ReactionWheel, level, ctx) -> (mass_rate_kg_s, power_w)
+
+No propellant. The power is the base power: the context does not carry the
+wheel's stored momentum, which the mechanical part needs. `mounted_power`, and
+the `actuator_power` result column, use `wheel_power` with the integrated
+momentum.
+"""
+@inline actuator_consumption(wheel::ReactionWheel, ::Real, ::ActuatorContext) =
+    (mass_rate_kg_s = 0.0, power_w = wheel.base_power_w)
 
 """
     wheel_momentum_saturate(wheel::ReactionWheel, level, h_nms) -> Float64
