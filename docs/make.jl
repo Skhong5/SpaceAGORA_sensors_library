@@ -59,7 +59,7 @@ function _write_undocumented_public_api_report()::Vector
         println(io, "generated_utc=$(Dates.now(Dates.UTC))")
         println(io)
         println(io, "Known placeholder docs (listed in docs/public_api_symbols.jl): ",
-            join(sort!(string.(collect(KNOWN_PLACEHOLDER_DOCS))), ", "))
+            join(sort!([string(owner, ".", symbol) for (owner, symbol) in KNOWN_PLACEHOLDER_DOCS]), ", "))
         println(io)
         if isempty(missing)
             println(io, "All documented.")
@@ -214,6 +214,11 @@ _write_undocumented_public_api_report()
 
 if !isempty(missing_public_api)
     error("Public API documentation is incomplete. See $(PUBLIC_API_REPORT) for the missing exports report.")
+end
+stale_placeholders = stale_placeholder_entries(SpaceAGORA)
+if !isempty(stale_placeholders)
+    error("Remove these documented or no longer public names from KNOWN_PLACEHOLDER_DOCS in docs/public_api_symbols.jl: " *
+          join([string(owner, ".", symbol) for (owner, symbol) in stale_placeholders], ", "))
 end
 
 # CI's strict build needs a GitHub token for link checks, but must not publish.

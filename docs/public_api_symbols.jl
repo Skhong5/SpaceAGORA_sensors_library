@@ -3,7 +3,7 @@ module PublicAPISymbols
 using Base.Docs
 
 export PUBLIC_API_SECTIONS, public_api_specs, render_public_api_markdown, undocumented_public_api_specs,
-    KNOWN_PLACEHOLDER_DOCS
+    KNOWN_PLACEHOLDER_DOCS, stale_placeholder_entries
 
 const PUBLIC_API_SECTIONS = [
     (title = "Constellation laser interlinks", items = [
@@ -512,18 +512,21 @@ function render_public_api_markdown(spaceagora::Module;
     return String(take!(io))
 end
 
-# Public names whose rendered documentation is still the "No documentation
-# found" placeholder. Each is listed so that any new gap fails the build; remove
-# a name here once it has a docstring.
+# Public names, as (owner module, symbol), whose rendered documentation is still
+# the "No documentation found" placeholder. Each is listed so that any new gap
+# fails the build. The build also fails when a listed name no longer renders the
+# placeholder, so documenting one requires removing it here.
 const KNOWN_PLACEHOLDER_DOCS = Set([
-    :thin_panel_inertia,
-    :ApoapsisTargetPeriapsisRaiseGuidanceModel,
-    :station_geometry_path,
-    :station_cad_path,
-    :load_rpo_station_pointcloud,
-    :load_rpo_station_cad_triangles,
-    :load_rpo_station_cad_pointcloud,
+    (:SpaceAGORA, :thin_panel_inertia),
+    (:SpaceAGORA, :ApoapsisTargetPeriapsisRaiseGuidanceModel),
+    (:SpaceAGORA, :station_geometry_path),
+    (:SpaceAGORA, :station_cad_path),
+    (:SpaceAGORA, :load_rpo_station_pointcloud),
+    (:SpaceAGORA, :load_rpo_station_cad_triangles),
+    (:SpaceAGORA, :load_rpo_station_cad_pointcloud),
 ])
+
+_spec_key(spec) = (nameof(spec.owner_module), spec.symbol)
 
 _is_placeholder_doc(doc) = doc === nothing || occursin("No documentation found", string(doc))
 
@@ -537,11 +540,23 @@ function undocumented_public_api_specs(spaceagora::Module)
         # counts. Check the text as well.
         placeholder = _is_placeholder_doc(Docs.doc(binding))
         if !Docs.hasdoc(binding.mod, binding.var) ||
-                (placeholder && !(spec.symbol in KNOWN_PLACEHOLDER_DOCS))
+                (placeholder && !(_spec_key(spec) in KNOWN_PLACEHOLDER_DOCS))
             push!(missing, spec)
         end
     end
     return missing
+end
+
+"""
+Entries of `KNOWN_PLACEHOLDER_DOCS` that no longer render the placeholder or are
+no longer public names; each must be removed from the list.
+"""
+function stale_placeholder_entries(spaceagora::Module)
+    placeholders = Set(
+        _spec_key(spec) for spec in public_api_specs(spaceagora)
+        if _is_placeholder_doc(Docs.doc(Docs.Binding(spec.owner_module, spec.symbol)))
+    )
+    return sort!(collect(setdiff(KNOWN_PLACEHOLDER_DOCS, placeholders)))
 end
 
 end # module PublicAPISymbols
