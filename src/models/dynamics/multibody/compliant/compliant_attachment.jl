@@ -1,6 +1,6 @@
 # Included inside `SpacecraftModels` (src/models/vehicle/spacecraft/model.jl) after `Link`, so that
 # `SpacecraftModel` can hold attachments. The dynamics live in
-# src/models/dynamics/compliant_multibody/compliant_attachment_dynamics.jl.
+# src/models/dynamics/multibody/compliant/compliant_attachment_dynamics.jl.
 
 using ..ClothMultibody: CompliantMultibodyModel, CompliantTopologyBuild, CompliantJointActuator
 using ..ClothMultibody: compliant_rest_state, compliant_state_in_mount_frame

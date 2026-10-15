@@ -5,13 +5,13 @@ Base.include(@__MODULE__, joinpath(@__DIR__, "runtime_any_hotpath_checks.jl"))
 const HOTPATH_FILES = String[
     joinpath(REPO_ROOT, "src", "orchestration", "simulation", "state", "runtime_types.jl"),
     joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "setup.jl"),
-    joinpath(REPO_ROOT, "src", "models", "dynamics", "coupled", "aerodynamic_wrench_models.jl"),
-    joinpath(REPO_ROOT, "src", "models", "dynamics", "coupled", "perturbations.jl"),
+    joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "aerodynamic_wrench_models.jl"),
+    joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "perturbations.jl"),
 ]
 
 # Split source keeps exactly the original hot-path scan coverage. New children
 # are covered recursively so later source splits cannot bypass the contract.
-const SPLIT_HOTPATH_DIR = joinpath(REPO_ROOT, "src", "models", "dynamics", "coupled", "perturbations")
+const SPLIT_HOTPATH_DIR = joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "perturbations")
 const MULTIBODY_POLICY_FILE = joinpath(REPO_ROOT, "src", "orchestration", "parallel", "policy", "multibody_routing.jl")
 
 const CALLBACK_DIR = joinpath(REPO_ROOT, "src", "orchestration", "simulation", "callbacks")

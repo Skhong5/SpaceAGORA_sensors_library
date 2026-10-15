@@ -40,7 +40,7 @@ JULIA_NUM_THREADS=4 SPACEAGORA_PERF_PARALLEL_BACKEND=auto SPACEAGORA_PERF_PROCS=
 2. Inner layer density callbacks: `src/orchestration/simulation/callbacks/density_callbacks.jl`
 3. Inner layer thermal callbacks: `src/orchestration/simulation/callbacks/thermal_callbacks.jl`
 4. Inner layer control callbacks: `src/orchestration/simulation/callbacks/control_callbacks.jl`
-5. Inner layer multibody/link kernels: `src/models/dynamics/coupled/aerodynamic_wrench_models.jl`, `src/models/dynamics/coupled/perturbations.jl`
+5. Inner layer multibody/link kernels: `src/models/dynamics/effectors/aerodynamic_wrench_models.jl`, `src/models/dynamics/effectors/perturbations.jl`
 6. Inner layer dynamic effector reduction and solve orchestration: `src/orchestration/simulation/engine/execution.jl`
 
 ## Output Artifacts

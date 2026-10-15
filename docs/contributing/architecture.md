@@ -109,7 +109,7 @@ does not by itself allocate tasks or provide a communication network.
 
 Compliant multibody dynamics describes motion within a spacecraft assembly.
 Its compliant lumped-body model represents flexibility with discrete bodies joined
-by springs and dampers. `src/models/dynamics/compliant_multibody/compliant_multibody.jl`
+by springs and dampers. `src/models/dynamics/multibody/compliant/compliant_multibody.jl`
 defines their mass and inertia, the translational and rotational stiffness and
 damping of their connections, and topology builders. The coupled robot-arm path in
 `compliant_robot_arm_dynamics.jl` supplies internal-state initialization and
@@ -126,7 +126,7 @@ for the corresponding type and function names.
 
 Articulated spacecraft use a second multibody path that is not tied to the
 compliant robot arm. A `Joint` with `joint_type` `:hinge`, `:slide` or `:ball` makes its
-spacecraft articulated: `src/models/dynamics/coupled/articulated_body.jl` builds a tree
+spacecraft articulated: `src/models/dynamics/multibody/articulated_body.jl` builds a tree
 of rigid bodies (links joined by `:fixed` joints are merged) and solves the
 forward dynamics in joint coordinates, with the root as a free-floating base.
 The engine integrates the joint coordinates beside the root state
@@ -143,7 +143,7 @@ or a moving articulated link), integrates its bodies beside the spacecraft
 (`att_r`, `att_q`, `att_v`, `att_ω`) and exchanges forces and torques with the
 link in both directions: through the bus equations for a rigid spacecraft and
 through per-body wrenches into the articulated backbone otherwise
-(`src/models/dynamics/compliant_multibody/compliant_attachment_dynamics.jl`). The
+(`src/models/dynamics/multibody/compliant/compliant_attachment_dynamics.jl`). The
 robot-arm coupling keeps its own path for now. See
 [Compliant attachments](../src/user/simulation_configuration.md#compliant-attachments).
 
@@ -152,7 +152,7 @@ A free-flying inspector is another spacecraft. Their task assignment and
 coordination belong at the mission level, above individual vehicle construction.
 The source-owner table below distinguishes vehicle construction from dynamics.
 Robot hardware belongs to `src/models/vehicle/robotics/`, compliant equations to
-`src/models/dynamics/compliant_multibody/`, reference planning to
+`src/models/dynamics/multibody/compliant/`, reference planning to
 `src/models/gnc/planning/robot_arm/`, and tracking control to
 `src/models/gnc/control/robot_arm_control.jl`. HYPR robot-arm
 search is implemented in the separate [HYPR.jl repository](https://github.com/Space-FALCON-Lab/HYPR.jl),
@@ -218,11 +218,11 @@ the file that performs each step.
 5. **Forces and torques.** The engine obtains the state and environment required by
    each effector and calls its `wrench` (or the compatibility
    `calcForceTorque`). The wrapper module and its models are under
-   `src/models/dynamics/coupled/force_torque_models.jl`
+   `src/models/dynamics/effectors/force_torque_models.jl`
    and the `force_torque_models/`
    folder (gravity, aerodynamics, perturbations, thrusters, plume, reaction
    wheels). Gravity model adapters and spacecraft wrenches live in
-   `src/models/dynamics/coupled/gravity/`, while the mathematical field kernels
+   `src/models/dynamics/effectors/gravity/`, while the mathematical field kernels
    live in `src/models/environment/gravity/`. The compatibility composition file
    `gravity_models.jl` preserves their definition order inside the existing
    `GravityEffectors` module. The ordered files under `coupled/perturbations/`

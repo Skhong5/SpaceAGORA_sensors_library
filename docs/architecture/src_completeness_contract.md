@@ -30,7 +30,7 @@ This contract defines how canonical source files are classified and what is forb
 ## Translational Boundary
 1. `src/models/dynamics/translational/*` is reserved for pure translational terms only.
 2. Gravity field kernels live under `src/models/environment/gravity/`; spacecraft/runtime
-   adapters live under `src/models/dynamics/coupled/gravity/`. The compatibility include
+   adapters live under `src/models/dynamics/effectors/gravity/`. The compatibility include
    manifest preserves the existing `DynamicEffectors.GravityEffectors` module ownership
    and declaration order. Neither responsibility belongs under translational dynamics.
 3. Translational files must not own attitude-coupled torque logic or actuator scheduling/commands.
@@ -42,7 +42,7 @@ This contract defines how canonical source files are classified and what is forb
 4. Unfinished subsystem scaffolds belong under top-level `experimental/*`; mirrored `src/*` copies are forbidden.
 5. Only the canonical roots described in this contract are valid ownership
    locations for plotting, reporting, and parallel support surfaces.
-6. Coupled dynamics owners live under `src/models/dynamics/coupled/*`.
+6. Force and torque effector owners live under `src/models/dynamics/effectors/*`; multibody dynamics owners live under `src/models/dynamics/multibody/*`.
 7. Simulation execution ownership is `src/orchestration/simulation/engine/public_api.jl` and `src/orchestration/simulation/engine/execution.jl`; `src/orchestration/simulation/events/*`, `src/orchestration/simulation/execution/*`, and `src/orchestration/simulation/solver_orchestration/*` are forbidden.
 8. Mission configuration ownership: initial-state definitions live with the spacecraft model (`src/models/vehicle/spacecraft/model.jl`); mission plans and policies live under `src/orchestration/mission/operations/*`.
 9. Structural analysis ownership is `src/models/vehicle/structure/*`, not `src/models/vehicle/spacecraft/*`; CAD/mesh readers live in `src/models/vehicle/structure/mesh_geometry.jl`.

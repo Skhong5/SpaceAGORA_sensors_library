@@ -137,10 +137,10 @@ const RETIRED_PATHS = (
 
 # Canonical owner paths that must exist.
 const REQUIRED_PATHS = (
-    joinpath("src", "models", "dynamics", "compliant_multibody", "compliant_multibody.jl"),
-    joinpath("src", "models", "dynamics", "compliant_multibody", "compliant_robot_arm_dynamics.jl"),
-    joinpath("src", "models", "dynamics", "compliant_multibody", "compliant_attachment.jl"),
-    joinpath("src", "models", "dynamics", "compliant_multibody", "compliant_attachment_dynamics.jl"),
+    joinpath("src", "models", "dynamics", "multibody", "compliant", "compliant_multibody.jl"),
+    joinpath("src", "models", "dynamics", "multibody", "compliant", "compliant_robot_arm_dynamics.jl"),
+    joinpath("src", "models", "dynamics", "multibody", "compliant", "compliant_attachment.jl"),
+    joinpath("src", "models", "dynamics", "multibody", "compliant", "compliant_attachment_dynamics.jl"),
     joinpath("src", "orchestration", "simulation", "config", "configuration.jl"),
     joinpath("src", "orchestration", "simulation", "config", "run_settings.jl"),
     joinpath("src", "orchestration", "simulation", "config", "solver_settings.jl"),

@@ -169,12 +169,12 @@ end
 end
 
 @testset "DynamicEffectors Internal Split Contract" begin
-    force_torque_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "coupled", "force_torque_models.jl"), String)
-    gravity_effectors_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "coupled", "force_torque_models", "gravity_effectors.jl"), String)
-    aerodynamic_effectors_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "coupled", "force_torque_models", "aerodynamic_effectors.jl"), String)
-    perturbation_effectors_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "coupled", "force_torque_models", "perturbation_effectors.jl"), String)
-    thruster_models_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "coupled", "force_torque_models", "thruster_models.jl"), String)
-    guidance_models_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "coupled", "force_torque_models", "guidance_models.jl"), String)
+    force_torque_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "force_torque_models.jl"), String)
+    gravity_effectors_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "force_torque_models", "gravity_effectors.jl"), String)
+    aerodynamic_effectors_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "force_torque_models", "aerodynamic_effectors.jl"), String)
+    perturbation_effectors_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "force_torque_models", "perturbation_effectors.jl"), String)
+    thruster_models_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "force_torque_models", "thruster_models.jl"), String)
+    guidance_models_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "force_torque_models", "guidance_models.jl"), String)
     top_level_thruster_models_src = read(joinpath(REPO_ROOT, "src", "models", "vehicle", "actuators", "thruster", "thruster_models_module.jl"), String)
     top_level_guidance_models_src = read(joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "guidance_models.jl"), String)
     top_level_gravity_effectors_src = read(joinpath(REPO_ROOT, "src", "models", "environment", "gravity", "gravity_effectors.jl"), String)
