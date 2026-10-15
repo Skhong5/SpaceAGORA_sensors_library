@@ -4,7 +4,7 @@ Use this page when you are changing repository structure, public API rules,
 verification gates, or documentation process expectations.
 
 This page is for maintainers. If you are looking for how to run SpaceAGORA,
-start with the [User Guide](../src/getting_started.md) instead.
+start with the [User Guide](../src/index.md) instead.
 
 Quickest related build command:
 

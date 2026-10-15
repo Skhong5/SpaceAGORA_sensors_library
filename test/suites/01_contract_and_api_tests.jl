@@ -356,7 +356,7 @@ end
 
 @testset "Documenter Strictness Contract" begin
     docs_make = read(joinpath(REPO_ROOT, "docs", "make.jl"), String)
-    getting_started = read(joinpath(REPO_ROOT, "docs", "src", "getting_started.md"), String)
+    quickstart = read(joinpath(REPO_ROOT, "docs", "src", "user", "quickstart.md"), String)
     from_env_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "adapters", "from_env.jl"), String)
 
     @test occursin("modules = [SpaceAGORA]", docs_make)
@@ -372,7 +372,7 @@ end
     @test occursin("SpaceAGORA.SpaceAGORACLI", docs_make)
     @test occursin("warnonly = false", docs_make)
     @test occursin("spaceagora_no_gram_example_args", docs_make)
-    @test occursin("```jldoctest", getting_started)
+    @test occursin("```jldoctest", quickstart)
     @test occursin("```jldoctest", from_env_src)
 end
 
@@ -440,9 +440,9 @@ end
     @test occursin("Manifest.toml", tracked)
 
     readme = read(joinpath(REPO_ROOT, "README.md"), String)
-    getting_started = read(joinpath(REPO_ROOT, "docs", "src", "getting_started.md"), String)
+    quickstart = read(joinpath(REPO_ROOT, "docs", "src", "user", "quickstart.md"), String)
     @test occursin("canonical committed execution environment", readme)
-    @test occursin("canonical committed execution environment", getting_started)
+    @test occursin("canonical committed execution environment", quickstart)
     @test occursin("there is no bootstrap step", lowercase(readme))
 end
 

@@ -14,7 +14,7 @@ julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstar
 
 What to read next:
 
-- [First Simulation](first_simulation.md)
+- [First Simulation](first_script.md)
 - [Assets & Modes](../assets.md)
 - [Public API](../generated/public_api.md)
 

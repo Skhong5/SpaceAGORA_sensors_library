@@ -84,6 +84,10 @@ found in current path`. See
 
 ## The repository environments
 
+![Which Julia environment to start: the root project for examples, tests and the command-line tool; the Odyssey example environment for the frozen-atmosphere tutorial; the viewer environment for the 3D viewer; one environment per optional companion for HYPR, MuJoCo and EDG; and your own project for scenarios kept outside the checkout. Each row shows how to start Julia and the one-time setup command.](../assets/figures/environments_map.svg)
+
+The sections below describe each environment.
+
 ### Root project (`--project=.`)
 
 The root project at the repository root is the canonical execution environment

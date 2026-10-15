@@ -1,5 +1,9 @@
 # Orbital scenes with MuJoCo
 
+!!! note "Optional package"
+    Requires the optional `SpaceAGORAMuJoCo` companion; see
+    [Install the compatible pair](#Install-the-compatible-pair).
+
 SpaceAGORAMuJoCo connects SpaceAGORA's gravitational models to MuJoCo's rigid-body,
 joint and contact dynamics. It is useful when the local mechanical scene matters:
 a spacecraft with moving links, two vehicles approaching each other, or bodies

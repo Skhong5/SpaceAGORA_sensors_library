@@ -5,6 +5,9 @@ run.
 
 This page is for first-time users who do not need GRAM or SPICE on day one.
 
+The root environment is the canonical committed execution environment for
+the repository-owned quickstart path.
+
 This default quickstart baseline is the Earth vacuum path:
 `NoAtmosphereModel()` plus `SimpleEphemeridesModel()`.
 
@@ -33,7 +36,7 @@ running Julia session.
 What to read next:
 
 - [Assets & Modes](../assets.md)
-- [First Simulation](first_simulation.md)
+- [Your First Script](first_script.md)
 - [Simulation Outputs](outputs.md)
 - [Recipes](recipes.md)
 
@@ -53,6 +56,17 @@ first time and shows precompilation progress for several minutes; anything
 else printed is a problem, and [Troubleshooting](troubleshooting.md) maps the
 common messages to their causes. The Julia REPL form of this check is on
 [Installation & Environment](installation_environment.md#Check-the-installation).
+
+The same check from the Julia REPL, confirming the no-GRAM baseline environment:
+
+```jldoctest
+julia> using SpaceAGORA
+
+julia> env = make_no_gram_environment();
+
+julia> env.density_model isa NoAtmosphereModel
+true
+```
 
 ## What to expect
 
@@ -85,6 +99,12 @@ trajectory in 3D; and the ground track. The example's orbit is nearly polar, so
 its x-y projection is close to a line, and its ground track runs along the top
 and bottom edges of the map while it passes the poles, where all longitudes
 meet.
+
+The first two plots from a run of this example:
+
+![Three plots against time since the start. Geodetic altitude falls from about 50,000 km to a periapsis near 200 km and climbs again; the osculating periapsis altitude stays near 200 km with a small disturbance around periapsis; inertial speed peaks at about 10 km/s at periapsis.](../assets/figures/quickstart_altitude_speed.png)
+
+![The trajectory projected on the inertial x-y and x-z planes, centred on the planet, whose equatorial radius is drawn as a circle, with the start and end points marked.](../assets/figures/quickstart_inertial_trajectory.png)
 
 On Windows the variable is set in a separate statement, and the remaining
 three lines of the path above then run unchanged. Terminal, Windows
@@ -131,6 +151,28 @@ two-minute mission that only checks the path end to end and honors the same
 `--output-dir`. Without an explicit output directory, smoke mode writes to
 `output/` under the directory you run from. Reusing a directory overwrites its
 previous run's files.
+
+## Run the same scenario without plots
+
+`AGORA_Earth_NoGRAM.jl` runs the same 12-hour Earth scenario, including
+`make_no_gram_planet(:earth)` and `SimpleEphemeridesModel()`, and writes the
+same three result files under `output/` without generating plots. Terminal,
+from the repository root:
+
+```text
+julia --project=. examples/AGORA_Earth_NoGRAM.jl
+```
+
+Through the command-line launcher, keeping its files in their own directory:
+
+```text
+julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Earth_NoGRAM.jl --output-dir=output/cli_run
+```
+
+`Earth_Thruster_Test.jl` builds its planet with `Earth("", SPICE_PATH)` and
+needs the SPICE kernels shipped in the `data/GRAMSuite.jl` submodule; on a
+fresh clone it stops with "Required SPICE kernel not found". Run it after
+[GRAMSuite Setup](gramsuite_setup.md).
 
 ## When to stop using this page
 

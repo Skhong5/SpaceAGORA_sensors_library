@@ -244,7 +244,7 @@ hook. Effectors in the default `:ideal` mode keep applying their own hooks.
 The built-in RPO and Apollo descent controllers and the magnetic momentum
 manager accept `actuation=:mounted`. A run with a mounted effector writes the
 `sc{i}_actuator_level_{k}` and `sc{i}_actuator_power` columns (see
-[Outputs](user/outputs.md#Mounted-actuators)); `applied_actuator_levels` and
+[Output Columns](user/output_columns.md#Mounted-actuators)); `applied_actuator_levels` and
 `mounted_power` compute the same values from a spacecraft and its levels.
 
 Template:
