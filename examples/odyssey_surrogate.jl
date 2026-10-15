@@ -266,6 +266,7 @@ function compare_panel_caps(; output_dir=joinpath(pwd(), "odyssey_surrogate_resu
     variant = validate_panel_cap(variant_cap_deg, "variant_cap_deg")
     baseline != variant || throw(ArgumentError("The baseline and variant caps must differ; both are $(baseline) degrees."))
     require_new_directory(output_dir)
+    println("Note: the first passage in this Julia process also compiles the example; its run time is not comparable with the second.")
     first = run_case(; panel_cap_deg=baseline, output_dir=joinpath(output_dir,cap_directory(baseline)), kwargs...)
     second = run_case(; panel_cap_deg=variant, output_dir=joinpath(output_dir,cap_directory(variant)), kwargs...)
     a = first.summary["common_state_m_m_s"]; b = second.summary["common_state_m_m_s"]

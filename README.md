@@ -16,25 +16,44 @@ Cross-platform command conventions used below:
   Linux, and macOS
 - `./bin/spaceagora` and `./scripts/ensure_gram_native.sh` remain available as
   convenience wrappers on Linux/macOS
+- command blocks say where they are typed: **Terminal** means a shell prompt
+  (PowerShell or Command Prompt on Windows, a terminal on Linux/macOS) and
+  **Julia REPL** means the `julia>` prompt of a running Julia session. Unless
+  a block says otherwise, terminal commands run from the repository root, the
+  directory that contains `Project.toml`
 
 ## Installation
 
-SpaceAGORA requires Julia 1.12. Use the repository root environment as the canonical committed execution environment for examples, tests, and normal local runs:
+**SpaceAGORA requires Julia 1.12** (any 1.12.x release). Other releases,
+including Julia 1.13, are not supported and the package manager refuses them;
+check with `julia --version` before anything else. See
+[Julia version](docs/src/user/installation_environment.md#julia-version) for
+what an unsupported release reports.
+
+Use the repository root environment as the canonical committed execution environment for examples, tests, and normal local runs.
+
+Terminal, Linux/macOS. The first line creates the checkout; the other lines
+run inside it, which is the repository root for every later command:
 
 ```text
 GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 cd SpaceAGORA.jl
-julia --project=. -e "using Pkg; Pkg.instantiate()"
+julia --project=. -e "using Pkg; Pkg.instantiate(julia_version_strict=true)"
 ```
 
-On Windows the variable is set in a separate statement. PowerShell:
+`julia_version_strict=true` makes the package manager stop with one clear
+message when the running Julia is not a 1.12 release, instead of continuing
+into unrelated errors.
+
+On Windows the variable is set in a separate statement, and the `cd` and
+`julia` lines above then run unchanged. Terminal, Windows PowerShell:
 
 ```text
 $env:GIT_LFS_SKIP_SMUDGE = "1"
 git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 ```
 
-Command Prompt:
+Terminal, Windows Command Prompt:
 
 ```text
 set GIT_LFS_SKIP_SMUDGE=1
@@ -46,7 +65,35 @@ git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 That gives you the baseline open-data onboarding path immediately. You do not
 need GRAM or SPICE to run the first quickstart example, and there is no bootstrap step beyond instantiating the committed root environment.
 
-Helpful first checks:
+### Check the installation
+
+A successful setup looks like this. Terminal, from the repository root:
+
+```text
+julia --version
+julia --project=. -e "using SpaceAGORA; println(pkgdir(SpaceAGORA))"
+```
+
+The first command prints `julia version 1.12.` followed by the patch number.
+The second prints the absolute path of your checkout; the first time it runs
+it also compiles the package, which takes several minutes and shows
+precompilation progress, and nothing else should be printed. The same check
+from a Julia REPL started from the repository root with `julia --project=.`:
+
+```julia
+julia> Base.active_project()
+"/absolute/path/to/SpaceAGORA.jl/Project.toml"
+
+julia> using SpaceAGORA
+
+julia>
+```
+
+If the path does not end in `SpaceAGORA.jl/Project.toml`, Julia was started
+from another directory or without `--project=.`; see
+[Troubleshooting](docs/src/user/troubleshooting.md#wrong-working-directory).
+
+Helpful first checks. Terminal, from the repository root:
 
 ```text
 julia --project=. src/interfaces/cli/main.jl assets check
@@ -76,14 +123,20 @@ download MuJoCo.
 The bounded Mars Odyssey P20 preset supplies a reproducible frozen atmosphere
 without native GRAM. From a normal clone, set up the example's own environment,
 which pins the public GRAMSuite wrapper and resolves the other packages, and
-run the active solar-panel control comparison:
+run the active solar-panel control comparison. Terminal, from the repository
+root (the directory that contains `Project.toml`); the paths below are
+relative to it:
 
 ```sh
 julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate_env/setup.jl
 julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl
 ```
 
-Only the selected grid and public scenario assets download on first use. Their
+The setup clones the EDG guidance companion from GitHub and adds it to the
+example environment, which edits the tracked
+`examples/odyssey_surrogate_env/Project.toml`; the walkthrough linked below
+describes both. On the first example run, only the selected grid and the
+public scenario assets download. Their
 checksums are verified before simulation. The example compares 90-degree and
 30-degree panel-angle limits and saves the actual commands, trajectory, heating
 and atmosphere provenance in `odyssey_surrogate_results/`, or the directory given
@@ -142,13 +195,14 @@ julia --project=. scripts/ensure_gram_native.jl --clean
 
 ## Quick Start
 
-The fastest first run is:
+The fastest first run. Terminal, from the repository root (the directory that
+contains `Project.toml`):
 
 ```text
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 
-Or through the CLI:
+Or through the CLI, from the same directory:
 
 ```text
 julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl
