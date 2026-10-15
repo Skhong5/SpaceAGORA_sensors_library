@@ -4,7 +4,7 @@ using Test
 using TOML
 using OrdinaryDiffEq: DiscreteCallback
 Base.include(@__MODULE__, joinpath(@__DIR__, "..", "..", "helpers", "load_visualizer.jl"))
-include(joinpath(@__DIR__, "..", "..", "optional_visualizer", "fixtures.jl"))
+include(joinpath(@__DIR__, "..", "..", "optional", "visualizer", "fixtures.jl"))
 
 # Most cases use tiny saved tables; the overwrite regression also runs the real
 # mission and simulation entry points against the same output directory.
