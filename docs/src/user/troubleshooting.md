@@ -225,7 +225,7 @@ expected local path.
    ```
 
 If the submodule checkout fails with Git LFS `no space left on device`, free
-disk space and see [GRAMSuite Setup](gramsuite_setup.md#git-lfs-reports-no-space-left-on-device).
+disk space and see [GRAMSuite Setup](gramsuite_setup.md#Git-LFS-reports-no-space-left-on-device).
 
 ---
 
@@ -253,7 +253,7 @@ julia --project=. scripts/ensure_gram_native.jl --clean
 ```
 
 If loading still fails, retain the complete error. See
-[GRAMSuite Setup](gramsuite_setup.md#build-or-verify-the-native-gram-library)
+[GRAMSuite Setup](gramsuite_setup.md#Build-or-verify-the-native-GRAM-library)
 for build prerequisites and expected output, including the GNU Make requirement
 on macOS.
 

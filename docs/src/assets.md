@@ -16,7 +16,7 @@ What to read next:
 
 - [Quickstart](user/quickstart.md)
 - [Installation & Environment](user/installation_environment.md)
-- [First Simulation](user/first_simulation.md)
+- [First Simulation](user/first_script.md)
 
 ## Choose a mode
 

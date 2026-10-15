@@ -9,7 +9,7 @@ contributing_path = joinpath(REPO_ROOT, "CONTRIBUTING.md")
 user_page_paths = [
     joinpath(REPO_ROOT, "docs", "src", "user", "quickstart.md"),
     joinpath(REPO_ROOT, "docs", "src", "user", "installation_environment.md"),
-    joinpath(REPO_ROOT, "docs", "src", "user", "first_simulation.md"),
+    joinpath(REPO_ROOT, "docs", "src", "user", "first_script.md"),
     joinpath(REPO_ROOT, "docs", "src", "user", "verification_study.md"),
     joinpath(REPO_ROOT, "docs", "src", "user", "recipes.md"),
     joinpath(REPO_ROOT, "docs", "src", "user", "concepts.md"),
@@ -48,12 +48,17 @@ for marker in (
 end
 
 for marker in (
-    "\"User Guide\" => Any[",
-    "\"Start Here\" => \"getting_started.md\"",
+    "\"Home\" => \"index.md\"",
+    "\"Get Started\" => Any[",
     "\"Quickstart\" => \"user/quickstart.md\"",
     "\"Installation & Environment\" => \"user/installation_environment.md\"",
+    "\"Build a Simulation\" => Any[",
+    "\"Your First Script\" => \"user/first_script.md\"",
     "\"Assets & Modes\" => \"assets.md\"",
-    "\"Reference\" => Any[",
+    "\"Help\" => Any[",
+    "\"Troubleshooting\" => \"user/troubleshooting.md\"",
+    "\"Extend SpaceAGORA\" => Any[",
+    "\"API Reference\" => Any[",
     "\"HYPR Service Contract\" => \"reference/hypr_services.md\"",
     "\"RPO Planner Contract\" => \"reference/rpo_planner_contract.md\"",
     "\"External Propagation Services\" => \"reference/external_propagation_services.md\"",

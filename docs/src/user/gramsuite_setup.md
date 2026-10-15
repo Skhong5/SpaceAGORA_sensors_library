@@ -293,6 +293,94 @@ If you want a larger mission example after that, move on to:
 - `examples/AGORA_Vex.jl`
 - `examples/AGORA_Odyssey.jl`
 
+## GRAM-backed atmosphere
+
+When GRAMSuite assets are available, the GRAM-backed constructor is provided by
+the `SpaceAGORAGRAMSuiteExt` extension and activated by importing `GRAMSuite`.
+See [GRAMSuite Setup](gramsuite_setup.md) for the full setup walkthrough.
+
+The basic usage once assets are in place:
+
+```julia
+setup_gram_example!()   # from examples/common.jl — loads GRAMSuite extension
+density_model = GRAMAtmosphereModel(planet_name="earth")
+```
+
+`GRAMAtmosphereModel` is not exported from the root `SpaceAGORA` module. It is
+available after `GRAMSuite` is loaded and is accessed through
+`SpaceAGORA.SimulationModel.GRAMAtmosphereModel` (or via `setup_gram_example!`
+in the examples).
+
+### Opt-in density perturbations
+
+Native GRAM uses mean density by default. Set
+`SPACEAGORA_GRAM_DENSITY_PERTURBATION=step` to advance a separate density walk
+at accepted solver steps and hold its factor between steps, or `pass` to
+sample a drag-free predicted atmospheric pass and interpolate its factor.
+Both modes apply the factor to spacecraft density on the scalar and distributed
+service paths. Temperature and wind retain their existing behavior.
+`naive_rhs` is a diagnostic negative control and is unsuitable for trajectory
+results; the distributed RHS density service declines this mode.
+
+Consecutive checkpoint segments within one run retain the same perturbation
+walk, pass counters and diagnostic history. Resuming a saved checkpoint is
+unsupported because it does not contain the native random state. Multirate
+splitting is also unsupported and is rejected before its first subsolve,
+because its overlapping intervals would revisit earlier walk times. Use a
+supported solver mode or set the perturbation mode to `off`.
+
+`SPACEAGORA_GRAM_DENSITY_PERTURBATION_PASS_RESEED=1` derives each pass's initial
+random stream from the seed and pass index. The realized density history still
+depends on the sampled states: accepted steps in `step` mode and the predicted
+trajectory in `pass` mode. In pass mode the last factor is held if the real pass
+outlasts its prediction. These modeling choices and their numerical accuracy
+need evidence for the intended scenario; lifecycle and interface tests do not
+validate a dispersed campaign.
+
+### GRAM epoch alignment
+
+A GRAM model carries its own epoch: the `initial_time` keyword of
+`GRAMAtmosphereModel` (the GRAMSuite default when omitted). The simulation
+carries another in `SimulationConfiguration.initial_time`. Before every run,
+`run_simulation` passes the density model through
+[`with_density_model_epoch`](@ref) so the two agree. This happens before the
+configuration is copied for state isolation, and the caller's configuration is
+left unchanged.
+
+For a keyword-built `GRAMAtmosphereModel` the rule is:
+
+- An unchanged epoch returns the same model object. Epochs are compared on
+  their integer year, month, day, hour and minute and on the seconds as
+  `Float32`, with no time tolerance.
+- A changed epoch rebuilds a fresh native model from the recorded constructor
+  keywords with only `initial_time` replaced; planet, paths, perturbation
+  options and every other recorded keyword are preserved. The rebuild runs
+  under the GRAM setup lock.
+- A `GRAMAtmosphereModel` wrapped around a raw GRAMSuite core, whose
+  constructor keywords are unknown, cannot be realigned and raises an
+  `ArgumentError` when the epochs differ. Construct it with the keyword
+  constructor at the run's `initial_time` instead.
+
+A `GRAMAtmosphereModelSurrogate` built over a GRAM base keeps its object, file
+and fallback setting for an unchanged epoch and rejects a changed one with an
+`ArgumentError`: its table was generated for one epoch, and rebuilding the
+native fallback would not re-epoch the table. Build and validate a surrogate
+for the epoch you intend to run. Surrogates over other base models, the grid
+model, `NRLMSISE00AtmosphereModel` and the analytic models are not touched by
+the hook.
+
+To avoid a rebuild, construct the model at the run's epoch:
+
+```julia
+density_model = GRAMAtmosphereModel(planet_name="earth", initial_time=args.initial_time)
+```
+
+The hook changes the construction epoch only. It does not convert between time
+systems, validate atmospheric coordinate or datum conventions, certify cached
+or surrogate data, or carry over a native random stream that was advanced or a
+handle that was edited by hand before the run. The existing native cache and
+environment policies apply to the rebuilt model as to any other.
+
 ## Troubleshooting
 
 ### The submodule exists, but GRAM is still reported missing

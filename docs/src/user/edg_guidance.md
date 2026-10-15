@@ -1,5 +1,9 @@
 # Energy Depletion Guidance for aerobraking
 
+!!! note "Optional package"
+    Requires the optional `SpaceAGORAEDG` companion; see
+    [Optional energy-depletion guidance](installation_environment.md#Optional-energy-depletion-guidance).
+
 Energy Depletion Guidance (EDG) controls the drag produced during an
 aerobraking passage by changing the angle of selected spacecraft panels. A
 larger exposed area generally removes orbital energy more quickly, but it also
@@ -84,6 +88,10 @@ otherwise it selects `:safe_low_drag`. The latter name means the minimum angle,
 not proof of constraint satisfaction. A failed candidate certificate remains
 visible even if a fallback command is applied. A failed sampled bracket does not
 prove that every physical trajectory is infeasible.
+
+One passage of the [Odyssey tutorial](../tutorials/odyssey_surrogate.md) shows these pieces in a run. Guidance selects maximum energy depletion at its first update, and the controller holds the panels at the configured cap for the whole passage, because the example sets no heat-rate limit. The lower cap gives less drag, a lower peak heat rate and half the heat load.
+
+![One aerobraking passage of the Odyssey tutorial for panel caps of 90 and 30 degrees, in four plots against elapsed time. Height falls from the 250 km entry interface to a periapsis of 111 km at 325 s and returns to 250 km, where the run ends. Drag and panel heat rate peak at periapsis and are lower with the 30-degree cap, whose heat load is 20 J/cm² against 40 J/cm². The panel angle stays at 90 degrees in one run and moves to 30 degrees at the first command in the other.](../assets/figures/aerobraking_pass_anatomy.png)
 
 ## Energy, heating, and loading
 

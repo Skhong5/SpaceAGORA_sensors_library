@@ -9,6 +9,10 @@ The workflow has three steps: define the configuration, run it into a fresh
 output directory, then inspect the returned data or open the saved viewer
 payload. The viewer can run independently of the simulation package.
 
+![One mission run on a timeline. One integration carries a continuous state. Operational segments initial_coast, observation and final_coast change commands at transitions at 120 and 180 seconds, where the exit action runs before the entry action. Descriptive phases only name time windows. An event callback, built fresh for the run, can end it before the mission horizon. Afterwards run.history, the saved mission file and the viewer show the segments that actually ran.](../assets/figures/mission_workflow_timeline.svg)
+
+The diagram uses the three-segment example and the two phase windows below; the stop event is placed for illustration.
+
 ## Build the configuration inside a function
 
 Put spacecraft, controllers and other mutable model state inside the builder.

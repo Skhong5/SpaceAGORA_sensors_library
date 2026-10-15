@@ -135,7 +135,7 @@ only gravity is evaluated per body. With
 `SimulationSettings(articulated_live_pose_loads=true)` aerodynamics and facet
 SRP are instead evaluated per link at the live link poses, through the opt-in
 `link_wrench` kernel, and the gravity gradient becomes per body. Spacecraft without a non-fixed joint
-never touch this path. See [Joint types](../src/user/simulation_configuration.md#joint-types-and-articulated-spacecraft).
+never touch this path. See [Joint types](../src/user/articulated_compliant.md#joint-types-and-articulated-spacecraft).
 The compliant model above remains the route for compliant (spring-connected)
 bodies. It is no longer arm-only: a `CompliantAttachment` mounts a
 `CompliantMultibodyModel` on any spacecraft link (the root, a fixed-merged link
@@ -145,7 +145,7 @@ link in both directions: through the bus equations for a rigid spacecraft and
 through per-body wrenches into the articulated backbone otherwise
 (`src/models/dynamics/multibody/compliant/compliant_attachment_dynamics.jl`). The
 robot-arm coupling keeps its own path for now. See
-[Compliant attachments](../src/user/simulation_configuration.md#compliant-attachments).
+[Compliant attachments](../src/user/articulated_compliant.md#compliant-attachments).
 
 For example, an arm attached to a station belongs to the station's assembly.
 A free-flying inspector is another spacecraft. Their task assignment and
@@ -341,7 +341,7 @@ are relative to the directory in the first column.
 | `templates/` | Starting files for a force/torque model, a density model and a control hook | copy one of these to begin an extension |
 | `test/` | Unit, integration, smoke and stress suites; companion suites under `test/optional/{hypr,edg,visualizer}/`; workflow entry points under `test/smoke/`; fixtures under `test/fixtures/`; CI gates under `test/gates/`, contract checks under `test/contracts/`, review artifacts under `test/ai_reviews/` | the gates enforce the ownership rules on this page |
 | `benchmarks/` | Performance studies and the paper pipeline (`benchmarks/scripts/performance_paper_pipeline.jl`); single-file studies grouped under `studies/{gram,constellation,performance,scenario_matrix}/`, launcher-and-folder studies at the studies root, each study's findings beside it | measurement work owned by the parallelization effort; see [Studies and Benchmarks](../src/user/studies_benchmarks.md) |
-| `scripts/` | Operational tools: plotting (`scripts/plotting/`), telemetry fetching, GRAM installation helpers, development launchers and scenario-matrix diagnostics (`scripts/dev/`), HPC and remote helpers | operational, not package code |
+| `scripts/` | Operational tools: plotting (`scripts/plotting/`), documentation figures (`scripts/docs_figures/`), telemetry fetching, GRAM installation helpers, development launchers and scenario-matrix diagnostics (`scripts/dev/`), HPC and remote helpers | operational, not package code |
 | `experimental/` | Typed scaffolds not loaded by the package (resources, laser terminal, constellation, estimation) | no stability guarantee; see its README |
 | `SpaceAGORAVisualizer.jl` (separate repository) | The browser viewer and its build scripts | Connected through `ext/SpaceAGORAVisualizerExt.jl`; scene and payload export stay in core |
 | `data/` | Gravity and topography coefficients, references, asset manifests and the Odyssey surrogate manifest | see [Assets & Modes](../src/assets.md) |
