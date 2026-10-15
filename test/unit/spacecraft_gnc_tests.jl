@@ -119,6 +119,26 @@ final_state(args) = collect(run_simulation(args; return_solution=true).u[end])
         @test rb isa RobotArmControlEffector && rb.spacecraft_idx == 2 && r.spacecraft_idx == 1 && rb !== r
         @test rb.joint_kp == 3.0
         @test bind_spacecraft(rb, 2) === rb
+        # One template on several spacecraft: each bound copy owns its MPC warm
+        # start and held command; the read-only reference plan stays shared.
+        arm = SpaceAGORA.default_cloth_arm_model()
+        arm_base = SpaceAGORA.ClothArmBasePose([0.0, 0.0, 0.0])
+        arm_target = SpaceAGORA.cloth_fk(arm, arm_base, [0.25, -0.35, 0.20]).end_effector_position
+        arm_plan = SpaceAGORA.plan_robot_arm_motion(arm, arm_base, zeros(3), arm_target;
+            config=SpaceAGORA.RobotArmPlannerConfig(dt_s=0.25, duration_s=1.0, ik_tol_m=5.0e-4))
+        template = RobotArmControlEffector(spacecraft_idx=1, plan=arm_plan,
+            controller=SpaceAGORA.init_robot_arm_joint_mpc(arm_plan; dt_s=0.1, horizon=4))
+        r2, r3 = bind_spacecraft(template, 2), bind_spacecraft(template, 3)
+        for (a, b) in ((template, r2), (template, r3), (r2, r3))
+            @test a.controller !== b.controller && a.controller.U_prev !== b.controller.U_prev
+            @test a.held !== b.held
+            @test a.plan === b.plan
+        end
+        @test r2.controller.H == template.controller.H && r2.controller.U_prev == template.controller.U_prev
+        preview = SpaceAGORA.robot_arm_joint_mpc_reference_preview(arm_plan, 0.5, 0.1, template.controller.horizon)
+        SpaceAGORA.robot_arm_joint_mpc_control(r2.controller, preview[:, 1] .+ 0.1, preview)
+        @test any(!iszero, r2.controller.U_prev)
+        @test all(iszero, template.controller.U_prev) && all(iszero, r3.controller.U_prev)
 
         # Apollo guidance and control, state sized for two spacecraft.
         tg, ta = apollo11_descent_targets()
@@ -200,14 +220,14 @@ end
     @test args.dynamics_model.spacecraft[2].guidance === gm
     @test args.dynamics_model.spacecraft[2].navigation === nm
 
-    # Built-in rebinds copy scalar fields but retain nested mutable members.
+    # Built-in rebinds copy scalar fields; the robot arm's held command is its own.
     arm = RobotArmControlEffector(spacecraft_idx=1)
     bound = bind_spacecraft(arm, 2)
     bound.updated_at_s = 5.0
     push!(bound.held.joint_torque_nm, 7.0)
     @test arm.updated_at_s == 0.0
-    @test bound.held === arm.held
-    @test arm.held.joint_torque_nm == [7.0]
+    @test bound.held !== arm.held
+    @test isempty(arm.held.joint_torque_nm)
 end
 
 @testset "Per-spacecraft GNC returned configuration" begin

@@ -111,6 +111,8 @@ module ControlHooks
         m.spacecraft_idx == sat_idx && return m
         b = SimulationLifecycle._shallow_copy(m)
         b.spacecraft_idx = sat_idx
+        b.controller = deepcopy(m.controller)  # its own MPC warm start, not the template's
+        b.held = RobotArmHeldActuation()       # its own held command
         return b
     end
     function SimulationLifecycle.bind_spacecraft(m::ApolloDescentControlModel, sat_idx::Int)
