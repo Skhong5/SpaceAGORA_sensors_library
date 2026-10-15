@@ -18,6 +18,7 @@ const API_REFERENCE_PAGES = (
     (section="Mesh Aerodynamics", title="Mesh Aerodynamics API", file="mesh_aerodynamics_api.md"),
     (section="Visualization Scene", title="Visualization API", file="visualization_api.md"),
     (section="Lunar Landing", title="Lunar Landing API", file="lunar_landing_api.md"),
+    (section="Actuators", title="Actuators API", file="actuators_api.md"),
 )
 const BUILD_DIR = joinpath(@__DIR__, "build")
 const PUBLIC_API_REPORT = joinpath(BUILD_DIR, "undocumented_public_exports.txt")
@@ -184,6 +185,7 @@ makedocs(
             "Mesh Aerodynamics API" => "generated/mesh_aerodynamics_api.md",
             "Visualization API" => "generated/visualization_api.md",
             "Lunar Landing API" => "generated/lunar_landing_api.md",
+            "Actuators API" => "generated/actuators_api.md",
             "Publications" => "publications.md",
             "Distributed and HPC" => "distributed_hpc.md",
             "Extensibility" => "extensibility.md",

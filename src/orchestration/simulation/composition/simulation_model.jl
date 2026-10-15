@@ -68,7 +68,9 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "guidance", "guida
 include(joinpath(@__DIR__, "..", "..", "..", "foundation", "core", "numerics", "geodesy.jl"))
 include(joinpath(@__DIR__, "..", "..", "..", "foundation", "core", "numerics", "orbital_geometry.jl"))
 
-# 2. Simple hardware data structs
+# 2. Simple hardware data structs: the actuator contract, then the records
+include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "actuators", "actuators.jl"))
+@reexport using .Actuators
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "spacecraft", "components.jl"))
 @reexport using .Components
 
@@ -84,6 +86,9 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "control", "interl
 # 4. Functions for building the model (add_...!)
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "spacecraft", "assembly.jl"))
 @reexport using .Assembly
+# Mounting actuators on links and evaluating the mounted set (needs the spacecraft types).
+include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "actuators", "mounting.jl"))
+@reexport using .ActuatorMounting
 
 # Articulated-body dynamics library (needs only the spacecraft model types; the runtime
 # types below hold its per-spacecraft run data).

@@ -345,9 +345,17 @@ function _accumulate_control_effectors_from_tuple!(
 )::Float64 where {CE <: Tuple}
     mass_rate = 0.0
     @inbounds for control_effector in control_effectors
-        control_force, control_torque = SimulationModel.calcControlForceTorque(control_effector, sc_view, p, sat_idx, t)
-        control_mass_rate = SimulationModel.calcControlMassFlowRate(control_effector, sc_view, p, sat_idx, t)
+        mounted = SimulationModel.actuation_mode(control_effector) === :mounted
+        if mounted
+            control_force, control_torque, control_mass_rate = _mounted_control_effect(control_effector, sc_view, p, sat_idx)
+        else
+            control_force, control_torque = SimulationModel.calcControlForceTorque(control_effector, sc_view, p, sat_idx, t)
+            control_mass_rate = SimulationModel.calcControlMassFlowRate(control_effector, sc_view, p, sat_idx, t)
+        end
         rw_torque = SimulationModel.calcReactionWheelTorque(control_effector, sc_view, p, sat_idx, t)
+        # A mounted wrench holds only the mounted actuators; a wheel torque the
+        # effector reports is still applied to the body, as in ideal actuation.
+        (mounted && rw_torque !== nothing) && (control_torque = control_torque + SVector{3, Float64}(rw_torque))
         if debug_control && (norm(control_force) > 0.0 || norm(control_torque) > 0.0)
             println("Applying control effect for spacecraft $sat_idx at time $t seconds:")
             println("  Control force: $control_force")
@@ -358,6 +366,23 @@ function _accumulate_control_effectors_from_tuple!(
         mass_rate += isfinite(control_mass_rate) ? control_mass_rate : 0.0
     end
     return mass_rate
+end
+
+# `:mounted` actuation: the wrench, inertial force and propellant mass rate of
+# the actuators mounted on spacecraft `sat_idx` at the levels the effector holds.
+# The mass rate is negative while propellant is used, as the control hooks return it.
+@inline function _mounted_control_effect(effector, sc_view, p, sat_idx::Int)::Tuple{SVector{3, Float64}, SVector{3, Float64}, Float64}
+    zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
+    levels = SimulationModel.actuator_levels(effector, sat_idx)
+    levels === nothing && return (zero3, zero3, 0.0)
+    hasproperty(sc_view, :q) || throw(ArgumentError(
+        "Mounted actuation needs the attitude state: set orientation_sim=true (spacecraft $(sat_idx))."))
+    q = SVector{4, Float64}(sc_view.q[1], sc_view.q[2], sc_view.q[3], sc_view.q[4])
+    ω = SVector{3, Float64}(sc_view.ω[1], sc_view.ω[2], sc_view.ω[3])
+    spacecraft = p.args.dynamics_model.spacecraft[sat_idx]
+    force_body, torque_body, mass_rate = SimulationModel.mounted_wrench(spacecraft, levels, Float64(sc_view.mass), q, ω)
+    force_ii = SimulationModel.rot(q)' * force_body          # rot(q) maps inertial to body
+    return (force_ii, torque_body, -mass_rate)
 end
 
 @inline function _ensure_rhs_flat_effector_scratch!(

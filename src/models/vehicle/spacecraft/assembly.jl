@@ -77,13 +77,16 @@ function add_thruster!(model::SpacecraftModel, link::Link, thruster::Thruster)
     - `link` : The Link to which the thruster is added
     - `thruster` : The thruster to add
     """
-    # Add the thruster torque to the Jacobian matrix
-    normalize!(thruster.direction) # Ensure the thruster direction is a unit vector
-    
+    # Add the thruster torque to the Jacobian matrix. `direction` is the thrust
+    # direction; a zero direction is kept as is rather than normalized to NaN.
+    n = norm(thruster.direction)
+    (isfinite(n) && n > 0.0) && (thruster.direction ./= n) # Ensure the thruster direction is a unit vector
+    column = reshape(Vector{Float64}(cross(thruster.location, thruster.direction)), 3, 1) # the r x F column of a unit thrust
+
     if isempty(link.thrusters)
-        link.J_thruster = cross(thruster.location, thruster.direction) # If this is the first thruster to be added, simply set the Jacobian equal to the r x F vector
+        link.J_thruster = column # If this is the first thruster to be added, the Jacobian is its column
     else
-        link.J_thruster = hcat(link.J_thruster, cross(thruster.location, thruster.direction)) # If there are already thrusters in the link, append the new r x F vector to the Jacobian
+        link.J_thruster = hcat(link.J_thruster, column) # If there are already thrusters in the link, append the new column to the Jacobian
     end
 
     # Append the thruster to the list of thrusters for future reference

@@ -35,6 +35,8 @@ function calcControlEffect!(model::RPOMPCControlModel, u, p::ODEParams, t::Float
         thruster_forces_n=thruster_forces,
         rw_torque_body=rw_torque_body,
     )
+    model.actuation === :mounted &&
+        _rpo_fill_mounted_levels!(model, p.args.dynamics_model.spacecraft[model.chaser_idx], thruster_forces)
     log = model.command_log
     if log !== nothing
         push!(log.t_s, t)
@@ -53,6 +55,32 @@ end
 function calcControlForceTorque(model::RPOMPCControlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
     i == model.chaser_idx || return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     return model.held.force_ii, model.held.torque_body
+end
+
+function actuation_mode(model::RPOMPCControlModel)
+    model.actuation === :ideal || model.actuation === :mounted ||
+        throw(ArgumentError("RPOMPCControlModel actuation must be :ideal or :mounted, got $(repr(model.actuation))."))
+    return model.actuation
+end
+
+# One level per actuator mounted on the chaser, in mounting order: the six
+# allocated forces on the first six mounted thrusters, every other actuator idle.
+function _rpo_fill_mounted_levels!(model::RPOMPCControlModel, chaser, thruster_forces)
+    mounted_thruster_count(chaser) >= 6 || throw(ArgumentError(
+        "Mounted RPO actuation needs the six-axis jets mounted first on the chaser: add six_axis_thrusters(model.thrusters)."))
+    levels = model.mounted_levels
+    resize!(levels, mounted_actuator_count(chaser))
+    fill!(levels, 0.0)
+    @inbounds for j in 1:6
+        levels[j] = thruster_forces[j]
+    end
+    return levels
+end
+
+"""The chaser's mounted actuator levels held since the last control tick (`:mounted` actuation); none before the first tick."""
+function actuator_levels(model::RPOMPCControlModel, i::Int)
+    (i == model.chaser_idx && !isempty(model.mounted_levels)) || return nothing
+    return model.mounted_levels
 end
 
 """Return the held reaction-wheel-attributable torque, held constant (ZOH) between control ticks like `calcControlForceTorque`."""

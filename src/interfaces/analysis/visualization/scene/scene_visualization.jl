@@ -77,6 +77,8 @@ struct LinkBox
     mass_kg::Float64
 end
 
+# `direction` is the plume (exhaust) direction, the opposite of the thruster's
+# thrust direction; the renderer draws the plume along it.
 struct ThrusterGlyph
     link::Int
     location_m::SVector{3, Float64}

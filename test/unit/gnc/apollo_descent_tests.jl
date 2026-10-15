@@ -153,10 +153,11 @@ const CH = SM.ControlHooks
     end
 
     @testset "descent thruster diagnostics and actuator shutdown" begin
-        # Exhaust points opposite to force. Unit lever arms and deliberately
-        # non-unit directions give independent +x/+y/+z torque oracles.
+        # `d` is each jet's exhaust; a Thruster's direction is its thrust, the
+        # opposite. Unit lever arms and deliberately non-unit directions give
+        # independent +x/+y/+z torque oracles.
         jet(r, d, thrust) = SM.Thruster(location=MVector{3,Float64}(r),
-            direction=MVector{3,Float64}(d), max_thrust=thrust)
+            direction=MVector{3,Float64}((-1.0 .* d)...), max_thrust=thrust)
         engine = jet((0.0, 0.0, 0.0), (0.0, 0.0, 1.0), 100.0)
         root = SM.Link(root=true, m=500.0, thrusters=[
             jet((0.0, 1.0, 0.0), (0.0, 0.0, -2.0), 10.0), engine])
@@ -238,6 +239,88 @@ const CH = SM.ControlHooks
         CH.calcControlEffect!(control, sample, params, 3.0, 1)
         @test CH.control_thruster_levels(control, 1) === saved_levels
         @test all(iszero, saved_levels)
+    end
+
+    @testset "closed-loop vertical descent on the mounted jets" begin
+        # The same descent as the ideal-actuation testset below, flown by the
+        # lunar module's engine and sixteen RCS jets in `:mounted` actuation:
+        # the engine at the slewed thrust, the jets at their clipped
+        # least-norm allocation of the attitude torque, propellant by each
+        # jet's specific impulse.
+        planet = SM.Moon()
+        ephem = SM.SimpleEphemeridesModel()
+        initial_time = SM.InitialTime(year=1969, month=7, day=20, hour=20, minute=10, second=0.0)
+        lat, lon, h0 = 0.674, 23.473, 60.0
+        et = SM.ephemerides_time_seconds(initial_time, ephem)
+        l_pi = SM.planet_frame_lpi(planet, et, ephem)
+        upv = SVector(cosd(lat) * cosd(lon), cosd(lat) * sind(lon), sind(lat))
+        r_p = (planet.Rp_e + h0) * upv
+        r_i = SVector{3, Float64}(l_pi' * r_p)
+        v_i = SVector{3, Float64}(l_pi' * cross(SVector{3, Float64}(planet.ω), r_p))
+        up_i = normalize(r_i)
+        tilt = SVector(0.0, sin(deg2rad(8.0) / 2), 0.0)
+        fwd_i = normalize(SVector{3, Float64}(l_pi' * SVector(sind(lon), -cosd(lon), 0.0)))
+        q0 = SM.quat_mult(descent_attitude_command(up_i, up_i, fwd_i), SVector(tilt[1], tilt[2], tilt[3], cos(deg2rad(8.0) / 2)))
+        q0 = q0 / norm(q0)
+        ic = SM.CartesianInitialCondition(r_i, v_i; q=SVector{4, Float64}(q0))
+        thrust(exhaust) = MVector{3, Float64}((-1.0 .* exhaust)...)
+        jets = [SM.Thruster(max_thrust=45_040.0, location=MVector{3, Float64}(0.0, 0.0, 1.5), direction=thrust((0.0, 0.0, 1.0)), Isp=311.0)]
+        for sx in (-1.0, 1.0), sy in (-1.0, 1.0), exhaust in ((sx, 0.0, 0.0), (0.0, sy, 0.0), (0.0, 0.0, 1.0), (0.0, 0.0, -1.0))
+            push!(jets, SM.Thruster(max_thrust=445.0, location=MVector{3, Float64}(1.65 * sx, 1.65 * sy, -0.3), direction=thrust(exhaust), Isp=290.0))
+        end
+        root = SM.Link(root=true, m=6_900.0, dims=MVector{3, Float64}(4.2, 4.2, 4.0), ref_area=1.0, q=MVector{4, Float64}(q0...), thrusters=jets)
+        sc = SM.SpacecraftModel(links=[root], root=root, prop_mass=1_000.0, inertia_tensor=SMatrix{3, 3, Float64}(2.2e4, 0, 0, 0, 2.4e4, 0, 0, 0, 2.0e4), initial_condition=ic, id=97)
+        ph = DescentPhaseTargets(name=:braking, r_T=SVector(0.0, 0.0, 0.0), v_T=SVector(0.0, 0.0, 0.0), a_T=SVector(0.0, 0.0, 0.0), t_go_initial_s=10.0, t_go_min_s=1.0, altitude_switch_m=Inf)
+        gcfg = ApolloDescentConfig(reference_radius_m=planet.Rp_e, site_lat_deg=lat, site_lon_deg=lon, site_height_m=0.0, approach_azimuth_deg=270.0, braking=ph, approach=ph,
+            ignition_trim_s=0.0, engine_cutoff_altitude_m=0.0)
+        state = ApolloDescentState(1)
+        guidance = ApolloDescentGuidanceModel(gcfg, state, NoTerrainModel())
+        control = ApolloDescentControlModel(ApolloDescentControlConfig(touchdown_height_m=0.5), gcfg, state, NoTerrainModel(); actuation=:mounted)
+        @test SpaceAGORA.actuation_mode(control) === :mounted
+        @test_throws ArgumentError ApolloDescentControlModel(ApolloDescentControlConfig(), gcfg, state; actuation=:bogus)
+        base = make_example_config(planet=planet, spacecraft=sc, mission_time=240.0, initial_time=initial_time,
+            dynamic_effectors=(SM.InverseSquaredGravityModel(),), density_model=SM.NoAtmosphereModel(), ephemerides_model=ephem,
+            orientation_sim=true, keplerian=false, EI_km=1.0, verbose=false, results=false)
+        args = SM.SimConfig._with_configuration(base;
+            guidance_model=SM.GuidanceModel(guidance_effectors=(guidance,), guidance_rates=[1.0]),
+            control_model=SM.ControlModel(control_effectors=(control,), control_rates=[0.05]),
+            integration_tolerances=SM.IntegrationTolerances(reltol_orbit=1e-9, abstol_orbit=1e-9,
+                dt_max_orbit=0.25, reltol_atmosphere=1e-9, abstol_atmosphere=1e-9, dt_max_atmosphere=0.25),
+            solver_config=SM.SolverConfig(solver_mode=:tsit5))
+        result = run_simulation(args; isolate_state=false, return_solution=true)
+        @test state.phase[1] == :landed
+        @test 40.0 < state.touchdown_s[1] < 200.0
+        v_td = state.touchdown_v_mps[1]
+        @test -1.0 < v_td[3] < -0.1
+        @test hypot(v_td[1], v_td[2]) < 0.5
+        @test state.touchdown_miss_m[1] < 20.0
+        @test control.actuators.attitude_error_rad[1] < deg2rad(3.0)
+        @test result.u[end].sc[1].mass < sc.dry_mass + sc.prop_mass
+        @test all(iszero, control.actuators.thruster_force_n[1])           # shut down at contact
+        @test SpaceAGORA.actuator_levels(control, 1) == zeros(17)
+
+        # The mounted jets, not the configured specific impulses, set the
+        # propellant use: with very efficient jets a mounted run uses almost
+        # none, while the ideal run of the same first seconds burns the DPS.
+        function first_seconds(actuation, isp)
+            craft = deepcopy(sc)
+            foreach(t -> t.Isp = isp, craft.root.thrusters)
+            st = ApolloDescentState(1)
+            g = ApolloDescentGuidanceModel(gcfg, st, NoTerrainModel())
+            c = ApolloDescentControlModel(ApolloDescentControlConfig(touchdown_height_m=0.5), gcfg, st, NoTerrainModel(); actuation=actuation)
+            short = SM.SimConfig._with_configuration(args;
+                dynamics_model=SM.DynamicsModel([craft], (SM.InverseSquaredGravityModel(),)),
+                guidance_model=SM.GuidanceModel(guidance_effectors=(g,), guidance_rates=[1.0]),
+                control_model=SM.ControlModel(control_effectors=(c,), control_rates=[0.05]),
+                mission_configuration=SM.MissionConfiguration(mission_type=SM.MissionTime, mission_time=3.0,
+                    number_of_orbits=1, keplerian=false, orientation_sim=true, num_steps_to_save=20))
+            out = run_simulation(short; return_solution=true)
+            return (craft.dry_mass + craft.prop_mass) - out.u[end].sc[1].mass
+        end
+        used_ideal = first_seconds(:ideal, 1.0e9)
+        used_mounted = first_seconds(:mounted, 1.0e9)
+        @test used_ideal > 1.0                       # kilograms, from the configured DPS specific impulse
+        @test 0.0 <= used_mounted < 1.0e-4
     end
 
     @testset "closed-loop vertical descent with RCS attitude control" begin
