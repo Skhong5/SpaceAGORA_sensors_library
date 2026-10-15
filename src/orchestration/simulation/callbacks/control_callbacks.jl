@@ -92,17 +92,17 @@ function _mounted_burn_tick_callback(control_model::BaseThrusterModel, period::F
 end
 
 # The engine of a mounted burn switches only between integration steps: the
-# solver stops at the window's ends (registered as stops when the burn is set),
-# this callback flips the engine there and marks the derivative discontinuous,
-# so the next step starts from a derivative evaluated with the new thrust.
+# solver stops at the window's ends (registered as stops when the burn is set)
+# and this callback flips the engine there. A discrete callback counts as a
+# derivative discontinuity unless it clears the flag, so the solver evaluates
+# the derivative again, with the new thrust, before the next step; the callback
+# must not call `derivative_discontinuity!(integrator, false)`, which would keep
+# the stale one.
 function _burn_edge_callback(control_model::BaseThrusterModel, num_sats::Int)
     condition = (u, t, integrator) -> burn_edge(control_model, t)
     affect! = integrator -> begin
         @inbounds for sat_idx in 1:num_sats
             refresh_burn!(control_model, integrator.p, sat_idx, integrator.t)
-        end
-        if applicable(DiffEqBase.derivative_discontinuity!, integrator, false)
-            DiffEqBase.derivative_discontinuity!(integrator, false)
         end
         return nothing
     end
