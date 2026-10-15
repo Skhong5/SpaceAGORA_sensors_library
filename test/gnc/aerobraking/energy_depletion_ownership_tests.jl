@@ -7,7 +7,7 @@ const A = S.EDGAlgorithms
 const P = S.EDGServices
 const C = S.ControlHooks
 const G = S.GuidanceHooks
-const root = normpath(joinpath(@__DIR__, "..", "..", "..", ".."))
+const root = normpath(joinpath(@__DIR__, "..", "..", ".."))
 include(joinpath(root, "test", "contracts", "edg_ownership_checks.jl"))
 state_values(s) = Tuple(copy(getfield(s, f)) for f in fieldnames(typeof(s)))
 geometry(sc) = [(r=Tuple(l.r), q=Tuple(l.q), alpha=l.α, a=Tuple(l.aᵇ), b=Tuple(l.bᵇ),

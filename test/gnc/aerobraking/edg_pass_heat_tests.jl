@@ -1,6 +1,6 @@
 using Test, ComponentArrays, StaticArrays
 if !isdefined(@__MODULE__, :_edg_test_context)
-    source = read(joinpath(REPO_ROOT, "test/unit/gnc/aerobraking/energy_depletion_gnc_tests.jl"), String)
+    source = read(joinpath(REPO_ROOT, "test/gnc/aerobraking/energy_depletion_gnc_tests.jl"), String)
     include_string(@__MODULE__, first(split(source, "\n@testset")), "edg_context_definitions.jl")
 end
 

@@ -1,11 +1,11 @@
 module EDGHeatObserverRegression
 using SpaceAGORA, Test, ComponentArrays, StaticArrays, LinearAlgebra, OrdinaryDiffEq, DiffEqCallbacks
-const REPO_ROOT=normpath(joinpath(@__DIR__,"..","..","..",".."))
+const REPO_ROOT=normpath(joinpath(@__DIR__,"..","..",".."))
 const SimulationModel=SpaceAGORA.SimulationModel
 const SimulationEngine=SpaceAGORA.SimulationEngine
 const CB=SimulationModel.SimulationCallbacks
 const CH=SimulationModel.ControlHooks
-include_string(@__MODULE__,first(split(read(joinpath(REPO_ROOT,"test/unit/gnc/aerobraking/energy_depletion_gnc_tests.jl"),String),"\n@testset")))
+include_string(@__MODULE__,first(split(read(joinpath(REPO_ROOT,"test/gnc/aerobraking/energy_depletion_gnc_tests.jl"),String),"\n@testset")))
 const _edg_observe_heat_callbacks=CB._edg_observe_heat_callbacks
 function linear_context(;inbound=false)
  c=_edg_test_context(heat_load_limit_j_cm2=30.)

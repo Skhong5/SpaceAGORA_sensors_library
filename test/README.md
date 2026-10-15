@@ -22,10 +22,7 @@ select the suites; helpers supply reusable setup and scenarios.
   orchestration out of the internal `reference_system.jl` leaf.
 - `test/unit/`
   A smaller, standalone (`using SpaceAGORA`, no shared-scope dependency) set of
-  domain tests, runnable on their own via `test/unit/runtests.jl`. The
-  energy-depletion guidance tests under `unit/gnc/aerobraking/` are included
-  there in dependency order: the first file defines the shared helpers the
-  others use, and the runner's EDG helper provides the companion they need. The default
+  domain tests, runnable on their own via `test/unit/runtests.jl`. The default
   `test/runtests.jl` chain also runs the whole tree once, as a subprocess
   dispatched from `test/suites/09_probe_drivers.jl` with the coverage flag
   forwarded, so their line data reaches the coverage gate.
@@ -42,8 +39,7 @@ select the suites; helpers supply reusable setup and scenarios.
   the workflows that name them.
 - `test/optional/`
   The companion suites: `hypr/`, `edg/` and `visualizer/`, each driven by its
-  installation job in `julia-ci.yml`. `edg/edg_e2c_repair_tests.jl` needs the
-  EDG companion and runs there.
+  installation job in `julia-ci.yml`.
 - `test/fixtures/`
   Tracked fixtures such as the Earth regression CSV read by suite 04.
 - `test/grid_atmosphere/`

@@ -1,5 +1,5 @@
 if !isdefined(@__MODULE__, :REPO_ROOT)
-    const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", "..", ".."))
+    const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
 end
 
 if !isdefined(@__MODULE__, :SimulationModel)

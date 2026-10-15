@@ -187,19 +187,6 @@ include(joinpath(@__DIR__, "simulation", "solar_ephemeris_requirements_tests.jl"
 
 # Focused contracts for source responsibility boundaries.
 include("gnc/planning_ownership_tests.jl")
-
-# Energy-depletion guidance (EDG) unit tests: the core-side contracts of the
-# aerobraking guidance; the companion-backed repair test lives under test/optional/edg/.
-include("gnc/aerobraking/energy_depletion_gnc_tests.jl")
-include("gnc/aerobraking/energy_depletion_lifecycle_tests.jl")
-include("gnc/aerobraking/energy_depletion_ownership_tests.jl")
-include("gnc/aerobraking/edg_feasibility_tests.jl")
-include("gnc/aerobraking/edg_heat_observer_tests.jl")
-include("gnc/aerobraking/edg_pass_heat_tests.jl")
-include("gnc/aerobraking/edg_journal_contract_tests.jl")
-include("gnc/aerobraking/edg_replan_callback_tests.jl")
-include("gnc/aerobraking/e_edg_strategy_parity_tests.jl")
-include("gnc/aerobraking/t_edg_strategy_parity_tests.jl")
 include("io/asset_catalog_boundary_tests.jl")
 include("io/checkpoint_storage_boundary_tests.jl")
 include("simulation/callback_service_boundary_tests.jl")
