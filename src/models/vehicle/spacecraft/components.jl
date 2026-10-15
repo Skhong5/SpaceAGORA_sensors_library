@@ -7,7 +7,7 @@ using ..ThrusterModels: SixAxisThrusterModel
 using ..Actuators: ActuatorContext, STANDARD_GRAVITY_MPS2
 import ..Actuators: actuator_wrench, actuator_limits, actuator_consumption
 export Facet, Thruster, Magnet, ReactionWheelAssembly, create_facet_list
-export six_axis_thrusters, ReactionWheel, wheel_momentum_saturate, Magnetorquer
+export six_axis_thrusters, ReactionWheel, wheel_momentum_saturate, Magnetorquer, LaserTerminal
 
 const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 
@@ -15,6 +15,7 @@ const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 include(joinpath(@__DIR__, "..", "actuators", "thruster.jl"))
 include(joinpath(@__DIR__, "..", "actuators", "reaction_wheel.jl"))
 include(joinpath(@__DIR__, "..", "actuators", "magnetorquer.jl"))
+include(joinpath(@__DIR__, "..", "actuators", "laser.jl"))
 
 @kwdef mutable struct Facet
     area::Float64 = 0.0 # Area of the facet

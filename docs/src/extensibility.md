@@ -207,8 +207,10 @@ in the body frame and the vehicle's mass, attitude and rate. The built-in kinds 
 `Thruster` (its level is a thrust in newtons and its `direction` is the thrust
 direction) and `ReactionWheel` (its level is the torque on the body about its
 spin axis; it mounts on the root link and its momentum is integrated, with
-torque and momentum limits) and `Magnetorquer` (its level is the commanded
-dipole along its axis; it acts in the run's magnetic field).
+torque and momentum limits), `Magnetorquer` (its level is the commanded
+dipole along its axis; it acts in the run's magnetic field) and `LaserTerminal`
+(its level is the transmitted optical power; the vehicle recoils with power
+over the speed of light).
 
 Registration: `add_actuator!(spacecraft, link, actuator)`.
 

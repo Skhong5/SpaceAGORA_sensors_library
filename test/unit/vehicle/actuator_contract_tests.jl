@@ -429,6 +429,37 @@ end
         @test_throws ArgumentError SpaceAGORA.actuation_mode(SM.MagneticMomentumManagerModel(actuation=:bogus))
     end
 
+    @testset "a laser terminal recoils with its transmitted power over c" begin
+        c = 299_792_458.0
+        root = SM.Link(root=true, m=30.0)
+        laser = LaserTerminal(boresight=SVector(2.0, 0.0, 0.0), location=SVector(0.0, 0.5, 0.0), max_power_w=1.0e4,
+            magnification=50.0, range_m=1.0e5, efficiency=0.4)
+        @test laser.boresight == SVector(1.0, 0.0, 0.0)
+        force, torque = actuator_wrench(laser, 3.0e3, actuator_context(root))
+        @test force == SVector(-3.0e3 / c, 0.0, 0.0)                         # opposite the beam
+        @test torque == cross(SVector(0.0, 0.5, 0.0), force)
+        @test actuator_consumption(laser, 3.0e3, actuator_context(root)) == (mass_rate_kg_s = 0.0, power_w = 3.0e3 / 0.4)
+        @test actuator_limits(laser) == (0.0, 1.0e4) && actuator_fraction(laser, 2.5e3) == 0.25
+        @test_throws ArgumentError LaserTerminal(boresight=ZERO3, max_power_w=1.0)
+        @test_throws ArgumentError LaserTerminal(boresight=SVector(1.0, 0.0, 0.0), max_power_w=1.0, efficiency=1.5)
+        link_parameters = SM.InterLinkParameters(laser)
+        @test (link_parameters.P, link_parameters.B, link_parameters.range) == (1.0e4, 50.0, 1.0e5)
+        mixed = spacecraft_with(SM.Link(root=true, m=30.0))
+        rod = add_actuator!(mixed, mixed.root, Magnetorquer(axis=SVector(0.0, 0.0, 1.0)))
+        puck = add_actuator!(mixed, mixed.root, ColdGasPuck(SVector(1.0, 0.0, 0.0), ZERO3, 0.5, 50.0))
+        beam = add_actuator!(mixed, mixed.root, LaserTerminal(boresight=SVector(1.0, 0.0, 0.0), max_power_w=10.0))
+        @test mixed.root.laser_terminals == [beam] && SM.mounted_laser_count(mixed) == 1
+        @test [e.actuator for e in mounted_actuators(mixed)] == AbstractActuator[rod, beam, puck]   # rods, lasers, user kinds
+        sc = spacecraft_with(root)
+        add_actuator!(sc, root, laser)
+        p = readout_params(SM.SpacecraftModel[sc], (HoldLevels(1, [2.0e4]),))   # saturates at 1e4 W
+        q = normalize(SVector(0.0, 0.0, sin(0.3), cos(0.3)))
+        f_ii, tq_body, _, rate = readout(p, 1, body_state(q))
+        @test f_ii ≈ SM.rot(q)' * SVector(-1.0e4 / c, 0.0, 0.0) rtol=1e-14
+        @test tq_body == cross(SVector(0.0, 0.5, 0.0), SVector(-1.0e4 / c, 0.0, 0.0))
+        @test rate == 0.0                                                  # no propellant
+    end
+
     @testset "a mounted run moves the vehicle and uses propellant as its jets say" begin
         root = SM.Link(root=true, m=500.0, dims=MVector(1.0, 1.0, 1.0))
         ic = SM.CartesianInitialCondition(SVector(4.0e9, 0.0, 0.0), SVector(0.0, 0.0, 0.0); q=SVector(0.0, 0.0, 0.0, 1.0))

@@ -11,7 +11,8 @@ actuators of user-defined kinds.
 2. every mounted reaction wheel, in mounting order (wheels mount on the root
    link);
 3. every torque rod, link by link in `link.magnetorquers` order;
-4. every actuator of a user-defined kind, link by link in
+4. every laser terminal, link by link in `link.laser_terminals` order;
+5. every actuator of a user-defined kind, link by link in
    `link.custom_actuators` order.
 
 Built-in kinds added later take their place before the user-defined kinds.
@@ -23,11 +24,11 @@ using StaticArrays
 using ..AbstractTypes: AbstractActuator
 using ..QuaternionMath: rot
 using ..Actuators
-using ..Components: Thruster, ReactionWheel, wheel_momentum_saturate, Magnetorquer
+using ..Components: Thruster, ReactionWheel, wheel_momentum_saturate, Magnetorquer, LaserTerminal
 using ..SpacecraftModels: Link, SpacecraftModel
 using ..Assembly: add_thruster!
 
-export add_actuator!, mounted_actuators, mounted_actuator_count, mounted_thruster_count, mounted_wheel_count, mounted_magnetorquer_count
+export add_actuator!, mounted_actuators, mounted_actuator_count, mounted_thruster_count, mounted_wheel_count, mounted_magnetorquer_count, mounted_laser_count
 export actuator_context, allocation_matrix, mounted_wrench, mounted_thruster_fractions
 
 const _ZERO3 = SVector{3, Float64}(0.0, 0.0, 0.0)
@@ -42,7 +43,8 @@ Mount `actuator` on `link`, one of `model`'s links. A [`Thruster`](@ref) joins
 `link.thrusters` (its direction is normalized and the link's thruster torque
 Jacobian gains its column). A [`ReactionWheel`](@ref) mounts on the root link
 only and joins its wheel assembly, whose momentum the engine integrates. A
-[`Magnetorquer`](@ref) joins `link.magnetorquers`. An actuator of any other [`AbstractActuator`](@ref) kind joins
+[`Magnetorquer`](@ref) joins `link.magnetorquers` and a [`LaserTerminal`](@ref)
+`link.laser_terminals`. An actuator of any other [`AbstractActuator`](@ref) kind joins
 `link.custom_actuators`. Returns the actuator.
 """
 function add_actuator!(model::SpacecraftModel, link::Link, thruster::Thruster)
@@ -67,6 +69,11 @@ end
 function add_actuator!(model::SpacecraftModel, link::Link, rod::Magnetorquer)
     push!(link.magnetorquers, rod)
     return rod
+end
+
+function add_actuator!(model::SpacecraftModel, link::Link, terminal::LaserTerminal)
+    push!(link.laser_terminals, terminal)
+    return terminal
 end
 
 function add_actuator!(model::SpacecraftModel, link::Link, actuator::AbstractActuator)
@@ -110,12 +117,25 @@ function mounted_magnetorquer_count(model::SpacecraftModel)::Int
 end
 
 """
+    mounted_laser_count(model::SpacecraftModel) -> Int
+
+The number of laser terminals mounted on `model`'s links.
+"""
+function mounted_laser_count(model::SpacecraftModel)::Int
+    n = 0
+    for link in model.links
+        n += length(link.laser_terminals)
+    end
+    return n
+end
+
+"""
     mounted_actuator_count(model::SpacecraftModel) -> Int
 
 The number of actuators mounted on `model`, of every kind.
 """
 function mounted_actuator_count(model::SpacecraftModel)::Int
-    n = mounted_thruster_count(model) + mounted_wheel_count(model) + mounted_magnetorquer_count(model)
+    n = mounted_thruster_count(model) + mounted_wheel_count(model) + mounted_magnetorquer_count(model) + mounted_laser_count(model)
     for link in model.links
         n += length(link.custom_actuators)
     end
@@ -138,6 +158,9 @@ function mounted_actuators(model::SpacecraftModel)
     end
     for link in model.links, rod in link.magnetorquers
         push!(out, (link=link, actuator=rod))
+    end
+    for link in model.links, terminal in link.laser_terminals
+        push!(out, (link=link, actuator=terminal))
     end
     for link in model.links, actuator in link.custom_actuators
         push!(out, (link=link, actuator=actuator))
@@ -253,6 +276,14 @@ function mounted_wrench(model::SpacecraftModel, levels::AbstractVector, mass_kg:
         for rod in link.magnetorquers
             k += 1
             force, torque, mass_rate = _add_actuator(rod, actuator_saturate(rod, levels[k]), ctx, force, torque, mass_rate)
+        end
+    end
+    @inbounds for link in model.links
+        isempty(link.laser_terminals) && continue
+        ctx = actuator_context(link, mass_kg, q_ib, ω_body, magnetic_field_body)
+        for terminal in link.laser_terminals
+            k += 1
+            force, torque, mass_rate = _add_actuator(terminal, actuator_saturate(terminal, levels[k]), ctx, force, torque, mass_rate)
         end
     end
     @inbounds for link in model.links
