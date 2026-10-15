@@ -348,6 +348,83 @@ end
 @inline _thruster_level_field_enabled(args::SimulationConfiguration)::Bool =
     args.simulation_settings.save_visualization_scene && any(>(0), thruster_level_counts(args))
 
+# Mounted actuation: the level every mounted actuator applies and the power the
+# mounted actuators draw, per spacecraft. A spacecraft's levels come from the
+# first control effector in `:mounted` actuation that holds levels for it.
+@inline function _mounted_effector_levels(effectors, i::Int, n::Int)
+    for effector in effectors
+        actuation_mode(effector) === :mounted || continue
+        levels = actuator_levels(effector, i)
+        (levels === nothing || length(levels) != n) && continue
+        return levels
+    end
+    return nothing
+end
+
+@inline _saved_wheel_momentum(u, i::Int) =
+    (hasproperty(u, :sc) && hasproperty(u.sc[i], :h_wheels)) ? u.sc[i].h_wheels : nothing
+
+function _save_actuator_levels(num_sats::Int, counts::Vector{Int}, u, t, integrator)
+    effectors = integrator.p.args.control_model.control_effectors
+    spacecraft = integrator.p.args.dynamics_model.spacecraft
+    out = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        levels = counts[i] == 0 ? nothing : _mounted_effector_levels(effectors, i, counts[i])
+        out[i] = levels === nothing ? zeros(Float64, counts[i]) :
+            applied_actuator_levels(spacecraft[i], levels; wheel_momentum=_saved_wheel_momentum(u, i))
+    end
+    return out
+end
+
+function _save_actuator_power(num_sats::Int, counts::Vector{Int}, u, t, integrator)
+    effectors = integrator.p.args.control_model.control_effectors
+    spacecraft = integrator.p.args.dynamics_model.spacecraft
+    out = Vector{Float64}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        levels = counts[i] == 0 ? nothing : _mounted_effector_levels(effectors, i, counts[i])
+        out[i] = levels === nothing ? 0.0 :
+            mounted_power(spacecraft[i], levels; wheel_momentum=_saved_wheel_momentum(u, i))
+    end
+    return out
+end
+
+"""
+    actuator_level_counts(args) -> Vector{Int}
+
+Number of mounted actuators per spacecraft, in mounting order, when a control
+effector of the run is in `:mounted` actuation; all zeros otherwise. The
+`actuator_level` field has one column per mounted actuator.
+"""
+function actuator_level_counts(args::SimulationConfiguration)::Vector{Int}
+    spacecraft = args.dynamics_model.spacecraft
+    effectors = hasproperty(args, :control_model) && hasproperty(args.control_model, :control_effectors) ?
+        args.control_model.control_effectors : ()
+    any(effector -> actuation_mode(effector) === :mounted, effectors) || return zeros(Int, length(spacecraft))
+    return Int[mounted_actuator_count(model) for model in spacecraft]
+end
+
+"""
+    actuator_save_fields(args) -> Vector{SaveField}
+
+The fields of a run in `:mounted` actuation: `actuator_level`, the level each
+mounted actuator applies (its command within its limits, written to
+`sc{i}_actuator_level_{k}` in mounting order), and `actuator_power`, the
+electrical power the mounted actuators of each spacecraft draw (W, written to
+`sc{i}_actuator_power`). Empty when no control effector is in `:mounted`
+actuation or no spacecraft carries mounted actuators.
+"""
+function actuator_save_fields(args::SimulationConfiguration)
+    counts = actuator_level_counts(args)
+    any(>(0), counts) || return SaveField[]
+    num_sats = length(args.dynamics_model.spacecraft)
+    return SaveField[
+        SaveField(:actuator_level, (u, t, integrator) -> _save_actuator_levels(num_sats, counts, u, t, integrator);
+            per_satellite=true, column_prefix="actuator_level"),
+        SaveField(:actuator_power, (u, t, integrator) -> _save_actuator_power(num_sats, counts, u, t, integrator);
+            per_satellite=true),
+    ]
+end
+
 # Articulated spacecraft (any non-fixed Joint): joint coordinates and rates, every link's inertial
 # COM pose from the forward kinematics, and the system COM. Rigid spacecraft contribute empty vectors.
 @inline function _save_joint_state(name::Symbol, num_sats::Int, u, t, integrator)
@@ -556,6 +633,7 @@ function default_save_fields(args::SimulationConfiguration)
     append!(fields, articulated_save_fields(args))
     append!(fields, attachment_save_fields(args))
     append!(fields, plume_save_fields(args))
+    append!(fields, actuator_save_fields(args))
     for field in visualization_save_fields(args)
         push!(fields, field)
     end

@@ -46,6 +46,7 @@ end
 Magnetorquer(; axis, max_dipole_am2::Real=Inf) = Magnetorquer(axis, max_dipole_am2)
 
 actuator_limits(rod::Magnetorquer) = (-rod.max_dipole_am2, rod.max_dipole_am2)
+actuator_requirements(::Magnetorquer) = ActuatorRequirements(magnetic_field=true)
 
 """
     actuator_wrench(rod::Magnetorquer, level, ctx) -> (force_body, torque_body)
