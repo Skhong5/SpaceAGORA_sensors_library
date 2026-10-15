@@ -34,9 +34,9 @@ one of these:
   field julia_version_strict`, because that package manager predates the
   option.
 
-**Cause:** SpaceAGORA supports Julia 1.12 only. Julia 1.13 accepts the
-install commands up to the point where its standard library and package
-versions differ from the committed manifest.
+**Cause:** SpaceAGORA is tested and supported on Julia 1.12 only, and the
+committed manifest was resolved with 1.12; the documented commands refuse
+other releases rather than run an untested combination.
 
 **Resolution:**
 - Install a Julia 1.12 release: with juliaup, `juliaup add 1.12` and then
