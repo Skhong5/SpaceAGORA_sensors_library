@@ -339,13 +339,13 @@ are relative to the directory in the first column.
 | `packages/SpaceAGORAHYPR/` | Compatibility package and source pin for external HYPR | `src/SpaceAGORAHYPR.jl` checks and aliases the external adapter; `HYPRSource.toml` pins its revision. Core services are defined in `src/models/gnc/planning/adapters/hypr/services.jl`. Install and load with the [RPO planner guide](../src/user/rpo_planner_pilot.md#installing-optional-hypr). |
 | `examples/` | Runnable scenarios; `common.jl` is the shared bootstrap | primary scenario entrypoints; development viewer demos also live in `scripts/dev/viewer_demos/`; see the [Examples Catalog](../src/user/examples_catalog.md) |
 | `templates/` | Starting files for a force/torque model, a density model and a control hook | copy one of these to begin an extension |
-| `test/` | Unit, integration, smoke and stress suites, CI gates under `test/gates/`, contract checks under `test/contracts/`, review artifacts under `test/ai_reviews/` | the gates enforce the ownership rules on this page |
-| `benchmarks/` | Performance studies and the paper pipeline (`benchmarks/scripts/performance_paper_pipeline.jl`) | measurement work owned by the parallelization effort; see [Studies and Benchmarks](../src/user/studies_benchmarks.md) |
+| `test/` | Unit, integration, smoke and stress suites; companion suites under `test/optional/{hypr,edg,visualizer}/`; workflow entry points under `test/smoke/`; fixtures under `test/fixtures/`; CI gates under `test/gates/`, contract checks under `test/contracts/`, review artifacts under `test/ai_reviews/` | the gates enforce the ownership rules on this page |
+| `benchmarks/` | Performance studies and the paper pipeline (`benchmarks/scripts/performance_paper_pipeline.jl`); single-file studies grouped under `studies/{gram,constellation,performance,scenario_matrix}/`, launcher-and-folder studies at the studies root, each study's findings beside it | measurement work owned by the parallelization effort; see [Studies and Benchmarks](../src/user/studies_benchmarks.md) |
 | `scripts/` | Operational tools: plotting (`scripts/plotting/`), telemetry fetching, GRAM installation helpers, development launchers and scenario-matrix diagnostics (`scripts/dev/`), HPC and remote helpers | operational, not package code |
 | `experimental/` | Typed scaffolds not loaded by the package (resources, laser terminal, constellation, estimation) | no stability guarantee; see its README |
 | `SpaceAGORAVisualizer.jl` (separate repository) | The browser viewer and its build scripts | Connected through `ext/SpaceAGORAVisualizerExt.jl`; scene and payload export stay in core |
 | `data/` | Gravity and topography coefficients, references, asset manifests and the Odyssey surrogate manifest | see [Assets & Modes](../src/assets.md) |
-| `docs/` | This site: user pages under `docs/src/`, maintainer contracts under `docs/architecture/` and `docs/quality/`, the public API registry | [Contributor Guide](index.md) |
+| `docs/` | This site: user pages under `docs/src/`, maintainer contracts under `docs/architecture/` and `docs/quality/` (study findings live beside their studies under `benchmarks/`), the public API registry | [Contributor Guide](index.md) |
 
 The shared asset catalog, `SpaceAGORA.AssetCatalog`, supplies manifest records
 to command front ends. As its source header comment says, this internal service
@@ -484,7 +484,7 @@ and proposals describe separate work; they do not reopen delivered repairs.
 
 **Benchmark entry point:**
 
-- `benchmarks/studies/performance_static_vs_parallel.jl` loads its maintained
+- `benchmarks/studies/performance/performance_static_vs_parallel.jl` loads its maintained
   owner, `benchmarks/scripts/performance_paper_pipeline.jl`, relative to the
   launcher directory. The include route is tested without executing the pipeline;
   benchmark workloads and performance validation remain separate.

@@ -31,7 +31,17 @@ select the suites; helpers supply reusable setup and scenarios.
   includes), plus the `examples/` regression entrypoint. Domain folders are added
   when they contain tests, rather than reserved in advance.
 - `test/smoke/`
-  Environment and startup smokes such as clean-depot, threaded, and no-GRAM checks.
+  Environment and startup smokes such as clean-depot, threaded, and no-GRAM checks,
+  plus the workflow entry points that check installation and surrogate contracts
+  (`installation_contract.jl`, `optional_packages_tests.jl`,
+  `gram_dependency_integration_tests.jl`, the surrogate preset, workflow and CLI
+  tests). `runtests.jl` lists its files explicitly; the entry points are run by
+  the workflows that name them.
+- `test/optional/`
+  The companion suites: `hypr/`, `edg/` and `visualizer/`, each driven by its
+  installation job in `julia-ci.yml`.
+- `test/fixtures/`
+  Tracked fixtures such as the Earth regression CSV read by suite 04.
 - `test/grid_atmosphere/`
   A standalone native-free grid-adapter suite with normal package imports.
   Synthetic fixtures cover scalar/batch queries, strict domain checks, buffered
