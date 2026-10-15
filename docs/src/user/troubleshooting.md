@@ -18,9 +18,10 @@ What to read next:
 one of these:
 
 - Setting up the Odyssey example environment, or any `Pkg.add`, `Pkg.update`
-  or `Pkg.resolve`, stops with `julia version requirement for package at ...
-  not satisfied: compat entry "julia = ~1.12" does not include Julia version
-  ...`.
+  or `Pkg.resolve`, stops with an error saying that the `julia = ~1.12` compat
+  entry does not include your Julia version (Julia 1.12 words it as `julia
+  version requirement for package at ... not satisfied`; other releases word it
+  differently).
 - The documented root instantiate,
   `Pkg.instantiate(julia_version_strict=true)`, stops with `The active
   manifest file has dependencies that were resolved with a different julia
@@ -33,9 +34,9 @@ one of these:
   field julia_version_strict`, because that package manager predates the
   option.
 
-**Cause:** SpaceAGORA supports Julia 1.12 only. Julia 1.13 accepts the
-install commands up to the point where its standard library and package
-versions differ from the committed manifest.
+**Cause:** SpaceAGORA is tested and supported on Julia 1.12 only, and the
+committed manifest was resolved with 1.12; the documented commands refuse
+other releases rather than run an untested combination.
 
 **Resolution:**
 - Install a Julia 1.12 release: with juliaup, `juliaup add 1.12` and then
@@ -152,6 +153,10 @@ populated are significantly faster.
 - The Odyssey surrogate example shows the same effect inside one run: its
   first passage includes compilation and reports a much longer run time than
   the second, whatever the panel caps are.
+- Lines such as `WARNING: Imported binding Logging.termlength was undeclared at
+  import time during import to WebSockets.` can appear while dependencies
+  precompile. They come from a dependency, not from your setup, and the run
+  continues; only an `ERROR:` line needs action (see Precompilation errors).
 
 ---
 
@@ -175,9 +180,11 @@ populated are significantly faster.
   and the public scenario assets. Neither step needs native GRAM or a GRAM
   data directory; see the [Odyssey walkthrough](../tutorials/odyssey_surrogate.md).
 - `--offline` refuses to download, so it works once the assets are installed.
-  Prefetch them with the [named surrogate data commands](../cli.md#Named-surrogate-data)
-  (`assets fetch --preset=odyssey_p20_frozen_v1 --version=1.0.0`), or run the
-  example once with network access.
+  Run the example once with network access; that installs both the preset grid
+  and the scenario's SPICE kernels and gravity coefficients. The
+  [named surrogate data command](../cli.md#Named-surrogate-data)
+  `assets fetch --preset=odyssey_p20_frozen_v1 --version=1.0.0` installs only
+  the grid, so an offline run still needs the scenario assets afterwards.
 - The modified `Project.toml` is expected: the setup adds the companion to the
   example environment. Leave it as it is, or restore it with Git before
   committing other changes.
@@ -315,20 +322,12 @@ make_example_config(
 **Cause:** Multiple `run_simulation` calls are writing to the same
 `results_directory`.
 
-**Resolution:** Give each run a unique `results_directory`:
-
-```julia
-for (i, config) in enumerate(configs)
-    config_i = SM.SimulationConfiguration(
-        config;
-        simulation_settings=SM.SimulationSettings(
-            config.simulation_settings;
-            results_directory = "output/run_$(i)"
-        )
-    )
-    run_simulation(config_i)
-end
-```
+**Resolution:** Give each run its own `results_directory` when you build its
+configuration: pass `results_directory=` to `make_example_config`, or set it in
+the `SimulationSettings` you construct for that run. The simplest pattern is a
+function that builds the configuration for a given directory and is called
+once per run; [Mission Workflows](mission_workflows.md) shows a complete one,
+and its `run_mission` refuses a directory that already holds results.
 
 The collision file (`*_collision_*`) is written as a safety net when two
 concurrent writes to the same path are detected.

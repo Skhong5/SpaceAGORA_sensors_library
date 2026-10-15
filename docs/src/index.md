@@ -31,11 +31,19 @@ a checkpoint that confirms the setup before the first run.
 Use this route if you want the shortest path to a working local simulation.
 
 - [Quickstart](user/quickstart.md)
+- [First Simulation](user/first_simulation.md)
+- [Mission Workflows](user/mission_workflows.md)
+- [Stopping on a Condition](user/stop_conditions.md)
+- [Assets & Modes](assets.md)
+
+### Optional packages
+
+Use these after a first run, when your study needs motion planning, contact
+scenes or energy-depletion guidance. Each needs its own package installation.
+
 - [Motion Planning with HYPR](user/hypr_planning.md)
 - [Orbital Scenes with MuJoCo](user/mujoco_scenes.md)
 - [Energy Depletion Guidance](user/edg_guidance.md)
-- [Assets & Modes](assets.md)
-- [First Simulation](user/first_simulation.md)
 
 ### High-fidelity GRAM/SPICE
 
@@ -64,6 +72,9 @@ find a concrete next step.
 
 - [Start Here](getting_started.md)
 - [Quickstart](user/quickstart.md)
+- [Simulation Configuration](user/simulation_configuration.md)
+- [Mission Workflows](user/mission_workflows.md)
+- [Stopping on a Condition](user/stop_conditions.md)
 - [Examples Catalog](user/examples_catalog.md)
 - [Studies and Benchmarks](user/studies_benchmarks.md)
 - [Recipes](user/recipes.md)

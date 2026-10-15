@@ -2,7 +2,8 @@ module PublicAPISymbols
 
 using Base.Docs
 
-export PUBLIC_API_SECTIONS, public_api_specs, render_public_api_markdown, undocumented_public_api_specs
+export PUBLIC_API_SECTIONS, public_api_specs, render_public_api_markdown, undocumented_public_api_specs,
+    KNOWN_PLACEHOLDER_DOCS, stale_placeholder_entries
 
 const PUBLIC_API_SECTIONS = [
     (title = "Constellation laser interlinks", items = [
@@ -76,6 +77,7 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :InverseSquaredGravityModel, rendered = "SpaceAGORA.InverseSquaredGravityModel"),
             (owner = :SpaceAGORA, symbol = :InverseSquaredJ2GravityModel, rendered = "SpaceAGORA.InverseSquaredJ2GravityModel"),
             (owner = :SpaceAGORA, symbol = :NBodyGravityModel, rendered = "SpaceAGORA.NBodyGravityModel"),
+            (owner = :SpaceAGORA, symbol = :GravitationalHarmonicsModel, rendered = "SpaceAGORA.GravitationalHarmonicsModel"),
             (owner = :SpaceAGORA, symbol = :make_example_config, rendered = "SpaceAGORA.make_example_config"),
             (owner = :SpaceAGORA, symbol = :make_three_body_spacecraft, rendered = "SpaceAGORA.make_three_body_spacecraft")
         ]
@@ -510,16 +512,51 @@ function render_public_api_markdown(spaceagora::Module;
     return String(take!(io))
 end
 
+# Public names, as (owner module, symbol), whose rendered documentation is still
+# the "No documentation found" placeholder. Each is listed so that any new gap
+# fails the build. The build also fails when a listed name no longer renders the
+# placeholder, so documenting one requires removing it here.
+const KNOWN_PLACEHOLDER_DOCS = Set([
+    (:SpaceAGORA, :thin_panel_inertia),
+    (:SpaceAGORA, :ApoapsisTargetPeriapsisRaiseGuidanceModel),
+    (:SpaceAGORA, :station_geometry_path),
+    (:SpaceAGORA, :station_cad_path),
+    (:SpaceAGORA, :load_rpo_station_pointcloud),
+    (:SpaceAGORA, :load_rpo_station_cad_triangles),
+    (:SpaceAGORA, :load_rpo_station_cad_pointcloud),
+])
+
+_spec_key(spec) = (nameof(spec.owner_module), spec.symbol)
+
+_is_placeholder_doc(doc) = doc === nothing || occursin("No documentation found", string(doc))
+
 function undocumented_public_api_specs(spaceagora::Module)
     missing = NamedTuple[]
     for spec in public_api_specs(spaceagora)
         binding = Docs.Binding(spec.owner_module, spec.symbol)
-        doc = Docs.doc(binding)
-        if doc === nothing
+        # `Docs.doc` returns a placeholder rather than `nothing` for an
+        # undocumented name, and a re-export written as `@doc (@doc inner) name`
+        # copies that placeholder into a real docstring, which `hasdoc` then
+        # counts. Check the text as well.
+        placeholder = _is_placeholder_doc(Docs.doc(binding))
+        if !Docs.hasdoc(binding.mod, binding.var) ||
+                (placeholder && !(_spec_key(spec) in KNOWN_PLACEHOLDER_DOCS))
             push!(missing, spec)
         end
     end
     return missing
+end
+
+"""
+Entries of `KNOWN_PLACEHOLDER_DOCS` that no longer render the placeholder or are
+no longer public names; each must be removed from the list.
+"""
+function stale_placeholder_entries(spaceagora::Module)
+    placeholders = Set(
+        _spec_key(spec) for spec in public_api_specs(spaceagora)
+        if _is_placeholder_doc(Docs.doc(Docs.Binding(spec.owner_module, spec.symbol)))
+    )
+    return sort!(collect(setdiff(KNOWN_PLACEHOLDER_DOCS, placeholders)))
 end
 
 end # module PublicAPISymbols

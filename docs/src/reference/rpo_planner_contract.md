@@ -141,6 +141,16 @@ propagate. A `:candidate` is still subject to lifecycle-owned validation before
 installation, and every non-candidate outcome reaches the run as an
 `RPOPlanningError` carrying these symbols.
 
+Results report their outcome in the `status` and `termination` fields and
+can carry diagnostics. A direct-baseline candidate records its planning budget, chosen
+duration and analytic maxima. A HYPR adapter candidate distinguishes the
+requested, mapped and optimizer-returned configurations and includes the
+planning budget, path representation and deterministic cost and its history.
+Refused results, whether refused before or after the optimizer runs, may carry
+only the planning budget or no diagnostics. Because the adapter plans within the reduced limits described
+below, its reference timing can differ from a legacy HYPR call that uses the
+unreduced limits.
+
 ## Adapter planning headroom
 
 `RPOPlanningHeadroom(fraction=0.01)` prospectively reserves one percent of each

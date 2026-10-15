@@ -58,6 +58,9 @@ function _write_undocumented_public_api_report()::Vector
         println(io, "SpaceAGORA undocumented public exports report")
         println(io, "generated_utc=$(Dates.now(Dates.UTC))")
         println(io)
+        println(io, "Known placeholder docs (listed in docs/public_api_symbols.jl): ",
+            join(sort!([string(owner, ".", symbol) for (owner, symbol) in KNOWN_PLACEHOLDER_DOCS]), ", "))
+        println(io)
         if isempty(missing)
             println(io, "All documented.")
         else
@@ -138,37 +141,37 @@ makedocs(
         "User Guide" => Any[
             "Start Here" => "getting_started.md",
             "Quickstart" => "user/quickstart.md",
-            "Motion Planning with HYPR" => "user/hypr_planning.md",
-            "Run the HyPR paper algorithm" => "user/hypr_paper.md",
-            "RPO Planner Pilot" => "user/rpo_planner_pilot.md",
-            "Orbital Scenes with MuJoCo" => "user/mujoco_scenes.md",
-            "Energy Depletion Guidance" => "user/edg_guidance.md",
             "Installation & Environment" => "user/installation_environment.md",
-            "GRAMSuite Setup" => "user/gramsuite_setup.md",
-            "Assets & Modes" => "assets.md",
             "First Simulation" => "user/first_simulation.md",
-            "Mission Workflows" => "user/mission_workflows.md",
             "Simulation Configuration" => "user/simulation_configuration.md",
-            "Atmosphere Models" => "user/atmosphere_models.md",
-            "Odyssey Surrogate Control Exercise" => "tutorials/odyssey_surrogate.md",
-            "Plume Interaction" => "user/plume_interaction.md",
-            "Lunar Landing" => "user/lunar_landing.md",
-            "Lunar Imagery Sources" => "user/lunar_imagery_sources.md",
-            "Mesh Aerodynamics" => "user/mesh_aerodynamics.md",
-            "Solver Configuration" => "user/solver_configuration.md",
             "Simulation Outputs" => "user/outputs.md",
-            "Interactive Visualization" => "user/visualization.md",
             "The Integrated State" => "user/integrated_state.md",
             "Adding a Force or Torque" => "user/custom_effector.md",
             "Stopping on a Condition" => "user/stop_conditions.md",
-            "Parallel Execution" => "user/parallel_execution.md",
-            "Verification Study" => "user/verification_study.md",
+            "Mission Workflows" => "user/mission_workflows.md",
+            "Solver Configuration" => "user/solver_configuration.md",
+            "Assets & Modes" => "assets.md",
+            "Atmosphere Models" => "user/atmosphere_models.md",
+            "GRAMSuite Setup" => "user/gramsuite_setup.md",
+            "Odyssey Surrogate Control Exercise" => "tutorials/odyssey_surrogate.md",
             "Examples Catalog" => "user/examples_catalog.md",
-            "Studies and Benchmarks" => "user/studies_benchmarks.md",
             "Recipes" => "user/recipes.md",
             "Concepts" => "user/concepts.md",
             "How a Simulation Fits Together" => "user/architecture.md",
             "Troubleshooting" => "user/troubleshooting.md",
+            "Interactive Visualization" => "user/visualization.md",
+            "Parallel Execution" => "user/parallel_execution.md",
+            "Verification Study" => "user/verification_study.md",
+            "Studies and Benchmarks" => "user/studies_benchmarks.md",
+            "Mesh Aerodynamics" => "user/mesh_aerodynamics.md",
+            "Plume Interaction" => "user/plume_interaction.md",
+            "Lunar Landing" => "user/lunar_landing.md",
+            "Lunar Imagery Sources" => "user/lunar_imagery_sources.md",
+            "Energy Depletion Guidance" => "user/edg_guidance.md",
+            "Motion Planning with HYPR" => "user/hypr_planning.md",
+            "Run the HyPR paper algorithm" => "user/hypr_paper.md",
+            "RPO Planner Pilot" => "user/rpo_planner_pilot.md",
+            "Orbital Scenes with MuJoCo" => "user/mujoco_scenes.md",
         ],
         "Reference" => Any[
             "CLI" => "cli.md",
@@ -212,6 +215,11 @@ _write_undocumented_public_api_report()
 
 if !isempty(missing_public_api)
     error("Public API documentation is incomplete. See $(PUBLIC_API_REPORT) for the missing exports report.")
+end
+stale_placeholders = stale_placeholder_entries(SpaceAGORA)
+if !isempty(stale_placeholders)
+    error("Remove these documented or no longer public names from KNOWN_PLACEHOLDER_DOCS in docs/public_api_symbols.jl: " *
+          join([string(owner, ".", symbol) for (owner, symbol) in stale_placeholders], ", "))
 end
 
 # CI's strict build needs a GitHub token for link checks, but must not publish.

@@ -39,6 +39,10 @@ Set `simulation_settings.results = false` to disable result-file output.
 The manifest records
 `schema_version`, `created_utc`, `mission_time_s`, `steps`,
 `spacecraft_count`, and SHA-256 hashes for each data file.
+`created_utc` is the wall-clock time the file was written, not the simulation
+epoch. The epoch is the `InitialTime` you configured; the manifest does not
+store it, so keep it with your script or read it from the returned
+configuration.
 
 The developer override `SPACEAGORA_SAVE_BUNDLE=0` disables Feather and manifest
 output. With this override and `save_csv=false`, use `return_results=true` to
@@ -66,6 +70,11 @@ res = run_simulation(args; return_results=true)
 res.table                      # DataFrame, one row per saved step
 res.files                      # e.g. ["output/simulation_results.csv", ...]
 res.configuration              # the (isolated) configuration that ran
+
+# Read back a setting that actually ran, for example spacecraft 1's inclination.
+# Keplerian InitialCondition fields are stored in SI units and radians.
+ic = res.configuration.dynamics_model.spacecraft[1].initial_condition
+rad2deg(ic.i)                  # inclination in degrees
 
 res = run_simulation(args; return_results=true, return_solution=true)
 res.solution.t

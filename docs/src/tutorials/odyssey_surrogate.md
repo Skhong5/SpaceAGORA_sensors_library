@@ -39,7 +39,9 @@ gigabyte and a depot (`~/.julia` by default) that grows by a few gigabytes
 once compiled caches and this example's assets are included.
 
 Each command-line run starts a new Julia process, which compiles the example
-before its first passage; expect a pause of a few minutes. The example prints
+before its first passage; expect a pause of a few minutes. The first command
+in a new example environment, even `--help`, also loads and compiles its
+packages; later commands reuse that work. The example prints
 a reminder of this before its first passage, and the run time it reports for
 that passage includes the compilation, so the baseline case looks much slower
 than the variant that follows it. That difference is compilation, not the
@@ -200,6 +202,38 @@ the absolute path when they finish. The comparison directory contains:
 - `cap_90_deg/trajectory.csv` and `cap_30_deg/trajectory.csv`, named after the compared caps: sampled height, latitude, longitude, density, temperature, panel commands, drag, panel heat rates, accumulated heat loads and Cartesian states.
 - A `summary.toml` beside each table: preset and scenario provenance, resolved start time, solver result, measured runtime and state at a common elapsed time.
 - `comparison.toml`: the baseline and variant caps (`baseline_cap_deg`, `variant_cap_deg`) and the position, velocity and panel-heating differences at 600 seconds, while both trajectories remain in the atmosphere domain.
+
+The three differences are lengths of difference vectors at the 600-second
+comparison time, so they are never negative and carry no direction:
+`position_difference_m` is the distance in metres between the two inertial
+positions, `velocity_difference_m_s` the magnitude in m/s of the difference of
+the two velocities, and `panel_heat_load_difference_norm_J_cm2` the Euclidean
+norm in J/cm² of the per-panel differences between the two runs' accumulated
+heat loads (one entry per panel). To
+see which run is ahead or hotter, compare the signed columns of the two
+`trajectory.csv` files, for example by plotting them. The example's own environment does not include
+Plots, so use the repository's root environment, instantiated as in
+[Installation & Environment](../user/installation_environment.md). Julia REPL
+started with `julia --project=.` from the repository root, after the default
+comparison:
+
+```julia
+using CSV, DataFrames, Plots
+dir = "odyssey_surrogate_results"
+baseline = CSV.read(joinpath(dir, "cap_90_deg", "trajectory.csv"), DataFrame)
+variant = CSV.read(joinpath(dir, "cap_30_deg", "trajectory.csv"), DataFrame)
+drag = plot(baseline.elapsed_s, baseline.drag_N; label="cap 90 deg",
+    xlabel="Elapsed time (s)", ylabel="Drag (N)")
+plot!(drag, variant.elapsed_s, variant.drag_N; label="cap 30 deg")
+height = plot(baseline.elapsed_s, baseline.height_km; label="cap 90 deg",
+    xlabel="Elapsed time (s)", ylabel="Ellipsoidal height (km)")
+plot!(height, variant.elapsed_s, variant.height_km; label="cap 30 deg")
+savefig(plot(drag, height; layout=(2, 1), size=(800, 700)),
+    joinpath(dir, "passages.png"))
+```
+
+For another pair of caps, change the directory and the two `cap_*_deg` folder
+names to the ones your run printed.
 
 The Cartesian states are Mars-centred J2000 inertial position in metres and
 velocity in m/s: the columns `x_m`, `y_m`, `z_m`, `vx_m_s`, `vy_m_s` and

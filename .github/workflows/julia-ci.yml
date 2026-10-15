@@ -613,7 +613,8 @@ jobs:
           # GRAM retrieval supplies its own scoped credential explicitly.
           persist-credentials: false
 
-      # Its Instantiate step is the README's `Pkg.instantiate()` command.
+      # Its Instantiate step is the README's
+      # `Pkg.instantiate(julia_version_strict=true)` command.
       - name: Setup (README instantiate command)
         uses: ./.github/actions/setup
         with:

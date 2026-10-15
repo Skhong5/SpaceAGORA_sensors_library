@@ -116,7 +116,8 @@ not establish scientific acceptance for a particular application.
 
 Use the [Public API and compatibility](../public_api_policy.md) reference to
 check whether a name is supported. Importable internal modules are not an
-extension contract.
+extension contract. A checkout also contains `experimental/`: typed scaffolds
+that `using SpaceAGORA` does not load, with no stability guarantee.
 
 The repository layout, the contributor checklist and the full source-owner map
 are kept with the repository in `CONTRIBUTING.md` and the contributor guide it

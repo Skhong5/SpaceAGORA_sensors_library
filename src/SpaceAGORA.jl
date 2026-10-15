@@ -60,8 +60,8 @@ export SimulationSettings
 using .SimulationModel: AerodynamicCoefficientfM
 export AerodynamicCoefficientfM
 @doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.AerodynamicCoefficientfM) AerodynamicCoefficientfM
-using .SimulationModel: SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, make_example_config, make_three_body_spacecraft
-export SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, make_example_config, make_three_body_spacecraft
+using .SimulationModel: SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, GravitationalHarmonicsModel, make_example_config, make_three_body_spacecraft
+export SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, GravitationalHarmonicsModel, make_example_config, make_three_body_spacecraft
 using .SimulationModel: ConstellationInterLinkModel, InterLinkGraph, InterLinkParameters, InterLinkKey, InterLinkHistory
 using .SimulationModel: SchedulingPolicyModel, register_allowed_link!, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
 using .SimulationModel: force_on_endpoint, laser_force_on_spacecraft
@@ -109,6 +109,20 @@ Return the default `SaveField`s for `config`.""" default_save_fields
 @doc """Point-mass (inverse-square) gravity effector.""" InverseSquaredGravityModel
 @doc """Point-mass gravity with the J2 oblateness term.""" InverseSquaredJ2GravityModel
 @doc """Third-body gravity effector using ephemerides for the listed bodies.""" NBodyGravityModel
+@doc """
+    GravitationalHarmonicsModel(L, M, coefficients_file, planet; kwargs...)
+
+Spherical-harmonic gravity to degree `L` and order `M` (`M <= L`) from a
+coefficients file with columns `degree,order,C,S`. The central point-mass term
+is included by default (`include_central=true`), so this model replaces
+`InverseSquaredGravityModel` or `InverseSquaredJ2GravityModel` rather than being
+added to them. `coefficient_normalization` names the file's convention (`:full`,
+the default, `:schmidt` or `:unnormalized`). `coefficients_normalized=false`
+also converts unnormalized coefficients, so use one of the two, not both, or
+the coefficients are converted twice. The other keywords are `j2_source`,
+`reference_radius_m`, `gm_m3s2` and `include_central`. A degree beyond the
+file's contents is refused.
+""" GravitationalHarmonicsModel
 @doc "Output and checkpoint settings for a simulation. The opt-in RPO pilot refuses checkpoint writing and resume." SimulationSettings
 @doc """
     RPOPSOConfig(; kwargs...)
