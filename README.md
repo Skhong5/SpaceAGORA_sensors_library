@@ -37,6 +37,12 @@ in its own command first; the
 [Quickstart](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/quickstart/)
 shows both Windows shells, a setup check and what the run prints.
 
+For a short check run through the command-line tool, from the same directory:
+
+```text
+julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --smoke
+```
+
 ## What you can simulate
 
 - **Atmospheric flight**: aerobraking, entry and aerocapture with analytic,
