@@ -7,13 +7,13 @@ using ..ThrusterModels: SixAxisThrusterModel
 using ..Actuators: ActuatorContext, STANDARD_GRAVITY_MPS2
 import ..Actuators: actuator_wrench, actuator_limits, actuator_consumption
 export Facet, Thruster, Magnet, ReactionWheelAssembly, create_facet_list
-export six_axis_thrusters
+export six_axis_thrusters, ReactionWheel, wheel_momentum_saturate
 
 const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 
 # Actuator hardware records live beside the actuator layer.
 include(joinpath(@__DIR__, "..", "actuators", "thruster.jl"))
-include(joinpath(@__DIR__, "..", "actuators", "reaction_wheel_record.jl"))
+include(joinpath(@__DIR__, "..", "actuators", "reaction_wheel.jl"))
 include(joinpath(@__DIR__, "..", "actuators", "magnetorquer_record.jl"))
 
 @kwdef mutable struct Facet

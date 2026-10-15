@@ -64,6 +64,24 @@ spacecraft_with(root; id=1, links=[root]) = SM.SpacecraftModel(links=links, root
 
 include(joinpath(@__DIR__, "..", "..", "..", "templates", "actuator_template.jl"))
 
+function wheel_spin_up(max_momentum)
+    inertia = SMatrix{3, 3, Float64}(2.0, 0, 0, 0, 3.0, 0, 0, 0, 4.0)
+    root = SM.Link(root=true, m=100.0, dims=MVector(1.0, 1.0, 1.0))
+    ic = SM.CartesianInitialCondition(SVector(4.0e9, 0.0, 0.0), ZERO3; q=SVector(0.0, 0.0, 0.0, 1.0))
+    sc = SM.SpacecraftModel(links=[root], root=root, prop_mass=1.0, inertia_tensor=inertia, initial_condition=ic, id=4)
+    for axis in (SVector(1.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(0.0, 0.0, 1.0))
+        add_actuator!(sc, root, ReactionWheel(spin_axis=axis, max_torque_nm=0.02, max_momentum_nms=max_momentum))
+    end
+    control = HoldLevels(1, [0.01, 0.0, 0.0])                # 0.01 N m on the body about +x
+    base = make_example_config(planet=SM.Earth(), spacecraft=sc, mission_time=5.0,
+        initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+        dynamic_effectors=(), ephemerides_model=SM.SimpleEphemeridesModel(), orientation_sim=true,
+        keplerian=false, EI_km=1.0, verbose=false, results=false)
+    args = SM.SimConfig._with_configuration(base;
+        control_model=SM.ControlModel(control_effectors=(control,), control_rates=[1.0]))
+    return run_simulation(args; return_solution=true).u[end].sc[1], inertia
+end
+
 @testset "Actuator contract" begin
     @testset "a thruster's wrench, limits and propellant follow from its record" begin
         root = SM.Link(root=true, m=10.0)
@@ -285,6 +303,64 @@ include(joinpath(@__DIR__, "..", "..", "..", "templates", "actuator_template.jl"
         @test force == SVector(0.25, 0.0, 0.0)
         @test torque == cross(SVector(0.0, 0.2, 0.0), SVector(0.25, 0.0, 0.0))
         @test rate == -0.25 / (60.0 * 9.80665)
+    end
+
+    @testset "a reaction wheel mounts on the root link and its torque and momentum are limited" begin
+        root = SM.Link(root=true, m=50.0)
+        sc = spacecraft_with(root)
+        wheel = ReactionWheel(spin_axis=SVector(0.0, 0.0, 2.0), max_torque_nm=0.01, max_momentum_nms=0.05)
+        @test wheel.spin_axis == SVector(0.0, 0.0, 1.0)
+        @test add_actuator!(sc, root, wheel) === wheel
+        @test root.rw_assembly.n_wheels == 1 && root.rw_assembly.J_rw == reshape([0.0, 0.0, 1.0], 3, 1)
+        @test root.rw_assembly.h_wheels == [0.0] && sc.n_reaction_wheels == 1 && SM.mounted_wheel_count(sc) == 1
+        @test_throws ArgumentError add_actuator!(sc, SM.Link(m=1.0), ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0)))
+        @test actuator_limits(wheel) == (-0.01, 0.01)
+        @test actuator_saturate(wheel, 1.0) == 0.01 && actuator_saturate(wheel, -1.0) == -0.01
+        @test actuator_wrench(wheel, 0.005, actuator_context(root)) == (ZERO3, SVector(0.0, 0.0, 0.005))
+        @test SM.wheel_momentum_saturate(wheel, 0.005, -0.05) == 0.0       # at the limit, storing more (dh/dt = -level)
+        @test SM.wheel_momentum_saturate(wheel, -0.005, -0.05) == -0.005   # unloading is allowed
+        @test SM.wheel_momentum_saturate(wheel, 0.005, -0.04) == 0.005
+        @test_throws ArgumentError ReactionWheel(spin_axis=ZERO3)
+        @test_throws ArgumentError ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0), max_torque_nm=0.0)
+        @test isinf(ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0)).max_momentum_nms)   # unlimited by default
+        # Mounting order: thrusters, then wheels, then user-defined kinds.
+        puck = add_actuator!(sc, root, ColdGasPuck(SVector(1.0, 0.0, 0.0), ZERO3, 0.5, 50.0))
+        jet = add_actuator!(sc, root, Thruster(max_thrust=1.0, direction=MVector(0.0, 1.0, 0.0)))
+        order = [entry.actuator for entry in mounted_actuators(sc)]
+        @test order[1] === jet && order[2] === wheel && order[3] === puck
+        force, torque, _, wheel_torque = mounted_wrench(sc, [0.0, 0.004, 0.0]; wheel_momentum=[0.0])
+        @test force == ZERO3 && wheel_torque == SVector(0.0, 0.0, 0.004) && torque == wheel_torque
+        @test mounted_wrench(sc, [0.0, 0.004, 0.0]; wheel_momentum=[-0.05])[4] == ZERO3      # saturated
+        @test allocation_matrix(sc)[:, 2] == [0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    end
+
+    @testset "mounted wheels spin the body up and store the opposite momentum" begin
+        final, inertia = wheel_spin_up(Inf)
+        @test final.ω[1] ≈ 0.01 * 5.0 / 2.0 rtol=1e-8              # τ T / I_xx
+        @test final.h_wheels ≈ [-0.05, 0.0, 0.0] atol=1e-12
+        @test inertia * collect(final.ω) + collect(final.h_wheels) ≈ zeros(3) atol=1e-12   # angular momentum conserved
+        limited, _ = wheel_spin_up(0.03)
+        @test limited.h_wheels[1] ≈ -0.03 atol=2e-4                 # stops storing at the limit
+        @test limited.ω[1] ≈ 0.03 / 2.0 rtol=1e-2
+    end
+
+    @testset "the momentum manager reads the integrated wheel momentum when the vehicle carries wheels" begin
+        root = SM.Link(root=true, m=50.0)
+        sc = spacecraft_with(root)
+        for axis in (SVector(1.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(0.0, 0.0, 1.0))
+            add_actuator!(sc, root, ReactionWheel(spin_axis=axis))
+        end
+        manager = SM.MagneticMomentumManagerModel(sat_idx=1, mu_gain=0.01, h_wheels_0=SVector(9.0, 9.0, 9.0),
+            commanded_torque=(t, r, v, q, w) -> SVector(0.0, 0.0, 0.0), b_field_ii=(t, r) -> SVector(0.0, 0.0, 3.0e-5))
+        p = readout_params(SM.SpacecraftModel[sc], (manager,))
+        u = (sc=[(pos=[7.0e6, 0.0, 0.0], vel=[0.0, 7.5e3, 0.0], q=[0.0, 0.0, 0.0, 1.0], ω=zeros(3), h_wheels=[0.02, -0.01, 0.0])],)
+        CH.calcControlEffect!(manager, u, p, 0.0, 1)
+        @test manager.h_wheels == SVector(0.02, -0.01, 0.0)       # not the configured h_wheels_0
+        bare = SM.MagneticMomentumManagerModel(sat_idx=1, h_wheels_0=SVector(9.0, 9.0, 9.0),
+            commanded_torque=(t, r, v, q, w) -> SVector(0.0, 0.0, 0.0), b_field_ii=(t, r) -> SVector(0.0, 0.0, 3.0e-5))
+        CH.calcControlEffect!(bare, (sc=[(pos=[7.0e6, 0.0, 0.0], vel=[0.0, 7.5e3, 0.0], q=[0.0, 0.0, 0.0, 1.0], ω=zeros(3))],),
+            readout_params(SM.SpacecraftModel[spacecraft_with(SM.Link(root=true, m=50.0))], (bare,)), 0.0, 1)
+        @test bare.h_wheels == SVector(9.0, 9.0, 9.0)               # no wheels: its own accumulator
     end
 
     @testset "a mounted run moves the vehicle and uses propellant as its jets say" begin

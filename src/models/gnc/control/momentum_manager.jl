@@ -36,7 +36,10 @@ field model through two user-supplied callables:
   tesla (a dipole/IGRF wrapper or an interpolated table).
 
 Wheel momentum uses the convention `dH_w/dt = -tau_cmd` (wheels react to the
-body torque they produce). The dipole command is capped at `m_max_am2`.
+body torque they produce). When the spacecraft carries reaction wheels whose
+momentum the engine integrates (its root wheel assembly, for example wheels
+mounted with `add_actuator!`), the manager reads that momentum at each tick
+instead of accumulating its own. The dipole command is capped at `m_max_am2`.
 
 To read `h_wheels`/`held_dipole_am2` back after a run, call
 `run_simulation(args; isolate_state=false)`: the default `isolate_state=true`
@@ -59,7 +62,16 @@ Base.@kwdef mutable struct MagneticMomentumManagerModel <: AbstractControlEffect
     ticks::Int = 0                            # diagnostic: discrete updates applied
 end
 
-"""Advance the wheel-momentum accumulator and refresh the held rod command."""
+# The body-frame momentum of the wheels the engine integrates for spacecraft
+# `sat_idx` (its root wheel assembly), or `nothing` when it carries none.
+function _integrated_wheel_momentum(u, p, sat_idx::Int)
+    hasproperty(p, :args) || return nothing
+    assembly = p.args.dynamics_model.spacecraft[sat_idx].root.rw_assembly
+    (assembly.n_wheels > 0 && hasproperty(u.sc[sat_idx], :h_wheels)) || return nothing
+    return SVector{3, Float64}(assembly.J_rw * u.sc[sat_idx].h_wheels)
+end
+
+"""Advance the wheel-momentum accumulator (or read the integrated wheels) and refresh the held rod command."""
 function calcControlEffect!(model::MagneticMomentumManagerModel, u, p, t::Float64, sat_idx::Int)
     sat_idx == model.sat_idx || return nothing
     (model.commanded_torque === nothing || model.b_field_ii === nothing) && return nothing
@@ -71,7 +83,12 @@ function calcControlEffect!(model::MagneticMomentumManagerModel, u, p, t::Float6
 
     model.ticks += 1
     tau_cmd = SVector{3, Float64}(model.commanded_torque(t, r_ii, v_ii, q_ib, w_body))
-    if !model.initialized
+    integrated = _integrated_wheel_momentum(u, p, sat_idx)
+    if integrated !== nothing
+        # The vehicle carries wheels whose momentum the engine integrates: use it.
+        model.h_wheels = integrated
+        model.initialized = true
+    elseif !model.initialized
         model.h_wheels = model.h_wheels_0
         model.initialized = true
     else

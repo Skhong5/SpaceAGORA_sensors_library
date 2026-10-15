@@ -15,10 +15,10 @@ kind.
 | `thruster_models_module.jl` | the `ThrusterModels` owner module |
 | `thruster_hooks.jl` | thruster firing dynamics over a link's jets: torque allocation, Schmitt trigger, impulse integration |
 | `thruster_allocation.jl` | the RPO six-axis force allocation and its wrench |
-| `reaction_wheel_record.jl` | `ReactionWheelAssembly`: wheel Jacobian, limits and stored momentum |
+| `reaction_wheel.jl` | the reaction-wheel kind: the `ReactionWheel` record (level: the torque on the body about its spin axis; torque and momentum limits, unlimited by default), its contract methods, and the root link's `ReactionWheelAssembly` whose momenta the engine integrates |
 | `magnetorquer_record.jl` | `Magnet`: a body-fixed dipole |
 
 Records stay owned by `Components` (`src/models/vehicle/spacecraft/components.jl`),
 which includes the kind files, so serialized spacecraft keep their type
-identity. The reaction wheel and the torque rod join the contract in later
-steps of the actuator plan; until then their records are data only.
+identity. The torque rod joins the contract in a later step of the actuator
+plan; until then its record is data only.
