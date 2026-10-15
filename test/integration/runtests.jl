@@ -99,16 +99,6 @@ if !isdefined(@__MODULE__, :make_example_config)
     const run_and_report = TelemetryVerification.run_and_report
 end
 
-include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "energy_depletion_gnc_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_e2c_repair_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_feasibility_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_pass_heat_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_heat_observer_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_journal_contract_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "edg_replan_callback_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "energy_depletion_lifecycle_tests.jl"))
-include(joinpath(REPO_ROOT, "test", "gnc", "aerobraking", "energy_depletion_ownership_tests.jl"))
-
 if !isdefined(@__MODULE__, :_solver_policy_mode)
     const build_initial_conditions = SimulationEngine.build_initial_conditions
     const _build_solver_tolerances = SimulationEngine._build_solver_tolerances
@@ -885,6 +875,7 @@ const GUIDANCE_SANDBOX = GuidanceSandbox
 
 
 const _ALL_SUITES = [
+    "00_energy_depletion_guidance_tests.jl",
     "01_contract_and_api_tests.jl",
     "02_callbacks_parallel_and_smoke_tests.jl",
     "03_persistence_units_and_rotational_tests.jl",
