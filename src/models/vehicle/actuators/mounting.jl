@@ -31,6 +31,7 @@ using ..Assembly: add_thruster!
 
 export add_actuator!, mounted_actuators, mounted_actuator_count, mounted_thruster_count, mounted_wheel_count, mounted_magnetorquer_count, mounted_laser_count, mounted_hinge_count, apply_hinge_levels!
 export actuator_context, allocation_matrix, mounted_wrench, mounted_thruster_fractions
+export mounted_requirements, applied_actuator_levels, mounted_power
 
 const _ZERO3 = SVector{3, Float64}(0.0, 0.0, 0.0)
 const _IDENTITY3 = SMatrix{3, 3, Float64, 9}(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
@@ -242,21 +243,41 @@ function mounted_actuators(model::SpacecraftModel)
 end
 
 """
-    actuator_context(link::Link; mass_kg=NaN, q_ib=identity, ω_body=zero, magnetic_field_body=NaN) -> ActuatorContext
+    actuator_context(link::Link; mass_kg=NaN, q_ib=identity, ω_body=zero, magnetic_field_body=NaN, environment=nothing) -> ActuatorContext
 
 The evaluation context of an actuator mounted on `link`: the link's configured
-pose in the body frame (its `r` and, for a non-root link, its attitude `q`)
-and the vehicle's mass, attitude, rate and local magnetic field.
+pose in the body frame (its `r` and, for a non-root link, its attitude `q`),
+the vehicle's mass, attitude, rate and local magnetic field, and the sampled
+environment the mounted actuators asked for.
 """
-actuator_context(link::Link; mass_kg::Real=NaN, q_ib=_IDENTITY_Q, ω_body=_ZERO3, magnetic_field_body=_NAN3) =
-    actuator_context(link, Float64(mass_kg), SVector{4, Float64}(q_ib), SVector{3, Float64}(ω_body), SVector{3, Float64}(magnetic_field_body))
+actuator_context(link::Link; mass_kg::Real=NaN, q_ib=_IDENTITY_Q, ω_body=_ZERO3, magnetic_field_body=_NAN3, environment=nothing) =
+    actuator_context(link, Float64(mass_kg), SVector{4, Float64}(q_ib), SVector{3, Float64}(ω_body), SVector{3, Float64}(magnetic_field_body), environment)
 
 @inline function actuator_context(link::Link, mass_kg::Float64, q_ib::SVector{4, Float64}, ω_body::SVector{3, Float64},
-                                  magnetic_field_body::SVector{3, Float64}=_NAN3)
+                                  magnetic_field_body::SVector{3, Float64}=_NAN3, environment=nothing)
     # Same link-to-body map as the thruster torque Jacobian (Kinematics.rotate_to_body).
     link_to_body = link.root ? _IDENTITY3 : SMatrix{3, 3, Float64, 9}(rot(SVector{4, Float64}(link.q))')
-    return ActuatorContext(SVector{3, Float64}(link.r), link_to_body, mass_kg, q_ib, ω_body, magnetic_field_body)
+    return ActuatorContext(SVector{3, Float64}(link.r), link_to_body, mass_kg, q_ib, ω_body, magnetic_field_body, environment)
 end
+
+"""
+    mounted_requirements(model::SpacecraftModel) -> ActuatorRequirements
+
+The union of [`actuator_requirements`](@ref) over every actuator mounted on
+`model`: what the engine samples once per evaluation for them.
+"""
+function mounted_requirements(model::SpacecraftModel)::ActuatorRequirements
+    req = mounted_magnetorquer_count(model) > 0 ? ActuatorRequirements(magnetic_field=true) : ActuatorRequirements()
+    for link in model.links, actuator in link.custom_actuators
+        req = req | (actuator_requirements(actuator)::ActuatorRequirements)
+    end
+    return req
+end
+
+# The thrust a thruster delivers: its saturated command, or, with firing
+# dynamics, the average thrust its last control tick scheduled (`thrust`).
+@inline _delivered_thrust(thruster::Thruster, level)::Float64 =
+    thruster.firing_dynamics ? Float64(thruster.thrust) : actuator_saturate(thruster, level)
 
 """
     allocation_matrix(model::SpacecraftModel) -> Matrix{Float64}
@@ -291,7 +312,7 @@ end
 
 """
     mounted_wrench(model::SpacecraftModel, levels; mass_kg=NaN, q_ib=identity, ω_body=zero, wheel_momentum=nothing,
-                   magnetic_field_body=NaN, wheel_rates=nothing)
+                   magnetic_field_body=NaN, wheel_rates=nothing, environment=nothing)
         -> (force_body, torque_body, mass_rate_kg_s, wheel_torque_body)
 
 The wrench of every actuator mounted on `model` at its level in `levels` (one
@@ -305,16 +326,19 @@ limit produces no torque that would store more. Torque rods act in
 `magnetic_field_body`, the local field in the body frame (T). When
 `wheel_rates` is given (one entry per mounted wheel), each mounted wheel's own
 momentum rate, minus its saturated level, is subtracted into it: the engine
-integrates the mounted wheels from these, wheel by wheel.
+integrates the mounted wheels from these, wheel by wheel. `environment` is the
+sampled environment the mounted actuators asked for, passed to each one's
+context. A thruster with firing dynamics acts at the thrust its last control
+tick scheduled rather than at its level.
 """
 mounted_wrench(model::SpacecraftModel, levels::AbstractVector; mass_kg::Real=NaN, q_ib=_IDENTITY_Q, ω_body=_ZERO3, wheel_momentum=nothing,
-               magnetic_field_body=_NAN3, wheel_rates=nothing) =
+               magnetic_field_body=_NAN3, wheel_rates=nothing, environment=nothing) =
     mounted_wrench(model, levels, Float64(mass_kg), SVector{4, Float64}(q_ib), SVector{3, Float64}(ω_body), wheel_momentum,
-                   SVector{3, Float64}(magnetic_field_body), wheel_rates)
+                   SVector{3, Float64}(magnetic_field_body), wheel_rates, environment)
 
 function mounted_wrench(model::SpacecraftModel, levels::AbstractVector, mass_kg::Float64,
                         q_ib::SVector{4, Float64}, ω_body::SVector{3, Float64}, wheel_momentum=nothing,
-                        magnetic_field_body::SVector{3, Float64}=_NAN3, wheel_rates=nothing)
+                        magnetic_field_body::SVector{3, Float64}=_NAN3, wheel_rates=nothing, environment=nothing)
     n = mounted_actuator_count(model)
     length(levels) == n || throw(ArgumentError(
         "Mounted actuation: $(length(levels)) actuator levels for the $(n) actuators mounted on spacecraft $(model.id)."))
@@ -325,15 +349,15 @@ function mounted_wrench(model::SpacecraftModel, levels::AbstractVector, mass_kg:
     k = 0
     @inbounds for link in model.links
         isempty(link.thrusters) && continue
-        ctx = actuator_context(link, mass_kg, q_ib, ω_body)
+        ctx = actuator_context(link, mass_kg, q_ib, ω_body, magnetic_field_body, environment)
         for thruster in link.thrusters
             k += 1
-            force, torque, mass_rate = _add_actuator(thruster, actuator_saturate(thruster, levels[k]), ctx, force, torque, mass_rate)
+            force, torque, mass_rate = _add_actuator(thruster, _delivered_thrust(thruster, levels[k]), ctx, force, torque, mass_rate)
         end
     end
     assembly = model.root.rw_assembly
     if !isempty(assembly.wheels)
-        ctx = actuator_context(model.root, mass_kg, q_ib, ω_body)
+        ctx = actuator_context(model.root, mass_kg, q_ib, ω_body, magnetic_field_body, environment)
         first_mounted = assembly.n_wheels - length(assembly.wheels)   # wheels given directly come first
         @inbounds for (j, wheel) in enumerate(assembly.wheels)
             k += 1
@@ -349,7 +373,7 @@ function mounted_wrench(model::SpacecraftModel, levels::AbstractVector, mass_kg:
     end
     @inbounds for link in model.links
         isempty(link.magnetorquers) && continue
-        ctx = actuator_context(link, mass_kg, q_ib, ω_body, magnetic_field_body)
+        ctx = actuator_context(link, mass_kg, q_ib, ω_body, magnetic_field_body, environment)
         for rod in link.magnetorquers
             k += 1
             force, torque, mass_rate = _add_actuator(rod, actuator_saturate(rod, levels[k]), ctx, force, torque, mass_rate)
@@ -357,7 +381,7 @@ function mounted_wrench(model::SpacecraftModel, levels::AbstractVector, mass_kg:
     end
     @inbounds for link in model.links
         isempty(link.laser_terminals) && continue
-        ctx = actuator_context(link, mass_kg, q_ib, ω_body, magnetic_field_body)
+        ctx = actuator_context(link, mass_kg, q_ib, ω_body, magnetic_field_body, environment)
         for terminal in link.laser_terminals
             k += 1
             force, torque, mass_rate = _add_actuator(terminal, actuator_saturate(terminal, levels[k]), ctx, force, torque, mass_rate)
@@ -366,7 +390,7 @@ function mounted_wrench(model::SpacecraftModel, levels::AbstractVector, mass_kg:
     k += mounted_hinge_count(model)        # hinges move geometry at control ticks; they put no wrench here
     @inbounds for link in model.links
         isempty(link.custom_actuators) && continue
-        ctx = actuator_context(link, mass_kg, q_ib, ω_body)
+        ctx = actuator_context(link, mass_kg, q_ib, ω_body, magnetic_field_body, environment)
         for actuator in link.custom_actuators
             k += 1
             # The list is abstractly typed: assert the result so the loop stays concretely typed.
@@ -388,10 +412,71 @@ function mounted_thruster_fractions(model::SpacecraftModel, levels::AbstractVect
     k = 0
     for link in model.links, thruster in link.thrusters
         k += 1
-        x = k <= length(levels) ? actuator_saturate(thruster, levels[k]) : 0.0
+        x = k <= length(levels) ? _delivered_thrust(thruster, levels[k]) : 0.0
         push!(out, actuator_fraction(thruster, x))
     end
     return out
+end
+
+"""
+    applied_actuator_levels(model::SpacecraftModel, levels; wheel_momentum=nothing) -> Vector{Float64}
+
+The level each mounted actuator actually applies, in mounting order: its
+command saturated to its limits; a thruster with firing dynamics at the thrust
+its last tick scheduled; a wheel at its momentum limit at zero when the
+command would store more (given `wheel_momentum`); a hinge at its current
+angle. These fill the `actuator_level` result columns.
+"""
+function applied_actuator_levels(model::SpacecraftModel, levels::AbstractVector; wheel_momentum=nothing)::Vector{Float64}
+    out = zeros(Float64, mounted_actuator_count(model))
+    length(levels) == length(out) || return out
+    k = 0
+    for link in model.links, thruster in link.thrusters
+        k += 1
+        out[k] = _delivered_thrust(thruster, levels[k])
+    end
+    assembly = model.root.rw_assembly
+    first_mounted = assembly.n_wheels - length(assembly.wheels)
+    for (j, wheel) in enumerate(assembly.wheels)
+        k += 1
+        x = actuator_saturate(wheel, levels[k])
+        wheel_momentum === nothing || (x = wheel_momentum_saturate(wheel, x, Float64(wheel_momentum[first_mounted + j])))
+        out[k] = x
+    end
+    for link in model.links, rod in link.magnetorquers
+        k += 1
+        out[k] = actuator_saturate(rod, levels[k])
+    end
+    for link in model.links, terminal in link.laser_terminals
+        k += 1
+        out[k] = actuator_saturate(terminal, levels[k])
+    end
+    for link in model.links, hinge in link.hinges
+        k += 1
+        out[k] = hinge.angle_rad
+    end
+    for link in model.links, actuator in link.custom_actuators
+        k += 1
+        out[k] = actuator_saturate(actuator, levels[k])
+    end
+    return out
+end
+
+"""
+    mounted_power(model::SpacecraftModel, levels; wheel_momentum=nothing) -> Float64
+
+The electrical power (W) the mounted actuators draw at their applied levels
+(see [`applied_actuator_levels`](@ref)): the sum of each one's
+`actuator_consumption(...).power_w`, evaluated without a sampled environment.
+It fills the `actuator_power` result column.
+"""
+function mounted_power(model::SpacecraftModel, levels::AbstractVector; wheel_momentum=nothing)::Float64
+    applied = applied_actuator_levels(model, levels; wheel_momentum=wheel_momentum)
+    total = 0.0
+    for (k, entry) in enumerate(mounted_actuators(model))
+        total += Float64(actuator_consumption(entry.actuator, applied[k], actuator_context(entry.link)).power_w)
+    end
+    return total
 end
 
 end # module ActuatorMounting

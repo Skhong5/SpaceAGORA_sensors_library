@@ -242,7 +242,7 @@ using .SimulationModel: control_thruster_levels
 using .SimulationModel: Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
 using .SimulationModel: actuator_wrench, actuator_limits, actuator_saturate, actuator_consumption, actuator_fraction, actuator_unit_wrench, actuation_mode, actuator_levels, allocate_actuators
 using .SimulationModel: add_actuator!, mounted_actuators, actuator_context, allocation_matrix, mounted_wrench, six_axis_thrusters
-using .SimulationModel: propellant_mass_rate
+using .SimulationModel: propellant_mass_rate, ActuatorRequirements, actuator_requirements, applied_actuator_levels, mounted_power
 using .SimulationLifecycle: bind_spacecraft
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
@@ -346,6 +346,10 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.mounted_wrench) mounted_wrench
 @doc (@doc SimulationModel.six_axis_thrusters) six_axis_thrusters
 @doc (@doc SimulationModel.propellant_mass_rate) propellant_mass_rate
+@doc (@doc SimulationModel.ActuatorRequirements) ActuatorRequirements
+@doc (@doc SimulationModel.actuator_requirements) actuator_requirements
+@doc (@doc SimulationModel.applied_actuator_levels) applied_actuator_levels
+@doc (@doc SimulationModel.mounted_power) mounted_power
 @doc (@doc SimulationModel.AbstractTypes.AbstractGuidanceModel) AbstractGuidanceModel
 @doc (@doc SimulationModel.StateSample) StateSample
 @doc (@doc SimulationModel.PlanetFrameSample) PlanetFrameSample
@@ -613,7 +617,7 @@ export control_thruster_levels, bind_spacecraft
 export AbstractActuator, Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
 export actuator_wrench, actuator_limits, actuator_saturate, actuator_consumption, actuator_fraction, actuator_unit_wrench, actuation_mode, actuator_levels, allocate_actuators
 export add_actuator!, mounted_actuators, actuator_context, allocation_matrix, mounted_wrench, six_axis_thrusters
-export propellant_mass_rate
+export propellant_mass_rate, ActuatorRequirements, actuator_requirements, applied_actuator_levels, mounted_power
 export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 export SolarPanelAngleOfAttackControlModel
