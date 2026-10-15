@@ -441,9 +441,9 @@ end
 
     readme = read(joinpath(REPO_ROOT, "README.md"), String)
     quickstart = read(joinpath(REPO_ROOT, "docs", "src", "user", "quickstart.md"), String)
-    @test occursin("canonical committed execution environment", readme)
+    @test occursin("julia_version_strict=true", readme)
     @test occursin("canonical committed execution environment", quickstart)
-    @test occursin("there is no bootstrap step", lowercase(readme))
+    @test occursin("there is no bootstrap step", lowercase(quickstart))
 end
 
 @testset "Project Compat Coverage Contract" begin
