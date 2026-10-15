@@ -248,3 +248,20 @@ terminals draw `level / efficiency`; reaction wheels draw their base power and
 their motor's power from the integrated wheel momentum, when they are given a
 spin inertia; torque rods draw their power at full dipole times the square of
 the dipole fraction. Hinges and thrusters report none.
+
+### Power budget
+
+These columns are written with the default save-field list when a spacecraft
+of the run carries power-system parts (solar arrays, a battery or constant
+loads; see [Powering a Spacecraft](power_budget.md)). They are NaN for a
+spacecraft without such parts, and the battery columns are NaN for one without
+a battery:
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_battery_wh` | Wh | Energy stored in the battery (an integrated state) |
+| `sc1_battery_soc` | — | State of charge, the stored energy over the capacity |
+| `sc1_power_generated_w` | W | Power the solar arrays generate: lit cells facing the Sun, through the eclipse model |
+| `sc1_power_load_w` | W | Load on the bus: constant loads plus the mounted actuators, with any shedding applied |
+| `sc1_power_shed_w` | W | Actuator power shed because the battery is empty |
+| `sc1_power_net_w` | W | Generation minus load; negative while the battery is discharging, or while it is empty and the load exceeds the generation |

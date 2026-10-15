@@ -237,6 +237,10 @@ The built-in kinds:
   control ticks. The energy-depletion controller also moves its panels through
   a hinge mounted on them.
 
+The actuators' power feeds the spacecraft's power budget when it carries one:
+solar arrays, a battery and constant loads mounted with `add_power!`. See
+[Powering a Spacecraft](user/power_budget.md).
+
 Registration: `add_actuator!(spacecraft, link, actuator)`.
 
 A control effector drives the mounted actuators by declaring
