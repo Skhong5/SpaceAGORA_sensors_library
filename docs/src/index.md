@@ -24,68 +24,55 @@ Command Prompt `set GIT_LFS_SKIP_SMUDGE=1`) and run the same `git clone` line
 without the prefix; the [Quickstart](user/quickstart.md) shows both forms and
 a checkpoint that confirms the setup before the first run.
 
-## Choose your path
+## Choose your route
 
-### No-GRAM first run
+### Run something now
 
-Use this route if you want the shortest path to a working local simulation.
+- [Quickstart](user/quickstart.md): install, check the setup and run the first example.
+- [Your First Script](user/first_script.md): write your own scenario from that example.
 
-- [Quickstart](user/quickstart.md)
-- [First Simulation](user/first_simulation.md)
-- [Mission Workflows](user/mission_workflows.md)
-- [Stopping on a Condition](user/stop_conditions.md)
+### Build your own simulation
+
+- [Configuring a Simulation](user/simulation_configuration.md) and [Gravity and Forces](user/gravity_forces.md)
+- [Stopping on a Condition](user/stop_conditions.md) and [Mission Workflows](user/mission_workflows.md)
+- [Simulation Outputs](user/outputs.md)
+
+### Guidance and control with a frozen atmosphere
+
+Develop a guidance, control or autonomy algorithm against a reproducible Mars
+atmosphere without native GRAM.
+
+- [Odyssey Guidance with a Frozen Atmosphere](tutorials/odyssey_surrogate.md)
+- [GRAM Grid Surrogates](user/gram_grid_surrogates.md)
+
+### High-fidelity GRAM and SPICE
+
 - [Assets & Modes](assets.md)
+- [GRAMSuite Setup](user/gramsuite_setup.md)
+- [Verification Study](user/verification_study.md)
 
 ### Optional packages
 
-Use these after a first run, when your study needs motion planning, contact
-scenes or energy-depletion guidance. Each needs its own package installation.
+Motion planning, contact scenes, energy-depletion guidance and the interactive
+viewer each need their own package installation; each page says which.
 
 - [Motion Planning with HYPR](user/hypr_planning.md)
 - [Orbital Scenes with MuJoCo](user/mujoco_scenes.md)
 - [Energy Depletion Guidance](user/edg_guidance.md)
+- [Interactive Visualization](user/visualization.md)
 
-### High-fidelity GRAM/SPICE
+## How these pages are organized
 
-Use this route if you need higher-fidelity atmosphere, ephemerides, or frame
-data.
+- **Get Started**: installation and the first run.
+- **Build a Simulation**: configuring a scenario, gravity and forces, stopping conditions, missions, solver and parallel settings.
+- **Vehicles and Models**: articulated and compliant vehicles, mesh aerodynamics, plumes and laser interlinks.
+- **Atmosphere and Data**: atmosphere models, GRAM grid surrogates, assets and native GRAM.
+- **Guidance and Planning**: energy-depletion guidance and motion planning.
+- **Tutorials**: complete worked exercises.
+- **Results**: output files, columns and visualization.
+- **How It Works**: the concepts and the state the solver integrates.
+- **Studies**: verification and benchmark workflows.
+- **Help**: troubleshooting, recipes and the examples catalog.
+- **Extend SpaceAGORA** and **API Reference**: extension contracts, the public API and the CLI.
 
-- [Installation & Environment](user/installation_environment.md)
-- [GRAMSuite Setup](user/gramsuite_setup.md)
-- [Assets & Modes](assets.md)
-- [Verification Study](user/verification_study.md)
-
-### Guidance and control with a frozen atmosphere
-
-Use this route to develop a guidance, control or autonomy algorithm against a
-reproducible Mars atmosphere without native GRAM.
-
-- [Odyssey Surrogate Control Exercise](tutorials/odyssey_surrogate.md)
-- [Atmosphere Models](user/atmosphere_models.md)
-
-## Documentation tracks
-
-### User Guide
-
-Start here if your goal is to run something, understand the main workflows, or
-find a concrete next step.
-
-- [Start Here](getting_started.md)
-- [Quickstart](user/quickstart.md)
-- [Simulation Configuration](user/simulation_configuration.md)
-- [Mission Workflows](user/mission_workflows.md)
-- [Stopping on a Condition](user/stop_conditions.md)
-- [Examples Catalog](user/examples_catalog.md)
-- [Studies and Benchmarks](user/studies_benchmarks.md)
-- [Recipes](user/recipes.md)
-- [Troubleshooting](user/troubleshooting.md)
-
-### Reference
-
-Use the reference pages when you already know what you want to do and need the
-exact command surface, extension hooks, or generated API details.
-
-- [CLI](cli.md)
-- [Public API](generated/public_api.md)
-- [Publications](publications.md)
-- [Extensibility](extensibility.md)
+To cite SpaceAGORA, see [Publications and Citing](publications.md).

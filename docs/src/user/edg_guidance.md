@@ -1,5 +1,9 @@
 # Energy Depletion Guidance for aerobraking
 
+!!! note "Optional package"
+    Requires the optional `SpaceAGORAEDG` companion; see
+    [Optional energy-depletion guidance](installation_environment.md#Optional-energy-depletion-guidance).
+
 Energy Depletion Guidance (EDG) controls the drag produced during an
 aerobraking passage by changing the angle of selected spacecraft panels. A
 larger exposed area generally removes orbital energy more quickly, but it also

@@ -1,5 +1,9 @@
 # Motion planning with HYPR
 
+!!! note "Optional package"
+    Requires the optional `SpaceAGORAHYPR` package and the HYPR planner; see
+    [Install and try the planner](#Install-and-try-the-planner).
+
 HYPR plans a route through a cluttered environment and turns that route into a
 reference that a spacecraft controller can follow. In SpaceAGORA, its rendezvous
 and proximity operations implementation is intended for motion near a target

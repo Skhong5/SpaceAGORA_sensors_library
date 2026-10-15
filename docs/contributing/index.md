@@ -19,6 +19,7 @@ What to read next:
 - [Documentation Policy](documentation_policy.md)
 - [API Policy](../src/public_api_policy.md)
 - [Contracts](contracts.md)
+- [Parallel runtime internals](parallel_internals.md)
 
 ## How this section is organized
 

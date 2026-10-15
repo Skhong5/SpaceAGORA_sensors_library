@@ -4,7 +4,7 @@ Use this page when you are changing the docs site, the generated API surface,
 or the process rules that keep documentation current.
 
 This page is for maintainers. If you are trying to run SpaceAGORA or find a
-command, see the [User Guide](../src/getting_started.md).
+command, see the [User Guide](../src/index.md).
 
 Quickest maintainer check:
 

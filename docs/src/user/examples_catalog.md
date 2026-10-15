@@ -17,7 +17,7 @@ julia --project=. examples/AGORA_Basic_Quickstart.jl
 
 What to read next:
 
-- [First Simulation](first_simulation.md)
+- [First Simulation](first_script.md)
 - [Simulation Outputs](outputs.md)
 - [Studies and Benchmarks](studies_benchmarks.md)
 - [CLI](../cli.md)
@@ -163,7 +163,7 @@ atmosphere example above.
 `Articulated_Panels_Demo.jl` flies the standard bus with two solar panels that
 hang on spring-damper `:hinge` joints, starts them off their rest angle, and
 saves a plot of the hinge angles and the bus roll reaction. It needs no GRAM and
-no SPICE. See [Joint types](simulation_configuration.md#Joint-types-and-articulated-spacecraft).
+no SPICE. See [Joint types](articulated_compliant.md#Joint-types-and-articulated-spacecraft).
 
 ```text
 julia --project=. examples/Articulated_Panels_Demo.jl
@@ -179,7 +179,7 @@ same model (about 7e-6 m with the rest schedule evaluated mid-step; the standalo
 lags the engine by about 1e-3 m), and a 100 kg bus in a circular orbit shows the reaction on the bus.
 It writes a 3D HTML from the saved `attachment_pose` columns, a comparison HTML and a CSV under
 `output/cloth_panel_attachment_demo/`. No GRAM and no SPICE; `SPACEAGORA_EXAMPLE_SMOKE=1` runs 3 s.
-See [Compliant attachments](simulation_configuration.md#Compliant-attachments).
+See [Compliant attachments](articulated_compliant.md#Compliant-attachments).
 
 ```text
 julia --project=. examples/Cloth_Panel_Attachment_Demo.jl
@@ -349,5 +349,5 @@ runs in a bare root environment: HYPR and EDG examples use their prepared projec
   The default run spans twenty target orbits; the CI smoke route uses the
   standard shortened mission duration and disables animation.
 
-See [Constellation laser interlinks](simulation_configuration.md#Constellation-laser-interlinks)
+See [Constellation laser interlinks](laser_interlinks.md#Constellation-laser-interlinks)
 for interpretation, optional cyclic matching and the model's physical limits.

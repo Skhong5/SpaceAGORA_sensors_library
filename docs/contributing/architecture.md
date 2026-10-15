@@ -135,7 +135,7 @@ only gravity is evaluated per body. With
 `SimulationSettings(articulated_live_pose_loads=true)` aerodynamics and facet
 SRP are instead evaluated per link at the live link poses, through the opt-in
 `link_wrench` kernel, and the gravity gradient becomes per body. Spacecraft without a non-fixed joint
-never touch this path. See [Joint types](../src/user/simulation_configuration.md#joint-types-and-articulated-spacecraft).
+never touch this path. See [Joint types](../src/user/articulated_compliant.md#joint-types-and-articulated-spacecraft).
 The compliant model above remains the route for compliant (spring-connected)
 bodies. It is no longer arm-only: a `CompliantAttachment` mounts a
 `CompliantMultibodyModel` on any spacecraft link (the root, a fixed-merged link
@@ -145,7 +145,7 @@ link in both directions: through the bus equations for a rigid spacecraft and
 through per-body wrenches into the articulated backbone otherwise
 (`src/models/dynamics/multibody/compliant/compliant_attachment_dynamics.jl`). The
 robot-arm coupling keeps its own path for now. See
-[Compliant attachments](../src/user/simulation_configuration.md#compliant-attachments).
+[Compliant attachments](../src/user/articulated_compliant.md#compliant-attachments).
 
 For example, an arm attached to a station belongs to the station's assembly.
 A free-flying inspector is another spacecraft. Their task assignment and

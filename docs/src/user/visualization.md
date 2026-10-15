@@ -1,5 +1,9 @@
 # Interactive Visualization
 
+!!! note "Optional package"
+    Requires the optional `SpaceAGORAVisualizer` package; see
+    [Install the optional viewer](#Install-the-optional-viewer).
+
 The viewer turns saved results into an HTML page: orbit the central body,
 scrub through time, select a spacecraft and inspect its trajectory. The page
 opens from disk and can be shared with someone who does not have Julia.
@@ -252,7 +256,7 @@ point on the axis in model units, or `:centroid` for the centre of the selected
 vertices' bounding box. Vertices inside the region rotate.
 
 Thruster firing levels saved with the run (the `thruster_level` field, see
-[Simulation Outputs](outputs.md#Visualization-fields)) drive a plume on every
+[Simulation Outputs](output_columns.md#Visualization-fields)) drive a plume on every
 thruster: an additive, flickering cone pair along the thruster's direction,
 long and orange-white for a main engine and short and blue-white for an
 attitude jet, with reach and brightness set by the rated thrust and by the
@@ -350,7 +354,7 @@ without the body rotation, because the poses are already inertial.
 
 With the default save-field list, a run with the plume-surface effector saves
 the seven `sc{i}_plume_*` columns described in [Plume interaction](plume_interaction.md) and listed in
-[Simulation Outputs](outputs.md#Plume-interaction). The page reads them into
+[Simulation Outputs](output_columns.md#Plume-interaction). The page reads them into
 its plume block and, with the **dust** toggle, draws regolith blown off the
 surface by the descent engine: a particle sheet fed by the saved erosion rate,
 ejecta speed, eroded mass and engine height, a ground haze disk and a scour
