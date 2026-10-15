@@ -4,7 +4,7 @@ const EPHEMERIDES = parentmodule(first(methods(SpaceAGORA.SimulationModel.planet
 const ORIGINAL_FRAME_METHOD = first(methods(EPHEMERIDES._spice_planet_frame_lpi))
 # Loading definitions must not perform a campaign or replace the package method.
 withenv("XVAL_FRAME_TABLE_DIR" => nothing) do
-    include(joinpath(ROOT, "scripts", "xval_fullarc.jl"))
+    include(joinpath(ROOT, "scripts", "xval", "xval_fullarc.jl"))
 end
 const XP = XvalProvenance
 
@@ -61,7 +61,7 @@ end # isolated lifecycle environment
             using Test, SpaceAGORA, SPICE
             eph = parentmodule(first(methods(SpaceAGORA.SimulationModel.planet_frame_lpi)))
             original = first(methods(eph._spice_planet_frame_lpi))
-            include($(repr(joinpath(ROOT, "scripts", "xval_fullarc.jl"))))
+            include($(repr(joinpath(ROOT, "scripts", "xval", "xval_fullarc.jl"))))
             @test first(methods(eph._spice_planet_frame_lpi)) !== original
             _install_frame_table!("earth_j2_tbfalse")
             SPICE.pdpool("BODY399_POLE_RA", [0., 0., 0.])

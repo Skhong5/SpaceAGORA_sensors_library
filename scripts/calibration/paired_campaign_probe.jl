@@ -2,11 +2,11 @@
 #
 # Paired in-process A/B between two routing profiles on a MONTE CARLO CAMPAIGN.
 #
-#   julia --project=. --threads=12 scripts/paired_campaign_probe.jl \
+#   julia --project=. --threads=12 scripts/calibration/paired_campaign_probe.jl \
 #       --cases=montecarlo_mars_aerobraking --a=full_smart --b=outer_inner_static \
 #       --mc-samples=64 --pairs=15
 #
-# scripts/paired_profile_probe.jl compares single simulations. This probe runs
+# scripts/calibration/paired_profile_probe.jl compares single simulations. This probe runs
 # complete Monte Carlo campaigns, including the outer dispatch dimension that
 # a single run_simulation call does not exercise.
 #
@@ -22,7 +22,7 @@
 # the Distributed pool outside the timed region, and returns the batch wall time.
 # Reusing that dispatcher keeps its setup and routing behavior in one place.
 
-const PPC_DIR = normpath(joinpath(@__DIR__, "..", "benchmarks", "studies",
+const PPC_DIR = normpath(joinpath(@__DIR__, "..", "..", "benchmarks", "studies",
                                   "parallelization_performance"))
 include(joinpath(PPC_DIR, "cli.jl"))
 include(joinpath(PPC_DIR, "modes.jl"))

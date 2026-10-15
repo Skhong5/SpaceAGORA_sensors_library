@@ -616,7 +616,7 @@ function save_machine_constants(mc::MachineConstants, path::AbstractString = mac
     path_s = String(path)
     # The `[campaign]` table holds costs measured from campaign traces, not by
     # this calibration (the predictive planner's pool terms; see
-    # scripts/extract_campaign_cost_terms.py). Re-calibrating must not erase
+    # scripts/calibration/extract_campaign_cost_terms.py). Re-calibrating must not erase
     # them, so an existing table is carried across the rewrite.
     if isfile(path_s)
         previous = try
@@ -660,7 +660,7 @@ const _ENSURE_CONSTANTS_LOCK = ReentrantLock()
 Make sure this machine's cost constants exist, calibrating them once if not.
 This is what `SolverConfig(parallel=true)` calls before its first run, so the
 predictive planner never runs without machine constants merely because nobody
-ran `scripts/calibrate_machine.jl`.
+ran `scripts/calibration/calibrate_machine.jl`.
 
 Returns
   - `:present` when `path` already holds current constants (nothing is
@@ -683,7 +683,7 @@ so a file written by a one-thread session is re-measured the first time a wider
 session runs with the flag; a file measured wider serves a narrower session as
 is, and is never overwritten by it. A file that predates the recorded thread
 count (`measured_threads == 0`) is treated as current, so constants written by
-`scripts/calibrate_machine.jl` before this check existed are not re-measured.
+`scripts/calibration/calibrate_machine.jl` before this check existed are not re-measured.
 
 Several processes started together in one working directory (a job array,
 parallel test runners) share the fingerprinted path. Only one of them measures:

@@ -2,7 +2,7 @@
 #
 # One-shot per-machine calibration for the analytic cost model.
 #
-#   julia --project=. --threads=auto scripts/calibrate_machine.jl [--verbose] [--repeats=N]
+#   julia --project=. --threads=auto scripts/calibration/calibrate_machine.jl [--verbose] [--repeats=N]
 #
 # Writes output/parallel_policy_state/cost_constants_<fingerprint>.toml, which
 # every later run on this machine reads instead of measuring anything itself.
