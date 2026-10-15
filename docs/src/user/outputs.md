@@ -482,9 +482,11 @@ that carries mounted actuators. An explicit list must include the
 
 The levels come from the first control effector in `:mounted` actuation that
 holds levels for the spacecraft. A row saved before that effector's first
-control tick reports the levels it held then. The built-in kinds that draw
-power are the laser terminals (`level / efficiency`); wheels, torque rods,
-hinges and thrusters report none.
+control tick reports the levels it held then. Among the built-in kinds, laser
+terminals draw `level / efficiency`; reaction wheels draw their base power and
+their motor's power from the integrated wheel momentum, when they are given a
+spin inertia; torque rods draw their power at full dipole times the square of
+the dipole fraction. Hinges and thrusters report none.
 
 ## Multi-spacecraft runs
 

@@ -41,6 +41,14 @@ structural restrictions, and updates the selected panel geometry at each
 control callback. Aerodynamic and thermal models then evaluate the resulting
 geometry during propagation.
 
+A panel turns to its commanded angle at once unless a `PanelHinge` is mounted
+on its link with `add_actuator!`. Then the hinge moves the panel toward the
+command at each control callback within its angle and rate limits, and the
+aerodynamic and thermal models see the angle it reached. Guidance still
+predicts with the commanded angles, so a slow hinge makes the predictions
+optimistic. A hinge whose axis is the absolute value of the link's offset and
+that has no limits moves the panel exactly as the default does.
+
 The two public model types are `AerobrakingEnergyDepletionGuidanceModel` and
 `AerobrakingEnergyDepletionControlModel`. They share an immutable
 `AerobrakingEnergyDepletionConfig` and the **same mutable**
