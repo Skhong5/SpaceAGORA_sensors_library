@@ -205,6 +205,13 @@ propellant). Both are read from the last row of the results table.
 - **Use a built-in kind.** `Thruster`, `ReactionWheel`, `Magnetorquer`,
   `LaserTerminal` and `PanelHinge` are actuators of the same contract; see
   [Extensibility](../extensibility.md#Add-an-actuator).
+  `examples/Earth_CubeSat_Mounted_Actuators.jl` flies three of them together.
+- **Let the nozzle feel its surroundings.** Define
+  `SpaceAGORA.actuator_requirements(::ColdGasNozzle) = ActuatorRequirements(atmosphere=true)`
+  and the context carries the sampled atmosphere in `ctx.environment`.
+- **Read what it did.** The results table has `sc1_actuator_level_1`, the
+  level the nozzle applied at each saved step, and `sc1_actuator_power`, the
+  power it reported through `actuator_consumption` (zero here).
 
 ## Reference: the interface
 
@@ -215,7 +222,8 @@ propellant). Both are read from the last row of the results table.
 | `SpaceAGORA.actuator_limits(a)` | Required: `(lower, upper)` bounds of the level. |
 | `SpaceAGORA.actuator_consumption(a, level, ctx)` | Optional: `(mass_rate_kg_s, power_w)`; default none. |
 | `SpaceAGORA.actuator_saturate`, `actuator_fraction`, `actuator_unit_wrench` | Optional, with defaults. |
-| `SpaceAGORA.ActuatorContext` | The mounting link's pose and the vehicle's mass, attitude, rate and magnetic field. |
+| `SpaceAGORA.actuator_requirements(a)` | Optional: the environment the kind needs sampled, an `ActuatorRequirements`; default none. |
+| `SpaceAGORA.ActuatorContext` | The mounting link's pose, the vehicle's mass, attitude, rate and magnetic field, and the sampled environment the kind asked for. |
 | `SpaceAGORA.add_actuator!(spacecraft, link, actuator)` | Mounting. |
 | `SpaceAGORA.actuation_mode(c)`, `SpaceAGORA.actuator_levels(c, i)` | The controller side. |
 | `SpaceAGORA.mounted_actuators`, `allocation_matrix`, `allocate_actuators`, `mounted_wrench` | The mounted set and allocation. |

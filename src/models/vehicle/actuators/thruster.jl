@@ -17,6 +17,14 @@ firing dynamics and hold its state during a run.
 
 A `Thruster` is an [`AbstractActuator`](@ref) whose level is a thrust in
 newtons, from zero to `max_thrust`. Mount it with `add_actuator!`.
+
+With `firing_dynamics=true`, a mounted thruster does not deliver its command
+at once: at each control tick of the effector commanding it, the commanded
+thrust becomes an on-time within the control period, subject to
+`min_firing_time` and the Schmitt trigger (`level_on`, `level_off`), and the
+thrust ramps with `cutoff_frequency`; the vehicle feels the resulting average
+thrust until the next tick. Off by default, the thruster acts at its
+saturated command.
 """
 @kwdef mutable struct Thruster <: AbstractActuator
     max_thrust::Float64 = 1.0 # Maximum thrust, N
@@ -30,6 +38,7 @@ newtons, from zero to `max_thrust`. Mount it with `add_actuator!`.
     κ::Float64 = 0.0 # Thrust factor, nd.
     thrust::Float64 = 0.0 # Current thrust magnitude, to be updated during simulation.
     stop_firing_time::Float64 = 0.0 # Time at which the thruster should stop firing, s.
+    firing_dynamics::Bool = false # In :mounted actuation, deliver the command through the minimum on-time, Schmitt trigger and thrust ramp above
 end
 
 # ---- State ----------------------------------------------------------------

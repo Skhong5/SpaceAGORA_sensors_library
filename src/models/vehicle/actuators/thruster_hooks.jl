@@ -13,7 +13,8 @@ export thrust_calculation_schmitt_trigger!, schmitt_trigger, integrate_impulse!
 
 @inline thruster_debug_enabled() = get(ENV, "SPACEAGORA_DEBUG_THRUSTER", "0") == "1"
 
-function thrust_calculation_schmitt_trigger!(link::Link, thruster::Thruster, thrust::Float64, time::Float64)
+function thrust_calculation_schmitt_trigger!(link::Link, thruster::Thruster, thrust::Float64, time::Float64;
+                                             period::Float64=link.attitude_control_rate)
     """
     Applies a Schmitt trigger to the thrusters of the Link.
     """
@@ -21,7 +22,7 @@ function thrust_calculation_schmitt_trigger!(link::Link, thruster::Thruster, thr
         thruster.thrust = 0.0
         return
     end
-    ti = min(thrust / thruster.max_thrust * link.attitude_control_rate, link.attitude_control_rate) # Calculate the time interval for the thrust
+    ti = min(thrust / thruster.max_thrust * period, period) # Calculate the time interval for the thrust
     if ti < thruster.min_firing_time # If the time interval is less than the minimum firing time, set it to the minimum firing time or 0, based on schmitt trigger
         ti = schmitt_trigger(ti, thruster.level_on, thruster.level_off) * thruster.min_firing_time # Use Schmitt trigger to determine if the thruster should fire
     end
@@ -29,9 +30,9 @@ function thrust_calculation_schmitt_trigger!(link::Link, thruster::Thruster, thr
     if thruster_debug_enabled()
         CSV.write("thruster_debug.csv", DataFrame(time=time, on_time_request=ti, thrust_req=thrust), append=true)
     end
-    total_integrated_thrust = integrate_impulse!(link, thruster, ti, time) # Integrate the impulse over the time interval
+    total_integrated_thrust = integrate_impulse!(link, thruster, ti, time; period=period) # Integrate the impulse over the time interval
     
-    thruster.thrust = total_integrated_thrust / link.attitude_control_rate # Update the average thrust value in the thruster
+    thruster.thrust = total_integrated_thrust / period # Update the average thrust value in the thruster
 end
 
 function schmitt_trigger(input::Float64, level_on::Float64, level_off::Float64)
@@ -47,11 +48,12 @@ function schmitt_trigger(input::Float64, level_on::Float64, level_off::Float64)
     return state
 end
 
-function integrate_impulse!(link::Link, thruster::Thruster, on_time_request::Float64, time::Float64)
+function integrate_impulse!(link::Link, thruster::Thruster, on_time_request::Float64, time::Float64;
+                            period::Float64=link.attitude_control_rate)
     """
     Integrates the impulse and thrust factor over the on-time request period.
     """
-    ti = clamp(on_time_request, 0.0, link.attitude_control_rate)
+    ti = clamp(on_time_request, 0.0, period)
     ω = abs(thruster.cutoff_frequency) # Get the cutoff frequency of the thruster
     if !isfinite(ω) || ω < 1e-9
         ω = 1e-9
@@ -62,8 +64,8 @@ function integrate_impulse!(link::Link, thruster::Thruster, on_time_request::Flo
     total_integrated_thrust = thruster.max_thrust * (ti + (κ - 1) / ω * one_minus_exp_on) # Calculate the total impulse
     κ = 1 + (κ - 1) * exp(-ω * ti) # Calculate the final thrust factor
     
-    if ti < link.attitude_control_rate
-        ramp_down_dt = link.attitude_control_rate - ti
+    if ti < period
+        ramp_down_dt = period - ti
         one_minus_exp_down = -expm1(-ω * ramp_down_dt)
         total_integrated_thrust += thruster.max_thrust * κ / ω * one_minus_exp_down # Add the impulse from ramp-down if applicable
         κ *= exp(-ω * ramp_down_dt) # Update the final thrust factor after ramp-down

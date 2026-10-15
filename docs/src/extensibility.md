@@ -181,7 +181,8 @@ models bind.
 
 An actuator is hardware mounted on a spacecraft link that acts on the vehicle
 when commanded. You describe the hardware once; the engine derives the force,
-the torque, the propellant use and the `thruster_level` result columns from the
+the torque, the propellant use and the result columns (each actuator's applied
+level, the actuators' power draw and the thrusters' firing levels) from the
 actuators mounted on the vehicle.
 
 Stable interface:
@@ -189,8 +190,8 @@ Stable interface:
 - `SpaceAGORA.AbstractActuator`
 - `SpaceAGORA.actuator_wrench` and `SpaceAGORA.actuator_limits` (required)
 - `SpaceAGORA.actuator_consumption`, `SpaceAGORA.actuator_saturate`,
-  `SpaceAGORA.actuator_fraction`, `SpaceAGORA.actuator_unit_wrench` (optional,
-  with defaults)
+  `SpaceAGORA.actuator_fraction`, `SpaceAGORA.actuator_unit_wrench`,
+  `SpaceAGORA.actuator_requirements` (optional, with defaults)
 - `SpaceAGORA.add_actuator!`, `SpaceAGORA.mounted_actuators`,
   `SpaceAGORA.allocation_matrix`, `SpaceAGORA.allocate_actuators`
 
@@ -204,16 +205,34 @@ SpaceAGORA.actuator_consumption(a::MyActuator, level, ctx) = (mass_rate_kg_s = .
 
 The wrench is in the spacecraft body frame, the torque about the body
 reference point; `ctx` (an `ActuatorContext`) gives the mounting link's pose
-in the body frame and the vehicle's mass, attitude and rate. The built-in kinds are
-`Thruster` (its level is a thrust in newtons and its `direction` is the thrust
-direction) and `ReactionWheel` (its level is the torque on the body about its
-spin axis; it mounts on the root link and its momentum is integrated, with
-torque and momentum limits), `Magnetorquer` (its level is the commanded
-dipole along its axis; it acts in the run's magnetic field) and `LaserTerminal`
-(its level is the transmitted optical power; the vehicle recoils with power
-over the speed of light) and `PanelHinge` (its level is the angle of the
-non-root link it turns, with angle and rate limits; the engine applies it at
-the commanding effector's control ticks).
+in the body frame and the vehicle's mass, attitude and rate.
+
+A kind that needs more of its surroundings declares it with
+`SpaceAGORA.actuator_requirements(a) = ActuatorRequirements(...)`: the
+planet-fixed frame, the atmosphere, the Sun's position or the local magnetic
+field. The engine samples what the mounted actuators ask for once per
+evaluation and passes it in the context: the field as
+`ctx.magnetic_field_body`, the rest as `ctx.environment`, an
+`EnvironmentSample` (for example `ctx.environment.atmosphere.rho_kg_m3`).
+Without a request, `ctx.environment` is `nothing`.
+
+The built-in kinds:
+
+- `Thruster`: its level is a thrust in newtons and its `direction` is the
+  thrust direction. With `firing_dynamics=true` the command goes through the
+  thruster's minimum on-time, Schmitt trigger and thrust ramp at each control
+  tick, and the vehicle feels the resulting average thrust until the next one.
+- `ReactionWheel`: its level is the torque on the body about its spin axis; it
+  mounts on the root link and its momentum is integrated, with torque and
+  momentum limits.
+- `Magnetorquer`: its level is the commanded dipole along its axis; it acts in
+  the run's magnetic field.
+- `LaserTerminal`: its level is the transmitted optical power; the vehicle
+  recoils with power over the speed of light, and it draws power over its
+  efficiency.
+- `PanelHinge`: its level is the angle of the non-root link it turns, with
+  angle and rate limits; the engine applies it at the commanding effector's
+  control ticks.
 
 Registration: `add_actuator!(spacecraft, link, actuator)`.
 
@@ -222,13 +241,19 @@ A control effector drives the mounted actuators by declaring
 actuator, in mounting order, from `SpaceAGORA.actuator_levels(c, i)`; it
 computes the levels in `calcControlEffect!` and writes no force or mass-flow
 hook. Effectors in the default `:ideal` mode keep applying their own hooks.
-The built-in RPO and Apollo descent controllers accept `actuation=:mounted`.
+The built-in RPO and Apollo descent controllers and the magnetic momentum
+manager accept `actuation=:mounted`. A run with a mounted effector writes the
+`sc{i}_actuator_level_{k}` and `sc{i}_actuator_power` columns (see
+[Outputs](user/outputs.md#Mounted-actuators)); `applied_actuator_levels` and
+`mounted_power` compute the same values from a spacecraft and its levels.
 
 Template:
 
 - `templates/actuator_template.jl`
 
 Walkthrough: [Adding an Actuator of Your Own](user/custom_actuator.md).
+Example: `examples/Earth_CubeSat_Mounted_Actuators.jl`, a CubeSat whose
+mounted wheels detumble it while its torque rods unload them.
 
 ## Planet, ephemerides, thermal, thruster, and guidance extensions
 

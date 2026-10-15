@@ -100,6 +100,37 @@ function pyramid_run(levels)
     return run_simulation(args; return_solution=true).u[end].sc[1], inertia, hcat(collect.(axes)...)
 end
 
+# A user-defined kind that asks for sampled environment and records what its
+# context carried at its last evaluation. It puts no wrench on the vehicle.
+struct EnvironmentRecorder <: AbstractActuator
+    seen::Base.RefValue{Any}
+    requirements::ActuatorRequirements
+end
+SpaceAGORA.actuator_limits(::EnvironmentRecorder) = (-Inf, Inf)
+SpaceAGORA.actuator_requirements(a::EnvironmentRecorder) = a.requirements
+function SpaceAGORA.actuator_wrench(a::EnvironmentRecorder, level, ctx::ActuatorContext)
+    a.seen[] = ctx.environment
+    return ZERO3, ZERO3
+end
+
+# A spacecraft far from Earth, attitude at the identity, for mounted runs.
+function far_spacecraft(; id, mass=100.0, prop_mass=1.0)
+    root = SM.Link(root=true, m=mass, dims=MVector(1.0, 1.0, 1.0))
+    ic = SM.CartesianInitialCondition(SVector(4.0e9, 0.0, 0.0), ZERO3; q=SVector(0.0, 0.0, 0.0, 1.0))
+    return SM.SpacecraftModel(links=[root], root=root, prop_mass=prop_mass, inertia_tensor=root.inertia, initial_condition=ic, id=id), root
+end
+
+# A run whose only controller holds `levels` for the mounted actuators of `sc`.
+function held_run(sc, levels; mission_time=2.0, rate=1.0, kw...)
+    base = make_example_config(planet=SM.Earth(), spacecraft=sc, mission_time=mission_time,
+        initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+        dynamic_effectors=(), ephemerides_model=SM.SimpleEphemeridesModel(), orientation_sim=true,
+        keplerian=false, EI_km=1.0, verbose=false, results=false)
+    args = SM.SimConfig._with_configuration(base;
+        control_model=SM.ControlModel(control_effectors=(HoldLevels(1, collect(Float64, levels)),), control_rates=[rate]))
+    return run_simulation(args; isolate_state=false, kw...)
+end
+
 @testset "Actuator contract" begin
     @testset "a thruster's wrench, limits and propellant follow from its record" begin
         root = SM.Link(root=true, m=10.0)
@@ -579,6 +610,103 @@ end
         @test final.mass ≈ m0 - mdot * duration_s rtol=1e-9
         @test final.vel[1] ≈ (thrust_n / mdot) * log(m0 / (m0 - mdot * duration_s)) rtol=1e-6   # rocket equation
         @test abs(final.vel[2]) < 1e-12 && abs(final.vel[3]) < 1e-12
+    end
+
+    @testset "actuator requirements combine and reach the actuators' context" begin
+        @test actuator_requirements(ColdGasPuck(SVector(1.0, 0.0, 0.0), ZERO3, 0.5, 50.0)) == ActuatorRequirements()
+        @test actuator_requirements(Magnetorquer(axis=SVector(1.0, 0.0, 0.0))) == ActuatorRequirements(magnetic_field=true)
+        @test (ActuatorRequirements(planet_frame=true) | ActuatorRequirements(magnetic_field=true)) ==
+              ActuatorRequirements(planet_frame=true, magnetic_field=true)
+        sc, root = far_spacecraft(id=8)
+        seen = Ref{Any}(:never)
+        add_actuator!(sc, root, EnvironmentRecorder(seen, ActuatorRequirements(planet_frame=true, atmosphere=true)))
+        add_actuator!(sc, root, Magnetorquer(axis=SVector(1.0, 0.0, 0.0)))
+        @test SM.mounted_requirements(sc) == ActuatorRequirements(planet_frame=true, atmosphere=true, magnetic_field=true)
+        held_run(sc, [0.0, 0.0])
+        env = seen[]
+        @test env isa EnvironmentSample
+        @test env.planet_frame isa PlanetFrameSample
+        @test env.planet_frame.alt_m ≈ 4.0e9 - SM.Earth().Rp_e rtol=1e-3
+        @test env.atmosphere isa AtmosphereSample && env.atmosphere.rho_kg_m3 == 0.0      # the run has no atmosphere
+        @test env.solar === nothing                                                      # not asked for
+        # A kind that asks for nothing gets no environment.
+        sc2, root2 = far_spacecraft(id=9)
+        plain = Ref{Any}(:never)
+        add_actuator!(sc2, root2, EnvironmentRecorder(plain, ActuatorRequirements()))
+        held_run(sc2, [0.0])
+        @test plain[] === nothing
+    end
+
+    @testset "a thruster with firing dynamics delivers what its control tick scheduled" begin
+        root = SM.Link(root=true, m=50.0)
+        sc = spacecraft_with(root)
+        jet = add_actuator!(sc, root, Thruster(max_thrust=2.0, direction=MVector(1.0, 0.0, 0.0),
+            min_firing_time=0.2, cutoff_frequency=1.0e6, firing_dynamics=true))
+        plain = add_actuator!(sc, root, Thruster(max_thrust=2.0, direction=MVector(0.0, 1.0, 0.0)))
+        control = HoldLevels(1, [1.0, 1.0])
+        p = readout_params(SM.SpacecraftModel[sc], (control,))
+        state = body_state(SVector(0.0, 0.0, 0.0, 1.0); mass=60.0)
+        @test readout(p, 1, state)[1] == SVector(0.0, 1.0, 0.0)          # the jet is idle until its first tick
+        SM.SimulationCallbacks._apply_mounted_thruster_firing!(control, p, 1, 0.0, 1.0)
+        @test jet.thrust ≈ 1.0 rtol=1e-5                                  # on at 2 N for half the period, fast ramp
+        @test plain.thrust == 0.0                                         # a thruster without firing dynamics is untouched
+        @test readout(p, 1, state)[1] == SVector(jet.thrust, 1.0, 0.0)
+        @test SM.mounted_thruster_fractions(sc, [1.0, 1.0]) == [jet.thrust / 2.0, 0.5]
+        @test applied_actuator_levels(sc, [1.0, 1.0]) == [jet.thrust, 1.0]
+        control.levels .= [0.2, 1.0]                                      # 0.1 s on: under the 0.2 s minimum
+        SM.SimulationCallbacks._apply_mounted_thruster_firing!(control, p, 1, 1.0, 1.0)
+        @test jet.thrust < 1e-6
+        held = jet.thrust
+        @test SM.SimulationCallbacks._apply_mounted_thruster_firing!(SM.MagneticMomentumManagerModel(), p, 1, 2.0, 1.0) === nothing
+        @test jet.thrust == held                                          # ideal effectors leave the jets alone
+        # In a run, a command under the minimum on-time never fires; without firing dynamics it acts at once.
+        function firing_run(dynamics, level)
+            sc, root = far_spacecraft(id=10, mass=500.0, prop_mass=10.0)
+            add_actuator!(sc, root, Thruster(max_thrust=1.0, direction=MVector(1.0, 0.0, 0.0), Isp=200.0,
+                min_firing_time=0.5, cutoff_frequency=1.0e6, firing_dynamics=dynamics))
+            return held_run(sc, [level]; mission_time=10.0, return_solution=true).u[end].sc[1], sc.dry_mass + sc.prop_mass
+        end
+        idle, m0 = firing_run(true, 0.1)
+        direct, _ = firing_run(false, 0.1)
+        @test collect(idle.vel) == zeros(3) && idle.mass == m0
+        @test direct.vel[1] > 0.0 && direct.mass < m0
+        # At full command the ticks fire the jet: at most the first period is lost.
+        fired, _ = firing_run(true, 1.0)
+        full, _ = firing_run(false, 1.0)
+        @test 0.85 * full.vel[1] <= fired.vel[1] <= full.vel[1] * (1 + 1e-9)
+        @test (m0 - fired.mass) <= (m0 - full.mass) * (1 + 1e-9)
+    end
+
+    @testset "mounted runs write every actuator's applied level and the actuators' power" begin
+        root = SM.Link(root=true, m=50.0)
+        sc = spacecraft_with(root)
+        add_actuator!(sc, root, Thruster(max_thrust=2.0, direction=MVector(1.0, 0.0, 0.0)))
+        add_actuator!(sc, root, ReactionWheel(spin_axis=SVector(0.0, 0.0, 1.0), max_torque_nm=0.01, max_momentum_nms=0.1))
+        add_actuator!(sc, root, LaserTerminal(boresight=SVector(1.0, 0.0, 0.0), max_power_w=10.0, efficiency=0.25))
+        add_actuator!(sc, root, ColdGasPuck(SVector(0.0, 1.0, 0.0), ZERO3, 0.5, 50.0))
+        commands = [3.0, 0.05, 4.0, 1.0]
+        @test applied_actuator_levels(sc, commands) == [2.0, 0.01, 4.0, 0.5]                 # each within its limits
+        @test applied_actuator_levels(sc, commands; wheel_momentum=[-0.1]) == [2.0, 0.0, 4.0, 0.5]   # a full wheel stops
+        @test mounted_power(sc, commands) == 16.0                                           # 4 W optical at 25 %
+        p = readout_params(SM.SpacecraftModel[sc], (HoldLevels(1, commands),))
+        counts = SM.SimulationCallbacks.actuator_level_counts(p.args)
+        @test counts == [4]
+        @test SM.SimulationCallbacks._save_actuator_levels(1, counts, nothing, 0.0, (p=p,)) == [[2.0, 0.01, 4.0, 0.5]]
+        @test SM.SimulationCallbacks._save_actuator_power(1, counts, nothing, 0.0, (p=p,)) == [16.0]
+        names(args) = [field.name for field in SM.SimulationCallbacks.default_save_fields(args)]
+        @test :actuator_level in names(p.args) && :actuator_power in names(p.args)
+        ideal = readout_params(SM.SpacecraftModel[sc], (SM.MagneticMomentumManagerModel(),))
+        @test SM.SimulationCallbacks.actuator_level_counts(ideal.args) == [0]
+        @test !(:actuator_level in names(ideal.args)) && !(:actuator_power in names(ideal.args))
+        # In a run, the columns carry the held levels.
+        sc2, root2 = far_spacecraft(id=11)
+        add_actuator!(sc2, root2, LaserTerminal(boresight=SVector(1.0, 0.0, 0.0), max_power_w=10.0, efficiency=0.5))
+        add_actuator!(sc2, root2, ColdGasPuck(SVector(1.0, 0.0, 0.0), ZERO3, 0.5, 50.0))
+        table = held_run(sc2, [4.0, 1.0]; mission_time=3.0, return_results=true).table
+        @test size(table, 1) > 1
+        @test all(==(4.0), table.sc1_actuator_level_1)
+        @test all(==(0.5), table.sc1_actuator_level_2)
+        @test all(==(8.0), table.sc1_actuator_power)
     end
 end
 
