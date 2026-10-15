@@ -391,6 +391,7 @@ thrusters stay idle.
 """
 function control_thruster_levels(controlModel::BaseThrusterModel, i::Int)
     (1 <= i <= length(controlModel.thrust)) || return nothing
+    controlModel.actuation === :mounted && return nothing   # the mounted thrusters' own levels report it
     return [_maneuver_burn_active(controlModel, Int64(i)) ? 1.0 : 0.0]
 end
 
@@ -621,4 +622,152 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
             _MANEUVER_TRACE_LAST_WINDOW[trace_key] = (start_burn_time, stop_burn_time)
         end
     end
+end
+
+# ---- Mounted actuation --------------------------------------------------------
+#
+# With `actuation = :mounted` the scheduler fires a mounted engine and points it
+# with the mounted reaction wheels (see the `BaseThrusterModel` docstring).
+
+actuation_mode(model::BaseThrusterModel) = model.actuation
+
+function actuator_levels(model::BaseThrusterModel, i::Int)
+    (model.actuation === :mounted && 1 <= i <= length(model.mounted_levels)) || return nothing
+    levels = model.mounted_levels[i]
+    isempty(levels) && return nothing
+    return levels
+end
+
+"""
+    refresh_burn!(model::BaseThrusterModel, p, i, t) -> Nothing
+
+For a scheduler in `:mounted` actuation: size spacecraft `i`'s level vector to
+its mounted actuators, record the effective burn window and thrust, and set
+whether the engine burns at time `t` (inside `[start, stop)`) with its level.
+Called when burns are scheduled, at each control tick and at the window's
+ends, where the solver stops; between those calls the engine's level holds,
+so no integration step sees it change.
+"""
+function refresh_burn!(model::BaseThrusterModel, p, i::Int, t::Real)
+    model.actuation === :mounted || return nothing
+    (1 <= i <= length(model.mounted_levels)) || return nothing
+    spacecraft = p.args.dynamics_model.spacecraft[i]
+    n_thrusters = mounted_thruster_count(spacecraft)
+    model.engine <= n_thrusters || throw(ArgumentError(
+        "Mounted burns: engine $(model.engine) on spacecraft $(i), which carries $(n_thrusters) mounted thrusters. " *
+        "Mount the engine with add_actuator!, or set `engine` to its mounting position."))
+    levels = model.mounted_levels[i]
+    n = mounted_actuator_count(spacecraft)
+    if length(levels) != n
+        resize!(levels, n)
+        fill!(levels, 0.0)
+    end
+    start_s, stop_s = _effective_burn_window(model, p, i)
+    thrust_n, _ = _effective_thrust_isp(model, p, i)
+    direction_rad = _effective_direction_rad(model, p, i)
+    valid = isfinite(start_s) && isfinite(stop_s) && stop_s > start_s &&
+            isfinite(thrust_n) && thrust_n > 0.0 && isfinite(direction_rad)
+    model.burn_windows[i] = valid ? (Float64(start_s), Float64(stop_s), Float64(thrust_n)) : (NaN, NaN, 0.0)
+    burning = valid && start_s <= t < stop_s
+    model.burning[i] = burning
+    levels[model.engine] = burning ? Float64(thrust_n) : 0.0
+    return nothing
+end
+
+"""
+    burn_edge(model::BaseThrusterModel, t) -> Bool
+
+Whether `t` is an end of a spacecraft's burn window, for a scheduler in
+`:mounted` actuation: the instant the solver stops at for the engine to switch.
+"""
+burn_edge(model::BaseThrusterModel, t::Real)::Bool =
+    model.actuation === :mounted && any(w -> t == w[1] || t == w[2], model.burn_windows)
+
+# The engine (the `engine`-th mounted thruster) and its link.
+function _mounted_engine(model::BaseThrusterModel, spacecraft)
+    k = 0
+    for link in spacecraft.links, thruster in link.thrusters
+        k += 1
+        k == model.engine && return link, thruster
+    end
+    throw(ArgumentError("Mounted burns: no mounted thruster at position $(model.engine)."))
+end
+
+# The body torque that turns the engine's thrust direction toward the burn
+# direction (prograde or retrograde) and follows the velocity's turn along the
+# orbit: J (ωn² θ ê - 2 ζ ωn (ω - ω_target)). `nothing` without a direction.
+function _burn_pointing_torque(model::BaseThrusterModel, spacecraft, state, p, i::Int)
+    pos = SVector{3, Float64}(state.pos[1], state.pos[2], state.pos[3])
+    vel = SVector{3, Float64}(state.vel[1], state.vel[2], state.vel[3])
+    speed = norm(vel)
+    (isfinite(speed) && speed > 0.0) || return nothing
+    direction_rad = _effective_direction_rad(model, p, i)
+    isfinite(direction_rad) || return nothing
+    v_hat = vel / speed
+    target_ii = cos(direction_rad) >= 0.0 ? v_hat : -v_hat
+    q = SVector{4, Float64}(state.q[1], state.q[2], state.q[3], state.q[4])
+    ω = SVector{3, Float64}(state.ω[1], state.ω[2], state.ω[3])
+    to_body = rot(q)                                       # inertial to body
+    target_b = to_body * target_ii
+    link, engine = _mounted_engine(model, spacecraft)
+    d = SVector{3, Float64}(engine.direction)
+    nd = norm(d)
+    (isfinite(nd) && nd > 0.0) || return nothing
+    axis_b = actuator_context(link).link_to_body * (d / nd)
+    e = cross(axis_b, target_b)
+    s = norm(e)
+    c = dot(axis_b, target_b)
+    θ = atan(s, c)
+    e_hat = if s > 1.0e-12
+        e / s
+    elseif c < 0.0                                          # pointing the opposite way: turn about any perpendicular axis
+        perpendicular = cross(axis_b, abs(axis_b[1]) < 0.9 ? SVector(1.0, 0.0, 0.0) : SVector(0.0, 1.0, 0.0))
+        perpendicular / norm(perpendicular)
+    else
+        SVector{3, Float64}(0.0, 0.0, 0.0)
+    end
+    r = norm(pos)
+    accel = -(p.args.environment_model.planet.μ / r^3) * pos
+    v_hat_rate = (accel - dot(accel, v_hat) * v_hat) / speed
+    ω_target_b = to_body * cross(v_hat, v_hat_rate)
+    ωn = model.pointing_frequency_rad_s
+    ζ = model.pointing_damping
+    return SMatrix{3, 3, Float64, 9}(spacecraft.inertia_tensor) * (ωn^2 * θ * e_hat - 2.0 * ζ * ωn * (ω - ω_target_b))
+end
+
+"""
+    mounted_burn_tick!(model::BaseThrusterModel, u, p, t, i) -> Nothing
+
+The control tick of a scheduler in `:mounted` actuation for spacecraft `i`:
+refresh the burn state, then, while a burn is planned or running, set the
+mounted wheels' levels to the least-norm split of the pointing torque (within
+their torque limits); the wheels idle otherwise.
+"""
+function mounted_burn_tick!(model::BaseThrusterModel, u, p, t::Float64, i::Int)
+    model.actuation === :mounted || return nothing
+    (1 <= i <= length(model.mounted_levels)) || return nothing
+    refresh_burn!(model, p, i, t)
+    spacecraft = p.args.dynamics_model.spacecraft[i]
+    levels = model.mounted_levels[i]
+    n_thrusters = mounted_thruster_count(spacecraft)
+    n_wheels = mounted_wheel_count(spacecraft)
+    for j in 1:n_wheels
+        levels[n_thrusters + j] = 0.0
+    end
+    _, stop_s, _ = model.burn_windows[i]
+    (n_wheels > 0 && isfinite(stop_s) && t <= stop_s) || return nothing
+    state = u.sc[i]
+    hasproperty(state, :q) || throw(ArgumentError(
+        "Mounted burns point the engine with the wheels and need the attitude state: set orientation_sim=true (spacecraft $(i))."))
+    torque = _burn_pointing_torque(model, spacecraft, state, p, i)
+    torque === nothing && return nothing
+    assembly = spacecraft.root.rw_assembly
+    first_mounted = assembly.n_wheels - n_wheels
+    axes = assembly.J_rw[:, (first_mounted + 1):assembly.n_wheels]
+    upper = [wheel.max_torque_nm for wheel in assembly.wheels]
+    wheel_levels = allocate_actuators(axes, torque, -upper, upper)
+    for j in 1:n_wheels
+        levels[n_thrusters + j] = wheel_levels[j]
+    end
+    return nothing
 end

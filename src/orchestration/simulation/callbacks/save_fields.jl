@@ -327,7 +327,9 @@ function thruster_level_counts(args::SimulationConfiguration)::Vector{Int}
     for i in eachindex(spacecraft)
         n = _thruster_count(spacecraft[i])
         n == 0 && continue
-        any(effector -> _effector_thruster_levels(effector, i, spacecraft[i]) !== nothing, effectors) || continue
+        # A mounted effector may size its levels only at its first tick.
+        any(effector -> actuation_mode(effector) === :mounted ||
+            _effector_thruster_levels(effector, i, spacecraft[i]) !== nothing, effectors) || continue
         counts[i] = n
     end
     return counts

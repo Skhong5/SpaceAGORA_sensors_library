@@ -131,6 +131,37 @@ function held_run(sc, levels; mission_time=2.0, rate=1.0, kw...)
     return run_simulation(args; isolate_state=false, kw...)
 end
 
+# A 110 kg spacecraft in a 7000 km circular orbit, attitude at the identity
+# (body x radial, so an engine along body x points 90 degrees off prograde),
+# with a 1 N, 300 s engine along body x and, optionally, three wheels.
+function orbit_spacecraft(; id, wheels=true)
+    root = SM.Link(root=true, m=100.0, dims=MVector(1.0, 1.0, 1.0))
+    speed = sqrt(SM.Earth().μ / 7.0e6)
+    ic = SM.CartesianInitialCondition(SVector(7.0e6, 0.0, 0.0), SVector(0.0, speed, 0.0); q=SVector(0.0, 0.0, 0.0, 1.0))
+    sc = SM.SpacecraftModel(links=[root], root=root, prop_mass=10.0, inertia_tensor=root.inertia, initial_condition=ic, id=id)
+    add_actuator!(sc, root, Thruster(max_thrust=1.0, direction=MVector(1.0, 0.0, 0.0), Isp=300.0))
+    if wheels
+        for axis in (SVector(1.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(0.0, 0.0, 1.0))
+            add_actuator!(sc, root, ReactionWheel(spin_axis=axis))
+        end
+    end
+    return sc
+end
+
+# A prograde 1 N burn from 300.5 s to 400.5 s, applied ideally or through the
+# mounted engine; the window's ends fall between the 1 s control ticks.
+function burn_run(sc, actuation; mission_time=450.0)
+    model = SM.BaseThrusterModel(thrust=[1.0], direction=[0.0], Δv=[0.0], start_burn_time=[300.5],
+        stop_burn_time=[400.5], Isp=[300.0], actuation=actuation)
+    base = make_example_config(planet=SM.Earth(), spacecraft=sc, mission_time=mission_time,
+        initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+        dynamic_effectors=(SM.InverseSquaredGravityModel(),), ephemerides_model=SM.SimpleEphemeridesModel(),
+        orientation_sim=true, keplerian=false, EI_km=1.0, verbose=false, results=false)
+    args = SM.SimConfig._with_configuration(base;
+        control_model=SM.ControlModel(control_effectors=(model,), control_rates=[1.0]))
+    return run_simulation(args; return_results=true, return_solution=true)
+end
+
 @testset "Actuator contract" begin
     @testset "a thruster's wrench, limits and propellant follow from its record" begin
         root = SM.Link(root=true, m=10.0)
@@ -763,6 +794,53 @@ end
         SM.ControlHooks._apply_solar_panel_aoa!(aoa, plain, 0.7)          # without a hinge the tick time is not needed
         @test plain_panel.α == 0.7
         @test_throws ArgumentError SM.ControlHooks._apply_solar_panel_aoa!(aoa, limited, 0.7)
+    end
+
+    @testset "a mounted burn points its engine with the wheels and fires it in the window" begin
+        @test_throws ArgumentError SM.BaseThrusterModel(thrust=[1.0], direction=[0.0], Δv=[0.0], start_burn_time=[0.0],
+            stop_burn_time=[1.0], Isp=[300.0], actuation=:bogus)
+        legacy = SM.BaseThrusterModel([1.0], [0.0], [0.0], [0.0], [1.0], [300.0])
+        @test SpaceAGORA.actuation_mode(legacy) === :ideal && SpaceAGORA.actuator_levels(legacy, 1) === nothing
+        mounted = SM.BaseThrusterModel(thrust=[1.0], direction=[0.0], Δv=[0.0], start_burn_time=[0.0],
+            stop_burn_time=[1.0], Isp=[300.0], actuation=:mounted)
+        @test SM.ControlHooks.control_thruster_levels(mounted, 1) === nothing      # the mounted engine reports its own level
+        # The engine switches only at the window's ends, through the flag the edge callback flips.
+        flag_model = SM.BaseThrusterModel(thrust=[1.0], direction=[0.0], Δv=[0.0], start_burn_time=[300.0],
+            stop_burn_time=[400.0], Isp=[300.0], actuation=:mounted)
+        p_flag = readout_params(SM.SpacecraftModel[orbit_spacecraft(id=25)], (flag_model,))
+        for (t, on) in ((299.999, false), (300.0, true), (350.0, true), (400.0, false))
+            SM.ControlHooks.refresh_burn!(flag_model, p_flag, 1, t)
+            @test flag_model.burning[1] == on && SpaceAGORA.actuator_levels(flag_model, 1)[1] == (on ? 1.0 : 0.0)
+        end
+        @test SM.ControlHooks.burn_edge(flag_model, 300.0) && SM.ControlHooks.burn_edge(flag_model, 400.0)
+        @test !SM.ControlHooks.burn_edge(flag_model, 350.0) && !SM.ControlHooks.burn_edge(legacy, 0.0)
+
+        ideal = burn_run(orbit_spacecraft(id=21), :ideal)
+        pointed = burn_run(orbit_spacecraft(id=22), :mounted)
+        unpointed = burn_run(orbit_spacecraft(id=23; wheels=false), :mounted)
+        speed(result) = norm(result.solution.u[end].sc[1].vel)
+        # The engine runs exactly the window: 1 N for 100 s at 300 s of specific impulse.
+        @test 110.0 - pointed.solution.u[end].sc[1].mass ≈ 100.0 / (300.0 * G0) rtol=1e-6
+        # ... and lights and stops at the window's ends, between the control ticks.
+        mass_at(t) = pointed.solution(t).sc[1].mass
+        mdot = 1.0 / (300.0 * G0)
+        @test mass_at(300.5) == mass_at(300.0) && mass_at(300.9) < mass_at(300.5) - 0.3 * mdot
+        @test isapprox(mass_at(400.9), mass_at(400.5); atol=1e-12) && mass_at(400.5) < mass_at(400.1) - 0.3 * mdot
+        # Pointed: the speed gained matches the ideal burn's to a small fraction of the burn's Δv.
+        dv_burn = 1.0 / 110.0 * 100.0
+        @test abs(speed(pointed) - speed(ideal)) < 0.01 * dv_burn
+        # Not pointed: the engine fires 90 degrees off, and the orbit does not speed up the same way.
+        @test abs(speed(unpointed) - speed(ideal)) > 0.2 * dv_burn
+        # At ignition the engine (body +x) is on the velocity.
+        k = findfirst(t -> t >= 300.5, pointed.solution.t)
+        state = pointed.solution.u[k].sc[1]
+        engine_ii = SM.rot(SVector{4}(state.q))' * SVector(1.0, 0.0, 0.0)
+        @test acos(clamp(dot(engine_ii, normalize(SVector{3}(state.vel))), -1.0, 1.0)) < deg2rad(0.5)
+        # The engine's level is the burn's thrust in the window and zero outside it.
+        table = pointed.table
+        inside = (table.time .> 300.5) .& (table.time .< 400.5)
+        @test any(inside) && all(==(1.0), table.sc1_actuator_level_1[inside])
+        @test all(==(0.0), table.sc1_actuator_level_1[.!inside .& ((table.time .< 300.5) .| (table.time .> 400.5))])
     end
 end
 

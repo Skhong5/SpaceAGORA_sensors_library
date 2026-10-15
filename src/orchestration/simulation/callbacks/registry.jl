@@ -26,7 +26,7 @@ using ..ConfigTypes: SaveData
 using ..SceneVisualization: link_pose_vector, link_pose_link_indices, arm_pose_vector, robot_arm_plan_for
 import ..ConfigTypes: GramTrackCache, VacuumPredictedGRAMCache, GramDensityPerturbationState
 import ..ConfigTypes: GramTrackCacheConfig, CallbackEnvConfig, PolicyDecisionEnvConfig
-using ..ControlHooks: calcControlEffect!, control_thruster_levels, touchdown_spec
+using ..ControlHooks: calcControlEffect!, control_thruster_levels, touchdown_spec, refresh_burn!, mounted_burn_tick!, burn_edge
 using ..Actuators: actuation_mode, actuator_levels
 using ..ActuatorMounting: mounted_thruster_fractions, mounted_hinge_count, apply_hinge_levels!, mounted_actuator_count
 using ..ActuatorMounting: applied_actuator_levels, mounted_power
