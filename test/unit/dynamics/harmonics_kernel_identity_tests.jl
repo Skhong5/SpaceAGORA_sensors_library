@@ -28,7 +28,7 @@ const PERT_HKI = SM_HKI.DynamicEffectors.PerturbationEffectors
 
 const HKI_GRAVITY_FILE = joinpath(
     normpath(joinpath(@__DIR__, "..", "..", "..")),
-    "data", "Gravity_harmonics_data", "EarthGGM05C.csv",
+    "data", "planets", "gravity", "EarthGGM05C.csv",
 )
 
 const HKI_LPI = SMatrix{3, 3, Float64, 9}(

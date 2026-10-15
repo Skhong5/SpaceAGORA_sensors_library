@@ -246,7 +246,7 @@ end
     # ---------------------------------------------------------------
     @testset "station geometry assets" begin
         demo_path = ASSETS.station_geometry_path(:demo)
-        @test endswith(demo_path, joinpath("demo", "station_pointcloud.csv"))
+        @test endswith(demo_path, joinpath("scene", "models", "station_pointcloud_demo.csv"))
         @test ASSETS.station_geometry_path(:gateway) == ASSETS.station_cad_path(:gateway)
         @test_throws ArgumentError ASSETS.station_geometry_path(:bogus)
         @test_throws ArgumentError ASSETS.station_cad_path(:bogus)

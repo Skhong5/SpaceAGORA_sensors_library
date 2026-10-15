@@ -60,22 +60,22 @@ _gmat_reference_available() = isdir(_GMAT_REFERENCE_DIR)
 
 # Used for the Basilisk target and the STK Earth point-mass cases. The Basilisk
 # reference was generated with GGM03S, so it is a known model mismatch there.
-const _GMAT_HARMONICS_EARTH_FILE = "data/Gravity_harmonics_data/EarthGGM05C.csv"
+const _GMAT_HARMONICS_EARTH_FILE = "data/planets/gravity/EarthGGM05C.csv"
 # Comparison choices for STK J2/J50: published fields converted using the
 # IERS 2010 permanent-tide terms. Reduced residuals motivated these choices;
 # they do not establish the settings of the retained STK reference runs.
-# See data/Gravity_harmonics_data/README.md.
-const _STK_HARMONICS_EARTH_FILE = "data/Gravity_harmonics_data/EGM96_GMAT_L50_zerotide.csv"
-const _STK_HARMONICS_MOON_FILE = "data/Gravity_harmonics_data/LP165P_permtide.csv"
+# See data/planets/gravity/README.md.
+const _STK_HARMONICS_EARTH_FILE = "data/planets/gravity/EGM96_GMAT_L50_zerotide.csv"
+const _STK_HARMONICS_MOON_FILE = "data/planets/gravity/LP165P_permtide.csv"
 # Earth field selected by the :gmat comparison (GMAT R2025a EGM96.cof,
 # transcribed to degree/order 50). Its match to the retained references' actual
 # generation settings is unverified; an older generator selects JGM2 instead.
-const _GMAT_HARMONICS_EARTH_EGM96_FILE = "data/Gravity_harmonics_data/EGM96_GMAT_L50.csv"
+const _GMAT_HARMONICS_EARTH_EGM96_FILE = "data/planets/gravity/EGM96_GMAT_L50.csv"
 # Must match data/telemetry/gmat_matrix_parity_locked.py, which generated the
 # locked Mars references with Mars-50c (GMM2B.csv stays available as an asset).
-const _GMAT_HARMONICS_MARS_FILE = "data/Gravity_harmonics_data/Mars50c.csv"
-const _GMAT_HARMONICS_VENUS_FILE = "data/Gravity_harmonics_data/MGNP180U.csv"
-const _GMAT_HARMONICS_MOON_FILE = "data/Gravity_harmonics_data/LP165P.csv"
+const _GMAT_HARMONICS_MARS_FILE = "data/planets/gravity/Mars50c.csv"
+const _GMAT_HARMONICS_VENUS_FILE = "data/planets/gravity/MGNP180U.csv"
+const _GMAT_HARMONICS_MOON_FILE = "data/planets/gravity/LP165P.csv"
 const _GMAT_PLANETARY_KERNEL_CANDIDATES = (
     "spk/planets/de430.bsp",
 )

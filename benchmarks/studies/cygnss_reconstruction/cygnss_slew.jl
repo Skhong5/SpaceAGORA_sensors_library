@@ -36,7 +36,7 @@ const FULL_HOUR = get(ENV, "SPACEAGORA_DEMO_CYGNSS_SLEW_FULL_HOUR", "1") != "0"
 # --- the drawn vehicle ------------------------------------------------------
 # NASA's own public 3D model of the observatory, as the constellation page uses
 # it (see `cygnss_constellation.jl` for the scale and rotation derivation and
-# `data/models/README.md` for the provenance). The nadir-face assumption is
+# `data/scene/models/README.md` for the provenance). The nadir-face assumption is
 # inherited from there: a rotation of +90 degrees about model Z puts the antenna
 # deck on body +z and the solar cells on body -z.
 const CYGNSS_MODEL = joinpath(MODELS_DIR, "cygnss_nasa_3d_resources.glb")

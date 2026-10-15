@@ -62,9 +62,9 @@ git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 ```
 
 `GIT_LFS_SKIP_SMUDGE=1` on the clone line keeps the seven GRAM surrogate grids
-under `data/GRAM_surrogate/` as small Git LFS pointers. They are about 2.5 GB,
+under `data/planets/gram_surrogate/` as small Git LFS pointers. They are about 2.5 GB,
 nothing on this path reads them, and `git lfs pull --include
-"data/GRAM_surrogate/*"` fetches them later if a benchmark study needs them.
+"data/planets/gram_surrogate/*"` fetches them later if a benchmark study needs them.
 
 ## What this run gives you
 

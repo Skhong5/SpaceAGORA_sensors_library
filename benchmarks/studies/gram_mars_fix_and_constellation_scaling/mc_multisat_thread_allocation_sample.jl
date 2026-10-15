@@ -26,7 +26,7 @@ const MISSION_TIME_S = 600.0
 function build_sample_config(mode::String, seed::Int)
     planet = Earth("", SPICE_PATH)
     harmonics = GravitationalHarmonicsModel(
-        20, 20, joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv"), planet
+        20, 20, joinpath(REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv"), planet
     )
     density_model = if mode == "surrogate"
         GRAMAtmosphereModelSurrogate(planet_name="earth")

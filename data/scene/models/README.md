@@ -9,6 +9,7 @@ Draco, meshopt or KTX2 (the exporter refuses them and says how to convert).
 | File | Source | License | Notes |
 |---|---|---|---|
 | `iss_nasa_3d_resources_b.glb` | NASA 3D Resources, "International Space Station (ISS) (B)" (github.com/nasa/NASA-3D-Resources) | US government work, public domain (NASA media usage guidelines) | glTF 2.0, Y-up, 36 meshes, 19 materials, no textures, 3.5 MB. NASA's file is Draco-compressed, which the viewer cannot decode, so this copy was decompressed with `npx @gltf-transform/cli copy` (geometry unchanged). Extents 14 x 45 x 46 model units; `model_scale=2.4` puts the truss near 109 m and `model_rotation_deg=(-90, 0, -90)` lays the truss along body y with the modules along body x. |
+| `gateway_core.stl` | not recorded in this repository (lab-supplied Gateway core module mesh; add the source here) | open-repo per `data/assets_manifest.toml` | RPO station reference geometry: sampled into the keep-out point cloud by the RPO examples through `station_cad_path(:gateway)`; not a viewer model |
 
 ## Mission display meshes
 

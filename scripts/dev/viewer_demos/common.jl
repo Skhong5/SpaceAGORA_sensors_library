@@ -21,8 +21,8 @@ using DataFrames
 
 const DEMO_OUT_ROOT = get(ENV, "SPACEAGORA_VIEWER_DEMO_OUT", joinpath(REPO_ROOT, "output", "viewer_demos"))
 const MISSION_SPK_DIR = abspath(get(ENV, "SPACEAGORA_MISSION_SPK_DIR", joinpath(SPICE_PATH, "spk", "missions")))
-const MODELS_DIR = joinpath(REPO_ROOT, "data", "models")
-const HARMONICS_DIR = joinpath(REPO_ROOT, "data", "Gravity_harmonics_data")
+const MODELS_DIR = joinpath(REPO_ROOT, "data", "scene", "models")
+const HARMONICS_DIR = joinpath(REPO_ROOT, "data", "planets", "gravity")
 
 demo_outdir(name::AbstractString) = viewer_demo_options(name, 1.0; argv=String[]).output_dir
 
@@ -333,6 +333,6 @@ end
 
 function demo_model_path(filename::AbstractString)
     path = joinpath(MODELS_DIR, filename)
-    isfile(path) && filesize(path) > 0 || throw(ArgumentError("mission display model missing: $path; restore the tracked asset from data/models in this repository"))
+    isfile(path) && filesize(path) > 0 || throw(ArgumentError("mission display model missing: $path; restore the tracked asset from data/scene/models in this repository"))
     return path
 end

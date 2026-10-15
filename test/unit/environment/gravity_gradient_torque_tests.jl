@@ -176,7 +176,7 @@ end
         @test_skip Threads.nthreads() >= 2
     else
         planet=args.environment_model.planet
-        coefficients=joinpath(@__DIR__,"..","..","..","data","Gravity_harmonics_data","EarthGGM05C.csv")
+        coefficients=joinpath(@__DIR__,"..","..","..","data","planets","gravity","EarthGGM05C.csv")
         harmonics=GravitationalHarmonicsModel(4,4,coefficients,planet)
         args=SM.SimConfig._with_configuration(args;dynamics_model=
             DynamicsModel(args.dynamics_model.spacecraft,(harmonics,model)))

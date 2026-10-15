@@ -440,13 +440,13 @@ end
 
 function _harmonics_file(planet_id::Symbol)::String
     if planet_id == :mars
-        return joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "Mars50c.csv")
+        return joinpath(REPO_ROOT, "data", "planets", "gravity", "Mars50c.csv")
     elseif planet_id == :earth
-        return joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "EarthGGM05C.csv")
+        return joinpath(REPO_ROOT, "data", "planets", "gravity", "EarthGGM05C.csv")
     elseif planet_id == :venus
-        return joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "MGNP180U.csv")
+        return joinpath(REPO_ROOT, "data", "planets", "gravity", "MGNP180U.csv")
     elseif planet_id == :titan
-        return joinpath(REPO_ROOT, "data", "Gravity_harmonics_data", "titan5.csv")
+        return joinpath(REPO_ROOT, "data", "planets", "gravity", "titan5.csv")
     end
     throw(ArgumentError("No harmonics file configured for '$planet_id'."))
 end
