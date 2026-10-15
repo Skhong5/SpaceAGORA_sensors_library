@@ -265,3 +265,14 @@ a battery:
 | `sc1_power_load_w` | W | Load on the bus: constant loads plus the mounted actuators, with any shedding applied |
 | `sc1_power_shed_w` | W | Actuator power shed because the battery is empty |
 | `sc1_power_net_w` | W | Generation minus load; negative while the battery is discharging, or while it is empty and the load exceeds the generation |
+
+### Actuator faults
+
+Written with the default save-field list when a spacecraft carries actuator
+faults (`add_fault!`, see [Extensibility](../extensibility.md#Add-an-actuator)):
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_fault_active_1` .. `sc1_fault_active_m` | — | 1 while each fault (in the order it was added) is active, 0 otherwise |
+
+The `actuator_level` columns show the levels as the faults leave them.
