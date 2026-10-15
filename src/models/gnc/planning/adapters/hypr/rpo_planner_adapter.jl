@@ -1,4 +1,4 @@
-"""Opt-in contract adapter for existing HYPR planning and configured retiming."""
+# Opt-in contract adapter for existing HYPR planning and configured retiming.
 module HYPRRPOPlanning
 using LinearAlgebra: norm
 using ..RPOPlannerInterfaces

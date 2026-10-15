@@ -67,7 +67,7 @@ harness. Native scenes support Linux x86_64 with MuJoCo 3.11.0.
 Install the companion in a separate environment and explicitly load it when
 needed; see [installation and environment](docs/src/user/installation_environment.md#optional-mujoco-companion).
 Its connection to SpaceAGORA follows the same
-[versioned adapter standard](docs/src/maintainer/adapter_contract.md) as other
+[versioned adapter standard](docs/src/reference/adapter_contract.md) as other
 optional integrations. Loading SpaceAGORA alone does not load the companion or
 download MuJoCo.
 
@@ -286,12 +286,12 @@ describes the placement and retirement rules. The
 [source directory guide](src/README.md) explains the four source groups and the
 composition loader; the groups do not introduce new Julia namespaces.
 
-- User docs live in `docs/src/` and are built with `julia --project=. docs/make.jl`
-- Generated API pages come from `docs/public_api_symbols.jl`
-- Start with [Architecture and Responsibilities](docs/src/user/architecture.md)
-  for the simulation flow, spacecraft composition, source owners and where new
-  work belongs. Architecture contracts and quality references live under the
-  docs Maintainer Guide.
+- The [user documentation](docs/src/index.md) covers installation, simulations,
+  results and supported extension interfaces.
+- Start with [How a Simulation Fits Together](docs/src/user/architecture.md)
+  for the simulation flow and spacecraft composition.
+- Repository changes, documentation builds, ownership rules and release checks
+  are covered separately in the [contributor guide](docs/contributing/index.md).
 
 Generated reports, docs builds, and other local outputs stay in ignored paths
 such as `output/`, `docs/build/`, `docs/site/`, and `docs/src/generated/`.

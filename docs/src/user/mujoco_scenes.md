@@ -26,8 +26,8 @@ Use the source revisions recorded by the companion's installer and
 [release preparation notes](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl/blob/988bd957de44799f8aacb0ef87f6bedf4fab16c6/docs/releases/v0.1.0.md).
 The core and companion are qualified as a pair; a matching version-family
 constraint is insufficient to establish compatibility. The connection follows
-the shared [adapter standard](../maintainer/adapter_contract.md) and version 1.0.0
-of [ExternalPropagationServices](../maintainer/external_propagation_services.md).
+the shared [adapter standard](../reference/adapter_contract.md) and version 1.0.0
+of [ExternalPropagationServices](../reference/external_propagation_services.md).
 
 ## Understand the coordinates and ownership
 

@@ -1,4 +1,4 @@
-# Maintainer Overview
+# Contributing to SpaceAGORA
 
 Use this section when you are changing documentation structure, public API
 shape, architecture rules, or CI-backed repository policy.
@@ -14,27 +14,27 @@ julia --project=. docs/make.jl
 
 What to read next:
 
-- [Optional Adapter Standard](adapter_contract.md)
-- [EDG Package Boundary](edg_adapter_boundary.md)
-- [Documentation Policy](../documentation_policy.md)
-- [API Policy](../public_api_policy.md)
-- [Contracts](../contracts.md)
+- [Optional Adapter Standard](../src/reference/adapter_contract.md)
+- [EDG Package Boundary](../src/reference/edg_adapter_boundary.md)
+- [Documentation Policy](documentation_policy.md)
+- [API Policy](../src/public_api_policy.md)
+- [Contracts](contracts.md)
 
 ## How this section is organized
 
 ### Documentation Policy
 
-Use [Documentation Policy](../documentation_policy.md) when you are changing the
+Use [Documentation Policy](documentation_policy.md) when you are changing the
 docs process, generated API handling, or release-gate expectations.
 
 ### API Policy
 
-Use [API Policy](../public_api_policy.md) when you need to know which package
+Use [API Policy](../src/public_api_policy.md) when you need to know which package
 surface is stable and which repository namespaces are still free to move.
 
 ### Contracts
 
-Use [Contracts](../contracts.md) when you are changing structure, ownership,
+Use [Contracts](contracts.md) when you are changing structure, ownership,
 quality gates, or runtime-analysis policy and need the authoritative contract
 pages.
 
@@ -42,24 +42,25 @@ pages.
 
 Use this checklist for a new contribution or an incoming research branch before
 review. Existing adapter-specific requirements remain in the
-[optional adapter standard](adapter_contract.md).
+[optional adapter standard](../src/reference/adapter_contract.md) and the
+[adapter maintenance notes](adapter_maintenance.md).
 
 1. **Identify the change.** Record the base and candidate revisions, affected
    source owners, intended behavior changes and existing behavior to preserve.
-   Use the [architecture map](../user/architecture.md#Map-of-the-repository) to
+   Use the [architecture map](architecture.md#map-of-the-repository) to
    distinguish shared core mechanisms, optional implementations and study code.
 2. **Name the boundary.** List the documented root API or versioned facade
    used by the contribution. Call out any internal API access explicitly;
    an importable name is not automatically supported. Follow
-   [Public API Policy](../public_api_policy.md) and
-   [Extensibility](../extensibility.md).
+   [Public API Policy](../src/public_api_policy.md) and
+   [Extensibility](../src/extensibility.md).
 3. **Preserve configuration and numerical contracts.** Use the existing
    configuration-copy helpers so unspecified settings survive overrides; see
-   [configuration ownership](../user/simulation_configuration.md#Source-ownership-for-contributors).
+   [configuration ownership](configuration_ownership.md).
    Reuse the shared calculation owner when its semantics match. Record units,
    frames, epoch and quaternion conventions, including normalization and rotation
-   direction. Follow the [integrated-state conventions](../user/integrated_state.md)
-   and [solver precedence](../user/solver_configuration.md#Solver-policy-and-partitioning);
+   direction. Follow the [integrated-state conventions](../src/user/integrated_state.md)
+   and [solver precedence](../src/user/solver_configuration.md#solver-policy-and-partitioning);
    do not infer that every quantity uses the same units or change solver policy
    as an incidental cleanup.
 4. **Identify runtime ownership.** State who owns mutable state, random-number
@@ -68,29 +69,29 @@ review. Existing adapter-specific requirements remain in the
    For adapters, apply the existing lifecycle and conformance requirements.
 5. **Retain evidence with its source.** Record input and asset identifiers,
    configuration, seed policy, platform and dependency revisions alongside the
-   [saved outputs](../user/outputs.md). Identify the affected tests and focused
+   [saved outputs](../src/user/outputs.md). Identify the affected tests and focused
    comparisons, their executed revision, and any failures or unexecuted checks.
    Preserve scientific tolerances and historical results; distinguish new
    measurements from old evidence and PR-head checks from integrated-main checks.
-   Follow [Contracts](../contracts.md) and the
-   [documentation review checklist](../documentation_policy.md#PR-review-checklist).
+   Follow [Contracts](contracts.md) and the
+   [documentation review checklist](documentation_policy.md#pr-review-checklist).
 
-## Generated and mirrored content
+## Public and contributor documentation
 
 The generated Public API, Terrain API, Mesh Aerodynamics API and Visualization API pages share one
 `docs/public_api_symbols.jl` registry.
 
-The contract pages shown in the docs site are mirrored from the hand-written
-sources under:
+Repository contracts remain authoritative under `docs/architecture/` and
+`docs/quality/`. This contributor guide, the source ownership map and the
+release procedures live outside `docs/src/` and are not published in the user
+site. The user site keeps supported API and extension contracts in Reference.
 
-- `docs/architecture/*`
-- `docs/quality/*`
-
-That split is intentional: user-facing docs stay task-oriented, while maintainer
-rules remain authoritative and reviewable in their source locations.
+See [adapter maintenance](adapter_maintenance.md) for conformance and release
+evidence, and [Contracts](contracts.md) for the canonical repository rules.
 
 ## Planner interface development
 
-The [RPO planner contract](rpo_planner_contract.md) describes the internal
-request/reference validation layer, its limits and the remaining integration
-work. Existing runtime planner selection is unchanged.
+The [RPO planner development record](rpo_planner_development.md) retains the
+staged implementation history and source ownership notes. The
+[supported planner contract](../src/reference/rpo_planner_contract.md) and
+[pilot guide](../src/user/rpo_planner_pilot.md) describe the current user interface.

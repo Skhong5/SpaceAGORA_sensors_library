@@ -1,5 +1,5 @@
 # Canonical aggregator: no behavior ownership.
-"""Run ownership and accepted-update installation for opt-in RPO planners."""
+# Run ownership and accepted-update installation for opt-in RPO planners.
 module RPOPlannerLifecycle
 using Random: MersenneTwister
 using SHA: sha256

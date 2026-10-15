@@ -142,8 +142,8 @@ For each run, inspect the installed reference, its sampled clearance checks and
 the executed trajectory. A validated reference does not guarantee collision-free
 tracking under arbitrary disturbances. The controller, actuator limits and
 failure policy remain part of the application. The
-[planner contract](../maintainer/rpo_planner_contract.md) and
-[HYPR service reference](../maintainer/hypr_services.md) describe those boundaries
+[planner contract](../reference/rpo_planner_contract.md) and
+[HYPR service reference](../reference/hypr_services.md) describe those boundaries
 for developers extending the integration.
 
 

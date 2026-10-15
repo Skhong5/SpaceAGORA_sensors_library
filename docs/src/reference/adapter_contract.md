@@ -77,12 +77,6 @@ record exact source revisions for the qualified pair and explicitly install the
 core revision before the adapter. Package `[sources]` entries do not propagate
 into arbitrary consumer environments.
 
-Cross-repository CI pins a reviewed adapter revision while testing the candidate
-SpaceAGORA checkout. Adapter CI tests its reviewed core revision. These test pins
-do not create a reverse runtime dependency. Advance pins deliberately after both
-repositories have qualified the pair; do not use a moving branch as release
-evidence.
-
 ## Ownership and scientific semantics
 
 Document who owns configuration, mutable runtime, state, random-number streams,
@@ -96,31 +90,6 @@ Refuse unsupported modes explicitly. Do not silently substitute an integrator,
 drop a configured feature, relax an accuracy threshold or treat a failed native
 test as a successful skip. Core validation and adapter validation complement each
 other; a configuration-only preflight does not certify every execution mode.
-
-## Conformance and release evidence
-
-`test/unit/adapter_contract_tests.jl` checks the common facade shape, inventory
-resolution and exact version refusal for HYPR, external propagation and EDG. Domain
-tests remain responsible for scientific and lifecycle behavior. Every adapter
-must additionally demonstrate:
-
-1. Clean installation with only declared dependencies and recorded source pins.
-2. Fresh-process core-first and adapter-first loading, successful repeated
-   initialization, and a negative compatibility case before adapter activation.
-3. Core-only loading without the provider or native library, and a clear error
-   when an unavailable optional feature is requested.
-4. An end-to-end configuration/run/result test through supported interfaces.
-5. Independent runtime ownership, reproducibility under supported concurrency,
-   and refusal tests for unsupported modes.
-6. Required native execution on the supported platform, plus unchanged scientific
-   regression tolerances and versioned fixtures.
-7. Hosted checks in both repositories and independently reviewed source changes.
-
-Extract in order: publish the core facade, qualify the standalone adapter against
-that revision, then replace the in-tree integration with an exact external pin.
-Remove the old copy only after the standalone native checks pass. Preserve source
-history, licenses and benchmark provenance; historical numerical results must
-remain labeled as historical until rerun.
 
 ## Saved-output consumers
 
@@ -140,6 +109,6 @@ The companion also opens saved JSON independently of SpaceAGORA.
 
 `scripts/setup_visualizer.jl` installs the revision pinned in
 `packages/VisualizerSource.toml` into a separate environment. Installation and
-both load orders have mandatory CI coverage. The companion does not read raw
+both load orders are supported. The companion does not read raw
 engine state, install a dynamics provider or change propagation settings.
 See the [user guide](../user/visualization.md) for supported commands.

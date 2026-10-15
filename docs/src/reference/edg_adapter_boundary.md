@@ -13,16 +13,11 @@ the scientific policy and its current limits.
 | Responsibility | Owner |
 |---|---|
 | Public configuration, state, guidance/control model and angle-command types | SpaceAGORA; existing type identities and constructors are retained. |
-| Heat-rate and heat-load decisions, structural restriction, targeting, candidate planning, passage heat, guidance and control decisions | Eight source files in SpaceAGORAEDG. |
+| Heat-rate and heat-load decisions, structural restriction, targeting, candidate planning, passage heat, guidance and control decisions | SpaceAGORAEDG numerical implementation. |
 | Observation copies, atmosphere, epoch, frames, gravity and vehicle queries | SpaceAGORA, behind the versioned facade. |
 | Integrator, heat integrals, event roots, solver masks, callback order, output and panel actuation | SpaceAGORA. |
 | Fresh-run initialization, per-passage bookkeeping and shared guidance/control state | Core lifecycle hooks, operating on the run's own EDG state. |
 | Older E-EDG/T-EDG bridge routes | Retained in core; shared typed numerical calls forward to the optional provider. |
-
-The private core `typed_edg/algorithms.jl` is a compatibility dispatcher. Its
-explicit `COMPATIBILITY_FUNCTIONS` inventory forwards existing helper names to
-the companion; it contains no second implementation of the eight kernels.
-Core source gates reject a numerical implementation added back to that owner.
 
 ## Supported calls and values
 
@@ -111,13 +106,8 @@ their existing diagnostics and scientific meaning.
 
 ## Evidence and limits
 
-The extracted baseline is the reviewed PR289/current-main integration recorded
-in the companion's `provenance/extraction.json`. That record preserves original
-file hashes and identifies the service substitutions. Numerical ownership tests,
-the existing equation, targeting, heat, event and lifecycle regressions,
-core-only failure tests, both package load orders and a short analytic-atmosphere
-run exercise the software boundary. Native reference campaigns and their exact
-settings remain separate evidence; an installation test does not qualify them.
+Interface conformance and installation checks do not qualify native reference
+campaigns or their scientific settings.
 
 The initial package is experimental. Exact journal reproduction, continuous-family
 optimality, flight use, new checkpoint support and new concurrency guarantees
