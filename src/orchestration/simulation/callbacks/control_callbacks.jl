@@ -22,6 +22,18 @@ end
     return nothing
 end
 
+# After the control tick of an effector in `:mounted` actuation, the engine moves
+# the spacecraft's mounted hinges toward the levels the effector holds.
+@inline function _apply_mounted_hinges!(control_model, p, sat_idx::Int, t)
+    actuation_mode(control_model) === :mounted || return nothing
+    spacecraft = p.args.dynamics_model.spacecraft[sat_idx]
+    mounted_hinge_count(spacecraft) == 0 && return nothing
+    levels = actuator_levels(control_model, sat_idx)
+    levels === nothing && return nothing
+    apply_hinge_levels!(spacecraft, levels, t)
+    return nothing
+end
+
 @inline control_requires_periodic_callback(::Any) = true
 @inline control_requires_periodic_callback(::BaseThrusterModel) = false
 
@@ -99,6 +111,7 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
         # to avoid conflating effector-index with spacecraft-index.
         apply_control! = (integrator, sat_idx) -> begin
             calcControlEffect!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
+            _apply_mounted_hinges!(control_model, integrator.p, sat_idx, integrator.t)
             if control_model isa BaseThrusterModel
                 _register_control_tstops!(integrator, control_model, sat_idx)
             end

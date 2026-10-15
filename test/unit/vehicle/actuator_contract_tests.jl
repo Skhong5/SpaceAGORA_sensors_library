@@ -460,6 +460,56 @@ end
         @test rate == 0.0                                                  # no propellant
     end
 
+    @testset "a hinge turns its link within its angle and rate limits at control ticks" begin
+        root = SM.Link(root=true, m=50.0)
+        panel = SM.Link(m=5.0, r=MVector(0.0, 1.5, 0.0))
+        sc = SM.SpacecraftModel(links=[root, panel], root=root, prop_mass=1.0, inertia_tensor=root.inertia, id=5)
+        hinge = PanelHinge(axis=SVector(0.0, 2.0, 0.0), min_angle_rad=-1.0, max_angle_rad=1.0, max_rate_rad_s=0.1, angle_rad=0.2)
+        @test hinge.axis == SVector(0.0, 1.0, 0.0)
+        @test add_actuator!(sc, panel, hinge) === hinge
+        @test panel.q ≈ [0.0, sin(0.1), 0.0, cos(0.1)]                       # the link takes the hinge's angle
+        @test_throws ArgumentError add_actuator!(sc, root, PanelHinge(axis=SVector(1.0, 0.0, 0.0)))   # not the root
+        @test_throws ArgumentError add_actuator!(sc, panel, PanelHinge(axis=SVector(1.0, 0.0, 0.0)))  # one per link
+        @test_throws ArgumentError PanelHinge(axis=SVector(1.0, 0.0, 0.0), min_angle_rad=1.0, max_angle_rad=0.0)
+        @test actuator_wrench(hinge, 0.5, actuator_context(panel)) == (ZERO3, ZERO3)
+        @test actuator_limits(hinge) == (-1.0, 1.0)
+        @test SM.hinge_step(hinge, 5.0, 0.0) == 0.2                         # first tick: holds, rate-limited
+        SM.apply_hinge_levels!(sc, [5.0], 0.0)
+        @test hinge.angle_rad == 0.2 && hinge.last_update_s == 0.0
+        SM.apply_hinge_levels!(sc, [5.0], 2.0)
+        @test hinge.angle_rad ≈ 0.4                                          # 0.1 rad/s for 2 s toward the limit
+        SM.apply_hinge_levels!(sc, [5.0], 100.0)
+        @test hinge.angle_rad == 1.0                                          # the angle limit
+        @test panel.q ≈ [0.0, sin(0.5), 0.0, cos(0.5)]
+        @test SM.hinge_step(PanelHinge(axis=SVector(1.0, 0.0, 0.0)), 0.7, 0.0) == 0.7   # unlimited: at once
+        @test [e.actuator for e in mounted_actuators(sc)] == AbstractActuator[hinge]
+        # After the commanding effector's tick the engine applies its hinge levels.
+        control = HoldLevels(1, [0.3])
+        p = readout_params(SM.SpacecraftModel[sc], (control,))
+        SM.SimulationCallbacks._apply_mounted_hinges!(control, p, 1, 110.0)
+        @test hinge.angle_rad ≈ 0.3
+        @test SM.SimulationCallbacks._apply_mounted_hinges!(SM.MagneticMomentumManagerModel(), p, 1, 120.0) === nothing
+        @test hinge.angle_rad ≈ 0.3                                          # ideal effectors leave hinges alone
+    end
+
+    @testset "a mounted run moves the hinge at the controller's ticks" begin
+        root = SM.Link(root=true, m=100.0, dims=MVector(1.0, 1.0, 1.0))
+        panel = SM.Link(m=5.0, r=MVector(0.0, 1.5, 0.0), dims=MVector(0.02, 2.0, 1.0))
+        ic = SM.CartesianInitialCondition(SVector(4.0e9, 0.0, 0.0), ZERO3; q=SVector(0.0, 0.0, 0.0, 1.0))
+        sc = SM.SpacecraftModel(links=[root, panel], root=root, prop_mass=1.0, inertia_tensor=root.inertia, initial_condition=ic, id=6)
+        hinge = add_actuator!(sc, panel, PanelHinge(axis=SVector(0.0, 1.0, 0.0), max_rate_rad_s=0.1))
+        base = make_example_config(planet=SM.Earth(), spacecraft=sc, mission_time=3.0,
+            initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+            dynamic_effectors=(), ephemerides_model=SM.SimpleEphemeridesModel(), orientation_sim=true,
+            keplerian=false, EI_km=1.0, verbose=false, results=false)
+        args = SM.SimConfig._with_configuration(base;
+            control_model=SM.ControlModel(control_effectors=(HoldLevels(1, [0.5]),), control_rates=[1.0]))
+        run_simulation(args; isolate_state=false)
+        @test 0.1 - 1e-12 <= hinge.angle_rad <= 0.3 + 1e-12                  # 0.1 rad/s from the first tick
+        @test hinge.angle_rad < 0.5                                          # still on its way
+        @test panel.q ≈ [0.0, sin(hinge.angle_rad / 2), 0.0, cos(hinge.angle_rad / 2)]
+    end
+
     @testset "a mounted run moves the vehicle and uses propellant as its jets say" begin
         root = SM.Link(root=true, m=500.0, dims=MVector(1.0, 1.0, 1.0))
         ic = SM.CartesianInitialCondition(SVector(4.0e9, 0.0, 0.0), SVector(0.0, 0.0, 0.0); q=SVector(0.0, 0.0, 0.0, 1.0))

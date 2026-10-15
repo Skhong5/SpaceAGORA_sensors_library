@@ -210,7 +210,9 @@ spin axis; it mounts on the root link and its momentum is integrated, with
 torque and momentum limits), `Magnetorquer` (its level is the commanded
 dipole along its axis; it acts in the run's magnetic field) and `LaserTerminal`
 (its level is the transmitted optical power; the vehicle recoils with power
-over the speed of light).
+over the speed of light) and `PanelHinge` (its level is the angle of the
+non-root link it turns, with angle and rate limits; the engine applies it at
+the commanding effector's control ticks).
 
 Registration: `add_actuator!(spacecraft, link, actuator)`.
 

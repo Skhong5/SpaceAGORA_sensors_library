@@ -12,6 +12,7 @@ kind.
 | `mounting.jl` | mounting and the mounted set (`ActuatorMounting`): `add_actuator!`, the mounting order, `allocation_matrix`, `mounted_wrench` |
 | `thruster.jl` | the thruster kind: the `Thruster` record (its `direction` is the thrust direction), its contract methods and `six_axis_thrusters` |
 | `laser.jl` | the laser-terminal kind: the `LaserTerminal` record (level: the transmitted optical power; the vehicle recoils with `level / c`), its contract methods, and the link parameters it gives the interlink model |
+| `hinge.jl` | the hinge kind: the `PanelHinge` record (level: the commanded angle of the link it turns; angle and rate limits), applied at control ticks |
 | `thruster_models.jl` | `BaseThrusterModel` (a burn schedule per spacecraft) and `SixAxisThrusterModel` (six fixed jets) |
 | `thruster_models_module.jl` | the `ThrusterModels` owner module |
 | `thruster_hooks.jl` | thruster firing dynamics over a link's jets: torque allocation, Schmitt trigger, impulse integration |

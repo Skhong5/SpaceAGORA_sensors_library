@@ -12,7 +12,8 @@ actuators of user-defined kinds.
    link);
 3. every torque rod, link by link in `link.magnetorquers` order;
 4. every laser terminal, link by link in `link.laser_terminals` order;
-5. every actuator of a user-defined kind, link by link in
+5. every hinge, link by link (one per hinged link);
+6. every actuator of a user-defined kind, link by link in
    `link.custom_actuators` order.
 
 Built-in kinds added later take their place before the user-defined kinds.
@@ -24,11 +25,11 @@ using StaticArrays
 using ..AbstractTypes: AbstractActuator
 using ..QuaternionMath: rot
 using ..Actuators
-using ..Components: Thruster, ReactionWheel, wheel_momentum_saturate, Magnetorquer, LaserTerminal
+using ..Components: Thruster, ReactionWheel, wheel_momentum_saturate, Magnetorquer, LaserTerminal, PanelHinge, hinge_step
 using ..SpacecraftModels: Link, SpacecraftModel
 using ..Assembly: add_thruster!
 
-export add_actuator!, mounted_actuators, mounted_actuator_count, mounted_thruster_count, mounted_wheel_count, mounted_magnetorquer_count, mounted_laser_count
+export add_actuator!, mounted_actuators, mounted_actuator_count, mounted_thruster_count, mounted_wheel_count, mounted_magnetorquer_count, mounted_laser_count, mounted_hinge_count, apply_hinge_levels!
 export actuator_context, allocation_matrix, mounted_wrench, mounted_thruster_fractions
 
 const _ZERO3 = SVector{3, Float64}(0.0, 0.0, 0.0)
@@ -44,7 +45,8 @@ Mount `actuator` on `link`, one of `model`'s links. A [`Thruster`](@ref) joins
 Jacobian gains its column). A [`ReactionWheel`](@ref) mounts on the root link
 only and joins its wheel assembly, whose momentum the engine integrates. A
 [`Magnetorquer`](@ref) joins `link.magnetorquers` and a [`LaserTerminal`](@ref)
-`link.laser_terminals`. An actuator of any other [`AbstractActuator`](@ref) kind joins
+`link.laser_terminals`. A [`PanelHinge`](@ref) mounts on a non-root link, one per
+link, and sets that link's attitude to its current angle. An actuator of any other [`AbstractActuator`](@ref) kind joins
 `link.custom_actuators`. Returns the actuator.
 """
 function add_actuator!(model::SpacecraftModel, link::Link, thruster::Thruster)
@@ -74,6 +76,22 @@ end
 function add_actuator!(model::SpacecraftModel, link::Link, terminal::LaserTerminal)
     push!(link.laser_terminals, terminal)
     return terminal
+end
+
+function add_actuator!(model::SpacecraftModel, link::Link, hinge::PanelHinge)
+    link.root && throw(ArgumentError("A hinge turns a non-root link; the root link carries the body frame."))
+    isempty(link.hinges) || throw(ArgumentError("This link already has a hinge; mount at most one per link."))
+    push!(link.hinges, hinge)
+    _set_hinge_attitude!(link, hinge, hinge.angle_rad)
+    return hinge
+end
+
+# The link's attitude as the rotation by `angle` about the hinge axis: the
+# arithmetic of `Kinematics.rotate_link(link, axis, angle)`.
+@inline function _set_hinge_attitude!(link::Link, hinge::PanelHinge, angle::Float64)
+    link.q .= SVector{4, Float64}(hinge.axis[1] * sin(angle / 2), hinge.axis[2] * sin(angle / 2),
+                                  hinge.axis[3] * sin(angle / 2), cos(angle / 2))
+    return nothing
 end
 
 function add_actuator!(model::SpacecraftModel, link::Link, actuator::AbstractActuator)
@@ -130,12 +148,48 @@ function mounted_laser_count(model::SpacecraftModel)::Int
 end
 
 """
+    mounted_hinge_count(model::SpacecraftModel) -> Int
+
+The number of hinges mounted on `model`'s links.
+"""
+function mounted_hinge_count(model::SpacecraftModel)::Int
+    n = 0
+    for link in model.links
+        n += length(link.hinges)
+    end
+    return n
+end
+
+"""
+    apply_hinge_levels!(model::SpacecraftModel, levels, t) -> model
+
+Move every hinge mounted on `model` toward its level in `levels` (mounting
+order) at a control tick at time `t`, within its angle and rate limits (see
+`hinge_step`), and set its link's attitude to the angle reached. The engine
+calls this after the control tick of an effector in `:mounted` actuation.
+"""
+function apply_hinge_levels!(model::SpacecraftModel, levels::AbstractVector, t::Real)
+    mounted_hinge_count(model) == 0 && return model
+    length(levels) == mounted_actuator_count(model) || throw(ArgumentError(
+        "Mounted actuation: $(length(levels)) actuator levels for the $(mounted_actuator_count(model)) actuators mounted on spacecraft $(model.id)."))
+    k = mounted_thruster_count(model) + mounted_wheel_count(model) + mounted_magnetorquer_count(model) + mounted_laser_count(model)
+    for link in model.links, hinge in link.hinges
+        k += 1
+        angle = hinge_step(hinge, levels[k], t)
+        _set_hinge_attitude!(link, hinge, angle)
+        hinge.angle_rad = angle
+        hinge.last_update_s = Float64(t)
+    end
+    return model
+end
+
+"""
     mounted_actuator_count(model::SpacecraftModel) -> Int
 
 The number of actuators mounted on `model`, of every kind.
 """
 function mounted_actuator_count(model::SpacecraftModel)::Int
-    n = mounted_thruster_count(model) + mounted_wheel_count(model) + mounted_magnetorquer_count(model) + mounted_laser_count(model)
+    n = mounted_thruster_count(model) + mounted_wheel_count(model) + mounted_magnetorquer_count(model) + mounted_laser_count(model) + mounted_hinge_count(model)
     for link in model.links
         n += length(link.custom_actuators)
     end
@@ -161,6 +215,9 @@ function mounted_actuators(model::SpacecraftModel)
     end
     for link in model.links, terminal in link.laser_terminals
         push!(out, (link=link, actuator=terminal))
+    end
+    for link in model.links, hinge in link.hinges
+        push!(out, (link=link, actuator=hinge))
     end
     for link in model.links, actuator in link.custom_actuators
         push!(out, (link=link, actuator=actuator))
@@ -286,6 +343,7 @@ function mounted_wrench(model::SpacecraftModel, levels::AbstractVector, mass_kg:
             force, torque, mass_rate = _add_actuator(terminal, actuator_saturate(terminal, levels[k]), ctx, force, torque, mass_rate)
         end
     end
+    k += mounted_hinge_count(model)        # hinges move geometry at control ticks; they put no wrench here
     @inbounds for link in model.links
         isempty(link.custom_actuators) && continue
         ctx = actuator_context(link, mass_kg, q_ib, ω_body)
