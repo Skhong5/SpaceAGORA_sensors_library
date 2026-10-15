@@ -77,7 +77,6 @@ function add_actuator!(model::SpacecraftModel, link::Link, wheel::ReactionWheel)
     push!(assembly.h_dot_wheels, 0.0)
     push!(assembly.wheels, wheel)
     push!(assembly.mounted_rates, 0.0)
-    model.n_reaction_wheels += 1
     return wheel
 end
 

@@ -170,9 +170,7 @@ end
         b = add_actuator!(sc, pod, Thruster(max_thrust=2.0, direction=MVector(0.0, 1.0, 0.0)))
         c = add_actuator!(sc, root, Thruster(max_thrust=3.0, location=MVector(1.0, 0.0, 0.0), direction=MVector(0.0, 0.0, 1.0)))
         @test a.direction == [1.0, 0.0, 0.0]                  # normalized on mounting
-        @test size(root.J_thruster) == (3, 2)                 # add_thruster! now builds the Jacobian
-        @test root.J_thruster[:, 1] == cross(Vector(a.location), Vector(a.direction))
-        @test sc.n_thrusters == 3
+        @test !hasfield(SM.Link, :J_thruster) && !hasfield(SM.SpacecraftModel, :n_thrusters)   # the mounted hardware is the record
         @test SM.mounted_thruster_count(sc) == 3 && SM.mounted_actuator_count(sc) == 4
         order = [entry.actuator for entry in mounted_actuators(sc)]
         @test order[1] === a && order[2] === c && order[3] === b && order[4] === puck   # links in order, thrusters first
@@ -361,7 +359,7 @@ end
         @test wheel.spin_axis == SVector(0.0, 0.0, 1.0)
         @test add_actuator!(sc, root, wheel) === wheel
         @test root.rw_assembly.n_wheels == 1 && root.rw_assembly.J_rw == reshape([0.0, 0.0, 1.0], 3, 1)
-        @test root.rw_assembly.h_wheels == [0.0] && sc.n_reaction_wheels == 1 && SM.mounted_wheel_count(sc) == 1
+        @test root.rw_assembly.h_wheels == [0.0] && SM.mounted_wheel_count(sc) == 1 && !hasfield(SM.SpacecraftModel, :n_reaction_wheels)
         @test_throws ArgumentError add_actuator!(sc, SM.Link(m=1.0), ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0)))
         @test actuator_limits(wheel) == (-0.01, 0.01)
         @test actuator_saturate(wheel, 1.0) == 0.01 && actuator_saturate(wheel, -1.0) == -0.01

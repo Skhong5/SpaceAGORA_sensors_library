@@ -744,15 +744,25 @@ SpaceAGORA.bind_spacecraft(m::PushControl, sat_idx::Int) = PushControl(sat_idx, 
     build = chain_build()
     sc, bus = rigid_sc(b -> [SM.CompliantAttachment(; model=build, link=b)])
     @test length(SE._without_gnc(sc).attachments) == 1 && SE._without_gnc(sc).attachments[1] === sc.attachments[1]
-    # the 11- and 14-argument positional constructors still work and declare no attachments
-    pos11 = SM.SpacecraftModel(sc.joints, sc.links, sc.root, sc.instant_actuation, sc.dry_mass, sc.prop_mass, sc.inertia_tensor,
-        sc.n_reaction_wheels, sc.n_thrusters, sc.initial_condition, sc.id)
-    pos14 = SM.SpacecraftModel(sc.joints, sc.links, sc.root, sc.instant_actuation, sc.dry_mass, sc.prop_mass, sc.inertia_tensor,
-        sc.n_reaction_wheels, sc.n_thrusters, sc.initial_condition, sc.id, sc.guidance, sc.navigation, sc.control)
-    @test isempty(pos11.attachments) && isempty(pos14.attachments)
-    pos15 = SM.SpacecraftModel(sc.joints, sc.links, sc.root, sc.instant_actuation, sc.dry_mass, sc.prop_mass, sc.inertia_tensor,
-        sc.n_reaction_wheels, sc.n_thrusters, sc.initial_condition, sc.id, sc.guidance, sc.navigation, sc.control, sc.attachments)
-    @test pos15.attachments == sc.attachments
+    # the 9- and 12-argument positional constructors still work and declare no attachments
+    pos9 = SM.SpacecraftModel(sc.joints, sc.links, sc.root, sc.instant_actuation, sc.dry_mass, sc.prop_mass, sc.inertia_tensor,
+        sc.initial_condition, sc.id)
+    pos12 = SM.SpacecraftModel(sc.joints, sc.links, sc.root, sc.instant_actuation, sc.dry_mass, sc.prop_mass, sc.inertia_tensor,
+        sc.initial_condition, sc.id, sc.guidance, sc.navigation, sc.control)
+    @test isempty(pos9.attachments) && isempty(pos12.attachments)
+    pos13 = SM.SpacecraftModel(sc.joints, sc.links, sc.root, sc.instant_actuation, sc.dry_mass, sc.prop_mass, sc.inertia_tensor,
+        sc.initial_condition, sc.id, sc.guidance, sc.navigation, sc.control, sc.attachments)
+    @test pos13.attachments == sc.attachments
+    # the forms that took the retired thruster and wheel counts still work and ignore them, without a warning
+    old11 = @test_logs SM.SpacecraftModel(sc.joints, sc.links, sc.root, sc.instant_actuation, sc.dry_mass, sc.prop_mass,
+        sc.inertia_tensor, 4, 2, sc.initial_condition, sc.id)
+    old14 = @test_logs SM.SpacecraftModel(sc.joints, sc.links, sc.root, sc.instant_actuation, sc.dry_mass, sc.prop_mass,
+        sc.inertia_tensor, 4, 2, sc.initial_condition, sc.id, sc.guidance, sc.navigation, sc.control)
+    old15 = @test_logs SM.SpacecraftModel(sc.joints, sc.links, sc.root, sc.instant_actuation, sc.dry_mass, sc.prop_mass,
+        sc.inertia_tensor, 4, 2, sc.initial_condition, sc.id, sc.guidance, sc.navigation, sc.control, sc.attachments)
+    @test old11.links == sc.links && isempty(old11.attachments) && isempty(old14.attachments) && old15.attachments == sc.attachments
+    @test (@test_logs SM.SpacecraftModel(; links=sc.links, root=sc.root, n_thrusters=2)).root === sc.root
+    @test (@test_logs SM.Link(root=true, J_thruster=zeros(3, 1))).root && !hasfield(SM.Link, :J_thruster)
     # a spacecraft that declares its own GNC and carries an attachment runs through the flattening path
     gnc_sc = SM.SpacecraftModel(; links=[bus], root=bus, inertia_tensor=bus.inertia, initial_condition=sc.initial_condition, attachments=sc.attachments,
         control=SM.ControlModel(control_effectors=(PushControl(0, SVector(0.0, 5.0, 0.0)),), control_rates=[1.0]))

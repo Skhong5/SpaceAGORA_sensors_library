@@ -36,7 +36,6 @@ function add_body!(model::SpacecraftModel,
     else
         push!(model.links, body) # Add the body to the links vector
     end
-    model.n_reaction_wheels += length(body.rw_assembly.h_wheels) # Increment the number of reaction wheels
     if body.root
         model.inertia_tensor = SMatrix{3, 3, Float64}(I(3)) # Add inertia tensor for root body
         # update_inertia_tensor!(model, body) # This function is in Analysis.jl, creates circular dependency
@@ -77,21 +76,13 @@ function add_thruster!(model::SpacecraftModel, link::Link, thruster::Thruster)
     - `link` : The Link to which the thruster is added
     - `thruster` : The thruster to add
     """
-    # Add the thruster torque to the Jacobian matrix. `direction` is the thrust
-    # direction; a zero direction is kept as is rather than normalized to NaN.
+    # `direction` is the thrust direction; a zero direction is kept as is rather
+    # than normalized to NaN. The thrusters' force and torque columns come from
+    # `allocation_matrix(model)`.
     n = norm(thruster.direction)
     (isfinite(n) && n > 0.0) && (thruster.direction ./= n) # Ensure the thruster direction is a unit vector
-    column = reshape(Vector{Float64}(cross(thruster.location, thruster.direction)), 3, 1) # the r x F column of a unit thrust
-
-    if isempty(link.thrusters)
-        link.J_thruster = column # If this is the first thruster to be added, the Jacobian is its column
-    else
-        link.J_thruster = hcat(link.J_thruster, column) # If there are already thrusters in the link, append the new column to the Jacobian
-    end
-
-    # Append the thruster to the list of thrusters for future reference
     push!(link.thrusters, thruster)
-    model.n_thrusters += 1 # Increment the number of thrusters in the spacecraft model
+    return thruster
 end
 
 end # module Assembly

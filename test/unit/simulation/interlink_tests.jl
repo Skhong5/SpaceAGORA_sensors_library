@@ -85,7 +85,7 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
         @test copied.battery_energy_index == 75.0
         @test copied.tempurature_index == 40.0
         @test copied.attachments === spacecraft.attachments
-        old_fields = fieldnames(SpacecraftModel)[1:15]
+        old_fields = fieldnames(SpacecraftModel)[1:findfirst(==(:attachments), fieldnames(SpacecraftModel))]
         positional = SpacecraftModel((getfield(spacecraft, field) for field in old_fields)...)
         @test positional.n_terminal == 1
         @test positional.battery_energy_index == positional.tempurature_index == 100.0
