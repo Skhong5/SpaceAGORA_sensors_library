@@ -173,9 +173,8 @@ end
     gravity_effectors_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "force_torque_models", "gravity_effectors.jl"), String)
     aerodynamic_effectors_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "force_torque_models", "aerodynamic_effectors.jl"), String)
     perturbation_effectors_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "force_torque_models", "perturbation_effectors.jl"), String)
-    thruster_models_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "force_torque_models", "thruster_models.jl"), String)
     guidance_models_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "force_torque_models", "guidance_models.jl"), String)
-    top_level_thruster_models_src = read(joinpath(REPO_ROOT, "src", "models", "vehicle", "actuators", "thruster", "thruster_models_module.jl"), String)
+    top_level_thruster_models_src = read(joinpath(REPO_ROOT, "src", "models", "vehicle", "actuators", "thruster_models_module.jl"), String)
     top_level_guidance_models_src = read(joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "guidance_models.jl"), String)
     top_level_gravity_effectors_src = read(joinpath(REPO_ROOT, "src", "models", "environment", "gravity", "gravity_effectors.jl"), String)
     command_types_src = read(joinpath(REPO_ROOT, "src", "models", "gnc", "command_types.jl"), String)
@@ -187,7 +186,6 @@ end
         "gravity_effectors.jl",
         "aerodynamic_effectors.jl",
         "perturbation_effectors.jl",
-        "thruster_models.jl",
         "guidance_models.jl",
     )
         @test occursin("\"$include_name\"", force_torque_src)
@@ -195,7 +193,6 @@ end
     @test occursin("module GravityEffectors", gravity_effectors_src)
     @test occursin("module AerodynamicEffectors", aerodynamic_effectors_src)
     @test occursin("module PerturbationEffectors", perturbation_effectors_src)
-    @test occursin("module ThrusterModels", thruster_models_src)
     @test occursin("module GuidanceModels", guidance_models_src)
     @test occursin("module ThrusterModels", top_level_thruster_models_src)
     @test occursin("module GuidanceModels", top_level_guidance_models_src)
@@ -208,9 +205,7 @@ end
     @test occursin("using .GravityEffectors: ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel", force_torque_src)
     @test occursin("using .AerodynamicEffectors: AerodynamicCoefficientConstant, AerodynamicCoefficientfM, AerodynamicCoefficientNoBallisticFlight", force_torque_src)
     @test occursin("using .PerturbationEffectors: NBodyGravityModel, GravitationalHarmonicsModel, SolarRadiationPressureModel", force_torque_src)
-    @test occursin("using .ThrusterModels: BaseThrusterModel", force_torque_src)
     @test occursin("using .GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel", force_torque_src)
-    @test occursin("using ...ThrusterModels: BaseThrusterModel", thruster_models_src)
     @test occursin("using ...GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel", guidance_models_src)
     @test occursin("export aerobraking_gravity_force_ii, srp, srp_cannonball_accel", force_torque_src)
 

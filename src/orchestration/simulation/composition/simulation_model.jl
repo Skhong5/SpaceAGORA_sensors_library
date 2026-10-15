@@ -55,7 +55,7 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "dynamics", "multibody", 
 const CompliantRobotArmDynamics = ClothRobotArmDynamics
 @reexport using .CompliantRobotArmDynamics
 
-include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "actuators", "thruster", "thruster_models_module.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "actuators", "thruster_models_module.jl"))
 @reexport using .ThrusterModels
 include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "guidance", "guidance_models.jl"))
 @reexport using .GuidanceModels
@@ -120,7 +120,7 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "kinematics", 
 @reexport using .Kinematics
 
 # 6. Generic and actuator-specific hook surfaces
-include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "actuators", "thruster", "thruster_hooks.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "actuators", "thruster_hooks.jl"))
 @reexport using .ThrusterHooks
 
 # 7. Spacecraft structural ownership helpers (mass, inertia, geometry)

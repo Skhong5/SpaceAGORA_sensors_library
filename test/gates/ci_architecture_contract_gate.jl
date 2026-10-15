@@ -14,7 +14,7 @@ spacecraft_model_src = _read(joinpath("src", "models", "vehicle", "spacecraft", 
 legacy_model_codes_src = _read(joinpath("src", "foundation", "core", "types", "compat_model_codes.jl"))
 runtime_types_src = _read(joinpath("src", "orchestration", "simulation", "state", "runtime_types.jl"))
 command_types_src = _read(joinpath("src", "models", "gnc", "command_types.jl"))
-top_level_thruster_models_src = _read(joinpath("src", "models", "vehicle", "actuators", "thruster", "thruster_models_module.jl"))
+top_level_thruster_models_src = _read(joinpath("src", "models", "vehicle", "actuators", "thruster_models_module.jl"))
 top_level_guidance_models_src = _read(joinpath("src", "models", "gnc", "guidance", "guidance_models.jl"))
 top_level_gravity_effectors_src = _read(joinpath("src", "models", "environment", "gravity", "gravity_effectors.jl"))
 engine_src = _read(joinpath("src", "orchestration", "simulation", "engine", "simulation_engine.jl"))
@@ -26,7 +26,6 @@ force_torque_src = _read(joinpath("src", "models", "dynamics", "effectors", "for
 gravity_effectors_src = _read(joinpath("src", "models", "dynamics", "effectors", "force_torque_models", "gravity_effectors.jl"))
 aerodynamic_effectors_src = _read(joinpath("src", "models", "dynamics", "effectors", "force_torque_models", "aerodynamic_effectors.jl"))
 perturbation_effectors_src = _read(joinpath("src", "models", "dynamics", "effectors", "force_torque_models", "perturbation_effectors.jl"))
-thruster_models_src = _read(joinpath("src", "models", "dynamics", "effectors", "force_torque_models", "thruster_models.jl"))
 guidance_models_src = _read(joinpath("src", "models", "dynamics", "effectors", "force_torque_models", "guidance_models.jl"))
 guidance_hooks_src = _read(joinpath("src", "models", "gnc", "guidance", "guidance_hooks.jl"))
 control_hooks_src = _read(joinpath("src", "models", "gnc", "control", "control_hooks.jl"))
@@ -107,19 +106,19 @@ occursin("using ..CommandTypes: PropulsiveManeuverCommand", runtime_types_src) |
     error("ConfigTypes is not importing PropulsiveManeuverCommand from CommandTypes.")
 occursin("maneuver_commands::Vector{PropulsiveManeuverCommand}", runtime_types_src) ||
     error("SharedBuffers is missing the typed maneuver_commands buffer.")
-occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"vehicle\", \"actuators\", \"thruster\", \"thruster_models_module.jl\"))", simulation_model_src) ||
+occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"vehicle\", \"actuators\", \"thruster_models_module.jl\"))", simulation_model_src) ||
     error("SimulationModel does not include the top-level ThrusterModels owner.")
 occursin("module ThrusterModels", top_level_thruster_models_src) ||
     error("Top-level ThrusterModels owner module is missing.")
 occursin("include(joinpath(@__DIR__, \"thruster_models.jl\"))", top_level_thruster_models_src) ||
-    error("Top-level ThrusterModels owner is not including vehicle/actuators/thruster/thruster_models.jl.")
+    error("Top-level ThrusterModels owner is not including vehicle/actuators/thruster_models.jl.")
 occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"guidance\", \"guidance_models.jl\"))", simulation_model_src) ||
     error("SimulationModel does not include the top-level GuidanceModels owner.")
 occursin("module GuidanceModels", top_level_guidance_models_src) ||
     error("Top-level GuidanceModels owner module is missing.")
 occursin("include(joinpath(@__DIR__, \"thruster_guidance\", \"thruster_guidance_models.jl\"))", top_level_guidance_models_src) ||
     error("Top-level GuidanceModels owner is not including the thruster guidance model definitions.")
-findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"vehicle\", \"actuators\", \"thruster\", \"thruster_models_module.jl\"))", simulation_model_src) <
+findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"vehicle\", \"actuators\", \"thruster_models_module.jl\"))", simulation_model_src) <
     findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"dynamics\", \"effectors\", \"force_torque_models.jl\"))", simulation_model_src) ||
     error("SimulationModel is not loading ThrusterModels before DynamicEffectors.")
 findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"guidance\", \"guidance_models.jl\"))", simulation_model_src) <
@@ -200,7 +199,6 @@ for include_name in (
     "gravity_effectors.jl",
     "aerodynamic_effectors.jl",
     "perturbation_effectors.jl",
-    "thruster_models.jl",
     "guidance_models.jl",
 )
     occursin("\"$include_name\"", force_torque_src) ||
@@ -212,12 +210,8 @@ occursin("module AerodynamicEffectors", aerodynamic_effectors_src) ||
     error("DynamicEffectors split contract violation: missing AerodynamicEffectors module owner file.")
 occursin("module PerturbationEffectors", perturbation_effectors_src) ||
     error("DynamicEffectors split contract violation: missing PerturbationEffectors module owner file.")
-occursin("module ThrusterModels", thruster_models_src) ||
-    error("DynamicEffectors split contract violation: missing ThrusterModels module owner file.")
 occursin("module GuidanceModels", guidance_models_src) ||
     error("DynamicEffectors split contract violation: missing GuidanceModels module owner file.")
-occursin("using ...ThrusterModels: BaseThrusterModel", thruster_models_src) ||
-    error("DynamicEffectors split contract violation: ThrusterModels shim is not forwarding from the top-level ThrusterModels owner.")
 occursin("using ...GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel", guidance_models_src) ||
     error("DynamicEffectors split contract violation: GuidanceModels shim is not forwarding from the top-level GuidanceModels owner.")
 !occursin(r"^\s+module\s+(GravityEffectors|AerodynamicEffectors|PerturbationEffectors|ThrusterModels|GuidanceModels)"m, force_torque_src) ||
@@ -257,7 +251,7 @@ occursin("using ..GravityEffectors: InverseSquaredJ2GravityModel", callback_regi
     error("Callback registry still imports gravity models from DynamicEffectors.GravityEffectors.")
 
 for rel in (
-    joinpath("src", "models", "vehicle", "actuators", "thruster", "thruster_hooks.jl"),
+    joinpath("src", "models", "vehicle", "actuators", "thruster_hooks.jl"),
     joinpath("src", "models", "vehicle", "structure", "structure_models.jl"),
     joinpath("src", "models", "vehicle", "structure", "assembly_graph.jl"),
     joinpath("src", "models", "vehicle", "structure", "mass_properties.jl"),

@@ -15,7 +15,6 @@ module DynamicEffectors
     include(joinpath(@__DIR__, "force_torque_models", "gravity_effectors.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "aerodynamic_effectors.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "perturbation_effectors.jl"))
-    include(joinpath(@__DIR__, "force_torque_models", "thruster_models.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "guidance_models.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "robot_arm_reaction_effector.jl"))
     include(joinpath(@__DIR__, "force_torque_models", "reaction_wheel_momentum.jl"))
@@ -47,7 +46,6 @@ module DynamicEffectors
     using .PerturbationEffectors: _make_harmonics_scratch_workspace, _harmonics_workspace_for_sat!
     using .PerturbationEffectors: _nbody_body_position_from_cache_j2000_m, _srp_sun_position_from_cache_j2000_m
     using .PerturbationEffectors: eclipse_area_calc
-    using .ThrusterModels: BaseThrusterModel
     using .GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel
     using .RobotArmReactionEffectors: RobotArmReactionEffector
     using .ReactionWheelMomentum: WheelSpeedSpline, ReactionWheelMomentumModel, ReactionWheelMomentumState
@@ -71,7 +69,6 @@ module DynamicEffectors
     export fit_mesh_aero_surrogate, mesh_aero_coefficients, write_mesh_aero_surrogate, read_mesh_aero_surrogate
     export calcForceTorque
     export wrench, wrench_caching!, environment_requirements, solver_partition
-    export BaseThrusterModel
     export AerobrakingCampaignPropulsiveManeuverGuidanceModel
     export RobotArmReactionEffector
     export WheelSpeedSpline, ReactionWheelMomentumModel, ReactionWheelMomentumState

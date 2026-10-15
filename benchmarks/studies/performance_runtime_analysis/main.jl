@@ -68,7 +68,7 @@ const GravitationalHarmonicsModel = SimulationModel.DynamicEffectors.Gravitation
 const NBodyGravityModel = SimulationModel.DynamicEffectors.NBodyGravityModel
 const SolarRadiationPressureModel = SimulationModel.DynamicEffectors.SolarRadiationPressureModel
 const AerodynamicCoefficientfM = SimulationModel.DynamicEffectors.AerodynamicCoefficientfM
-const BaseThrusterModel = SimulationModel.DynamicEffectors.BaseThrusterModel
+const BaseThrusterModel = SimulationModel.ThrusterModels.BaseThrusterModel
 const AerobrakingCampaignPropulsiveManeuverGuidanceModel =
     SimulationModel.GuidanceModels.AerobrakingCampaignPropulsiveManeuverGuidanceModel
 
