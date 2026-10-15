@@ -227,3 +227,22 @@ is enabled. An explicit list must include them to write them:
 
 The plume quantities are diagnostics of an illustrative closure, as described on
 the plume page; they are not a calibrated flight reconstruction.
+
+### Mounted actuators
+
+These columns are written with the default save-field list when a control
+effector of the run is in `:mounted` actuation (see
+[Extensibility](../extensibility.md#Add-an-actuator)), for every spacecraft
+that carries mounted actuators. An explicit list must include the
+`actuator_level` and `actuator_power` fields to write them:
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_actuator_level_1` .. `sc1_actuator_level_k` | the kind's | The level each mounted actuator applies, in mounting order: its command within its limits. A thruster with firing dynamics reports the average thrust its last control tick scheduled, a wheel at its momentum limit reports zero when the command would store more, and a hinge reports its current angle |
+| `sc1_actuator_power` | W | Electrical power the mounted actuators draw at those levels, the sum of what each kind reports through `actuator_consumption` |
+
+The levels come from the first control effector in `:mounted` actuation that
+holds levels for the spacecraft. A row saved before that effector's first
+control tick reports the levels it held then. The built-in kinds that draw
+power are the laser terminals (`level / efficiency`); wheels, torque rods,
+hinges and thrusters report none.

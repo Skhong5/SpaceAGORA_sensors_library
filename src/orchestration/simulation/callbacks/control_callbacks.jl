@@ -34,6 +34,31 @@ end
     return nothing
 end
 
+# After the control tick of an effector in `:mounted` actuation, each mounted
+# thruster with firing dynamics schedules the average thrust it delivers until
+# the next tick: the command as an on-time within the control period, through
+# its minimum on-time, Schmitt trigger and thrust ramp.
+function _apply_mounted_thruster_firing!(control_model, p, sat_idx::Int, t, period::Float64)
+    actuation_mode(control_model) === :mounted || return nothing
+    spacecraft = p.args.dynamics_model.spacecraft[sat_idx]
+    any(link -> any(th -> th.firing_dynamics, link.thrusters), spacecraft.links) || return nothing
+    levels = actuator_levels(control_model, sat_idx)
+    (levels === nothing || length(levels) != mounted_actuator_count(spacecraft)) && return nothing
+    k = 0
+    for link in spacecraft.links, thruster in link.thrusters
+        k += 1
+        thruster.firing_dynamics || continue
+        thrust_calculation_schmitt_trigger!(link, thruster, actuator_saturate(thruster, levels[k]), Float64(t); period=period)
+    end
+    return nothing
+end
+
+@inline function _apply_mounted_tick!(control_model, p, sat_idx::Int, t, period::Float64)
+    _apply_mounted_hinges!(control_model, p, sat_idx, t)
+    _apply_mounted_thruster_firing!(control_model, p, sat_idx, t, period)
+    return nothing
+end
+
 @inline control_requires_periodic_callback(::Any) = true
 @inline control_requires_periodic_callback(::BaseThrusterModel) = false
 
@@ -111,7 +136,7 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
         # to avoid conflating effector-index with spacecraft-index.
         apply_control! = (integrator, sat_idx) -> begin
             calcControlEffect!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
-            _apply_mounted_hinges!(control_model, integrator.p, sat_idx, integrator.t)
+            _apply_mounted_tick!(control_model, integrator.p, sat_idx, integrator.t, Float64(control_rate))
             if control_model isa BaseThrusterModel
                 _register_control_tstops!(integrator, control_model, sat_idx)
             end

@@ -13,10 +13,11 @@ module Actuators
 using LinearAlgebra
 using StaticArrays
 using ..AbstractTypes: AbstractActuator
+using ..EffectorSampling: EffectorEnvironmentRequirements
 
-export ActuatorContext, STANDARD_GRAVITY_MPS2, propellant_mass_rate
+export ActuatorContext, ActuatorRequirements, STANDARD_GRAVITY_MPS2, propellant_mass_rate
 export actuator_wrench, actuator_limits, actuator_saturate, actuator_consumption
-export actuator_fraction, actuator_unit_wrench
+export actuator_fraction, actuator_unit_wrench, actuator_requirements
 export actuation_mode, actuator_levels
 export allocate_actuators
 
@@ -38,7 +39,7 @@ const _IDENTITY3 = SMatrix{3, 3, Float64, 9}(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 
 const _IDENTITY_Q = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
 
 """
-    ActuatorContext(; link_r_body, link_to_body, mass_kg, q_ib, ω_body, magnetic_field_body)
+    ActuatorContext(; link_r_body, link_to_body, mass_kg, q_ib, ω_body, magnetic_field_body, environment=nothing)
 
 What an actuator kind may use when it is evaluated:
 
@@ -49,19 +50,27 @@ What an actuator kind may use when it is evaluated:
 - `q_ib`: the attitude quaternion, inertial to body, scalar last;
 - `ω_body`: the body angular velocity, rad/s;
 - `magnetic_field_body`: the local magnetic field in the body frame, T, when
-  the vehicle carries torque rods; NaN otherwise.
+  a mounted actuator asks for it (see [`actuator_requirements`](@ref)); NaN
+  otherwise;
+- `environment`: the sampled environment (an `EnvironmentSample`: planet
+  frame, atmosphere, Sun) when a mounted actuator asks for any of it;
+  `nothing` otherwise.
 
 The link pose is the link's configured geometry. The attitude and the rate are
 the identity and zero when the run does not propagate attitude.
 """
-struct ActuatorContext
+struct ActuatorContext{E}
     link_r_body::SVector{3, Float64}
     link_to_body::SMatrix{3, 3, Float64, 9}
     mass_kg::Float64
     q_ib::SVector{4, Float64}
     ω_body::SVector{3, Float64}
     magnetic_field_body::SVector{3, Float64}
+    environment::E
 end
+
+ActuatorContext(link_r_body, link_to_body, mass_kg, q_ib, ω_body, magnetic_field_body) =
+    ActuatorContext(link_r_body, link_to_body, mass_kg, q_ib, ω_body, magnetic_field_body, nothing)
 
 ActuatorContext(;
     link_r_body=_ZERO3,
@@ -70,9 +79,48 @@ ActuatorContext(;
     q_ib=_IDENTITY_Q,
     ω_body=_ZERO3,
     magnetic_field_body=SVector{3, Float64}(NaN, NaN, NaN),
+    environment=nothing,
 ) = ActuatorContext(SVector{3, Float64}(link_r_body), SMatrix{3, 3, Float64, 9}(link_to_body),
                     Float64(mass_kg), SVector{4, Float64}(q_ib), SVector{3, Float64}(ω_body),
-                    SVector{3, Float64}(magnetic_field_body))
+                    SVector{3, Float64}(magnetic_field_body), environment)
+
+"""
+    ActuatorRequirements(; planet_frame=false, atmosphere=false, solar=false, magnetic_field=false)
+
+What an actuator kind needs sampled before it is evaluated: the planet-fixed
+frame, the atmosphere (density, temperature, wind), the Sun's position, the
+local magnetic field. The engine samples the union over the actuators mounted
+on a spacecraft, once per evaluation, and passes it in the
+[`ActuatorContext`](@ref): the field as `magnetic_field_body`, the rest as
+`environment`.
+"""
+struct ActuatorRequirements
+    planet_frame::Bool
+    atmosphere::Bool
+    solar::Bool
+    magnetic_field::Bool
+end
+
+ActuatorRequirements(; planet_frame::Bool=false, atmosphere::Bool=false, solar::Bool=false, magnetic_field::Bool=false) =
+    ActuatorRequirements(planet_frame, atmosphere, solar, magnetic_field)
+
+Base.:|(a::ActuatorRequirements, b::ActuatorRequirements) = ActuatorRequirements(
+    a.planet_frame | b.planet_frame, a.atmosphere | b.atmosphere, a.solar | b.solar, a.magnetic_field | b.magnetic_field)
+
+"""Whether the requirements ask for any sampled environment besides the magnetic field."""
+needs_environment(r::ActuatorRequirements)::Bool = r.planet_frame | r.atmosphere | r.solar
+
+"""The same requirements as the effector sampler takes them (no third bodies)."""
+effector_requirements(r::ActuatorRequirements) =
+    EffectorEnvironmentRequirements(planet_frame=r.planet_frame, atmosphere=r.atmosphere, solar=r.solar)
+
+"""
+    actuator_requirements(actuator) -> ActuatorRequirements
+
+Optional: what the actuator needs sampled to be evaluated. Default: nothing.
+The torque rod asks for the magnetic field.
+"""
+@inline actuator_requirements(::Any) = ActuatorRequirements()
 
 """
     actuator_wrench(actuator, level, ctx::ActuatorContext) -> (force_body, torque_body)

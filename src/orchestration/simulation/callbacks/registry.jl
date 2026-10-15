@@ -28,7 +28,10 @@ import ..ConfigTypes: GramTrackCache, VacuumPredictedGRAMCache, GramDensityPertu
 import ..ConfigTypes: GramTrackCacheConfig, CallbackEnvConfig, PolicyDecisionEnvConfig
 using ..ControlHooks: calcControlEffect!, control_thruster_levels, touchdown_spec
 using ..Actuators: actuation_mode, actuator_levels
-using ..ActuatorMounting: mounted_thruster_fractions, mounted_hinge_count, apply_hinge_levels!
+using ..ActuatorMounting: mounted_thruster_fractions, mounted_hinge_count, apply_hinge_levels!, mounted_actuator_count
+using ..ActuatorMounting: applied_actuator_levels, mounted_power
+using ..Actuators: actuator_saturate
+using ..ThrusterHooks: thrust_calculation_schmitt_trigger!
 using ..TerrainModels: AbstractTerrainModel, DEMTerrainModel, terrain_radius
 using ..ControlHooks: _edg_heat_states, _edg_heat_boundary_distance, _edg_heat_boundary_vertical_speed, _edg_capture_entry_heat!, _edg_capture_exit_heat!, _edg_reconcile_heat_boundary!
 using ..GuidanceHooks: calcGuidanceEffect!

@@ -350,7 +350,7 @@ function _accumulate_control_effectors_from_tuple!(
     @inbounds for control_effector in control_effectors
         mounted = SimulationModel.actuation_mode(control_effector) === :mounted
         if mounted
-            control_force, control_torque, control_mass_rate, _ = _mounted_control_effect(control_effector, sc_view, p, sat_idx)
+            control_force, control_torque, control_mass_rate, _ = _mounted_control_effect(control_effector, sc_view, p, sat_idx, t)
         else
             control_force, control_torque = SimulationModel.calcControlForceTorque(control_effector, sc_view, p, sat_idx, t)
             control_mass_rate = SimulationModel.calcControlMassFlowRate(control_effector, sc_view, p, sat_idx, t)
@@ -381,7 +381,7 @@ end
 # reaction-wheel torque of the actuators mounted on spacecraft `sat_idx` at the
 # levels the effector holds. The mass rate is negative while propellant is used,
 # as the control hooks return it.
-@inline function _mounted_control_effect(effector, sc_view, p, sat_idx::Int)::Tuple{SVector{3, Float64}, SVector{3, Float64}, Float64, SVector{3, Float64}}
+@inline function _mounted_control_effect(effector, sc_view, p, sat_idx::Int, t::Float64)::Tuple{SVector{3, Float64}, SVector{3, Float64}, Float64, SVector{3, Float64}}
     zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
     levels = SimulationModel.actuator_levels(effector, sat_idx)
     levels === nothing && return (zero3, zero3, 0.0, zero3)
@@ -391,15 +391,22 @@ end
     ω = SVector{3, Float64}(sc_view.ω[1], sc_view.ω[2], sc_view.ω[3])
     spacecraft = p.args.dynamics_model.spacecraft[sat_idx]
     wheel_momentum = hasproperty(sc_view, :h_wheels) ? sc_view.h_wheels : nothing
-    field = SimulationModel.mounted_magnetorquer_count(spacecraft) == 0 ? SVector{3, Float64}(NaN, NaN, NaN) :
+    # What the mounted actuators ask for, sampled once for all of them.
+    req = SimulationModel.mounted_requirements(spacecraft)
+    field = req.magnetic_field ?
         SimulationModel.rod_field_body(_rod_field_source(p.args.dynamics_model.dynamic_effectors),
-            SVector{3, Float64}(sc_view.pos[1], sc_view.pos[2], sc_view.pos[3]), q, p)
+            SVector{3, Float64}(sc_view.pos[1], sc_view.pos[2], sc_view.pos[3]), q, p) :
+        SVector{3, Float64}(NaN, NaN, NaN)
+    environment = SimulationModel.Actuators.needs_environment(req) ?
+        sample_environment(SimulationModel.Actuators.effector_requirements(req), nothing,
+            build_state_sample(sc_view, spacecraft, true), p, sat_idx, t; write_buffers=false) :
+        nothing
     # Each mounted wheel's momentum rate goes to the orientation right-hand side
     # wheel by wheel (through the assembly's `mounted_rates`), not through the
     # least-norm split of a summed torque, so redundant wheels integrate exactly.
     force_body, torque_body, mass_rate, wheel_torque =
         SimulationModel.mounted_wrench(spacecraft, levels, Float64(sc_view.mass), q, ω, wheel_momentum, field,
-            spacecraft.root.rw_assembly.mounted_rates)
+            spacecraft.root.rw_assembly.mounted_rates, environment)
     force_ii = SimulationModel.rot(q)' * force_body          # rot(q) maps inertial to body
     return (force_ii, torque_body, -mass_rate, wheel_torque)
 end
