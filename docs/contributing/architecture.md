@@ -448,8 +448,8 @@ and proposals describe separate work; they do not reopen delivered repairs.
 - [#164](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/164) removed five
   example-local constant-density definitions and reused the shared model.
 - [#188](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/188) replaced the
-  generated `scripts/dev/tb_matrix_debug_defs_only.jl` copy with a compatibility
-  loader through `scripts/dev/scenario_matrix_debug_support.jl`, which loads
+  generated `scripts/dev/diagnostics/tb_matrix_debug_defs_only.jl` copy with a compatibility
+  loader through `scripts/dev/diagnostics/scenario_matrix_debug_support.jl`, which loads
   `test/gmat_scenario_matrix.jl` in definitions-only mode, repaired the debug runners,
   and retired the one-time `scripts/dev/test_reorg_b1.sh` migration.
 - [#194](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/194) consolidated

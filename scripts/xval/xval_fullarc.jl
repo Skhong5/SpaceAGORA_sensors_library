@@ -2,7 +2,7 @@
 # matrix against one reference tool, keeping the per-epoch position errors.
 #
 # Usage (from the repository root):
-#   julia --startup-file=no --project=. scripts/xval_fullarc.jl <target> <outdir> [variant]
+#   julia --startup-file=no --project=. scripts/xval/xval_fullarc.jl <target> <outdir> [variant]
 #
 #   target   gmat      data/telemetry/GMAT_Examples (reported GMAT R2025a runs)
 #            stk       data/telemetry/stk_results   (STK HPOP runs)
@@ -34,7 +34,7 @@ import SPICE
 include(joinpath(@__DIR__, "xval_provenance.jl"))
 using .XvalProvenance
 
-const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
+const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
 # Use the maintained definitions-only boundary. Text-prefix extraction would
 # leave an incomplete function after the matrix runner was encapsulated.
@@ -292,7 +292,7 @@ function run_case(name::String, target::String, variant::String, ref_path::Strin
 end
 
 function main()
-    length(ARGS) >= 2 || error("usage: scripts/xval_fullarc.jl <gmat|stk|basilisk> <outdir> [variant]")
+    length(ARGS) >= 2 || error("usage: scripts/xval/xval_fullarc.jl <gmat|stk|basilisk> <outdir> [variant]")
     realpath(pkgdir(SpaceAGORA)) == realpath(REPO_ROOT) ||
         error("Full-arc runner must load SpaceAGORA from this checkout; use --project=$REPO_ROOT")
     target = ARGS[1]

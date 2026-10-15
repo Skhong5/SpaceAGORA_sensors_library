@@ -7,9 +7,9 @@
 # data/telemetry/SpaceAGORA_Examples/, overwriting any existing files.
 #
 # Usage:
-#   julia --project=. scripts/generate_gmat_comparison_data.jl
+#   julia --project=. scripts/xval/generate_gmat_comparison_data.jl
 
-const REPO_ROOT = normpath(joinpath(@__DIR__, ".."))
+const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
 import Pkg
 if something(Base.active_project(), "") != joinpath(REPO_ROOT, "Project.toml")

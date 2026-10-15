@@ -62,7 +62,7 @@ Requirements and behavior:
   speedups apply only up to the recorded thread count. Processes that start together in one working directory measure
   once: the others wait for the file (a `.lock` file beside it marks the
   measurement in progress). To redo the measurement, delete the file or run
-  `julia --project=. --threads=<T> scripts/calibrate_machine.jl`.
+  `julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl`.
 - The flag's settings apply for the duration of the call only. Nothing is
   left in the process environment afterwards, including when the run
   throws or when several flagged runs overlap on different tasks. While any
@@ -518,8 +518,8 @@ Julia 1.12.1. It records improvements for selected workloads and launch
 configurations, as well as slower cases. Those results describe the recorded
 source and measurement conditions; they do not establish that `R6` is fastest
 for every workload or on the current revision. Compare routes for the target
-workload and machine with `scripts/paired_profile_probe.jl` and
-`scripts/paired_campaign_probe.jl --src-runner --profile=full`. Retain the source
+workload and machine with `scripts/calibration/paired_profile_probe.jl` and
+`scripts/calibration/paired_campaign_probe.jl --src-runner --profile=full`. Retain the source
 revision, configuration, calibration state, cold/warm distinction and run records
 with any reported timing; use paired measurements and their observed variability
 rather than assuming a fixed benchmark resolution.
@@ -540,7 +540,7 @@ The calibration constants are created automatically on the first
 `parallel=true` run, or explicitly with
 
 ```bash
-julia --project=. --threads=<T> scripts/calibrate_machine.jl
+julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl
 ```
 
 which is run once per machine, at the thread count you intend to simulate at,

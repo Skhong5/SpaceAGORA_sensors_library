@@ -51,7 +51,7 @@ file at PATH is replaced (or appended) with the values and their source.
 Only do that with a run measured on the machine PATH belongs to.
 
 Usage:
-    python3 scripts/extract_campaign_cost_terms.py RUN_DIR [--rank]
+    python3 scripts/calibration/extract_campaign_cost_terms.py RUN_DIR [--rank]
         [--usl-alpha A --usl-beta B] [--write-constants PATH]
 """
 

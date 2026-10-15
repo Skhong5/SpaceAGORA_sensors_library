@@ -32,7 +32,7 @@ _cfg(; threads, heap_model = :locals) = SCamp.PredictivePlannerConfig(
     route_switch = false, heap_model = heap_model, local_thrash = 3.0)
 
 # The round tail extracted from the archived run: the median over its 55
-# pure-process rows (scripts/extract_campaign_cost_terms.py).
+# pure-process rows (scripts/calibration/extract_campaign_cost_terms.py).
 const TRX50_TAIL = 0.2261
 
 _plan(; n, threads, pool = threads, heap_model = :locals, terms = SCamp.PredictiveCostTerms(),
@@ -350,7 +350,7 @@ end
 end
 
 # The `:locals` model's fitted pairwise term, s(k) = 1 + c k (k - 1), with c
-# fitted by scripts/extract_campaign_cost_terms.py on the archived gate run:
+# fitted by scripts/calibration/extract_campaign_cost_terms.py on the archived gate run:
 # least squares over the four measured mixed-plan points (k = 4, 7, 15, 31).
 const TRX50_LOCAL_SLOPE = 0.006011
 
