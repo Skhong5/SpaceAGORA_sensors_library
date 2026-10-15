@@ -142,18 +142,3 @@ julia --project=. src/interfaces/cli/main.jl benchmark smart-parallel-ladder smo
 ```text
 julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis quick --output-dir=output/perf_quick --print-only
 ```
-
-## Build the docs locally
-
-```text
-julia --project=. -e "using Pkg; Pkg.instantiate()"
-julia --project=. docs/make.jl
-```
-
-## Regenerate common local artifacts
-
-```text
-julia --project=. scripts/regenerate_ignored_outputs.jl runtime-analysis quick
-julia --project=. scripts/regenerate_ignored_outputs.jl telemetry quick
-julia --project=. scripts/regenerate_ignored_outputs.jl docs
-```

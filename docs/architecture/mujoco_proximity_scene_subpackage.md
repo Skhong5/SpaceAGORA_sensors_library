@@ -15,8 +15,8 @@ remains in SpaceAGORA under `benchmarks/studies/coupled_local_comparison/`.
 
 Core retains the generic external-propagation lifecycle and shared dynamics.
 Adapters connect through the supported
-[`SpaceAGORA.ExternalPropagationServices` facade](../src/maintainer/external_propagation_services.md)
-and follow the [common adapter standard](../src/maintainer/adapter_contract.md);
+[`SpaceAGORA.ExternalPropagationServices` facade](../src/reference/external_propagation_services.md)
+and follow the [common adapter standard](../src/reference/adapter_contract.md);
 they do not reach through private engine modules or runtime storage layouts.
 See [installation and environment](../src/user/installation_environment.md)
 for explicit companion setup. Loading SpaceAGORA alone does not load the

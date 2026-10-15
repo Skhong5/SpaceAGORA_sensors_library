@@ -94,18 +94,39 @@ function save_quickstart_plots(csv_path)
         x_km = df[!, :sc1_pos_1] ./ 1e3
         y_km = df[!, :sc1_pos_2] ./ 1e3
         z_km = df[!, :sc1_pos_3] ./ 1e3
+        # Use the same span on every axis so a thin orbit remains readable.
+        bounds = extrema.((x_km, y_km, z_km))
+        halfspan = max(maximum(hi - lo for (lo, hi) in bounds) * 0.55, 1.0)
+        limits = [((lo + hi) / 2 - halfspan, (lo + hi) / 2 + halfspan)
+                  for (lo, hi) in bounds]
+        tick_values = [round.([(lo + hi) / 2 - 0.8 * halfspan,
+                               (lo + hi) / 2,
+                               (lo + hi) / 2 + 0.8 * halfspan]; sigdigits=2)
+                       for (lo, hi) in limits]
+        axis_ticks = [(values, string.(values)) for values in tick_values]
         p = plot(
             x_km,
             y_km,
             z_km;
             label="Orbit",
-            xlabel="Inertial x (km)",
-            ylabel="Inertial y (km)",
-            zlabel="Inertial z (km)",
+            xlabel="x (km)",
+            ylabel="y (km)",
+            zlabel="z (km)",
             title="3D Inertial Orbit",
             aspect_ratio=:equal,
             camera=(35, 25),
-            lw=2
+            lw=2,
+            size=(900, 700),
+            xlims=limits[1],
+            ylims=limits[2],
+            zlims=limits[3],
+            xticks=axis_ticks[1],
+            yticks=axis_ticks[2],
+            zticks=axis_ticks[3],
+            legend=:outertopright,
+            margin=5Plots.mm,
+            tickfontsize=9,
+            guidefontsize=11
         )
         scatter!(p, [first(x_km)], [first(y_km)], [first(z_km)]; label="Start", ms=4)
         scatter!(p, [last(x_km)], [last(y_km)], [last(z_km)]; label="End", ms=4)

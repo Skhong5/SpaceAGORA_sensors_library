@@ -1,10 +1,8 @@
-# Public API Policy
+# Public API and compatibility
 
 Use this page when you need to know which package surface is stable and which
-parts of the repository can still move.
-
-This page is for maintainers and extension authors. If you only want to run
-SpaceAGORA, use the User Guide and the generated Public API page instead.
+names your applications and extensions can depend on. The generated public API
+pages identify the supported symbols; internal implementation names can move.
 
 Shortest stable package example:
 
@@ -16,7 +14,6 @@ What to read next:
 
 - [Public API](generated/public_api.md)
 - [Extensibility](extensibility.md)
-- [Maintainer Overview](maintainer/index.md)
 
 SpaceAGORA now treats the root `SpaceAGORA` module as the only stable package
 surface.
@@ -46,7 +43,7 @@ boundaries: `HYPRServices`, `ExternalPropagationServices` and `EDGServices`.
 Their documented
 metadata, lifecycle operations and explicit binding inventories define the
 supported boundary; use them by qualified name. Their
-[adapter contract](maintainer/adapter_contract.md) controls compatibility
+[adapter contract](reference/adapter_contract.md) controls compatibility
 separately from package versions. Other symbols absent from the documented root
 API or a facade inventory should be treated as internal.
 
@@ -83,7 +80,7 @@ Some historical strings are configuration or data identifiers, rather than
 display names. Keep `planner=:cloth_quintic`, `mode=:cloth`, the `retime_cloth_*`
 configuration fields, and existing example filenames, output directories and
 CSV column names. The versioned `HYPRServices.Cloth` namespaces and their
-inventory retain their exact spellings; see the [HYPR service contract](maintainer/hypr_services.md#Cloth).
+inventory retain their exact spellings; see the [HYPR service contract](reference/hypr_services.md#Cloth).
 This compatibility change neither adds contact physics nor couples the core
 compliant model to MuJoCo. The optional [MuJoCo companion](user/mujoco_scenes.md)
 has its own propagation ownership and coupling limits.
@@ -135,20 +132,6 @@ Solver-side policy note:
 - `gravity_backbone_structure` / `gravity_backbone_acceleration_ii` declare gravity-core participation
 - `gravity_backbone_kick_structure` / `gravity_backbone_kick_acceleration_ii` declare explicit translational kick participation
 - the current `heat_loads` state remains explicit because it is an accumulated heat-rate integral, not a thermal-capacitance model
-
-## Documentation enforcement
-
-The docs build checks the root exported public API list and fails if any symbol
-listed in the generated public API page is missing documentation.
-
-The generated undocumented-export report is written to:
-
-```text
-docs/build/undocumented_public_exports.txt
-```
-
-That report is intentionally scoped to the stable root API, not to internal
-modules.
 
 ## Opt-in RPO planner surface
 

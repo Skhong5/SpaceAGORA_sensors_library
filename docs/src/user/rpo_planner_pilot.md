@@ -186,6 +186,10 @@ using SpaceAGORA, SpaceAGORAHYPR
 planner = HYPRRPOPlanner(RPOPSOConfig())
 ```
 
+When the planning configuration carries an acceleration limit, also set
+`retime_accel_limit_enable=true` in `RPOPSOConfig`; see
+[Built-in planners](../reference/rpo_planner_contract.md#Built-in-planners).
+
 Either package may be loaded first. Without the companion, HYPR selection raises
 `HYPRUnavailableError` with installation instructions. Public RPO assembly and
 simulation preflight perform this check before creating run outputs. A legacy

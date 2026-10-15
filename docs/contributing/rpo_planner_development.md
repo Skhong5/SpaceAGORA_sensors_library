@@ -1,18 +1,27 @@
-# RPO planner contract development
+# RPO planner development record
 
-The public opt-in [RPO pilot](../user/rpo_planner_pilot.md) connects neutral requests,
+This record preserves staged implementation notes, including historical next
+steps. For current supported use, see the [planner contract](../src/reference/rpo_planner_contract.md)
+and [pilot guide](../src/user/rpo_planner_pilot.md).
+
+The public opt-in [RPO pilot](../src/user/rpo_planner_pilot.md) connects neutral requests,
 references and results to simulation initialization and accepted guidance updates.
 The contract and direct baseline load with standard libraries without HYPR source.
 This contract-level separation does not yet make the installed package independent
 of HYPR. Existing `RPOGuidanceModel`, buffer layouts and controller mathematics
 retain their compatibility route.
 
-```@docs
-SpaceAGORA.RPOPlannerInterfaces
-SpaceAGORA.DirectRPOPlanning
-SpaceAGORA.HYPRRPOPlanning
-SpaceAGORA.RPOPlannerLifecycle
-```
+The internal modules, described in their source header comments:
+
+- `SpaceAGORA.RPOPlannerInterfaces`: RPO planner contracts. This module loads
+  with Julia standard libraries alone. The opt-in public RPO pilot connects
+  them to accepted simulation updates.
+- `SpaceAGORA.DirectRPOPlanning`: internal direct-path baseline. Loads with the
+  neutral contract and standard libraries only.
+- `SpaceAGORA.HYPRRPOPlanning`: opt-in contract adapter for existing HYPR
+  planning and configured retiming.
+- `SpaceAGORA.RPOPlannerLifecycle`: run ownership and accepted-update
+  installation for opt-in RPO planners.
 
 ## Data and ownership
 
@@ -341,7 +350,7 @@ chain and dependency declarations still need their separate acceptance work.
 The separate `HYPR` package owns the optimizer; its `HYPRSpaceAGORAExt`
 extension owns configured objectives, refinement, RRT/retiming adapters and
 robot-arm HYPR execution. HYPR's core has no SpaceAGORA dependency. The extension
-uses SpaceAGORA's [versioned service contract](hypr_services.md).
+uses SpaceAGORA's [versioned service contract](../src/reference/hypr_services.md).
 `packages/SpaceAGORAHYPR` is the compatibility shim that loads both packages,
 checks the extension and preserves historical module aliases. SpaceAGORA's core
 has no required HYPR or shim dependency. OSQP remains a core dependency because

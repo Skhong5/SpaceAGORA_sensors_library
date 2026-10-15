@@ -89,8 +89,3 @@ SpaceAGORA supports two common working modes:
 - a higher-fidelity path that expects GRAM/SPICE assets on the local machine
 
 You do not need the higher-fidelity path to get a first successful run.
-
-## If you are maintaining the docs or repo structure
-
-The user guide is not the right place for documentation policy or architecture
-rules. Use the [Maintainer Overview](maintainer/index.md) for that material.

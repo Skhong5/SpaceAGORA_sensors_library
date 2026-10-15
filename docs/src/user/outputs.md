@@ -111,19 +111,18 @@ elapsed time to the terminal. It disables result saving, so it writes no
 result files, including when `--output-dir` is supplied.
 
 Smoke mode (`--smoke` on the CLI, or `SPACEAGORA_EXAMPLE_SMOKE=1` for a script)
-shortens the mission to at most 120 s and one orbit. It does not honour
-`--output-dir` or `SPACEAGORA_CLI_OUTPUT_DIR`: the smoke configuration sets
-`results_directory` to `output/` under the current working directory, so a
-smoke run replaces the results of a previous full run in that `output/`
-(run from the repository root, that is the same `output/` the quickstart
-writes to). Results are kept only when `SPACEAGORA_EXAMPLE_SMOKE_RESULTS=1`,
-which the CLI sets for you.
+uses a short mission, normally at most 120 s and one orbit. An explicit
+`--output-dir` is honored through `SPACEAGORA_CLI_OUTPUT_DIR`. Without that
+override, smoke mode writes to `output/` under the current working directory.
+Choose a separate destination to keep earlier results: reusing the same
+directory replaces its previous result files. Results are kept only when
+`SPACEAGORA_EXAMPLE_SMOKE_RESULTS=1`, which the CLI sets for you.
 
 ### Visualization scene sidecar (opt-in)
 
 Setting `simulation_settings.save_visualization_scene = true` adds one more
 file and one more group of columns, both consumed by the post-hoc 3D viewer
-described in `docs/architecture/interactive_visualization_plan.md`:
+described in [Interactive Visualization](visualization.md):
 
 ```text
 output/
