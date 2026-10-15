@@ -58,6 +58,9 @@ function _write_undocumented_public_api_report()::Vector
         println(io, "SpaceAGORA undocumented public exports report")
         println(io, "generated_utc=$(Dates.now(Dates.UTC))")
         println(io)
+        println(io, "Known placeholder docs (listed in docs/public_api_symbols.jl): ",
+            join(sort!(string.(collect(KNOWN_PLACEHOLDER_DOCS))), ", "))
+        println(io)
         if isempty(missing)
             println(io, "All documented.")
         else

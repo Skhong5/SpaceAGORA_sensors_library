@@ -143,10 +143,11 @@ installation, and every non-candidate outcome reaches the run as an
 
 Results report their outcome in the `status` and `termination` fields and
 can carry diagnostics. A direct-baseline candidate records its planning budget, chosen
-duration and analytic maxima. A HYPR adapter result that reaches the optimizer
-distinguishes the requested, mapped and optimizer-returned configurations and
-includes the planning budget, path representation and deterministic cost and
-its history. Requests refused before planning carry few or no diagnostics. Because the adapter plans within the reduced limits described
+duration and analytic maxima. A HYPR adapter candidate distinguishes the
+requested, mapped and optimizer-returned configurations and includes the
+planning budget, path representation and deterministic cost and its history.
+Refused results, whether refused before or after the optimizer runs, may carry
+only the planning budget or no diagnostics. Because the adapter plans within the reduced limits described
 below, its reference timing can differ from a legacy HYPR call that uses the
 unreduced limits.
 

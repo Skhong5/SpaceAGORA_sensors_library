@@ -35,9 +35,10 @@ which excludes Julia 1.13 and later as well as 1.11 and earlier. Install a
 What an unsupported release reports:
 
 - Resolving an environment, which the Odyssey example setup and every
-  `Pkg.add`, `Pkg.update` or `Pkg.resolve` do, stops with
-  `julia version requirement for package at ... not satisfied: compat entry
-  "julia = ~1.12" does not include Julia version ...`.
+  `Pkg.add`, `Pkg.update` or `Pkg.resolve` do, stops with an error saying that
+  the `julia = ~1.12` compat entry does not include your Julia version (Julia
+  1.12 words it as `julia version requirement for package at ... not
+  satisfied`; other releases word it differently).
 - `Pkg.instantiate()` of the root project installs the committed manifest
   without resolving, so it does not read that compat entry. With
   `julia_version_strict=true`, the form used in the documented commands, it

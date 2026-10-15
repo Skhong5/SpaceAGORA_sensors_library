@@ -2,7 +2,8 @@ module PublicAPISymbols
 
 using Base.Docs
 
-export PUBLIC_API_SECTIONS, public_api_specs, render_public_api_markdown, undocumented_public_api_specs
+export PUBLIC_API_SECTIONS, public_api_specs, render_public_api_markdown, undocumented_public_api_specs,
+    KNOWN_PLACEHOLDER_DOCS
 
 const PUBLIC_API_SECTIONS = [
     (title = "Constellation laser interlinks", items = [
@@ -511,13 +512,32 @@ function render_public_api_markdown(spaceagora::Module;
     return String(take!(io))
 end
 
+# Public names whose rendered documentation is still the "No documentation
+# found" placeholder. Each is listed so that any new gap fails the build; remove
+# a name here once it has a docstring.
+const KNOWN_PLACEHOLDER_DOCS = Set([
+    :thin_panel_inertia,
+    :ApoapsisTargetPeriapsisRaiseGuidanceModel,
+    :station_geometry_path,
+    :station_cad_path,
+    :load_rpo_station_pointcloud,
+    :load_rpo_station_cad_triangles,
+    :load_rpo_station_cad_pointcloud,
+])
+
+_is_placeholder_doc(doc) = doc === nothing || occursin("No documentation found", string(doc))
+
 function undocumented_public_api_specs(spaceagora::Module)
     missing = NamedTuple[]
     for spec in public_api_specs(spaceagora)
         binding = Docs.Binding(spec.owner_module, spec.symbol)
-        # `Docs.doc` returns a "No documentation found" placeholder rather than
-        # `nothing` for an undocumented name, so `hasdoc` decides.
-        if !Docs.hasdoc(binding.mod, binding.var) || Docs.doc(binding) === nothing
+        # `Docs.doc` returns a placeholder rather than `nothing` for an
+        # undocumented name, and a re-export written as `@doc (@doc inner) name`
+        # copies that placeholder into a real docstring, which `hasdoc` then
+        # counts. Check the text as well.
+        placeholder = _is_placeholder_doc(Docs.doc(binding))
+        if !Docs.hasdoc(binding.mod, binding.var) ||
+                (placeholder && !(spec.symbol in KNOWN_PLACEHOLDER_DOCS))
             push!(missing, spec)
         end
     end
