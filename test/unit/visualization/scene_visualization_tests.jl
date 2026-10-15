@@ -136,7 +136,8 @@ SM.ControlHooks.control_thruster_levels(::ViewerReportedThruster, i::Int) = i ==
 
     @testset "thruster and facet glyphs carry their link index" begin
         model = _three_link_model()
-        push!(model.root.thrusters, SM.Thruster(max_thrust=2.0, location=MVector{3, Float64}(0.5, 0.0, 0.0), direction=MVector{3, Float64}(-1.0, 0.0, 0.0)))
+        # The record holds the thrust direction (+x); the glyph carries the plume direction (-x).
+        push!(model.root.thrusters, SM.Thruster(max_thrust=2.0, location=MVector{3, Float64}(0.5, 0.0, 0.0), direction=MVector{3, Float64}(1.0, 0.0, 0.0)))
         push!(model.links[3].SRP_facets, SM.Facet(area=2.0, normal_vector=MVector{3, Float64}(1.0, 0.0, 0.0), name="panel_r"))
         geometry = spacecraft_geometry(model)
         @test length(geometry.thrusters) == 1

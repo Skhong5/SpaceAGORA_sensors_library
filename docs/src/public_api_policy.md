@@ -119,6 +119,8 @@ For model authors, the stable extension contract is:
   - `calcControlEffect!`
   - `calcControlForceTorque`
   - `calcControlMassFlowRate`
+  - `actuator_wrench`, `actuator_limits` and the optional actuator methods
+  - `actuation_mode` and `actuator_levels`
 
 This lets extension code stay rooted in `SpaceAGORA.*` rather than reaching into
 internal modules.

@@ -2,6 +2,7 @@ module InterLinkModels
 
 	using LinearAlgebra
 	using StaticArrays
+	using ..Components: LaserTerminal
 
 	export ConstellationInterLinkModel, InterLinkGraph, InterLinkParameters
 	export vertex, InterLinkKey, InterLinkHistory
@@ -23,6 +24,16 @@ module InterLinkModels
 			new(Float64(P), Float64(B), Float64(range))
 		end
 	end
+
+	"""
+	    InterLinkParameters(terminal::LaserTerminal)
+
+	The parameters of a link between two terminals of `terminal`'s design: its
+	transmitted power `max_power_w`, its open-cavity `magnification` and its
+	maximum `range_m`.
+	"""
+	InterLinkParameters(terminal::LaserTerminal) =
+		InterLinkParameters(P=terminal.max_power_w, B=terminal.magnification, range=terminal.range_m)
 
 	mutable struct InterLinkGraph
 		# i) Core graph data structures

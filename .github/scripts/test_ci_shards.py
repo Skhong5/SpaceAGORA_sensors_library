@@ -26,6 +26,8 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 import ci_shard_plan  # noqa: E402
+import ci_shard_verify  # noqa: E402
+import ci_shard_weights  # noqa: E402
 
 
 def plan():
@@ -350,6 +352,74 @@ class VerifyTests(unittest.TestCase):
             self.complete(Path(tmp))
             (Path(tmp) / "t-1" / "grid.done").unlink()
             self.assertNotEqual(self.verify(Path(tmp)).returncode, 0)
+
+    def test_slow_items_and_start_up_warn(self):
+        matrix = [{"shard": "coverage-1"}, {"shard": "coverage-2"}]
+        timings = {"unit:new_tests.jl": 6.0 * 60, "unit:fast_tests.jl": 1.0,
+                   "coverage-1:preamble": 9.0 * 60, "coverage-2:preamble": 60.0,
+                   "coverage-1:suite:09": 90.0 * 60}
+        slow = ci_shard_verify.slow_timings(matrix, timings)
+        # An unweighted unit file is planned at the coverage default (0.5 min).
+        self.assertEqual([(r, round(m, 1), p) for r, m, p in slow],
+                         [("coverage-1:preamble", 9.0, None), ("unit:new_tests.jl", 6.0, 0.5)])
+        self.assertEqual(ci_shard_verify.slow_timings([{"shard": "t-1"}], timings),
+                         [("coverage-1:preamble", 9.0, None)])
+
+
+class WeightsTests(unittest.TestCase):
+    CONFIG = textwrap.dedent("""\
+        # header kept
+        [tests.coverage]
+        shards = 2
+
+        [tests.coverage.weights]
+        "suite:01" = 1.00
+        "unit:gone_tests.jl" = 3.00
+        "unit:kept_tests.jl" = 2.00
+        grid = 1.5
+
+        [examples.weights]
+        "A.jl" = 1.00
+        """)
+
+    def test_measured_skips_shard_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            logs = [Path(tmp) / "a.log", Path(tmp) / "b.log"]
+            logs[0].write_text("2026-10-15T14:48:41.6786877Z    37.00 min  unit:x_tests.jl\n"
+                               "2026-10-15T14:48:41.6785733Z    46.23 min  coverage-14:suite:09\n"
+                               "2026-10-15T14:48:41.6789312Z    15.78 min  coverage-8:preamble\n")
+            logs[1].write_text("    39.00 min  unit:x_tests.jl\n     0.50 min  suite:01\n")
+            self.assertEqual(ci_shard_weights.measured(logs), {"unit:x_tests.jl": 38.0, "suite:01": 0.5})
+
+    def test_refresh_replaces_only_its_table(self):
+        items = {"suite:01", "suite:02", "unit:kept_tests.jl", "unit:new_tests.jl", "grid"}
+        text, summary = ci_shard_weights.refresh(self.CONFIG, "coverage",
+                                                 {"suite:01": 4.567, "unit:new_tests.jl": 0.25,
+                                                  "unit:elsewhere_tests.jl": 9.0}, items)
+        self.assertEqual(text, textwrap.dedent("""\
+            # header kept
+            [tests.coverage]
+            shards = 2
+
+            [tests.coverage.weights]
+            "suite:01" = 4.57
+            "unit:kept_tests.jl" = 2.00
+            "unit:new_tests.jl" = 0.25
+            grid = 1.50
+
+            [examples.weights]
+            "A.jl" = 1.00
+            """))
+        self.assertEqual(summary, {"updated": ["suite:01", "unit:new_tests.jl"],
+                                   "kept": ["grid", "unit:kept_tests.jl"], "dropped": ["unit:gone_tests.jl"],
+                                   "unknown": ["unit:elsewhere_tests.jl"], "default": ["suite:02"]})
+
+    def test_entrypoint_runs_no_tests_before_the_shard_dispatch(self):
+        # Tests included there would run again in every shard.
+        text = (ROOT / "test/integration/runtests.jl").read_text()
+        preamble, dispatch = text.split('if haskey(ENV, "SPACEAGORA_CI_SHARD_ITEMS")', 1)
+        self.assertTrue(dispatch)
+        self.assertEqual(re.findall(r'^\s*(?:Base\.)?include\(.*_tests\.jl"\)\)', preamble, re.M), [])
 
 
 if __name__ == "__main__":

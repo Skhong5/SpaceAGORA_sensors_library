@@ -191,6 +191,7 @@ include("io/asset_catalog_boundary_tests.jl")
 include("io/checkpoint_storage_boundary_tests.jl")
 include("simulation/callback_service_boundary_tests.jl")
 include("vehicle/rpo_stl_decoder_boundary_tests.jl")
+include("vehicle/actuator_contract_tests.jl")
 include("quality/runtime_any_gate_tests.jl")
 
 # Optional renderer installer planning is stdlib-only and performs no installation.

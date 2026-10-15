@@ -18,6 +18,7 @@ const API_REFERENCE_PAGES = (
     (section="Mesh Aerodynamics", title="Mesh Aerodynamics API", file="mesh_aerodynamics_api.md"),
     (section="Visualization Scene", title="Visualization API", file="visualization_api.md"),
     (section="Lunar Landing", title="Lunar Landing API", file="lunar_landing_api.md"),
+    (section="Actuators", title="Actuators API", file="actuators_api.md"),
 )
 const BUILD_DIR = joinpath(@__DIR__, "build")
 const PUBLIC_API_REPORT = joinpath(BUILD_DIR, "undocumented_public_exports.txt")
@@ -148,6 +149,7 @@ makedocs(
             "Configuring a Simulation" => "user/simulation_configuration.md",
             "Gravity and Forces" => "user/gravity_forces.md",
             "Adding a Force or Torque" => "user/custom_effector.md",
+            "Adding an Actuator" => "user/custom_actuator.md",
             "Stopping on a Condition" => "user/stop_conditions.md",
             "Mission Workflows" => "user/mission_workflows.md",
             "Solver Configuration" => "user/solver_configuration.md",
@@ -217,6 +219,7 @@ makedocs(
             "Mesh Aerodynamics API" => "generated/mesh_aerodynamics_api.md",
             "Visualization API" => "generated/visualization_api.md",
             "Lunar Landing API" => "generated/lunar_landing_api.md",
+            "Actuators API" => "generated/actuators_api.md",
         ],
     ],
     doctest = true,

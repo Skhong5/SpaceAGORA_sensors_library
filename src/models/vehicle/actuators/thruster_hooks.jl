@@ -5,52 +5,13 @@ using ..SpacecraftModels
 using ..Components
 using ..Kinematics
 
-export update_thrusters!, thrust_calculation_schmitt_trigger!, schmitt_trigger, integrate_impulse!
+export thrust_calculation_schmitt_trigger!, schmitt_trigger, integrate_impulse!
+
+# Thruster firing dynamics over a link's jets: the Schmitt trigger, impulse
+# integration and the ramp factor. Torque allocation over mounted jets is
+# `allocate_actuators` over `allocation_matrix` (the actuator layer).
 
 @inline thruster_debug_enabled() = get(ENV, "SPACEAGORA_DEBUG_THRUSTER", "0") == "1"
-
-function update_thrusters!(link::Link, torque::AbstractVector{Float64}, t::Float64)
-    """
-    Updates the thrusters of the Link with the given torque vector.
-    - `link`: The Link whose thrusters are to be updated.
-    - `torque`: The torque vector to apply to the thrusters.
-    """
-    if isempty(link.thrusters)
-        link.J_thruster = Matrix{Float64}(undef, 3, 0)
-        return
-    end
-
-    link.J_thruster = Matrix{Float64}(zeros(3, length(link.thrusters))) # Reset the Jacobian matrix
-    rot_to_body = rotate_to_body(link)
-    
-    for (i, thruster) in enumerate(link.thrusters)
-        direction_norm = norm(thruster.direction)
-        if !isfinite(direction_norm) || direction_norm == 0.0
-            link.J_thruster[:, i] .= 0.0
-            continue
-        end
-        thruster.direction ./= direction_norm
-        link.J_thruster[:, i] = cross(rot_to_body * thruster.location + link.r, rot_to_body * thruster.direction)
-    end
-    
-    # The pseudoinverse can produce negative entries for an underdetermined layout;
-    # shift and clamp so downstream pulse scheduling only sees realizable thrusts.
-    thrust_vector = pinv(link.J_thruster) * torque # Solve for the thrust vector using the Jacobian matrix
-    if !all(isfinite, thrust_vector)
-        thrust_vector .= 0.0
-    else
-        min_thrust = minimum(thrust_vector)
-        if isfinite(min_thrust) && min_thrust < 0.0
-            thrust_vector .-= min_thrust # Shift only when needed to avoid negative thrust values.
-        end
-        thrust_vector .= max.(thrust_vector, 0.0)
-    end
-    
-    for (i, thruster) in enumerate(link.thrusters)
-        thruster.thrust = thrust_vector[i]
-        thrust_calculation_schmitt_trigger!(link, thruster, thrust_vector[i], t) 
-    end
-end
 
 function thrust_calculation_schmitt_trigger!(link::Link, thruster::Thruster, thrust::Float64, time::Float64)
     """

@@ -149,7 +149,8 @@ function spacecraft_geometry(
         geometry_idx = get(index_map, i, 0)
         geometry_idx == 0 && continue
         for thruster in link.thrusters
-            push!(thrusters, ThrusterGlyph(geometry_idx, _svec3(thruster.location), _svec3(thruster.direction), Float64(thruster.max_thrust)))
+            # The glyph carries the plume (exhaust) direction, opposite to the thrust direction the record holds.
+            push!(thrusters, ThrusterGlyph(geometry_idx, _svec3(thruster.location), -_svec3(thruster.direction), Float64(thruster.max_thrust)))
         end
         for facet in link.SRP_facets
             push!(facets, FacetGlyph(geometry_idx, String(facet.name), _svec3(facet.normal_vector), _svec3(facet.cp), Float64(facet.area)))

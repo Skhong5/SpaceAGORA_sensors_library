@@ -299,6 +299,27 @@ end
 
 @inline environment_requirements(::MagneticTorqueRodModel) = EffectorEnvironmentRequirements(planet_frame=true)
 
+"""
+    rod_field_body(model::MagneticTorqueRodModel, pos_ii, q_ib, param) -> SVector{3}
+
+The magnetic field (T) in the body frame at inertial position `pos_ii` and
+attitude `q_ib`, from `model`'s field source, with the same arithmetic as the
+model's torque. Mounted torque rods act in this field.
+"""
+function rod_field_body(model::MagneticTorqueRodModel, pos_ii::SVector{3, Float64}, q_ib::SVector{4, Float64}, param::ODEParams)::SVector{3, Float64}
+    et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
+    planet = param.args.environment_model.planet
+    l_pi = planet_frame_lpi(planet, et, param.args.environment_model.ephemerides_model)
+    pos_pp = l_pi * pos_ii
+    if model.field_model === :igrf
+        alt_m, lat_rad, lon_rad = rtolatlong(pos_pp, planet)
+        B_ii = _magnetic_field_inertial(model, SMatrix{3, 3, Float64, 9}(l_pi), pos_pp, lat_rad, lon_rad, alt_m)
+    else
+        B_ii = get_magnetic_field_dipole(pos_pp, MMatrix{3, 3, Float64}(l_pi))
+    end
+    return rot(q_ib) * B_ii
+end
+
 @inline function wrench(
     model::MagneticTorqueRodModel,
     x::StateSample,

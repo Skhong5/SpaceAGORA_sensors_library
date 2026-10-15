@@ -39,6 +39,7 @@ assets on the local machine. You do not need it for a first successful run.
 ### Build your own simulation
 
 - [Configuring a Simulation](user/simulation_configuration.md) and [Gravity and Forces](user/gravity_forces.md)
+- [Adding a Force or Torque](user/custom_effector.md), [Adding an Actuator](user/custom_actuator.md) and [The Integrated State](user/integrated_state.md)
 - [Stopping on a Condition](user/stop_conditions.md) and [Mission Workflows](user/mission_workflows.md)
 - [Simulation Outputs](user/outputs.md)
 
