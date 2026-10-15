@@ -6,7 +6,7 @@
 # read as shipped intent; it is not, and at its measured accuracy it would be a
 # regression against the sweep it was meant to replace.
 #
-# Measured by scripts/validate_cost_model.jl against the held-out real harmonics
+# Measured by scripts/calibration/validate_cost_model.jl against the held-out real harmonics
 # kernel, over six runs on identical cached constants: 30-45% decision accuracy
 # at picking the fastest plan (30/30/35/35/35/45), median regret +2.8% to +11%.
 # That is worse than the heuristic it would displace, and the abstention guard

@@ -2,8 +2,8 @@
 #
 # Compare RHS timing across interleaved execution widths in one Julia process.
 #
-#   julia --project=. --threads=12 scripts/dev/probe_lock_thread_ladder.jl
-#   PLT_WIDTHS=1,2,4 julia --project=. --threads=4 scripts/dev/probe_lock_thread_ladder.jl
+#   julia --project=. --threads=12 scripts/dev/diagnostics/probe_lock_thread_ladder.jl
+#   PLT_WIDTHS=1,2,4 julia --project=. --threads=4 scripts/dev/diagnostics/probe_lock_thread_ladder.jl
 #
 # Start Julia with enough threads for the requested PLT_WIDTHS. The probe warms
 # every width, rotates their measurement order between repeats and discards

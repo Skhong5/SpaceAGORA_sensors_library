@@ -1,10 +1,10 @@
-"""Collect scripts/xval_fullarc.jl output into the paper's CSV deliverables.
+"""Collect scripts/xval/xval_fullarc.jl output into the paper's CSV deliverables.
 
 Requires Python 3.11+ (stdlib tomllib), or tomli on older Python.
 The CSV/Arrow export additionally requires pandas and pyarrow.
 
 Usage:
-    python3 scripts/xval_fullarc_export.py <xval outdir> <paper repo root>
+    python3 scripts/xval/xval_fullarc_export.py <xval outdir> <paper repo root>
 
 Validates run_info.json and retained output hashes before accepting
 <outdir>/gmat_committed and <outdir>/stk_committed as primary runs, and reads

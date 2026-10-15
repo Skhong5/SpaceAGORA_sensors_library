@@ -7,7 +7,7 @@ using CSV
 using SHA
 
 const _DEBUG_PROBE_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const _DEBUG_PROBE_SCRIPTS = joinpath(_DEBUG_PROBE_ROOT, "scripts", "dev")
+const _DEBUG_PROBE_SCRIPTS = joinpath(_DEBUG_PROBE_ROOT, "scripts", "dev", "diagnostics")
 const _DEBUG_PROBE_MATRIX = joinpath(_DEBUG_PROBE_ROOT, "test", "gmat_scenario_matrix.jl")
 
 module DebugProbeDefinitions end
@@ -305,7 +305,7 @@ end
 @testset "Full-arc entrypoint uses the maintained definition boundary" begin
     # A separate process checks the command entrypoint. Empty arguments must
     # reach its usage check before any campaign or output write.
-    script = joinpath(_DEBUG_PROBE_ROOT, "scripts", "xval_fullarc.jl")
+    script = joinpath(_DEBUG_PROBE_ROOT, "scripts", "xval", "xval_fullarc.jl")
     code = """
         using Test
         err = try
@@ -316,7 +316,7 @@ end
             e
         end
         @test err isa ErrorException
-        @test occursin("usage: scripts/xval_fullarc.jl", sprint(showerror, err))
+        @test occursin("usage: scripts/xval/xval_fullarc.jl", sprint(showerror, err))
         @test isempty(_BASILISK_MATRIX_CACHE_KEY[])
         @test _BASILISK_MATRIX_RESULT_CACHE[] === nothing
         @test _STK_MATRIX_RESULT_CACHE[] === nothing

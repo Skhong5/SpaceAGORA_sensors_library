@@ -1,7 +1,7 @@
 using DataFrames
 using Statistics
 
-const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
+const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
 
 include(joinpath(@__DIR__, "tb_matrix_debug_defs_only.jl"))
 
