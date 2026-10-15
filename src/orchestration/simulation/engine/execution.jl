@@ -444,6 +444,27 @@ function _callbacks_from_factories(extra_callbacks, factories, args::SimulationC
     return (extra_callbacks..., built...)
 end
 
+# Print the initial state as labelled values (the state's own units: m, m/s, kg,
+# J/cm^2 for heat loads), one line per spacecraft, rather than the state array's
+# full type. Field names follow `u.sc[i]` (see the
+# integrated-state documentation); other top-level components print by name.
+function _print_initial_conditions(io::IO, u0::ComponentVector)
+    println(io, "Initial conditions:")
+    _plain(value) = value isa AbstractArray ? collect(value) : value
+    for name in keys(u0)
+        component = getproperty(u0, name)
+        if name === :sc && component isa AbstractVector
+            for (i, sc) in enumerate(component)
+                fields = (string(field, " = ", _plain(getproperty(sc, field))) for field in keys(sc))
+                println(io, "  spacecraft ", i, ": ", join(fields, ", "))
+            end
+        else
+            println(io, "  ", name, " = ", _plain(component))
+        end
+    end
+    return nothing
+end
+
 """
     run_simulation(args...; isolate_state=true, kwargs...)
 
@@ -505,26 +526,6 @@ julia> length(sol.t) > 1
 true
 ```
 """
-# Print the initial state as labelled SI values, one line per spacecraft, rather
-# than the state array's full type. Field names follow `u.sc[i]` (see the
-# integrated-state documentation); other top-level components print by name.
-function _print_initial_conditions(io::IO, u0::ComponentVector)
-    println(io, "Initial conditions:")
-    _plain(value) = value isa AbstractArray ? collect(value) : value
-    for name in keys(u0)
-        component = getproperty(u0, name)
-        if name === :sc && component isa AbstractVector
-            for (i, sc) in enumerate(component)
-                fields = (string(field, " = ", _plain(getproperty(sc, field))) for field in keys(sc))
-                println(io, "  spacecraft ", i, ": ", join(fields, ", "))
-            end
-        else
-            println(io, "  ", name, " = ", _plain(component))
-        end
-    end
-    return nothing
-end
-
 function run_simulation(
     args::SimulationConfiguration;
     isolate_state::Bool=true,

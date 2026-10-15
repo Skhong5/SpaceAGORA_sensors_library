@@ -58,8 +58,8 @@ common messages to their causes. The Julia REPL form of this check is on
 
 Installation time depends on your connection and which Julia packages are
 already installed. The first run also compiles code, so allow more time for
-it than for later runs. The run prints the initial state of each spacecraft (position, velocity, mass
-and heat loads, in SI units), the number of saved samples and the
+it than for later runs. The run prints the initial state of each spacecraft (position in m, velocity in
+m/s, mass in kg and accumulated heat loads in J/cm²), the number of saved samples and the
 computational time, and writes:
 
 ```text

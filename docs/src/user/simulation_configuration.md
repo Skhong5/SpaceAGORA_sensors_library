@@ -174,8 +174,9 @@ from the planet's centre. The constructor finds the radius at each apsis
 whose geodetic altitude matches the requested value, then computes `a` and
 `e`. Both altitudes must be nonnegative, and the resulting apoapsis radius
 must exceed the periapsis radius. This mode therefore cannot express a
-circular orbit: equal `ra` and `hp` give two radii that differ only through
-the ellipsoid, and the result is either refused or slightly eccentric. For a
+circular orbit: equal apoapsis and periapsis altitudes give equal radii, which
+are refused because the apoapsis radius must exceed the periapsis radius
+(rounding occasionally lets an orbit with eccentricity near zero through). For a
 circular orbit use Mode 1 with `ra` equal to `rp`, or Mode 2 with `e = 0.0`.
 
 Use the same `initial_time` and `ephemerides_model` in the simulation
@@ -345,17 +346,18 @@ config = make_example_config(
 run_simulation(config)
 ```
 
-The repository ships fully normalized coefficient files, with columns
-`degree,order,C,S`, in `data/planets/gravity/`: `EarthGGM05C.csv` and
-`egm96.csv` for Earth, `Mars50c.csv` and `GMM2B.csv` for Mars, `MGNP180U.csv`
-for Venus and `LP165P.csv` for the Moon. The `README.md` in that folder gives
-each file's source and conventions. Asking for a degree or order beyond what a
+The repository's coefficient files, fully normalized with columns
+`degree,order,C,S`, are in `data/planets/gravity/`. They include
+`EarthGGM05C.csv` and `egm96.csv` for Earth, `Mars50c.csv` and `GMM2B.csv` for
+Mars, `MGNP180U.csv` for Venus, `LP165P.csv` for the Moon and `titan5.csv` for
+Titan; the `README.md` in that folder lists every file, including variants
+with other tide conventions, with its source. Asking for a degree beyond what a
 file contains is refused with an error. Run time grows with the degree, so
 start low and raise it once the setup works; `AGORA_Earth_Aerobraking.jl`,
 `AGORA_Odyssey.jl` and `AGORA_Vex.jl` use degree and order 50. Keywords select
 other coefficient normalizations (`coefficient_normalization=:schmidt` or
 `:unnormalized`) and a perturbation-only term (`include_central=false`); the
-[Public API](../generated/public_api.md) entry lists them.
+[Simulation Setup API](../generated/simulation_setup_api.md) entry lists them.
 
 ## SimulationSettings
 
@@ -379,9 +381,9 @@ SM.SimulationSettings(
 ```
 
 Set `results = false` to run without writing any output (useful for
-performance profiling or validation-only runs). Set `generate_plots = false`
-to skip plot generation, which is typically what you want for CLI/batch runs
-and performance studies.
+performance profiling or validation-only runs). `generate_plots` does not
+change what `run_simulation` writes (see below); plots come from scripts that
+read the saved files.
 
 `generate_plots = true` is the default of `SimulationSettings` itself, not of
 the example helper: `make_example_config` builds its settings with

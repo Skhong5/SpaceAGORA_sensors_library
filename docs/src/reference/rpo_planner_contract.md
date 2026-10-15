@@ -141,11 +141,12 @@ propagate. A `:candidate` is still subject to lifecycle-owned validation before
 installation, and every non-candidate outcome reaches the run as an
 `RPOPlanningError` carrying these symbols.
 
-Each result carries diagnostics. The direct baseline records its planning
-budget, chosen duration and analytic maxima. The HYPR adapter distinguishes the
-requested, mapped and optimizer-returned configurations and includes the
-planning budget, path representation, deterministic cost and its history, and
-the termination. Because the adapter plans within the reduced limits described
+Results report their outcome in the `status` and `termination` fields and
+can carry diagnostics. A direct-baseline candidate records its planning budget, chosen
+duration and analytic maxima. A HYPR adapter result that reaches the optimizer
+distinguishes the requested, mapped and optimizer-returned configurations and
+includes the planning budget, path representation and deterministic cost and
+its history. Requests refused before planning carry few or no diagnostics. Because the adapter plans within the reduced limits described
 below, its reference timing can differ from a legacy HYPR call that uses the
 unreduced limits.
 

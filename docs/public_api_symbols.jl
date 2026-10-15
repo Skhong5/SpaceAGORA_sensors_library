@@ -515,8 +515,9 @@ function undocumented_public_api_specs(spaceagora::Module)
     missing = NamedTuple[]
     for spec in public_api_specs(spaceagora)
         binding = Docs.Binding(spec.owner_module, spec.symbol)
-        doc = Docs.doc(binding)
-        if doc === nothing
+        # `Docs.doc` returns a "No documentation found" placeholder rather than
+        # `nothing` for an undocumented name, so `hasdoc` decides.
+        if !Docs.hasdoc(binding.mod, binding.var) || Docs.doc(binding) === nothing
             push!(missing, spec)
         end
     end

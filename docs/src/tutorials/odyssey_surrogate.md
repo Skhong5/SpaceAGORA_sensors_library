@@ -207,11 +207,15 @@ The three differences are lengths of difference vectors at the 600-second
 comparison time, so they are never negative and carry no direction:
 `position_difference_m` is the distance in metres between the two inertial
 positions, `velocity_difference_m_s` the magnitude in m/s of the difference of
-the two velocities, and `panel_heat_load_difference_norm_J_cm2` the magnitude
-in J/cm² of the difference between the two panels' accumulated heat loads. To
+the two velocities, and `panel_heat_load_difference_norm_J_cm2` the Euclidean
+norm in J/cm² of the per-panel differences between the two runs' accumulated
+heat loads (one entry per panel). To
 see which run is ahead or hotter, compare the signed columns of the two
-`trajectory.csv` files, for example by plotting them. Julia REPL started with
-`julia --project=.` from the repository root, after the default comparison:
+`trajectory.csv` files, for example by plotting them. The example's own environment does not include
+Plots, so use the repository's root environment, instantiated as in
+[Installation & Environment](../user/installation_environment.md). Julia REPL
+started with `julia --project=.` from the repository root, after the default
+comparison:
 
 ```julia
 using CSV, DataFrames, Plots

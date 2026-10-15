@@ -7,10 +7,10 @@
 
 Struct containing the information needed for the dynamics propagation of all spacecraft.
 
-- `spacecraft`: vector of spacecraft models, one per propagated vehicle, each given by its root link (main bus or core body). This is the vector over which the threads are parallelized, so each thread handles the dynamics propagation of one spacecraft and its attached links.
+- `spacecraft`: vector of spacecraft models, one per propagated vehicle, each represented by its root link (main bus or core body). This is the vector over which the threads are parallelized, so each thread handles the dynamics propagation of one spacecraft and its attached links.
 - `dynamic_effectors`: tuple of force and torque models (gravity, drag, etc.) applied during the dynamics propagation.
 
-After a run, `res.configuration.dynamics_model.spacecraft[i]` is the spacecraft that ran.
+After `res = run_simulation(config; return_results=true)`, `res.configuration.dynamics_model.spacecraft[i]` is the spacecraft that ran.
 """
 struct DynamicsModel{T_Effectors<:Tuple}
     spacecraft::Vector{SpacecraftModel} # Vector of root links (main bus or core bodies)

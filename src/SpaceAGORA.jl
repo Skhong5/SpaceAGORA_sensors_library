@@ -117,9 +117,11 @@ coefficients file with columns `degree,order,C,S`. The central point-mass term
 is included by default (`include_central=true`), so this model replaces
 `InverseSquaredGravityModel` or `InverseSquaredJ2GravityModel` rather than being
 added to them. `coefficient_normalization` names the file's convention (`:full`,
-the default, `:schmidt` or `:unnormalized`); the other keywords are
-`coefficients_normalized`, `j2_source`, `reference_radius_m`, `gm_m3s2` and
-`include_central`. A degree or order beyond the file's contents is refused.
+the default, `:schmidt` or `:unnormalized`). `coefficients_normalized=false`
+also converts unnormalized coefficients, so use one of the two, not both, or
+the coefficients are converted twice. The other keywords are `j2_source`,
+`reference_radius_m`, `gm_m3s2` and `include_central`. A degree beyond the
+file's contents is refused.
 """ GravitationalHarmonicsModel
 @doc "Output and checkpoint settings for a simulation. The opt-in RPO pilot refuses checkpoint writing and resume." SimulationSettings
 @doc """

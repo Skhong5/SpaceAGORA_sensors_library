@@ -18,9 +18,10 @@ What to read next:
 one of these:
 
 - Setting up the Odyssey example environment, or any `Pkg.add`, `Pkg.update`
-  or `Pkg.resolve`, stops with `julia version requirement for package at ...
-  not satisfied: compat entry "julia = ~1.12" does not include Julia version
-  ...`.
+  or `Pkg.resolve`, stops with an error saying that the `julia = ~1.12` compat
+  entry does not include your Julia version (Julia 1.12 words it as `julia
+  version requirement for package at ... not satisfied`; other releases word it
+  differently).
 - The documented root instantiate,
   `Pkg.instantiate(julia_version_strict=true)`, stops with `The active
   manifest file has dependencies that were resolved with a different julia
@@ -179,9 +180,11 @@ populated are significantly faster.
   and the public scenario assets. Neither step needs native GRAM or a GRAM
   data directory; see the [Odyssey walkthrough](../tutorials/odyssey_surrogate.md).
 - `--offline` refuses to download, so it works once the assets are installed.
-  Prefetch them with the [named surrogate data commands](../cli.md#Named-surrogate-data)
-  (`assets fetch --preset=odyssey_p20_frozen_v1 --version=1.0.0`), or run the
-  example once with network access.
+  Run the example once with network access; that installs both the preset grid
+  and the scenario's SPICE kernels and gravity coefficients. The
+  [named surrogate data command](../cli.md#Named-surrogate-data)
+  `assets fetch --preset=odyssey_p20_frozen_v1 --version=1.0.0` installs only
+  the grid, so an offline run still needs the scenario assets afterwards.
 - The modified `Project.toml` is expected: the setup adds the companion to the
   example environment. Leave it as it is, or restore it with Git before
   committing other changes.
