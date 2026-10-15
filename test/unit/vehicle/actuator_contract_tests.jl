@@ -363,6 +363,72 @@ end
         @test bare.h_wheels == SVector(9.0, 9.0, 9.0)               # no wheels: its own accumulator
     end
 
+    @testset "a torque rod's torque is its dipole crossed with the field" begin
+        root = SM.Link(root=true, m=20.0)
+        rod = Magnetorquer(axis=SVector(0.0, 0.0, 2.0), max_dipole_am2=1.5)
+        @test rod.axis == SVector(0.0, 0.0, 1.0)
+        @test actuator_limits(rod) == (-1.5, 1.5) && actuator_saturate(rod, -4.0) == -1.5
+        field = SVector(2.0e-5, -1.0e-5, 3.0e-5)
+        @test actuator_wrench(rod, 1.0, actuator_context(root; magnetic_field_body=field)) == (ZERO3, cross(SVector(0.0, 0.0, 1.0), field))
+        @test actuator_wrench(rod, 1.0, actuator_context(root)) == (ZERO3, ZERO3)      # no field, no torque
+        @test_throws ArgumentError Magnetorquer(axis=ZERO3)
+        @test_throws ArgumentError Magnetorquer(axis=SVector(1.0, 0.0, 0.0), max_dipole_am2=-1.0)
+        sc = spacecraft_with(root)
+        @test add_actuator!(sc, root, rod) === rod && root.magnetorquers == [rod]
+        wheel = add_actuator!(sc, root, ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0)))
+        puck = add_actuator!(sc, root, ColdGasPuck(SVector(1.0, 0.0, 0.0), ZERO3, 0.5, 50.0))
+        jet = add_actuator!(sc, root, Thruster(max_thrust=1.0, direction=MVector(0.0, 1.0, 0.0)))
+        @test [e.actuator for e in mounted_actuators(sc)] == AbstractActuator[jet, wheel, rod, puck]   # thrusters, wheels, rods, user kinds
+        @test SM.mounted_magnetorquer_count(sc) == 1 && SM.mounted_actuator_count(sc) == 4
+        @test mounted_wrench(sc, [0.0, 0.0, 1.0, 0.0]; magnetic_field_body=field)[2] == cross(SVector(0.0, 0.0, 1.0), field)
+        @test isempty(SM.Link().magnetorquers)
+    end
+
+    @testset "a mounted rod acts in the run's field, as an equal permanent dipole does" begin
+        q = normalize(SVector(0.1, 0.2, 0.3, 0.9))
+        x = ComponentVector(pos=[7.0e6, 1.0e6, 2.0e5], vel=[0.0, 7.5e3, 0.0], mass=50.0, q=collect(q), ω=zeros(3))
+        passive_root = SM.Link(root=true, m=50.0)
+        push!(passive_root.magnets, SM.Magnet(m=MVector(0.3, -0.2, 0.8)))
+        _, torque_passive = SM.calcForceTorque(SM.MagneticTorqueRodModel(), x,
+            readout_params(SM.SpacecraftModel[spacecraft_with(passive_root)], ()), 1)
+        rod_root = SM.Link(root=true, m=50.0)
+        rods = spacecraft_with(rod_root)
+        for axis in (SVector(1.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(0.0, 0.0, 1.0))
+            add_actuator!(rods, rod_root, Magnetorquer(axis=axis))
+        end
+        _, torque_rods, _, _ = readout(readout_params(SM.SpacecraftModel[rods], (HoldLevels(1, [0.3, -0.2, 0.8]),)), 1, x)
+        @test torque_rods ≈ torque_passive rtol=1e-12
+        @test norm(torque_rods) > 0.0
+    end
+
+    @testset "the momentum manager drives mounted torque rods with its dipole command" begin
+        root = SM.Link(root=true, m=50.0)
+        sc = spacecraft_with(root)
+        for axis in (SVector(1.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(0.0, 0.0, 1.0))
+            add_actuator!(sc, root, Magnetorquer(axis=axis))
+        end
+        estimate(t, r) = SVector(1.0e-5, -2.0e-5, 3.0e-5)
+        manager = SM.MagneticMomentumManagerModel(sat_idx=1, mu_gain=0.01, h_wheels_0=SVector(0.02, 0.0, 0.01),
+            commanded_torque=(t, r, v, q, w) -> ZERO3, b_field_ii=estimate, actuation=:mounted)
+        p = readout_params(SM.SpacecraftModel[sc], (manager,))
+        u = (sc=[(pos=[7.0e6, 0.0, 0.0], vel=[0.0, 7.5e3, 0.0], q=[0.0, 0.0, 0.0, 1.0], ω=zeros(3))],)
+        @test SpaceAGORA.actuator_levels(manager, 1) === nothing                  # before the first tick
+        CH.calcControlEffect!(manager, u, p, 0.0, 1)
+        @test SpaceAGORA.actuation_mode(manager) === :mounted
+        @test SpaceAGORA.actuator_levels(manager, 1) ≈ collect(manager.held_dipole_am2) atol=1e-15   # orthogonal rods carry its components
+        x = ComponentVector(pos=[7.0e6, 0.0, 0.0], vel=[0.0, 7.5e3, 0.0], mass=50.0, q=[0.0, 0.0, 0.0, 1.0], ω=zeros(3))
+        _, torque, _, _ = readout(p, 1, x)
+        truth = SM.rod_field_body(SM.MagneticTorqueRodModel(), SVector(7.0e6, 0.0, 0.0), SVector(0.0, 0.0, 0.0, 1.0), p)
+        @test torque ≈ cross(manager.held_dipole_am2, truth) rtol=1e-12          # the run's field, not the estimate
+        bound = SpaceAGORA.bind_spacecraft(manager, 2)
+        @test bound.mounted_levels !== manager.mounted_levels && isempty(bound.mounted_levels)
+        rodless = SM.MagneticMomentumManagerModel(sat_idx=1, h_wheels_0=SVector(0.02, 0.0, 0.0),
+            commanded_torque=(t, r, v, q, w) -> ZERO3, b_field_ii=estimate, actuation=:mounted)
+        @test_throws ArgumentError CH.calcControlEffect!(rodless, u,
+            readout_params(SM.SpacecraftModel[spacecraft_with(SM.Link(root=true, m=50.0))], (rodless,)), 0.0, 1)
+        @test_throws ArgumentError SpaceAGORA.actuation_mode(SM.MagneticMomentumManagerModel(actuation=:bogus))
+    end
+
     @testset "a mounted run moves the vehicle and uses propellant as its jets say" begin
         root = SM.Link(root=true, m=500.0, dims=MVector(1.0, 1.0, 1.0))
         ic = SM.CartesianInitialCondition(SVector(4.0e9, 0.0, 0.0), SVector(0.0, 0.0, 0.0); q=SVector(0.0, 0.0, 0.0, 1.0))

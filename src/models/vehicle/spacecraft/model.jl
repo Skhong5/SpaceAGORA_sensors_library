@@ -240,6 +240,7 @@ mutable struct Link
     thrusters::Vector{Thruster}
     magnets::Vector{Magnet} # List of magnetic dipoles attached to the link
     cop_offset_b::MVector{3, Float64} # Aerodynamic center-of-pressure offset from the link COM (link frame, m); lever arm for the aero wrench torque, zeros = no intrinsic aero torque
+    magnetorquers::Vector{Magnetorquer} # Torque rods mounted on the link (see add_actuator!)
     # Actuators of user-defined kinds mounted on the link (see add_actuator!). Built-in
     # kinds keep their own concretely typed lists above; this one is evaluated through
     # a function barrier per actuator.
@@ -274,6 +275,7 @@ mutable struct Link
         thrusters=Thruster[],
         magnets=Magnet[],
         cop_offset_b=MVector{3, Float64}(0, 0, 0),
+        magnetorquers=Magnetorquer[],
         custom_actuators=AbstractActuator[])
 
         n_rw = size(J_rw, 2)
@@ -286,7 +288,7 @@ mutable struct Link
             h_dot_wheels=zeros(Float64, n_rw),
             tau_body_net=MVector{3, Float64}(zeros(3))      # tau_body_net
         )
-        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, reflection_coefficient, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, J_thruster, thrusters, magnets, cop_offset_b, Vector{AbstractActuator}(custom_actuators))
+        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, reflection_coefficient, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, J_thruster, thrusters, magnets, cop_offset_b, Vector{Magnetorquer}(magnetorquers), Vector{AbstractActuator}(custom_actuators))
     end
 end
 

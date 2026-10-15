@@ -10,7 +10,8 @@ actuators of user-defined kinds.
    and of the viewer's plumes);
 2. every mounted reaction wheel, in mounting order (wheels mount on the root
    link);
-3. every actuator of a user-defined kind, link by link in
+3. every torque rod, link by link in `link.magnetorquers` order;
+4. every actuator of a user-defined kind, link by link in
    `link.custom_actuators` order.
 
 Built-in kinds added later take their place before the user-defined kinds.
@@ -22,16 +23,17 @@ using StaticArrays
 using ..AbstractTypes: AbstractActuator
 using ..QuaternionMath: rot
 using ..Actuators
-using ..Components: Thruster, ReactionWheel, wheel_momentum_saturate
+using ..Components: Thruster, ReactionWheel, wheel_momentum_saturate, Magnetorquer
 using ..SpacecraftModels: Link, SpacecraftModel
 using ..Assembly: add_thruster!
 
-export add_actuator!, mounted_actuators, mounted_actuator_count, mounted_thruster_count, mounted_wheel_count
+export add_actuator!, mounted_actuators, mounted_actuator_count, mounted_thruster_count, mounted_wheel_count, mounted_magnetorquer_count
 export actuator_context, allocation_matrix, mounted_wrench, mounted_thruster_fractions
 
 const _ZERO3 = SVector{3, Float64}(0.0, 0.0, 0.0)
 const _IDENTITY3 = SMatrix{3, 3, Float64, 9}(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
 const _IDENTITY_Q = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
+const _NAN3 = SVector{3, Float64}(NaN, NaN, NaN)
 
 """
     add_actuator!(model::SpacecraftModel, link::Link, actuator) -> actuator
@@ -39,8 +41,8 @@ const _IDENTITY_Q = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
 Mount `actuator` on `link`, one of `model`'s links. A [`Thruster`](@ref) joins
 `link.thrusters` (its direction is normalized and the link's thruster torque
 Jacobian gains its column). A [`ReactionWheel`](@ref) mounts on the root link
-only and joins its wheel assembly, whose momentum the engine integrates. An
-actuator of any other [`AbstractActuator`](@ref) kind joins
+only and joins its wheel assembly, whose momentum the engine integrates. A
+[`Magnetorquer`](@ref) joins `link.magnetorquers`. An actuator of any other [`AbstractActuator`](@ref) kind joins
 `link.custom_actuators`. Returns the actuator.
 """
 function add_actuator!(model::SpacecraftModel, link::Link, thruster::Thruster)
@@ -60,6 +62,11 @@ function add_actuator!(model::SpacecraftModel, link::Link, wheel::ReactionWheel)
     push!(assembly.wheels, wheel)
     model.n_reaction_wheels += 1
     return wheel
+end
+
+function add_actuator!(model::SpacecraftModel, link::Link, rod::Magnetorquer)
+    push!(link.magnetorquers, rod)
+    return rod
 end
 
 function add_actuator!(model::SpacecraftModel, link::Link, actuator::AbstractActuator)
@@ -90,12 +97,25 @@ actuators of the mounted set.
 mounted_wheel_count(model::SpacecraftModel)::Int = length(model.root.rw_assembly.wheels)
 
 """
+    mounted_magnetorquer_count(model::SpacecraftModel) -> Int
+
+The number of torque rods mounted on `model`'s links.
+"""
+function mounted_magnetorquer_count(model::SpacecraftModel)::Int
+    n = 0
+    for link in model.links
+        n += length(link.magnetorquers)
+    end
+    return n
+end
+
+"""
     mounted_actuator_count(model::SpacecraftModel) -> Int
 
 The number of actuators mounted on `model`, of every kind.
 """
 function mounted_actuator_count(model::SpacecraftModel)::Int
-    n = mounted_thruster_count(model) + mounted_wheel_count(model)
+    n = mounted_thruster_count(model) + mounted_wheel_count(model) + mounted_magnetorquer_count(model)
     for link in model.links
         n += length(link.custom_actuators)
     end
@@ -116,6 +136,9 @@ function mounted_actuators(model::SpacecraftModel)
     for wheel in model.root.rw_assembly.wheels
         push!(out, (link=model.root, actuator=wheel))
     end
+    for link in model.links, rod in link.magnetorquers
+        push!(out, (link=link, actuator=rod))
+    end
     for link in model.links, actuator in link.custom_actuators
         push!(out, (link=link, actuator=actuator))
     end
@@ -123,19 +146,20 @@ function mounted_actuators(model::SpacecraftModel)
 end
 
 """
-    actuator_context(link::Link; mass_kg=NaN, q_ib=identity, ω_body=zero) -> ActuatorContext
+    actuator_context(link::Link; mass_kg=NaN, q_ib=identity, ω_body=zero, magnetic_field_body=NaN) -> ActuatorContext
 
 The evaluation context of an actuator mounted on `link`: the link's configured
 pose in the body frame (its `r` and, for a non-root link, its attitude `q`)
-and the vehicle's mass, attitude and rate.
+and the vehicle's mass, attitude, rate and local magnetic field.
 """
-actuator_context(link::Link; mass_kg::Real=NaN, q_ib=_IDENTITY_Q, ω_body=_ZERO3) =
-    actuator_context(link, Float64(mass_kg), SVector{4, Float64}(q_ib), SVector{3, Float64}(ω_body))
+actuator_context(link::Link; mass_kg::Real=NaN, q_ib=_IDENTITY_Q, ω_body=_ZERO3, magnetic_field_body=_NAN3) =
+    actuator_context(link, Float64(mass_kg), SVector{4, Float64}(q_ib), SVector{3, Float64}(ω_body), SVector{3, Float64}(magnetic_field_body))
 
-@inline function actuator_context(link::Link, mass_kg::Float64, q_ib::SVector{4, Float64}, ω_body::SVector{3, Float64})
+@inline function actuator_context(link::Link, mass_kg::Float64, q_ib::SVector{4, Float64}, ω_body::SVector{3, Float64},
+                                  magnetic_field_body::SVector{3, Float64}=_NAN3)
     # Same link-to-body map as the thruster torque Jacobian (Kinematics.rotate_to_body).
     link_to_body = link.root ? _IDENTITY3 : SMatrix{3, 3, Float64, 9}(rot(SVector{4, Float64}(link.q))')
-    return ActuatorContext(SVector{3, Float64}(link.r), link_to_body, mass_kg, q_ib, ω_body)
+    return ActuatorContext(SVector{3, Float64}(link.r), link_to_body, mass_kg, q_ib, ω_body, magnetic_field_body)
 end
 
 """
@@ -170,7 +194,8 @@ end
     _add_actuator(actuator, actuator_saturate(actuator, level), ctx, force, torque, mass_rate)
 
 """
-    mounted_wrench(model::SpacecraftModel, levels; mass_kg=NaN, q_ib=identity, ω_body=zero, wheel_momentum=nothing)
+    mounted_wrench(model::SpacecraftModel, levels; mass_kg=NaN, q_ib=identity, ω_body=zero, wheel_momentum=nothing,
+                   magnetic_field_body=NaN)
         -> (force_body, torque_body, mass_rate_kg_s, wheel_torque_body)
 
 The wrench of every actuator mounted on `model` at its level in `levels` (one
@@ -180,13 +205,17 @@ point; the total propellant mass rate (kg/s, positive while consuming); and the
 part of the torque the reaction wheels produce, which the engine integrates
 into their momentum. `wheel_momentum` holds the root wheel assembly's stored
 momenta (the integrated `h_wheels` state); with it, a wheel at its momentum
-limit produces no torque that would store more.
+limit produces no torque that would store more. Torque rods act in
+`magnetic_field_body`, the local field in the body frame (T).
 """
-mounted_wrench(model::SpacecraftModel, levels::AbstractVector; mass_kg::Real=NaN, q_ib=_IDENTITY_Q, ω_body=_ZERO3, wheel_momentum=nothing) =
-    mounted_wrench(model, levels, Float64(mass_kg), SVector{4, Float64}(q_ib), SVector{3, Float64}(ω_body), wheel_momentum)
+mounted_wrench(model::SpacecraftModel, levels::AbstractVector; mass_kg::Real=NaN, q_ib=_IDENTITY_Q, ω_body=_ZERO3, wheel_momentum=nothing,
+               magnetic_field_body=_NAN3) =
+    mounted_wrench(model, levels, Float64(mass_kg), SVector{4, Float64}(q_ib), SVector{3, Float64}(ω_body), wheel_momentum,
+                   SVector{3, Float64}(magnetic_field_body))
 
 function mounted_wrench(model::SpacecraftModel, levels::AbstractVector, mass_kg::Float64,
-                        q_ib::SVector{4, Float64}, ω_body::SVector{3, Float64}, wheel_momentum=nothing)
+                        q_ib::SVector{4, Float64}, ω_body::SVector{3, Float64}, wheel_momentum=nothing,
+                        magnetic_field_body::SVector{3, Float64}=_NAN3)
     n = mounted_actuator_count(model)
     length(levels) == n || throw(ArgumentError(
         "Mounted actuation: $(length(levels)) actuator levels for the $(n) actuators mounted on spacecraft $(model.id)."))
@@ -216,6 +245,14 @@ function mounted_wrench(model::SpacecraftModel, levels::AbstractVector, mass_kg:
             _, tq = actuator_wrench(wheel, x, ctx)
             torque = torque + tq
             wheel_torque = wheel_torque + tq
+        end
+    end
+    @inbounds for link in model.links
+        isempty(link.magnetorquers) && continue
+        ctx = actuator_context(link, mass_kg, q_ib, ω_body, magnetic_field_body)
+        for rod in link.magnetorquers
+            k += 1
+            force, torque, mass_rate = _add_actuator(rod, actuator_saturate(rod, levels[k]), ctx, force, torque, mass_rate)
         end
     end
     @inbounds for link in model.links

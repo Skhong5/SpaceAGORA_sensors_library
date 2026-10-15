@@ -239,7 +239,7 @@ using .SimulationModel: ApolloDescentControlConfig, ApolloDescentControlModel, d
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 using .SimulationModel: control_thruster_levels
 # Actuators: the contract (Actuators), the thruster kind (Components) and mounting (ActuatorMounting).
-using .SimulationModel: Thruster, ReactionWheel, ActuatorContext
+using .SimulationModel: Thruster, ReactionWheel, Magnetorquer, ActuatorContext
 using .SimulationModel: actuator_wrench, actuator_limits, actuator_saturate, actuator_consumption, actuator_fraction, actuator_unit_wrench, actuation_mode, actuator_levels, allocate_actuators
 using .SimulationModel: add_actuator!, mounted_actuators, actuator_context, allocation_matrix, mounted_wrench, six_axis_thrusters
 using .SimulationLifecycle: bind_spacecraft
@@ -325,6 +325,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.AbstractTypes.AbstractActuator) AbstractActuator
 @doc (@doc SimulationModel.Thruster) Thruster
 @doc (@doc SimulationModel.ReactionWheel) ReactionWheel
+@doc (@doc SimulationModel.Magnetorquer) Magnetorquer
 @doc (@doc SimulationModel.ActuatorContext) ActuatorContext
 @doc (@doc SimulationModel.actuator_wrench) actuator_wrench
 @doc (@doc SimulationModel.actuator_limits) actuator_limits
@@ -605,7 +606,7 @@ export ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_c
 export getDensity, getDensityBatch!, with_density_model_epoch
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
 export control_thruster_levels, bind_spacecraft
-export AbstractActuator, Thruster, ReactionWheel, ActuatorContext
+export AbstractActuator, Thruster, ReactionWheel, Magnetorquer, ActuatorContext
 export actuator_wrench, actuator_limits, actuator_saturate, actuator_consumption, actuator_fraction, actuator_unit_wrench, actuation_mode, actuator_levels, allocate_actuators
 export add_actuator!, mounted_actuators, actuator_context, allocation_matrix, mounted_wrench, six_axis_thrusters
 export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState

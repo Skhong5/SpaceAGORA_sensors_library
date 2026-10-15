@@ -28,7 +28,7 @@ const _IDENTITY3 = SMatrix{3, 3, Float64, 9}(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 
 const _IDENTITY_Q = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
 
 """
-    ActuatorContext(; link_r_body, link_to_body, mass_kg, q_ib, ω_body)
+    ActuatorContext(; link_r_body, link_to_body, mass_kg, q_ib, ω_body, magnetic_field_body)
 
 What an actuator kind may use when it is evaluated:
 
@@ -37,7 +37,9 @@ What an actuator kind may use when it is evaluated:
 - `link_to_body`: the rotation from the link frame to the body frame;
 - `mass_kg`: the vehicle's current mass;
 - `q_ib`: the attitude quaternion, inertial to body, scalar last;
-- `ω_body`: the body angular velocity, rad/s.
+- `ω_body`: the body angular velocity, rad/s;
+- `magnetic_field_body`: the local magnetic field in the body frame, T, when
+  the vehicle carries torque rods; NaN otherwise.
 
 The link pose is the link's configured geometry. The attitude and the rate are
 the identity and zero when the run does not propagate attitude.
@@ -48,6 +50,7 @@ struct ActuatorContext
     mass_kg::Float64
     q_ib::SVector{4, Float64}
     ω_body::SVector{3, Float64}
+    magnetic_field_body::SVector{3, Float64}
 end
 
 ActuatorContext(;
@@ -56,8 +59,10 @@ ActuatorContext(;
     mass_kg::Real=NaN,
     q_ib=_IDENTITY_Q,
     ω_body=_ZERO3,
+    magnetic_field_body=SVector{3, Float64}(NaN, NaN, NaN),
 ) = ActuatorContext(SVector{3, Float64}(link_r_body), SMatrix{3, 3, Float64, 9}(link_to_body),
-                    Float64(mass_kg), SVector{4, Float64}(q_ib), SVector{3, Float64}(ω_body))
+                    Float64(mass_kg), SVector{4, Float64}(q_ib), SVector{3, Float64}(ω_body),
+                    SVector{3, Float64}(magnetic_field_body))
 
 """
     actuator_wrench(actuator, level, ctx::ActuatorContext) -> (force_body, torque_body)

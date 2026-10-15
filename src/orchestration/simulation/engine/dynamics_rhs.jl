@@ -370,6 +370,12 @@ function _accumulate_control_effectors_from_tuple!(
     return mass_rate
 end
 
+# The field source of mounted torque rods: the run's MagneticTorqueRodModel, or
+# its default (the tilted dipole) when the run has none.
+@inline _rod_field_source(::Tuple{}) = SimulationModel.MagneticTorqueRodModel()
+@inline _rod_field_source(effectors::Tuple) = first(effectors) isa SimulationModel.MagneticTorqueRodModel ?
+    first(effectors) : _rod_field_source(Base.tail(effectors))
+
 # `:mounted` actuation: the inertial force, body torque, propellant mass rate and
 # reaction-wheel torque of the actuators mounted on spacecraft `sat_idx` at the
 # levels the effector holds. The mass rate is negative while propellant is used,
@@ -384,8 +390,11 @@ end
     ω = SVector{3, Float64}(sc_view.ω[1], sc_view.ω[2], sc_view.ω[3])
     spacecraft = p.args.dynamics_model.spacecraft[sat_idx]
     wheel_momentum = hasproperty(sc_view, :h_wheels) ? sc_view.h_wheels : nothing
+    field = SimulationModel.mounted_magnetorquer_count(spacecraft) == 0 ? SVector{3, Float64}(NaN, NaN, NaN) :
+        SimulationModel.rod_field_body(_rod_field_source(p.args.dynamics_model.dynamic_effectors),
+            SVector{3, Float64}(sc_view.pos[1], sc_view.pos[2], sc_view.pos[3]), q, p)
     force_body, torque_body, mass_rate, wheel_torque =
-        SimulationModel.mounted_wrench(spacecraft, levels, Float64(sc_view.mass), q, ω, wheel_momentum)
+        SimulationModel.mounted_wrench(spacecraft, levels, Float64(sc_view.mass), q, ω, wheel_momentum, field)
     force_ii = SimulationModel.rot(q)' * force_body          # rot(q) maps inertial to body
     return (force_ii, torque_body, -mass_rate, wheel_torque)
 end

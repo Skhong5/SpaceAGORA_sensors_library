@@ -41,6 +41,13 @@ momentum the engine integrates (its root wheel assembly, for example wheels
 mounted with `add_actuator!`), the manager reads that momentum at each tick
 instead of accumulating its own. The dipole command is capped at `m_max_am2`.
 
+`actuation = :ideal` (the default) holds the rod torque `m x B` computed with
+the model's own field callable. `actuation = :mounted` instead drives the
+torque rods mounted on the spacecraft (`Magnetorquer` actuators) at the
+dipole command, so the torque comes from the run's field (the
+`MagneticTorqueRodModel` field source) while the model's callable stays its
+estimate of that field.
+
 To read `h_wheels`/`held_dipole_am2` back after a run, call
 `run_simulation(args; isolate_state=false)`: the default `isolate_state=true`
 deep-copies the configuration — including this model — so the simulation
@@ -60,6 +67,8 @@ Base.@kwdef mutable struct MagneticMomentumManagerModel <: AbstractControlEffect
     last_update_s::Float64 = NaN
     initialized::Bool = false
     ticks::Int = 0                            # diagnostic: discrete updates applied
+    actuation::Symbol = :ideal                # :ideal holds the rod torque; :mounted drives mounted torque rods
+    mounted_levels::Vector{Float64} = Float64[]   # :mounted: one level per mounted actuator, refreshed each tick
 end
 
 # The body-frame momentum of the wheels the engine integrates for spacecraft
@@ -105,6 +114,7 @@ function calcControlEffect!(model::MagneticMomentumManagerModel, u, p, t::Float6
     if !(b2 > 0.0)
         model.held_dipole_am2 = SVector{3, Float64}(0.0, 0.0, 0.0)
         model.held_torque_body = SVector{3, Float64}(0.0, 0.0, 0.0)
+        model.actuation === :mounted && _manager_fill_mounted_levels!(model, p.args.dynamics_model.spacecraft[sat_idx], model.held_dipole_am2)
         return nothing
     end
     m = model.mu_gain * cross(model.h_wheels, b_body) / b2
@@ -114,7 +124,42 @@ function calcControlEffect!(model::MagneticMomentumManagerModel, u, p, t::Float6
     end
     model.held_dipole_am2 = m
     model.held_torque_body = cross(m, b_body)
+    model.actuation === :mounted && _manager_fill_mounted_levels!(model, p.args.dynamics_model.spacecraft[sat_idx], m)
     return nothing
+end
+
+# `:mounted`: the dipole command as levels of the mounted torque rods (their
+# least-norm split, so three orthogonal rods carry its components); every other
+# mounted actuator idle.
+function _manager_fill_mounted_levels!(model::MagneticMomentumManagerModel, spacecraft, dipole_body::SVector{3, Float64})
+    n_rods = mounted_magnetorquer_count(spacecraft)
+    n_rods > 0 || throw(ArgumentError("Mounted momentum management needs torque rods mounted on the spacecraft: add Magnetorquer actuators."))
+    axes = zeros(Float64, 3, n_rods)
+    k = 0
+    for link in spacecraft.links, rod in link.magnetorquers
+        k += 1
+        axes[:, k] = actuator_context(link).link_to_body * rod.axis
+    end
+    split = pinv(axes) * dipole_body
+    levels = model.mounted_levels
+    resize!(levels, mounted_actuator_count(spacecraft))
+    fill!(levels, 0.0)
+    offset = mounted_thruster_count(spacecraft) + mounted_wheel_count(spacecraft)
+    for j in 1:n_rods
+        levels[offset + j] = split[j]
+    end
+    return levels
+end
+
+function actuation_mode(model::MagneticMomentumManagerModel)
+    model.actuation === :ideal || model.actuation === :mounted ||
+        throw(ArgumentError("MagneticMomentumManagerModel actuation must be :ideal or :mounted, got $(repr(model.actuation))."))
+    return model.actuation
+end
+
+function actuator_levels(model::MagneticMomentumManagerModel, i::Int)
+    (i == model.sat_idx && !isempty(model.mounted_levels)) || return nothing
+    return model.mounted_levels
 end
 
 """Return the held rod torque (body frame); no force."""
