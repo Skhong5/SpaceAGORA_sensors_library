@@ -8,12 +8,25 @@ The example propagates Odyssey's P20 aerobraking passage and runs the existing m
 
 From the root of the SpaceAGORA checkout, install the dedicated example
 environment. It pins the public Julia wrapper and uses the current SpaceAGORA
-checkout. All paths on this page are relative to the repository root:
+checkout. All paths on this page are relative to the repository root. Blocks
+marked "Terminal" are typed at the shell prompt there (PowerShell or Command
+Prompt on Windows, a terminal on Linux/macOS); blocks marked "Julia REPL" go
+to the `julia>` prompt. Terminal, from the repository root:
 
 ```sh
 julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate_env/setup.jl
 julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl
 ```
+
+The setup script changes two things in the checkout. It clones the EDG
+guidance companion from GitHub into `packages/gnc/SpaceAGORAEDG.jl` (a Git
+submodule, so the first setup needs network access), and it adds that
+companion to the example environment, which rewrites the tracked file
+`examples/odyssey_surrogate_env/Project.toml`. `git status` then lists that
+file as modified; this is expected, and the resolved `Manifest.toml` beside it
+stays untracked. The root project's own instantiate is not a prerequisite:
+this environment resolves its own manifest, including SpaceAGORA's
+dependencies.
 
 After pulling a newer SpaceAGORA, run the setup script again. It moves the
 environment to the GRAMSuite revision the checkout now pins, which a plain
@@ -21,18 +34,26 @@ environment to the GRAMSuite revision the checkout now pins, which a plain
 
 The first setup downloads and compiles several hundred packages, so it can take
 from a few minutes to much longer on a busy machine; later setups reuse them.
+On a machine with an empty Julia depot, expect downloads on the order of a
+gigabyte and a depot (`~/.julia` by default) that grows by a few gigabytes
+once compiled caches and this example's assets are included.
 
 Each command-line run starts a new Julia process, which compiles the example
-before its first passage; expect a pause of a few minutes. An interactive
-session compiles once and reuses the code for later runs. When the comparison
-finishes, it prints the absolute path of its results directory and the files it
-wrote there. "Inspect the result" below describes them.
+before its first passage; expect a pause of a few minutes. The example prints
+a reminder of this before its first passage, and the run time it reports for
+that passage includes the compilation, so the baseline case looks much slower
+than the variant that follows it. That difference is compilation, not the
+panel angle, and `wall_s` in each `summary.toml` records that same run time,
+compilation included for the first case. An interactive session compiles once
+and reuses the code for later runs. When the comparison finishes, it prints
+the absolute path of its results directory and the files it wrote there.
+"Inspect the result" below describes them.
 
 For a notebook or an interactive session, select that same environment before
 including the example: start Julia from the repository root with
 `julia --project=examples/odyssey_surrogate_env`, or run
 `] activate examples/odyssey_surrogate_env` in a session started there. The
-`include` path is relative to the repository root:
+`include` path is relative to the repository root. Julia REPL:
 
 ```julia
 include("examples/odyssey_surrogate.jl")
@@ -45,7 +66,7 @@ The trailing semicolon keeps the REPL from printing the returned tables. Give
 each run a new directory; the examples on this page use directories under
 `output/`, which git ignores.
 
-The preset resolver installs the identified atmosphere once, and the scenario helper supplies the four identified public SPICE kernels and Mars gravity coefficients. Each first installation prints one line naming its source and one confirming that its SHA256 checksums match. The files, about 224 MB in total (a 47 MB grid and 176 MB of kernels and coefficients), are stored in the `artifacts/` folder of your Julia depot, by default `~/.julia/artifacts`. The atmosphere grid is published under CC BY 4.0: cite it by preset name and version, and credit NASA's GRAM Suite (Mars-GRAM) as the source model. The scenario assets keep the original terms of the NAIF kernels and gravity coefficients (see the [GRAMSuite.jl repository](https://github.com/Space-FALCON-Lab/GRAMSuite.jl)). To list, prefetch or check presets without running the example, use the commands in [Named surrogate data](../cli.md#Named-surrogate-data). Subsequent runs reuse installed files. An offline run requires these assets to be installed already:
+The preset resolver installs the identified atmosphere once, and the scenario helper supplies the four identified public SPICE kernels and Mars gravity coefficients. Each first installation prints one line naming its source and one confirming that its SHA256 checksums match. The files, about 224 MB in total (a 47 MB grid and 176 MB of kernels and coefficients), are stored in the `artifacts/` folder of your Julia depot, by default `~/.julia/artifacts`. The atmosphere grid is published under CC BY 4.0: cite it by preset name and version, and credit NASA's GRAM Suite (Mars-GRAM) as the source model. The scenario assets keep the original terms of the NAIF kernels and gravity coefficients (see the [GRAMSuite.jl repository](https://github.com/Space-FALCON-Lab/GRAMSuite.jl)). To list, prefetch or check presets without running the example, use the commands in [Named surrogate data](../cli.md#Named-surrogate-data). Subsequent runs reuse installed files. An offline run requires these assets to be installed already. Terminal, from the repository root:
 
 ```sh
 julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl --offline --output=output/odyssey_offline
@@ -58,7 +79,8 @@ Run it in a separate Julia session if your notebook also uses another SPICE scen
 
 ## Change an active setting
 
-For a single run, change `panel_cap_deg`:
+For a single run, change `panel_cap_deg`. Julia REPL, in the example
+environment:
 
 ```julia
 run = OdysseySurrogateExample.run_case(
@@ -73,7 +95,7 @@ is the sample at the 600-second comparison time and `endpoint` is the sample at
 the outbound 250 km crossing.
 
 To compare another cap with the 90-degree baseline, pass it on the command
-line. `--help` lists all options:
+line. `--help` lists all options. Terminal, from the repository root:
 
 ```sh
 julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl --help
@@ -83,8 +105,8 @@ julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl --c
 The second command runs the 90-degree baseline and a 60-degree variant. It
 writes `cap_90_deg/`, `cap_60_deg/` and `comparison.toml` in
 `output/odyssey_cap_60/`. `--baseline-cap=DEG` changes the baseline. Both caps
-must be in (0, 90] degrees and must differ. The same comparison from Julia,
-in its own directory:
+must be in (0, 90] degrees and must differ. The same comparison from the
+Julia REPL, in its own directory:
 
 ```julia
 comparison = OdysseySurrogateExample.compare_panel_caps(
@@ -194,6 +216,17 @@ now. The revision your session runs is pinned in
 `examples/odyssey_surrogate_env/Project.toml` and recorded in that folder's
 `Manifest.toml`.
 
+`summary.toml` carries three timestamps that are easy to confuse.
+`requested_start_utc` and `start_utc`, at the top of the file, are the
+simulation's start: the instant at which the initial state is read from the
+Odyssey kernel. Under `[atmosphere.atmosphere]`, `epoch_utc` is the frozen
+epoch of the atmosphere snapshot, the instant whose Mars-GRAM state the grid
+stores; advancing simulation time never changes it. Under
+`[atmosphere.generation_provenance]`, `payload_created_at_utc` is the date on
+which the grid file was generated and packaged for publication. It describes
+the data product, not the mission, and it is the only one of the three that
+is not a 2001 date.
+
 Each run stops at its outbound 250 km ellipsoidal-height crossing, so
 `solver_retcode = "Terminated"` in `summary.toml` is the normal result. The common-time comparison avoids confusing a control effect with a difference in the exit event's timing. The example's small nonzero effect checks establish that the selected setting is active. They are not accuracy tolerances or release requirements.
 
@@ -206,7 +239,7 @@ Runtime in each summary covers the simulation and its sample recording. It exclu
 
 To query the frozen atmosphere directly, for example along your own trajectory,
 load both packages in the example environment, build the model and call
-`getDensity`:
+`getDensity`. Julia REPL:
 
 ```julia
 using SpaceAGORA
@@ -226,7 +259,7 @@ interface.
 
 ## Atmospheric and scenario assumptions
 
-The grid stores density, temperature and east/north/up winds. Its atmosphere is frozen at `2001-11-07T11:51:04.794789Z`, with the recorded Mars-GRAM TES Mapping Year 2 configuration. Advancing simulation time does not change these fields. The example starts near `2001-11-07T11:45:45.690115Z`; the initial state is queried from the identified Odyssey kernel at the engine's resolved start time.
+The grid stores density, temperature and east/north/up winds. Its atmosphere is frozen at `2001-11-07T11:51:04.794789Z` (`epoch_utc` in `summary.toml`), with the recorded Mars-GRAM TES Mapping Year 2 configuration. Advancing simulation time does not change these fields. The example starts near `2001-11-07T11:45:45.690115Z`; the initial state is queried from the identified Odyssey kernel at the engine's resolved start time.
 
 The stored domain is 100 to 260 km ellipsoidal altitude, 40 to 90 degrees geodetic north latitude, and periodic east longitude. The Mars equatorial and polar radii are 3,396,190 and 3,376,200 metres. A query outside the height or latitude bounds fails. A named preset fixes this policy: `surrogate_preset_model` rejects grid options such as `above_grid=:vacuum` with an `ArgumentError`. [Atmosphere Models](../user/atmosphere_models.md#Fixed-GRAM-grid-snapshot) shows the generic grid model for other policies; queries below the floor fail with either model. The example uses nominal stored winds; `wind=false` is not a supported way to remove winds from this preset.
 

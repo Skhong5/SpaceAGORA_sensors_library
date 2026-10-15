@@ -6,11 +6,16 @@ or docs builds.
 This page is for users and contributors who need to understand the repository
 environments before running anything heavier than a quick smoke path.
 
-Shortest successful command:
+Shortest successful command. Terminal, from the repository root (the
+directory that contains `Project.toml`):
 
 ```text
-julia --project=. -e "using Pkg; Pkg.instantiate()"
+julia --project=. -e "using Pkg; Pkg.instantiate(julia_version_strict=true)"
 ```
+
+Command blocks on this page say where they are typed: "Terminal" is the shell
+prompt (PowerShell or Command Prompt on Windows, a terminal on Linux/macOS),
+and "Julia REPL" is the `julia>` prompt inside a running Julia session.
 
 What to read next:
 
@@ -20,8 +25,61 @@ What to read next:
 
 ## Julia version
 
-The root `Project.toml` pins `julia = "1.12"`. Install that Julia release
-before instantiating either project.
+SpaceAGORA requires Julia 1.12; any 1.12.x patch release works. The root
+`Project.toml` and the Odyssey example environment declare `julia = "~1.12"`,
+which excludes Julia 1.13 and later as well as 1.11 and earlier. Install a
+1.12 release before instantiating either project (with juliaup:
+`juliaup add 1.12` and `juliaup default 1.12`) and confirm it with
+`julia --version`.
+
+What an unsupported release reports:
+
+- Resolving an environment, which the Odyssey example setup and every
+  `Pkg.add`, `Pkg.update` or `Pkg.resolve` do, stops with
+  `julia version requirement for package at ... not satisfied: compat entry
+  "julia = ~1.12" does not include Julia version ...`.
+- `Pkg.instantiate()` of the root project installs the committed manifest
+  without resolving, so it does not read that compat entry. With
+  `julia_version_strict=true`, the form used in the documented commands, it
+  stops at once with `The active manifest file has dependencies that were
+  resolved with a different julia version (1.12.3)`. Without the option it
+  only warns and then fails later, on missing standard-library sources or in
+  precompilation. On Julia 1.11 or older the option itself is unknown and the
+  command fails with `type Context has no field julia_version_strict`; the
+  remedy is the same.
+
+[Troubleshooting](troubleshooting.md#Wrong-Julia-version) lists these symptoms
+with their fixes.
+
+## Check the installation
+
+A successful setup looks like this. Terminal, from the repository root:
+
+```text
+julia --version
+julia --project=. -e "using SpaceAGORA; println(pkgdir(SpaceAGORA))"
+```
+
+The first command prints `julia version 1.12.` followed by the patch number.
+The second prints the absolute path of your checkout; the first time it runs
+it also compiles the package, which takes several minutes and shows
+precompilation progress, and nothing else should be printed. The same check
+from a Julia REPL started from the repository root with `julia --project=.`:
+
+```julia
+julia> Base.active_project()
+"/absolute/path/to/SpaceAGORA.jl/Project.toml"
+
+julia> using SpaceAGORA
+
+julia>
+```
+
+`Base.active_project()` must end in `SpaceAGORA.jl/Project.toml`. Any other
+path means Julia was started from another directory or without
+`--project=.`, and `using SpaceAGORA` then fails with `Package SpaceAGORA not
+found in current path`. See
+[Troubleshooting](troubleshooting.md#Wrong-working-directory).
 
 ## The repository environments
 
@@ -43,20 +101,30 @@ Use it for:
 The Odyssey surrogate example has its own environment. It adds the public
 `GRAMSuite` Julia wrapper, which provides the native-free grid atmosphere, and
 uses the current SpaceAGORA checkout. Its setup script instantiates it, and the
-resolved manifest stays local:
+resolved manifest stays local. Terminal, from the repository root:
 
 ```text
 julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate_env/setup.jl
 julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl
 ```
 
-See the [Odyssey walkthrough](../tutorials/odyssey_surrogate.md).
+The setup also clones the EDG guidance companion from GitHub into
+`packages/gnc/SpaceAGORAEDG.jl` and adds it to this environment, which
+rewrites the tracked `examples/odyssey_surrogate_env/Project.toml`; `git
+status` then shows that file as modified, which is expected. The environment
+resolves its own manifest, including SpaceAGORA's dependencies, so the root
+instantiate is not a prerequisite, although the documented installation order
+runs it first. The first setup needs network access, and on an empty Julia
+depot it downloads on the order of a gigabyte of packages and binary
+artifacts; with compiled caches and the example's assets the depot grows by a
+few gigabytes. See the [Odyssey walkthrough](../tutorials/odyssey_surrogate.md).
 
 ### Optional package commands
 
 From a SpaceAGORA Git clone, a shared helper manages the optional repositories
 under `packages/robotics/` and `packages/gnc/`. It uses Julia's standard library and command-line Git
 for source inspection and checkout; it does not require loading SpaceAGORA first.
+Terminal, from the repository root:
 
 ```sh
 julia --startup-file=no scripts/optional_packages.jl status
@@ -102,14 +170,15 @@ Basilisk comparison harness. Julia 1.12 is required; native scenes currently
 support Linux x86_64 and use the pinned MuJoCo 3.11.0 artifact.
 
 The pinned source is available at `packages/robotics/SpaceAGORAMuJoCo.jl`.
-From the SpaceAGORA repository root:
+Terminal, from the SpaceAGORA repository root:
 
 ```sh
 julia --startup-file=no scripts/optional_packages.jl setup mujoco /path/to/mujoco-env
 julia --startup-file=no --project=/path/to/mujoco-env
 ```
 
-Then load the packages explicitly:
+Then, in the Julia REPL that the second command started, load the packages
+explicitly:
 
 ```julia
 using SpaceAGORA, SpaceAGORAMuJoCo
@@ -139,14 +208,15 @@ Its linked checkout belongs in `packages/gnc/SpaceAGORAEDG.jl`. SpaceAGORA owns 
 simulation state, callback schedule, accumulated heat and application of panel
 commands; the companion computes decisions through `EDGServices` contract 1.0.0.
 
-For a core revision that records a published EDG companion pin:
+For a core revision that records a published EDG companion pin. Terminal,
+from the repository root:
 
 ```sh
 julia --startup-file=no scripts/optional_packages.jl setup edg /path/to/edg-env
 julia --startup-file=no --project=/path/to/edg-env
 ```
 
-Load both packages before creating an EDG mission:
+Load both packages before creating an EDG mission. Julia REPL:
 
 ```julia
 using SpaceAGORA, SpaceAGORAEDG
@@ -180,7 +250,7 @@ CI, with the companion required. The parent coverage gate also collects the
 companion kernels at the existing thresholds and rejects missing measurements;
 extracting a file does not remove it from that gate. A separate core-only check verifies that
 loading SpaceAGORA without EDG remains possible. To reproduce those tests in an
-isolated development environment:
+isolated development environment, terminal, from the repository root:
 
 ```sh
 julia --startup-file=no scripts/setup_edg.jl /path/to/edg-test-env
@@ -218,7 +288,8 @@ Pkg.add([PackageSpec(name="StaticArrays"), PackageSpec(name="CSV"),
 Pkg.instantiate()
 ```
 
-Run setup, then save `my_effector.jl` from the walkthrough in the new project:
+Run setup, then save `my_effector.jl` from the walkthrough in the new project.
+Terminal, from any directory, since both commands use absolute paths:
 
 ```text
 julia --startup-file=no setup_user_project.jl /absolute/SpaceAGORA.jl /absolute/my-project

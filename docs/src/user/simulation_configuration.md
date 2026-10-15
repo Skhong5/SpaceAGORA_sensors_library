@@ -157,7 +157,10 @@ In this form, both `ra` and `hp` are altitudes in metres. The positional
 from the planet's centre. The constructor finds the radius at each apsis
 whose geodetic altitude matches the requested value, then computes `a` and
 `e`. Both altitudes must be nonnegative, and the resulting apoapsis radius
-must exceed the periapsis radius.
+must exceed the periapsis radius. This mode therefore cannot express a
+circular orbit: equal `ra` and `hp` give two radii that differ only through
+the ellipsoid, and the result is either refused or slightly eccentric. For a
+circular orbit use Mode 1 with `ra` equal to `rp`, or Mode 2 with `e = 0.0`.
 
 Use the same `initial_time` and `ephemerides_model` in the simulation
 configuration so the constructor uses the intended inertial-to-planet-fixed
@@ -207,6 +210,16 @@ When `mission_type = SM.MissionOrbits`, the simulation terminates after
 uses Keplerian two-phase integration (free-flight + drag-pass). Set
 `keplerian = false` to keep uniform integration throughout (useful for
 continuous atmosphere scenarios or full entry trajectories).
+
+To size `mission_time` from an orbit count, use the planet's gravitational
+parameter `planet.μ` in m³/s², a field of every built-in planet including the
+one returned by `make_no_gram_planet(:earth)`: one Keplerian period is
+`2π * sqrt(a^3 / planet.μ)` seconds for a semi-major axis `a` in metres, so a
+400 km circular Earth orbit (`a = planet.Rp_e + 400e3`) takes about
+92.6 minutes. `make_example_config` always builds a `MissionTime` mission, so
+pass that product as its `mission_time`; to stop after a number of completed
+orbits instead, construct `MissionConfiguration` yourself with
+`mission_type = SM.MissionOrbits`.
 
 ## EnvironmentModel
 
@@ -293,7 +306,7 @@ SM.SimulationSettings(
     results            = true,           # write output files
     verbose            = false,          # print solver diagnostics
     results_directory  = "output",       # directory for CSV and bundle output
-    generate_plots     = true,           # generate plots after simulation (default)
+    generate_plots     = true,           # default true; make_example_config sets false (see below)
     generate_filenames = false,          # embed run parameters in output filenames (default)
     normalize          = false,          # legacy compatibility flag; typed run_simulation propagates SI state directly (default)
     save_csv           = true,           # write CSV alongside the Feather bundle
@@ -309,6 +322,17 @@ Set `results = false` to run without writing any output (useful for
 performance profiling or validation-only runs). Set `generate_plots = false`
 to skip plot generation, which is typically what you want for CLI/batch runs
 and performance studies.
+
+`generate_plots = true` is the default of `SimulationSettings` itself, not of
+the example helper: `make_example_config` builds its settings with
+`generate_plots = false`, so a configuration from that helper writes the CSV,
+Feather and manifest files and no plots. No code path in `run_simulation`
+reads this flag in either case: it is only carried along when settings are
+copied, and the verification study switches its own plots with the CLI's
+`--plots=` option. The four PNG files the quickstart saves under
+`output/plots/` come from that example script's own plotting code, which
+reads the saved CSV. For a helper-built run, make plots from the saved files
+as [Simulation Outputs](outputs.md) describes.
 
 ## FilePaths
 

@@ -8,14 +8,27 @@ This page is for first-time users who do not need GRAM or SPICE on day one.
 This default quickstart baseline is the Earth vacuum path:
 `NoAtmosphereModel()` plus `SimpleEphemeridesModel()`.
 
-Shortest successful path:
+SpaceAGORA requires Julia 1.12 (any 1.12.x release); `julia --version` must
+say so before you start. Julia 1.13 and older releases are refused, as
+described under [Julia version](installation_environment.md#Julia-version).
+
+Shortest successful path. Terminal, Linux/macOS: the first line creates the
+checkout, and the remaining lines run inside it, which is the repository root
+that every later command on this site assumes:
 
 ```text
 GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 cd SpaceAGORA.jl
-julia --project=. -e "using Pkg; Pkg.instantiate()"
+julia --project=. -e "using Pkg; Pkg.instantiate(julia_version_strict=true)"
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
+
+`julia_version_strict=true` makes the package manager stop with one clear
+message on a Julia release other than 1.12 instead of continuing into
+unrelated errors. Command blocks on this site say where they are typed:
+"Terminal" is the shell prompt (PowerShell or Command Prompt on Windows, a
+terminal on Linux/macOS), and "Julia REPL" is the `julia>` prompt inside a
+running Julia session.
 
 What to read next:
 
@@ -23,6 +36,23 @@ What to read next:
 - [First Simulation](first_simulation.md)
 - [Simulation Outputs](outputs.md)
 - [Recipes](recipes.md)
+
+## Check the setup
+
+Before the first run, confirm the installation. Terminal, from the repository
+root:
+
+```text
+julia --version
+julia --project=. -e "using SpaceAGORA; println(pkgdir(SpaceAGORA))"
+```
+
+Expected: `julia version 1.12.` followed by the patch number, then the
+absolute path of your checkout. The second command compiles the package the
+first time and shows precompilation progress for several minutes; anything
+else printed is a problem, and [Troubleshooting](troubleshooting.md) maps the
+common messages to their causes. The Julia REPL form of this check is on
+[Installation & Environment](installation_environment.md#Check-the-installation).
 
 ## What to expect
 
@@ -47,14 +77,16 @@ output/
 this example again overwrites its previous files; see
 [Simulation Outputs](outputs.md) for keeping runs apart.
 
-On Windows the variable is set in a separate statement. PowerShell:
+On Windows the variable is set in a separate statement, and the remaining
+three lines of the path above then run unchanged. Terminal, Windows
+PowerShell:
 
 ```text
 $env:GIT_LFS_SKIP_SMUDGE = "1"
 git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 ```
 
-Command Prompt:
+Terminal, Windows Command Prompt:
 
 ```text
 set GIT_LFS_SKIP_SMUDGE=1
@@ -78,7 +110,7 @@ simulation. It does not require:
 
 ## If you prefer the CLI
 
-The equivalent command-line path is:
+The equivalent command-line path. Terminal, from the repository root:
 
 ```text
 julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_run

@@ -7,18 +7,22 @@ saved results or extend a model through the supported API.
 ## Start in under a minute
 
 Use this path if you want the fastest successful run on a machine that does not
-have GRAM or SPICE configured yet.
+have GRAM or SPICE configured yet. SpaceAGORA requires Julia 1.12; other
+releases are refused (see [Julia version](user/installation_environment.md#Julia-version)).
+Terminal, Linux/macOS; the first line creates the checkout and the rest run
+inside it:
 
 ```text
 GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 cd SpaceAGORA.jl
-julia --project=. -e "using Pkg; Pkg.instantiate()"
+julia --project=. -e "using Pkg; Pkg.instantiate(julia_version_strict=true)"
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 
 On Windows set the variable first (PowerShell `$env:GIT_LFS_SKIP_SMUDGE = "1"`,
 Command Prompt `set GIT_LFS_SKIP_SMUDGE=1`) and run the same `git clone` line
-without the prefix; the [Quickstart](user/quickstart.md) shows both forms.
+without the prefix; the [Quickstart](user/quickstart.md) shows both forms and
+a checkpoint that confirms the setup before the first run.
 
 ## Choose your path
 
@@ -42,6 +46,14 @@ data.
 - [GRAMSuite Setup](user/gramsuite_setup.md)
 - [Assets & Modes](assets.md)
 - [Verification Study](user/verification_study.md)
+
+### Guidance and control with a frozen atmosphere
+
+Use this route to develop a guidance, control or autonomy algorithm against a
+reproducible Mars atmosphere without native GRAM.
+
+- [Odyssey Surrogate Control Exercise](tutorials/odyssey_surrogate.md)
+- [Atmosphere Models](user/atmosphere_models.md)
 
 ## Documentation tracks
 
