@@ -8,7 +8,7 @@ using Statistics
 const REPO = normpath(joinpath(@__DIR__, "..", "..", ".."))
 const RUNTIME = joinpath(REPO, "benchmarks", "studies", "performance_runtime_analysis")
 const PIPELINE = joinpath(REPO, "benchmarks", "scripts", "performance_paper_pipeline.jl")
-const STATIC = joinpath(REPO, "benchmarks", "studies", "performance_static_vs_parallel.jl")
+const STATIC = joinpath(REPO, "benchmarks", "studies", "performance", "performance_static_vs_parallel.jl")
 const REPORT_FIXTURE = joinpath(@__DIR__, "benchmark_report_tests.jl")
 
 # Load selected real definitions and reuse the existing synthetic row schema.

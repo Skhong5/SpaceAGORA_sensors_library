@@ -21,11 +21,11 @@ fields once. Exporting an already saved bundle does not run a simulation.
 The features developed alongside the viewer in PR121 have since landed with
 owners of their own and are not part of this scene boundary: the GRAM epoch
 alignment hook (`src/models/environment/atmosphere/density_epoch.jl`), the
-aerodynamic mesh surrogate (`src/models/dynamics/coupled/aerodynamic_mesh_surrogate.jl`),
+aerodynamic mesh surrogate (`src/models/dynamics/effectors/aerodynamic_mesh_surrogate.jl`),
 the Apollo-style descent guidance and control
 (`src/models/gnc/guidance/landing/`, `src/models/gnc/control/landing/`), touchdown handling
 in the simulation callbacks, plume-surface physics
-(`src/models/dynamics/coupled/force_torque_models/plume_surface_interaction.jl` with
+(`src/models/dynamics/effectors/force_torque_models/plume_surface_interaction.jl` with
 `src/orchestration/simulation/callbacks/plume_callbacks.jl`) and regional terrain
 (`src/models/environment/terrain/`). The viewer only reads what those models save.
 

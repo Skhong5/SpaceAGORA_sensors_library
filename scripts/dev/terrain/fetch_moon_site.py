@@ -2,7 +2,7 @@
 """Build lunar DEM grids and optional imagery for SpaceAGORA.
 
 Requires Python 3.9+, NumPy and Pillow. Run with --help for the options and see
-`docs/reference/lunar_imagery_sources.md` for the datum, cache and source contract.
+`docs/src/user/lunar_imagery_sources.md` for the datum, cache and source contract.
 DEM samples are elevations above the 1737400 m sphere on north-to-south,
 west-to-east cell-centred grids with explicit outer edges. LOLA uses bounded
 HTTP ranges; coarse rows are stratified samples, not full-area averages.
@@ -41,7 +41,7 @@ TREK_LAYERS = {
     "a11_26cm": {"layer": "apollo11_26cm_mosaic_byte_geo_1_2_highContrast", "ext": "png", "zmax": 15, "bbox": (23.4484963, 0.1464532, 23.5396925, 1.1149077)},
 }
 # ---- PDS archive rasters -----------------------------------------------------------------
-# Moon Trek caps every layer it serves (see docs/reference/lunar_imagery_sources.md): its own
+# Moon Trek caps every layer it serves (see docs/src/user/lunar_imagery_sources.md): its own
 # Apollo 11 mosaic is held at about 0.26 m/px and served at 0.651, so the deepest Trek level of
 # the quadtree is 2.5x coarser than the mosaic behind it. The archive has no such cap. These are
 # the products read straight out of the PDS, by HTTP range requests into the raster, for the
@@ -1268,7 +1268,7 @@ def _build_tiles(out, track, root, a, idir, request):
             # source is one LROC NAC frame whose ground sample is 0.24 m across the detector line
             # and 0.56 m along track (SCALED_PIXEL_WIDTH and _HEIGHT of M175124932R in the PDS
             # volume index), and radially averaged power spectra of the archive raster lose their
-            # signal at about 0.5 m of feature size: see docs/reference/lunar_imagery_sources.md,
+            # signal at about 0.5 m of feature size: see docs/src/user/lunar_imagery_sources.md,
             # section 6. So the tiles are sampled finer than the imagery resolves, and a viewer
             # that quotes the sampling alone overstates what is there by about a factor of two.
             "resolution": {"finest_m_per_px": round(finest, 4),

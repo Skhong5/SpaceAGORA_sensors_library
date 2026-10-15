@@ -47,11 +47,11 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "robotics", "r
 @reexport using .Robotics
 include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "planning", "robot_arm", "planning.jl"))
 @reexport using .RobotArmPlanning
-include(joinpath(@__DIR__, "..", "..", "..", "models", "dynamics", "compliant_multibody", "compliant_multibody.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "models", "dynamics", "multibody", "compliant", "compliant_multibody.jl"))
 # Keep the defining module identity for existing serialized objects and HYPR.
 const CompliantMultibody = ClothMultibody
 @reexport using .CompliantMultibody
-include(joinpath(@__DIR__, "..", "..", "..", "models", "dynamics", "compliant_multibody", "compliant_robot_arm_dynamics.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "models", "dynamics", "multibody", "compliant", "compliant_robot_arm_dynamics.jl"))
 const CompliantRobotArmDynamics = ClothRobotArmDynamics
 @reexport using .CompliantRobotArmDynamics
 
@@ -87,16 +87,16 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "spacecraft", 
 
 # Articulated-body dynamics library (needs only the spacecraft model types; the runtime
 # types below hold its per-spacecraft run data).
-include(joinpath(@__DIR__, "..", "..", "..", "models", "dynamics", "coupled", "articulated_body.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "models", "dynamics", "multibody", "articulated_body.jl"))
 @reexport using .ArticulatedBody
 
 # Compliant multibody attachments mounted on spacecraft links (the type itself lives in
 # SpacecraftModels; this is its runtime and dynamics).
-include(joinpath(@__DIR__, "..", "..", "..", "models", "dynamics", "compliant_multibody", "compliant_attachment_dynamics.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "models", "dynamics", "multibody", "compliant", "compliant_attachment_dynamics.jl"))
 @reexport using .CompliantAttachmentDynamics
 
 # Generic hooks for spacecraft an external integrator owns for a run (internal name space, not re-exported).
-include(joinpath(@__DIR__, "..", "..", "..", "models", "dynamics", "coupled", "external_propagation.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "models", "dynamics", "external_propagation.jl"))
 
 # Private owner for shared coordinate transforms; preserve legacy qualified bindings.
 module FrameTransforms
@@ -156,7 +156,7 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "dynamics", "translationa
 @reexport using .DynamicsTranslational
 
 # --- Coupled Dynamic Force/Torque Effectors ---
-include(joinpath(@__DIR__, "..", "..", "..", "models", "dynamics", "coupled", "force_torque_models.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "models", "dynamics", "effectors", "force_torque_models.jl"))
 @reexport using .DynamicEffectors
 include(joinpath(@__DIR__, "..", "..", "parallel", "routing", "effector_routing.jl"))
 include(joinpath(@__DIR__, "..", "..", "..", "models", "environment", "gravity", "gravity_effectors.jl"))

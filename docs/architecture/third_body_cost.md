@@ -8,7 +8,7 @@ profiles and timing tables are retained under the
 
 ## Shared samples and name resolution
 
-`_spice_query_name` in `src/models/dynamics/coupled/perturbations.jl` interns
+`_spice_query_name` in `src/models/dynamics/effectors/perturbations.jl` interns
 canonical body names. Its table is published copy-on-write behind a lock;
 readers use a dictionary that is not subsequently mutated. The cached result
 must equal the uncached string transformation.

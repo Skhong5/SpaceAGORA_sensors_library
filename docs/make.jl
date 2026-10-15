@@ -166,6 +166,7 @@ makedocs(
             "Mesh Aerodynamics" => "user/mesh_aerodynamics.md",
             "Plume Interaction" => "user/plume_interaction.md",
             "Lunar Landing" => "user/lunar_landing.md",
+            "Lunar Imagery Sources" => "user/lunar_imagery_sources.md",
             "Energy Depletion Guidance" => "user/edg_guidance.md",
             "Motion Planning with HYPR" => "user/hypr_planning.md",
             "Run the HyPR paper algorithm" => "user/hypr_paper.md",

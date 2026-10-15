@@ -542,7 +542,7 @@ Tuple of control effectors and the rate (s) at which each is called. `ControlMod
 end
 
 # Compliant multibody models mounted on links (needs `Link`, needed by `SpacecraftModel`).
-include(joinpath(@__DIR__, "..", "..", "dynamics", "compliant_multibody", "compliant_attachment.jl"))
+include(joinpath(@__DIR__, "..", "..", "dynamics", "multibody", "compliant", "compliant_attachment.jl"))
 
 mutable struct SpacecraftModel
     joints::Vector{Joint} # List of joints

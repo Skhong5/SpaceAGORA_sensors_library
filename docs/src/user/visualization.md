@@ -419,7 +419,7 @@ export_visualization("output/moon-run/simulation_results";
 Reopen `output/moon-run/simulation_results_viewer.html`. The site bundle
 contains `site.json`, the named DEM metadata and `.f32` samples, and optional
 JPEG tiles. The Moon download tools and legacy imagery converter live in
-`scripts/dev/terrain/`; `docs/reference/lunar_imagery_sources.md` explains their
+`scripts/dev/terrain/`; `docs/src/user/lunar_imagery_sources.md` explains their
 Python requirements, commands, data sources and output layout. Downloading
 assets is a separate step. Existing local bundles export without a network
 connection or native GRAM.

@@ -109,7 +109,7 @@ does not by itself allocate tasks or provide a communication network.
 
 Compliant multibody dynamics describes motion within a spacecraft assembly.
 Its compliant lumped-body model represents flexibility with discrete bodies joined
-by springs and dampers. `src/models/dynamics/compliant_multibody/compliant_multibody.jl`
+by springs and dampers. `src/models/dynamics/multibody/compliant/compliant_multibody.jl`
 defines their mass and inertia, the translational and rotational stiffness and
 damping of their connections, and topology builders. The coupled robot-arm path in
 `compliant_robot_arm_dynamics.jl` supplies internal-state initialization and
@@ -126,7 +126,7 @@ for the corresponding type and function names.
 
 Articulated spacecraft use a second multibody path that is not tied to the
 compliant robot arm. A `Joint` with `joint_type` `:hinge`, `:slide` or `:ball` makes its
-spacecraft articulated: `src/models/dynamics/coupled/articulated_body.jl` builds a tree
+spacecraft articulated: `src/models/dynamics/multibody/articulated_body.jl` builds a tree
 of rigid bodies (links joined by `:fixed` joints are merged) and solves the
 forward dynamics in joint coordinates, with the root as a free-floating base.
 The engine integrates the joint coordinates beside the root state
@@ -143,7 +143,7 @@ or a moving articulated link), integrates its bodies beside the spacecraft
 (`att_r`, `att_q`, `att_v`, `att_ω`) and exchanges forces and torques with the
 link in both directions: through the bus equations for a rigid spacecraft and
 through per-body wrenches into the articulated backbone otherwise
-(`src/models/dynamics/compliant_multibody/compliant_attachment_dynamics.jl`). The
+(`src/models/dynamics/multibody/compliant/compliant_attachment_dynamics.jl`). The
 robot-arm coupling keeps its own path for now. See
 [Compliant attachments](../src/user/simulation_configuration.md#compliant-attachments).
 
@@ -152,7 +152,7 @@ A free-flying inspector is another spacecraft. Their task assignment and
 coordination belong at the mission level, above individual vehicle construction.
 The source-owner table below distinguishes vehicle construction from dynamics.
 Robot hardware belongs to `src/models/vehicle/robotics/`, compliant equations to
-`src/models/dynamics/compliant_multibody/`, reference planning to
+`src/models/dynamics/multibody/compliant/`, reference planning to
 `src/models/gnc/planning/robot_arm/`, and tracking control to
 `src/models/gnc/control/robot_arm_control.jl`. HYPR robot-arm
 search is implemented in the separate [HYPR.jl repository](https://github.com/Space-FALCON-Lab/HYPR.jl),
@@ -218,14 +218,14 @@ the file that performs each step.
 5. **Forces and torques.** The engine obtains the state and environment required by
    each effector and calls its `wrench` (or the compatibility
    `calcForceTorque`). The wrapper module and its models are under
-   `src/models/dynamics/coupled/force_torque_models.jl`
+   `src/models/dynamics/effectors/force_torque_models.jl`
    and the `force_torque_models/`
    folder (gravity, aerodynamics, perturbations, thrusters, plume, reaction
    wheels). Gravity model adapters and spacecraft wrenches live in
-   `src/models/dynamics/coupled/gravity/`, while the mathematical field kernels
+   `src/models/dynamics/effectors/gravity/`, while the mathematical field kernels
    live in `src/models/environment/gravity/`. The compatibility composition file
    `gravity_models.jl` preserves their definition order inside the existing
-   `GravityEffectors` module. The ordered files under `coupled/perturbations/`
+   `GravityEffectors` module. The ordered files under `effectors/perturbations/`
    retain the existing perturbation models, including continuous torque laws.
    These source boundaries do not introduce new evaluations or equations. The
    hook contract is on the [Extensibility](../src/extensibility.md) page.
@@ -329,7 +329,7 @@ are relative to the directory in the first column.
 | `src/orchestration/parallel/` | Parallel profiles and routing, cost models, worker process pools and in-process policy | route selection and process pools; owned by the parallelization work |
 | `src/models/vehicle/` | Spacecraft components and assembly, structure and mass properties, mesh readers, thrusters, thermal models, kinematics and robotics | vehicle boundary per the [topology contract](../architecture/canonical_topology_contract.md): `spacecraft/` composes, `structure/` computes mass, inertia and geometry, `actuators/thruster/thruster_hooks.jl` owns thruster hooks |
 | `src/models/environment/` | Planets and ephemerides, atmosphere models and presets, gravity fields and terrain grids | density sampling: `atmosphere/density_models.jl`; terrain queries: `terrain/terrain_models.jl` |
-| `src/models/dynamics/` | Translational and rotational equations, coupled force/torque models, compliant multibody dynamics under `compliant_multibody/`, and articulated-body dynamics | effector evaluation: `coupled/force_torque_models.jl`; gravity adapters: `coupled/gravity/`; other perturbations: `coupled/perturbations/`; articulated solver: `coupled/articulated_body.jl` |
+| `src/models/dynamics/` | Translational and rotational equations, force and torque effectors under `effectors/`, compliant and articulated multibody dynamics under `multibody/` | effector evaluation: `effectors/force_torque_models.jl`; gravity adapters: `effectors/gravity/`; other perturbations: `effectors/perturbations/`; articulated solver: `multibody/articulated_body.jl` |
 | `src/models/gnc/` | Guidance, navigation and control hooks, planner contracts and lifecycle, shared calculations, baseline algorithms and HYPR compatibility types | the three hook files named above; planner contracts: `interfaces/`; planning and lifecycle: `planning/rpo/`; arm references: `planning/robot_arm/`; shared kernels: `planning/common/`; optional-adapter services: `planning/adapters/`; aerobraking bridges: `internal/` |
 | `src/foundation/core/` | Abstract types and shared model contracts, reference frames, geodesy, orbital geometry and quaternions | frames: `interfaces/reference_system.jl`; shared geometry: `numerics/geodesy.jl` and `numerics/orbital_geometry.jl`; canonical quaternions: `numerics/quaternion_utils.jl`; robotics/compliant orientation policy: `numerics/orientation_quaternion_utils.jl`; run buffers and composition belong to simulation orchestration |
 | `src/foundation/assets/` | Manifest lookup and availability checks, RPO station assets and the Odyssey surrogate | reusable manifest records and local checks: `asset_catalog.jl`; CLI report types and presentation remain in the CLI; see [Assets & Modes](../src/assets.md) |
@@ -339,13 +339,13 @@ are relative to the directory in the first column.
 | `packages/SpaceAGORAHYPR/` | Compatibility package and source pin for external HYPR | `src/SpaceAGORAHYPR.jl` checks and aliases the external adapter; `HYPRSource.toml` pins its revision. Core services are defined in `src/models/gnc/planning/adapters/hypr/services.jl`. Install and load with the [RPO planner guide](../src/user/rpo_planner_pilot.md#installing-optional-hypr). |
 | `examples/` | Runnable scenarios; `common.jl` is the shared bootstrap | primary scenario entrypoints; development viewer demos also live in `scripts/dev/viewer_demos/`; see the [Examples Catalog](../src/user/examples_catalog.md) |
 | `templates/` | Starting files for a force/torque model, a density model and a control hook | copy one of these to begin an extension |
-| `test/` | Unit, integration, smoke and stress suites, CI gates under `test/gates/`, contract checks under `test/contracts/`, review artifacts under `test/ai_reviews/` | the gates enforce the ownership rules on this page |
-| `benchmarks/` | Performance studies and the paper pipeline (`benchmarks/scripts/performance_paper_pipeline.jl`) | measurement work owned by the parallelization effort; see [Studies and Benchmarks](../src/user/studies_benchmarks.md) |
+| `test/` | Unit, integration, smoke and stress suites; companion suites under `test/optional/{hypr,edg,visualizer}/`; workflow entry points under `test/smoke/`; fixtures under `test/fixtures/`; CI gates under `test/gates/`, contract checks under `test/contracts/`, review artifacts under `test/ai_reviews/` | the gates enforce the ownership rules on this page |
+| `benchmarks/` | Performance studies and the paper pipeline (`benchmarks/scripts/performance_paper_pipeline.jl`); single-file studies grouped under `studies/{gram,constellation,performance,scenario_matrix}/`, launcher-and-folder studies at the studies root, each study's findings beside it | measurement work owned by the parallelization effort; see [Studies and Benchmarks](../src/user/studies_benchmarks.md) |
 | `scripts/` | Operational tools: plotting (`scripts/plotting/`), telemetry fetching, GRAM installation helpers, development launchers and scenario-matrix diagnostics (`scripts/dev/`), HPC and remote helpers | operational, not package code |
 | `experimental/` | Typed scaffolds not loaded by the package (resources, laser terminal, constellation, estimation) | no stability guarantee; see its README |
 | `SpaceAGORAVisualizer.jl` (separate repository) | The browser viewer and its build scripts | Connected through `ext/SpaceAGORAVisualizerExt.jl`; scene and payload export stay in core |
 | `data/` | Gravity and topography coefficients, references, asset manifests and the Odyssey surrogate manifest | see [Assets & Modes](../src/assets.md) |
-| `docs/` | This site: user pages under `docs/src/`, maintainer contracts under `docs/architecture/` and `docs/quality/`, the public API registry | [Contributor Guide](index.md) |
+| `docs/` | This site: user pages under `docs/src/`, maintainer contracts under `docs/architecture/` and `docs/quality/` (study findings live beside their studies under `benchmarks/`), the public API registry | [Contributor Guide](index.md) |
 
 The shared asset catalog, `SpaceAGORA.AssetCatalog`, supplies manifest records
 to command front ends. As its source header comment says, this internal service
@@ -484,7 +484,7 @@ and proposals describe separate work; they do not reopen delivered repairs.
 
 **Benchmark entry point:**
 
-- `benchmarks/studies/performance_static_vs_parallel.jl` loads its maintained
+- `benchmarks/studies/performance/performance_static_vs_parallel.jl` loads its maintained
   owner, `benchmarks/scripts/performance_paper_pipeline.jl`, relative to the
   launcher directory. The include route is tested without executing the pipeline;
   benchmark workloads and performance validation remain separate.

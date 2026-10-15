@@ -1481,7 +1481,7 @@ end
     # Drag/heat models must use v_spacecraft MINUS v_atmosphere. The flipped
     # form (`vel_pp + wind_pp`) was copy-pasted across six files; pin all of them.
     files = [
-        joinpath(_COV_REPO_ROOT, "src", "models", "dynamics", "coupled", "aerodynamic_wrench_models.jl"),
+        joinpath(_COV_REPO_ROOT, "src", "models", "dynamics", "effectors", "aerodynamic_wrench_models.jl"),
         joinpath(_COV_REPO_ROOT, "src", "orchestration", "simulation", "callbacks", "thermal_callbacks.jl"),
         joinpath(_COV_REPO_ROOT, "src", "models", "gnc", "guidance", "aerobraking", "t_edg", "trajectory_predictor.jl"),
         joinpath(_COV_REPO_ROOT, "src", "models", "gnc", "guidance", "aerobraking", "t_edg", "eom_predictor.jl"),

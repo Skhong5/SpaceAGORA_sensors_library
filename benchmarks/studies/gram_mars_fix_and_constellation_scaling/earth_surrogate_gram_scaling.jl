@@ -1,4 +1,4 @@
-# Surrogate-GRAM variant of benchmarks/studies/leo_2048_constellation_gram_scaling.jl
+# Surrogate-GRAM variant of benchmarks/studies/constellation/leo_2048_constellation_gram_scaling.jl
 # for a direct runtime comparison against real/native GRAM. Only the density
 # model differs (GRAMAtmosphereModelSurrogate instead of GRAMAtmosphereModel);
 # everything else (N_SATS, altitude, mission time, rhs_mode=flat threading) is

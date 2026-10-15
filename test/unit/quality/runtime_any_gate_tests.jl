@@ -10,10 +10,10 @@ using Test
         paths = (
             "src/orchestration/simulation/state/runtime_types.jl",
             "src/orchestration/simulation/engine/setup.jl",
-            "src/models/dynamics/coupled/aerodynamic_wrench_models.jl",
-            "src/models/dynamics/coupled/perturbations.jl",
+            "src/models/dynamics/effectors/aerodynamic_wrench_models.jl",
+            "src/models/dynamics/effectors/perturbations.jl",
             "src/orchestration/parallel/policy/multibody_routing.jl",
-            "src/models/dynamics/coupled/perturbations/gravity/nested/probe.jl",
+            "src/models/dynamics/effectors/perturbations/gravity/nested/probe.jl",
             "src/orchestration/simulation/callbacks/event_callbacks.jl",
             "src/orchestration/simulation/callbacks/nested/probe.jl",
         )
