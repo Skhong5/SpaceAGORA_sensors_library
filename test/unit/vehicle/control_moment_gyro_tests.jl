@@ -108,6 +108,17 @@ gyro(; kw...) = ControlMomentGyro(; rotor_momentum_nms=2.0, gimbal_axis=SVector(
         @test norm(x.ω[1:2]) > 1e-4                                                     # the rotor's momentum tips the spin axis
     end
 
+    @testset "a spacecraft reused without controllers keeps its CMG and wheel still" begin
+        # The first run commands the CMG and a mounted wheel; the second, on the
+        # same records with no control effector, must not reuse those rates.
+        sc, root = far_spacecraft()
+        add_actuator!(sc, root, ReactionWheel(spin_axis=SVector(0.0, 0.0, 1.0)))
+        add_actuator!(sc, root, gyro(gimbal_angle_rad=0.1))
+        cmg_run(sc, [0.01, 0.02]; mission_time=5.0)
+        x = cmg_run(sc, Float64[]; mission_time=5.0).solution.u[end].sc[1]
+        @test x.cmg_angles[1] == 0.1 && x.h_wheels[1] == 0.0 && norm(SVector{3}(x.ω)) == 0.0
+    end
+
     @testset "a failed CMG holds its gimbal" begin
         sc, root = far_spacecraft()
         c = add_actuator!(sc, root, gyro(gimbal_angle_rad=0.3))

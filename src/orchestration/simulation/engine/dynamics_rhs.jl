@@ -317,8 +317,12 @@ end
     t::Float64,
     debug_control::Bool,
 )::Tuple{Float64, SVector{3, Float64}}
-    p.args.control_model isa SimulationModel.ControlModel{Tuple{}} &&
+    if p.args.control_model isa SimulationModel.ControlModel{Tuple{}}
+        # Nothing commands the mounted wheels or CMGs: clear the rates a
+        # previous run on the same spacecraft may have left.
+        _clear_mounted_rates!(p.args.dynamics_model.spacecraft[sat_idx].root.rw_assembly)
         return (0.0, SVector{3, Float64}(0.0, 0.0, 0.0))
+    end
     rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
     mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, sat_idx, t, debug_control)
     return (mass_rate, SVector{3, Float64}(rw_torque_body))
@@ -344,10 +348,9 @@ function _accumulate_control_effectors_from_tuple!(
     control_effectors::CE,
 )::Float64 where {CE <: Tuple}
     mass_rate = 0.0
-    # The mounted wheels' momentum rates are rebuilt by every evaluation.
+    # The mounted wheels' momentum rates and the CMGs' gimbal rates are rebuilt by every evaluation.
     wheels = p.args.dynamics_model.spacecraft[sat_idx].root.rw_assembly
-    isempty(wheels.mounted_rates) || fill!(wheels.mounted_rates, 0.0)
-    isempty(wheels.cmg_rates) || fill!(wheels.cmg_rates, 0.0)
+    _clear_mounted_rates!(wheels)
     @inbounds for control_effector in control_effectors
         mounted = SimulationModel.actuation_mode(control_effector) === :mounted
         if mounted
@@ -416,6 +419,12 @@ end
     _add_mounted_cmg_rates!(spacecraft, levels)
     force_ii = SimulationModel.rot(q)' * force_body          # rot(q) maps inertial to body
     return (force_ii, torque_body, -mass_rate, wheel_torque)
+end
+
+@inline function _clear_mounted_rates!(assembly)
+    isempty(assembly.mounted_rates) || fill!(assembly.mounted_rates, 0.0)
+    isempty(assembly.cmg_rates) || fill!(assembly.cmg_rates, 0.0)
+    return nothing
 end
 
 @inline function _add_mounted_cmg_rates!(spacecraft, levels)
