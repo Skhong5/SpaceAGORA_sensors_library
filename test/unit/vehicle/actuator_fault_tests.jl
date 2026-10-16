@@ -11,19 +11,34 @@ SpaceAGORA.actuation_mode(::HoldLevels) = :mounted
 SpaceAGORA.actuator_levels(c::HoldLevels, i::Int) = i == 1 ? c.levels : nothing
 SpaceAGORA.calcControlEffect!(::HoldLevels, u, p, t::Float64, i::Int64) = nothing
 
+# A controller whose command grows with the time of its tick.
+mutable struct RampLevels <: AbstractControlEffectorModel
+    levels::Vector{Float64}
+    slope::Float64
+end
+SpaceAGORA.actuation_mode(::RampLevels) = :mounted
+SpaceAGORA.actuator_levels(c::RampLevels, i::Int) = i == 1 ? c.levels : nothing
+SpaceAGORA.calcControlEffect!(c::RampLevels, u, p, t::Float64, i::Int64) = (c.levels[1] = c.slope * t; nothing)
+
 function far_spacecraft(; mass=100.0, prop_mass=10.0)
     root = SM.Link(root=true, m=mass, dims=MVector(1.0, 1.0, 1.0))
     ic = SM.CartesianInitialCondition(SVector(4.0e9, 0.0, 0.0), SVector(0.0, 0.0, 0.0); q=SVector(0.0, 0.0, 0.0, 1.0))
     return SM.SpacecraftModel(links=[root], root=root, prop_mass=prop_mass, inertia_tensor=root.inertia, initial_condition=ic, id=1), root
 end
 
-function held_run(sc, levels; mission_time=5.0, rate=1.0, kw...)
+function held_run(sc, levels; mission_time=5.0, rate=1.0, effector=HoldLevels(collect(Float64, levels)), settings=(;), kw...)
     base = make_example_config(planet=SM.Earth(), spacecraft=sc, mission_time=mission_time,
         initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
         dynamic_effectors=(), ephemerides_model=SM.SimpleEphemeridesModel(), orientation_sim=true,
         keplerian=false, EI_km=1.0, verbose=false, results=false)
+    extra = (;)
+    if !isempty(settings)
+        st = base.simulation_settings
+        fields = NamedTuple{fieldnames(typeof(st))}(map(n -> getfield(st, n), fieldnames(typeof(st))))
+        extra = (; simulation_settings=SM.SimulationSettings(; merge(fields, settings)...))
+    end
     args = SM.SimConfig._with_configuration(base;
-        control_model=SM.ControlModel(control_effectors=(HoldLevels(collect(Float64, levels)),), control_rates=[rate]))
+        control_model=SM.ControlModel(control_effectors=(effector,), control_rates=[rate]), extra...)
     return run_simulation(args; isolate_state=false, return_results=true, return_solution=true, kw...)
 end
 
@@ -107,6 +122,27 @@ end
         @test 0.0 < hinge.angle_rad < 0.25 + 1e-12                                     # moved until the fault, then held
         stuck_at = hinge.angle_rad
         @test panel.q ≈ [0.0, sin(stuck_at / 2), 0.0, cos(stuck_at / 2)]
+    end
+
+    @testset "a stuck actuator keeps its onset level across checkpoint segments" begin
+        # The command ramps by 0.001 N m per second at 10 Hz ticks; the wheel sticks
+        # at 0.55 s with the command of the 0.5 s tick. The 1 s segments must not
+        # take a later command.
+        function ramp_run(; settings=(;))
+            sc, root = far_spacecraft()
+            wheel = add_actuator!(sc, root, ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0)))
+            add_fault!(sc, ActuatorFault(wheel; kind=:stuck, start_s=0.55))
+            return held_run(sc, [0.0]; rate=0.1, effector=RampLevels([0.0], 0.001), settings=settings)   # a tick every 0.1 s
+        end
+        after(r) = [r.table.sc1_actuator_level_1[i] for i in eachindex(r.table.time) if r.table.time[i] >= 0.55]
+        dir = mktempdir()
+        straight = ramp_run()
+        split = ramp_run(settings=(checkpoint_enabled=true, checkpoint_interval_s=1.0, checkpoint_directory=dir))
+        @test !isempty(after(straight)) && all(l -> isapprox(l, 0.0005; rtol=1e-9), after(straight))
+        @test !isempty(after(split)) && all(l -> isapprox(l, 0.0005; rtol=1e-9), after(split))
+        @test split.solution.u[end].sc[1].h_wheels[1] ≈ straight.solution.u[end].sc[1].h_wheels[1] rtol=1e-9
+        # A checkpoint file does not hold the onset level: resume is refused.
+        @test_throws ArgumentError ramp_run(settings=(resume_from_checkpoint=true, checkpoint_directory=dir))
     end
 
     @testset "faults are opt-in" begin
