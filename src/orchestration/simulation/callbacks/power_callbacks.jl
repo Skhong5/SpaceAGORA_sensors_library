@@ -8,7 +8,8 @@ const _NO_SUN = SVector{3, Float64}(NaN, NaN, NaN)
 # Generation, load and net power of spacecraft `sat_idx` in state `sc_view` at
 # time `t`: the arrays lit by the Sun of the run's ephemerides (none when they
 # cannot place it), the constant loads, and the mounted actuators at the levels
-# of every control effector in `:mounted` actuation that holds them.
+# of every control effector in `:mounted` actuation that holds them, as the
+# faults leave them.
 function _power_snapshot(sc_view, spacecraft, p, sat_idx::Int, t::Float64)
     args = p.args
     planet = args.environment_model.planet
@@ -36,8 +37,9 @@ end
 
 # The power balance (as `PowerSystems.power_balance` gives it for one set of
 # levels) with the mounted actuators of every control effector in `:mounted`
-# actuation that holds levels for spacecraft `sat_idx`: the dynamics apply each
-# one's actuators, so each one's draw is a load.
+# actuation that holds levels for spacecraft `sat_idx`, at the levels its faults
+# leave them: the dynamics apply each one's actuators, so each one's draw is a
+# load.
 function _mounted_power_balance(spacecraft, effectors, sat_idx::Int, generation_w::Float64, wheel_momentum)
     n = mounted_actuator_count(spacecraft)
     bus = bus_load_w(spacecraft)
@@ -48,6 +50,7 @@ function _mounted_power_balance(spacecraft, effectors, sat_idx::Int, generation_
             actuation_mode(effector) === :mounted || continue
             levels = actuator_levels(effector, sat_idx)
             (levels === nothing || length(levels) != n) && continue
+            levels = faulted_levels(spacecraft, levels)
             by_tier = actuator_power_by_tier(spacecraft, levels; wheel_momentum=wheel_momentum)
             applied = shed_levels(spacecraft, levels)
             unshed = unshed .+ by_tier

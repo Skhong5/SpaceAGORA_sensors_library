@@ -13,6 +13,8 @@ kind.
 | `mounting.jl` | mounting and the mounted set (`ActuatorMounting`): `add_actuator!`, the mounting order, `allocation_matrix`, `mounted_wrench`, the applied levels and power behind the result columns |
 | `thruster.jl` | the thruster kind: the `Thruster` record (its `direction` is the thrust direction; `firing_dynamics` opts a mounted thruster into the firing dynamics), its contract methods and `six_axis_thrusters` |
 | `laser.jl` | the laser-terminal kind: the `LaserTerminal` record (level: the transmitted optical power; the vehicle recoils with `level / c`), its contract methods, and the link parameters it gives the interlink model |
+| `fault.jl` | the `ActuatorFault` record (failed, stuck, degraded or biased between two times) and the spacecraft's `FaultSet`, owned by `Components` |
+| `faults.jl` | `ActuatorFaults`: `add_fault!`, the faulted levels the mounted path uses, and the fault switching the engine runs at the faults' window ends |
 | `hinge.jl` | the hinge kind: the `PanelHinge` record (level: the commanded angle of the link it turns; angle and rate limits), applied at control ticks |
 | `thruster_models.jl` | `BaseThrusterModel` (a burn schedule per spacecraft; with `actuation=:mounted` it fires a mounted engine and points it with the mounted wheels, the control code being in `gnc/control/propulsive_maneuvers.jl`) and `SixAxisThrusterModel` (six fixed jets) |
 | `thruster_models_module.jl` | the `ThrusterModels` owner module |

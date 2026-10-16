@@ -289,7 +289,9 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :SolarArray, rendered = "SpaceAGORA.SolarArray"),
             (owner = :SpaceAGORA, symbol = :Battery, rendered = "SpaceAGORA.Battery"),
             (owner = :SpaceAGORA, symbol = :PowerLoad, rendered = "SpaceAGORA.PowerLoad"),
-            (owner = :SpaceAGORA, symbol = :add_power!, rendered = "SpaceAGORA.add_power!")
+            (owner = :SpaceAGORA, symbol = :add_power!, rendered = "SpaceAGORA.add_power!"),
+            (owner = :SpaceAGORA, symbol = :ActuatorFault, rendered = "SpaceAGORA.ActuatorFault"),
+            (owner = :SpaceAGORA, symbol = :add_fault!, rendered = "SpaceAGORA.add_fault!")
         ]
     ),
     (
