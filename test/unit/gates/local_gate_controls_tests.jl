@@ -297,22 +297,27 @@ end
             probe = joinpath(dirname(_unique_source(fixture, "gravity_gradient_effector.jl")), "deprecated_hook_probe.jl")
             for text in ("calcForceTorque(model::Probe, x, p, i) = (0.0, 0.0)\n",
                          "function SimulationModel.calcForceTorque(model::Probe, x::AbstractVector, p, i::Int)\n    return 0.0, 0.0\nend\n",
-                         "@inline SpaceAGORA.calcForceTorque(::Probe, x, p, i)::Tuple = (0.0, 0.0)\n")
+                         "@inline SpaceAGORA.calcForceTorque(::Probe, x, p, i)::Tuple = (0.0, 0.0)\n",
+                         "(f::typeof(calcForceTorque))(model::Probe, x, p, i) = (0.0, 0.0)\n",
+                         "(::typeof(SimulationModel.calcForceTorque))(model::Probe, x, p, i) = (0.0, 0.0)\n")
                 _with_probe(probe, text) do
                     rejected = run_gate()
                     @test _failed_with(rejected, message)
                     @test _reports(rejected, probe, fixture, "deprecated hook calcForceTorque")
                 end
             end
-            # The forwarder for direct calls stays, untyped.
+            # The forwarder for direct calls stays, with four untyped positional arguments.
             forwarder = joinpath(fixture, "src", "orchestration", "simulation", "engine", "effector_sampling.jl")
             original = read(forwarder, String)
             needle = "function SimulationModel.calcForceTorque(model, x, p, i)"
             @test occursin(needle, original)
-            _with_text(forwarder, replace(original, needle => "function SimulationModel.calcForceTorque(model, x, p, i::Int)"; count=1)) do
-                rejected = run_gate()
-                @test _failed_with(rejected, message)
-                @test any(v -> occursin("forwarder for direct calls is missing", v), rejected.violations)
+            for changed in ("function SimulationModel.calcForceTorque(model, x, p, i::Int)",
+                            "function SimulationModel.calcForceTorque(model, x, p, i, extra)")
+                _with_text(forwarder, replace(original, needle => changed; count=1)) do
+                    rejected = run_gate()
+                    @test _failed_with(rejected, message)
+                    @test any(v -> occursin("forwarder for direct calls (four untyped positional arguments) is missing", v), rejected.violations)
+                end
             end
             @test isnothing(run_gate().failure)
         end

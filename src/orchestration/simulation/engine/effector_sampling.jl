@@ -471,11 +471,15 @@ end
 # the one the right-hand side is evaluating, so the right-hand side's prefilled
 # environment buffers are not read. The dynamics call `wrench_caching!`
 # themselves, so they never take this path for such a model; for a model with
-# neither method it raises the MethodError the pre-run check reports first.
+# neither method it raises the MethodError the pre-run check reports first. The
+# call warns once per model type that it is deprecated, and under
+# --depwarn=error it throws before evaluating anything.
 function SimulationModel.calcForceTorque(model, x, p, i)
     hasmethod(SimulationModel.wrench,
         Tuple{typeof(model), SimulationModel.StateSample, SimulationModel.EnvironmentSample, Float64}) ||
         throw(MethodError(SimulationModel.calcForceTorque, (model, x, p, i)))
+    SimulationModel.HookDeprecation._hook_deprecation((typeof(model), :calcForceTorque),
+        _direct_force_torque_deprecation(typeof(model)))
     sat_idx = Int(i)
     t = Float64(p.shared_buffers.current_time[])
     sample = build_state_sample(x, p.args.dynamics_model.spacecraft[sat_idx],
@@ -484,3 +488,8 @@ function SimulationModel.calcForceTorque(model, x, p, i)
         write_buffers=false)
     return SimulationModel.wrench_caching!(model, sample, env, t, p, sat_idx)
 end
+
+@noinline _direct_force_torque_deprecation(::Type{T}) where {T} =
+    "calcForceTorque(model, x, p, i) is deprecated and will be removed in SpaceAGORA 0.5.0; " *
+    "it was called directly on a $(nameof(T)). Call wrench(model, x::StateSample, " *
+    "env::EnvironmentSample, t::Float64) instead."

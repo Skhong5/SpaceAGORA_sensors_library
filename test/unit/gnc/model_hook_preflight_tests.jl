@@ -417,6 +417,18 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
             sb.rhs_planet_frame_prefilled[] = false
             sb.rhs_atmosphere_prefilled[] = false
         end
+        # A direct call warns that the hook is deprecated, once per model type and
+        # independently of the pre-run check, which never ran for these types.
+        warning(T) = (:warn, Regex("^calcForceTorque\\(model, x, p, i\\) is deprecated .* called directly on a $(nameof(T))\\."))
+        @test_logs warning(HP_SM.InverseSquaredGravityModel) warning(HP_SM.ConstantGravityModel) begin
+            SpaceAGORA.calcForceTorque(HP_SM.InverseSquaredGravityModel(), HP_U0.sc[1], p, 1)
+            SpaceAGORA.calcForceTorque(HP_SM.InverseSquaredGravityModel(), HP_U0.sc[1], p, 1)
+            SpaceAGORA.calcForceTorque(HP_SM.ConstantGravityModel(), HP_U0.sc[1], p, 1)
+        end
+        # Under --depwarn=error a direct call throws before evaluating anything.
+        strict = "using SpaceAGORA; try SpaceAGORA.calcForceTorque(SpaceAGORA.InverseSquaredGravityModel(), nothing, nothing, 1); " *
+                 "print(\"no error\") catch err; print(err isa ErrorException && occursin(\"is deprecated\", err.msg)) end"
+        @test read(`$(Base.julia_cmd()) --startup-file=no --depwarn=error --project=$(pkgdir(SpaceAGORA)) -e $strict`, String) == "true"
         # A model with neither hook raises a MethodError.
         @test_throws MethodError SpaceAGORA.calcForceTorque(HpForceNoHook(), HP_U0.sc[1], p, 1)
     end

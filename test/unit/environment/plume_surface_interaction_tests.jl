@@ -69,10 +69,10 @@ end
     @test wrench(model1, down, downe, 0.0) == (f1, torque1)
     model2 = PlumeSurfaceInteractionModel(control([1000.0, 2000.0]); config=cfg1)
     @test_throws ArgumentError wrench(model2, x, env, 0.0)
-    @test wrench(model2, x, env, 0.0, 2)[1] ≈ 2wrench(model2, x, env, 0.0, 1)[1]
+    @test PSI._plume_wrench(model2, x, env, 0.0, 2)[1] ≈ 2PSI._plume_wrench(model2, x, env, 0.0, 1)[1]
     before = deepcopy(model2.state)
     for t in (0.0, 100.0, -1.0, 0.01)
-        wrench(model2, x, env, t, 2)
+        PSI._plume_wrench(model2, x, env, t, 2)
         SM.DynamicEffectors.wrench_caching!(model2, x, env, t, nothing, 1)
     end
     @test all(name -> isequal(getfield(before,name), getfield(model2.state,name)), fieldnames(PlumeSurfaceState))
@@ -348,13 +348,35 @@ end
     x, env = state_environment(2.0)
     for i in 1:2
         xi = SM.StateSample(x.pos_ii, x.vel_ii, x.mass_kg; spacecraft_index=i)
-        @test wrench(two, xi, env, 0.0) === wrench(two, x, env, 0.0, i)
-        @test SM.DynamicEffectors.wrench_caching!(two, xi, env, 0.0, nothing, i) === wrench(two, x, env, 0.0, i)
+        @test wrench(two, xi, env, 0.0) === PSI._plume_wrench(two, x, env, 0.0, i)
+        @test SM.DynamicEffectors.wrench_caching!(two, xi, env, 0.0, nothing, i) === PSI._plume_wrench(two, x, env, 0.0, i)
     end
-    @test wrench(two, x, env, 0.0, 2)[1] != wrench(two, x, env, 0.0, 1)[1]
+    @test PSI._plume_wrench(two, x, env, 0.0, 2)[1] != PSI._plume_wrench(two, x, env, 0.0, 1)[1]
     @test_throws ArgumentError wrench(two, x, env, 0.0)
     one = PlumeSurfaceInteractionModel(control([1000.0]); config=cfg)
-    @test wrench(one, x, env, 0.0) === wrench(one, x, env, 0.0, 1)
+    @test wrench(one, x, env, 0.0) === PSI._plume_wrench(one, x, env, 0.0, 1)
+end
+
+@testset "the five-argument plume wrench is deprecated" begin
+    two = PlumeSurfaceInteractionModel(control([1000.0, 2000.0]); config=PlumeSurfaceConfig(nozzle_offset_m=1.0))
+    x, env = state_environment(2.0)
+    # It warns once, however often it is called, and returns the indexed result.
+    deprecated = (:warn, r"^wrench\(model::PlumeSurfaceInteractionModel, x, env, t, i\), with the spacecraft index as a fifth argument, is deprecated")
+    results = @test_logs deprecated begin
+        [wrench(two, x, env, 0.0, i) for i in (1, 2, 2)]
+    end
+    @test results == [PSI._plume_wrench(two, x, env, 0.0, i) for i in (1, 2, 2)]
+    # The four-argument form and the engine's wrench_caching! do not warn.
+    xi = SM.StateSample(x.pos_ii, x.vel_ii, x.mass_kg; spacecraft_index=2)
+    @test_logs wrench(two, xi, env, 0.0)
+    @test_logs SM.DynamicEffectors.wrench_caching!(two, xi, env, 0.0, nothing, 2)
+    # Under --depwarn=error it throws.
+    strict = "using SpaceAGORA, StaticArrays; const SM = SpaceAGORA.SimulationModel; " *
+             "m = SM.PlumeSurfaceInteractionModel((; actuators=(; thrust_n=[1000.0]))); " *
+             "x = SM.StateSample(SVector(7.0e6, 0.0, 0.0), SVector(0.0, 0.0, 0.0), 500.0); " *
+             "try SM.wrench(m, x, SM.EnvironmentSample(nothing), 0.0, 1); print(\"no error\") " *
+             "catch err; print(err isa ErrorException && occursin(\"is deprecated\", err.msg)) end"
+    @test read(`$(Base.julia_cmd()) --startup-file=no --depwarn=error --project=$(pkgdir(SpaceAGORA)) -e $strict`, String) == "true"
 end
 
 end # module PlumeInteractionTests
