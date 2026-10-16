@@ -49,6 +49,10 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :RPOPlanningError, rendered = "SpaceAGORA.RPOPlanningError"),
         (owner = :SpaceAGORA, symbol = :make_rpo_configuration, rendered = "SpaceAGORA.make_rpo_configuration"),
         (owner = :SpaceAGORA, symbol = :rpo_run_report, rendered = "SpaceAGORA.rpo_run_report"),
+        (owner = :SpaceAGORA, symbol = :AbstractRPOGeometryProvider, rendered = "SpaceAGORA.AbstractRPOGeometryProvider"),
+        (owner = :SpaceAGORA, symbol = :rpo_geometry_revision, rendered = "SpaceAGORA.rpo_geometry_revision"),
+        (owner = :SpaceAGORA, symbol = :rpo_geometry_snapshot, rendered = "SpaceAGORA.rpo_geometry_snapshot"),
+        (owner = :SpaceAGORA, symbol = :RPOReplanningSpheres, rendered = "SpaceAGORA.RPOReplanningSpheres"),
     ]),
     (title = "GNC algorithm contract", items = [
         (owner = :SpaceAGORA, symbol = :AbstractGNCAlgorithm, rendered = "SpaceAGORA.AbstractGNCAlgorithm"),
@@ -80,6 +84,7 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :run_algorithm_request!, rendered = "SpaceAGORA.run_algorithm_request!"),
         (owner = :SpaceAGORA, symbol = :algorithm_runtime, rendered = "SpaceAGORA.algorithm_runtime"),
         (owner = :SpaceAGORA, symbol = :bound_algorithm, rendered = "SpaceAGORA.bound_algorithm"),
+        (owner = :SpaceAGORA, symbol = :bound_family, rendered = "SpaceAGORA.bound_family"),
         (owner = :SpaceAGORA, symbol = :bound_link, rendered = "SpaceAGORA.bound_link"),
         (owner = :SpaceAGORA, symbol = :build_algorithm_request, rendered = "SpaceAGORA.build_algorithm_request"),
         (owner = :SpaceAGORA, symbol = :trusted_queries, rendered = "SpaceAGORA.trusted_queries"),

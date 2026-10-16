@@ -331,6 +331,17 @@ Required for each binding: the algorithm it runs.
 function bound_algorithm end
 
 """
+    bound_family(binding) -> AbstractAlgorithmFamily
+
+The family instance a binding runs its algorithm under. Defaults to
+`algorithm_family(bound_algorithm(binding))`. A binding returns its own instance to
+configure the family's policy, such as the RPO rejection policy. The instance must
+have the same type as the family the algorithm declares; otherwise the request
+fails with reason `:family_mismatch`.
+"""
+bound_family(binding) = algorithm_family(bound_algorithm(binding))
+
+"""
     bound_link(binding)
 
 Required for each binding: the object accepted products are installed into, shared
@@ -464,8 +475,8 @@ end
 
 Run one request of `binding` at time `t` through the contract's steps:
 1. advance the request counter, resolve the algorithm and its family
-   (`bound_algorithm`, `algorithm_family`) and build the request
-   (`build_algorithm_request`);
+   (`bound_algorithm`, `bound_family`, checked against `algorithm_family`) and
+   build the request (`build_algorithm_request`);
 2. record a copy of it;
 3. check capabilities (`validate_capabilities`);
 4. ask for a proposal, passing a separate copy of the request (`propose!`, or
@@ -491,7 +502,10 @@ function run_algorithm_request!(binding, u, p, t, reason; exception_reason::Symb
     runtime.request_id += 1
     try
         algorithm = bound_algorithm(binding)
-        family = algorithm_family(algorithm)
+        family = bound_family(binding)
+        # A binding configures the declared family; it cannot substitute another one.
+        Base.typename(typeof(family)) === Base.typename(typeof(algorithm_family(algorithm))) ||
+            _fail_request!(binding, :family_mismatch)
         request = build_algorithm_request(binding, u, p, t, reason, runtime.request_id)
         # Retain a trusted snapshot. Algorithm code only receives another copy.
         push!(runtime.records, (event=:request, time_s=t, request=deepcopy(request)))
