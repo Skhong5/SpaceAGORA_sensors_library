@@ -581,6 +581,37 @@ end
     @test norm(ws.ext_force[1]) == 0.0                    # the bus carries no facets
 end
 
+# A per-link model that declares a third body: every link receives the root's
+# third-body sample, since the positions are measured from the planet.
+struct DeclaredMoonLinkLoad <: SM.AbstractForceTorqueModel end
+SM.environment_requirements(::DeclaredMoonLinkLoad) = SM.EffectorEnvironmentRequirements(third_body_names=("Moon",))
+SM.link_wrench_capable(::DeclaredMoonLinkLoad) = true
+function SM.link_wrench(::DeclaredMoonLinkLoad, link, xl::SM.LinkStateSample, env::SM.EnvironmentSample, t, p, sat_idx)
+    z = SVector(0.0, 0.0, 0.0)
+    env.third_bodies === nothing && return z, z, z, z, z
+    return 1e-12 * link.m * env.third_bodies.positions_ii[1], z, z, z, z
+end
+
+@testset "declared third bodies reach every link" begin
+    bus = mklink(root=true, m=20.0, dims=(1.0, 1.0, 1.0))
+    P = mklink(m=2.0, dims=(1.0, 0.05, 0.5), r=(1.1, 0.0, 0.0))
+    j = mkjoint(bus, P, (0.5, 0.0, 0.0); joint_type=:hinge, axis=[0, 1, 0], stiffness=0.0, damping=0.0, initial_q=0.5)
+    sc = SM.SpacecraftModel(; joints=[j], links=[bus, P], root=bus, initial_condition=IC_Z)
+    eff = (DeclaredMoonLinkLoad(),)
+    S = rhs_setup(sc, eff; live=true)
+    # The Moon from a two-sample cache measured from the run's planet, so no kernels are read.
+    moon = SVector(3.0e8, 2.0e8, 1.0e7)
+    PE = SM.DynamicEffectors.PerturbationEffectors
+    et = S.p.shared_buffers.et_start[]
+    S.p.shared_buffers.nbody_ephemeris_cache[] = SM.NBodyEphemerisCache(
+        PE._spice_query_name(PLANET.name), ["moon"], Dict("moon" => 1), [et - 1.0e6, et + 1.0e6],
+        reshape(SVector{3, Float64}[moon, moon], 2, 1))
+    eval_rhs!(S, eff)
+    ws = S.art.ws
+    @test ws.ext_force[1] ≈ 1e-12 * 20.0 * moon rtol = 1e-14
+    @test ws.ext_force[2] ≈ 1e-12 * 2.0 * moon rtol = 1e-14
+end
+
 # ---------------------------------------------------------------------------
 # Live link sample: panel-angle control on the root body, refusals
 # ---------------------------------------------------------------------------

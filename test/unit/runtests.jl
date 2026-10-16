@@ -187,6 +187,7 @@ include(joinpath(@__DIR__, "simulation", "gram_perturbation_study_scripts_tests.
 include(joinpath(@__DIR__, "simulation", "gram_perturbation_extension_lock_tests.jl"))
 include(joinpath(@__DIR__, "dynamics", "facet_srp_and_thermal_models_tests.jl"))
 include(joinpath(@__DIR__, "simulation", "solar_ephemeris_requirements_tests.jl"))
+include(joinpath(@__DIR__, "simulation", "third_body_ephemeris_requirements_tests.jl"))
 
 # Focused contracts for source responsibility boundaries.
 include("gnc/planning_ownership_tests.jl")
