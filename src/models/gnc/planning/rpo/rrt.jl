@@ -212,8 +212,11 @@ function rpo_rrt_connect_join_paths(start_tree::RPORRTConnectTree, start_idx::In
     return hypr_rrt_join_paths(start_tree, start_idx, goal_tree, goal_idx)
 end
 
-"""Randomly shortcut an RPO RRT path while preserving safety."""
-function rpo_rrt_shortcut_path(path, geometry, settings::RPORRTConnectSettings; safe_distance_m::Real, rng=Random.default_rng(),
+"""
+Randomly shortcut an RPO RRT path while preserving safety. The required `rng`
+owns every shortcut draw; there is no default global stream.
+"""
+function rpo_rrt_shortcut_path(path, geometry, settings::RPORRTConnectSettings; safe_distance_m::Real, rng::Random.AbstractRNG,
     edge_is_safe=(a, b) -> rpo_rrt_segment_is_safe(a, b, geometry, settings; safe_distance_m=safe_distance_m))
     pts = Matrix{Float64}(path)
     size(pts, 2) <= 2 && return pts
@@ -294,7 +297,8 @@ to give the same answer in reverse. This pre-existing limitation is retained;
 Consumers needing that guarantee must supply a symmetric predicate and validate
 the returned path against their collision policy.
 Callbacks must use the same objective and constraints, preserve caller-owned
-inputs and avoid hidden random draws. The supplied `rng` owns search draws.
+inputs and avoid hidden random draws. The required `rng` owns search draws;
+there is no default global stream.
 Search failure retains the legacy direct-path diagnostic with `path_found=false`;
 that path must not be consumed as an accepted solution.
 """
@@ -309,7 +313,7 @@ function rpo_rrt_connect_plan_path(
     safe_distance_m::Real=0.0,
     settings::RPORRTConnectSettings=RPORRTConnectSettings(),
     max_runtime_s::Real=Inf,
-    rng=Random.default_rng(),
+    rng::Random.AbstractRNG,
     edge_is_safe=(a, b) -> rpo_rrt_segment_is_safe(a, b, geometry, settings; safe_distance_m=safe_distance_m),
 )
     start = SVector{3, Float64}(start_rtn)
@@ -414,8 +418,9 @@ end
 """
 Plan an RPO path with RRT* and optional shortcut smoothing.
 Uses the same explicit bounds, scoring, refinement and edge contracts as
-`rpo_rrt_connect_plan_path`. Search uses geometric edge length for rewiring;
-the supplied objective scores candidate/output paths and does not replace it.
+`rpo_rrt_connect_plan_path`, including the required `rng`. Search uses geometric
+edge length for rewiring; the supplied objective scores candidate/output paths
+and does not replace it.
 """
 function rpo_rrt_star_plan_path(
     start_rtn,
@@ -428,7 +433,7 @@ function rpo_rrt_star_plan_path(
     safe_distance_m::Real=0.0,
     settings::RPORRTStarSettings=RPORRTStarSettings(),
     max_runtime_s::Real=Inf,
-    rng=Random.default_rng(),
+    rng::Random.AbstractRNG,
     edge_is_safe=(a, b) -> rpo_rrt_segment_is_safe(a, b, geometry, settings; safe_distance_m=safe_distance_m),
 )
     start = SVector{3, Float64}(start_rtn)

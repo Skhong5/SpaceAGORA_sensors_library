@@ -68,11 +68,12 @@ function _robot_arm_seed_control_points end
 """
     plan_robot_arm_motion_hypr(model, base_pose, q_start, target;
         planner_config=RobotArmPlannerConfig(), hypr_config=RobotArmHYPRConfig(),
-        obstacles=RobotArmSphereObstacle[], rng=Random.default_rng())
+        obstacles=RobotArmSphereObstacle[], rng)
 
 Plan a robot-arm trajectory with HYPR sampling, PSO search, optional RRT warm
 start, and retiming. `q_start` is the initial joint configuration; `target` is the
-end-effector target passed to inverse kinematics. Load `SpaceAGORAHYPR` before
+end-effector target passed to inverse kinematics. `rng` (an `AbstractRNG`) is
+required and owns every random draw; there is no default global stream. Load `SpaceAGORAHYPR` before
 calling this function. The returned `RobotArmHYPRResult` holds the joint reference
 and end-effector trajectory in its `plan` field, together with planning metrics.
 """

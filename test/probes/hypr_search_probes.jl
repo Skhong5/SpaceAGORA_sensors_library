@@ -441,7 +441,7 @@ const _SV3 = SVector{3, Float64}
         @test cut[:, end] ≈ zigzag[:, end]
         @test GH.rpo_path_length(cut) <= GH.rpo_path_length(zigzag) + 1.0e-9
         @test size(cut, 2) < size(zigzag, 2)
-        @test GH.rpo_rrt_shortcut_path(zigzag[:, [1, 4]], far, settings; safe_distance_m=0.0) == zigzag[:, [1, 4]]
+        @test GH.rpo_rrt_shortcut_path(zigzag[:, [1, 4]], far, settings; safe_distance_m=0.0, rng=MersenneTwister(9)) == zigzag[:, [1, 4]]
     end
 
     @testset "rrt star add node" begin
@@ -484,7 +484,7 @@ const _SV3 = SVector{3, Float64}
         goal = _SV3(1.5, 0.0, 0.0)
 
         # Free space returns the direct two-point path without any tree work.
-        direct = GH.rpo_rrt_connect_plan_path(start, goal, far, cfg; safe_distance_m=0.1)
+        direct = GH.rpo_rrt_connect_plan_path(start, goal, far, cfg; safe_distance_m=0.1, rng=MersenneTwister(1))
         @test direct.path_found
         @test direct.iterations == 0
         @test direct.path == hcat(collect(start), collect(goal))
@@ -552,7 +552,7 @@ const _SV3 = SVector{3, Float64}
         start = _SV3(-1.5, 0.0, 0.0)
         goal = _SV3(1.5, 0.0, 0.0)
 
-        direct = GH.rpo_rrt_star_plan_path(start, goal, far, cfg; safe_distance_m=0.1)
+        direct = GH.rpo_rrt_star_plan_path(start, goal, far, cfg; safe_distance_m=0.1, rng=MersenneTwister(1))
         @test direct.path_found
         @test direct.iterations == 0
         @test direct.path == hcat(collect(start), collect(goal))
