@@ -329,6 +329,40 @@ end
         used_mounted = first_seconds(:mounted, 1.0e9)
         @test used_ideal > 1.0                       # kilograms, from the configured DPS specific impulse
         @test 0.0 <= used_mounted < 1.0e-4
+
+        # The controller commands the thrusters only; every other mounted actuator
+        # holds. A gimbal at zero on the descent engine leaves the run bit for bit,
+        # and a reaction wheel, whose level vector was once too short, holds still.
+        function mounted_seconds(craft)
+            st = ApolloDescentState(1)
+            g = ApolloDescentGuidanceModel(gcfg, st, NoTerrainModel())
+            c = ApolloDescentControlModel(ApolloDescentControlConfig(touchdown_height_m=0.5), gcfg, st, NoTerrainModel(); actuation=:mounted)
+            short = SM.SimConfig._with_configuration(args;
+                dynamics_model=SM.DynamicsModel([craft], (SM.InverseSquaredGravityModel(),)),
+                guidance_model=SM.GuidanceModel(guidance_effectors=(g,), guidance_rates=[1.0]),
+                control_model=SM.ControlModel(control_effectors=(c,), control_rates=[0.05]),
+                mission_configuration=SM.MissionConfiguration(mission_type=SM.MissionTime, mission_time=20.0,
+                    number_of_orbits=1, keplerian=false, orientation_sim=true, num_steps_to_save=20))
+            out = run_simulation(short; isolate_state=false, return_solution=true)
+            return out.u[end].sc[1], c
+        end
+        x_plain, _ = mounted_seconds(deepcopy(sc))
+        gimballed = deepcopy(sc)
+        gimbal = add_actuator!(gimballed, gimballed.root, ThrusterGimbal(gimballed.root.thrusters[1]; axis=SVector(1.0, 0.0, 0.0),
+            min_angle_rad=-0.1, max_angle_rad=0.1))
+        x_gimbal, c_gimbal = mounted_seconds(gimballed)
+        @test gimbal.angle_rad == 0.0
+        @test length(SpaceAGORA.actuator_levels(c_gimbal, 1)) == 18 && SpaceAGORA.actuator_levels(c_gimbal, 1)[18] == 0.0
+        @test reinterpret(UInt64, collect(x_gimbal)) == reinterpret(UInt64, collect(x_plain))
+        tilted = deepcopy(sc)
+        held = add_actuator!(tilted, tilted.root, ThrusterGimbal(tilted.root.thrusters[1]; axis=SVector(1.0, 0.0, 0.0), angle_rad=0.02))
+        mounted_seconds(tilted)
+        @test held.angle_rad == 0.02                                       # held at its own angle, not driven to zero
+        wheeled = deepcopy(sc)
+        add_actuator!(wheeled, wheeled.root, ReactionWheel(spin_axis=SVector(0.0, 0.0, 1.0)))
+        x_wheel, c_wheel = mounted_seconds(wheeled)
+        @test length(SpaceAGORA.actuator_levels(c_wheel, 1)) == 18 && x_wheel.h_wheels[1] == 0.0
+        @test collect(x_wheel.pos) ≈ collect(x_plain.pos) rtol=1e-12
     end
 
     @testset "closed-loop vertical descent with RCS attitude control" begin
