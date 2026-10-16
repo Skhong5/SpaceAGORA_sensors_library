@@ -247,6 +247,36 @@ end
         @test many_frames["vel_kms"] === nothing
     end
 
+    @testset "heat rate reaches the viewer in W/m²" begin
+        # Saved sc{i}_heat_rate is W/cm² (outputs page); the frames field the
+        # viewer reads, heat_rate_w_m2, is W/m², so it carries 1e4 times the column.
+        dir = mktempdir()
+        args = _viewer_config(results_directory=dir)
+        scene = build_visualization_scene(args; rotation_max_samples=8)
+        df = _synthetic_results(scene; n_rows=25, with_link_pose=false)
+        @test SV.build_viewer_frames(df, scene)["heat_rate_w_m2"] === nothing
+        df.sc1_heat_rate = 0.05 .+ 0.0005 .* df.time
+        heat = _decode_f32(SV.build_viewer_frames(df, scene)["heat_rate_w_m2"])
+        @test length(heat) == 25
+        @test isapprox(heat, Float32.(1.0e4 .* df.sc1_heat_rate); rtol=1e-6)
+
+        # The ensemble exporter resamples each sample onto one time axis; the
+        # shorter sample is NaN after its end and stays NaN.
+        short = _synthetic_results(scene; n_rows=13, with_link_pose=false)
+        short.sc1_heat_rate = 0.2 .+ 0.001 .* short.time
+        samples = [SV.EnsembleSample(i, string(i), true, NaN, "sample $(i)", dir) for i in 1:2]
+        frames, _, per_sample = SV.build_ensemble_frames(samples, [scene, scene], [df, short])
+        @test per_sample == 1 && frames["sats"] == 2
+        t = _decode_f64(frames["t_s"])
+        eheat = _decode_f32(frames["heat_rate_w_m2"])
+        @test length(eheat) == 2 * length(t)
+        @test isapprox(eheat[1:2:end], Float32.(1.0e4 .* (0.05 .+ 0.0005 .* t)); rtol=1e-6)
+        inside = t .<= short.time[end]
+        @test any(inside) && !all(inside)
+        @test isapprox(eheat[2:2:end][inside], Float32.(1.0e4 .* (0.2 .+ 0.001 .* t[inside])); rtol=1e-6)
+        @test all(isnan, eheat[2:2:end][.!inside])
+    end
+
     @testset "plume payload" begin
         dir = mktempdir()
         args = _viewer_config(results_directory=dir)

@@ -56,6 +56,8 @@ const PLUME_FRAME_FIELDS = ("height_m", "shear_pa", "pressure_pa", "erosion_kg_s
 const FLOAT64_POSITION_MAX_SPACECRAFT = 64
 const DEFAULT_MAX_FRAMES = 2000
 const DEFAULT_DATA_BUDGET_MB = 150.0
+# Saved `sc{i}_heat_rate` columns are W/cm²; the frames field `heat_rate_w_m2` is W/m².
+const HEAT_RATE_W_CM2_TO_W_M2 = 1.0e4
 
 # ---------------------------------------------------------------------------
 # Textures
@@ -339,7 +341,7 @@ function build_viewer_frames(
                 density[(f - 1) * S + i] = Float64(dcol[r])
             end
             if hcol !== nothing
-                heat[(f - 1) * S + i] = Float64(hcol[r])
+                heat[(f - 1) * S + i] = Float64(hcol[r]) * HEAT_RATE_W_CM2_TO_W_M2
             end
             if fcols !== nothing
                 drag[(f - 1) * S + i] = sqrt(Float64(fcols[1][r])^2 + Float64(fcols[2][r])^2 + Float64(fcols[3][r])^2)
