@@ -65,8 +65,8 @@ routes. Source grouping does not move companion implementations into core.
    - `src/models/dynamics/external_propagation.jl` (the external-propagator hook)
    and `src/models/dynamics/models/` is retired.
 5. Mission configuration ownership: initial-state definitions live with the
-   spacecraft model (`src/models/vehicle/spacecraft/model.jl`); plans, schedules, and
-   aerobraking policy live under `src/orchestration/mission/operations/*`.
+   spacecraft model (`src/models/vehicle/spacecraft/model.jl`); mission plans and
+   schedules live under `src/orchestration/mission/operations/*`.
    One-run scenario configuration lives under `src/orchestration/simulation/config/`; the existing
    spacecraft collection and selected effectors are defined in
    `constellation_configuration.jl`, retaining the `SpacecraftModels.DynamicsModel`

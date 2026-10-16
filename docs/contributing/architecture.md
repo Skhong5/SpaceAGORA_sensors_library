@@ -327,7 +327,7 @@ are relative to the directory in the first column.
 | `src/models/vehicle/` | Spacecraft components and assembly, structure and mass properties, mesh readers, actuators, thermal models, kinematics and robotics | vehicle boundary per the [topology contract](../architecture/canonical_topology_contract.md): `spacecraft/` composes, `structure/` computes mass, inertia and geometry, `actuators/actuators.jl` owns the actuator contract, `actuators/mounting.jl` mounting, one file per actuator kind beside them |
 | `src/models/environment/` | Planets and ephemerides, atmosphere models and presets, gravity fields and terrain grids | density sampling: `atmosphere/density_models.jl`; terrain queries: `terrain/terrain_models.jl` |
 | `src/models/dynamics/` | Translational and rotational equations, force and torque effectors under `effectors/`, compliant and articulated multibody dynamics under `multibody/` | effector evaluation: `effectors/force_torque_models.jl`; gravity adapters: `effectors/gravity/`; other perturbations: `effectors/perturbations/`; articulated solver: `multibody/articulated_body.jl` |
-| `src/models/gnc/` | Guidance, navigation and control hooks, planner contracts and lifecycle, shared calculations, baseline algorithms and HYPR compatibility types | the three hook files named above; planner contracts: `interfaces/`; planning and lifecycle: `planning/rpo/`; arm references: `planning/robot_arm/`; shared kernels: `planning/common/`; optional-adapter services: `planning/adapters/`; aerobraking bridges: `internal/` |
+| `src/models/gnc/` | Guidance, navigation and control hooks, planner contracts and lifecycle, shared calculations, baseline algorithms and HYPR compatibility types | the three hook files named above; planner contracts: `interfaces/`; planning and lifecycle: `planning/rpo/`; arm references: `planning/robot_arm/`; shared kernels: `planning/common/`; optional-adapter services: `planning/adapters/`; typed EDG: `guidance/aerobraking/typed_edg/` |
 | `src/foundation/core/` | Abstract types and shared model contracts, reference frames, geodesy, orbital geometry and quaternions | frames: `interfaces/reference_system.jl`; shared geometry: `numerics/geodesy.jl` and `numerics/orbital_geometry.jl`; canonical quaternions: `numerics/quaternion_utils.jl`; robotics/compliant orientation policy: `numerics/orientation_quaternion_utils.jl`; run buffers and composition belong to simulation orchestration |
 | `src/foundation/assets/` | Manifest lookup and availability checks, RPO station assets and the Odyssey surrogate | reusable manifest records and local checks: `asset_catalog.jl`; CLI report types and presentation remain in the CLI; see [Assets & Modes](../src/assets.md) |
 | `ext/` | Optional package connections for GRAMSuite, the visualizer and EDG | Each extension activates when its package pair is loaded; see [GRAMSuite Setup](../src/user/gramsuite_setup.md) and the [optional adapter standard](../src/reference/adapter_contract.md). |
@@ -413,9 +413,9 @@ private results repository, not in this public tree.
 For example, a reusable scheduling interface and the mechanism that executes
 its commands can belong in the package after their API is agreed. A student's
 particular scheduling objective, search algorithm and experiment belong in the
-study or research repository. The current `src/orchestration/mission/` folder contains
-specific aerobraking policy code; its name does not imply that a general
-scheduling API already exists.
+study or research repository. The current `src/orchestration/mission/operations/`
+folder contains mission-specific firing schedules (`maneuver_plans.jl`); its name
+does not imply that a general scheduling API already exists.
 
 **Put it in `experimental/` when** you are shaping an API for a subsystem that
 does not run yet. It is not loaded by `using SpaceAGORA` and can contain
