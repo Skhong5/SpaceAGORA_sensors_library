@@ -10,7 +10,9 @@ command, or a nonzero `Δv`, the scheduler plans the burn itself, symmetric
 about the next apoapsis, after the spacecraft leaves the atmosphere.
 
 `actuation = :ideal` (the default) applies the burn as a force along the
-velocity, whatever the attitude. `actuation = :mounted` fires a thruster
+velocity, whatever the attitude. In both modes the burn switches exactly at
+the window's ends: the solver stops there and a callback switches the burn
+between integration steps, so no step straddles an end. `actuation = :mounted` fires a thruster
 mounted on the spacecraft instead: the `engine`-th mounted thruster (mounting
 order) runs at the burn's thrust during the window, so the force follows the
 vehicle's attitude and the propellant follows the engine's own `Isp`. From
@@ -22,9 +24,6 @@ engine's thrust direction and the burn direction, with natural frequency
 spacecraft's inertia and tracking the turn of the velocity along the orbit. A
 spacecraft without mounted wheels is not pointed. Give the engine the
 scheduler's thrust and specific impulse so the planned burn delivers its Δv.
-The engine switches on and off exactly at the window's ends: the solver stops
-there and a callback flips the engine between steps, so no integration step
-straddles an edge.
 """
 struct BaseThrusterModel <: AbstractThrusterModel
     thrust::Vector{Float64}
@@ -37,10 +36,10 @@ struct BaseThrusterModel <: AbstractThrusterModel
     engine::Int
     pointing_frequency_rad_s::Float64
     pointing_damping::Float64
-    # `:mounted` state, one entry per spacecraft: the levels of every mounted
-    # actuator (the wheels' refreshed at each control tick, the engine's when
-    # it switches), the window with its thrust (start, stop, thrust), and
-    # whether the engine is burning, flipped only at the window's ends.
+    # Per-spacecraft state: the window with its thrust (start, stop, thrust) and
+    # whether the burn is on, flipped only at the window's ends; in `:mounted`
+    # actuation also the levels of every mounted actuator (the wheels'
+    # refreshed at each control tick, the engine's when the burn switches).
     mounted_levels::Vector{Vector{Float64}}
     burn_windows::Vector{NTuple{3, Float64}}
     burning::Vector{Bool}
