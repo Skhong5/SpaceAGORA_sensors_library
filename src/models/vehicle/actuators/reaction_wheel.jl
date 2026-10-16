@@ -167,4 +167,10 @@ why.
 
     "Momentum rate of each mounted wheel (N m) commanded in the current right-hand-side evaluation: minus its saturated level, written by the engine"
     mounted_rates::Vector{Float64} = Float64[]
+
+    "Control moment gyros mounted with add_actuator! (their gimbal angles are the `cmg_angles` state)"
+    cmgs::Vector{ControlMomentGyro} = ControlMomentGyro[]
+
+    "Gimbal rate of each mounted CMG (rad/s) commanded in the current right-hand-side evaluation, written by the engine"
+    cmg_rates::Vector{Float64} = Float64[]
 end

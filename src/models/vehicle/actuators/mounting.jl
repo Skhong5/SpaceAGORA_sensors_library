@@ -14,7 +14,9 @@ actuators of user-defined kinds.
 4. every laser terminal, link by link in `link.laser_terminals` order;
 5. every hinge, link by link (one per hinged link);
 6. every thruster gimbal axis, link by link in `link.gimbals` order;
-7. every actuator of a user-defined kind, link by link in
+7. every control moment gyro, in mounting order (CMGs mount on the root
+   link);
+8. every actuator of a user-defined kind, link by link in
    `link.custom_actuators` order.
 
 Built-in kinds added later take their place before the user-defined kinds.
@@ -28,11 +30,13 @@ using ..QuaternionMath: rot
 using ..Actuators
 using ..Components: Thruster, ReactionWheel, wheel_momentum_saturate, wheel_power, Magnetorquer, LaserTerminal, PanelHinge, hinge_step
 using ..Components: ThrusterGimbal, gimbal_step, _gimbal_rotation
+using ..Components: ControlMomentGyro, cmg_torque_axis
 using ..SpacecraftModels: Link, SpacecraftModel
 using ..Assembly: add_thruster!
 
 export add_actuator!, mounted_actuators, mounted_actuator_count, mounted_thruster_count, mounted_wheel_count, mounted_magnetorquer_count, mounted_laser_count, mounted_hinge_count, apply_hinge_levels!, move_hinge!
 export mounted_gimbal_count, apply_gimbal_levels!, move_gimbal!
+export mounted_cmg_count, cmg_steering
 export actuator_context, allocation_matrix, mounted_wrench, mounted_thruster_fractions
 export mounted_requirements, applied_actuator_levels, mounted_power
 
@@ -61,7 +65,9 @@ only and joins its wheel assembly, whose momentum the engine integrates. A
 `link.laser_terminals`. A [`PanelHinge`](@ref) mounts on a non-root link, one per
 link, and sets that link's attitude to its current angle. A [`ThrusterGimbal`](@ref)
 mounts on the link of the thruster it turns and joins `link.gimbals`; the
-thruster's thrust turns by its current angle. An actuator of any other [`AbstractActuator`](@ref) kind joins
+thruster's thrust turns by its current angle. A [`ControlMomentGyro`](@ref)
+mounts on the root link only and joins its wheel assembly's `cmgs`; its
+gimbal angle becomes a state the engine integrates. An actuator of any other [`AbstractActuator`](@ref) kind joins
 `link.custom_actuators`. Returns the actuator.
 """
 function add_actuator!(model::SpacecraftModel, link::Link, thruster::Thruster)
@@ -114,6 +120,17 @@ function add_actuator!(model::SpacecraftModel, link::Link, gimbal::ThrusterGimba
     push!(link.gimbals, gimbal)
     _update_gimbal_rotation!(link, gimbal.thruster)
     return gimbal
+end
+
+function add_actuator!(model::SpacecraftModel, link::Link, cmg::ControlMomentGyro)
+    link === model.root || throw(ArgumentError(
+        "Control moment gyros mount on the spacecraft's root link, whose gimbal angles the engine integrates."))
+    _check_own_link(model, link)
+    assembly = link.rw_assembly
+    any(c -> c === cmg, assembly.cmgs) && throw(ArgumentError("This control moment gyro is already mounted."))
+    push!(assembly.cmgs, cmg)
+    push!(assembly.cmg_rates, 0.0)
+    return cmg
 end
 
 # The thruster's thrust turned by its gimbals on `link` at their current angles.
@@ -284,13 +301,59 @@ function move_gimbal!(link::Link, gimbal::ThrusterGimbal, level::Real, t::Real):
 end
 
 """
+    mounted_cmg_count(model::SpacecraftModel) -> Int
+
+The number of control moment gyros mounted on `model` (on its root link).
+"""
+mounted_cmg_count(model::SpacecraftModel)::Int = length(model.root.rw_assembly.cmgs)
+
+# The number of mounted actuators before the first CMG in the mounting order.
+_cmg_level_offset(model::SpacecraftModel)::Int =
+    mounted_thruster_count(model) + mounted_wheel_count(model) + mounted_magnetorquer_count(model) +
+    mounted_laser_count(model) + mounted_hinge_count(model) + mounted_gimbal_count(model)
+
+"""
+    cmg_steering(model::SpacecraftModel, angles, torque_body; λ0=0.01, μ=10.0) -> Vector{Float64}
+
+Gimbal rates for `model`'s mounted control moment gyros, at gimbal angles
+`angles` (mounting order), that put `torque_body` (N m, body frame) on the
+vehicle: the singularity-robust inverse of the CMGs' torque Jacobian
+(Bedrossian): with `A = [g_j × h_j]` normalized by the largest rotor
+momentum, `δ̇ = -Aᵀ (A Aᵀ + λ I)⁻¹ τ` and `λ = λ0 exp(-μ det(A Aᵀ))`, which
+stays bounded near a singular gimbal configuration at the cost of a torque
+error (`λ0 = 0` gives the pseudo-inverse). Rates beyond a CMG's limit are
+scaled down together, keeping the torque's direction.
+"""
+function cmg_steering(model::SpacecraftModel, angles::AbstractVector, torque_body::AbstractVector; λ0::Real=0.01, μ::Real=10.0)::Vector{Float64}
+    cmgs = model.root.rw_assembly.cmgs
+    n = length(cmgs)
+    length(angles) == n || throw(ArgumentError("cmg_steering: $(length(angles)) gimbal angles for $(n) mounted CMGs."))
+    n == 0 && return Float64[]
+    href = maximum(c -> c.rotor_momentum_nms, cmgs)
+    A = zeros(Float64, 3, n)
+    for j in 1:n
+        A[:, j] .= cmg_torque_axis(cmgs[j], angles[j]) ./ href
+    end
+    M = A * transpose(A)
+    λ = Float64(λ0) * exp(-Float64(μ) * det(M))
+    # pinv: the inverse for λ > 0, the least-squares minimum-norm solution for λ = 0 at a singular A.
+    rates = -(transpose(A) * (pinv(M + λ * Matrix{Float64}(I, 3, 3)) * Vector{Float64}(torque_body))) ./ href
+    scale = 1.0
+    for j in 1:n
+        limit = cmgs[j].max_gimbal_rate_rad_s
+        isfinite(limit) && (scale = max(scale, abs(rates[j]) / limit))
+    end
+    return rates ./ scale
+end
+
+"""
     mounted_actuator_count(model::SpacecraftModel) -> Int
 
 The number of actuators mounted on `model`, of every kind.
 """
 function mounted_actuator_count(model::SpacecraftModel)::Int
     n = mounted_thruster_count(model) + mounted_wheel_count(model) + mounted_magnetorquer_count(model) + mounted_laser_count(model) +
-        mounted_hinge_count(model) + mounted_gimbal_count(model)
+        mounted_hinge_count(model) + mounted_gimbal_count(model) + mounted_cmg_count(model)
     for link in model.links
         n += length(link.custom_actuators)
     end
@@ -322,6 +385,9 @@ function mounted_actuators(model::SpacecraftModel)
     end
     for link in model.links, gimbal in link.gimbals
         push!(out, (link=link, actuator=gimbal))
+    end
+    for cmg in model.root.rw_assembly.cmgs
+        push!(out, (link=model.root, actuator=cmg))
     end
     for link in model.links, actuator in link.custom_actuators
         push!(out, (link=link, actuator=actuator))
@@ -498,7 +564,9 @@ function mounted_wrench(model::SpacecraftModel, levels::AbstractVector, mass_kg:
             force, torque, mass_rate = _add_actuator(terminal, actuator_saturate(terminal, levels[k]), ctx, force, torque, mass_rate)
         end
     end
-    k += mounted_hinge_count(model) + mounted_gimbal_count(model)   # hinges and gimbals move geometry at control ticks; no wrench here
+    # Hinges and gimbals move geometry at control ticks; CMGs act through their
+    # gimbal-angle state in the attitude equation. No wrench here.
+    k += mounted_hinge_count(model) + mounted_gimbal_count(model) + mounted_cmg_count(model)
     @inbounds for link in model.links
         isempty(link.custom_actuators) && continue
         ctx = actuator_context(link, mass_kg, q_ib, ω_body, magnetic_field_body, environment)
@@ -569,6 +637,10 @@ function applied_actuator_levels(model::SpacecraftModel, levels::AbstractVector;
     for link in model.links, gimbal in link.gimbals
         k += 1
         out[k] = gimbal.angle_rad
+    end
+    for cmg in model.root.rw_assembly.cmgs
+        k += 1
+        out[k] = actuator_saturate(cmg, levels[k])
     end
     for link in model.links, actuator in link.custom_actuators
         k += 1
