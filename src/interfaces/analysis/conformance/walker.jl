@@ -32,12 +32,13 @@ end
 
 # Whether `a` and `b` hold the same state: equal bits for bits values, equal
 # elements for arrays and dictionaries, and the same field values for every other
-# object, followed recursively. A mutable object reached twice in `a` must
-# correspond to one object in `b` (aliasing is part of the state). Tasks, locks and
-# IO streams are not model state and are not compared.
-_same_state(a, b) = _same_state(a, b, IdDict{Any, Any}())
+# object, followed recursively. Mutable objects are matched one to one in both
+# directions, so aliasing is part of the state: two objects of `a` cannot both
+# correspond to one object of `b`, nor the reverse. Tasks, locks and IO streams are
+# not model state and are not compared.
+_same_state(a, b) = _same_state(a, b, IdDict{Any, Any}(), IdDict{Any, Any}())
 
-function _same_state(a, b, seen::IdDict{Any, Any})
+function _same_state(a, b, seen::IdDict{Any, Any}, back::IdDict{Any, Any})
     typeof(a) === typeof(b) || return false
     T = typeof(a)
     isbitstype(T) && return a === b
@@ -46,13 +47,15 @@ function _same_state(a, b, seen::IdDict{Any, Any})
     (a isa Task || a isa Base.AbstractLock || a isa IO || a isa Threads.Condition) && return true
     if ismutable(a)
         haskey(seen, a) && return seen[a] === b
+        haskey(back, b) && return false
         seen[a] = b
+        back[b] = a
     end
     if a isa AbstractDict
         length(a) == length(b) || return false
         for (k, v) in a
             haskey(b, k) || return false
-            _same_state(v, b[k], seen) || return false
+            _same_state(v, b[k], seen, back) || return false
         end
         return true
     end
@@ -60,13 +63,13 @@ function _same_state(a, b, seen::IdDict{Any, Any})
         size(a) == size(b) || return false
         for i in eachindex(a)
             isassigned(a, i) == isassigned(b, i) || return false
-            isassigned(a, i) && !_same_state(a[i], b[i], seen) && return false
+            isassigned(a, i) && !_same_state(a[i], b[i], seen, back) && return false
         end
         return true
     end
     for i in 1:fieldcount(T)
         isdefined(a, i) == isdefined(b, i) || return false
-        isdefined(a, i) && !_same_state(getfield(a, i), getfield(b, i), seen) && return false
+        isdefined(a, i) && !_same_state(getfield(a, i), getfield(b, i), seen, back) && return false
     end
     return true
 end

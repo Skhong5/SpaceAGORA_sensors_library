@@ -36,8 +36,9 @@ in report order:
   ways are equal (it is restored afterwards); a model draws only from the streams the
   engine supplies.
 - `concurrent_equals_sequential`: two runs on separate threads, kept in step after
-  every solver step so that they overlap, equal the two sequential runs. Skipped when
-  Julia runs with one thread.
+  every solver step so that they overlap, equal the two sequential runs. It fails when
+  a run waits more than 60 s for the other at a step, since the runs then did not
+  overlap. Skipped when Julia runs with one thread.
 - `output_hook_pure`: two calls of `wrench` with the same arguments return equal values,
   leave a deep copy of the model unchanged, and log nothing at `Info` level or above.
 - `environment_declared`: `wrench` returns a finite force and torque (two
@@ -166,11 +167,11 @@ end
 _Rendezvous() = _Rendezvous([Threads.Atomic{Int}(0) for _ in 1:2], [Threads.Atomic{Bool}(false) for _ in 1:2],
     Threads.Atomic{Int}(0))
 
-function _lockstep_factory(rendezvous::_Rendezvous, me::Int)
+function _lockstep_factory(rendezvous::_Rendezvous, me::Int, timeout_s::Float64=_RENDEZVOUS_TIMEOUT_S)
     other = 3 - me
     function wait_for_other!(integrator)
         n = Threads.atomic_add!(rendezvous.steps[me], 1) + 1
-        deadline = time() + _RENDEZVOUS_TIMEOUT_S
+        deadline = time() + timeout_s
         while rendezvous.steps[other][] < n && !rendezvous.finished[other][]
             if time() > deadline
                 Threads.atomic_add!(rendezvous.timeouts, 1)
@@ -186,22 +187,26 @@ function _lockstep_factory(rendezvous::_Rendezvous, me::Int)
         initialize=(callback, u, t, integrator) -> wait_for_other!(integrator), save_positions=(false, false))
 end
 
-function _concurrency_check(configuration, base::_RunOutcome, again::_RunOutcome, since::VersionNumber)
+function _concurrency_check(configuration, base::_RunOutcome, again::_RunOutcome, since::VersionNumber;
+        timeout_s::Float64=_RENDEZVOUS_TIMEOUT_S)
     Threads.nthreads() >= 2 || return _skip(:concurrent_equals_sequential, since,
         "needs Julia started with at least two threads; this session has $(Threads.nthreads())")
     rendezvous = _Rendezvous()
     tasks = map(1:2) do me
         Threads.@spawn try
-            _solve(configuration; extra_callback_factories=(_lockstep_factory(rendezvous, me),))
+            _solve(configuration; extra_callback_factories=(_lockstep_factory(rendezvous, me, timeout_s),))
         finally
             rendezvous.finished[me][] = true
         end
     end
     runs = fetch.(tasks)
     gaps = (_run_difference(base, runs[1]), _run_difference(again, runs[2]))
-    detail = join(("concurrent run $k and sequential run $k differ: $(gap)" for (k, gap) in enumerate(gaps) if gap !== nothing), "\n")
-    rendezvous.timeouts[] > 0 && (detail *= "\n(the runs fell out of step $(rendezvous.timeouts[]) times)")
-    return _check(:concurrent_equals_sequential, since, all(isnothing, gaps), detail)
+    problems = String["concurrent run $k and sequential run $k differ: $(gap)" for (k, gap) in enumerate(gaps) if gap !== nothing]
+    # Equal results from runs that did not overlap certify nothing about concurrency.
+    timeouts = rendezvous.timeouts[]
+    timeouts > 0 && pushfirst!(problems, "the concurrent runs fell out of step: a run waited more than " *
+        "$(timeout_s) s for the other $(timeouts) time(s), so the runs did not overlap and the comparison does not apply")
+    return _check(:concurrent_equals_sequential, since, isempty(problems), join(problems, "\n"))
 end
 
 # The `(x, env, t)` arguments `wrench` is called with, or the error that stopped

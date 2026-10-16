@@ -6,9 +6,10 @@ module ConformanceNegativeControlsTests
 
 using Test, SpaceAGORA, Logging
 using StaticArrays: SVector
-using SpaceAGORA.Conformance: CHECK_IDS, check_force_torque_model, check_service_facade, passed
+using SpaceAGORA.Conformance: CHECK_IDS, check_force_torque_model, check_service_facade, conformance_fixture, passed
 
 const SM = SpaceAGORA.SimulationModel
+const C = SpaceAGORA.Conformance
 const Z3 = SVector(0.0, 0.0, 0.0)
 const ForceModel = SpaceAGORA.AbstractForceTorqueModel
 const Sample = SpaceAGORA.StateSample
@@ -68,6 +69,24 @@ SpaceAGORA.wrench(m::NcCountsCalls, x::Sample, env::Env, t::Float64) = (m.calls 
 struct NcLogs <: ForceModel end
 SpaceAGORA.wrench(::NcLogs, x::Sample, env::Env, t::Float64) = (@info "NcLogs wrench" maxlog = 1; along_velocity(x, -1.0e-3))
 
+# output_hook_pure: two fields share one vector, and each call replaces one of them
+# with an equal copy, so the values stay the same but the aliasing does not.
+mutable struct NcBreaksAliasing <: ForceModel
+    a::Vector{Float64}
+    b::Vector{Float64}
+end
+NcBreaksAliasing() = (v = [1.0e-3]; NcBreaksAliasing(v, v))
+SpaceAGORA.wrench(m::NcBreaksAliasing, x::Sample, env::Env, t::Float64) = (m.b = copy(m.b); along_velocity(x, -m.a[1]))
+
+# concurrent_equals_sequential: the first call after the token is set sleeps, so one
+# of two concurrent runs stalls while the other waits for it at the rendezvous.
+const NC_STALL = Threads.Atomic{Bool}(false)
+struct NcStallsOnce <: ForceModel end
+function SpaceAGORA.wrench(::NcStallsOnce, x::Sample, env::Env, t::Float64)
+    t > 0.0 && Threads.atomic_cas!(NC_STALL, true, false) && sleep(4.0)
+    return along_velocity(x, -1.0e-3)
+end
+
 # environment_declared: reads the atmosphere without declaring it, and returns a
 # non-finite force when the undeclared solar sample is missing.
 struct NcUndeclaredAtmosphere <: ForceModel end
@@ -106,8 +125,8 @@ function control_facade(; version=v"1.0.0", require=:exact, implemented=(:serve,
         const Empty = nothing
         const Nested = (; serve)
     end)
-    omit === :IMPLEMENTED_FUNCTIONS || Core.eval(facade, :(const IMPLEMENTED_FUNCTIONS = $implemented))
-    omit === :CONSUMED_SERVICES || Core.eval(facade, :(const CONSUMED_SERVICES = $consumed))
+    omit === :IMPLEMENTED_FUNCTIONS || Core.eval(facade, :(const IMPLEMENTED_FUNCTIONS = $(QuoteNode(implemented))))
+    omit === :CONSUMED_SERVICES || Core.eval(facade, :(const CONSUMED_SERVICES = $(QuoteNode(consumed))))
     return facade
 end
 
@@ -138,6 +157,9 @@ controls() = [
         report=() -> check_force_torque_model(NcCountsCalls(0)), passing=except(:output_hook_pure)),
     (kind=:force_torque_model, id=:output_hook_pure, broken="a log message", expect="the first: Info: NcLogs wrench",
         report=() -> check_force_torque_model(NcLogs()), passing=except(:output_hook_pure)),
+    (kind=:force_torque_model, id=:output_hook_pure, broken="replaces one of two aliased fields with an equal copy",
+        expect="the calls changed the model",
+        report=() -> check_force_torque_model(NcBreaksAliasing()), passing=except(:output_hook_pure)),
     (kind=:force_torque_model, id=:environment_declared, broken="reads the atmosphere without declaring it", expect="wrench threw at t = 0.0 s with only the declared environment fields (planet_frame = nothing, atmosphere = nothing",
         report=() -> check_force_torque_model(NcUndeclaredAtmosphere()),
         passing=(:hooks_present, :supported_sample_signature)),
@@ -165,6 +187,12 @@ controls() = [
         report=() -> facade_report(control_facade(implemented=((:Nested, :absent),)); version=v"1.0.0"), passing=()),
     (kind=:service_facade, id=:facade_shape, broken="a consumed name bound to nothing", expect="consumed Empty is nothing",
         report=() -> facade_report(control_facade(consumed=(:Empty,)); version=v"1.0.0"), passing=()),
+    (kind=:service_facade, id=:facade_shape, broken="IMPLEMENTED_FUNCTIONS a bare name, not a collection",
+        expect="IMPLEMENTED_FUNCTIONS is :serve, not a collection of names or name paths",
+        report=() -> facade_report(control_facade(implemented=:serve); version=v"1.0.0"), passing=()),
+    (kind=:service_facade, id=:facade_shape, broken="CONSUMED_SERVICES nothing",
+        expect="CONSUMED_SERVICES is nothing, not a collection of names or name paths",
+        report=() -> facade_report(control_facade(consumed=nothing); version=v"1.0.0"), passing=()),
     (kind=:service_facade, id=:facade_shape, broken="no CONSUMED_SERVICES", expect="does not define CONSUMED_SERVICES",
         report=() -> facade_report(control_facade(omit=:CONSUMED_SERVICES); version=v"1.0.0"), passing=()),
 ]
@@ -195,25 +223,62 @@ status_of(report, id) = only(check.status for check in report.checks if check.id
         @test passed(nested)
     end
     for control in all_controls
-        report = with_logger(NullLogger()) do
-            control.report()
+        # A check reports a broken input as a failing check; it never throws.
+        report = try
+            with_logger(NullLogger()) do
+                control.report()
+            end
+        catch err
+            err
         end
         expected = control.id === :concurrent_equals_sequential && Threads.nthreads() < 2 ? :skip : :fail
         @testset "$(control.id): $(control.broken)" begin
-            detail = only(check.detail for check in report.checks if check.id === control.id)
-            @testset let id = control.id, status = status_of(report, control.id), detail = detail
-                @test status === expected
-                expected === :fail && @test occursin(control.expect, detail)
-                # A run-level control fails by its behaviour, not by a run that stopped.
-                control.id in RUN_LEVEL && @test !occursin("run failed", detail)
+            @testset let id = control.id, thrown = report isa Exception ? sprint(showerror, report) : ""
+                @test !(report isa Exception)
             end
-            expected === :fail && @test !passed(report)
-            for id in control.passing
-                @testset let id = id, status = status_of(report, id)
-                    @test status === :pass || (id === :concurrent_equals_sequential && status === :skip)
+            if !(report isa Exception)
+                detail = only(check.detail for check in report.checks if check.id === control.id)
+                @testset let id = control.id, status = status_of(report, control.id), detail = detail
+                    @test status === expected
+                    expected === :fail && @test occursin(control.expect, detail)
+                    # A run-level control fails by its behaviour, not by a run that stopped.
+                    control.id in RUN_LEVEL && @test !occursin("run failed", detail)
+                end
+                expected === :fail && @test !passed(report)
+                for id in control.passing
+                    @testset let id = id, status = status_of(report, id)
+                        @test status === :pass || (id === :concurrent_equals_sequential && status === :skip)
+                    end
                 end
             end
         end
+    end
+    @testset "concurrent_equals_sequential: a run stalls past the rendezvous limit" begin
+        model = NcStallsOnce()
+        fixture = conformance_fixture(effectors=(model,))
+        base = C._solve(fixture.configuration)
+        again = C._solve(fixture.configuration)
+        NC_STALL[] = true
+        check = C._concurrency_check(fixture.configuration, base, again, v"0.3.0"; timeout_s=1.0)
+        @test !NC_STALL[]   # one concurrent run took the token and stalled
+        if Threads.nthreads() >= 2
+            @testset let status = check.status, detail = check.detail
+                @test status === :fail
+                @test occursin("the concurrent runs fell out of step", detail)
+                @test !occursin("differ", detail)   # equal results do not rescue it
+            end
+        else
+            @test check.status === :skip
+        end
+    end
+    @testset "the state comparison matches mutable objects one to one" begin
+        shared = [1.0, 2.0]
+        aliased = NcBreaksAliasing(shared, shared)
+        separate = NcBreaksAliasing([1.0, 2.0], [1.0, 2.0])
+        @test C._same_state(aliased, deepcopy(aliased))
+        @test C._same_state(separate, deepcopy(separate))
+        @test !C._same_state(aliased, separate)
+        @test !C._same_state(separate, aliased)
     end
     # The checks run copies; only the deepcopy_equivalent run mutates the model given.
     counter = NcCountsCalls(0)

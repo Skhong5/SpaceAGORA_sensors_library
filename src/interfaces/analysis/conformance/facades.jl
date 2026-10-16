@@ -13,9 +13,12 @@ Check a versioned service facade against the optional adapter standard. One chec
 - `require_version(version)` returns `nothing`, and every neighbouring version (one
   patch, minor or major release up or down, and `v"0.0.0"`) throws the facade's
   `CompatibilityError`: the check is exact;
-- the two inventories hold names or name paths (tuples of names), each listed once,
-  none in both; every implemented name resolves to a function and every consumed one
-  to a value.
+- the two inventories are collections of names or name paths (tuples of names), each
+  listed once, none in both; every implemented name resolves to a function and every
+  consumed one to a value.
+
+A facade that breaks any of these gets a failing `facade_shape` with the problems in
+its detail; the check does not throw on a malformed facade.
 """
 function check_service_facade(facade::Module; version::VersionNumber)
     problems = _facade_problems(facade, version)
@@ -54,6 +57,21 @@ function _resolve_binding(facade::Module, path)
     end
 end
 
+# The name paths an inventory lists. A value that is not a collection, or entries
+# that are not names or tuples of names, become problems instead of errors.
+function _inventory_paths!(problems::Vector{String}, name::Symbol, inventory)
+    entries = try
+        collect(Any, inventory)
+    catch err
+        push!(problems, "$(name) is $(repr(inventory)), not a collection of names or name paths " *
+            "($(first(split(_summary(err), '\n'))))")
+        return Tuple{Vararg{Symbol}}[]
+    end
+    bad = filter(entry -> _binding_path(entry) === nothing || isempty(_binding_path(entry)), entries)
+    isempty(bad) || push!(problems, "$(name) entries must be names or non-empty tuples of names: $(join(repr.(bad), ", "))")
+    return [_binding_path(entry) for entry in entries if !(entry in bad)]
+end
+
 function _facade_problems(facade::Module, version::VersionNumber)
     missing_names = [name for name in _FACADE_NAMES if !isdefined(facade, name)]
     isempty(missing_names) || return ["$(facade) does not define $(join(missing_names, ", "))"]
@@ -85,13 +103,8 @@ function _facade_problems(facade::Module, version::VersionNumber)
             push!(problems, "require_version($(neighbour)) threw $(typeof(outcome)), not CompatibilityError")
         end
     end
-    inventories = (implemented=facade.IMPLEMENTED_FUNCTIONS, consumed=facade.CONSUMED_SERVICES)
-    paths = map(inventories) do inventory
-        entries = collect(inventory)
-        bad = filter(entry -> _binding_path(entry) === nothing || isempty(_binding_path(entry)), entries)
-        isempty(bad) || push!(problems, "inventory entries must be names or non-empty tuples of names: $(join(repr.(bad), ", "))")
-        [_binding_path(entry) for entry in entries if !(entry in bad)]
-    end
+    paths = (implemented=_inventory_paths!(problems, :IMPLEMENTED_FUNCTIONS, facade.IMPLEMENTED_FUNCTIONS),
+        consumed=_inventory_paths!(problems, :CONSUMED_SERVICES, facade.CONSUMED_SERVICES))
     for (label, list) in pairs(paths)
         repeated = unique(filter(path -> count(==(path), list) > 1, list))
         isempty(repeated) || push!(problems, "$(label) entries listed more than once: $(join(join.(repeated, "."), ", "))")
