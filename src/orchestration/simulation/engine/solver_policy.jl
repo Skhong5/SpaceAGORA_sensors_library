@@ -97,30 +97,12 @@ end
 end
 @inline _solver_maxiters()::Union{Nothing, Int} = _solver_maxiters(_active_solver_config())
 
-@inline function _symplectic_fixed_dt_s(cfg::SolverConfig, args)::Float64
-    dt = isnothing(cfg.symplectic_dt_s) ? args.integration_tolerances.dt_max_orbit : cfg.symplectic_dt_s
-    dt > 0.0 || throw(ArgumentError("SolverConfig.symplectic_dt_s must be > 0.0, got $dt."))
-    return dt
-end
-@inline _symplectic_fixed_dt_s(args)::Float64 = _symplectic_fixed_dt_s(_active_solver_config(), args)
-
 @inline function _gravity_backbone_fixed_dt_s(cfg::SolverConfig, args)::Float64
     dt = isnothing(cfg.gravity_backbone_dt_s) ? args.integration_tolerances.dt_max_orbit : cfg.gravity_backbone_dt_s
     dt > 0.0 || throw(ArgumentError("SolverConfig.gravity_backbone_dt_s must be > 0.0, got $dt."))
     return dt
 end
 @inline _gravity_backbone_fixed_dt_s(args)::Float64 = _gravity_backbone_fixed_dt_s(_active_solver_config(), args)
-
-@inline function _symplectic_conservative_eligible(args)::Bool
-    args.mission_configuration.orientation_sim && return false
-    length(args.dynamics_model.spacecraft) == 1 || return false
-    isempty(args.control_model.control_effectors) || return false
-    isempty(args.guidance_model.guidance_effectors) || return false
-    isempty(args.navigation_model.navigation_effectors) || return false
-    effectors = args.dynamics_model.dynamic_effectors
-    length(effectors) == 1 || return false
-    return first(effectors) isa SimulationModel.InverseSquaredGravityModel
-end
 
 @inline _auto_stiff_smooth_gravity_tsit5_enabled(cfg::SolverConfig)::Bool = cfg.auto_stiff_gravity_tsit5
 
@@ -824,22 +806,6 @@ function _solve_with_solver_policy(prob, cfg::SolverConfig, args, reltol_tol, ab
     solver_cache::Union{Nothing, SolverIntegratorCache}=nothing,
     needs_full_solution::Bool=true)
     mode = _solver_policy_mode(cfg)
-    if mode == :symplectic
-        _symplectic_conservative_eligible(args) || throw(ArgumentError(
-            "SolverConfig.solver_mode=:symplectic currently requires a single-spacecraft, translational-only inverse-squared gravity configuration with no control/guidance/navigation effectors."
-        ))
-        _is_partitioned_second_order_problem(prob) || throw(ArgumentError(
-            "SolverConfig.solver_mode=:symplectic requires a partitioned SecondOrderODEProblem. The typed run_simulation path still builds a first-order ODEProblem, so use :tsit5/:auto_stiff there until a partitioned runtime path is added."
-        ))
-        sol = _solve_with_fixed_step_solver(prob, cfg, KahanLi8(), _symplectic_fixed_dt_s(cfg, args); needs_full_solution=needs_full_solution)
-        return sol, (
-            solver="KahanLi8(Symplectic)",
-            initial_solver="KahanLi8",
-            fallback_used=false,
-            trigger_retcode=missing
-        )
-    end
-
     if mode == :gravity_backbone_split
         reject_reason = _gravity_backbone_reject_reason(args)
         isnothing(reject_reason) || throw(ArgumentError(reject_reason))
@@ -933,6 +899,13 @@ function _solve_with_solver_policy(prob, cfg::SolverConfig, args, reltol_tol, ab
         )
     end
 
+    # SolverConfig only admits the modes routed above, so this guard keeps a
+    # mode added to SimConfig._SOLVER_MODES without a route here from running
+    # Tsit5 under its name.
+    mode == :tsit5 || throw(ArgumentError(
+        "SolverConfig.solver_mode=$(repr(mode)) has no solver route. Use one of: " *
+        "$(SimulationModel.SimConfig._solver_name_list(SimulationModel.SimConfig._SOLVER_MODES))."
+    ))
     tsit_sol = _solve_with_explicit_solver(prob, cfg, args, Tsit5(), reltol_tol, abstol_tol; solver_cache=solver_cache, needs_full_solution=needs_full_solution)
     return tsit_sol, (
         solver="Tsit5",

@@ -6,7 +6,14 @@
         @test _solver_policy_mode() == :auto_stiff
     end
     withenv("SPACEAGORA_SOLVER_MODE" => "symplectic") do
-        @test _solver_policy_mode() == :symplectic
+        err = try
+            _solver_policy_mode()
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        @test occursin(":gravity_backbone_split", err.msg)
     end
     withenv("SPACEAGORA_SOLVER_MODE" => "gravity_backbone_split") do
         @test _solver_policy_mode() == :gravity_backbone_split
@@ -331,19 +338,6 @@
         @test_throws ArgumentError _solver_maxiters()
     end
 
-    withenv("SPACEAGORA_SYMPLECTIC_DT_S" => nothing) do
-        @test _symplectic_fixed_dt_s(args_eff_single) == args_eff_single.integration_tolerances.dt_max_orbit
-    end
-    withenv("SPACEAGORA_SYMPLECTIC_DT_S" => "4.0") do
-        @test _symplectic_fixed_dt_s(args_eff_single) == 4.0
-    end
-    withenv("SPACEAGORA_SYMPLECTIC_DT_S" => "bad") do
-        @test_throws ArgumentError _symplectic_fixed_dt_s(args_eff_single)
-    end
-    withenv("SPACEAGORA_SYMPLECTIC_DT_S" => "0.0") do
-        @test_throws ArgumentError _symplectic_fixed_dt_s(args_eff_single)
-    end
-
     withenv("SPACEAGORA_GRAVITY_BACKBONE_DT_S" => nothing) do
         @test _gravity_backbone_fixed_dt_s(args_eff_single) == args_eff_single.integration_tolerances.dt_max_orbit
     end
@@ -581,18 +575,6 @@
         @test_throws ArgumentError _multirate_fast_solver_spec()
     end
 
-    args_symplectic = build_config(
-        spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
-        density_model=NoAtmosphereModel(),
-        orientation_sim=false,
-        mission_time=120.0,
-        EI_km=120.0,
-        dynamic_effectors=(InverseSquaredGravityModel(),),
-        keplerian=true,
-        ephemerides_model=SimpleEphemeridesModel()
-    )
-    @test _symplectic_conservative_eligible(args_symplectic) == true
-    @test _symplectic_conservative_eligible(args_eff_single) == false
     @test SimulationModel.gravity_backbone_structure(ConstantGravityModel()) == :position_only_static_gravity
     @test SimulationModel.gravity_backbone_structure(InverseSquaredGravityModel()) == :position_only_static_gravity
     @test SimulationModel.gravity_backbone_structure(InverseSquaredJ2GravityModel()) == :position_only_static_gravity
@@ -602,29 +584,6 @@
     @test SimulationModel.gravity_backbone_kick_structure(NBodyGravityModel(body_names=("moon",), primary_body_name="Earth")) == :velocity_kick_explicit
     @test _gravity_backbone_kick_structure_validated(SolarRadiationPressureModel(1.2, 12.0)) == :velocity_kick_explicit
     @test_throws ArgumentError _gravity_backbone_kick_structure_validated(InvalidBackboneKickStructureModel())
-
-    kepler_second_order! = function (ddu, du, u, p, t)
-        r = norm(u)
-        @. ddu = -p.μ * u / r^3
-    end
-    r0_sym = [EARTH.Rp_e + 500e3, 0.0, 0.0]
-    v0_sym = [0.0, sqrt(EARTH.μ / r0_sym[1]), 0.0]
-    prob_symplectic = SecondOrderODEProblem(kepler_second_order!, v0_sym, r0_sym, (0.0, 120.0), (μ=EARTH.μ,))
-
-    withenv(
-        "SPACEAGORA_SOLVER_MODE" => "symplectic",
-        "SPACEAGORA_SYMPLECTIC_DT_S" => "2.0",
-        "SPACEAGORA_SOLVER_MAXITERS" => nothing
-    ) do
-        sol, meta = _solve_with_solver_policy(prob_symplectic, args_symplectic, 1e-8, 1e-8)
-        @test string(sol.retcode) == "Success"
-        @test meta.solver == "KahanLi8(Symplectic)"
-        @test meta.initial_solver == "KahanLi8"
-        @test meta.fallback_used == false
-    end
-    withenv("SPACEAGORA_SOLVER_MODE" => "symplectic", "SPACEAGORA_SOLVER_MAXITERS" => nothing) do
-        @test_throws ArgumentError _solve_with_solver_policy(prob_simple, args_symplectic, 1e-8, 1e-8)
-    end
 
     args_backbone = build_config(
         spacecraft=make_single_link_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
