@@ -195,7 +195,7 @@ end
 DriverBinding(algorithm; throws=true) =
     DriverBinding(algorithm, G.AlgorithmRuntime(G.gnc_stream_words("Toy/v1", 1, 2)), Ref{Any}(nothing), throws)
 G.algorithm_runtime(b::DriverBinding) = b.runtime
-G.bound_algorithm(b::DriverBinding) = b.algorithm
+G.bound_algorithm(b::DriverBinding) = b.algorithm === :unbound ? error("no algorithm bound") : b.algorithm
 G.bound_link(b::DriverBinding) = b.link
 G.trusted_queries(::DriverBinding) = (limit=10.0,)
 G.build_algorithm_request(b::DriverBinding, u, p, t, reason, request_id) = DriverRequest(request_id, reason, u)
@@ -242,6 +242,11 @@ G.propose!(state, ::VectorAlgorithm, request::VectorRequest, rng) = G.AlgorithmR
 struct ForeignFailure <: G.GNCAlgorithmError
     reason::Symbol
 end
+# An algorithm whose family cannot be resolved.
+struct UnfamiliarAlgorithm <: G.AbstractGNCAlgorithm
+    error::Exception
+end
+G.algorithm_family(a::UnfamiliarAlgorithm) = throw(a.error)
 # A binding, family and result type that log the order of the driver's calls.
 const CALLS = Symbol[]
 struct LoggedResult <: G.AbstractAlgorithmResult
@@ -322,6 +327,15 @@ events(b) = [r.event for r in b.runtime.records]
     @test e isa DriverFailure && e.reason === :algorithm_exception && e.cause == ForeignFailure(:foreign)
     e = failure(() -> run_request!(DriverBinding(Doubler{:fail}(:binding_type_failure)), 1.0, 0.0))
     @test e isa DriverFailure && e.reason === :algorithm_exception && e.cause.reason === :mimic
+    # So is an error from resolving the algorithm or its family; the request still counts.
+    for (algorithm, cause) in ((UnfamiliarAlgorithm(ErrorException("no family")), ErrorException("no family")),
+                               (UnfamiliarAlgorithm(ForeignFailure(:family)), ForeignFailure(:family)),
+                               (:unbound, ErrorException("no algorithm bound")))
+        r = DriverBinding(algorithm)
+        e = failure(() -> G.run_algorithm_request!(r, 1.0, nothing, 0.0, :initial; exception_reason=:toy_exception))
+        @test e isa DriverFailure && e.reason === :toy_exception && e.cause == cause
+        @test r.runtime.records == [(event=:failure, reason=:toy_exception)] && r.runtime.request_id == 1
+    end
     # Family hooks get copies: mutating their arguments changes nothing installed.
     v = DriverBinding(VectorAlgorithm{:fail}())
     @test run_request!(v, [2.0], 0.0) === true

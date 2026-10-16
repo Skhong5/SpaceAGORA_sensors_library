@@ -463,7 +463,9 @@ end
     run_algorithm_request!(binding, u, p, t, reason; exception_reason=:algorithm_exception) -> Bool
 
 Run one request of `binding` at time `t` through the contract's steps:
-1. advance the request counter and build the request (`build_algorithm_request`);
+1. advance the request counter, resolve the algorithm and its family
+   (`bound_algorithm`, `algorithm_family`) and build the request
+   (`build_algorithm_request`);
 2. record a copy of it;
 3. check capabilities (`validate_capabilities`);
 4. ask for a proposal, passing a separate copy of the request (`propose!`, or
@@ -477,17 +479,19 @@ Run one request of `binding` at time `t` through the contract's steps:
    between validation and installation: no yield, no hook and no user callback;
 8. record the install (`installed_record`, called after installation on copies).
 
-A refusal follows the family's `on_rejection` policy. Any error thrown by algorithm
-or family code, including a `GNCAlgorithmError`, becomes a failure of this binding
-with reason `exception_reason`; only the binding's own failure passes through
-unwrapped. Returns whether a product was installed.
+A refusal follows the family's `on_rejection` policy. Any error thrown once the
+counter has advanced, by algorithm or family code (resolving the family included)
+and including a `GNCAlgorithmError`, becomes a failure of this binding with reason
+`exception_reason`; only the binding's own failure passes through unwrapped. Every
+failure counts as a request: the counter stays advanced. Returns whether a product
+was installed.
 """
 function run_algorithm_request!(binding, u, p, t, reason; exception_reason::Symbol=:algorithm_exception)
     runtime = algorithm_runtime(binding)::AlgorithmRuntime
     runtime.request_id += 1
-    algorithm = bound_algorithm(binding)
-    family = algorithm_family(algorithm)
     try
+        algorithm = bound_algorithm(binding)
+        family = algorithm_family(algorithm)
         request = build_algorithm_request(binding, u, p, t, reason, runtime.request_id)
         # Retain a trusted snapshot. Algorithm code only receives another copy.
         push!(runtime.records, (event=:request, time_s=t, request=deepcopy(request)))
