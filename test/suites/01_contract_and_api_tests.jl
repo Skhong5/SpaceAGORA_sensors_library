@@ -895,7 +895,7 @@ end
         dynamic_effectors=(InverseSquaredGravityModel(),),
         keplerian=true
     )
-    force_nbody, torque_nbody = calcForceTorque(nbody_jupiter, nbody_state, ODEParams(n_sats=1, args=args_nbody), 1)
+    force_nbody, torque_nbody = dynamics_force_torque(nbody_jupiter, nbody_state, ODEParams(n_sats=1, args=args_nbody), 1)
     @test all(isfinite, force_nbody)
     @test torque_nbody == SVector{3, Float64}(0.0, 0.0, 0.0)
 

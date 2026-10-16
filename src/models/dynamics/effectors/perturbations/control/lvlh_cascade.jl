@@ -143,22 +143,6 @@ degenerate orbits (near-zero radius or angular momentum).
     return clamp.(model.k_rate .* (w_cmd - w_rel) + model.tau_ff, -model.tau_max, model.tau_max)
 end
 
-function calcForceTorque(model::LVLHCascadeAttitudeControlModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    zero_wrench = (SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
-    if !param.args.mission_configuration.orientation_sim
-        return zero_wrench
-    end
-    if !hasproperty(x, :q) || !hasproperty(x, :ω)
-        return zero_wrench
-    end
-    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
-    vel_ii = SVector{3, Float64}(x[4], x[5], x[6])
-    q_ib = SVector{4, Float64}(Float64.(getproperty(x, :q))...)
-    w_body = SVector{3, Float64}(Float64.(getproperty(x, :ω))...)
-    torque = _lvlh_cascade_torque(model, pos_ii, vel_ii, q_ib, w_body)
-    return SVector{3, Float64}(0.0, 0.0, 0.0), torque
-end
-
 @inline environment_requirements(::LVLHCascadeAttitudeControlModel) = EffectorEnvironmentRequirements()
 
 @inline function wrench(

@@ -440,13 +440,17 @@
     sc_alloc_probe = u_alloc_probe.sc[1]
     gravity_alloc_model = InverseSquaredGravityModel()
     j2_alloc_model = InverseSquaredJ2GravityModel()
+    # The gravity force kernels allocate nothing, given the sample and environment.
+    sample_alloc_probe = SimulationEngine.build_state_sample(sc_alloc_probe, solver_args.dynamics_model.spacecraft[1], false, 1)
+    gravity_env, j2_env = (SimulationEngine.sample_environment(SimulationModel.environment_requirements(model),
+        model, sc_alloc_probe, p_alloc_probe, 1, 0.0) for model in (gravity_alloc_model, j2_alloc_model))
     for _ in 1:1000
-        calcForceTorque(gravity_alloc_model, sc_alloc_probe, p_alloc_probe, 1)
-        calcForceTorque(j2_alloc_model, sc_alloc_probe, p_alloc_probe, 1)
+        SimulationModel.wrench(gravity_alloc_model, sample_alloc_probe, gravity_env, 0.0)
+        SimulationModel.wrench(j2_alloc_model, sample_alloc_probe, j2_env, 0.0)
         SimulationEngine._extract_sample_pos_vel(sc_alloc_probe)
     end
-    @test (@allocated calcForceTorque(gravity_alloc_model, sc_alloc_probe, p_alloc_probe, 1)) == 0
-    @test (@allocated calcForceTorque(j2_alloc_model, sc_alloc_probe, p_alloc_probe, 1)) == 0
+    @test (@allocated SimulationModel.wrench(gravity_alloc_model, sample_alloc_probe, gravity_env, 0.0)) == 0
+    @test (@allocated SimulationModel.wrench(j2_alloc_model, sample_alloc_probe, j2_env, 0.0)) == 0
     @test (@allocated SimulationEngine._extract_sample_pos_vel(sc_alloc_probe)) == 0
 
     split_prob_simple = SplitODEProblem(
@@ -1364,24 +1368,24 @@
     srp_model = args_nbody_srp.dynamics_model.dynamic_effectors[3]
     x_a = Float64[7000e3, 0.0, 0.0, 0.0, 0.0, 0.0, 200.0]
     x_b = Float64[6999e3, 10.0, 0.0, 0.0, 0.0, 0.0, 200.0]
-    SimulationModel.calcForceTorque(nbody_model, x_a, p_nbody_srp, 1)
+    dynamics_force_torque(nbody_model, x_a, p_nbody_srp, 1)
     @test p_nbody_srp.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls[] == 2
-    SimulationModel.calcForceTorque(nbody_model, x_b, p_nbody_srp, 1)
+    dynamics_force_torque(nbody_model, x_b, p_nbody_srp, 1)
     @test p_nbody_srp.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls[] == 2
-    SimulationModel.calcForceTorque(srp_model, x_a, p_nbody_srp, 1)
+    dynamics_force_torque(srp_model, x_a, p_nbody_srp, 1)
     @test p_nbody_srp.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls[] == 0
     p_nbody_srp.shared_buffers.current_time[] = 124.0
-    SimulationModel.calcForceTorque(srp_model, x_a, p_nbody_srp, 1)
+    dynamics_force_torque(srp_model, x_a, p_nbody_srp, 1)
     @test p_nbody_srp.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls[] == 1
     p_nbody_srp.shared_buffers.spice_rhs_memo_enabled[] = false
     _reset_spice_runtime_counters!(p_nbody_srp)
     _reset_spice_rhs_memo!(p_nbody_srp)
     p_nbody_srp.shared_buffers.current_time[] = 223.0
-    SimulationModel.calcForceTorque(nbody_model, x_a, p_nbody_srp, 1)
+    dynamics_force_torque(nbody_model, x_a, p_nbody_srp, 1)
     @test p_nbody_srp.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls[] == 2
-    SimulationModel.calcForceTorque(nbody_model, x_b, p_nbody_srp, 1)
+    dynamics_force_torque(nbody_model, x_b, p_nbody_srp, 1)
     @test p_nbody_srp.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls[] == 4
-    SimulationModel.calcForceTorque(srp_model, x_a, p_nbody_srp, 1)
+    dynamics_force_torque(srp_model, x_a, p_nbody_srp, 1)
     @test p_nbody_srp.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls[] == 1
 
     dyn = SimulationModel.DynamicEffectors
@@ -1497,7 +1501,7 @@
             for pos_pp in sample_positions_pp
                 pos_ii = l_pi_compare' * pos_pp
                 state = ComponentVector(pos=collect(pos_ii), vel=[0.0, 0.0, 0.0], mass=200.0)
-                force_ii, torque_pp = calcForceTorque(model_full, state, p_harmonics_compare, 1)
+                force_ii, torque_pp = dynamics_force_torque(model_full, state, p_harmonics_compare, 1)
                 acc_pp = (l_pi_compare * force_ii) / state.mass
                 ref_total_pp = SVector{3, Float64}(
                     SatelliteToolboxGravityModels.GravityModels.gravitational_acceleration(
@@ -1554,7 +1558,7 @@
     srp_interp_catmull = dyn._srp_sun_position_from_cache_j2000_m(srp_cache, 7.5)
     @test srp_interp_catmull isa SVector{3, Float64}
 
-    force_zero_srp, torque_zero_srp = calcForceTorque(SolarRadiationPressureModel(1.2, 0.0), x_a, p_nbody_srp, 1)
+    force_zero_srp, torque_zero_srp = dynamics_force_torque(SolarRadiationPressureModel(1.2, 0.0), x_a, p_nbody_srp, 1)
     @test force_zero_srp == SVector{3, Float64}(0.0, 0.0, 0.0)
     @test torque_zero_srp == SVector{3, Float64}(0.0, 0.0, 0.0)
 
@@ -1565,7 +1569,7 @@
     p_srp.shared_buffers.et_start[] = 0.0
     p_srp.shared_buffers.current_time[] = 5.0
     x_zero_dist = Float64[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 200.0]
-    force_zero_dist, torque_zero_dist = calcForceTorque(SolarRadiationPressureModel(1.2, 12.0), x_zero_dist, p_srp, 1)
+    force_zero_dist, torque_zero_dist = dynamics_force_torque(SolarRadiationPressureModel(1.2, 12.0), x_zero_dist, p_srp, 1)
     @test force_zero_dist == SVector{3, Float64}(0.0, 0.0, 0.0)
     @test torque_zero_dist == SVector{3, Float64}(0.0, 0.0, 0.0)
 
@@ -1617,8 +1621,8 @@
         p_srp.shared_buffers.current_time[] = 5.0
         x_srp_regression = Float64[7_000_000.0, 100.0, 50.0, 0.0, 0.0, 0.0, 200.0]
 
-        force_on, _ = calcForceTorque(SolarRadiationPressureModel(1.2, 12.0), x_srp_regression, p_srp, 1)
-        force_off, _ = calcForceTorque(SolarRadiationPressureModel(1.2, 0.0), x_srp_regression, p_srp, 1)
+        force_on, _ = dynamics_force_torque(SolarRadiationPressureModel(1.2, 12.0), x_srp_regression, p_srp, 1)
+        force_off, _ = dynamics_force_torque(SolarRadiationPressureModel(1.2, 0.0), x_srp_regression, p_srp, 1)
         expected_force_mag = 4.56e-6 * 1.2 * 12.0
         @test norm(force_on) > 0.0
         @test force_off == SVector{3, Float64}(0.0, 0.0, 0.0)
@@ -1674,7 +1678,7 @@
             SVector{3, Float64}[sun_dayside, sun_dayside]
         )
         x_dayside = Float64[8.0e6, 0.0, 0.0, 0.0, 0.0, 0.0, 200.0]
-        force_total, _ = calcForceTorque(
+        force_total, _ = dynamics_force_torque(
             SolarRadiationPressureModel(1.2, 12.0; direct=true, albedo=true, ir=true, planet_albedo=0.3, planet_ir_flux_w_m2=237.0),
             x_dayside,
             p_srp,
@@ -1684,7 +1688,7 @@
         @test isapprox(force_total, expected_total_force; atol=1e-12, rtol=1e-12)
 
         x_nightside = Float64[-8.0e6, 0.0, 0.0, 0.0, 0.0, 0.0, 200.0]
-        force_ir_only, _ = calcForceTorque(
+        force_ir_only, _ = dynamics_force_torque(
             SolarRadiationPressureModel(1.2, 12.0; direct=false, albedo=false, ir=true, planet_ir_flux_w_m2=237.0),
             x_nightside,
             p_srp,
@@ -2236,9 +2240,12 @@ end
     p = ODEParams(n_sats=1, args=args)
     _initialize_heat_rate_buffers!(p)
     spacecraft_dynamics!(du0, u0, p, 0.0)
-    drag_force, drag_torque = SimulationModel.calcForceTorque(AerodynamicCoefficientfM(), u0.sc[1], p, 1)
+    # The atmosphere sample at this state, written to the stage buffers.
+    atmosphere = SimulationEngine.sample_atmosphere(u0.sc[1], p, 1, 0.0; write_buffers=true)
+    drag_force, drag_torque = dynamics_force_torque(AerodynamicCoefficientfM(), u0.sc[1], p, 1)
 
-    @test p.shared_buffers.densities[1] > 0.0
+    @test atmosphere.rho_kg_m3 > 0.0
+    @test p.shared_buffers.densities[1] == atmosphere.rho_kg_m3
     @test isfinite(p.shared_buffers.temperatures[1])
     @test all(isfinite, p.shared_buffers.winds[1])
     @test norm(drag_force) > 0.0

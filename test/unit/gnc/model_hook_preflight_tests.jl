@@ -48,7 +48,7 @@ SpaceAGORA.calcControlEffect!(::HpMountedControl, u, p, t::Float64, i::Int) = no
 SpaceAGORA.actuation_mode(::HpMountedControl) = :mounted
 
 struct HpForceNoHook <: SpaceAGORA.AbstractForceTorqueModel end
-# Only the older calcForceTorque hook; counts the dynamics evaluations it serves.
+# Only the deprecated calcForceTorque hook; counts the dynamics evaluations it serves.
 mutable struct HpLegacyForceCounter <: SpaceAGORA.AbstractForceTorqueModel
     calls::Int
 end
@@ -56,6 +56,12 @@ function SpaceAGORA.calcForceTorque(m::HpLegacyForceCounter, x::AbstractVector, 
     m.calls += 1
     return HP_ZERO3, HP_ZERO3
 end
+# For the deprecation warnings: only calcForceTorque, and both hooks.
+struct HpDeprecatedForce <: SpaceAGORA.AbstractForceTorqueModel end
+SpaceAGORA.calcForceTorque(::HpDeprecatedForce, x, p, i) = (HP_ZERO3, HP_ZERO3)
+struct HpBothForce <: SpaceAGORA.AbstractForceTorqueModel end
+SpaceAGORA.calcForceTorque(::HpBothForce, x, p, i) = (HP_ZERO3, HP_ZERO3)
+SpaceAGORA.wrench(::HpBothForce, x::SpaceAGORA.StateSample, env::SpaceAGORA.EnvironmentSample, t::Float64) = (HP_ZERO3, HP_ZERO3)
 
 # Backbone declarations: a gravity core with its acceleration hook, one without,
 # and a kick without its kick hook; none has wrench or calcForceTorque. Then a
@@ -76,6 +82,8 @@ SpaceAGORA.getDensity(::HpDensitySixArgs, h::Float64, lat::Float64, lon::Float64
 struct HpDensitySevenArgs <: SpaceAGORA.AbstractDensityModel end
 SpaceAGORA.getDensity(::HpDensitySevenArgs, h::Float64, lat::Float64, lon::Float64, t::Float64, wind::Bool, p) =
     (0.0, 200.0, HP_ZERO3)
+
+include(joinpath(@__DIR__, "..", "..", "..", "templates", "force_torque_model_template.jl"))
 
 # The parts of a configuration the check reads.
 hp_args(; guidance=(), navigation=(), control=(), effectors=(), density=SpaceAGORA.NoAtmosphereModel()) = (
@@ -202,10 +210,10 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
         end
         forces = hp_package_types(SpaceAGORA.AbstractForceTorqueModel)
         @test length(forces) >= 15
+        # Every built-in force model has wrench, and none a calcForceTorque method of its own.
         for T in forces
-            wrench_ok = hp_sampled(SpaceAGORA.wrench, T)
-            legacy_ok = hasmethod(SpaceAGORA.calcForceTorque, Tuple{T, HP_X, HP_P, Int})
-            @test wrench_ok || legacy_ok
+            @test hp_sampled(SpaceAGORA.wrench, T)
+            @test !HP_SE._own_force_torque_method(T, HP_X, HP_P)
         end
         # Every built-in backbone declaration has its acceleration hook.
         cores = filter(T -> hp_declares(SpaceAGORA.gravity_backbone_structure, T), forces)
@@ -246,7 +254,8 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
         @test !has("(HpGuidanceNoHook)", "none accepts")
         @test has("navigation_model.navigation_effectors[1] (HpNavigationNoHook)", "calcNavigationEffect!")
         @test has("control_model.control_effectors[1] (HpControlTickOnly)", "calcControlForceTorque", "actuation_mode :ideal")
-        @test has("dynamics_model.dynamic_effectors[1] (HpForceNoHook)", "wrench(", "calcForceTorque(")
+        @test has("dynamics_model.dynamic_effectors[1] (HpForceNoHook)", "has no method wrench(model, x::StateSample")
+        @test !has("(HpForceNoHook)", "calcForceTorque")
         @test has("environment_model.density_model (HpDensitySixArgs)", "getDensity(", "wind::Bool, p)")
         # A :mounted effector needs no calcControlForceTorque, and calcForceTorque alone serves a force model.
         for accepted in ("HpGuidanceCounter", "HpGuidanceComponentState", "HpNavigationCounter", "HpMountedControl", "HpLegacyForceCounter", "InverseSquaredJ2GravityModel")
@@ -325,13 +334,90 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
         @test err isa ArgumentError
         @test occursin("(HpBackboneOnly) has no method gravity_backbone_acceleration_ii(", err.msg)
 
-        # With the hook present the same run integrates, through the older calcForceTorque path too.
+        # With the hook present the same run integrates, through the deprecated
+        # calcForceTorque path too, which it warns about.
         guidance = HpGuidanceCounter()
-        run_simulation(hp_run_config(guidance=(guidance,), navigation=(navigation,), effectors=(force,)); isolate_state=false)
+        @test_logs (:warn, r"HpLegacyForceCounter implements calcForceTorque") match_mode=:any run_simulation(
+            hp_run_config(guidance=(guidance,), navigation=(navigation,), effectors=(force,)); isolate_state=false)
         @test force.calls > 0
         @test guidance.calls > 0 && navigation.calls > 0
         # The first tick comes one period after the start, as the docstrings say.
         @test guidance.first_t == 10.0
         @test navigation.first_t == 15.0
+    end
+
+    @testset "deprecated calcForceTorque: warning before the run, direct calls forwarded" begin
+        # One warning per model type: a model with only calcForceTorque, and one
+        # with both hooks, whose calcForceTorque the dynamics never call. Built-in
+        # models and models without the hook give none.
+        args = hp_args(effectors=(HpDeprecatedForce(), HpBothForce(), HpDeprecatedForce(),
+            HP_SM.InverseSquaredJ2GravityModel()))
+        found = HP_SE._deprecated_model_hooks(args, HP_CALL)
+        @test first.(found) == [(HpDeprecatedForce, :calcForceTorque), (HpBothForce, :calcForceTorque)]
+        @test occursin("HpDeprecatedForce implements calcForceTorque(model, x, p, i), which is deprecated", last(found[1]))
+        @test occursin("x.spacecraft_index", last(found[1]))
+        @test occursin("HpBothForce implements both wrench and calcForceTorque", last(found[2]))
+        @test occursin("never used", last(found[2]))
+        @test isempty(HP_SE._deprecated_model_hooks(hp_args(effectors=(HP_SM.InverseSquaredJ2GravityModel(), HpBackboneCore())), HP_CALL))
+        # The force template implements wrench and passes without a warning.
+        template = ExampleForceTorqueModelTemplate.ExampleForceTorqueModel(HP_ZERO3, HP_ZERO3)
+        @test isempty(HP_SE._missing_model_hooks(hp_args(effectors=(template,)), HP_CALL))
+        @test isempty(HP_SE._deprecated_model_hooks(hp_args(effectors=(template,)), HP_CALL))
+        # The check warns once per type and hook, however often it runs.
+        @test_logs (:warn, r"^HpDeprecatedForce implements") (:warn, r"^HpBothForce implements") begin
+            HP_SE._validate_model_hooks!(args, HP_U0, HP_PARAMS)
+            HP_SE._validate_model_hooks!(args, HP_U0, HP_PARAMS)
+        end
+        # Under --depwarn=error the warning is an error.
+        helper = joinpath(pkgdir(SpaceAGORA), "src", "foundation", "core", "interfaces", "hook_deprecation.jl")
+        script = "include($(repr(helper))); try HookDeprecation._hook_deprecation((Int, :hook), \"msg\"); " *
+                 "print(\"no error\") catch err; print(err isa ErrorException && err.msg == \"msg\") end"
+        @test read(`$(Base.julia_cmd()) --startup-file=no --depwarn=error -e $script`, String) == "true"
+        @test read(`$(Base.julia_cmd()) --startup-file=no --depwarn=no -e $script`, String) == "no error"
+
+        # A direct call on a built-in model evaluates it as the dynamics do.
+        p = HP_SM.ODEParams(n_sats=1, args=HP_FIXTURE)
+        p.shared_buffers.current_time[] = 30.0
+        for model in (HP_SM.InverseSquaredJ2GravityModel(), HP_SM.InverseSquaredGravityModel(), HP_SM.GravityGradientTorqueModel())
+            sample = HP_SE.build_state_sample(HP_U0.sc[1], HP_FIXTURE.dynamics_model.spacecraft[1], false, 1)
+            expected = HP_SE._evaluate_dynamic_effector(model, HP_U0.sc[1], sample, p, 1, 30.0)
+            @test SpaceAGORA.calcForceTorque(model, HP_U0.sc[1], p, 1) === expected
+        end
+        # A direct call builds the environment from its own `x`, not from what a
+        # right-hand side prefilled for another state: the buffers below hold
+        # state A's planet frame and a buffered density, and the calls pass
+        # state B. A direct call must equal the evaluation at B with nothing
+        # prefilled. This run has no atmosphere, so the buffered density alone
+        # would give the aerodynamic model a drag, and its prefilled planet-frame
+        # position is A's; the dynamics' path reads both. J2 reads only the
+        # frame rotation, which is the same for A and B at one time.
+        HP_SE._initialize_save_cache_buffers!(p)
+        spacecraft = HP_FIXTURE.dynamics_model.spacecraft[1]
+        state_a = HP_U0.sc
+        x_b = copy(HP_U0.sc[1])
+        x_b.pos .= 1.01 .* x_b.pos
+        x_b.vel .= 0.99 .* x_b.vel
+        sample_b = HP_SE.build_state_sample(x_b, spacecraft, false, 1)
+        models = (HP_SM.InverseSquaredJ2GravityModel(), HP_SM.AerodynamicCoefficientfM())
+        fresh_b = map(model -> HP_SE._evaluate_dynamic_effector(model, x_b, sample_b, p, 1, 30.0), models)
+        @test iszero(last(fresh_b)[1])
+        sb = p.shared_buffers
+        HP_SE._prefill_environment_samples!(p, 30.0, state_a; atmosphere=false)
+        sb.densities[1] = 1.0e-6
+        sb.temperatures[1] = 220.0
+        sb.density_sample_t[1] = 30.0
+        sb.rhs_planet_frame_prefilled[] = true
+        sb.rhs_atmosphere_prefilled[] = true
+        try
+            for (model, expected) in zip(models, fresh_b)
+                @test SpaceAGORA.calcForceTorque(model, x_b, p, 1) === expected
+            end
+            @test HP_SE._evaluate_dynamic_effector(last(models), x_b, sample_b, p, 1, 30.0) !== last(fresh_b)
+        finally
+            sb.rhs_planet_frame_prefilled[] = false
+            sb.rhs_atmosphere_prefilled[] = false
+        end
+        # A model with neither hook raises a MethodError.
+        @test_throws MethodError SpaceAGORA.calcForceTorque(HpForceNoHook(), HP_U0.sc[1], p, 1)
     end
 end

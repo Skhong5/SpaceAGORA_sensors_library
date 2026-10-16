@@ -15,8 +15,17 @@
         env = sample_environment_with_reusable_buffers(req, effector, sc_view, p, sat_idx, t)
         return SimulationModel.wrench_caching!(effector, state_sample, env, t, p, sat_idx)
     end
-    return SimulationModel.calcForceTorque(effector, sc_view, p, sat_idx)
+    return _force_torque_without_wrench(effector, sc_view, p, sat_idx)
 end
+
+# Models without `wrench`: a user model's own method of the deprecated
+# calcForceTorque, which the pre-run check warns about. The harmonics model has
+# `wrench` but is evaluated here, through its kernel with preallocated
+# workspaces (see `_wrench_method_available`).
+@inline _force_torque_without_wrench(effector, sc_view, p, sat_idx::Int) =
+    SimulationModel.calcForceTorque(effector, sc_view, p, sat_idx)
+@inline _force_torque_without_wrench(effector::SimulationModel.GravitationalHarmonicsModel, sc_view, p, sat_idx::Int) =
+    SimulationModel.DynamicEffectors.PerturbationEffectors._harmonics_force_torque(effector, sc_view, p, sat_idx)
 
 @inline function _solver_partition_validated(effector)::Symbol
     partition = SimulationModel.solver_partition(effector)
@@ -1276,7 +1285,7 @@ end
 # primary is at the frame origin), so the win here is purely eliminating
 # per-satellite Polyester/flat-queue dispatch for a kernel whose body is a few
 # FLOPs — too cheap to ever amortise task-spawn overhead. Delegates to the same
-# `_inverse_squared_gravity_accel` helper used by `calcForceTorque`/`wrench`, so
+# `_inverse_squared_gravity_accel` helper the model's `wrench` uses, so
 # results are bit-identical to the per-satellite path.
 function _accumulate_invsq_flat_batch!(
     slots::Array{Float64, 3},

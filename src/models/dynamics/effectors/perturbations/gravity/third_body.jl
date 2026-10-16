@@ -40,7 +40,7 @@ const _HARMONICS_MODEL_CACHE = Dict{Tuple{Int64, Int64, String, Symbol, Bool, Sy
 #
 # Safe to share the whole returned model across concurrent callers: `A`, `R`, `I`,
 # `N1`, `N2`, `VR01`, `VR11`, `sqrt_2n_plus_3`, `C`, `S` are precomputed, read-only
-# recurrence/coefficient tables — nothing in `calcForceTorque`/`wrench` ever mutates
+# recurrence/coefficient tables — nothing in the force kernels ever mutates
 # them. The actual per-call mutable scratch space comes from a separate, properly
 # pooled/per-satellite workspace (`_make_harmonics_scratch_workspace`,
 # `_harmonics_workspace_for_sat!`), never from the model's own fields.
@@ -58,7 +58,7 @@ end
 
 Load degree/order-limited spherical-harmonics gravity coefficients from `coefficients_file`.
 The CSV coefficients are converted at load time into the fully normalized convention expected
-by the Pines recurrence used in `calcForceTorque`.
+by the Pines recurrence used by the force kernels.
 
 Accepted `coefficient_normalization` values are:
 - `:full` or `:fully_normalized`
@@ -288,66 +288,6 @@ function GravitationalHarmonicsModel(
     return lock(_HARMONICS_MODEL_CACHE_LOCK) do
         get!(_HARMONICS_MODEL_CACHE, cache_key, model)::GravitationalHarmonicsModel{P}
     end
-end
-
-"""
-    calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-"""
-function calcForceTorque(model::NBodyGravityModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
-    mass = Float64(x[7])
-    primary_body_name = _spice_query_name(model.primary_body_name)
-    et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
-    force_ii = MVector{3, Float64}(0.0, 0.0, 0.0) # Initialize force vector
-    n_bodies = length(model.body_names)
-    decision = _multibody_thread_decision(n_bodies; heavy_work=true)
-    use_threads = decision.use_threads
-    n_workers = use_threads ? ParallelPolicy.thread_worker_count(n_bodies, decision.allotment) : 1
-    workspace = _nbody_workspace_for_sat!(param, i, n_bodies, n_workers)
-    pos_primary_k_all = workspace.pos_primary_k_all
-    nbody_cache_entry = param.shared_buffers.nbody_ephemeris_cache[]
-    spice_rhs_memo_enabled = param.shared_buffers.spice_rhs_memo_enabled[]
-    spice_rhs_memo = param.shared_buffers.spice_rhs_memo
-    for (k, body_name) in pairs(model.body_names)
-        body_name_spice = _spice_query_name(body_name)
-        pos_primary_body_j2000_m = if nbody_cache_entry isa NBodyEphemerisCache
-            cached = _nbody_body_position_from_cache_j2000_m(nbody_cache_entry, et, body_name_spice, primary_body_name)
-            cached === nothing ? _nbody_body_position_from_spice_j2000_m(body_name_spice, et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls) : cached
-        else
-            _nbody_body_position_from_spice_j2000_m(body_name_spice, et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls)
-        end
-        pos_primary_k_all[k] = pos_primary_body_j2000_m
-    end
-
-    started_ns = time_ns()
-    # Collect-then-sum: each body's contribution goes into its own slot (in
-    # parallel or not), then the slots are summed in body order on this thread.
-    # Serial and threaded evaluation are bit-identical by construction.
-    body_force_ii = workspace.body_force_ii
-    if use_threads
-        ParallelPolicy.threaded_collect_persistent!(:rhs_nbody, body_force_ii, n_bodies, decision.allotment) do k
-            @inbounds _nbody_body_force_ii(pos_primary_k_all[k], pos_ii, mass, model.body_mus[k])
-        end
-    else
-        @inbounds for k in 1:n_bodies
-            body_force_ii[k] = _nbody_body_force_ii(pos_primary_k_all[k], pos_ii, mass, model.body_mus[k])
-        end
-    end
-    @inbounds for k in 1:n_bodies
-        force_ii .+= body_force_ii[k]
-    end
-    # Per satellite, and under satellite_batch on a Polyester worker task: pass
-    # the run's context rather than relying on task-local lookup.
-    ParallelPolicy.record_policy_observation!(
-        :multibody;
-        mode=decision.mode,
-        num_items=n_bodies,
-        use_threads=use_threads,
-        elapsed_ns=(time_ns() - started_ns),
-        ctx=ParallelPolicy.policy_context_hint(param)
-    )
-
-    return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
 @inline environment_requirements(model::NBodyGravityModel) = EffectorEnvironmentRequirements(third_body_names=model.body_names)

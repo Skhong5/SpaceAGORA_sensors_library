@@ -14,7 +14,7 @@ module PerturbationEffectors
     # Shared geodetic conversion for the IGRF field option.
     using ...FrameTransforms: rtolatlong
     using StaticArrays
-    import ..DynamicEffectors: calcForceTorque, wrench, environment_requirements
+    import ..DynamicEffectors: wrench, environment_requirements
     import ...EffectorSampling: gravity_backbone_structure, gravity_backbone_acceleration_ii, gravity_backbone_relative_acceleration_ii
     import ...EffectorSampling: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 

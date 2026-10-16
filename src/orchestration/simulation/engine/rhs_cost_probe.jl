@@ -2,7 +2,7 @@
 #
 # Lives here rather than in ParallelCost because probing means calling
 # `_evaluate_dynamic_effector`, which needs live `ODEParams`, populated prefill
-# buffers, and the engine's wrench/calcForceTorque dispatch -- all of which sit
+# buffers, and the engine's effector dispatch -- all of which sit
 # above SimulationModel. ParallelCost owns the estimators and the result types;
 # this file owns the driver that feeds them real effectors.
 #

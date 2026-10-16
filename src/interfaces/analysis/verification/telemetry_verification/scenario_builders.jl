@@ -135,16 +135,6 @@ function SimulationModel.wrench_caching!(
     return model.cd_scale .* f, model.cd_scale .* τ
 end
 
-function SimulationModel.calcForceTorque(
-    model::ScaledAerodynamicCoefficientfM,
-    x::AbstractVector,
-    param::SimulationModel.ODEParams,
-    i::Int64
-)
-    f, τ = SimulationModel.calcForceTorque(model.model, x, param, i)
-    return model.cd_scale .* f, model.cd_scale .* τ
-end
-
 function _scenario_dynamic_effectors(
     cfg::AbstractScenarioConfig,
     planet,

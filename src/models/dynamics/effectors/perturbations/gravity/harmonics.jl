@@ -1,5 +1,5 @@
 """
-    calcForceTorque(model::GravitationalHarmonicsModel, x, param, i)
+    wrench(model::GravitationalHarmonicsModel, x, env, t)
 
 Compute spherical-harmonics gravity using coefficients stored in the model's internal fully
 normalized convention. By default this includes the inverse-square central term, so it should
@@ -211,7 +211,10 @@ end
     return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-function calcForceTorque(model::GravitationalHarmonicsModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+# The force and torque the dynamics apply for this model, from spacecraft `i`'s
+# state view at the run's current time, with the per-spacecraft workspaces the
+# `wrench` method does not reuse.
+function _harmonics_force_torque(model::GravitationalHarmonicsModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
     L_PI = _harmonics_lpi_at!(model, param, et)
     return _harmonics_calcforcetorque_with_lpi(model, x, param, i, L_PI)

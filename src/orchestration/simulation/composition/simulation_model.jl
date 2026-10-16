@@ -36,6 +36,7 @@ include(joinpath(@__DIR__, "..", "..", "..", "foundation", "core", "types", "abs
 @reexport using .AbstractTypes
 include(joinpath(@__DIR__, "..", "..", "..", "foundation", "core", "types", "effector_sampling.jl"))
 @reexport using .EffectorSampling
+include(joinpath(@__DIR__, "..", "..", "..", "foundation", "core", "interfaces", "hook_deprecation.jl"))
 
 include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "command_types.jl"))
 @reexport using .CommandTypes

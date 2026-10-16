@@ -5,9 +5,20 @@ module DynamicEffectors
     """
         calcForceTorque(model, x, p, i) -> (force_n, torque_n_m)
 
-    Stable extension hook for custom [`AbstractForceTorqueModel`](@ref)
-    implementations. Extend this method for package or user models that contribute
-    translational and rotational wrench terms to the simulation RHS.
+    Deprecated: implement `wrench(model, x::StateSample, env::EnvironmentSample,
+    t::Float64)` instead. `calcForceTorque` will be removed in SpaceAGORA 0.5.0.
+
+    The older force and torque hook for an [`AbstractForceTorqueModel`](@ref).
+    `x` is the spacecraft's state view (`x.pos`, `x.vel`, `x.mass`, and with
+    attitude propagation `x.q` and `x.ω`), `p` the run's parameters and `i` the
+    spacecraft's position in the run (from 1). It returns the force in the
+    inertial frame in N and the torque in the bus frame in N·m. The dynamics call
+    a model's own `calcForceTorque` method only when the model has no `wrench`
+    method, and the run warns about it before integration.
+
+    Called on a model with `wrench`, as every built-in model is, it evaluates
+    that `wrench` at the run's current time with the state sample and
+    environment built from `x`, and writes spacecraft `i`'s drag diagnostics.
     """
     function calcForceTorque end
     using ..EffectorSampling: wrench, wrench_caching!, environment_requirements, solver_partition

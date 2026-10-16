@@ -121,37 +121,6 @@ Body-frame eddy-current damping torque `k_e · B × (B × ω)` [N·m].
     return k_e .* cross(B_body, cross(B_body, ω_body))
 end
 
-function calcForceTorque(model::EddyCurrentDampingModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    zero_wrench = (SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
-    if !param.args.mission_configuration.orientation_sim
-        return zero_wrench
-    end
-    if i < 1 || i > length(param.args.dynamics_model.spacecraft)
-        return zero_wrench
-    end
-    if !hasproperty(x, :q) || !hasproperty(x, :ω)
-        return zero_wrench
-    end
-
-    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
-    et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
-    planet = param.args.environment_model.planet
-    l_pi = planet_frame_lpi(planet, et, param.args.environment_model.ephemerides_model)
-    pos_pp = l_pi * pos_ii
-    if model.field_model === :igrf
-        alt_m, lat_rad, lon_rad = rtolatlong(pos_pp, planet)
-        B_ii = _magnetic_field_inertial(model, SMatrix{3, 3, Float64, 9}(l_pi), pos_pp, lat_rad, lon_rad, alt_m)
-    else
-        B_ii = get_magnetic_field_dipole(pos_pp, MMatrix{3, 3, Float64}(l_pi))
-    end
-
-    q_ib = getproperty(x, :q)
-    q_body = SVector{4, Float64}(Float64(q_ib[1]), Float64(q_ib[2]), Float64(q_ib[3]), Float64(q_ib[4]))
-    B_body = rot(q_body) * B_ii
-    ω_body = SVector{3, Float64}(Float64.(getproperty(x, :ω))...)
-    return SVector{3, Float64}(0.0, 0.0, 0.0), eddy_damping_torque(model.k_e, B_body, ω_body)
-end
-
 @inline environment_requirements(::EddyCurrentDampingModel) = EffectorEnvironmentRequirements(planet_frame=true)
 
 @inline function wrench(
@@ -260,41 +229,6 @@ end
         end
     end
     return m_total
-end
-
-function calcForceTorque(model::MagneticTorqueRodModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    zero_wrench = (SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
-    if !param.args.mission_configuration.orientation_sim
-        return zero_wrench
-    end
-    if i < 1 || i > length(param.args.dynamics_model.spacecraft)
-        return zero_wrench
-    end
-    if !hasproperty(x, :q)
-        return zero_wrench
-    end
-
-    spacecraft = param.args.dynamics_model.spacecraft[i]
-    m_body = _total_dipole_moment_body(spacecraft)
-    iszero(m_body) && return zero_wrench
-
-    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
-    et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
-    planet = param.args.environment_model.planet
-    l_pi = planet_frame_lpi(planet, et, param.args.environment_model.ephemerides_model)
-    pos_pp = l_pi * pos_ii
-    if model.field_model === :igrf
-        alt_m, lat_rad, lon_rad = rtolatlong(pos_pp, planet)
-        B_ii = _magnetic_field_inertial(model, SMatrix{3, 3, Float64, 9}(l_pi), pos_pp, lat_rad, lon_rad, alt_m)
-    else
-        B_ii = get_magnetic_field_dipole(pos_pp, MMatrix{3, 3, Float64}(l_pi))
-    end
-
-    q_ib = getproperty(x, :q)
-    q_body = SVector{4, Float64}(Float64(q_ib[1]), Float64(q_ib[2]), Float64(q_ib[3]), Float64(q_ib[4]))
-    B_body = rot(q_body) * B_ii
-    torque_body = calculate_magnetic_torque(m_body, B_body)
-    return SVector{3, Float64}(0.0, 0.0, 0.0), torque_body
 end
 
 @inline environment_requirements(::MagneticTorqueRodModel) = EffectorEnvironmentRequirements(planet_frame=true)
