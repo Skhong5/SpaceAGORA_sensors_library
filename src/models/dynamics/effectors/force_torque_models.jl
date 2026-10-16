@@ -16,10 +16,9 @@ module DynamicEffectors
     a model's own `calcForceTorque` method only when the model has no `wrench`
     method, and the run warns about it before integration.
 
-    Calling `calcForceTorque` on a model that implements `wrench`, as every
-    built-in model does, evaluates `wrench` with the state sample and
-    environment the dynamics build for spacecraft `i` at the run's current
-    time, `p.shared_buffers.current_time[]`.
+    Called on a model with `wrench`, as every built-in model is, it evaluates
+    that `wrench` at the run's current time with the state sample and
+    environment built from `x`, and writes spacecraft `i`'s drag diagnostics.
     """
     function calcForceTorque end
     using ..EffectorSampling: wrench, wrench_caching!, environment_requirements, solver_partition

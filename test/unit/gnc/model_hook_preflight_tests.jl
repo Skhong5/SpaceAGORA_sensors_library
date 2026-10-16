@@ -383,6 +383,40 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
             expected = HP_SE._evaluate_dynamic_effector(model, HP_U0.sc[1], sample, p, 1, 30.0)
             @test SpaceAGORA.calcForceTorque(model, HP_U0.sc[1], p, 1) === expected
         end
+        # A direct call builds the environment from its own `x`, not from what a
+        # right-hand side prefilled for another state: the buffers below hold
+        # state A's planet frame and a buffered density, and the calls pass
+        # state B. A direct call must equal the evaluation at B with nothing
+        # prefilled. This run has no atmosphere, so the buffered density alone
+        # would give the aerodynamic model a drag, and its prefilled planet-frame
+        # position is A's; the dynamics' path reads both. J2 reads only the
+        # frame rotation, which is the same for A and B at one time.
+        HP_SE._initialize_save_cache_buffers!(p)
+        spacecraft = HP_FIXTURE.dynamics_model.spacecraft[1]
+        state_a = HP_U0.sc
+        x_b = copy(HP_U0.sc[1])
+        x_b.pos .= 1.01 .* x_b.pos
+        x_b.vel .= 0.99 .* x_b.vel
+        sample_b = HP_SE.build_state_sample(x_b, spacecraft, false, 1)
+        models = (HP_SM.InverseSquaredJ2GravityModel(), HP_SM.AerodynamicCoefficientfM())
+        fresh_b = map(model -> HP_SE._evaluate_dynamic_effector(model, x_b, sample_b, p, 1, 30.0), models)
+        @test iszero(last(fresh_b)[1])
+        sb = p.shared_buffers
+        HP_SE._prefill_environment_samples!(p, 30.0, state_a; atmosphere=false)
+        sb.densities[1] = 1.0e-6
+        sb.temperatures[1] = 220.0
+        sb.density_sample_t[1] = 30.0
+        sb.rhs_planet_frame_prefilled[] = true
+        sb.rhs_atmosphere_prefilled[] = true
+        try
+            for (model, expected) in zip(models, fresh_b)
+                @test SpaceAGORA.calcForceTorque(model, x_b, p, 1) === expected
+            end
+            @test HP_SE._evaluate_dynamic_effector(last(models), x_b, sample_b, p, 1, 30.0) !== last(fresh_b)
+        finally
+            sb.rhs_planet_frame_prefilled[] = false
+            sb.rhs_atmosphere_prefilled[] = false
+        end
         # A model with neither hook raises a MethodError.
         @test_throws MethodError SpaceAGORA.calcForceTorque(HpForceNoHook(), HP_U0.sc[1], p, 1)
     end

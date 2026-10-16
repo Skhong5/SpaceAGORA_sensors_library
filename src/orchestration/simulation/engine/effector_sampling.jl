@@ -463,12 +463,15 @@ end
 end
 
 # A direct call of the deprecated calcForceTorque on a model that implements
-# `wrench` (every built-in model) evaluates the model as the dynamics do:
-# `wrench_caching!` with the state sample and environment they build for
-# spacecraft `i`, at the run's current time, so diagnostics such as the drag
-# caches are written as before. The dynamics call `wrench_caching!` themselves,
-# so they never take this path for such a model; for a model with neither
-# method it raises the MethodError the pre-run check reports first.
+# `wrench` (every built-in model) evaluates `wrench_caching!` for spacecraft `i`
+# at the run's current time, so diagnostics such as the drag caches are written
+# as the removed methods wrote them; a call with another state overwrites them
+# until the next right-hand-side evaluation. The state sample and the
+# environment are both built from `x`: a direct call may pass a state other than
+# the one the right-hand side is evaluating, so the right-hand side's prefilled
+# environment buffers are not read. The dynamics call `wrench_caching!`
+# themselves, so they never take this path for such a model; for a model with
+# neither method it raises the MethodError the pre-run check reports first.
 function SimulationModel.calcForceTorque(model, x, p, i)
     hasmethod(SimulationModel.wrench,
         Tuple{typeof(model), SimulationModel.StateSample, SimulationModel.EnvironmentSample, Float64}) ||
@@ -477,7 +480,7 @@ function SimulationModel.calcForceTorque(model, x, p, i)
     t = Float64(p.shared_buffers.current_time[])
     sample = build_state_sample(x, p.args.dynamics_model.spacecraft[sat_idx],
         p.args.mission_configuration.orientation_sim, sat_idx)
-    req = SimulationModel.environment_requirements(model)
-    env = sample_environment_with_reusable_buffers(req, model, x, p, sat_idx, t)
+    env = sample_environment(SimulationModel.environment_requirements(model), model, x, p, sat_idx, t;
+        write_buffers=false)
     return SimulationModel.wrench_caching!(model, sample, env, t, p, sat_idx)
 end

@@ -73,8 +73,8 @@ state/environment data into the effector; `x.spacecraft_index` is the
 spacecraft's position in the run. A model with only `calcForceTorque` still runs
 through it, and the run warns before integration (an error under
 `julia --depwarn=error`). Calling `calcForceTorque` on a model that implements
-`wrench`, as every built-in model does, returns the force and torque the
-dynamics apply.
+`wrench`, as every built-in model does, returns that model's `wrench` for the
+state `x` it is given.
 Override `solver_partition` only if the effector should move to the implicit
 side of `split_imex`; the default is `:explicit`.
 Override the gravity-backbone hooks only if the effector should participate in
