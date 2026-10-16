@@ -89,6 +89,7 @@ end
     mktempdir() do fixture
         _copy_into!(fixture, repo, "src")
         _copy_into!(fixture, repo, "Project.toml")
+        _copy_into!(fixture, repo, joinpath("build", "build_sysimage.jl"))
         _copy_into!(fixture, repo, joinpath("packages", "SpaceAGORAHYPR", "src"))
 
         @testset "Project compat gate" begin
@@ -118,6 +119,55 @@ end
             end
             _with_text(project_path, without("Base64")) do
                 @test isnothing(run_gate().failure)
+            end
+            @test isnothing(run_gate().failure)
+        end
+
+        @testset "Sysimage package lists gate" begin
+            run_gate = _gate_runner(repo, fixture, "ci_sysimage_package_lists_gate.jl")
+            @test isnothing(run_gate().failure)
+
+            builder = joinpath(fixture, "build", "build_sysimage.jl")
+            original = read(builder, String)
+            prefix = "Sysimage package lists in build/build_sysimage.jl name packages that are not " *
+                     ":SpaceAGORA or a Project.toml [deps] entry: "
+            full_head = "const FULL_PACKAGES = [\n"
+            ci_head = "const CI_PACKAGES = [\n"
+            @test occursin(full_head, original)
+            @test occursin(ci_head, original)
+
+            # The two names both lists carried after their dependencies were removed.
+            stale = "    :Quaternions,\n    :SatelliteToolbox,\n"
+            both = replace(replace(original, full_head => full_head * stale; count=1), ci_head => ci_head * stale; count=1)
+            _with_text(builder, both) do
+                @test _failed_with(run_gate(), prefix *
+                    "FULL_PACKAGES: Quaternions, SatelliteToolbox; CI_PACKAGES: Quaternions, SatelliteToolbox")
+            end
+            # Each list is checked on its own.
+            _with_text(builder, replace(original, ci_head => ci_head * "    :Quaternions,\n"; count=1)) do
+                @test _failed_with(run_gate(), prefix * "CI_PACKAGES: Quaternions")
+            end
+            _with_text(builder, replace(original, full_head => full_head * "    :SatelliteToolbox,\n"; count=1)) do
+                @test _failed_with(run_gate(), prefix * "FULL_PACKAGES: SatelliteToolbox")
+            end
+            # A list that is not a literal vector of symbols, or is missing, cannot be checked: fail.
+            _with_text(builder, replace(original, ci_head => "const CI_PACKAGES = Symbol[\n"; count=1)) do
+                @test _failed_with(run_gate(),
+                    "build/build_sysimage.jl: `const CI_PACKAGES` must be a literal vector of symbols")
+            end
+            _with_text(builder, replace(original, "const FULL_PACKAGES = [" => "const FULL_PACKAGES_RENAMED = ["; count=1)) do
+                @test _failed_with(run_gate(),
+                    "build/build_sysimage.jl must define `const FULL_PACKAGES` exactly once; found 0")
+            end
+
+            # Dropping a dependency from the project makes its builder entries stale.
+            project_path = joinpath(fixture, "Project.toml")
+            project = read(project_path, String)
+            without_roots = replace(project, r"^Roots = .*\n"m => ""; count=1)
+            @test without_roots != project
+            @test !haskey(TOML.parse(without_roots)["deps"], "Roots")
+            _with_text(project_path, without_roots) do
+                @test _failed_with(run_gate(), prefix * "FULL_PACKAGES: Roots; CI_PACKAGES: Roots")
             end
             @test isnothing(run_gate().failure)
         end
