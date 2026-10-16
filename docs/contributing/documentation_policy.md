@@ -74,6 +74,8 @@ Examples already in the repo:
 
 - assets are anchored to `data/assets_manifest.toml`
 - public API docs are anchored to `docs/public_api_symbols.jl`
+- the extension hook reference is generated from `docs/extension_hooks.jl` and
+  checked by `test/gates/ci_extension_hook_reference_gate.jl`
 - Wave 5 docs are anchored by `test/gates/ci_hpc_extensibility_docs_gate.jl`
 - terminal commands in user docs should use cross-platform entrypoints or
   provide shell-specific variants where syntax differs

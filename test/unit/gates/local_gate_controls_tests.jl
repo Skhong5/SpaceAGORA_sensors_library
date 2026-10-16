@@ -265,6 +265,184 @@ end
             @test isnothing(run_gate().failure)
         end
 
+        @testset "Extension hook reference gate" begin
+            for rel in (joinpath("docs", "extension_hooks.jl"), joinpath("docs", "public_api_symbols.jl"),
+                        joinpath("docs", "src"))
+                _copy_into!(fixture, repo, rel)
+            end
+            run_gate = _gate_runner(repo, fixture, "ci_extension_hook_reference_gate.jl")
+            @test isnothing(run_gate().failure)
+            registry = joinpath(fixture, "docs", "extension_hooks.jl")
+            original = read(registry, String)
+            rejects(result, fragment) = _failed_with(result, "Extension hook reference gate failed") &&
+                any(v -> occursin(fragment, v), result.violations)
+            function with_registry(f, pairs::Pair...)
+                edited = original
+                for (needle, replacement) in pairs
+                    @test occursin(needle, edited)
+                    edited = replace(edited, needle => replacement; count=1)
+                end
+                _with_text(f, registry, edited)
+            end
+            # Faults go into rows and list heads that later pull requests leave alone,
+            # never into the known gaps, which those pull requests close.
+            row(symbol) = match(Regex("        hook\\(:" * symbol * ";.*?\\),\\n", "s"), original).match
+            in_row(symbol, change::Pair) = row(symbol) => replace(row(symbol), change; count=1)
+            not_hooks_head = "const NOT_HOOKS = [\n"
+            gaps_head = "const KNOWN_GAPS = [\n"
+            # Rule 1: a row for a name SpaceAGORA does not export.
+            with_registry(in_row("touchdown_spec", "hook(:touchdown_spec;" => "hook(:touchdown_specs;")) do
+                @test rejects(run_gate(), "touchdown_specs: not exported from SpaceAGORA.")
+            end
+            # Rule 2: an exported hook with no row, NOT_HOOKS entries that are rows or
+            # outside the hook sections, and a renamed hook section.
+            with_registry(row("touchdown_spec") => "") do
+                @test rejects(run_gate(), "touchdown_spec (\"Model Extension Hooks\"): exported function with no registry row")
+            end
+            with_registry(not_hooks_head => not_hooks_head * "    (symbol = :wrench, reason = \"probe\"),\n    (symbol = :run_simulation, reason = \"probe\"),\n") do
+                rejected = run_gate()
+                @test rejects(rejected, "wrench: both a registry row and in NOT_HOOKS.")
+                @test rejects(rejected, "NOT_HOOKS lists run_simulation, which is not an exported function in a hook section.")
+            end
+            with_registry("    \"Sensors\",\n" => "    \"Sensor\",\n") do
+                rejected = run_gate()
+                @test rejects(rejected, "HOOK_SECTIONS names \"Sensor\"")
+                @test rejects(rejected, "sensor_measure: listed in \"Sensors\", which is not in HOOK_SECTIONS.")
+            end
+            # Rule 3: a signature that is not the docstring's first line.
+            wrench_signature = "wrench(model, x::StateSample, env::EnvironmentSample, t::Float64) -> (force_ii, torque_body)"
+            with_registry(in_row("wrench", wrench_signature => "wrench(model, x, env, t) -> (force_ii, torque_body)")) do
+                @test rejects(run_gate(), "wrench: signature cell \"wrench(model, x, env, t) -> (force_ii, torque_body)\" differs from the docstring's first line")
+            end
+            # Rule 4: arity, dispatch argument and both directions of the fallback.
+            with_registry(in_row("wrench", wrench_signature => "wrench(model, x, env) -> (force_ii, torque_body)")) do
+                @test rejects(run_gate(), "wrench: no method takes 3 positional arguments")
+            end
+            with_registry(in_row("wrench", wrench_signature => "wrench(m, x, env, t) -> (force_ii, torque_body)")) do
+                @test rejects(run_gate(), "wrench: the signature names no dispatch argument")
+            end
+            with_registry(in_row("environment_requirements", "fallback = \"returns no sampled fields\"" => "fallback = \"none\"")) do
+                @test rejects(run_gate(), "environment_requirements: fallback cell says none, but")
+            end
+            with_registry(in_row("wrench", "fallback = \"none\"" => "fallback = \"returns `0.0`\"")) do
+                @test rejects(run_gate(), "wrench: fallback cell says \"returns `0.0`\", but no method with an untyped or public abstract model takes 4 positional arguments.")
+            end
+            with_registry(in_row("environment_requirements", "fallback = \"returns no sampled fields\"" => "fallback = \"defaults\"")) do
+                @test rejects(run_gate(), "environment_requirements: fallback cell must be none")
+            end
+            # Rule 5: deprecated rows whose docstring does not say so, with a stray index-word gap,
+            # and with a missing replacement and the wrong removal release.
+            with_registry(in_row("wrench", "hook(:wrench; shape = \"R\"," =>
+                              "hook(:wrench; shape = \"R\", status = \"deprecated\", replacement = :environment_requirements, removed_in = \"0.5.0\","),
+                          gaps_head => gaps_head * "    (symbol = :wrench, rule = :index_word, reason = \"probe\"),\n") do
+                rejected = run_gate()
+                @test rejects(rejected, "wrench: the docstring's first paragraph does not open with \"Deprecated\".")
+                @test rejects(rejected, "wrench: the docstring's first paragraph does not name the replacement environment_requirements.")
+                @test rejects(rejected, "wrench: the docstring does not give the removal release 0.5.0.")
+                @test rejects(rejected, "wrench: deprecated rows need no :index_word entry in KNOWN_GAPS.")
+            end
+            with_registry(in_row("wrench", "hook(:wrench; shape = \"R\"," =>
+                              "hook(:wrench; shape = \"R\", status = \"deprecated\", replacement = :wrenches, removed_in = \"0.4.0\",")) do
+                rejected = run_gate()
+                @test rejects(rejected, "wrench: a deprecated row must name a replacement that is another registry row.")
+                @test rejects(rejected, "wrench: removed_in must be 0.5.0.")
+            end
+            # Rule 6: a missing page, a page that does not name the hook, no page without a gap,
+            # an unknown gap rule, and a deleted page.
+            with_registry(in_row("touchdown_spec", "page = \"user/stop_conditions.md\"" => "page = \"user/missing_page.md\"")) do
+                @test rejects(run_gate(), "touchdown_spec: page docs/src/user/missing_page.md does not exist")
+            end
+            with_registry(in_row("environment_requirements", "page = \"user/custom_effector.md\"" => "page = \"publications.md\"")) do
+                @test rejects(run_gate(), "environment_requirements: page docs/src/publications.md does not name the hook.")
+            end
+            with_registry(in_row("wrench", "page = \"user/custom_effector.md\"" => "page = nothing"),
+                          gaps_head => gaps_head * "    (symbol = :wrench, rule = :unknown, reason = \"probe\"),\n") do
+                rejected = run_gate()
+                @test rejects(rejected, "wrench: no page; name the page that explains it.")
+                @test rejects(rejected, "KNOWN_GAPS entry wrench: unknown rule :unknown.")
+            end
+            actuator_page = joinpath(fixture, "docs", "src", "user", "custom_actuator.md")
+            actuator_text = read(actuator_page, String)
+            rm(actuator_page)
+            try
+                @test rejects(run_gate(), "actuator_wrench: page docs/src/user/custom_actuator.md does not exist")
+            finally
+                write(actuator_page, actuator_text)
+            end
+            # Rule 7: `sat_idx` in a current row, and an index-word gap that no longer applies.
+            with_registry(in_row("touchdown_spec", "touchdown_spec(effector, spacecraft_index::Int)" => "touchdown_spec(effector, sat_idx::Int)")) do
+                @test rejects(run_gate(), "touchdown_spec: a current row names the spacecraft index sat_idx; use spacecraft_index.")
+            end
+            with_registry(gaps_head => gaps_head * "    (symbol = :touchdown_spec, rule = :index_word, reason = \"probe\"),\n") do
+                @test rejects(run_gate(), "touchdown_spec: the signature now uses spacecraft_index; remove its :index_word entry from KNOWN_GAPS.")
+            end
+            # A facade page that does not exist.
+            with_registry("page = \"reference/hypr_services.md\"" => "page = \"reference/missing_services.md\"") do
+                @test rejects(run_gate(), "HYPRServices: page docs/src/reference/missing_services.md does not exist or does not name the facade.")
+            end
+            # Package faults that no registry edit can express. A child process changes
+            # SpaceAGORA in memory and runs the gate on this fixture, so this process's
+            # package is never touched:
+            # - status: calcControlMassFlowRate's docstring opens with a deprecation while
+            #   its row still says current;
+            # - arity: calcControlMassFlowRate loses its five-argument fallback and gains an
+            #   untyped two-argument one, so a type with no method of its own, called with
+            #   the documented five arguments, has no fallback.
+            mutations = joinpath(fixture, "hook_gate_mutations.jl")
+            write(mutations, raw"""
+                using SpaceAGORA
+                fixture, gate, root_line = ARGS
+                source = replace(read(gate, String), root_line => "const REPO_ROOT = " * repr(fixture); count=1)
+                function report(name)
+                    m = Module(:MutatedHookGate)
+                    failed = try
+                        redirect_stdout(devnull) do
+                            Base.include_string(m, source, gate)
+                        end
+                        false
+                    catch
+                        true
+                    end
+                    println(name, " failed=", failed)
+                    foreach(v -> println(name, " violation: ", v), Core.eval(m, :violations))
+                end
+                hook = SpaceAGORA.calcControlMassFlowRate
+                owner = parentmodule(hook)
+                saved = []
+                for mod in Base.Docs.modules, (binding, multidoc) in Base.Docs.meta(mod)
+                    binding.var === :calcControlMassFlowRate || continue
+                    for d in values(multidoc.docs)
+                        text = join(string.(d.text))
+                        startswith(lstrip(text), "calcControlMassFlowRate(") || continue
+                        push!(saved, (d, d.text, d.object))
+                        d.text = Core.svec(replace(text, "\n\n" => "\n\nDeprecated: use `wrench` instead; `calcControlMassFlowRate` will be removed in SpaceAGORA 0.5.0.\n\n"; count=1))
+                        d.object = nothing
+                    end
+                end
+                isempty(saved) && error("calcControlMassFlowRate's docstring was not found")
+                report("status")
+                for (d, text, object) in saved
+                    d.text, d.object = text, object
+                end
+                generic = only(m for m in methods(hook) if m.module === owner && m.nargs == 6 &&
+                    all(T -> T === Any, Base.unwrap_unionall(m.sig).parameters[2:end]))
+                Base.delete_method(generic)
+                Core.eval(owner, :(calcControlMassFlowRate(model, u) = 0.0))
+                report("arity")
+                """)
+            gate_path = joinpath(repo, "test", "gates", "ci_extension_hook_reference_gate.jl")
+            child = `$(Base.julia_cmd()) --startup-file=no --project=$(Base.active_project()) $mutations $fixture $gate_path $_GATE_ROOT_LINE`
+            lines = split(read(child, String), '\n')
+            @test "status failed=true" in lines
+            @test "status violation: calcControlMassFlowRate: the docstring's first paragraph opens with \"Deprecated\", but the row says current." in lines
+            @test count(startswith("status violation: "), lines) == 1
+            @test "arity failed=true" in lines
+            @test "arity violation: calcControlMassFlowRate: fallback cell says \"returns `0.0`\", but no method with an untyped or public abstract model takes 5 positional arguments." in lines
+            @test count(startswith("arity violation: "), lines) == 1
+            rm(mutations)
+            @test isnothing(run_gate().failure)
+        end
+
         @testset "Typed command boundary gate" begin
             run_gate = _gate_runner(repo, fixture, "ci_gnc_typed_command_boundary_gate.jl")
             @test isnothing(run_gate().failure)
