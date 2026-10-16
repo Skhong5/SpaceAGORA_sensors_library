@@ -3,7 +3,7 @@
 # differs from a periodic tick.
 module GNCRuntime
 
-export tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!
+export tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!, gnc_period_s
 
 """
     tick_schedule(model) -> Symbol
@@ -48,5 +48,16 @@ checkpointed run calls it again at each segment. A model that keeps a clock of i
 own ticks records the origin here. Default: nothing.
 """
 gnc_clock_started!(model, period_s, origin_s) = nothing
+
+"""
+    gnc_period_s(model) -> Union{Nothing, Float64}
+
+The tick period (s) that control `model`'s law assumes, such as the step its
+controller was discretized with. Before the run the engine compares it with the
+rate of the model's periodic callback and warns when they differ; SpaceAGORA
+0.4.0 will refuse such a run. Default: `nothing`, no declared period, as for a
+law that measures the elapsed time itself.
+"""
+gnc_period_s(model) = nothing
 
 end # module GNCRuntime
