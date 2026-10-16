@@ -417,7 +417,7 @@ a host that refuses embedded `data:` scripts, `SpaceAGORAVisualizer.jl/viewer/bu
 rewrites an exported page to load the pinned three.js and mp4-muxer from
 `cdn.jsdelivr.net` with the renderer modules inlined; the built page lists
 its network hosts and third-party notices in its footer, and adds fonts
-from Google Fonts only with `--fonts`. See [the companion renderer guide](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl/blob/6c0080743c124e321d538f3780fa30868612da21/viewer/README.md) for renderer development, module layout and
+from Google Fonts only with `--fonts`. See [the companion renderer guide](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl/blob/31a62181653e57cd7ae769ce26d954afa94e704d/viewer/README.md) for renderer development, module layout and
 licensing. Landing dynamics and plume-surface physics are separate from the
 viewer: the page only draws what the run saved.
 

@@ -28,6 +28,7 @@ import ..ConfigTypes: GramTrackCache, VacuumPredictedGRAMCache, GramDensityPertu
 import ..ConfigTypes: GramTrackCacheConfig, CallbackEnvConfig, PolicyDecisionEnvConfig
 using ..ControlHooks: calcControlEffect!, control_thruster_levels, _thruster_levels_at, touchdown_spec, refresh_burn!, mounted_burn_tick!, burn_edge
 using ..Actuators: actuation_mode, actuator_levels
+using ..ActuatorMounting: mounted_gimbal_count, apply_gimbal_levels!
 using ..ActuatorMounting: mounted_thruster_fractions, mounted_hinge_count, apply_hinge_levels!, mounted_actuator_count
 using ..ActuatorMounting: applied_actuator_levels, mounted_power
 using ..Actuators: actuator_saturate

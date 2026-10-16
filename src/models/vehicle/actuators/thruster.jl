@@ -39,6 +39,8 @@ saturated command.
     thrust::Float64 = 0.0 # Current thrust magnitude, to be updated during simulation.
     stop_firing_time::Float64 = 0.0 # Time at which the thruster should stop firing, s.
     firing_dynamics::Bool = false # In :mounted actuation, deliver the command through the minimum on-time, Schmitt trigger and thrust ramp above
+    gimballed::Bool = false # A ThrusterGimbal turns this thruster's thrust (set when one is mounted)
+    gimbal_rotation::SMatrix{3, 3, Float64, 9} = SMatrix{3, 3, Float64, 9}(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0) # Its gimbals' current rotation, link frame
 end
 
 # ---- State ----------------------------------------------------------------
@@ -53,6 +55,16 @@ end
 actuator_limits(thruster::Thruster) = (0.0, Float64(thruster.max_thrust))
 
 """
+    thrust_direction(thruster::Thruster) -> SVector{3}
+
+The direction of the thruster's thrust in its link frame: its `direction`,
+turned by its gimbals' current angles when a `ThrusterGimbal` is mounted on
+it. Not normalized.
+"""
+@inline thrust_direction(thruster::Thruster)::SVector{3, Float64} =
+    thruster.gimballed ? thruster.gimbal_rotation * SVector{3, Float64}(thruster.direction) : SVector{3, Float64}(thruster.direction)
+
+"""
     actuator_wrench(thruster::Thruster, level, ctx) -> (force_body, torque_body)
 
 A thrust of `level` newtons along the thruster's `direction`, applied at its
@@ -60,7 +72,7 @@ A thrust of `level` newtons along the thruster's `direction`, applied at its
 reference point. A zero or non-finite direction gives no wrench.
 """
 @inline function actuator_wrench(thruster::Thruster, level::Real, ctx::ActuatorContext)
-    direction = SVector{3, Float64}(thruster.direction)
+    direction = thrust_direction(thruster)
     n = norm(direction)
     (isfinite(n) && n > 0.0) || return (SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
     force_body = ctx.link_to_body * ((Float64(level) / n) * direction)

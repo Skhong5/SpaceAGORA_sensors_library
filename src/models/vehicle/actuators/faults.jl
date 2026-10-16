@@ -10,7 +10,7 @@ module ActuatorFaults
 
 using StaticArrays
 using ..AbstractTypes: AbstractActuator
-using ..Components: PanelHinge, ActuatorFault, FaultSet
+using ..Components: PanelHinge, ThrusterGimbal, ActuatorFault, FaultSet
 using ..SpacecraftModels: Link, SpacecraftModel
 using ..ActuatorMounting: mounted_actuators
 using ..Actuators: actuator_limits
@@ -54,7 +54,7 @@ end
 
 Set which faults are active at time `t` (inside `[start_s, stop_s)`), capturing
 a stuck actuator's level at onset from `levels` (the command it held, or a
-hinge's current angle). Returns whether any fault switched. Called at the
+hinge's or gimbal's current angle). Returns whether any fault switched. Called at the
 start of a run and at the faults' window ends, where the solver stops.
 """
 function refresh_faults!(model::SpacecraftModel, levels, t::Real)::Bool
@@ -73,7 +73,7 @@ end
 
 function _onset_level(f::ActuatorFault, levels)::Float64
     isnan(f.value) || return f.value
-    f.actuator isa PanelHinge && return f.actuator.angle_rad
+    f.actuator isa Union{PanelHinge, ThrusterGimbal} && return f.actuator.angle_rad
     (levels === nothing || f.index < 1 || f.index > length(levels)) && return 0.0
     return Float64(levels[f.index])
 end
@@ -86,7 +86,7 @@ fault_edge(model::SpacecraftModel, t::Real)::Bool =
     faulted_levels(model, levels) -> AbstractVector
 
 `levels` (one per mounted actuator) as the active faults leave them: a failed
-actuator at zero (a failed hinge holds its angle), a stuck one at its held
+actuator at zero (a failed hinge or gimbal holds its angle), a stuck one at its held
 level, a degraded one scaled with its limits, a biased one offset. `levels`
 itself when no fault is active.
 """
@@ -105,7 +105,7 @@ end
 
 function _apply_fault(f::ActuatorFault, level::Float64)::Float64
     if f.kind === :failed
-        return f.actuator isa PanelHinge ? f.held_level : 0.0
+        return f.actuator isa Union{PanelHinge, ThrusterGimbal} ? f.held_level : 0.0
     elseif f.kind === :stuck
         return f.held_level
     elseif f.kind === :degraded
