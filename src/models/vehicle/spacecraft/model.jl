@@ -242,6 +242,7 @@ mutable struct Link
     magnetorquers::Vector{Magnetorquer} # Torque rods mounted on the link (see add_actuator!)
     laser_terminals::Vector{LaserTerminal} # Laser terminals mounted on the link (see add_actuator!)
     hinges::Vector{PanelHinge} # The hinge that turns this (non-root) link, if one is mounted (see add_actuator!)
+    gimbals::Vector{ThrusterGimbal} # Gimbal axes turning the thrust of thrusters on this link (see add_actuator!)
     # Actuators of user-defined kinds mounted on the link (see add_actuator!). Built-in
     # kinds keep their own concretely typed lists above; this one is evaluated through
     # a function barrier per actuator.
@@ -288,6 +289,7 @@ mutable struct Link
         magnetorquers=Magnetorquer[],
         laser_terminals=LaserTerminal[],
         hinges=PanelHinge[],
+        gimbals=ThrusterGimbal[],
         custom_actuators=AbstractActuator[],
         solar_arrays=SolarArray[],
         batteries=Battery[],
@@ -305,7 +307,7 @@ mutable struct Link
             h_dot_wheels=zeros(Float64, n_rw),
             tau_body_net=MVector{3, Float64}(zeros(3))      # tau_body_net
         )
-        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, reflection_coefficient, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, thrusters, magnets, cop_offset_b, Vector{Magnetorquer}(magnetorquers), Vector{LaserTerminal}(laser_terminals), Vector{PanelHinge}(hinges), Vector{AbstractActuator}(custom_actuators),
+        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, reflection_coefficient, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, thrusters, magnets, cop_offset_b, Vector{Magnetorquer}(magnetorquers), Vector{LaserTerminal}(laser_terminals), Vector{PanelHinge}(hinges), Vector{ThrusterGimbal}(gimbals), Vector{AbstractActuator}(custom_actuators),
             Vector{SolarArray}(solar_arrays), Vector{Battery}(batteries), Vector{PowerLoad}(power_loads), faults,
             Vector{AbstractSensor}(sensors))
     end

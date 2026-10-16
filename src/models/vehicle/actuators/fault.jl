@@ -10,9 +10,9 @@ const _FAULT_KINDS = (:failed, :stuck, :degraded, :biased)
 A failure of one mounted actuator (the record mounted with `add_actuator!`)
 between `start_s` and `stop_s` (seconds into the run):
 
-- `:failed`: it applies level zero; a failed hinge holds its angle.
+- `:failed`: it applies level zero; a failed hinge or gimbal holds its angle.
 - `:stuck`: it holds `value`, or, when `value` is NaN, the level it was
-  commanded to (a hinge: the angle it had) when the fault began.
+  commanded to (a hinge or gimbal: the angle it had) when the fault began.
 - `:degraded`: its level and its limits scale by `value`, from 0 to 1.
 - `:biased`: `value` is added to its command before saturation.
 

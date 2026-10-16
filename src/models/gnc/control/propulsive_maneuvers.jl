@@ -712,7 +712,7 @@ function _burn_pointing_torque(model::BaseThrusterModel, spacecraft, state, p, i
     to_body = rot(q)                                       # inertial to body
     target_b = to_body * target_ii
     link, engine = _mounted_engine(model, spacecraft)
-    d = SVector{3, Float64}(engine.direction)
+    d = thrust_direction(engine)                           # turned by its gimbals, if any
     nd = norm(d)
     (isfinite(nd) && nd > 0.0) || return nothing
     axis_b = actuator_context(link).link_to_body * (d / nd)

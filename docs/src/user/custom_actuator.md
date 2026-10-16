@@ -163,8 +163,8 @@ returns the propellant mass rate (kg/s) and the electrical power (W);
 mass-flow hook. Declaring `actuation_mode(c) = :mounted` tells the engine to
 derive those from the actuators mounted on the spacecraft, at the levels
 `actuator_levels` returns: one level per mounted actuator, in mounting order
-(thrusters, wheels, torque rods, laser terminals and hinges come first, then
-kinds of your own). The engine calls `actuator_levels` at every evaluation of
+(thrusters, wheels, torque rods, laser terminals, hinges and thruster gimbals
+come first, then kinds of your own). The engine calls `actuator_levels` at every evaluation of
 the equations of motion, so `calcControlEffect!` computes the levels at each
 control tick and the method returns stored values. The initial levels are
 held until the first tick, one control period after the start.

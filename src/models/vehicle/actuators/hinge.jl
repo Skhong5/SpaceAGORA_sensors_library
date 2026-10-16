@@ -64,11 +64,16 @@ The angle the hinge reaches at a control tick at time `t` when commanded to
 times the time since the hinge's previous tick. A rate-limited hinge holds
 its angle on its first tick, which only records the time.
 """
-function hinge_step(hinge::PanelHinge, level::Real, t::Real)::Float64
-    target = actuator_saturate(hinge, level)
-    if isfinite(hinge.max_rate_rad_s)
-        step = isfinite(hinge.last_update_s) ? hinge.max_rate_rad_s * max(0.0, Float64(t) - hinge.last_update_s) : 0.0
-        target = clamp(target, hinge.angle_rad - step, hinge.angle_rad + step)
+hinge_step(hinge::PanelHinge, level::Real, t::Real)::Float64 =
+    _rate_limited_angle(actuator_saturate(hinge, level), hinge.angle_rad, hinge.last_update_s, hinge.max_rate_rad_s, t)
+
+# The angle reached from `angle` toward `target` (already within the angle
+# limits) at time `t`: within `max_rate` times the time since `last_update_s`,
+# and no move on the first tick of a rate-limited joint (NaN `last_update_s`).
+@inline function _rate_limited_angle(target, angle::Float64, last_update_s::Float64, max_rate::Float64, t::Real)::Float64
+    if isfinite(max_rate)
+        step = isfinite(last_update_s) ? max_rate * max(0.0, Float64(t) - last_update_s) : 0.0
+        target = clamp(target, angle - step, angle + step)
     end
     return target
 end

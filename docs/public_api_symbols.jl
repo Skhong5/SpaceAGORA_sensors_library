@@ -291,6 +291,8 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :Magnetorquer, rendered = "SpaceAGORA.Magnetorquer"),
             (owner = :SpaceAGORA, symbol = :LaserTerminal, rendered = "SpaceAGORA.LaserTerminal"),
             (owner = :SpaceAGORA, symbol = :PanelHinge, rendered = "SpaceAGORA.PanelHinge"),
+            (owner = :SpaceAGORA, symbol = :ThrusterGimbal, rendered = "SpaceAGORA.ThrusterGimbal"),
+            (owner = :SpaceAGORA, symbol = :thrust_direction, rendered = "SpaceAGORA.thrust_direction"),
             (owner = :SpaceAGORA, symbol = :ActuatorContext, rendered = "SpaceAGORA.ActuatorContext"),
             (owner = :SpaceAGORA, symbol = :actuator_wrench, rendered = "SpaceAGORA.actuator_wrench"),
             (owner = :SpaceAGORA, symbol = :actuator_limits, rendered = "SpaceAGORA.actuator_limits"),

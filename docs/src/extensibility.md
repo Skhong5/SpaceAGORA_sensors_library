@@ -236,6 +236,13 @@ The built-in kinds:
   angle and rate limits; the engine applies it at the commanding effector's
   control ticks. The energy-depletion controller also moves its panels through
   a hinge mounted on them.
+- `ThrusterGimbal`: one axis of a gimbal on a thruster mounted on the same
+  link; its level is the gimbal angle, with angle and rate limits, applied at
+  control ticks like a hinge's. The thrust direction turns about the gimbal
+  axis (the nozzle stays where it is), so the thruster's force, torque,
+  propellant use and allocation column follow it; two gimbals on one
+  thruster make a two-axis gimbal, turning in mounting order.
+  `thrust_direction(thruster)` gives the turned direction.
 
 The actuators' power feeds the spacecraft's power budget when it carries one:
 solar arrays, a battery and constant loads mounted with `add_power!`. See
@@ -243,7 +250,7 @@ solar arrays, a battery and constant loads mounted with `add_power!`. See
 
 A mounted actuator can fail: `add_fault!(spacecraft, ActuatorFault(actuator;
 kind, start_s, stop_s, value))` makes it apply level zero (`:failed`; a failed
-hinge holds its angle), hold a level (`:stuck`, by default the one it was
+hinge or gimbal holds its angle), hold a level (`:stuck`, by default the one it was
 commanded to when the fault began), act at a fraction of its level and limits
 (`:degraded`) or with an offset (`:biased`) between `start_s` and `stop_s`. The
 fault switches exactly at those times, and acts on what the vehicle feels, the
