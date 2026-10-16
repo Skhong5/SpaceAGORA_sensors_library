@@ -242,14 +242,11 @@ the file that performs each step.
    bindings. That geometry is not itself a sensor or estimator. Guidance and
    control models remain in their respective folders. Core typed EDG models,
    services and compatibility bindings live in `guidance/aerobraking/typed_edg/`;
-   the optional SpaceAGORAEDG companion owns the numerical kernels. Older
-   aerobraking paths and their bridges remain available without a claim of
-   numerical equivalence. Configured HYPR
+   the optional SpaceAGORAEDG companion owns the numerical kernels and is the
+   only EDG implementation. Configured HYPR
    execution is provided by the external
    HYPR package through `SpaceAGORA.HYPRServices`; the local
-   `packages/SpaceAGORAHYPR/` compatibility package loads its adapter. The
-   aerobraking strategy selector lives in
-   `src/orchestration/mission/operations/aerobraking_policy/`.
+   `packages/SpaceAGORAHYPR/` compatibility package loads its adapter.
    Navigation and guidance hooks run as periodic callbacks between integrator
    steps; control commands are refreshed on periodic or event-driven schedules, and the
    resulting control force and torque are evaluated inside the right-hand side
@@ -325,7 +322,7 @@ are relative to the directory in the first column.
 | `src/interfaces/io/` | Result and checkpoint paths, checkpoint storage and output tables | paths: `paths/io_paths.jl`; storage and atomic writes: `checkpoints/checkpoint_storage.jl`; output recording: `outputs/io_outputs.jl` |
 | `src/interfaces/analysis/` | Telemetry verification studies and example helpers, visualization scenes and completed planner reports | study helpers: `verification/telemetry_verification/example_support.jl`; planner reports: `planning/rpo_comparison_reports.jl` |
 | `src/orchestration/simulation/` | One-run configuration, engine setup and execution, callbacks, campaigns, runtime locks and external-propagation services | configuration and presets: `config/`; model composition: `composition/`; concrete run buffers: `state/`; setup and solve: `engine/`; callbacks: `callbacks/` and their internal `callback_services.jl` contract; Monte Carlo and ensembles: `campaigns/`; shared locks: `runtime_services.jl`; optional dynamics adapter boundary: `external_propagation_services.jl` |
-| `src/orchestration/mission/` | Mission-specific schedules and aerobraking policy types and strategy selection | example-loaded maneuver schedules: `operations/maneuver_plans.jl`; policy: `operations/aerobraking_policy/` |
+| `src/orchestration/mission/` | Mission plans, operational segments and mission-specific schedules | example-loaded maneuver schedules: `operations/maneuver_plans.jl`; workflow: `mission_workflow.jl` |
 | `src/orchestration/parallel/` | Parallel profiles and routing, cost models, worker process pools and in-process policy | route selection and process pools; owned by the parallelization work |
 | `src/models/vehicle/` | Spacecraft components and assembly, structure and mass properties, mesh readers, actuators, thermal models, kinematics and robotics | vehicle boundary per the [topology contract](../architecture/canonical_topology_contract.md): `spacecraft/` composes, `structure/` computes mass, inertia and geometry, `actuators/actuators.jl` owns the actuator contract, `actuators/mounting.jl` mounting, one file per actuator kind beside them |
 | `src/models/environment/` | Planets and ephemerides, atmosphere models and presets, gravity fields and terrain grids | density sampling: `atmosphere/density_models.jl`; terrain queries: `terrain/terrain_models.jl` |

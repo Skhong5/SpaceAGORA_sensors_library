@@ -152,11 +152,11 @@ end
             @test isnothing(run_gate().failure)
 
             # A shared forbidden token in a listed file.
-            stub = _unique_source(fixture, "selector_stub.jl")
-            _with_text(stub, read(stub, String) * "\ngravity_const(1.0)\n") do
+            listed = _unique_source(fixture, "io_paths.jl")
+            _with_text(listed, read(listed, String) * "\ngravity_const(1.0)\n") do
                 rejected = run_gate()
                 @test _failed_with(rejected, "Runtime legacy surface gate failed")
-                @test _reports(rejected, stub, fixture, "gravity_const")
+                @test _reports(rejected, listed, fixture, "gravity_const")
             end
             # A file-specific forbidden token.
             setup = _unique_source(fixture, "setup.jl")
@@ -166,8 +166,8 @@ end
                 @test _reports(rejected, setup, fixture, "_compat_")
             end
             # Directory targets are scanned recursively.
-            control_dir = dirname(_unique_source(fixture, "tracking_executor.jl"))
-            nested_probe = joinpath(control_dir, "nested", "legacy_probe.jl")
+            guidance_dir = dirname(_unique_source(fixture, "adapter_queries.jl"))
+            nested_probe = joinpath(guidance_dir, "nested", "legacy_probe.jl")
             _with_probe(nested_probe, "gravity_GRAM(x)\n") do
                 rejected = run_gate()
                 @test _failed_with(rejected, "Runtime legacy surface gate failed")
@@ -175,14 +175,14 @@ end
             end
             rm(dirname(nested_probe))
             # A missing listed target is an explicit failure, not a silent skip.
-            helpers = _unique_source(fixture, "bridge_helpers.jl")
-            helpers_source = read(helpers, String)
-            rm(helpers)
+            persistence = _unique_source(fixture, "persistence.jl")
+            persistence_source = read(persistence, String)
+            rm(persistence)
             try
                 @test _failed_with(run_gate(),
-                    "Missing runtime legacy-surface target: " * relpath(helpers, fixture))
+                    "Missing runtime legacy-surface target: " * relpath(persistence, fixture))
             finally
-                write(helpers, helpers_source)
+                write(persistence, persistence_source)
             end
             @test isnothing(run_gate().failure)
         end
