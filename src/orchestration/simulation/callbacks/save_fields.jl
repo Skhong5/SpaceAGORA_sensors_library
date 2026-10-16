@@ -280,14 +280,20 @@ end
 
 # The firing levels an effector reports for spacecraft `i`: its own
 # `control_thruster_levels`, or, for an effector in `:mounted` actuation that
-# does not report them, the mounted thrusters' fractions at the levels it holds.
+# does not report them, the mounted thrusters' fractions at the levels it
+# holds, as the faults and the shedding leave them. A `:mounted` effector on a
+# spacecraft with faults always takes the mounted fractions, so the columns
+# and the plumes show what the faulted thrusters deliver.
 @inline function _effector_thruster_levels(effector, i::Int, spacecraft)
-    reported = control_thruster_levels(effector, i)
-    reported === nothing || return reported
-    actuation_mode(effector) === :mounted || return nothing
+    mounted = actuation_mode(effector) === :mounted
+    if !(mounted && has_faults(spacecraft))
+        reported = control_thruster_levels(effector, i)
+        reported === nothing || return reported
+    end
+    mounted || return nothing
     levels = actuator_levels(effector, i)
     levels === nothing && return nothing
-    return mounted_thruster_fractions(spacecraft, levels)
+    return mounted_thruster_fractions(spacecraft, shed_levels(spacecraft, faulted_levels(spacecraft, levels)))
 end
 
 @inline function _save_thruster_levels(num_sats::Int, counts::Vector{Int}, u, t, integrator)

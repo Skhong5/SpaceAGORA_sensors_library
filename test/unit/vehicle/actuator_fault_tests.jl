@@ -145,6 +145,54 @@ end
         @test_throws ArgumentError ramp_run(settings=(resume_from_checkpoint=true, checkpoint_directory=dir))
     end
 
+    @testset "a thruster with firing dynamics stops at its fault time, not at the next tick" begin
+        # Ticks every second from 1 s schedule the jet fully on (about 1 N, a fast
+        # ramp); it fails at 2.5 s, between the ticks at 2 s and 3 s.
+        function firing_run(fail)
+            sc, root = far_spacecraft(mass=500.0)
+            jet = add_actuator!(sc, root, Thruster(max_thrust=1.0, direction=MVector(1.0, 0.0, 0.0), Isp=200.0,
+                min_firing_time=0.05, cutoff_frequency=1.0e6, firing_dynamics=true))
+            fail && add_fault!(sc, ActuatorFault(jet; kind=:failed, start_s=2.5))
+            return held_run(sc, [1.0])
+        end
+        failed, healthy = firing_run(true), firing_run(false)
+        used(r) = 510.0 - r.solution.u[end].sc[1].mass
+        @test used(failed) ≈ 1.5 / (200.0 * G0) rtol=1e-4                             # fired from 1 s to 2.5 s
+        @test used(healthy) ≈ 4.0 / (200.0 * G0) rtol=1e-4
+        t, col = failed.table.time, failed.table.sc1_actuator_level_1
+        @test all(i -> t[i] < 2.5 || col[i] == 0.0, eachindex(t))
+    end
+
+    @testset "the thruster-level columns see the faults" begin
+        sc, root = far_spacecraft()
+        jet = add_actuator!(sc, root, Thruster(max_thrust=2.0, direction=MVector(1.0, 0.0, 0.0)))
+        add_fault!(sc, ActuatorFault(jet; kind=:degraded, value=0.5, start_s=1.0))
+        SM.ActuatorFaults.resolve_faults!(sc)
+        c = HoldLevels([2.0])
+        @test SM.SimulationCallbacks._effector_thruster_levels(c, 1, sc) == [1.0]
+        SM.ActuatorFaults.refresh_faults!(sc, c.levels, 1.0)
+        @test SM.SimulationCallbacks._effector_thruster_levels(c, 1, sc) == [0.5]
+    end
+
+    @testset "the power budget sheds by the faulted load from the fault's start" begin
+        # About 12 W of arrays against a 5 W load and a laser drawing 10 W: the empty
+        # battery sheds the laser until a fault halves its level at 2 s; the load
+        # (10 W) then fits the arrays, and the laser is restored at once.
+        sc, root = far_spacecraft()
+        ephem = SM.SimpleEphemeridesModel()
+        epoch = SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
+        sun = SM.ephemerides_sun_direction_ii(SM.Earth(), SM.ephemerides_time_seconds(epoch, ephem), ephem)
+        add_power!(sc, root, SolarArray(normal=sun, area_m2=0.03, efficiency=0.3))
+        add_power!(sc, root, Battery(capacity_wh=5.0, initial_soc=0.0, recovery_soc=0.5))
+        add_power!(sc, root, PowerLoad(power_w=5.0))
+        laser = add_actuator!(sc, root, LaserTerminal(boresight=SVector(1.0, 0.0, 0.0), max_power_w=2.0, efficiency=0.2))
+        add_fault!(sc, ActuatorFault(laser; kind=:degraded, value=0.5, start_s=2.0))
+        res = held_run(sc, [2.0]; mission_time=20.0)
+        gen = res.table.sc1_power_generated_w[1]
+        @test 10.0 < gen < 15.0
+        @test res.solution.u[end].sc[1].battery_wh ≈ ((gen - 5.0) * 2.0 + (gen - 10.0) * 18.0) / 3600 rtol=1e-6
+    end
+
     @testset "faults are opt-in" begin
         sc, root = far_spacecraft()
         add_actuator!(sc, root, ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0)))

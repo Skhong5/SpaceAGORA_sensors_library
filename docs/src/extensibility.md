@@ -248,7 +248,9 @@ commanded to when the fault began), act at a fraction of its level and limits
 (`:degraded`) or with an offset (`:biased`) between `start_s` and `stop_s`. The
 fault switches exactly at those times, and acts on what the vehicle feels, the
 propellant, the power and the `actuator_level` columns; the controller keeps
-seeing its own commands. Runs with faults write `sc{i}_fault_active_{j}`. A
+seeing its own commands. On a thruster with firing dynamics the fault acts on
+the thrust it delivers, so it takes effect at its start, between control
+ticks. Runs with faults write `sc{i}_fault_active_{j}`. A
 checkpointed run keeps the faults' state from one segment to the next, but a
 `:stuck` fault without a `value` refuses `resume_from_checkpoint`: the
 checkpoint file does not hold the level it captured at onset.

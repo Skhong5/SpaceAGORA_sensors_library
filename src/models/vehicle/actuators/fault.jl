@@ -17,8 +17,12 @@ between `start_s` and `stop_s` (seconds into the run):
 - `:biased`: `value` is added to its command before saturation.
 
 Faults act on the mounted path only: the wrench, the propellant and power,
-hinge moves, thruster firing dynamics and the `actuator_level` columns see
-them; the controller sees its own commands. Mount with `add_fault!`.
+hinge moves, the `actuator_level` and thruster-level columns and the plumes
+see them; the controller sees its own commands. On a thruster with firing
+dynamics a fault acts on the thrust it delivers, from the fault's start
+rather than from the next control tick: failed, none; stuck, the held level;
+degraded, the fraction `value`; biased, offset by `value` within its limits.
+Mount with `add_fault!`.
 """
 mutable struct ActuatorFault
     actuator::AbstractActuator
