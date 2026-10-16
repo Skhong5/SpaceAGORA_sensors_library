@@ -192,10 +192,6 @@ include(joinpath(@__DIR__, "..", "..", "..", "interfaces", "io", "checkpoints", 
 include(joinpath(@__DIR__, "..", "..", "..", "interfaces", "io", "outputs", "io_outputs.jl"))
 @reexport using .IOOutputs
 
-# --- Mission Policy Owners ---
-include(joinpath(@__DIR__, "..", "..", "mission", "operations", "aerobraking_policy", "policy_types.jl"))
-@reexport using .AerobrakingPolicy
-
 # --- Navigation Effectors ---
 include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "navigation", "navigation_hooks.jl"))
 @reexport using .NavigationHooks

@@ -35,10 +35,6 @@ density_models_src = _read(joinpath("src", "models", "environment", "atmosphere"
 gram_suite_ext_src = _read(joinpath("ext", "SpaceAGORAGRAMSuiteExt.jl"))
 ephemerides_models_src = _read(joinpath("src", "models", "environment", "ephemerides", "ephemerides_models.jl"))
 setup_src = _read(joinpath("src", "orchestration", "simulation", "engine", "setup.jl"))
-control_commands_src = _read(joinpath("src", "models", "gnc", "control", "aerobraking", "control_commands.jl"))
-constraint_tracking_src = _read(joinpath("src", "models", "gnc", "control", "aerobraking", "constraint_tracking.jl"))
-trajectory_predictor_src = _read(joinpath("src", "models", "gnc", "guidance", "aerobraking", "t_edg", "trajectory_predictor.jl"))
-eom_predictor_src = _read(joinpath("src", "models", "gnc", "guidance", "aerobraking", "t_edg", "eom_predictor.jl"))
 
 occursin("run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kwargs...)", spaceagora_src) ||
     error("SpaceAGORA.run_simulation is not forwarded to SimulationEngine.")
@@ -164,7 +160,7 @@ occursin("using ..ReferenceSystems", guidance_hooks_src) ||
     error("GuidanceHooks is not importing the CamelCase ReferenceSystems module.")
 occursin("using ..ReferenceSystems", control_hooks_src) ||
     error("ControlHooks is not importing the CamelCase ReferenceSystems module.")
-!occursin("ref_sys", guidance_hooks_src * control_hooks_src * control_commands_src * constraint_tracking_src * trajectory_predictor_src * eom_predictor_src) ||
+!occursin("ref_sys", guidance_hooks_src * control_hooks_src) ||
     error("Package-owned source still references the retired ref_sys module name.")
 !occursin("Any[", density_callback_assembly_src) ||
     error("Density callback assembly still builds callback collections through Any[].")
@@ -256,11 +252,6 @@ for rel in (
     joinpath("src", "models", "vehicle", "structure", "mass_properties.jl"),
     joinpath("src", "models", "vehicle", "structure", "geometry_properties.jl"),
     joinpath("src", "models", "dynamics", "effectors", "force_torque_models.jl"),
-    joinpath("src", "models", "gnc", "guidance", "aerobraking", "interfaces.jl"),
-    joinpath("src", "models", "gnc", "guidance", "aerobraking", "dispatcher.jl"),
-    joinpath("src", "models", "gnc", "guidance", "aerobraking", "e_edg", "e_edg_strategy.jl"),
-    joinpath("src", "models", "gnc", "guidance", "aerobraking", "t_edg", "t_edg_strategy.jl"),
-    joinpath("src", "orchestration", "mission", "operations", "aerobraking_policy", "policy_types.jl"),
 )
     isfile(joinpath(REPO_ROOT, rel)) ||
         error("Canonical-ownership contract violation: missing canonical owner file: $rel")

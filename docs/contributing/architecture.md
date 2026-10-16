@@ -242,14 +242,11 @@ the file that performs each step.
    bindings. That geometry is not itself a sensor or estimator. Guidance and
    control models remain in their respective folders. Core typed EDG models,
    services and compatibility bindings live in `guidance/aerobraking/typed_edg/`;
-   the optional SpaceAGORAEDG companion owns the numerical kernels. Older
-   aerobraking paths and their bridges remain available without a claim of
-   numerical equivalence. Configured HYPR
+   the optional SpaceAGORAEDG companion owns the numerical kernels and is the
+   only EDG implementation. Configured HYPR
    execution is provided by the external
    HYPR package through `SpaceAGORA.HYPRServices`; the local
-   `packages/SpaceAGORAHYPR/` compatibility package loads its adapter. The
-   aerobraking strategy selector lives in
-   `src/orchestration/mission/operations/aerobraking_policy/`.
+   `packages/SpaceAGORAHYPR/` compatibility package loads its adapter.
    Navigation and guidance hooks run as periodic callbacks between integrator
    steps; control commands are refreshed on periodic or event-driven schedules, and the
    resulting control force and torque are evaluated inside the right-hand side
@@ -325,12 +322,12 @@ are relative to the directory in the first column.
 | `src/interfaces/io/` | Result and checkpoint paths, checkpoint storage and output tables | paths: `paths/io_paths.jl`; storage and atomic writes: `checkpoints/checkpoint_storage.jl`; output recording: `outputs/io_outputs.jl` |
 | `src/interfaces/analysis/` | Telemetry verification studies and example helpers, visualization scenes and completed planner reports | study helpers: `verification/telemetry_verification/example_support.jl`; planner reports: `planning/rpo_comparison_reports.jl` |
 | `src/orchestration/simulation/` | One-run configuration, engine setup and execution, callbacks, campaigns, runtime locks and external-propagation services | configuration and presets: `config/`; model composition: `composition/`; concrete run buffers: `state/`; setup and solve: `engine/`; callbacks: `callbacks/` and their internal `callback_services.jl` contract; Monte Carlo and ensembles: `campaigns/`; shared locks: `runtime_services.jl`; optional dynamics adapter boundary: `external_propagation_services.jl` |
-| `src/orchestration/mission/` | Mission-specific schedules and aerobraking policy types and strategy selection | example-loaded maneuver schedules: `operations/maneuver_plans.jl`; policy: `operations/aerobraking_policy/` |
+| `src/orchestration/mission/` | Mission plans, operational segments and mission-specific schedules | example-loaded maneuver schedules: `operations/maneuver_plans.jl`; workflow: `mission_workflow.jl` |
 | `src/orchestration/parallel/` | Parallel profiles and routing, cost models, worker process pools and in-process policy | route selection and process pools; owned by the parallelization work |
 | `src/models/vehicle/` | Spacecraft components and assembly, structure and mass properties, mesh readers, actuators, thermal models, kinematics and robotics | vehicle boundary per the [topology contract](../architecture/canonical_topology_contract.md): `spacecraft/` composes, `structure/` computes mass, inertia and geometry, `actuators/actuators.jl` owns the actuator contract, `actuators/mounting.jl` mounting, one file per actuator kind beside them |
 | `src/models/environment/` | Planets and ephemerides, atmosphere models and presets, gravity fields and terrain grids | density sampling: `atmosphere/density_models.jl`; terrain queries: `terrain/terrain_models.jl` |
 | `src/models/dynamics/` | Translational and rotational equations, force and torque effectors under `effectors/`, compliant and articulated multibody dynamics under `multibody/` | effector evaluation: `effectors/force_torque_models.jl`; gravity adapters: `effectors/gravity/`; other perturbations: `effectors/perturbations/`; articulated solver: `multibody/articulated_body.jl` |
-| `src/models/gnc/` | Guidance, navigation and control hooks, planner contracts and lifecycle, shared calculations, baseline algorithms and HYPR compatibility types | the three hook files named above; planner contracts: `interfaces/`; planning and lifecycle: `planning/rpo/`; arm references: `planning/robot_arm/`; shared kernels: `planning/common/`; optional-adapter services: `planning/adapters/`; aerobraking bridges: `internal/` |
+| `src/models/gnc/` | Guidance, navigation and control hooks, planner contracts and lifecycle, shared calculations, baseline algorithms and HYPR compatibility types | the three hook files named above; planner contracts: `interfaces/`; planning and lifecycle: `planning/rpo/`; arm references: `planning/robot_arm/`; shared kernels: `planning/common/`; optional-adapter services: `planning/adapters/`; typed EDG: `guidance/aerobraking/typed_edg/` and `guidance/aerobraking/energy_depletion_lifecycle.jl`, with its control lifecycle, passage heat accounting and targeting in `control/energy_depletion_lifecycle.jl`, `control/edg_heat_accounting.jl` and `control/targeting_control.jl` |
 | `src/foundation/core/` | Abstract types and shared model contracts, reference frames, geodesy, orbital geometry and quaternions | frames: `interfaces/reference_system.jl`; shared geometry: `numerics/geodesy.jl` and `numerics/orbital_geometry.jl`; canonical quaternions: `numerics/quaternion_utils.jl`; robotics/compliant orientation policy: `numerics/orientation_quaternion_utils.jl`; run buffers and composition belong to simulation orchestration |
 | `src/foundation/assets/` | Manifest lookup and availability checks, RPO station assets and the Odyssey surrogate | reusable manifest records and local checks: `asset_catalog.jl`; CLI report types and presentation remain in the CLI; see [Assets & Modes](../src/assets.md) |
 | `ext/` | Optional package connections for GRAMSuite, the visualizer and EDG | Each extension activates when its package pair is loaded; see [GRAMSuite Setup](../src/user/gramsuite_setup.md) and the [optional adapter standard](../src/reference/adapter_contract.md). |
@@ -416,9 +413,9 @@ private results repository, not in this public tree.
 For example, a reusable scheduling interface and the mechanism that executes
 its commands can belong in the package after their API is agreed. A student's
 particular scheduling objective, search algorithm and experiment belong in the
-study or research repository. The current `src/orchestration/mission/` folder contains
-specific aerobraking policy code; its name does not imply that a general
-scheduling API already exists.
+study or research repository. The current `src/orchestration/mission/operations/`
+folder contains mission-specific firing schedules (`maneuver_plans.jl`); its name
+does not imply that a general scheduling API already exists.
 
 **Put it in `experimental/` when** you are shaping an API for a subsystem that
 does not run yet. It is not loaded by `using SpaceAGORA` and can contain

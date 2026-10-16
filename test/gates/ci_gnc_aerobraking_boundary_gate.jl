@@ -1,18 +1,6 @@
 include(joinpath(@__DIR__, "..", "contracts", "edg_ownership_checks.jl"))
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
-required_files = (
-    joinpath("src", "models", "gnc", "guidance", "aerobraking", "interfaces.jl"),
-    joinpath("src", "models", "gnc", "guidance", "aerobraking", "dispatcher.jl"),
-    joinpath("src", "models", "gnc", "guidance", "aerobraking", "e_edg", "e_edg_strategy.jl"),
-    joinpath("src", "models", "gnc", "guidance", "aerobraking", "t_edg", "t_edg_strategy.jl"),
-    joinpath("src", "models", "gnc", "control", "aerobraking", "tracking_executor.jl"),
-    joinpath("src", "orchestration", "mission", "operations", "aerobraking_policy", "policy_types.jl"),
-)
-for rel in required_files
-    isfile(joinpath(REPO_ROOT, rel)) || error("Missing aerobraking boundary file: $rel")
-end
-
 isdir(joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "targeting_control")) &&
     error("Retired guidance targeting_control path still exists.")
 
@@ -47,25 +35,6 @@ for root_rel in (
             src = read(path, String)
             occursin("DynamicEffectors", src) && push!(violations, "$rel: GNC source still depends on DynamicEffectors directly")
         end
-    end
-end
-
-# Control must not own strategy/planning solver definitions.
-for rel in (
-    joinpath("src", "models", "gnc", "control", "aerobraking", "tracking_executor.jl"),
-    joinpath("src", "models", "gnc", "control", "aerobraking", "control_commands.jl"),
-    joinpath("src", "models", "gnc", "control", "aerobraking", "constraint_tracking.jl"),
-)
-    src = read(joinpath(REPO_ROOT, rel), String)
-    for forbidden_fn in (
-        "function switch_calculation_with_integration",
-        "function switch_calculation(",
-        "function second_time_switch_recalc_with_integration",
-        "function second_time_switch_recalc(",
-        "function security_mode(",
-        "function target_planning(",
-    )
-        occursin(forbidden_fn, src) && push!(violations, "$rel: contains strategy planning function `$forbidden_fn`")
     end
 end
 
