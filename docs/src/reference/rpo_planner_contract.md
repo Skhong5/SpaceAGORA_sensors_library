@@ -127,6 +127,14 @@ The family's rejection policy is `:fail`, and `RPOPlanningError` is a
 check that a proposal leaves the stream unchanged. The RPO names remain the
 supported way to write an RPO planner.
 
+The pilot lifecycle runs each request through the shared driver,
+`run_algorithm_request!`. It builds and records the request, checks capabilities,
+asks for a proposal with a separate copy, validates the copy against the retained
+request, installs the validated reference into the plan buffer (`install!`) and
+records the install. Records, reasons and reports are the same as before. The
+planner's stream comes from `gnc_stream_words("RPO/v1", seed, chaser_id,
+target_id)`, the same SHA-256 mapping as before.
+
 ## Built-in planners
 
 `DirectRPOPlanner` builds a straight segment with `s(q)=3q²-2q³`, sampled

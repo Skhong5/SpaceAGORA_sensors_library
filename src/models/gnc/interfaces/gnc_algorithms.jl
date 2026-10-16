@@ -1,6 +1,10 @@
-# General GNC algorithm contract. This module loads with Julia standard libraries
-# alone. The RPO planner contract (rpo_planner.jl) is its first family.
+# General GNC algorithm contract and its shared lifecycle machinery. This module
+# loads with Julia standard libraries alone. The RPO planner contract
+# (rpo_planner.jl) is its first family.
 module GNCAlgorithms
+
+using Random: MersenneTwister
+using SHA: sha256
 
 """
     AbstractGNCAlgorithm
@@ -213,11 +217,13 @@ advances a random stream and never reads diagnostics as geometry.
 function validate_proposal end
 
 """
-    install!(link, family, product, request, t) -> nothing
+    install!(link, family, product, request, t; validation, diagnostics) -> nothing
 
 Required for each family. Install a validated copy of `product` into `link`, the
 object the family shares with the product's consumer, at time `t`. Installation
 is atomic: no yield or user callback runs between validation and installation.
+The lifecycle passes the accepted `validation` result and the algorithm's copied
+`diagnostics` as keywords, so a family may keep them with the product.
 """
 function install! end
 
@@ -255,5 +261,232 @@ companion package can require the one it was built for. The default `nothing`
 means unversioned.
 """
 family_contract_version(family) = nothing
+
+# ---- Shared lifecycle machinery ----------------------------------------------
+#
+# A binding is the guidance model that runs one algorithm in a simulation (for RPO,
+# `PlannerGuidance`). It implements the binding functions below; the request driver
+# then runs the contract's steps in a fixed order for every family.
+
+"""
+    gnc_stream_words(namespace, seed, ids...) -> Vector{UInt32}
+
+The seed words of a binding's random stream, for `MersenneTwister(words)`: SHA-256
+over the ASCII text `"SpaceAGORA/<namespace>/<seed>/<id>/..."`, decoded
+little-endian into eight 32-bit words (held as unsigned integers; the RPO mapping
+has always produced them this way). The namespace carries a version, so a
+changed mapping is a new namespace. RPO uses `"RPO/v1"` with the chaser and target
+IDs. A stream depends only on these values, never on run order or threads.
+"""
+function gnc_stream_words(namespace::AbstractString, seed, ids...)
+    digest = sha256(join(("SpaceAGORA", namespace, string(seed), map(string, ids)...), "/"))
+    return [sum(UInt32(digest[i+j]) << (8j) for j in 0:3) for i in 1:4:32]
+end
+
+"""
+    AlgorithmRuntime(stream_words; state=nothing)
+
+Run-owned record of one binding, created fresh when the run starts and never
+shared between bindings:
+- the algorithm's `state` and its random stream `rng` (seeded from `stream_words`);
+- the request counter `request_id`;
+- the `installed_request` and `product`, which stay `nothing` until a product is
+  installed;
+- the delivered event tokens (`processed_tokens`);
+- the last guidance and request times;
+- the run `records`.
+"""
+mutable struct AlgorithmRuntime
+    state::Any
+    rng::MersenneTwister
+    stream_words::Vector{UInt32}
+    request_id::Int
+    installed_request::Any
+    product::Any
+    processed_tokens::Set{Int}
+    last_guidance_time::Float64
+    last_request_time::Float64
+    records::Vector{NamedTuple}
+end
+AlgorithmRuntime(stream_words::AbstractVector{<:Unsigned}; state=nothing) =
+    AlgorithmRuntime(state, MersenneTwister(stream_words), stream_words, 0, nothing, nothing,
+        Set{Int}(), -Inf, -Inf, NamedTuple[])
+
+"""
+    algorithm_runtime(binding) -> AlgorithmRuntime
+
+Required for each binding: its run-owned `AlgorithmRuntime`.
+"""
+function algorithm_runtime end
+
+"""
+    bound_algorithm(binding)
+
+Required for each binding: the algorithm it runs.
+"""
+function bound_algorithm end
+
+"""
+    bound_link(binding)
+
+Required for each binding: the object accepted products are installed into, shared
+with their consumer (for RPO, the plan buffer).
+"""
+function bound_link end
+
+"""
+    build_algorithm_request(binding, u, p, t, reason, request_id)
+
+Required for each binding: the owned request snapshot for this tick, built by
+trusted code from the simulation state `u` and parameters `p`.
+"""
+function build_algorithm_request end
+
+"""
+    trusted_queries(binding) -> NamedTuple
+
+The queries the lifecycle hands to `validate_proposal`, supplied independently of
+the algorithm (for RPO, `clearance_at`). Defaults to none.
+"""
+trusted_queries(binding) = NamedTuple()
+
+"""
+    fail_algorithm_request!(binding, reason; cause=nothing, backtrace=nothing, details=NamedTuple())
+
+Required for each binding: record the failure and throw a `GNCAlgorithmError`
+carrying the binding's copied run report. The request driver calls it when a
+request fails under the `:fail` policy, and with the driver's `exception_reason`
+when algorithm code throws.
+"""
+function fail_algorithm_request! end
+
+"""
+    algorithm_result_type(family) -> Type
+
+The type every proposal of `family` must have. A proposal of any other type fails
+the request with reason `:invalid_result_type`. Defaults to `AbstractAlgorithmResult`.
+"""
+algorithm_result_type(family) = AbstractAlgorithmResult
+
+"""
+    is_revision_request(family, request) -> Bool
+
+Whether `request` asks for a revision of the installed product, which the driver
+sends to `propose_revision!` instead of `propose!` (RPO: `reason === :retime`).
+Defaults to `false`.
+"""
+is_revision_request(family, request) = false
+
+"""
+    proposed_product(result)
+
+The product a candidate `result` proposes: `result.product` for an
+`AlgorithmResult` (RPO: the reference).
+"""
+proposed_product(result::AlgorithmResult) = result.product
+
+"""
+    installed_record(family, request, result, validation, product, reason, t) -> NamedTuple
+
+The run record kept when `product` is installed; the driver stores a deep copy.
+The default names the product `product`.
+"""
+installed_record(family, request, result, validation, product, reason, t) =
+    (event=:installed, time_s=t, request_id=_request_id(request), reason=reason,
+     termination=result.termination, validation=validation, product=product,
+     diagnostics=result.diagnostics)
+
+"""
+    rejected_record(family, request, result, validation, reason, t) -> NamedTuple
+
+The run record kept when a request is rejected under the `:keep_previous` or
+`:install_fallback` policy. `result` is `nothing` when the capability check refused
+the request before any proposal.
+"""
+rejected_record(family, request, result, validation, reason, t) =
+    (event=:rejected, time_s=t, request_id=_request_id(request), reason=reason,
+     termination=result === nothing ? :not_proposed : result.termination,
+     validation=validation)
+
+function _fail_request!(binding, reason; kwargs...)
+    fail_algorithm_request!(binding, reason; kwargs...)
+    throw(ArgumentError("fail_algorithm_request! for $(nameof(typeof(binding))) must throw a GNCAlgorithmError."))
+end
+
+function _reject_request!(binding, runtime, family, request, result, validation, reason, t)
+    policy = on_rejection(family)
+    if policy === :fail
+        result === nothing && _fail_request!(binding, validation.reason)
+        _fail_request!(binding, validation.reason; details=(termination=result.termination,
+            diagnostics=result.diagnostics, validation=validation))
+    elseif policy === :keep_previous
+        push!(runtime.records, deepcopy(rejected_record(family, request, result, validation, reason, t)))
+        return false
+    elseif policy === :install_fallback
+        product = deepcopy(fallback_product(family, request))
+        push!(runtime.records, deepcopy(rejected_record(family, request, result, validation, reason, t)))
+        install!(bound_link(binding), family, product, request, t; validation=validation,
+            diagnostics=NamedTuple())
+        runtime.product, runtime.installed_request, runtime.last_request_time = product, request, t
+        push!(runtime.records, deepcopy((event=:fallback_installed, time_s=t,
+            request_id=_request_id(request), reason=reason, product=product)))
+        return true
+    end
+    throw(ArgumentError("Unknown rejection policy $(repr(policy)) for $(nameof(typeof(family)))."))
+end
+
+"""
+    run_algorithm_request!(binding, u, p, t, reason; exception_reason=:algorithm_exception) -> Bool
+
+Run one request of `binding` at time `t` through the contract's steps:
+1. advance the request counter and build the request (`build_algorithm_request`);
+2. record a copy of it;
+3. check capabilities (`validate_capabilities`);
+4. ask for a proposal, passing a separate copy of the request (`propose!`, or
+   `propose_revision!` with a copy of the installed product when
+   `is_revision_request`);
+5. check the proposal's type and copy it;
+6. validate it against the retained request (`validate_proposal` with the binding's
+   `trusted_queries`);
+7. install a copy of the product (`install!`), with no yield or user callback
+   between validation and installation;
+8. record the install.
+
+A refusal follows the family's `on_rejection` policy. Algorithm exceptions become
+failures with reason `exception_reason`. Returns whether a product was installed.
+"""
+function run_algorithm_request!(binding, u, p, t, reason; exception_reason::Symbol=:algorithm_exception)
+    runtime = algorithm_runtime(binding)::AlgorithmRuntime
+    runtime.request_id += 1
+    algorithm = bound_algorithm(binding)
+    family = algorithm_family(algorithm)
+    try
+        request = build_algorithm_request(binding, u, p, t, reason, runtime.request_id)
+        # Retain a trusted snapshot. Algorithm code only receives another copy.
+        push!(runtime.records, (event=:request, time_s=t, request=deepcopy(request)))
+        capabilities = validate_capabilities(family, algorithm, request)
+        capabilities.accepted ||
+            return _reject_request!(binding, runtime, family, request, nothing, capabilities, reason, t)
+        result = is_revision_request(family, request) ?
+            propose_revision!(runtime.state, algorithm, deepcopy(request), deepcopy(runtime.product), runtime.rng) :
+            propose!(runtime.state, algorithm, deepcopy(request), runtime.rng)
+        result isa algorithm_result_type(family) || _fail_request!(binding, :invalid_result_type)
+        result = deepcopy(result)
+        checked = validate_proposal(family, request, result, trusted_queries(binding))
+        checked.accepted ||
+            return _reject_request!(binding, runtime, family, request, result, checked, reason, t)
+        product = deepcopy(proposed_product(result))
+        record = deepcopy(installed_record(family, request, result, checked, product, reason, t))
+        # No yield or user callback between validation and installation.
+        install!(bound_link(binding), family, product, request, t; validation=checked,
+            diagnostics=result.diagnostics)
+        runtime.product, runtime.installed_request, runtime.last_request_time = product, request, t
+        push!(runtime.records, record)
+        return true
+    catch e
+        e isa GNCAlgorithmError && rethrow()
+        _fail_request!(binding, exception_reason; cause=e, backtrace=catch_backtrace())
+    end
+end
 
 end # module GNCAlgorithms

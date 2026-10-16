@@ -279,4 +279,14 @@ GA.is_current(::RPOReferenceFamily, request::RPOPlanningRequest, reference::RPOR
     rpo_reference_is_current(request, reference, time_s)
 GA.on_rejection(::RPOReferenceFamily) = :fail
 GA.family_contract_version(::RPOReferenceFamily) = v"1.0.0"
+# Lifecycle hooks of the shared request driver; the install record keeps RPO's
+# historical field names, so run reports are unchanged.
+GA.algorithm_result_type(::RPOReferenceFamily) = RPOPlanningResult
+GA.is_revision_request(::RPOReferenceFamily, request::RPOPlanningRequest) = request.reason === :retime
+GA.proposed_product(result::RPOPlanningResult) = result.reference
+GA.installed_record(::RPOReferenceFamily, request::RPOPlanningRequest, result::RPOPlanningResult,
+        validation, reference, reason, time_s) =
+    (event=:installed, time_s=time_s, request_id=request.request_id, reason=reason,
+     termination=result.termination, validation=validation, reference=reference,
+     diagnostics=result.diagnostics)
 end

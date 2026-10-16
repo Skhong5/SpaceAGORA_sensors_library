@@ -1,7 +1,7 @@
 # Deliberately standalone, like the RPO contract tests: the general contract and
 # its RPO family load with Julia standard libraries alone.
 module GNCAlgorithmContractTests
-using Test, Random, LinearAlgebra
+using Test, Random, LinearAlgebra, SHA
 const SRC = joinpath(@__DIR__, "..", "..", "..", "src", "models", "gnc")
 include(joinpath(SRC, "interfaces", "gnc_algorithms.jl"))
 include(joinpath(SRC, "interfaces", "rpo_planner.jl"))
@@ -143,6 +143,137 @@ end
     @test stream_untouched(rng -> G.propose!(nothing, NullRPOPlanner(), request, rng))
     @test stream_untouched(rng -> G.propose_revision!(nothing, NullRPOPlanner(),
         rpo_request(reason=:retime), P.plan_rpo!(nothing, direct(), request, rng).reference, rng))
+end
+
+# The shared request driver, run by a toy binding and family written the way a
+# contributor would; the policy is the family's type parameter.
+struct DriverRequest <: G.AbstractAlgorithmRequest
+    request_id::Int
+    reason::Symbol
+    value::Float64
+end
+struct DriverFamily{Policy} <: G.AbstractAlgorithmFamily end
+G.on_rejection(::DriverFamily{Policy}) where {Policy} = Policy
+G.validate_capabilities(::DriverFamily, algorithm, request::DriverRequest; checkpoint::Bool=false) =
+    request.reason === :unsupported ? G.ValidationResult(false, :unsupported_reason) : G.ValidationResult(true, :supported)
+G.validate_proposal(::DriverFamily, request::DriverRequest, result, trusted) =
+    result.product <= trusted.limit ? G.ValidationResult(true, :within_limit) :
+        G.ValidationResult(false, :above_limit, (product=result.product,))
+function G.install!(link::Base.RefValue{Any}, ::DriverFamily, product, request::DriverRequest, t; validation, diagnostics)
+    link[] = (product=product, t=t, validated=validation.reason)
+    return nothing
+end
+G.fallback_product(::DriverFamily{:install_fallback}, request::DriverRequest) = 0.0
+G.is_revision_request(::DriverFamily, request::DriverRequest) = request.reason === :revise
+struct Doubler{Policy} <: G.AbstractGNCAlgorithm
+    mode::Symbol
+end
+G.algorithm_family(::Doubler{Policy}) where {Policy} = DriverFamily{Policy}()
+G.consumes_rng(::Doubler) = false
+function G.propose!(state, algorithm::Doubler, request::DriverRequest, rng)
+    algorithm.mode === :throw && error("algorithm failed")
+    algorithm.mode === :wrong_type && return :not_a_result
+    return G.AlgorithmResult(request_id=request.request_id, status=:candidate, termination=:completed,
+        product=2request.value)
+end
+G.propose_revision!(state, algorithm::Doubler, request::DriverRequest, active, rng) =
+    G.AlgorithmResult(request_id=request.request_id, status=:candidate, termination=:completed,
+        product=active + request.value)
+struct DriverFailure <: G.GNCAlgorithmError
+    reason::Symbol
+    cause::Any
+    details::Any
+end
+mutable struct DriverBinding
+    algorithm::Any
+    runtime::G.AlgorithmRuntime
+    link::Base.RefValue{Any}
+    throws::Bool
+end
+DriverBinding(algorithm; throws=true) =
+    DriverBinding(algorithm, G.AlgorithmRuntime(G.gnc_stream_words("Toy/v1", 1, 2)), Ref{Any}(nothing), throws)
+G.algorithm_runtime(b::DriverBinding) = b.runtime
+G.bound_algorithm(b::DriverBinding) = b.algorithm
+G.bound_link(b::DriverBinding) = b.link
+G.trusted_queries(::DriverBinding) = (limit=10.0,)
+G.build_algorithm_request(b::DriverBinding, u, p, t, reason, request_id) = DriverRequest(request_id, reason, u)
+function G.fail_algorithm_request!(b::DriverBinding, reason; cause=nothing, backtrace=nothing, details=NamedTuple())
+    push!(b.runtime.records, (event=:failure, reason=reason))
+    b.throws && throw(DriverFailure(reason, cause, details))
+    return nothing
+end
+run_request!(b, value, t, reason=:initial) = G.run_algorithm_request!(b, value, nothing, t, reason)
+failure(f) = try f(); nothing catch err; err end
+events(b) = [r.event for r in b.runtime.records]
+
+@testset "Shared request driver" begin
+    b = DriverBinding(Doubler{:fail}(:ok))
+    stream = copy(b.runtime.rng)
+    @test run_request!(b, 2.0, 0.5) === true
+    @test b.link[] == (product=4.0, t=0.5, validated=:within_limit)
+    @test b.runtime.product == 4.0 && b.runtime.installed_request == DriverRequest(1, :initial, 2.0)
+    @test b.runtime.request_id == 1 && b.runtime.last_request_time == 0.5
+    @test events(b) == [:request, :installed] && last(b.runtime.records).product == 4.0
+    @test rand(copy(b.runtime.rng)) == rand(stream)          # a deterministic algorithm draws nothing
+    # A revision request revises the installed product.
+    @test run_request!(b, 1.0, 1.0, :revise) === true && b.link[].product == 5.0
+    # :fail: the binding's failure carries the validation; nothing is installed.
+    e = failure(() -> run_request!(b, 6.0, 2.0))
+    @test e isa DriverFailure && e.reason === :above_limit
+    @test e.details.validation.metrics.product == 12.0 && e.details.termination === :completed
+    @test b.link[].product == 5.0 && b.runtime.product == 5.0 && b.runtime.request_id == 3
+    # A capability refusal fails before any proposal, without details.
+    e = failure(() -> run_request!(DriverBinding(Doubler{:fail}(:ok)), 1.0, 0.0, :unsupported))
+    @test e isa DriverFailure && e.reason === :unsupported_reason && e.details == NamedTuple()
+    # :keep_previous keeps the installed product and records the rejection.
+    k = DriverBinding(Doubler{:keep_previous}(:ok)); run_request!(k, 2.0, 0.0)
+    @test run_request!(k, 6.0, 1.0) === false
+    @test k.link[].product == 4.0 && k.runtime.product == 4.0 && k.runtime.last_request_time == 0.0
+    @test events(k) == [:request, :installed, :request, :rejected]
+    @test last(k.runtime.records).validation.reason === :above_limit
+    @test run_request!(k, 1.0, 2.0, :unsupported) === false
+    @test last(k.runtime.records).termination === :not_proposed
+    # :install_fallback installs the family's fallback product.
+    f = DriverBinding(Doubler{:install_fallback}(:ok))
+    @test run_request!(f, 6.0, 1.0) === true
+    @test f.link[].product == 0.0 && f.runtime.product == 0.0
+    @test events(f) == [:request, :rejected, :fallback_installed]
+    # A proposal of the wrong type, and algorithm exceptions, fail the request.
+    e = failure(() -> run_request!(DriverBinding(Doubler{:fail}(:wrong_type)), 1.0, 0.0))
+    @test e isa DriverFailure && e.reason === :invalid_result_type
+    w = DriverBinding(Doubler{:fail}(:throw))
+    e = failure(() -> G.run_algorithm_request!(w, 1.0, nothing, 0.0, :initial; exception_reason=:toy_exception))
+    @test e isa DriverFailure && e.reason === :toy_exception && e.cause isa ErrorException
+    @test w.link[] === nothing && w.runtime.product === nothing
+    # A failure hook that returns instead of throwing breaks the contract.
+    @test_throws ArgumentError run_request!(DriverBinding(Doubler{:fail}(:ok); throws=false), 6.0, 0.0)
+end
+
+@testset "Stream words and runtime" begin
+    words = G.gnc_stream_words("RPO/v1", 741, 101, 201)
+    digest = sha256("SpaceAGORA/RPO/v1/741/101/201")
+    @test words == [sum(UInt32(digest[i+j]) << (8j) for j in 0:3) for i in 1:4:32]
+    @test length(words) == 8 && all(w -> w <= typemax(UInt32), words)
+    @test G.gnc_stream_words("RPO/v1", 741, 101, 202) != words
+    @test G.gnc_stream_words("RPO/v2", 741, 101, 201) != words
+    runtime = G.AlgorithmRuntime(words)
+    @test rand(runtime.rng) == rand(MersenneTwister(words))
+    @test runtime.stream_words == words && runtime.stream_words isa Vector{UInt32}
+    @test runtime.request_id == 0 && runtime.product === nothing && runtime.installed_request === nothing
+    @test isempty(runtime.records) && isempty(runtime.processed_tokens) && runtime.last_request_time == -Inf
+end
+
+@testset "RPO lifecycle hooks" begin
+    family, request = P.RPOReferenceFamily(), rpo_request()
+    proposed = G.propose!(nothing, direct(), deepcopy(request), MersenneTwister(1))
+    checked = G.validate_proposal(family, request, proposed, (clearance_at=point_clearance,))
+    @test G.algorithm_result_type(family) === P.RPOPlanningResult
+    @test G.is_revision_request(family, rpo_request(reason=:retime))
+    @test !G.is_revision_request(family, request) && !G.is_revision_request(family, rpo_request(reason=:replan))
+    @test G.proposed_product(proposed) === proposed.reference
+    record = G.installed_record(family, request, proposed, checked, proposed.reference, :initial, 0.0)
+    @test keys(record) == (:event, :time_s, :request_id, :reason, :termination, :validation, :reference, :diagnostics)
+    @test record.reference === proposed.reference && record.event === :installed
 end
 end # module GNCAlgorithmContractTests
 
