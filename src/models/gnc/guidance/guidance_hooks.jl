@@ -71,6 +71,38 @@ module GuidanceHooks
     export apollo11_descent_targets, descent_site_frame, descent_accel_command, descent_time_to_go
     export descent_attitude_command, descent_throttle, descent_environment, quaternion_from_passive_dcm
 
+    """
+        calcGuidanceEffect!(model, u, p, t, spacecraft_index) -> nothing
+
+    The guidance tick, which every effector in a `GuidanceModel` implements for
+    its own type. The effector updates its own state (a plan, a target, a mode)
+    for control effectors to read; the engine ignores the return value.
+
+    - `model`: the guidance effector.
+    - `u`: the full integrated state. `u.sc[spacecraft_index]` is the spacecraft, with
+      `pos` (m) and `vel` (m/s) relative to the planet's centre in the inertial
+      frame and `mass` (kg); with attitude propagation also `q`, the scalar-last
+      quaternion from inertial to bus axes, and `ω`, the bus angular velocity in
+      rad/s.
+    - `p`: the run's parameters; `p.args` is the `SimulationConfiguration`.
+    - `t`: elapsed time since the run's start epoch, in seconds (`Float64`).
+    - `spacecraft_index`: the spacecraft's position in the run (`Int`, from 1), not its ID.
+
+    Effector `k` runs every `guidance_rates[k]` seconds of simulated time, once
+    for each spacecraft in index order, starting one period after the solve
+    starts. When ticks coincide, navigation effectors run first, then control
+    effectors, then guidance effectors; energy depletion guidance with targeting
+    runs before the control effectors instead. The propulsive-maneuver thruster
+    control effector (see `calcControlEffect!`) also runs every guidance
+    effector at the start of the solve and when a spacecraft leaves the
+    atmosphere, just before it schedules that spacecraft's burns.
+
+    Before integration starts, `run_simulation` checks that every guidance
+    effector has a method for these arguments and stops with an `ArgumentError`
+    naming the effector otherwise.
+    """
+    function calcGuidanceEffect! end
+
     include(joinpath(@__DIR__, "..", "internal", "bridge_helpers.jl"))
     using ..FrameTransforms
     # Shared calculations and compatibility types/bindings retain this module.

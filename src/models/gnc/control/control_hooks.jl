@@ -78,6 +78,50 @@ module ControlHooks
     """
     touchdown_spec(effector, spacecraft_index::Int) = nothing
 
+    """
+        calcControlEffect!(model, u, p, t, spacecraft_index) -> nothing
+
+    The control tick, which every effector in a `ControlModel` implements for its
+    own type. The effector computes its command (a thrust, a torque, actuator
+    levels, panel angles) and keeps it in its own state; the engine ignores the
+    return value and applies the held command until the next tick:
+
+    - in `:ideal` actuation, the default `actuation_mode`, through the effector's
+      `calcControlForceTorque`, `calcControlMassFlowRate` and
+      `calcReactionWheelTorque`, which the dynamics evaluate at every step;
+    - in `:mounted` actuation, through the levels `actuator_levels` returns for
+      the actuators mounted on the spacecraft; `calcControlForceTorque` and
+      `calcControlMassFlowRate` are not called.
+
+    The arguments:
+
+    - `model`: the control effector.
+    - `u`: the full integrated state. `u.sc[spacecraft_index]` is the spacecraft, with
+      `pos` (m) and `vel` (m/s) relative to the planet's centre in the inertial
+      frame and `mass` (kg); with attitude propagation also `q`, the scalar-last
+      quaternion from inertial to bus axes, and `ω`, the bus angular velocity in
+      rad/s.
+    - `p`: the run's parameters; `p.args` is the `SimulationConfiguration`.
+    - `t`: elapsed time since the run's start epoch, in seconds (`Float64`).
+    - `spacecraft_index`: the spacecraft's position in the run (`Int`, from 1), not its ID.
+
+    Effector `k` runs every `control_rates[k]` seconds of simulated time, once for
+    each spacecraft, starting one period after the solve starts. The calls for
+    different spacecraft run one after another unless the effector's type is
+    declared thread-safe (`SimulationModel.SimulationCallbacks.control_model_threadsafe(::MyEffector) = true`)
+    or the run sets `SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE=1`; then they
+    may run at the same time on different threads, and state that several
+    spacecraft share needs a lock. `BaseThrusterModel` is the exception: it runs
+    at the start of the solve and when a spacecraft leaves the atmosphere, to
+    schedule that spacecraft's burns.
+
+    Before integration starts, `run_simulation` checks that every control
+    effector has a method of this function and, unless its actuation is
+    `:mounted`, of `calcControlForceTorque`, and stops with an `ArgumentError`
+    naming the effector otherwise.
+    """
+    function calcControlEffect! end
+
     include(joinpath(@__DIR__, "..", "internal", "bridge_helpers.jl"))
     using ..QuaternionMath
     include(joinpath(@__DIR__, "propulsive_maneuvers.jl"))
