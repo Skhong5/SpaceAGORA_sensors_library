@@ -13,7 +13,7 @@ name = "SpaceAGORAMuJoCo"
 path = "packages/robotics/SpaceAGORAMuJoCo.jl"
 url = "https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl.git"
 uuid = "a46e04e1-adb7-43c3-a03b-26575bf4fb67"
-version = "0.1.0"
+version = "0.2.0"
 
 # A real published companion commit must be recorded as a gitlink before setup.
 [edg]

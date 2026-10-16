@@ -22,13 +22,17 @@ Contract, per run:
 3. `external_sync!(rt, t)` advances the owner to time `t` or the last owned step not past it, and returns the
    number of owner steps taken. The engine calls it after every accepted step, before any other discrete
    callback, so guidance, navigation and control callbacks see state current to `t` at an owner-step boundary.
-4. `external_state(rt, k, t)` returns the absolute state of the `k`-th owned spacecraft at engine time `t` in
-   SpaceAGORA's conventions: `pos`, `vel` (inertial, m and m/s), `q` (scalar-last, body to inertial) and `ω`
-   (body frame). The owner's time is at most one owner step behind `t`; the owner advances its state over that
-   remainder with the same model the shadow right-hand side uses (chief acceleration, constant body rate), so
-   a written shadow entry is consistent in time with the state the solver integrates.
-5. `external_acceleration(rt, k, t)` is the translational acceleration the shadow entry follows at engine time
+4. `external_state(rt, t, slot)` returns the absolute state of the owned spacecraft at position `slot` of the
+   owner's `external_spacecraft` list, at engine time `t`, in SpaceAGORA's conventions: `pos`, `vel` (inertial,
+   m and m/s), `q` (scalar last, `v_body = rot(q) * v_inertial`) and `ω` (body frame). The owner's time is at
+   most one owner step behind `t`; the owner advances its state over that remainder with the same model the
+   shadow right-hand side uses (chief acceleration, constant body rate), so a written shadow entry is consistent
+   in time with the state the solver integrates.
+5. `external_acceleration(rt, t, slot)` is the translational acceleration the shadow entry follows at engine time
    `t` until the next sync (inertial, m/s^2); an owner uses its chief's acceleration, evaluated at `t`.
+
+Contract 2.0.0 puts the time before the owner-local position `slot`, as every SpaceAGORA hook puts time before
+an index; contract 1.0.0 had `external_state(rt, k, t)` and `external_acceleration(rt, k, t)`.
 """
 module ExternalPropagation
 
@@ -89,17 +93,33 @@ external_sync!(rt, t::Float64) = _unimplemented("external_sync!", typeof(rt))
 external_time(rt) = _unimplemented("external_time", typeof(rt))
 
 """
-    external_state(rt, k, t) -> (pos, vel, q, ω)
+    external_state(rt, t, slot) -> (pos, vel, q, ω)
 
-Return the absolute state of the `k`-th owned spacecraft at elapsed engine time
-`t` [s]: inertial position [m], inertial velocity [m/s], scalar-last
-body-to-inertial quaternion, and body angular velocity [rad/s]. `k` is local to
-the owner's ordered spacecraft list. Account for any lag after the last whole
-owner step with the model used by the shadow acceleration and attitude kinematics.
+Return the absolute state, at elapsed engine time `t` [s], of the owned spacecraft
+at position `slot` (1-based) of the owner's `external_spacecraft` list; `slot` is
+local to the owner, not a run index. The fields are inertial position `pos` [m],
+inertial velocity `vel` [m/s], attitude quaternion `q` and body angular velocity
+`ω` [rad/s]. Account for any lag after the last whole owner step with the model
+used by the shadow acceleration and attitude kinematics.
+
+`q = (x, y, z, w)` is scalar last and gives `v_body = rot(q) * v_inertial`, with
+`rot(q) = (w^2 - e⋅e) I + 2 e eᵀ - 2 w [e×]`, `e = (x, y, z)` and `[e×]` the
+cross-product matrix of `e`. This is the engine's convention for the state `q`,
+`StateSample.q_ib` and the saved `sc<i>_q_*` columns.
+
+Contract 2.0.0 order: time before the position. Contract 1.0.0 was
+`external_state(rt, k, t)`.
 """
-external_state(rt, k::Int, t::Float64) = _unimplemented("external_state", typeof(rt))
+external_state(rt, t::Float64, slot::Int) = _unimplemented("external_state", typeof(rt))
 
-"""`external_acceleration(rt, k, t) -> SVector{3,Float64}`: shadow-entry translational acceleration at engine time `t`."""
-external_acceleration(rt, k::Int, t::Float64) = _unimplemented("external_acceleration", typeof(rt))
+"""
+    external_acceleration(rt, t, slot) -> SVector{3,Float64}
+
+Inertial translational acceleration [m/s^2] that the shadow entry of the owned
+spacecraft at position `slot` follows at elapsed engine time `t` [s]. Contract
+2.0.0 order: time before the position; contract 1.0.0 was
+`external_acceleration(rt, k, t)`.
+"""
+external_acceleration(rt, t::Float64, slot::Int) = _unimplemented("external_acceleration", typeof(rt))
 
 end # module ExternalPropagation

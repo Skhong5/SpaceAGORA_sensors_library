@@ -15,12 +15,10 @@ module ControlHooks
     using ..GuidanceModels: RPOPlan, RPOPlanBuffer
     using ..GravityEffectors: aerobraking_gravity_force_ii
     using ..AerodynamicEffectors: aerodynamic_coefficient_fM
-    using ..GuidanceHooks: AerobrakingGuidanceInput, dispatch_aerobraking_guidance
     using ..GuidanceHooks: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState, AerobrakingEnergyDepletionGuidanceModel
     using ..GuidanceHooks: ApolloDescentConfig, ApolloDescentState, _validate_descent_config, _descent_indices
     using ..AbstractTypes: AbstractTerrainModel
     using ..TerrainModels: NoTerrainModel, DEMTerrainModel
-    using ..AerobrakingPolicy: AerobrakingPolicyConfig, DefaultAerobrakingPolicySelector
     using ..EnvironmentModels: getDensity, _environment_wind
     using ..EphemeridesModels: ephemerides_requires_spice, planet_frame_lpi
     using ..ReferenceSystems
@@ -158,7 +156,6 @@ module ControlHooks
     """
     function calcControlEffect! end
 
-    include(joinpath(@__DIR__, "..", "internal", "bridge_helpers.jl"))
     using ..QuaternionMath
     include(joinpath(@__DIR__, "propulsive_maneuvers.jl"))
     include(joinpath(@__DIR__, "heat_rate_control.jl"))
@@ -174,9 +171,6 @@ module ControlHooks
     include(joinpath(@__DIR__, "rpo_mpc", "rpo_mpc_control_model.jl"))
     include(joinpath(@__DIR__, "robot_arm_control.jl"))
     include(joinpath(@__DIR__, "momentum_manager.jl"))
-    include(joinpath(@__DIR__, "aerobraking", "control_commands.jl"))
-    include(joinpath(@__DIR__, "aerobraking", "constraint_tracking.jl"))
-    include(joinpath(@__DIR__, "aerobraking", "tracking_executor.jl"))
     include(joinpath(@__DIR__, "landing", "apollo_descent_control.jl"))
 
     # Per-spacecraft GNC binding (see SimulationLifecycle.bind_spacecraft).

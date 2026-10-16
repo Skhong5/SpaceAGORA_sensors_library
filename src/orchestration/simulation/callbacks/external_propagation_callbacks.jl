@@ -29,7 +29,7 @@ function get_external_propagation_callback(num_sats::Int)
             ExternalPropagation.external_sync!(rt, t) > 0 || continue
             for i in 1:num_sats
                 buffers.external_owner[i] == r || continue
-                st = ExternalPropagation.external_state(rt, buffers.external_local[i], t)
+                st = ExternalPropagation.external_state(rt, t, buffers.external_local[i])
                 sc = u.sc[i]
                 sc.pos .= st.pos
                 sc.vel .= st.vel

@@ -60,7 +60,6 @@ default_weight = { other = 1.2 }
 "probe:hypr_search_probes.jl" = 0.63
 "probe:initial_condition_altitude_probes.jl" = 0.39
 "probe:kinematics_probes.jl" = 0.26
-"probe:legacy_roots_callers_probes.jl" = 0.34
 "probe:parallel_policy_probes.jl" = 0.51
 "probe:pck_override_probes.jl" = 0.32
 "probe:process_pool_probes.jl" = 1.15
@@ -282,7 +281,6 @@ grid = 1.00
 "probe:hypr_search_probes.jl" = 1.14
 "probe:initial_condition_altitude_probes.jl" = 1.13
 "probe:kinematics_probes.jl" = 0.88
-"probe:legacy_roots_callers_probes.jl" = 1.10
 "probe:parallel_policy_probes.jl" = 1.18
 "probe:pck_override_probes.jl" = 1.07
 "probe:process_pool_probes.jl" = 2.41
