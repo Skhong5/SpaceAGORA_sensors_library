@@ -1,5 +1,7 @@
 using ..FrameTransforms
 import ...SimulationLifecycle
+import ...GNCRuntime
+using ...GNCRuntime: tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!
 
 using OrdinaryDiffEq
 using DiffEqBase
@@ -37,7 +39,7 @@ using ..PowerSystems: has_battery, has_power_parts, battery, solar_generation_w,
 using ..PowerSystems: bus_load_w, actuator_power_by_tier, battery_boundary!, update_power_state!, shed_levels
 using ..DynamicEffectors: eclipse_area_calc, MagneticTorqueRodModel, rod_field_body
 using ..ActuatorFaults: has_faults, faulted_levels, refresh_faults!, fault_edge, resolve_faults!
-using ..Sensors: SensorTruth, sensor_measure, sensor_requirements, sensor_period_s
+using ..Sensors: SensorTruth, sensor_measure, sensor_requirements, sensor_period_s, initialize_sensor!
 using ..SensorMounting: SensorMounting, mounted_sensors, reset_sensors!
 using ..ActuatorMounting: actuator_context
 using ..TerrainModels: AbstractTerrainModel, DEMTerrainModel, terrain_radius

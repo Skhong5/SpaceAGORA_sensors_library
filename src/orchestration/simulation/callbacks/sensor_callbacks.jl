@@ -32,13 +32,16 @@ function _sensor_truth(integrator, i::Int, wants_field::Bool)
     return SensorTruth(pos, vel, q, ω, Float64(sc_view.mass), Float64(integrator.t), field)
 end
 
-function _sample_sensors!(integrator, members::Vector{Tuple{Int, Int}})
+function _sample_sensors!(integrator, members::Vector{Tuple{Int, Int}}; first_sample::Bool=false)
     spacecraft = integrator.p.args.dynamics_model.spacecraft
     for (i, k) in members
         entry = mounted_sensors(spacecraft[i])[k]
         s = entry.sensor
         truth = _sensor_truth(integrator, i, sensor_requirements(s).magnetic_field)
-        s.latest = sensor_measure(s, truth, actuator_context(entry.link), s.rng)
+        ctx = actuator_context(entry.link)
+        # The run's first sample: the sensor's own state resets first.
+        first_sample && initialize_sensor!(s, truth, ctx, s.rng)
+        s.latest = sensor_measure(s, truth, ctx, s.rng)
         s.latest_time_s = Float64(integrator.t)
     end
     return nothing
@@ -75,8 +78,8 @@ function get_sensor_callbacks(num_sats::Int, args::SimulationConfiguration)
         start = Ref(NaN)
         next = Ref(0)
         due() = start[] + next[] * period
-        function sample_now!(integrator)
-            _sample_sensors!(integrator, members)
+        function sample_now!(integrator; first_sample::Bool=false)
+            _sample_sensors!(integrator, members; first_sample=first_sample)
             next[] += 1
             while due() <= integrator.t
                 next[] += 1
@@ -85,7 +88,8 @@ function get_sensor_callbacks(num_sats::Int, args::SimulationConfiguration)
             return nothing
         end
         function initialize!(cb, u, t, integrator)
-            if isnan(start[])                       # the run's first solve
+            first_sample = isnan(start[])                # the run's first solve
+            if first_sample
                 if !reset_done[]
                     for i in sensor_sats
                         reset_sensors!(integrator.p.args.dynamics_model.spacecraft[i])
@@ -96,7 +100,7 @@ function get_sensor_callbacks(num_sats::Int, args::SimulationConfiguration)
                 next[] = 0
             end
             # The run's first sample, or one due where the previous segment ended.
-            Float64(t) >= due() ? sample_now!(integrator) : _maybe_add_control_tstop!(integrator, due())
+            Float64(t) >= due() ? sample_now!(integrator; first_sample=first_sample) : _maybe_add_control_tstop!(integrator, due())
             return nothing
         end
         affect! = integrator -> begin

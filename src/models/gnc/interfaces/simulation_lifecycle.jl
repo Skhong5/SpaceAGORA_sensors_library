@@ -1,6 +1,9 @@
 # Internal lifecycle extension points. Legacy guidance retains no-op defaults.
 module SimulationLifecycle
 preflight_guidance(model, args; isolate_state) = nothing
+# Run-start initialization: before the solve, the engine calls the navigation,
+# then the guidance, then the control methods for every configured effector.
+initialize_navigation!(model, u, p, t) = nothing
 initialize_guidance!(model, u, p, t) = nothing
 preflight_control(model, args; isolate_state) = nothing
 initialize_control!(model, u, p, t) = nothing
