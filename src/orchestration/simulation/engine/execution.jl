@@ -186,6 +186,11 @@ end
         throw(ArgumentError("A spacecraft with a battery needs a solver mode that integrates the full right-hand side; " *
             "solver_mode=$(repr(mode)) splits it. Use :tsit5, :dp8, :rodas5p or :auto_stiff."))
     end
+    if mode in (:gravity_backbone_split, :split_imex, :multirate) &&
+            any(sc -> !isempty(sc.root.rw_assembly.cmgs), p.args.dynamics_model.spacecraft)
+        throw(ArgumentError("Control moment gyros need a solver mode that integrates the full right-hand side; " *
+            "solver_mode=$(repr(mode)) splits it. Use :tsit5, :dp8, :rodas5p or :auto_stiff."))
+    end
     # The gravity backbone runs no sensor sampling, and multirate subsolves
     # revisit overlapping intervals, which would sample twice or out of order.
     if mode in (:gravity_backbone_split, :multirate) &&

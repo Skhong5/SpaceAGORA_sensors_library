@@ -326,8 +326,12 @@ end
     t::Float64,
     debug_control::Bool,
 )::Tuple{Float64, SVector{3, Float64}}
-    p.args.control_model isa SimulationModel.ControlModel{Tuple{}} &&
+    if p.args.control_model isa SimulationModel.ControlModel{Tuple{}}
+        # Nothing commands the mounted wheels or CMGs: clear the rates a
+        # previous run on the same spacecraft may have left.
+        _clear_mounted_rates!(p.args.dynamics_model.spacecraft[sat_idx].root.rw_assembly)
         return (0.0, SVector{3, Float64}(0.0, 0.0, 0.0))
+    end
     rw_torque_body = MVector{3, Float64}(0.0, 0.0, 0.0)
     mass_rate = _accumulate_control_effectors!(forces, torques, rw_torque_body, sc_view, p, sat_idx, t, debug_control)
     return (mass_rate, SVector{3, Float64}(rw_torque_body))
@@ -353,9 +357,9 @@ function _accumulate_control_effectors_from_tuple!(
     control_effectors::CE,
 )::Float64 where {CE <: Tuple}
     mass_rate = 0.0
-    # The mounted wheels' momentum rates are rebuilt by every evaluation.
+    # The mounted wheels' momentum rates and the CMGs' gimbal rates are rebuilt by every evaluation.
     wheels = p.args.dynamics_model.spacecraft[sat_idx].root.rw_assembly
-    isempty(wheels.mounted_rates) || fill!(wheels.mounted_rates, 0.0)
+    _clear_mounted_rates!(wheels)
     @inbounds for control_effector in control_effectors
         mounted = SimulationModel.actuation_mode(control_effector) === :mounted
         if mounted
@@ -419,8 +423,40 @@ end
     force_body, torque_body, mass_rate, wheel_torque =
         SimulationModel.mounted_wrench(spacecraft, levels, Float64(sc_view.mass), q, ω, wheel_momentum, field,
             spacecraft.root.rw_assembly.mounted_rates, environment)
+    # Each mounted CMG's gimbal rate goes to the orientation right-hand side the
+    # same way (the assembly's `cmg_rates`), which applies the CMG's torque there.
+    _add_mounted_cmg_rates!(spacecraft, levels)
     force_ii = SimulationModel.rot(q)' * force_body          # rot(q) maps inertial to body
     return (force_ii, torque_body, -mass_rate, wheel_torque)
+end
+
+@inline function _clear_mounted_rates!(assembly)
+    isempty(assembly.mounted_rates) || fill!(assembly.mounted_rates, 0.0)
+    isempty(assembly.cmg_rates) || fill!(assembly.cmg_rates, 0.0)
+    return nothing
+end
+
+@inline function _add_mounted_cmg_rates!(spacecraft, levels)
+    assembly = spacecraft.root.rw_assembly
+    isempty(assembly.cmgs) && return nothing
+    k = SimulationModel.ActuatorMounting._cmg_level_offset(spacecraft)
+    @inbounds for (j, cmg) in enumerate(assembly.cmgs)
+        assembly.cmg_rates[j] += SimulationModel.actuator_saturate(cmg, levels[k + j])
+    end
+    return nothing
+end
+
+# The mounted CMGs' momentum in the body frame at gimbal angles `angles`, and
+# its rate relative to the body at the commanded gimbal rates: `Σ δ̇ (g × h)`.
+@inline function _cmg_momentum_and_rate(assembly, angles)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    h = SVector{3, Float64}(0.0, 0.0, 0.0)
+    hdot = SVector{3, Float64}(0.0, 0.0, 0.0)
+    @inbounds for (j, cmg) in enumerate(assembly.cmgs)
+        hj = SimulationModel.cmg_momentum(cmg, angles[j])
+        h += hj
+        hdot += assembly.cmg_rates[j] * cross(cmg.gimbal_axis, hj)
+    end
+    return h, hdot
 end
 
 @inline function _ensure_rhs_flat_effector_scratch!(
@@ -2753,6 +2789,15 @@ end
         end
     end
 
+    # Control moment gyros: their rotors' momentum joins the gyroscopic term and
+    # the vehicle feels minus its rate; the gimbal angles follow the commanded rates.
+    if rw_assembly !== nothing && !isempty(rw_assembly.cmgs)
+        h_cmg, hdot_cmg = _cmg_momentum_and_rate(rw_assembly, sc_view.cmg_angles)
+        h_wheel_body = h_wheel_body + h_cmg
+        tau_body = tau_body - hdot_cmg
+        du_view.cmg_angles .= rw_assembly.cmg_rates
+    end
+
     du_view.ω .= SimulationModel.DynamicsRotational.angular_acceleration(
         omega_body,
         inertia_tensor,
@@ -3912,6 +3957,11 @@ function build_initial_conditions(args)::ComponentVector
         end
         n_rw = args.mission_configuration.orientation_sim ? sc.root.rw_assembly.n_wheels : 0
         base_shape = n_rw > 0 ? merge(base_shape, (h_wheels = zeros(n_rw),)) : base_shape
+        # Control moment gyros' gimbal angles, only when CMGs are mounted.
+        n_cmg = length(sc.root.rw_assembly.cmgs)
+        (n_cmg > 0 && !args.mission_configuration.orientation_sim) && throw(ArgumentError(
+            "Control moment gyros need the attitude state: set orientation_sim=true (spacecraft $(i))."))
+        base_shape = n_cmg > 0 ? merge(base_shape, (cmg_angles = zeros(n_cmg),)) : base_shape
         # The battery's stored energy, Wh, only when a battery is mounted.
         base_shape = SimulationModel.has_battery(sc) ? merge(base_shape, (battery_wh = 0.0,)) : base_shape
         if args.interlink_model !== nothing
@@ -3952,6 +4002,8 @@ function build_initial_conditions(args)::ComponentVector
             if spacecraft.root.rw_assembly.n_wheels > 0
                 sc_view.h_wheels .= spacecraft.root.rw_assembly.h_wheels
             end
+            cmgs = spacecraft.root.rw_assembly.cmgs
+            isempty(cmgs) || (sc_view.cmg_angles .= [c.gimbal_angle_rad for c in cmgs])
         end
         if SimulationModel.has_battery(spacecraft)
             sc_view.battery_wh = SimulationModel.initial_battery_wh(spacecraft)

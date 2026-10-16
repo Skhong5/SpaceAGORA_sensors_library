@@ -398,6 +398,22 @@ function _save_actuator_power(num_sats::Int, counts::Vector{Int}, u, t, integrat
 end
 
 """
+    cmg_save_fields(args) -> Vector{SaveField}
+
+The `cmg_angle` field when a spacecraft carries control moment gyros: per
+spacecraft the gimbal angle of each CMG, in mounting order, rad
+(`sc{i}_cmg_angle_{j}`), from the integrated state.
+"""
+function cmg_save_fields(args::SimulationConfiguration)
+    args.mission_configuration.orientation_sim || return SaveField[]
+    any(sc -> !isempty(sc.root.rw_assembly.cmgs), args.dynamics_model.spacecraft) || return SaveField[]
+    num_sats = length(args.dynamics_model.spacecraft)
+    getter = (u, t, integrator) -> [hasproperty(u.sc[i], :cmg_angles) ? Float64[x for x in u.sc[i].cmg_angles] : Float64[]
+                                    for i in 1:num_sats]
+    return SaveField[SaveField(:cmg_angle, getter; per_satellite=true, column_prefix="cmg_angle")]
+end
+
+"""
     actuator_level_counts(args) -> Vector{Int}
 
 Number of mounted actuators per spacecraft, in mounting order, when a control
@@ -646,6 +662,7 @@ function default_save_fields(args::SimulationConfiguration)
     append!(fields, power_save_fields(args))
     append!(fields, fault_save_fields(args))
     append!(fields, sensor_save_fields(args))
+    append!(fields, cmg_save_fields(args))
     for field in visualization_save_fields(args)
         push!(fields, field)
     end

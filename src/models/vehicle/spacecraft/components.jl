@@ -13,6 +13,7 @@ import ..Actuators: actuator_wrench, actuator_limits, actuator_consumption, actu
 export Facet, Thruster, Magnet, ReactionWheelAssembly, create_facet_list
 export six_axis_thrusters, ReactionWheel, wheel_momentum_saturate, wheel_power, Magnetorquer, LaserTerminal, PanelHinge, hinge_step
 export ThrusterGimbal, gimbal_step, thrust_direction
+export ControlMomentGyro, cmg_momentum, cmg_torque_axis
 export SolarArray, Battery, PowerLoad
 export ActuatorFault, FaultSet
 export RateGyro, StarTracker, Magnetometer
@@ -21,6 +22,8 @@ const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 
 # Actuator hardware records live beside the actuator layer.
 include(joinpath(@__DIR__, "..", "actuators", "thruster.jl"))
+# Control moment gyros, held by the reaction-wheel assembly below.
+include(joinpath(@__DIR__, "..", "actuators", "cmg.jl"))
 include(joinpath(@__DIR__, "..", "actuators", "reaction_wheel.jl"))
 include(joinpath(@__DIR__, "..", "actuators", "magnetorquer.jl"))
 include(joinpath(@__DIR__, "..", "actuators", "laser.jl"))

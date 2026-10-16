@@ -1,0 +1,143 @@
+module ControlMomentGyroTests
+using Test, StaticArrays, LinearAlgebra, SpaceAGORA
+import SpaceAGORA.TelemetryVerification: make_example_config
+const SM = SpaceAGORA.SimulationModel
+
+mutable struct HoldLevels <: AbstractControlEffectorModel
+    levels::Vector{Float64}
+end
+SpaceAGORA.actuation_mode(::HoldLevels) = :mounted
+SpaceAGORA.actuator_levels(c::HoldLevels, i::Int) = i == 1 ? c.levels : nothing
+SpaceAGORA.calcControlEffect!(::HoldLevels, u, p, t::Float64, i::Int64) = nothing
+
+function far_spacecraft(; ω0=SVector(0.0, 0.0, 0.0))
+    root = SM.Link(root=true, m=500.0, dims=MVector(1.0, 1.0, 1.0))
+    ic = SM.CartesianInitialCondition(SVector(4.0e9, 0.0, 0.0), SVector(0.0, 0.0, 0.0); q=SVector(0.0, 0.0, 0.0, 1.0), ang_vel=ω0)
+    return SM.SpacecraftModel(links=[root], root=root, prop_mass=0.0, inertia_tensor=root.inertia, initial_condition=ic, id=1), root
+end
+
+function cmg_run(sc, levels; mission_time=20.0, solver=nothing, orientation_sim=true)
+    base = make_example_config(planet=SM.Earth(), spacecraft=sc, mission_time=mission_time,
+        initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+        dynamic_effectors=(), ephemerides_model=SM.SimpleEphemeridesModel(), orientation_sim=orientation_sim,
+        keplerian=false, EI_km=1.0, verbose=false, results=false,
+        solver_config=solver === nothing ? nothing : SM.SolverConfig(solver_mode=solver))
+    effectors = isempty(levels) ? () : (HoldLevels(collect(Float64, levels)),)
+    args = SM.SimConfig._with_configuration(base;
+        control_model=SM.ControlModel(control_effectors=effectors, control_rates=fill(1.0, length(effectors))))
+    return run_simulation(args; isolate_state=false, return_results=true, return_solution=true)
+end
+
+# The vehicle's angular momentum, body plus rotors, in the inertial frame.
+function inertial_momentum(sc, x)
+    q = SVector{4}(x.q)
+    h = sum(SM.cmg_momentum(c, x.cmg_angles[j]) for (j, c) in enumerate(sc.root.rw_assembly.cmgs))
+    return SM.rot(q)' * (sc.inertia_tensor * SVector{3}(x.ω) + h)
+end
+
+gyro(; kw...) = ControlMomentGyro(; rotor_momentum_nms=2.0, gimbal_axis=SVector(0.0, 0.0, 1.0), spin_axis=SVector(1.0, 0.0, 0.0), kw...)
+
+@testset "Control moment gyros" begin
+    @testset "the record and mounting" begin
+        @test_throws ArgumentError gyro(rotor_momentum_nms=0.0)
+        @test_throws ArgumentError ControlMomentGyro(rotor_momentum_nms=1.0, gimbal_axis=SVector(0.0, 0.0, 1.0), spin_axis=SVector(1.0, 0.0, 1.0))
+        @test_throws ArgumentError gyro(max_gimbal_rate_rad_s=0.0)
+        sc, root = far_spacecraft()
+        panel = SM.Link(m=1.0, r=MVector(0.0, 1.0, 0.0))
+        push!(sc.links, panel)
+        @test_throws ArgumentError add_actuator!(sc, panel, gyro())                      # the root link only
+        c = add_actuator!(sc, root, gyro(max_gimbal_rate_rad_s=0.5))
+        @test_throws ArgumentError add_actuator!(sc, root, c)                            # mounted twice
+        @test SM.mounted_cmg_count(sc) == 1 && [e.actuator for e in mounted_actuators(sc)] == [c]
+        @test actuator_limits(c) == (-0.5, 0.5) && actuator_saturate(c, 2.0) == 0.5
+        @test all(iszero, allocation_matrix(sc))                                         # its torque depends on its state
+    end
+
+    @testset "the rotor's momentum and torque axis" begin
+        c = gyro()
+        @test cmg_momentum(c, 0.0) ≈ SVector(2.0, 0.0, 0.0)
+        @test cmg_momentum(c, π / 2) ≈ SVector(0.0, 2.0, 0.0) atol=1e-15
+        @test cmg_torque_axis(c, 0.0) ≈ SVector(0.0, 2.0, 0.0)                           # g × h
+    end
+
+    @testset "steering: exact away from singularities, bounded at one, within rate limits" begin
+        sc, root = far_spacecraft()
+        for (g, s) in ((SVector(0.0, 0.0, 1.0), SVector(1.0, 0.0, 0.0)), (SVector(1.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0)),
+                       (SVector(0.0, 1.0, 0.0), SVector(0.0, 0.0, 1.0)))
+            add_actuator!(sc, root, ControlMomentGyro(rotor_momentum_nms=2.0, gimbal_axis=g, spin_axis=s))
+        end
+        τ = SVector(0.01, -0.02, 0.03)
+        rates = cmg_steering(sc, zeros(3), τ)
+        made = -sum(rates[j] * cmg_torque_axis(c, 0.0) for (j, c) in enumerate(sc.root.rw_assembly.cmgs))
+        @test made ≈ τ rtol=1e-5
+        pair, proot = far_spacecraft()
+        for _ in 1:2
+            add_actuator!(pair, proot, gyro())                                           # parallel: torque only along y
+        end
+        rates = cmg_steering(pair, zeros(2), SVector(1.0, 0.0, 0.0))
+        @test all(isfinite, rates) && maximum(abs, rates) < 1e-12                        # an unreachable request gives no motion
+        rates = cmg_steering(pair, zeros(2), SVector(0.0, -0.4, 0.0))
+        @test all(isfinite, rates) && rates[1] ≈ rates[2] && rates[1] > 0.0
+        limited, lroot = far_spacecraft()
+        add_actuator!(limited, lroot, gyro(max_gimbal_rate_rad_s=0.1))
+        add_actuator!(limited, lroot, ControlMomentGyro(rotor_momentum_nms=2.0, gimbal_axis=SVector(1.0, 0.0, 0.0), spin_axis=SVector(0.0, 1.0, 0.0), max_gimbal_rate_rad_s=0.1))
+        free = cmg_steering(limited, zeros(2), SVector(0.0, -1.0, -0.5); λ0=0.0)
+        @test maximum(abs, free) ≈ 0.1 && free[1] / free[2] ≈ 2.0                        # scaled together
+    end
+
+    @testset "a run integrates the gimbal angle and conserves the angular momentum" begin
+        sc, root = far_spacecraft(ω0=SVector(0.001, 0.0, 0.0))
+        c = add_actuator!(sc, root, gyro(gimbal_angle_rad=0.1))
+        res = cmg_run(sc, [0.02]; mission_time=20.0)
+        x0, x = res.solution.u[1].sc[1], res.solution.u[end].sc[1]
+        @test x.cmg_angles[1] ≈ 0.1 + 0.02 * 20.0 rtol=1e-9
+        @test res.table.sc1_cmg_angle_1[end] ≈ x.cmg_angles[1] && res.table.sc1_actuator_level_1[end] == 0.02
+        @test inertial_momentum(sc, x) ≈ inertial_momentum(sc, x0) rtol=1e-8
+        # The body took up the rotor's momentum change: ω changed by about -(Δh)/I.
+        Δh = cmg_momentum(c, x.cmg_angles[1]) - cmg_momentum(c, 0.1)
+        @test norm(SVector{3}(x.ω) - SVector(0.001, 0.0, 0.0)) > 0.5 * norm(Δh) / sc.inertia_tensor[1, 1]
+    end
+
+    @testset "a held gimbal still couples through the gyroscopic term" begin
+        sc, root = far_spacecraft(ω0=SVector(0.0, 0.0, 0.01))
+        add_actuator!(sc, root, gyro())
+        res = cmg_run(sc, Float64[]; mission_time=50.0)
+        x0, x = res.solution.u[1].sc[1], res.solution.u[end].sc[1]
+        @test x.cmg_angles[1] == 0.0
+        @test inertial_momentum(sc, x) ≈ inertial_momentum(sc, x0) rtol=1e-8
+        @test norm(x.ω[1:2]) > 1e-4                                                     # the rotor's momentum tips the spin axis
+    end
+
+    @testset "a spacecraft reused without controllers keeps its CMG and wheel still" begin
+        # The first run commands the CMG and a mounted wheel; the second, on the
+        # same records with no control effector, must not reuse those rates.
+        sc, root = far_spacecraft()
+        add_actuator!(sc, root, ReactionWheel(spin_axis=SVector(0.0, 0.0, 1.0)))
+        add_actuator!(sc, root, gyro(gimbal_angle_rad=0.1))
+        cmg_run(sc, [0.01, 0.02]; mission_time=5.0)
+        x = cmg_run(sc, Float64[]; mission_time=5.0).solution.u[end].sc[1]
+        @test x.cmg_angles[1] == 0.1 && x.h_wheels[1] == 0.0 && norm(SVector{3}(x.ω)) == 0.0
+    end
+
+    @testset "a failed CMG holds its gimbal" begin
+        sc, root = far_spacecraft()
+        c = add_actuator!(sc, root, gyro(gimbal_angle_rad=0.3))
+        add_fault!(sc, ActuatorFault(c; kind=:failed, start_s=5.0))
+        res = cmg_run(sc, [0.05]; mission_time=10.0)
+        @test res.solution.u[end].sc[1].cmg_angles[1] ≈ 0.3 + 0.05 * 5.0 rtol=1e-9
+    end
+
+    @testset "split solver modes and runs without attitude refuse CMGs" begin
+        sc, root = far_spacecraft()
+        add_actuator!(sc, root, gyro())
+        @test_throws ArgumentError cmg_run(sc, Float64[]; mission_time=1.0, orientation_sim=false)
+        err = try
+            cmg_run(sc, Float64[]; mission_time=1.0, solver=:split_imex); nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError && occursin("moment gyros", err.msg)
+    end
+end
+
+end # module ControlMomentGyroTests
