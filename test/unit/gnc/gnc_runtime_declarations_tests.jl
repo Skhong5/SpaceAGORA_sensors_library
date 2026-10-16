@@ -53,6 +53,40 @@ SpaceAGORA.calcControlEffect!(::OddControl, u, p, t, i) = nothing
 SpaceAGORA.calcControlForceTorque(::OddControl, u, p, i, t) = (ZERO3, ZERO3)
 SpaceAGORA.tick_schedule(::OddControl) = :sometimes
 
+# A thread-safe periodic law that records, per spacecraft, the thread of its
+# last tick and of its last stop registration.
+struct ThreadedLaw <: SM.AbstractControlEffectorModel
+    tick_thread::Vector{Int}
+    stop_thread::Vector{Int}
+end
+ThreadedLaw(n) = ThreadedLaw(zeros(Int, n), zeros(Int, n))
+SpaceAGORA.calcControlEffect!(m::ThreadedLaw, u, p, t, i) = (m.tick_thread[i] = Threads.threadid(); nothing)
+SpaceAGORA.calcControlForceTorque(::ThreadedLaw, u, p, i, t) = (ZERO3, ZERO3)
+SM.SimulationCallbacks.control_model_threadsafe(::ThreadedLaw) = true
+SpaceAGORA.register_tstops!(integrator, m::ThreadedLaw, i) = (m.stop_thread[i] = Threads.threadid(); nothing)
+
+function constellation_args(control; n=4, mission_time=5.0)
+    planet = SM.make_no_gram_planet(:earth)
+    sats = map(1:n) do id
+        root = SM.Link(root=true, m=100.0, ref_area=2.0)
+        ic = SM.InitialCondition(ra=planet.Rp_e + 700e3, rp=planet.Rp_e + 650e3, i=45.0, ω=0.0, Ω=30.0id, ν=10.0)
+        SM.SpacecraftModel(joints=SM.Joint[], links=[root], root=root, prop_mass=0.0, inertia_tensor=root.inertia,
+            initial_condition=ic, id=id)
+    end
+    env = SM.EnvironmentModel(planet=planet, EI=120.0, density_model=SM.NoAtmosphereModel(),
+        ephemerides_model=SM.SimpleEphemeridesModel(),
+        thermal_model=SM.MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet), topography=false, wind=false)
+    return SM.SimulationConfiguration(
+        simulation_settings=SM.SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+        mission_configuration=SM.MissionConfiguration(mission_type=SM.MissionTime, keplerian=true, number_of_orbits=1,
+            mission_time=mission_time, orientation_sim=false, num_steps_to_save=100),
+        environment_model=env,
+        dynamics_model=SM.DynamicsModel(SM.SpacecraftModel[sats...], (SM.InverseSquaredJ2GravityModel(),)),
+        guidance_model=SM.GuidanceModel((), Float64[]), navigation_model=SM.NavigationModel((), Float64[]),
+        control_model=SM.ControlModel(control_effectors=(control,), control_rates=[1.0]),
+        initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0))
+end
+
 # A sensor with state of its own: the number of samples since the run started.
 mutable struct CountingSensor <: AbstractSensor
     period_s::Float64
@@ -135,6 +169,16 @@ end
             @test sensor.initialized_at == fill(0.0, run)         # once per run, before the first sample
             @test sensor.count == 5                               # this run's samples only: 0, 1, 2, 3, 4 s
         end
+    end
+
+    @testset "stop registration runs on one thread when the ticks are threaded" begin
+        law = ThreadedLaw(4)
+        withenv("SPACEAGORA_CONTROL_CALLBACK_PARALLEL" => "on", "SPACEAGORA_CONTROL_CALLBACK_THREAD_THRESHOLD" => "2") do
+            run_simulation(constellation_args(law); isolate_state=false)
+        end
+        @test all(>(0), law.tick_thread) && all(>(0), law.stop_thread)
+        @test length(unique(law.stop_thread)) == 1                 # one thread registers every stop
+        Threads.nthreads() > 1 && @test length(unique(law.tick_thread)) > 1   # while the ticks spread
     end
 
     @testset "an unknown schedule is refused" begin

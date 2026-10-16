@@ -30,9 +30,12 @@ gnc_callbacks(model, num_sats, args, period_s) = ()
 """
     register_tstops!(integrator, model, spacecraft_index) -> nothing
 
-Called after each tick of control `model` for `spacecraft_index`. Use it to add
-the solver stops that the new command needs; the burn scheduler adds the ends of
-its burn window. Default: none.
+Called after each periodic tick of control `model`, once for every spacecraft
+index. Use it to add the solver stops that the new command needs; the burn
+scheduler adds the ends of its burn window. The ticks of several spacecraft may
+run on different threads, but these calls do not: they run one spacecraft at a
+time, after all of that tick's spacecraft have ticked, because the stop list
+belongs to the integrator they share. Default: none.
 """
 register_tstops!(integrator, model, spacecraft_index) = nothing
 

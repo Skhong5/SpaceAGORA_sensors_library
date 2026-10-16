@@ -204,7 +204,6 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
         apply_control! = (integrator, sat_idx) -> begin
             calcControlEffect!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
             _apply_mounted_tick!(control_model, integrator.p, sat_idx, integrator.t, Float64(control_rate))
-            register_tstops!(integrator, control_model, sat_idx)
         end
         control_func = (integrator) -> begin
             decision = _control_callback_thread_decision(integrator.p, control_model, num_sats)
@@ -218,6 +217,12 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
                 @inbounds for sat_idx in 1:num_sats
                     apply_control!(integrator, sat_idx)
                 end
+            end
+            # The solver's stop list belongs to the integrator that all spacecraft
+            # share, so stops are registered one spacecraft at a time, after the
+            # ticks, even when the ticks ran on several threads.
+            @inbounds for sat_idx in 1:num_sats
+                register_tstops!(integrator, control_model, sat_idx)
             end
             if decision.policy_applied
                 ParallelPolicy.record_policy_observation!(
