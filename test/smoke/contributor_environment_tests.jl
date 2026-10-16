@@ -367,6 +367,14 @@ end
         ("const S = SpaceAGORA\nk(x::T) where T<:S._B = x", [(2, "S._B is internal to SpaceAGORA")]),
         ("m(x::T) where {SpaceAGORA._Lo<:T<:Real} = x", [(1, "SpaceAGORA._Lo is internal to SpaceAGORA")]),
         ("const T = SpaceAGORA\nn(x::T) where {T} = T._z", Tuple{Int,String}[]),
+        # A later `for` clause sees the earlier loop variables; a comma comprehension's
+        # iterables are evaluated outside it, where S is still the alias.
+        ("const S = SpaceAGORA\nfor S in xs, x in S._items\n    x\nend", Tuple{Int,String}[]),
+        ("const S = SpaceAGORA\nfor (S, y) in zs, x in S._v\n    x\nend", Tuple{Int,String}[]),
+        ("const S = SpaceAGORA\nfor x in S._items, S in xs\n    S\nend", [(2, "S._items is internal to SpaceAGORA")]),
+        ("const S = SpaceAGORA\nfor S in S._items\n    S\nend", [(2, "S._items is internal to SpaceAGORA")]),
+        ("const S = SpaceAGORA\n[x for S in xs for x in S._items]", Tuple{Int,String}[]),
+        ("const S = SpaceAGORA\n[x for S in xs, x in S._items]", [(2, "S._items is internal to SpaceAGORA")]),
         ("function r(x::SpaceAGORA._Internal)\n    x\nend", [(1, "SpaceAGORA._Internal is internal to SpaceAGORA")]),
     ]
     for (source, expected) in scoped

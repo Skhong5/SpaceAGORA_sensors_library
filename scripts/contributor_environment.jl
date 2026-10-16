@@ -454,17 +454,19 @@ end
 
 internal!(found, line, name) = name === nothing || push!(found, (line, "$name is internal to SpaceAGORA"))
 
-# Iteration specifications `x = iter` of a loop or generator: bind the targets, scan the iterables outside.
-function iteration!(found, specs, line, roots, bound)
+# Iteration specifications `x = iter` of a loop or generator: bind the targets and scan the
+# iterables. In `for a in A, b in B`, B sees `a` (`sequential`); the comma-separated
+# iterables of a comprehension are all evaluated outside it.
+function iteration!(found, specs, line, roots, bound; sequential=false)
     for spec in specs
         spec isa LineNumberNode && continue
         if spec isa Expr && spec.head === :block
-            line = iteration!(found, spec.args, line, roots, bound)
+            line = iteration!(found, spec.args, line, roots, bound; sequential)
         elseif spec isa Expr && spec.head === :filter
-            line = iteration!(found, spec.args[2:end], line, roots, bound)
+            line = iteration!(found, spec.args[2:end], line, roots, bound; sequential)
         elseif spec isa Expr && spec.head === :(=)
+            line = scan_expression!(found, spec.args[2], line, sequential ? setdiff(roots, bound) : roots)
             bound_names!(bound, spec.args[1])
-            line = scan_expression!(found, spec.args[2], line, roots)
         end
     end
     return line
@@ -504,7 +506,7 @@ function scan_expression!(found, ex, line, roots)
         return scan_expression!(found, body, line, union(scope_roots(roots, bound, body), aliases))
     elseif ex.head in (:for, :while)
         bound = Set{Symbol}()
-        ex.head === :for ? (line = iteration!(found, Any[ex.args[1]], line, roots, bound)) :
+        ex.head === :for ? (line = iteration!(found, Any[ex.args[1]], line, roots, bound; sequential=true)) :
             (line = scan_expression!(found, ex.args[1], line, roots))
         return scan_expression!(found, ex.args[2], line, scope_roots(roots, bound, ex.args[2]))
     elseif ex.head === :generator
