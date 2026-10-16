@@ -283,11 +283,12 @@ end
 # does not report them, the mounted thrusters' fractions at the levels it
 # holds, as the faults and the shedding leave them. A `:mounted` effector on a
 # spacecraft with faults always takes the mounted fractions, so the columns
-# and the plumes show what the faulted thrusters deliver.
-@inline function _effector_thruster_levels(effector, i::Int, spacecraft)
+# and the plumes show what the faulted thrusters deliver. With a sample time
+# `t`, a reported level is the level at that time (see `_thruster_levels_at`).
+@inline function _effector_thruster_levels(effector, i::Int, spacecraft, t=nothing)
     mounted = actuation_mode(effector) === :mounted
     if !(mounted && has_faults(spacecraft))
-        reported = control_thruster_levels(effector, i)
+        reported = t === nothing ? control_thruster_levels(effector, i) : _thruster_levels_at(effector, i, t)
         reported === nothing || return reported
     end
     mounted || return nothing
@@ -304,7 +305,7 @@ end
         levels = zeros(Float64, counts[i])
         if counts[i] > 0
             for effector in effectors
-                reported = _effector_thruster_levels(effector, i, spacecraft[i])
+                reported = _effector_thruster_levels(effector, i, spacecraft[i], t)
                 reported === nothing && continue
                 for k in 1:min(counts[i], length(reported))
                     value = Float64(reported[k])

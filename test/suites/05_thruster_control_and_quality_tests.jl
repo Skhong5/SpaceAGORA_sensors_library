@@ -398,7 +398,6 @@
             @test_throws ErrorException calcControlEffect!(model_throw, state, p_throw, 100.0, 1)
         end
 
-        trace_key_helper = SimulationModel.ControlHooks._maneuver_trace_key
         trace_bool_helper = SimulationModel.ControlHooks._trace_bool_enabled
         trace_path_helper = SimulationModel.ControlHooks._maneuver_trace_path
         safe_orbit_counter_helper = SimulationModel.ControlHooks._safe_orbit_counter
@@ -407,7 +406,6 @@
         @test trace_bool_helper("yes")
         @test trace_bool_helper("ON")
         @test !trace_bool_helper("0")
-        @test trace_key_helper(model_throw, 1) isa Tuple{UInt64, Int64}
 
         p_no_orbit_counter = (shared_buffers=(debug_control=Ref(false),),)
         @test safe_orbit_counter_helper(p_no_orbit_counter, 1) == -1
@@ -420,18 +418,32 @@
             ) do
                 @test trace_path_helper() == trace_csv
 
-                model_trace = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
+                # A short burn, so the window opens after the scheduling call.
+                model_trace = make_base_thruster_model(thrust=2.0, Δv=2.0, start_burn_time=-1.0, stop_burn_time=-1.0)
                 state_trace = build_initial_conditions(args)
                 p_trace = ODEParams(n_sats=1, args=args)
 
+                # The engine's sequence: each scheduling call is followed by
+                # `refresh_burn!`, which also runs at the window's ends.
+                refresh_trace!(t) = SimulationModel.ControlHooks.refresh_burn!(model_trace, p_trace, 1, t)
+                schedule_trace!(t) = (calcControlEffect!(model_trace, state_trace, p_trace, t, 1); refresh_trace!(t))
+                level_trace() = only(SimulationModel.ControlHooks.control_thruster_levels(model_trace, 1))
+
                 _clear_burn_plan!(p_trace, 1)
-                calcControlEffect!(model_trace, state_trace, p_trace, 100.0, 1)
+                schedule_trace!(100.0)
                 s_trace = _burn_plan(p_trace, 1).start_burn_s
                 e_trace = _burn_plan(p_trace, 1).stop_burn_s
-                @test s_trace < e_trace
+                @test 100.0 < s_trace < e_trace
+                @test level_trace() == 0.0
+                schedule_trace!(100.0)                 # same window: no second schedule event
 
-                calcControlEffect!(model_trace, state_trace, p_trace, s_trace + 1e-6, 1)
-                calcControlEffect!(model_trace, state_trace, p_trace, e_trace + 1.0, 1)
+                refresh_trace!(s_trace)                # the burn switches on at the start
+                @test level_trace() == 1.0
+                schedule_trace!(s_trace + 1e-6)        # the schedule holds during the burn
+                @test level_trace() == 1.0
+                refresh_trace!(e_trace)                # and off at the stop
+                @test level_trace() == 0.0
+                schedule_trace!(e_trace + 1.0)
                 trace_plan_after = _burn_plan(p_trace, 1)
                 @test !trace_plan_after.valid ||
                       trace_plan_after.start_burn_s != s_trace ||
@@ -440,10 +452,12 @@
                 @test isfile(trace_csv)
                 trace_text = read(trace_csv, String)
                 @test occursin("event,t_s,spacecraft_idx", trace_text)
-                @test occursin("schedule_set", trace_text)
-                @test occursin("burn_start", trace_text)
-                @test occursin("burn_end", trace_text)
-                @test occursin("schedule_clear", trace_text)
+                trace_rows = [split(line, ",") for line in split(chomp(trace_text), "\n")[2:end]]
+                # The clearing call plans the next burn from the same state.
+                @test [row[1] for row in trace_rows] == ["schedule_set", "burn_start", "burn_end", "schedule_clear", "schedule_set"]
+                # The burn's events fall on the window's ends, with the window they ran.
+                @test parse(Float64, trace_rows[2][2]) == s_trace && parse(Float64, trace_rows[3][2]) == e_trace
+                @test all(parse(Float64, row[8]) == s_trace && parse(Float64, row[9]) == e_trace for row in trace_rows[1:4])
 
                 trace_event_helper("manual_event", model_trace, p_no_orbit_counter, 1, 0.0)
                 trace_text_after_manual = read(trace_csv, String)
