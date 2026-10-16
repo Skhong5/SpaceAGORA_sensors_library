@@ -290,3 +290,69 @@ end
         end
     end
 end
+
+@testset "Random-stream gate distinguishes in-place destinations" begin
+    repo = normpath(joinpath(@__DIR__, "..", "..", ".."))
+    mktempdir() do fixture
+        _copy_into!(fixture, repo, joinpath("src", "models", "gnc"))
+        _copy_into!(fixture, repo, joinpath("packages", "SpaceAGORAHYPR", "src"))
+        run_gate = _gate_runner(repo, fixture, "ci_gnc_random_stream_gate.jl")
+        @test isnothing(run_gate().failure)
+        probe = joinpath(fixture, "src", "models", "gnc", "random_stream_probe.jl")
+        message = "draw without an explicit stream as its first argument"
+        failure = "GNC random-stream gate failed: take an explicit rng argument and pass it to every draw"
+
+        for draw in ("rand!", "randn!", "randexp!", "shuffle!")
+            @testset "$draw" begin
+                for source in (
+                    "rng_buffer = zeros(3); $draw(rng_buffer)\n",
+                    "Random.$draw(\n    rng_buffer,\n)\n",
+                    "$draw(view(rng_buffer, :, 1))\n",
+                    "$draw((rng_buffer,))\n",
+                    "$draw(rng_buffer; keyword=rng)\n",
+                    "$draw(rng_buffer, keyword=rng)\n",
+                    "$draw(rng_buffer, rest...)\n",
+                    "$draw(rng..., buffer)\n",
+                )
+                    _with_probe(probe, source) do
+                        rejected = run_gate()
+                        @test _failed_with(rejected, failure)
+                        @test _reports(rejected, probe, fixture, message)
+                    end
+                end
+                for source in (
+                    "$draw(rng, buffer)\n",
+                    "Random.$draw(\n    rng, # caller's stream\n    view(buffer, :, 1),\n)\n",
+                    "$draw(state.master_rng, buffer)\n",
+                )
+                    _with_probe(probe, source) do
+                        @test isnothing(run_gate().failure)
+                    end
+                end
+            end
+        end
+        # Non-mutating calls still require the named first stream argument.
+        for source in ("rand()\n", "randn(3)\n", "randexp(Float64)\n", "rand!(buffer, rng)\n")
+            _with_probe(probe, source) do
+                rejected = run_gate()
+                @test _failed_with(rejected, failure)
+                @test _reports(rejected, probe, fixture, message)
+            end
+        end
+        _with_probe(probe, "rand(rng)\nrandn(master_rng, 3)\nrandexp(state.rng)\n") do
+            @test isnothing(run_gate().failure)
+        end
+        # Comments and string examples are not draw call sites.
+        _with_probe(probe, "# rand!(rng_buffer)\nexample = \"rand!(rng_buffer)\"\n") do
+            @test isnothing(run_gate().failure)
+        end
+        # Both roots remain covered, with the draw's source line in the report.
+        hypr_probe = joinpath(fixture, "packages", "SpaceAGORAHYPR", "src", "random_stream_probe.jl")
+        _with_probe(hypr_probe, "rng_buffer = zeros(3)\nrand!(\n    rng_buffer\n)\n") do
+            rejected = run_gate()
+            @test _failed_with(rejected, failure)
+            @test _reports(rejected, hypr_probe, fixture, "random_stream_probe.jl:2: " * message)
+        end
+        @test isnothing(run_gate().failure)
+    end
+end
