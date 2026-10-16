@@ -6,7 +6,8 @@ name: Windows install
 # workflow runs on Linux. Not a required check, and it does not run on every
 # pull request: weekly, on manual dispatch, and on pull requests that change
 # the install path (the package environment, Git attributes, the quickstart
-# and the code it runs at precompile time).
+# and the code it runs at precompile time) or the pages that document its
+# commands.
 on:
   workflow_dispatch:
     inputs:
@@ -20,6 +21,9 @@ on:
     paths:
       - "Project.toml"
       - "Manifest.toml"
+      - "README.md"
+      - "docs/src/user/quickstart.md"
+      - "docs/src/user/installation_environment.md"
       - ".gitattributes"
       - ".gitmodules"
       - "examples/AGORA_Basic_Quickstart.jl"
@@ -60,6 +64,30 @@ jobs:
           persist-credentials: false
           lfs: false
           submodules: false
+
+      # The steps below run these commands as written. When a page changes one
+      # of them, this step fails until the step that runs it changes too; the
+      # pages are in the pull request path filter for that reason.
+      - name: Documented commands match
+        shell: bash
+        run: |
+          status=0
+          expect() {
+            if ! grep -qF -- "$2" "$1"; then
+              echo "::error file=$1::$1 no longer contains the command this job runs: $2"
+              status=1
+            fi
+          }
+          instantiate='julia --project=. -e "using Pkg; Pkg.instantiate(julia_version_strict=true)"'
+          setup_check='julia --project=. -e "using SpaceAGORA; println(pkgdir(SpaceAGORA))"'
+          smoke='julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --smoke'
+          expect README.md "$instantiate"
+          expect README.md "$smoke"
+          for page in docs/src/user/quickstart.md docs/src/user/installation_environment.md; do
+            expect "$page" "$instantiate"
+            expect "$page" "$setup_check"
+          done
+          exit "$status"
 
       # Git for Windows converts text files to CRLF on checkout unless told
       # otherwise, and the repository sets no eol attribute. A student's clone
