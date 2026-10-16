@@ -22,6 +22,7 @@ const API_REFERENCE_PAGES = (
     (section="Actuators", title="Actuators API", file="actuators_api.md"),
     (section="Sensors", title="Sensors API", file="sensors_api.md"),
     (section="Model Extension Hooks", title="Extension Hooks API", file="extension_hooks_api.md"),
+    (section="Contributor conformance", title="Contributor Conformance API", file="contributor_conformance_api.md"),
 )
 const BUILD_DIR = joinpath(@__DIR__, "build")
 const PUBLIC_API_REPORT = joinpath(BUILD_DIR, "undocumented_public_exports.txt")
@@ -227,6 +228,7 @@ makedocs(
             "Actuators API" => "generated/actuators_api.md",
             "Sensors API" => "generated/sensors_api.md",
             "Extension Hooks API" => "generated/extension_hooks_api.md",
+            "Contributor Conformance API" => "generated/contributor_conformance_api.md",
         ],
     ],
     doctest = true,

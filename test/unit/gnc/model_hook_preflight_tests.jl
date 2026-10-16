@@ -95,26 +95,7 @@ hp_args(; guidance=(), navigation=(), control=(), effectors=(), density=SpaceAGO
 )
 
 # Every concrete type defined in SpaceAGORA's modules that subtypes `T`.
-function hp_package_types(T::Type)
-    found = Any[]
-    seen = Set{Module}()
-    function walk(m::Module)
-        m in seen && return
-        push!(seen, m)
-        for n in names(m; all=true)
-            isdefined(m, n) || continue
-            v = getfield(m, n)
-            if v isa Module
-                parentmodule(v) === m && v !== m && walk(v)
-            elseif v isa Union{DataType, UnionAll} && parentmodule(v) === m
-                body = Base.unwrap_unionall(v)
-                body isa DataType && !isabstracttype(body) && body <: T && push!(found, v)
-            end
-        end
-    end
-    walk(SpaceAGORA)
-    return unique(found)
-end
+const hp_package_types = SpaceAGORA.Conformance.package_types
 
 function hp_run_config(; guidance=(), navigation=(), effectors=(), solver_mode=:tsit5)
     planet = HP_SM.make_no_gram_planet(:earth)
