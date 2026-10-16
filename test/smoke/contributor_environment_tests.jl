@@ -360,6 +360,13 @@ end
         ("const S = SpaceAGORA\n[S._g for S in xs]", Tuple{Int,String}[]),
         ("module Inner\nf() = S._u\nend\nconst S = SpaceAGORA", Tuple{Int,String}[]),
         ("SpaceAGORA._hook(x) = 1", [(1, "SpaceAGORA._hook is internal to SpaceAGORA")]),
+        # Return annotations and `where` bounds belong to the signature, scanned in the enclosing scope.
+        ("const S = SpaceAGORA\nf()::S._Private = 1", [(2, "S._Private is internal to SpaceAGORA")]),
+        ("function g(x)::SpaceAGORA._Ret\n    x\nend", [(1, "SpaceAGORA._Ret is internal to SpaceAGORA")]),
+        ("h(x::T) where {T<:SpaceAGORA._Abstract} = x", [(1, "SpaceAGORA._Abstract is internal to SpaceAGORA")]),
+        ("const S = SpaceAGORA\nk(x::T) where T<:S._B = x", [(2, "S._B is internal to SpaceAGORA")]),
+        ("m(x::T) where {SpaceAGORA._Lo<:T<:Real} = x", [(1, "SpaceAGORA._Lo is internal to SpaceAGORA")]),
+        ("const T = SpaceAGORA\nn(x::T) where {T} = T._z", Tuple{Int,String}[]),
         ("function r(x::SpaceAGORA._Internal)\n    x\nend", [(1, "SpaceAGORA._Internal is internal to SpaceAGORA")]),
     ]
     for (source, expected) in scoped

@@ -360,23 +360,50 @@ end
 
 is_signature(ex) = ex isa Expr && (ex.head === :call || (ex.head in (:where, :(::)) && is_signature(ex.args[1])))
 
-"""`(callee, arguments, body)` of a function, macro or anonymous function; `nothing` otherwise."""
+# A `where` parameter: `T`, `T<:U`, `T>:L` or `L<:T<:U`. The parameter binds inside the
+# function; its bounds are annotations of the signature.
+function where_parameter!(parameters, annotations, ex)
+    if ex isa Symbol
+        push!(parameters, ex)
+    elseif ex isa Expr && ex.head === :braces
+        foreach(arg -> where_parameter!(parameters, annotations, arg), ex.args)
+    elseif ex isa Expr && ex.head in (:<:, :>:) && length(ex.args) == 2
+        bound_names!(parameters, ex.args[1])
+        push!(annotations, ex.args[2])
+    elseif ex isa Expr && ex.head === :comparison && length(ex.args) == 5
+        bound_names!(parameters, ex.args[3])
+        push!(annotations, ex.args[1], ex.args[5])
+    else
+        push!(annotations, ex)
+    end
+end
+
+"""`(callee, arguments, body, annotations, parameters)` of a function, macro or anonymous
+function, or `nothing`. The annotations are its return type and `where` bounds, which are
+scanned with the callee in the enclosing scope; the `where` parameters bind inside it."""
 function function_parts(ex)
     ex isa Expr && length(ex.args) == 2 || return nothing
+    annotations, parameters = Any[], Set{Symbol}()
     if ex.head in (:function, :macro) || (ex.head === :(=) && is_signature(ex.args[1]))
         signature = ex.args[1]
         while signature isa Expr && signature.head in (:where, :(::)) && signature.args[1] isa Expr &&
                 signature.args[1].head in (:call, :tuple, :where, :(::))
+            if signature.head === :(::)
+                push!(annotations, signature.args[2])
+            else
+                foreach(arg -> where_parameter!(parameters, annotations, arg), signature.args[2:end])
+            end
             signature = signature.args[1]
         end
-        signature isa Expr && signature.head === :call && return (signature.args[1], signature.args[2:end], ex.args[2])
-        signature isa Expr && signature.head === :tuple && return (nothing, signature.args, ex.args[2])
-        return (nothing, Any[signature], ex.args[2])
+        signature isa Expr && signature.head === :call &&
+            return (signature.args[1], signature.args[2:end], ex.args[2], annotations, parameters)
+        signature isa Expr && signature.head === :tuple && return (nothing, signature.args, ex.args[2], annotations, parameters)
+        return (nothing, Any[signature], ex.args[2], annotations, parameters)
     elseif ex.head === :->
         signature = ex.args[1]
         arguments = signature isa Expr && signature.head in (:tuple, :block) ?
             filter(arg -> !(arg isa LineNumberNode), signature.args) : Any[signature]
-        return (nothing, arguments, ex.args[2])
+        return (nothing, arguments, ex.args[2], annotations, parameters)
     end
     return nothing
 end
@@ -453,9 +480,12 @@ function scan_expression!(found, ex, line, roots)
     elseif ex.head === :module
         return scan_expression!(found, ex.args[end], line, module_aliases!(Set([:SpaceAGORA]), ex.args[end]))
     elseif parts !== nothing
-        callee, arguments, body = parts
+        callee, arguments, body, annotations, parameters = parts
         callee === nothing || (line = scan_expression!(found, callee, line, roots))
-        inner = scope_roots(roots, bound_names!(Set{Symbol}(), Expr(:tuple, arguments...)), body)
+        for annotation in annotations
+            line = scan_expression!(found, annotation, line, roots)
+        end
+        inner = scope_roots(roots, bound_names!(copy(parameters), Expr(:tuple, arguments...)), body)
         for argument in arguments
             line = scan_expression!(found, argument, line, inner)
         end
