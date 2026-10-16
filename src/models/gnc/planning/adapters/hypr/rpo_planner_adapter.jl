@@ -36,7 +36,14 @@ end
 P.require_planner_support(::HYPRRPOPlanner) = S.HYPRSupport.require_hypr()
 P.initialize_planner(::HYPRRPOPlanner, context) = (S.HYPRSupport.require_hypr(); nothing)
 import ..SimulationLifecycle
+# The pre-run check of the deprecated RPOGuidanceModel. Its deprecation warning
+# fires here, before the HYPR check, once per session like other pre-run warnings
+# (maxlog=1), and does not throw under --depwarn=error: the examples still run it.
 function SimulationLifecycle.preflight_guidance(g::S.RPOGuidanceModel, args; isolate_state)
+    @warn "RPOGuidanceModel is deprecated. Build RPO runs with make_rpo_configuration and a planner, " *
+        "for example planner=HYPRRPOPlanner(RPOPSOConfig(...)), which configures a PlannerGuidance. " *
+        "RPOGuidanceModel will be removed once that path supports its time-varying replanning " *
+        "spheres, safe hold and retiming." maxlog=1
     replanning = G._rpo_replanning_config(g)
     if !g.plan_buffer.valid || g.force_replan || (replanning !== nothing && replanning.enabled)
         S.HYPRSupport.require_hypr()

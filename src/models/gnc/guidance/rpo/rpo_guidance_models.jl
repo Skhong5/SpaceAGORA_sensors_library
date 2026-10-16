@@ -1,4 +1,11 @@
-"""Guidance model state for RPO planning, tracking, and optional replanning."""
+"""
+Guidance model state for RPO planning, tracking, and optional replanning.
+
+Deprecated: a run that configures this model warns before it starts. Build RPO
+runs with `make_rpo_configuration` and a planner instead (`HYPRRPOPlanner` for
+HYPR planning), which configures a `PlannerGuidance`. The model stays until that
+path supports its time-varying replanning spheres, safe hold and retiming.
+"""
 Base.@kwdef mutable struct RPOGuidanceModel <: AbstractGuidanceModel
     chaser_idx::Int = 1
     target_idx::Int = 2

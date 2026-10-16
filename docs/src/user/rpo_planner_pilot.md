@@ -8,7 +8,9 @@
 The opt-in RPO pilot connects a planner to the existing simulation and LQ-MPC
 controller. It supports truth observations, a passive target on a circular Earth
 orbit, and a static station point cloud aligned with the target's rotating RTN
-frame. The existing research examples remain available.
+frame. The existing research examples remain available; they still use the
+deprecated `RPOGuidanceModel` (see
+[Moving from RPOGuidanceModel](#Moving-from-RPOGuidanceModel)).
 
 ```julia
 using SpaceAGORA
@@ -215,3 +217,18 @@ load the companion before their common helper activates the root project. See
 [Examples Catalog](examples_catalog.md) for the exact commands. Baseline examples
 keep `--project=.` and do not preload HYPR. Do not add the companion as a required
 dependency of SpaceAGORA itself.
+
+## Moving from RPOGuidanceModel
+
+`RPOGuidanceModel`, the HYPR guidance model of the older RPO examples, is
+deprecated. A run that configures it warns once before it starts; the run itself
+is unchanged. Build new RPO runs with `make_rpo_configuration` and a planner. For
+HYPR planning, pass `planner=HYPRRPOPlanner(RPOPSOConfig(...))`; the configuration
+then uses a `PlannerGuidance`, which validates each reference before installing
+it.
+
+The model stays until the planner path supports three of its features:
+time-varying replanning spheres, a safe hold when replanning fails, and retiming of
+the installed reference. A run on the planner path draws from a different random
+stream, and its validation can refuse a reference the model would install, so its
+trajectories are not identical to the model's.
