@@ -238,7 +238,7 @@ that carries mounted actuators. An explicit list must include the
 
 | Column | Unit | Description |
 |---|---|---|
-| `sc1_actuator_level_1` .. `sc1_actuator_level_k` | the kind's | The level each mounted actuator applies, in mounting order: its command within its limits. A thruster with firing dynamics reports the average thrust its last control tick scheduled, a wheel at its momentum limit reports zero when the command would store more, and a hinge or thruster gimbal reports its current angle |
+| `sc1_actuator_level_1` .. `sc1_actuator_level_k` | the kind's | The level each mounted actuator applies, in mounting order: its command within its limits. A thruster with firing dynamics reports the average thrust its last control tick scheduled, a wheel at its momentum limit reports zero when the command would store more, a hinge or thruster gimbal reports its current angle, and a control moment gyro its gimbal rate |
 | `sc1_actuator_power` | W | Electrical power the mounted actuators draw at those levels, the sum of what each kind reports through `actuator_consumption` |
 
 The levels come from the first control effector in `:mounted` actuation that
@@ -248,6 +248,13 @@ terminals draw `level / efficiency`; reaction wheels draw their base power and
 their motor's power from the integrated wheel momentum, when they are given a
 spin inertia; torque rods draw their power at full dipole times the square of
 the dipole fraction. Hinges and thrusters report none.
+
+Runs with control moment gyros also write their gimbal angles, from the
+integrated state:
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_cmg_angle_1` .. `sc1_cmg_angle_n` | rad | Gimbal angle of each control moment gyro, in mounting order |
 
 ### Power budget
 

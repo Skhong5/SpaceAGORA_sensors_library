@@ -243,6 +243,14 @@ The built-in kinds:
   propellant use and allocation column follow it; two gimbals on one
   thruster make a two-axis gimbal, turning in mounting order.
   `thrust_direction(thruster)` gives the turned direction.
+- `ControlMomentGyro`: a single-gimbal CMG on the root link, a rotor of
+  constant momentum whose spin axis turns about the gimbal axis; its level is
+  the gimbal rate, within its rate limit. The gimbal angle is integrated with
+  the vehicle's state (`cmg_angles`, only when a CMG is mounted); the vehicle
+  feels `-δ̇ (g × h)` and the rotor's momentum in its gyroscopic term.
+  `cmg_steering(spacecraft, angles, torque)` turns a desired torque into
+  gimbal rates with a singularity-robust inverse. The split solver modes
+  refuse CMGs.
 
 The actuators' power feeds the spacecraft's power budget when it carries one:
 solar arrays, a battery and constant loads mounted with `add_power!`. See

@@ -38,7 +38,7 @@ spacecraft = SpacecraftModel(links=[bus], root=bus, prop_mass=0.0, inertia_tenso
     initial_condition=ic, id=1)
 
 # Mounting order: wheels first, then rods, then the terminal (thrusters,
-# wheels, rods, laser terminals, hinges, thruster gimbals, then user-defined kinds).
+# wheels, rods, laser terminals, hinges, thruster gimbals, CMGs, then user-defined kinds).
 for axis in (SVector(1.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(0.0, 0.0, 1.0))
     add_actuator!(spacecraft, bus, ReactionWheel(spin_axis=axis,
         max_torque_nm=WHEEL_TORQUE_NM, max_momentum_nms=WHEEL_MOMENTUM_NMS))
