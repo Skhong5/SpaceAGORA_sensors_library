@@ -1,6 +1,7 @@
 # Deliberately standalone: this contract must load without SpaceAGORA/HYPR.
 module RPOPlannerContractTests
 using Test, Random, LinearAlgebra
+include(joinpath(@__DIR__, "..", "..", "..", "src", "models", "gnc", "interfaces", "gnc_algorithms.jl"))
 include(joinpath(@__DIR__, "..", "..", "..", "src", "models", "gnc", "interfaces", "rpo_planner.jl"))
 const P = RPOPlannerInterfaces
 

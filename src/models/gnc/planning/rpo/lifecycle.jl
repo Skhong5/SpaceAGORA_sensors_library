@@ -6,6 +6,7 @@ using SHA: sha256
 using LinearAlgebra: norm, dot
 using ..SimulationModel
 import ..RPOPlannerInterfaces as P
+import ..GNCAlgorithms as GA
 import ..SimulationLifecycle as L
 import ..DirectRPOPlanning: DirectRPOPlanner
 const S = SimulationModel

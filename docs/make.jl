@@ -12,6 +12,7 @@ const GENERATED_API_PAGE = joinpath(GENERATED_SRC, "public_api.md")
 const API_REFERENCE_PAGES = (
     (section="Simulation Setup", title="Simulation Setup API", file="simulation_setup_api.md"),
     (section="RPO planner pilot", title="RPO Planner API", file="rpo_planner_api.md"),
+    (section="GNC algorithm contract", title="GNC Algorithm Contract API", file="gnc_algorithm_contract_api.md"),
     (section="Robotics and Planning", title="Robotics API", file="robotics_api.md"),
     (section="Compliant Multibody Dynamics", title="Compliant Multibody API", file="compliant_multibody_api.md"),
     (section="Terrain Queries", title="Terrain API", file="terrain_api.md"),
@@ -215,6 +216,7 @@ makedocs(
             "Public API" => "generated/public_api.md",
             "Simulation Setup API" => "generated/simulation_setup_api.md",
             "RPO Planner API" => "generated/rpo_planner_api.md",
+            "GNC Algorithm Contract API" => "generated/gnc_algorithm_contract_api.md",
             "Robotics API" => "generated/robotics_api.md",
             "Compliant Multibody API" => "generated/compliant_multibody_api.md",
             "Terrain API" => "generated/terrain_api.md",

@@ -1,6 +1,7 @@
 # The baseline and planning-budget policy must work without the simulator or HYPR.
 module DirectRPOPlannerTests
 using Test, Random, LinearAlgebra
+include(joinpath(@__DIR__, "..", "..", "..", "src", "models", "gnc", "interfaces", "gnc_algorithms.jl"))
 include(joinpath(@__DIR__, "..", "..", "..", "src", "models", "gnc", "interfaces", "rpo_planner.jl"))
 include(joinpath(@__DIR__, "..", "..", "..", "src", "models", "gnc", "planning", "rpo", "direct_planner.jl"))
 const P=RPOPlannerInterfaces
