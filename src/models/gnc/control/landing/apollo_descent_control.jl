@@ -59,8 +59,9 @@ mutable struct ApolloDescentControlState
     # is allocated over (built on the first control cycle from the spacecraft).
     thruster_level::Vector{Vector{Float64}}
     thruster_layout::Vector{Union{Nothing, DescentThrusterLayout}}
-    # The same levels as thrusts in newtons, the mounted thrusters' actuator
-    # levels in `:mounted` actuation.
+    # The mounted actuators' levels in `:mounted` actuation, in mounting order:
+    # the thrusters' (the same levels as thrusts in newtons) first, then every
+    # other mounted actuator holding (see `_hold_other_mounted_levels!`).
     thruster_force_n::Vector{Vector{Float64}}
 end
 function ApolloDescentControlState(n::Integer)
@@ -270,19 +271,46 @@ end
 @inline function _update_descent_thruster_levels!(model::ApolloDescentControlModel, p::ODEParams, i::Int)
     act = model.actuators
     layout = act.thruster_layout[i]
+    spacecraft = p.args.dynamics_model.spacecraft[i]
     if layout === nothing
-        layout = descent_thruster_layout(p.args.dynamics_model.spacecraft[i])
+        layout = descent_thruster_layout(spacecraft)
         layout === nothing && return nothing
         act.thruster_layout[i] = layout
         act.thruster_level[i] = zeros(length(layout.jets) + 1)
-        act.thruster_force_n[i] = zeros(length(layout.jets) + 1)
+        # One mounted level per mounted actuator; the thrusters come first.
+        act.thruster_force_n[i] = zeros(max(mounted_actuator_count(spacecraft), length(layout.jets) + 1))
     end
     levels = descent_thruster_levels!(act.thruster_level[i], layout, act.thrust_n[i], act.torque_nm[i])
     forces = act.thruster_force_n[i]
     k = 0
-    for link in p.args.dynamics_model.spacecraft[i].links, thruster in link.thrusters
+    for link in spacecraft.links, thruster in link.thrusters
         k += 1
         k <= length(forces) && (forces[k] = levels[k] * thruster.max_thrust)
+    end
+    _hold_other_mounted_levels!(forces, spacecraft, k)
+    return nothing
+end
+
+# The controller commands only the thrusters; every other mounted actuator
+# holds: a hinge or a thruster gimbal at its current angle, any other kind at
+# level zero. Refreshed at each control cycle.
+function _hold_other_mounted_levels!(forces::Vector{Float64}, spacecraft, n_thrusters::Int)
+    length(forces) > n_thrusters || return forces
+    for (k, entry) in enumerate(mounted_actuators(spacecraft))
+        k <= n_thrusters && continue
+        k > length(forces) && break
+        a = entry.actuator
+        forces[k] = a isa Union{PanelHinge, ThrusterGimbal} ? a.angle_rad : 0.0
+    end
+    return forces
+end
+
+# The thrusters off; the other mounted actuators keep holding.
+@inline function _zero_descent_thrusters!(act::ApolloDescentControlState, i::Int)
+    fill!(act.thruster_level[i], 0.0)
+    forces = act.thruster_force_n[i]
+    @inbounds for k in 1:min(length(act.thruster_level[i]), length(forces))
+        forces[k] = 0.0
     end
     return nothing
 end
@@ -312,8 +340,7 @@ function calcControlEffect!(model::ApolloDescentControlModel, u, p::ODEParams, t
     if !p.is_active[i]
         model.actuators.thrust_n[i] = 0.0
         model.actuators.torque_nm[i] = SVector{3, Float64}(0.0, 0.0, 0.0)
-        fill!(model.actuators.thruster_level[i], 0.0)
-        fill!(model.actuators.thruster_force_n[i], 0.0)
+        _zero_descent_thrusters!(model.actuators, i)
         return nothing
     end
     sc = _descent_state_view(u, i)
@@ -389,8 +416,7 @@ function touchdown_spec(model::ApolloDescentControlModel, spacecraft_index::Int)
         st.thrust_cmd_n[i] = 0.0; st.throttle[i] = 0.0
         model.actuators.thrust_n[i] = 0.0
         model.actuators.torque_nm[i] = SVector{3, Float64}(0.0, 0.0, 0.0)
-        fill!(model.actuators.thruster_level[i], 0.0)
-        fill!(model.actuators.thruster_force_n[i], 0.0)
+        _zero_descent_thrusters!(model.actuators, i)
         f = frame[i]
         if f !== nothing
             d = r_p - f.origin_p
