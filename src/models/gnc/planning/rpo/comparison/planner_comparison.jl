@@ -260,14 +260,17 @@ function _rpo_comparison_rrt_connect_seed_path(
     return plan.path
 end
 
-"""Run one planner on one RPO comparison case and collect comparable metrics."""
+"""
+Run one planner on one RPO comparison case and collect comparable metrics. The
+required `rng` is the only random stream the planner draws from.
+"""
 function rpo_plan_comparison_path(
     planner_type,
     start_rtn,
     goal_rtn,
     geometry,
     cfg::RPOPlannerComparisonConfig;
-    rng=Random.default_rng(),
+    rng::Random.AbstractRNG,
     runtime_limit_s::Real=Inf,
     warmstart_path=nothing,
 )
