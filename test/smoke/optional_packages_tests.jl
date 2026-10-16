@@ -11,10 +11,13 @@ const OPTIONAL_FIXTURE_PACKAGES = (
          uuid="a782e8ee-96d7-4dd6-8231-bb64649e6ad4", version="0.1.0"),
 )
 
+# Automatic maintenance after a commit or fetch runs in the background and can
+# repack loose objects while `fixture_snapshot` walks `.git`, so it is disabled.
 function fixture_git(args...)
     addenv(Cmd(["git", "-c", "init.defaultBranch=main", "-c", "protocol.file.allow=always",
                 "-c", "user.name=Optional package fixture", "-c", "user.email=fixture@example.invalid",
-                "-c", "core.autocrlf=false", String.(args)...]),
+                "-c", "core.autocrlf=false", "-c", "maintenance.auto=false", "-c", "gc.auto=0",
+                String.(args)...]),
            "GIT_DIR" => nothing, "GIT_WORK_TREE" => nothing, "GIT_INDEX_FILE" => nothing,
            "GIT_COMMON_DIR" => nothing, "GIT_OBJECT_DIRECTORY" => nothing,
            "GIT_ALTERNATE_OBJECT_DIRECTORIES" => nothing, "GIT_CONFIG_NOSYSTEM" => "1",
