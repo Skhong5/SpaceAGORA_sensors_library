@@ -21,7 +21,7 @@ end
     return length(x) >= 7 ? Float64(x[7]) : NaN
 end
 
-@inline function build_state_sample(sc_view, spacecraft, orientation_sim::Bool)::StateSample
+@inline function build_state_sample(sc_view, spacecraft, orientation_sim::Bool, spacecraft_index::Int=0)::StateSample
     pos_ii, vel_ii = _extract_sample_pos_vel(sc_view)
     q_ib = (orientation_sim && hasproperty(sc_view, :q)) ? SVector{4, Float64}(sc_view.q) : nothing
     ω_body = (orientation_sim && hasproperty(sc_view, :ω)) ? SVector{3, Float64}(sc_view.ω) : nothing
@@ -32,6 +32,7 @@ end
         q_ib=q_ib,
         ω_body=ω_body,
         spacecraft=spacecraft,
+        spacecraft_index=spacecraft_index,
     )
 end
 

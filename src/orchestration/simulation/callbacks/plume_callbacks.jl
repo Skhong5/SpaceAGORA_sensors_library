@@ -14,7 +14,7 @@ function _plume_sample_state(model, u, p, i, t)
     x = _simulation_model_module.StateSample(engine._state_position_ii(u, i),
         engine._state_velocity_ii(u, i), engine._state_mass_kg(u, p.args, i);
         q_ib=engine._state_quaternion(u, i),
-        spacecraft=p.args.dynamics_model.spacecraft[i])
+        spacecraft=p.args.dynamics_model.spacecraft[i], spacecraft_index=i)
     env = engine.sample_environment(_PSI.environment_requirements(model), model,
         x, p, i, Float64(t))
     return x, env

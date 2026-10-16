@@ -622,3 +622,141 @@ end
     @test isequal(finals["1"], finals["0"])
     @test isequal(finals["auto"], finals["0"])
 end
+
+# Every sample the engine builds carries the run index of the spacecraft it
+# describes (`StateSample.spacecraft_index`). The probes record what each route
+# hands them: a sample for spacecraft k must carry k and spacecraft k's position.
+using StaticArrays: SVector, SMatrix
+using RecursiveArrayTools: ArrayPartition
+
+struct _RHSDAIndexProbe <: SpaceAGORA.AbstractForceTorqueModel
+    seen::Vector{Tuple{Int, SVector{3, Float64}}}
+    lock::ReentrantLock
+end
+_RHSDAIndexProbe() = _RHSDAIndexProbe(Tuple{Int, SVector{3, Float64}}[], ReentrantLock())
+_rhsda_record!(m, x) = lock(() -> push!(m.seen, (x.spacecraft_index, x.pos_ii)), m.lock)
+const _RHSDA_Z3 = SVector(0.0, 0.0, 0.0)
+
+function SpaceAGORA.wrench(m::_RHSDAIndexProbe, x::StateSample, env::EnvironmentSample, t::Float64)
+    _rhsda_record!(m, x)
+    return _RHSDA_Z3, _RHSDA_Z3
+end
+SpaceAGORA.gravity_backbone_kick_structure(::_RHSDAIndexProbe) = :velocity_kick_explicit
+function SpaceAGORA.gravity_backbone_kick_acceleration_ii(m::_RHSDAIndexProbe, x::StateSample, env::EnvironmentSample, t::Float64)
+    _rhsda_record!(m, x)
+    return _RHSDA_Z3
+end
+
+# Position-only gravity: the gravity-backbone core and the articulated and
+# attachment gravity callables sample it at each body.
+struct _RHSDAGravityProbe <: SpaceAGORA.AbstractForceTorqueModel
+    seen::Vector{Tuple{Int, SVector{3, Float64}}}
+    lock::ReentrantLock
+end
+_RHSDAGravityProbe() = _RHSDAGravityProbe(Tuple{Int, SVector{3, Float64}}[], ReentrantLock())
+SpaceAGORA.gravity_backbone_structure(::_RHSDAGravityProbe) = :position_only_static_gravity
+function SpaceAGORA.gravity_backbone_acceleration_ii(m::_RHSDAGravityProbe, x::StateSample, env::EnvironmentSample, t::Float64)
+    _rhsda_record!(m, x)
+    return _RHSDA_Z3
+end
+SpaceAGORA.wrench(::_RHSDAGravityProbe, x::StateSample, env::EnvironmentSample, t::Float64) = (_RHSDA_Z3, _RHSDA_Z3)
+
+function _rhsda_check_indices(seen, positions)
+    @test !isempty(seen)
+    @test all(((k, pos),) -> 1 <= k <= length(positions) && pos == positions[k], seen)
+    @test sort!(unique(first.(seen))) == collect(eachindex(positions))
+end
+
+function _rhsda_index_params(args, n, mode)
+    p = ODEParams(n_sats=n, args=args)
+    p.is_active .= true
+    p.shared_buffers.rhs_env_config[] = withenv(RHSDA_SE._snapshot_rhs_plan_env_config,
+        "SPACEAGORA_RHS_EXECUTION_MODE" => mode)
+    return p
+end
+
+@testset "StateSample carries the spacecraft's run index" begin
+    pos, vel = SVector(7.0e6, 0.0, 0.0), SVector(0.0, 7.5e3, 0.0)
+    @test StateSample(pos, vel, 500.0).spacecraft_index == 0
+    @test StateSample(pos, vel, 500.0; spacecraft_index=3).spacecraft_index == 3
+    @test StateSample(pos, vel, 500.0, nothing, nothing, nothing).spacecraft_index == 0
+    @test StateSample(pos, vel, 500.0, nothing, nothing, nothing, 2).spacecraft_index == 2
+
+    n = 3
+    probe = _RHSDAIndexProbe()
+    args = _rhs_direct_assembly_config(n_sats=n, effectors=(InverseSquaredGravityModel(), probe))
+    u = RHSDA_SE.build_initial_conditions(args)
+    positions = [SVector{3, Float64}(u.sc[k].pos) for k in 1:n]
+
+    @testset "engine sample builder" begin
+        for k in 1:n
+            x = RHSDA_SE.build_state_sample(u.sc[k], args.dynamics_model.spacecraft[k], false, k)
+            @test x.spacecraft_index == k && x.pos_ii == positions[k]
+        end
+        @test RHSDA_SE.build_state_sample(u.sc[1], nothing, false).spacecraft_index == 0
+    end
+
+    for mode in ("serial", "satellite")
+        @testset "full right-hand side, $mode execution" begin
+            empty!(probe.seen)
+            RHSDA_SE.spacecraft_dynamics!(zero(u), u, _rhsda_index_params(args, n, mode), 0.0)
+            _rhsda_check_indices(probe.seen, positions)
+        end
+    end
+
+    @testset "flat constellation queue" begin
+        plan = (
+            mode=:flat_constellation_effector_queue, allotment=1, scheduler=:static,
+            dominant_axis=:effector, policy_applied=false,
+            effector_decision=(use_threads=false, allotment=1, mode=:off, policy_applied=false),
+        )
+        empty!(probe.seen)
+        RHSDA_SE._spacecraft_dynamics_flat_constellation_effector_queue!(
+            zero(u), u, _rhsda_index_params(args, n, "auto"), 0.0, plan; rhs_kind=:full, partition=nothing)
+        _rhsda_check_indices(probe.seen, positions)
+    end
+
+    for (label, rhs!) in (("split IMEX explicit remainder", RHSDA_SE.spacecraft_dynamics_explicit_remainder!),
+                          ("multirate slow part", RHSDA_SE.spacecraft_dynamics_slow!))
+        @testset "$label" begin
+            empty!(probe.seen)
+            rhs!(zero(u), u, _rhsda_index_params(args, n, "auto"), 0.0)
+            _rhsda_check_indices(probe.seen, positions)
+        end
+    end
+
+    @testset "gravity backbone core and kick samples" begin
+        gravity, kick = _RHSDAGravityProbe(), _RHSDAIndexProbe()
+        bargs = _rhs_direct_assembly_config(n_sats=n, effectors=(InverseSquaredGravityModel(), gravity, kick))
+        bu = RHSDA_SE.build_initial_conditions(bargs)
+        bp = _rhsda_index_params(bargs, n, "auto")
+        q, dq = RHSDA_SE._gravity_backbone_initial_states(bu, bargs)
+        RHSDA_SE.spacecraft_dynamics_gravity_backbone!(zero(dq), dq, q, bp, 0.0)
+        _rhsda_check_indices(gravity.seen, positions)
+        state = ArrayPartition(deepcopy(dq), deepcopy(q))
+        RHSDA_SE._gravity_backbone_half_kick!(state, bp, 0.0, 1.0)
+        _rhsda_check_indices(kick.seen, positions)
+    end
+
+    @testset "articulated and attachment gravity callables" begin
+        gravity = _RHSDAGravityProbe()
+        gargs = _rhs_direct_assembly_config(n_sats=n, effectors=(gravity,))
+        gp = _rhsda_index_params(gargs, n, "auto")
+        r = SVector(7.0e6, 1.0e5, -2.0e5)
+        for k in 1:n
+            empty!(gravity.seen)
+            RHSDA_SE._gravity_only_acceleration_ii(gp, r, 0.0; sat_idx=k)
+            @test first.(gravity.seen) == [k]
+            g = RHSDA_SE._ArticulatedGravity(gp, 0.0, SMatrix{3, 3, Float64, 9}(1, 0, 0, 0, 1, 0, 0, 0, 1),
+                gargs.dynamics_model.spacecraft[k], gargs.dynamics_model.dynamic_effectors, k)
+            empty!(gravity.seen)
+            SpaceAGORA.SimulationModel.CompliantAttachmentDynamics.relative_gravity(g, r, SVector(1.0, 0.0, 0.0), _RHSDA_Z3)
+            @test first.(gravity.seen) == [k, k]
+        end
+    end
+
+    @testset "operational segment context" begin
+        context = SpaceAGORA.MissionWorkflow._segment_context(u, 0.0, args)
+        @test [x.spacecraft_index for x in context.spacecraft] == collect(1:n)
+    end
+end

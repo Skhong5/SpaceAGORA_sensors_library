@@ -33,6 +33,11 @@ mass, `q_ib` is the inertial-to-body attitude quaternion when available, and
 `ω_body` is the body-frame angular velocity when available. `spacecraft` is the
 typed spacecraft model handle for effectors that need static geometry or
 inertia data without reaching back into the integrator state.
+
+`spacecraft_index` is the spacecraft's position in the run (1-based, in the
+order of `dynamics_model.spacecraft`) for every sample the engine builds, and 0
+for a sample built outside a run. A model that acts on one spacecraft of a
+multi-spacecraft run selects it with this field.
 """
 struct StateSample{S}
     pos_ii::SVector{3, Float64}
@@ -41,7 +46,18 @@ struct StateSample{S}
     q_ib::Union{Nothing, SVector{4, Float64}}
     ω_body::Union{Nothing, SVector{3, Float64}}
     spacecraft::S
+    spacecraft_index::Int
 end
+
+# The six-field form that predates `spacecraft_index`: a sample outside a run.
+StateSample(
+    pos_ii::SVector{3, Float64},
+    vel_ii::SVector{3, Float64},
+    mass_kg::Float64,
+    q_ib::Union{Nothing, SVector{4, Float64}},
+    ω_body::Union{Nothing, SVector{3, Float64}},
+    spacecraft,
+) = StateSample(pos_ii, vel_ii, mass_kg, q_ib, ω_body, spacecraft, 0)
 
 StateSample(
     pos_ii::SVector{3, Float64},
@@ -50,6 +66,7 @@ StateSample(
     q_ib::Union{Nothing, AbstractVector{<:Real}}=nothing,
     ω_body::Union{Nothing, AbstractVector{<:Real}}=nothing,
     spacecraft=nothing,
+    spacecraft_index::Integer=0,
 ) = StateSample(
     pos_ii,
     vel_ii,
@@ -57,6 +74,7 @@ StateSample(
     q_ib === nothing ? nothing : SVector{4, Float64}(q_ib),
     ω_body === nothing ? nothing : SVector{3, Float64}(ω_body),
     spacecraft,
+    Int(spacecraft_index),
 )
 
 """
@@ -163,7 +181,8 @@ implementations. The engine owns stage-consistent sampling and caching, then
 passes a typed state/environment bundle into `wrench`.
 
 Return inertial-frame force and body-frame torque in SI units. Implementations
-should behave as pure functions of `(model, x, env, t)`.
+should behave as pure functions of `(model, x, env, t)`. A model that acts on
+one spacecraft of a multi-spacecraft run selects it with `x.spacecraft_index`.
 """
 function wrench end
 
@@ -172,7 +191,8 @@ function wrench end
 
 Like `wrench`, but may also write per-component force diagnostics to `p.save_cache`
 (e.g. drag/lift/cross vectors for aerodynamic models).  The default falls back to
-calling `wrench` and ignoring `p`/`sat_idx`.
+calling `wrench` and ignoring `p`/`sat_idx`. `sat_idx` equals `x.spacecraft_index`;
+a model that only needs the index reads it from `x` and implements `wrench`.
 """
 function wrench_caching! end
 @inline wrench_caching!(model, x, env, t, p, sat_idx) = wrench(model, x, env, t)

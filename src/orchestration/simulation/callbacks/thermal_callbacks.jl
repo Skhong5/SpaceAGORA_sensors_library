@@ -63,7 +63,7 @@ function _compute_stage_heat_rates!(
     incidence_mode = _thermal_incidence_mode(p.args.dynamics_model.dynamic_effectors, orientation_sim)
     spacecraft = p.args.dynamics_model.spacecraft[sat_idx]
     q_root = incidence_mode !== nothing && orientation_sim ?
-        engine.build_state_sample(x, spacecraft, true).q_ib : nothing
+        engine.build_state_sample(x, spacecraft, true, sat_idx).q_ib : nothing
     vel_pi = orientation_sim ? planet_frame.l_pi' * vel_pp_rw : SVector{3, Float64}(0.0, 0.0, 0.0)
     @inbounds for j in eachindex(links)
         # Typed wrenches intentionally do not mutate Link angles. Derive heating
