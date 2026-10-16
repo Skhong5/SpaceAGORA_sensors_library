@@ -209,10 +209,8 @@ function SM.ControlHooks.calcControlEffect!(model::HeldControl, u::ComponentVect
     model.actuators.thrust_n[i] = model.initial[i] * (model.jump && t >= 1.0 ? 2.0 : 1.0)
     return nothing
 end
-SM.ControlHooks.calcControlForceTorque(::HeldControl, u::AbstractVector,
-    p::SM.ODEParams, i::Int64, t::Float64) = (Z3,Z3)
-SM.ControlHooks.calcControlMassFlowRate(::HeldControl, u::AbstractVector,
-    p::SM.ODEParams, i::Int64, t::Float64) = 0.0
+SM.ControlHooks.control_wrench(::HeldControl, x::SM.StateSample,
+    p::SM.ODEParams, t::Float64) = (Z3,Z3)
 struct OscillatingForce <: SpaceAGORA.AbstractForceTorqueModel end
 SM.wrench(::OscillatingForce, x::SM.StateSample, env::SM.EnvironmentSample, t::Float64) =
     (SVector(500sin(200t), 0.0, 0.0), Z3)

@@ -497,7 +497,7 @@ SpaceAGORA.SimulationModel.ControlHooks.touchdown_spec(m::CombinedDescentTouchdo
     (terrain=SpaceAGORA.SimulationModel.NoTerrainModel(), reference_radius_m=m.radius_m, height_m=m.clearance_m,
      on_touchdown=(t, r_p, v_p, idx) -> push!(m.events, (t=t, r=sqrt(sum(abs2, r_p)), v=sqrt(sum(abs2, v_p)))))
 SpaceAGORA.SimulationModel.ControlHooks.calcControlEffect!(::CombinedDescentTouchdown, u, p, t, i) = nothing
-SpaceAGORA.SimulationModel.ControlHooks.calcControlForceTorque(::CombinedDescentTouchdown, u, p, i, t) =
+SpaceAGORA.SimulationModel.ControlHooks.control_wrench(::CombinedDescentTouchdown, x, p, t) =
     (SpaceAGORA.SimulationModel.StaticArrays.SVector(0.0, 0.0, 0.0), SpaceAGORA.SimulationModel.StaticArrays.SVector(0.0, 0.0, 0.0))
 
 @testset "Combined descent atmosphere" begin

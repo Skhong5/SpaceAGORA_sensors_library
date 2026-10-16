@@ -319,6 +319,32 @@ end
                     @test any(v -> occursin("forwarder for direct calls (four untyped positional arguments) is missing", v), rejected.violations)
                 end
             end
+            # The deprecated control output hooks are refused the same way, and
+            # each keeps its five-argument forwarder.
+            for (hook, text) in (
+                    ("calcControlForceTorque", "SpaceAGORA.calcControlForceTorque(model::Probe, u, p, i, t) = (0.0, 0.0)\n"),
+                    ("calcControlMassFlowRate", "function ControlHooks.calcControlMassFlowRate(model::Probe, u::AbstractVector, p, i::Int, t::Float64)\n    return -1.0\nend\n"),
+                    ("calcReactionWheelTorque", "(::typeof(calcReactionWheelTorque))(model::Probe, u, p, i, t) = nothing\n"))
+                _with_probe(probe, text) do
+                    rejected = run_gate()
+                    @test _failed_with(rejected, message)
+                    @test _reports(rejected, probe, fixture, "deprecated hook $(hook)")
+                end
+            end
+            bridges = joinpath(fixture, "src", "orchestration", "simulation", "engine", "control_hook_bridges.jl")
+            original = read(bridges, String)
+            for hook in ("calcControlForceTorque", "calcControlMassFlowRate", "calcReactionWheelTorque")
+                needle = "function SimulationModel.$(hook)(model, u, p, i, t)"
+                @test occursin(needle, original)
+                for changed in ("function SimulationModel.$(hook)(model, u, p, i::Int, t)",
+                                "function SimulationModel.$(hook)(model, u, p, i)")
+                    _with_text(bridges, replace(original, needle => changed; count=1)) do
+                        rejected = run_gate()
+                        @test _failed_with(rejected, message)
+                        @test any(v -> occursin("the $(hook) forwarder for direct calls (five untyped positional arguments) is missing", v), rejected.violations)
+                    end
+                end
+            end
             @test isnothing(run_gate().failure)
         end
     end

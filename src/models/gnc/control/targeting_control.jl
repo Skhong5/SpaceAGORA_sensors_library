@@ -153,21 +153,19 @@ function calcControlEffect!(
     return nothing
 end
 
-function calcControlForceTorque(
+function control_wrench(
     model::AerobrakingEnergyDepletionControlModel,
-    u::AbstractVector,
+    x::StateSample,
     p::ODEParams,
-    i::Int64,
     t::Float64,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-function calcControlForceTorque(
+function control_wrench(
     model::SolarPanelAngleOfAttackControlModel,
-    u::AbstractVector,
+    x::StateSample,
     p::ODEParams,
-    i::Int64,
     t::Float64,
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)

@@ -1237,16 +1237,16 @@ end
 
 """A control effector representing an idealized reaction wheel: the commanded body
 torque is entirely wheel-attributable (reacts against stored wheel momentum), so
-`calcControlForceTorque` and `calcReactionWheelTorque` return the same torque."""
+`control_wrench` and `control_wheel_torque` return the same torque."""
 struct TestReactionWheelEffector
     torque_body::SVector{3, Float64}
 end
 
-function SimulationModel.calcControlForceTorque(m::TestReactionWheelEffector, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
+function SimulationModel.control_wrench(m::TestReactionWheelEffector, x::SimulationModel.StateSample, p::ODEParams, t::Float64)
     return SVector{3, Float64}(0.0, 0.0, 0.0), m.torque_body
 end
 
-function SimulationModel.calcReactionWheelTorque(m::TestReactionWheelEffector, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
+function SimulationModel.control_wheel_torque(m::TestReactionWheelEffector, x::SimulationModel.StateSample, p::ODEParams, t::Float64)
     return m.torque_body
 end
 

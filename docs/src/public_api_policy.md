@@ -113,12 +113,11 @@ For model authors, the stable extension contract is:
   - `solver_partition`
   - `gravity_backbone_structure`
   - `gravity_backbone_acceleration_ii`
-  - `calcForceTorque`
   - `getDensity`
   - `getDensityBatch!`
   - `calcControlEffect!`
-  - `calcControlForceTorque`
-  - `calcControlMassFlowRate`
+  - `control_wrench`
+  - `control_propellant_rate` and `control_wheel_torque`
   - `actuator_wrench`, `actuator_limits` and the optional actuator methods
   - `actuation_mode` and `actuator_levels`
 
