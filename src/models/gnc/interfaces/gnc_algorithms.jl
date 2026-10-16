@@ -308,9 +308,13 @@ mutable struct AlgorithmRuntime
     last_request_time::Float64
     records::Vector{NamedTuple}
 end
-AlgorithmRuntime(stream_words::AbstractVector{<:Unsigned}; state=nothing) =
-    AlgorithmRuntime(state, MersenneTwister(stream_words), stream_words, 0, nothing, nothing,
+function AlgorithmRuntime(stream_words::AbstractVector{<:Unsigned}; state=nothing)
+    # Own one copy, so a caller that later reuses its vector cannot change what the
+    # runtime reports as the stream's seed.
+    words = collect(UInt32, stream_words)
+    return AlgorithmRuntime(state, MersenneTwister(words), words, 0, nothing, nothing,
         Set{Int}(), -Inf, -Inf, NamedTuple[])
+end
 
 """
     algorithm_runtime(binding) -> AlgorithmRuntime
@@ -388,7 +392,8 @@ proposed_product(result::AlgorithmResult) = result.product
 """
     installed_record(family, request, result, validation, product, reason, t) -> NamedTuple
 
-The run record kept when `product` is installed; the driver stores a deep copy.
+The run record kept when `product` is installed. The driver calls it after
+installation, with copies of its arguments, and stores a deep copy of the result.
 The default names the product `product`.
 """
 installed_record(family, request, result, validation, product, reason, t) =
@@ -408,10 +413,27 @@ rejected_record(family, request, result, validation, reason, t) =
      termination=result === nothing ? :not_proposed : result.termination,
      validation=validation)
 
+# Marks the failure this request's binding raised, so the driver passes it on
+# unwrapped; any other error, including a GNCAlgorithmError thrown by algorithm
+# code, is wrapped with the driver's `exception_reason`. Never escapes the driver.
+struct _BindingFailure <: Exception
+    error::GNCAlgorithmError
+end
+
 function _fail_request!(binding, reason; kwargs...)
-    fail_algorithm_request!(binding, reason; kwargs...)
+    try
+        fail_algorithm_request!(binding, reason; kwargs...)
+    catch e
+        e isa GNCAlgorithmError && throw(_BindingFailure(e))
+        rethrow()
+    end
     throw(ArgumentError("fail_algorithm_request! for $(nameof(typeof(binding))) must throw a GNCAlgorithmError."))
 end
+
+# Record hooks receive isolated copies, so a family's record code cannot change the
+# request, result, validation or product the lifecycle keeps or installs.
+_rejection(family, request, result, validation, reason, t) =
+    deepcopy(rejected_record(family, deepcopy(request), deepcopy(result), deepcopy(validation), reason, t))
 
 function _reject_request!(binding, runtime, family, request, result, validation, reason, t)
     policy = on_rejection(family)
@@ -420,11 +442,11 @@ function _reject_request!(binding, runtime, family, request, result, validation,
         _fail_request!(binding, validation.reason; details=(termination=result.termination,
             diagnostics=result.diagnostics, validation=validation))
     elseif policy === :keep_previous
-        push!(runtime.records, deepcopy(rejected_record(family, request, result, validation, reason, t)))
+        push!(runtime.records, _rejection(family, request, result, validation, reason, t))
         return false
     elseif policy === :install_fallback
-        product = deepcopy(fallback_product(family, request))
-        push!(runtime.records, deepcopy(rejected_record(family, request, result, validation, reason, t)))
+        product = deepcopy(fallback_product(family, deepcopy(request)))
+        push!(runtime.records, _rejection(family, request, result, validation, reason, t))
         install!(bound_link(binding), family, product, request, t; validation=validation,
             diagnostics=NamedTuple())
         runtime.product, runtime.installed_request, runtime.last_request_time = product, request, t
@@ -450,10 +472,12 @@ Run one request of `binding` at time `t` through the contract's steps:
    `trusted_queries`);
 7. install a copy of the product (`install!`), with no yield or user callback
    between validation and installation;
-8. record the install.
+8. record the install (`installed_record`, called after installation on copies).
 
-A refusal follows the family's `on_rejection` policy. Algorithm exceptions become
-failures with reason `exception_reason`. Returns whether a product was installed.
+A refusal follows the family's `on_rejection` policy. Any error thrown by algorithm
+or family code, including a `GNCAlgorithmError`, becomes a failure of this binding
+with reason `exception_reason`; only the binding's own failure passes through
+unwrapped. Returns whether a product was installed.
 """
 function run_algorithm_request!(binding, u, p, t, reason; exception_reason::Symbol=:algorithm_exception)
     runtime = algorithm_runtime(binding)::AlgorithmRuntime
@@ -476,16 +500,23 @@ function run_algorithm_request!(binding, u, p, t, reason; exception_reason::Symb
         checked.accepted ||
             return _reject_request!(binding, runtime, family, request, result, checked, reason, t)
         product = deepcopy(proposed_product(result))
-        record = deepcopy(installed_record(family, request, result, checked, product, reason, t))
         # No yield or user callback between validation and installation.
         install!(bound_link(binding), family, product, request, t; validation=checked,
             diagnostics=result.diagnostics)
         runtime.product, runtime.installed_request, runtime.last_request_time = product, request, t
-        push!(runtime.records, record)
+        # The record hook runs after installation, on isolated copies.
+        push!(runtime.records, deepcopy(installed_record(family, deepcopy(request), deepcopy(result),
+            deepcopy(checked), deepcopy(product), reason, t)))
         return true
     catch e
-        e isa GNCAlgorithmError && rethrow()
-        _fail_request!(binding, exception_reason; cause=e, backtrace=catch_backtrace())
+        e isa _BindingFailure && throw(e.error)
+        backtrace = catch_backtrace()
+        try
+            _fail_request!(binding, exception_reason; cause=e, backtrace=backtrace)
+        catch failure
+            failure isa _BindingFailure && throw(failure.error)
+            rethrow()
+        end
     end
 end
 

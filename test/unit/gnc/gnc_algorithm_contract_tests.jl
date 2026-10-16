@@ -172,6 +172,7 @@ G.algorithm_family(::Doubler{Policy}) where {Policy} = DriverFamily{Policy}()
 G.consumes_rng(::Doubler) = false
 function G.propose!(state, algorithm::Doubler, request::DriverRequest, rng)
     algorithm.mode === :throw && error("algorithm failed")
+    algorithm.mode === :foreign_failure && throw(DriverFailure(:foreign, nothing, NamedTuple()))
     algorithm.mode === :wrong_type && return :not_a_result
     return G.AlgorithmResult(request_id=request.request_id, status=:candidate, termination=:completed,
         product=2request.value)
@@ -202,6 +203,21 @@ function G.fail_algorithm_request!(b::DriverBinding, reason; cause=nothing, back
     b.throws && throw(DriverFailure(reason, cause, details))
     return nothing
 end
+# A family whose record hook mutates the product it is given.
+struct VectorFamily <: G.AbstractAlgorithmFamily end
+G.validate_proposal(::VectorFamily, request::DriverRequest, result, trusted) = G.ValidationResult(true, :accepted)
+function G.install!(link::Base.RefValue{Any}, ::VectorFamily, product, request::DriverRequest, t; validation, diagnostics)
+    link[] = product
+    return nothing
+end
+function G.installed_record(::VectorFamily, request, result, validation, product, reason, t)
+    product[1] = -1.0
+    return (event=:installed, product=product)
+end
+struct VectorAlgorithm <: G.AbstractGNCAlgorithm end
+G.algorithm_family(::VectorAlgorithm) = VectorFamily()
+G.propose!(state, ::VectorAlgorithm, request::DriverRequest, rng) = G.AlgorithmResult(
+    request_id=request.request_id, status=:candidate, termination=:completed, product=[2request.value])
 run_request!(b, value, t, reason=:initial) = G.run_algorithm_request!(b, value, nothing, t, reason)
 failure(f) = try f(); nothing catch err; err end
 events(b) = [r.event for r in b.runtime.records]
@@ -245,6 +261,14 @@ events(b) = [r.event for r in b.runtime.records]
     e = failure(() -> G.run_algorithm_request!(w, 1.0, nothing, 0.0, :initial; exception_reason=:toy_exception))
     @test e isa DriverFailure && e.reason === :toy_exception && e.cause isa ErrorException
     @test w.link[] === nothing && w.runtime.product === nothing
+    # An algorithm's own GNCAlgorithmError is wrapped as this binding's failure.
+    e = failure(() -> run_request!(DriverBinding(Doubler{:fail}(:foreign_failure)), 1.0, 0.0))
+    @test e isa DriverFailure && e.reason === :algorithm_exception
+    @test e.cause isa DriverFailure && e.cause.reason === :foreign
+    # A record hook gets copies: mutating its product leaves the installed one intact.
+    v = DriverBinding(VectorAlgorithm())
+    @test run_request!(v, 2.0, 0.0) === true
+    @test v.link[] == [4.0] && v.runtime.product == [4.0] && last(v.runtime.records).product == [-1.0]
     # A failure hook that returns instead of throwing breaks the contract.
     @test_throws ArgumentError run_request!(DriverBinding(Doubler{:fail}(:ok); throws=false), 6.0, 0.0)
 end
@@ -259,6 +283,11 @@ end
     runtime = G.AlgorithmRuntime(words)
     @test rand(runtime.rng) == rand(MersenneTwister(words))
     @test runtime.stream_words == words && runtime.stream_words isa Vector{UInt32}
+    # The runtime owns its seed words: reusing the caller's vector changes nothing.
+    caller_words = collect(UInt32, words)
+    owned = G.AlgorithmRuntime(caller_words)
+    caller_words[1] = 0
+    @test owned.stream_words == words && rand(owned.rng) == rand(MersenneTwister(words))
     @test runtime.request_id == 0 && runtime.product === nothing && runtime.installed_request === nothing
     @test isempty(runtime.records) && isempty(runtime.processed_tokens) && runtime.last_request_time == -Inf
 end
