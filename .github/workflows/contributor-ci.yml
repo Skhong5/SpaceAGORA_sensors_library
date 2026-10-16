@@ -1,0 +1,253 @@
+name: Contributor CI
+
+# Reusable CI for repositories built on SpaceAGORA: research projects, algorithm
+# packages and companions. A caller pins this file and the core to one commit,
+# which is also the SpaceAGORA rev in its Project.toml [sources]:
+#
+#   jobs:
+#     spaceagora:
+#       uses: Space-FALCON-Lab/SpaceAGORA.jl/.github/workflows/contributor-ci.yml@<sha>
+#       with:
+#         spaceagora-rev: <sha>
+#         kind: package
+#
+# The repository is tested in a separate environment that develops the pinned
+# core by path (scripts/contributor_environment.jl). A pass certifies interface
+# conformance only; scientific validation is the author's.
+on:
+  workflow_call:
+    inputs:
+      spaceagora-rev:
+        description: Full 40-character SpaceAGORA commit, the same as the @ref in `uses:` and the [sources] pin.
+        type: string
+        required: true
+      kind:
+        description: project, package or companion.
+        type: string
+        required: true
+      julia-version:
+        description: Julia version for setup-julia.
+        type: string
+        default: "1.12"
+      manifest:
+        description: >-
+          core (seed from the core Manifest, keeping its versions), committed (the
+          repository's Manifest) or resolve (a fresh resolution; advisory).
+        type: string
+        default: core
+      depwarn:
+        description: Julia --depwarn value for the tests and examples.
+        type: string
+        default: error
+      threads:
+        description: Julia threads for the tests and examples; 2 or more, so that the concurrency checks run on threads.
+        type: string
+        default: "2"
+      examples:
+        description: Newline-separated scripts, relative to the directory, run after the tests.
+        type: string
+        default: ""
+      companions:
+        description: Companions installed at the core's pins (hypr, mujoco, edg), separated by spaces or commas.
+        type: string
+        default: ""
+      load-orders:
+        description: "Companions only: also run test/load_order.jl core-first and companion-first."
+        type: boolean
+        default: false
+      directory:
+        description: The project or package directory inside the caller's repository.
+        type: string
+        default: "."
+      core-from-caller:
+        description: Core CI only; the caller's checkout is SpaceAGORA itself.
+        type: boolean
+        default: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  contributor:
+    name: ${{ inputs.kind }} (${{ inputs.manifest }} manifest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    # A fresh resolution can select releases the core has not qualified; it is
+    # reported, not enforced.
+    continue-on-error: ${{ inputs.manifest == 'resolve' }}
+    permissions:
+      contents: read
+    env:
+      SPACEAGORA_REV: ${{ inputs.spaceagora-rev }}
+      KIND: ${{ inputs.kind }}
+      MANIFEST: ${{ inputs.manifest }}
+      DEPWARN: ${{ inputs.depwarn }}
+      EXAMPLES: ${{ inputs.examples }}
+      COMPANIONS: ${{ inputs.companions }}
+      LOAD_ORDERS: ${{ inputs.load-orders }}
+      DIRECTORY: ${{ inputs.directory }}
+      CORE_FROM_CALLER: ${{ inputs.core-from-caller }}
+      JULIA_NUM_THREADS: ${{ inputs.threads }}
+      JULIA_LOAD_PATH: "@:@stdlib"
+      JULIA_PKG_PRECOMPILE_AUTO: "0"
+    steps:
+      # The github context belongs to the caller; job.workflow_sha is this file's
+      # own commit (not reported on GitHub Enterprise Server).
+      - name: Check the inputs and this workflow's commit
+        env:
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+          WORKFLOW_REF: ${{ job.workflow_ref }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          [[ "$SPACEAGORA_REV" =~ ^[0-9a-f]{40}$ ]] ||
+            fail "spaceagora-rev must be a full 40-character lowercase commit SHA, not '$SPACEAGORA_REV'."
+          case "$KIND" in project|package|companion) ;; *) fail "kind must be project, package or companion, not '$KIND'." ;; esac
+          case "$MANIFEST" in core|committed|resolve) ;; *) fail "manifest must be core, committed or resolve, not '$MANIFEST'." ;; esac
+          case "$DEPWARN" in error|yes|no) ;; *) fail "depwarn must be error, yes or no, not '$DEPWARN'." ;; esac
+          [[ "$JULIA_NUM_THREADS" =~ ^[0-9]+$ ]] && (( JULIA_NUM_THREADS >= 2 )) ||
+            fail "threads must be 2 or more, so that the concurrency checks run on threads."
+          [[ "$LOAD_ORDERS" != true || "$KIND" == companion ]] || fail "load-orders applies to kind companion only."
+          case "/$DIRECTORY/" in */../*|//*) fail "directory must be a relative path inside the repository, not '$DIRECTORY'." ;; esac
+          if [ -z "$WORKFLOW_SHA" ]; then
+            echo "::warning::This runner does not report the workflow's own commit; only the [sources] pin is checked against spaceagora-rev."
+          elif [ "$WORKFLOW_SHA" != "$SPACEAGORA_REV" ]; then
+            fail "This workflow runs from $WORKFLOW_SHA ($WORKFLOW_REF), but spaceagora-rev is $SPACEAGORA_REV. Call it at the same commit."
+          fi
+          if [ "$MANIFEST" = resolve ]; then
+            echo "::notice::manifest: resolve is advisory; a failure is reported but does not fail the caller."
+          fi
+
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check out SpaceAGORA at the pinned commit
+        if: ${{ !inputs.core-from-caller }}
+        uses: actions/checkout@v7
+        with:
+          repository: Space-FALCON-Lab/SpaceAGORA.jl
+          ref: ${{ inputs.spaceagora-rev }}
+          path: .spaceagora
+          lfs: false
+          persist-credentials: false
+
+      - name: Verify the core commit and locate the repository
+        run: |
+          set -euo pipefail
+          if [ "$CORE_FROM_CALLER" = true ]; then core="$GITHUB_WORKSPACE"; else core="$GITHUB_WORKSPACE/.spaceagora"; fi
+          head="$(git -C "$core" rev-parse HEAD)"
+          if [ "$head" != "$SPACEAGORA_REV" ]; then
+            echo "::error::The SpaceAGORA checkout is at $head, not spaceagora-rev $SPACEAGORA_REV."
+            exit 1
+          fi
+          repository="$(cd "$GITHUB_WORKSPACE/$DIRECTORY" && pwd -P)"
+          {
+            echo "SPACEAGORA_CORE=$core"
+            echo "CONTRIBUTOR_REPOSITORY=$repository"
+            echo "CONTRIBUTOR_ENVIRONMENT=$RUNNER_TEMP/contributor-environment"
+            echo "SPACEAGORA_CONFORMANCE_REPORT_DIR=$RUNNER_TEMP/conformance"
+          } >> "$GITHUB_ENV"
+
+      # Core CI restores the depot its `depot` job built and never saves one: the
+      # repository's cache space is shared with the required jobs.
+      - name: Set up Julia and the core depot key (core CI)
+        if: inputs.core-from-caller
+        id: core-depot
+        uses: ./.github/actions/cache-keys
+        with:
+          julia-version: ${{ inputs.julia-version }}
+
+      - name: Restore the shared core depot (core CI)
+        if: inputs.core-from-caller
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.julia
+          key: ${{ steps.core-depot.outputs.depot-key }}
+          restore-keys: ${{ steps.core-depot.outputs.depot-prefix }}
+
+      - name: Set up Julia
+        if: ${{ !inputs.core-from-caller }}
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ inputs.julia-version }}
+
+      - name: Julia depot cache
+        if: ${{ !inputs.core-from-caller }}
+        uses: julia-actions/cache@v2
+
+      - name: Contributor environment self-test (core CI)
+        if: inputs.core-from-caller
+        run: julia --startup-file=no test/smoke/contributor_environment_tests.jl
+
+      - name: Internal-name scan
+        if: inputs.kind != 'companion'
+        run: julia --startup-file=no --project=@stdlib "$SPACEAGORA_CORE/scripts/contributor_environment.jl" scan "$KIND" "$CONTRIBUTOR_REPOSITORY"
+
+      - name: Build the separate environment
+        run: >-
+          julia --startup-file=no --project=@stdlib "$SPACEAGORA_CORE/scripts/contributor_environment.jl"
+          "$KIND" "$CONTRIBUTOR_REPOSITORY" "$CONTRIBUTOR_ENVIRONMENT"
+          --manifest "$MANIFEST" --rev "$SPACEAGORA_REV" --companions "$COMPANIONS"
+
+      - name: Precompile strictly
+        run: julia --startup-file=no --project="$CONTRIBUTOR_ENVIRONMENT" -e 'using Pkg; Pkg.precompile(; strict=true)'
+
+      # Pkg.test would install SpaceAGORA from the repository's [sources] pin
+      # instead of the checked-out core, so test/runtests.jl runs in the
+      # environment, from the test directory as under Pkg.test.
+      - name: Tests
+        run: |
+          set -euo pipefail
+          mkdir -p "$SPACEAGORA_CONFORMANCE_REPORT_DIR"
+          cd "$CONTRIBUTOR_REPOSITORY/test"
+          julia --startup-file=no --project="$CONTRIBUTOR_ENVIRONMENT" --depwarn="$DEPWARN" runtests.jl
+
+      - name: Examples
+        if: inputs.examples != ''
+        run: |
+          set -euo pipefail
+          while IFS= read -r script || [ -n "$script" ]; do
+            script="$(printf '%s' "$script" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+            [ -n "$script" ] || continue
+            case "/$script/" in */../*|//*) echo "::error::Example '$script' must be a relative path inside the repository."; exit 1 ;; esac
+            [ -f "$CONTRIBUTOR_REPOSITORY/$script" ] || { echo "::error::Example '$script' was not found."; exit 1; }
+            echo "::group::$script"
+            (cd "$CONTRIBUTOR_REPOSITORY" && julia --startup-file=no --project="$CONTRIBUTOR_ENVIRONMENT" --depwarn="$DEPWARN" "$script")
+            echo "::endgroup::"
+          done <<< "$EXAMPLES"
+
+      - name: Refuse an incompatible core (companion)
+        if: inputs.kind == 'companion'
+        run: julia --startup-file=no --project="$CONTRIBUTOR_ENVIRONMENT" --depwarn="$DEPWARN" "$CONTRIBUTOR_REPOSITORY/test/incompatible_core.jl"
+
+      - name: Core-first load order (companion)
+        if: inputs.kind == 'companion' && inputs.load-orders
+        run: julia --startup-file=no --project="$CONTRIBUTOR_ENVIRONMENT" --depwarn="$DEPWARN" "$CONTRIBUTOR_REPOSITORY/test/load_order.jl" core-first
+
+      - name: Companion-first load order (companion)
+        if: inputs.kind == 'companion' && inputs.load-orders
+        run: julia --startup-file=no --project="$CONTRIBUTOR_ENVIRONMENT" --depwarn="$DEPWARN" "$CONTRIBUTOR_REPOSITORY/test/load_order.jl" companion-first
+
+      - name: Tracked files unchanged
+        run: |
+          set -euo pipefail
+          git -C "$GITHUB_WORKSPACE" diff --exit-code
+          if [ "$CORE_FROM_CALLER" != true ]; then git -C "$SPACEAGORA_CORE" diff --exit-code; fi
+
+      - name: Conformance summary
+        if: ${{ !cancelled() && env.SPACEAGORA_CORE != '' }}
+        run: >-
+          julia --startup-file=no --project=@stdlib "$SPACEAGORA_CORE/scripts/contributor_environment.jl"
+          summary "$SPACEAGORA_CONFORMANCE_REPORT_DIR" "$CONTRIBUTOR_ENVIRONMENT" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the conformance reports
+        if: ${{ !cancelled() && env.SPACEAGORA_CONFORMANCE_REPORT_DIR != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: contributor-conformance-${{ inputs.kind }}-${{ inputs.manifest }}-${{ job.check_run_id }}
+          path: ${{ env.SPACEAGORA_CONFORMANCE_REPORT_DIR }}
+          if-no-files-found: ignore
+          retention-days: 14
