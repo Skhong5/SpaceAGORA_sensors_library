@@ -245,7 +245,7 @@ end
     retained.diagnostics.mutable_values .= 99
     @test g.plan_buffer.plan.r_ref_rtn[1,1]==3.
     @test g.plan_buffer.plan.diagnostics.planner.mutable_values==[1,2]
-    @test g.runtime.reference.r_ref_rtn_m[1,1]==3.
+    @test g.runtime.product.r_ref_rtn_m[1,1]==3.
 end
 
 using DiffEqCallbacks: PresetTimeCallback

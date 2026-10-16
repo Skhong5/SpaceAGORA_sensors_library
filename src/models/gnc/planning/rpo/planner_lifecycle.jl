@@ -33,18 +33,9 @@ function Base.showerror(io::IO, e::RPOPlanningError)
     e.cause === nothing || (print(io, ". Cause: "); showerror(io, e.cause))
 end
 
-mutable struct PlannerRuntime
-    state::Any
-    rng::MersenneTwister
-    stream_words::Vector{UInt32}
-    request_id::Int
-    installed_request::Any
-    reference::Union{Nothing,P.RPOReference}
-    processed_tokens::Set{Int}
-    last_guidance_time::Float64
-    last_planning_time::Float64
-    records::Vector{NamedTuple}
-end
+# The planner's run-owned state is the shared lifecycle record; `product` holds
+# the installed reference.
+const PlannerRuntime = GA.AlgorithmRuntime
 
 # Kept separate from RPOGuidanceModel and RPOPlanBuffer for legacy compatibility.
 Base.@kwdef mutable struct PlannerGuidance <: S.AbstractGuidanceModel
@@ -69,11 +60,9 @@ Base.@kwdef mutable struct PlannerGuidance <: S.AbstractGuidanceModel
     runtime::Union{Nothing,PlannerRuntime} = nothing
 end
 
-# SHA-256 over this versioned ASCII encoding, decoded little-endian, not hash().
-function stream_words(seed, chaser_id, target_id)
-    digest = sha256("SpaceAGORA/RPO/v1/$(seed)/$(chaser_id)/$(target_id)")
-    return [sum(UInt32(digest[i+j]) << (8j) for j in 0:3) for i in 1:4:32]
-end
+# SHA-256 over "SpaceAGORA/RPO/v1/<seed>/<chaser_id>/<target_id>", decoded
+# little-endian, not hash(): the shared stream mapping with the RPO namespace.
+stream_words(seed, chaser_id, target_id) = GA.gnc_stream_words("RPO/v1", seed, chaser_id, target_id)
 
 function report_binding(g::PlannerGuidance)
     r = g.runtime
@@ -84,7 +73,7 @@ function report_binding(g::PlannerGuidance)
         state_source=:truth, frame=:target_rtn, geometry_revision=g.geometry_revision,
         constraints=g.constraints, validation_settings=g.validation,
         request_id=r === nothing ? 0 : r.request_id,
-        active_reference=r === nothing ? nothing : r.reference,
+        active_reference=r === nothing ? nothing : r.product,
         records=r === nothing ? NamedTuple[] : r.records))
 end
 function fail!(g, reason; cause=nothing, backtrace=nothing, details=NamedTuple())
@@ -126,11 +115,10 @@ function L.initialize_guidance!(g::PlannerGuidance, u, p, t)
     c.command_log = S.RPOControlCommandLog()
     fill!(c.controller.U_prev, 0)
     words = stream_words(g.seed,g.chaser_id,g.target_id)
-    g.runtime = PlannerRuntime(nothing, MersenneTwister(words), words, 0,
-        nothing, nothing, Set{Int}(), -Inf, -Inf, NamedTuple[])
+    g.runtime = GA.AlgorithmRuntime(words)
     g.plan_buffer.valid = false
     try
-        g.runtime.state = P.initialize_planner(g.planner,
+        g.runtime.state = GA.initialize_algorithm(g.planner,
             (seed=g.seed, chaser_id=g.chaser_id, target_id=g.target_id,
              epoch=deepcopy(p.args.initial_time), stream_words=copy(words)))
         request_plan!(g, u, p, Float64(t), :initial)
@@ -141,50 +129,42 @@ function L.initialize_guidance!(g::PlannerGuidance, u, p, t)
     return nothing
 end
 
+# The planner is the RPO binding of the shared request driver (GNCAlgorithms):
+# the driver runs request, capability check, proposal, validation and install in
+# a fixed order; the methods below supply the RPO pieces.
+GA.algorithm_runtime(g::PlannerGuidance) = g.runtime
+GA.bound_algorithm(g::PlannerGuidance) = g.planner
+GA.bound_link(g::PlannerGuidance) = g.plan_buffer
+GA.trusted_queries(::PlannerGuidance) =
+    (clearance_at=(point,geom)->S.rpo_clearance_distance_to_station(point,geom),)
+GA.fail_algorithm_request!(g::PlannerGuidance, reason; kwargs...) = fail!(g, reason; kwargs...)
+function GA.build_algorithm_request(g::PlannerGuidance, u, p, t, reason, request_id)
+    a, b = u.sc[g.chaser_idx], u.sc[g.target_idx]
+    x = S.FrameTransforms.inertial_to_rtn_relative_state(a.pos,a.vel,b.pos,b.vel)
+    return P.RPOPlanningRequest(request_id=request_id, reason=reason,
+        chaser_id=g.chaser_id, target_id=g.target_id, epoch=p.args.initial_time,
+        time_s=t, x_rtn=x, target_state_ii=vcat(b.pos,b.vel),
+        goal_rtn_m=g.goal_rtn_m, geometry=g.geometry,
+        geometry_revision=g.geometry_revision, constraints=g.constraints,
+        reference_dt_s=g.reference_dt_s, preview_horizon_steps=g.preview_horizon_steps,
+        valid_until_s=t+g.validity_s, validation=g.validation)
+end
+
+# Install the validated reference: the buffer the planner shares with its controller.
+function GA.install!(buffer::S.RPOPlanBuffer, ::P.RPOReferenceFamily, ref::P.RPOReference,
+        request::P.RPOPlanningRequest, t; validation, diagnostics)
+    # Diagnostics never choose the controller's geometry. This is the validated polyline.
+    plan = S.RPOPlan(valid=true, t_ref_s=copy(ref.t_ref_s),
+        r_ref_rtn=copy(ref.r_ref_rtn_m), v_ref_rtn=copy(ref.v_ref_rtn_mps),
+        path_rtn=copy(ref.r_ref_rtn_m), cost=NaN,
+        diagnostics=(request_id=request.request_id, validation=validation,
+                     planner=deepcopy(diagnostics)))
+    S.update_rpo_plan_buffer!(buffer, plan, t)
+    return nothing
+end
+
 function request_plan!(g, u, p, t, reason)
-    r = g.runtime::PlannerRuntime
-    r.request_id += 1
-    try
-        a, b = u.sc[g.chaser_idx], u.sc[g.target_idx]
-        x = S.FrameTransforms.inertial_to_rtn_relative_state(a.pos,a.vel,b.pos,b.vel)
-        # Retain a trusted snapshot. Planner code only receives another copy.
-        req = P.RPOPlanningRequest(request_id=r.request_id, reason=reason,
-            chaser_id=g.chaser_id, target_id=g.target_id, epoch=p.args.initial_time,
-            time_s=t, x_rtn=x, target_state_ii=vcat(b.pos,b.vel),
-            goal_rtn_m=g.goal_rtn_m, geometry=g.geometry,
-            geometry_revision=g.geometry_revision, constraints=g.constraints,
-            reference_dt_s=g.reference_dt_s, preview_horizon_steps=g.preview_horizon_steps,
-            valid_until_s=t+g.validity_s, validation=g.validation)
-        push!(r.records, (event=:request, time_s=t, request=deepcopy(req)))
-        caps = P.validate_rpo_capabilities(g.planner, req)
-        caps.accepted || fail!(g, caps.reason)
-        result = reason === :retime ?
-            P.retime_rpo!(r.state, g.planner, deepcopy(req), deepcopy(r.reference), r.rng) :
-            P.plan_rpo!(r.state, g.planner, deepcopy(req), r.rng)
-        result isa P.RPOPlanningResult || fail!(g, :invalid_result_type)
-        result = deepcopy(result)
-        checked = P.validate_rpo_result(req, result;
-            clearance_at=(point,geom)->S.rpo_clearance_distance_to_station(point,geom))
-        checked.accepted || fail!(g, checked.reason;
-            details=(termination=result.termination, diagnostics=result.diagnostics, validation=checked))
-        ref = deepcopy(result.reference)
-        # Diagnostics never choose the controller's geometry. This is the validated polyline.
-        plan = S.RPOPlan(valid=true, t_ref_s=copy(ref.t_ref_s),
-            r_ref_rtn=copy(ref.r_ref_rtn_m), v_ref_rtn=copy(ref.v_ref_rtn_mps),
-            path_rtn=copy(ref.r_ref_rtn_m), cost=NaN,
-            diagnostics=(request_id=req.request_id, validation=checked,
-                         planner=deepcopy(result.diagnostics)))
-        record = deepcopy((event=:installed, time_s=t, request_id=req.request_id,
-            reason=reason, termination=result.termination, validation=checked,
-            reference=ref, diagnostics=result.diagnostics))
-        # No yield or user callback between preparing and committing the complete plan.
-        S.update_rpo_plan_buffer!(g.plan_buffer, plan, t)
-        r.reference, r.installed_request, r.last_planning_time = ref, req, t
-        push!(r.records, record)
-    catch e
-        e isa RPOPlanningError && rethrow()
-        fail!(g, :planner_exception; cause=e, backtrace=catch_backtrace())
-    end
+    GA.run_algorithm_request!(g, u, p, t, reason; exception_reason=:planner_exception)
     return nothing
 end
 
@@ -214,7 +194,7 @@ function S.GuidanceHooks.calcGuidanceEffect!(g::PlannerGuidance, u, p, t::Float6
             max(0.0,t-g.plan_buffer.updated_at_s),g.reference_dt_s,1)
         # Guidance tick subtraction can round just below the requested interval.
         # Use the same time tolerance as scheduled events, without widening expiry.
-        if t-r.last_planning_time >= g.replan_interval_s - g.validation.time_atol_s ||
+        if t-r.last_request_time >= g.replan_interval_s - g.validation.time_atol_s ||
                 norm(x[1:3]-preview[1:3,1]) > g.tracking_error_limit_m
             request_plan!(g,u,p,t,:replan)
         end
@@ -226,9 +206,9 @@ function L.before_reference_control!(g::PlannerGuidance, c, u, p, t)
     c isa S.RPOMPCControlModel && c.plan_buffer === g.plan_buffer || return nothing
     r = g.runtime
     r === nothing && fail!(g,:uninitialized)
-    r.reference === nothing && fail!(g,:missing_reference)
-    P.rpo_reference_is_current(r.installed_request,r.reference,t) ||
-        fail!(g,:expired_reference; details=(time_s=t,valid_until_s=r.reference.valid_until_s,
+    r.product === nothing && fail!(g,:missing_reference)
+    GA.is_current(P.RPOReferenceFamily(),r.installed_request,r.product,t) ||
+        fail!(g,:expired_reference; details=(time_s=t,valid_until_s=r.product.valid_until_s,
             preview_end_s=t+g.preview_horizon_steps*g.reference_dt_s))
     push!(r.records,(event=:control, time_s=Float64(t), request_id=r.request_id))
     return nothing
