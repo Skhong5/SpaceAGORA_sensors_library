@@ -888,6 +888,23 @@ Stable extension hook for custom [`AbstractDensityModel`](@ref)
 implementations. The scalar form returns density, temperature, and wind for a
 single atmosphere query.
 
+The arguments, as the simulation engine passes them:
+
+- `h`: geodetic altitude above the planet's reference ellipsoid, in m.
+- `lat`: geodetic latitude, in rad.
+- `lon`: east longitude in the planet-fixed frame, in rad.
+- `el_time`: elapsed seconds since the scenario epoch.
+- `wind`: whether the caller needs the wind vector. A model may return a zero
+  `wind_vec` when it is `false`.
+- `p`: the run's parameters, in the 7-argument form.
+
+The engine computes `h`, `lat` and `lon` from the planet-fixed position with
+Bowring's method (`rtolatlong`). On a planet with zero flattening, geodetic and
+planetocentric latitude coincide.
+
+The result is `rho` in kg/m³, `temperature` in K, and `wind_vec`, the air's
+velocity relative to the rotating planet as east, north and up components in m/s.
+
 Calendar-dependent models require the 7-argument form: `el_time` is elapsed
 seconds from the scenario epoch, which only `p.args.initial_time` can resolve
 to an absolute date. `NRLMSISE00AtmosphereModel` therefore throws on the
@@ -1183,6 +1200,12 @@ end
 Optional batch extension hook for [`AbstractDensityModel`](@ref)
 implementations that can answer many atmosphere queries more efficiently than
 repeated scalar `getDensity` dispatch.
+
+For query `k` it writes `rhos[k]`, `Ts[k]` and `winds[k]`, the scalar form's
+results for `hs[k]`, `lats[k]` and `lons[k]`, in the same units and conventions
+as `getDensity`. `el_time` is either one elapsed time for every query or one per
+query. The method for any `AbstractDensityModel` calls the scalar form query by
+query.
 """
 function getDensityBatch!(
     rhos::AbstractVector{Float64},
@@ -1342,7 +1365,7 @@ end
     return _gram_point_density(model.base_model, h, lat, lon, el_time, wind)
 end
 
-function getDensity(model::ConstantDensityModel, altitude_m::Float64, latitude_deg::Float64, longitude_deg::Float64, et::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
+function getDensity(model::ConstantDensityModel, h::Float64, lat::Float64, lon::Float64, el_time::Float64, wind::Bool, p::params)::Tuple{Float64, Float64, SVector{3, Float64}} where params
     return model.density_kg_m3, model.temperature_k, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
