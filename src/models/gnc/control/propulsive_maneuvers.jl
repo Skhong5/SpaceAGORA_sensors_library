@@ -318,33 +318,41 @@ end
 end
 
 """
-    calcControlMassFlowRate(model, u, p, i, t)
+    calcControlMassFlowRate(model, u, p, spacecraft_index, t) -> Float64
 
 Stable extension hook for [`AbstractControlEffectorModel`](@ref)
-implementations that consume propellant. Effectors that do not model propellant
-consumption should return `0.0`.
+implementations that consume propellant: the spacecraft's mass derivative in
+kg/s, negative while propellant is used. Effectors that use no propellant need
+no method; the fallback for any effector returns `0.0`.
 
-Return the spacecraft mass derivative in kilograms per second, negative for
-propellant consumption. `u` is the individual spacecraft state, `p` holds the
-simulation parameters, `i` is the spacecraft index, and `t` is elapsed time in
-seconds. The `BaseThrusterModel` method returns `-norm(force) / (Isp * g0)`
+- `u`: the state of that spacecraft alone (`u.pos`, `u.vel`, `u.mass`, and with
+  attitude propagation `u.q` and `u.ω`), not the full state the tick receives.
+- `p`: the run's parameters.
+- `spacecraft_index`: the spacecraft's position in the run (`Int`, from 1).
+- `t`: elapsed time since the run's start epoch, in seconds (`Float64`).
+
+The spacecraft index comes before the time here, as in `calcControlForceTorque`
+and `calcReactionWheelTorque`, and after it in `calcControlEffect!`. The engine
+calls this at every right-hand-side evaluation in `:ideal` actuation, so return
+the rate held since the last `calcControlEffect!` tick. The fallback types none
+of its arguments, so a method for your effector's type needs no other
+annotation. The `BaseThrusterModel` method returns `-norm(force) / (Isp * g0)`
 during an active valid burn and `0.0` otherwise.
 """
-function calcControlMassFlowRate(controlModel::AbstractControlEffectorModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
-    return 0.0
-end
+function calcControlMassFlowRate end
 
-function calcControlMassFlowRate(controlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
+function calcControlMassFlowRate(model, u, p, spacecraft_index, t)
     return 0.0
 end
 
 """
-    calcReactionWheelTorque(model, u, p, i, t) -> Union{Nothing, AbstractVector}
+    calcReactionWheelTorque(model, u, p, spacecraft_index, t) -> Union{Nothing, AbstractVector}
 
 Optional hook for a control effector that drives reaction wheels: the part of
-its commanded torque on spacecraft `i` that the wheels produce, a 3-vector in
-the bus frame in N·m. Return `nothing`, the default for any effector type that
-does not override this method, when the effector drives no wheel.
+its commanded torque on the spacecraft at `spacecraft_index` that the wheels
+produce, a 3-vector in the bus frame in N·m. Return `nothing`, the default for
+any effector type that does not override this method, when the effector drives
+no wheel.
 
 The momentum stored in the wheels (the `h_wheels` state) changes at the
 opposite rate, mapped onto the wheel axes. In `:ideal` actuation the engine
@@ -352,19 +360,17 @@ applies this torque only to the wheels: the effector includes it in the torque
 its `calcControlForceTorque` returns. In `:mounted` actuation the engine adds
 it to the torque of the mounted actuators.
 
-`u` is the state of spacecraft `i` alone, `p` the run's parameters, `i` the
-spacecraft's position in the run and `t` the elapsed time in seconds. The
-engine calls this at every right-hand-side evaluation, so return the torque
-held since the last `calcControlEffect!` tick rather than recomputing the
-control law here.
+`u` is the state of that spacecraft alone, `p` the run's parameters,
+`spacecraft_index` the spacecraft's position in the run (from 1) and `t` the
+elapsed time in seconds; the index comes before the time, as in
+`calcControlForceTorque`. The engine calls this at every right-hand-side
+evaluation, so return the torque held since the last `calcControlEffect!` tick
+rather than recomputing the control law here. The fallback types none of its
+arguments, so a method for your effector's type needs no other annotation.
 """
 function calcReactionWheelTorque end
 
-function calcReactionWheelTorque(controlModel::AbstractControlEffectorModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
-    return nothing
-end
-
-function calcReactionWheelTorque(controlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
+function calcReactionWheelTorque(model, u, p, spacecraft_index, t)
     return nothing
 end
 
@@ -401,17 +407,11 @@ function _thruster_levels_at(controlModel::BaseThrusterModel, i::Int, t)
 end
 
 """
-    calcControlForceTorque(model, u, p, i, t)
-    calcControlForceTorque(model::BaseThrusterModel, u, p, i, t)
+    calcControlForceTorque(model::BaseThrusterModel, u, p, spacecraft_index, t)
 
-Stable extension hook for [`AbstractControlEffectorModel`](@ref)
-implementations that contribute force and torque terms to the spacecraft
-dynamics.
-
-For `BaseThrusterModel`, `u` is the individual spacecraft state, `p` holds the
-simulation parameters, `i` is the spacecraft index, and `t` is elapsed time in
-seconds. Return a tuple of 3D force and torque vectors in newtons and
-newton-meters. During the effective burn window, thrust is parallel or
+The maneuver engine's force and torque on the spacecraft at `spacecraft_index`
+(see the generic `calcControlForceTorque` for the arguments, frames and
+units). During the effective burn window, thrust is parallel or
 antiparallel to the inertial velocity according to the configured direction;
 torque is zero. Outside the burn window or for invalid thrust inputs, both
 vectors are zero. At the window's ends, where the run stops, the thrust

@@ -15,27 +15,29 @@ function SpaceAGORA.calcControlEffect!(
     u::ComponentVector,
     p,
     t::Float64,
-    i::Int64,
+    spacecraft_index::Int,
 )
     return nothing
 end
 
+# The held command: inertial force (N) and bus-frame torque (N·m).
 function SpaceAGORA.calcControlForceTorque(
     model::ExampleControlHook,
     u::AbstractVector,
     p,
-    i::Int64,
+    spacecraft_index::Int,
     t::Float64,
 )
     return model.force_n, model.torque_n_m
 end
 
+# The mass derivative in kg/s, negative while propellant is used. An effector
+# that uses no propellant can leave this method out: the fallback returns 0.0.
 function SpaceAGORA.calcControlMassFlowRate(
     model::ExampleControlHook,
     u::AbstractVector,
-    # Match the engine fallback so this model-specific method is unambiguous.
-    p::SpaceAGORA.SimulationModel.ODEParams,
-    i::Int64,
+    p,
+    spacecraft_index::Int,
     t::Float64,
 )
     return model.mass_flow_kg_s

@@ -170,6 +170,4 @@ function calcControlForceTorque(model::MagneticMomentumManagerModel, u, p, i::In
 end
 
 # No calcControlMassFlowRate method: torque rods consume no propellant, and
-# the AbstractControlEffectorModel fallback (propulsive_maneuvers.jl) already
-# returns 0.0 — defining one here with looser argument types is ambiguous
-# against that fallback.
+# the fallback (propulsive_maneuvers.jl) already returns 0.0.

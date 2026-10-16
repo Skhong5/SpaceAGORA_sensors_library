@@ -165,7 +165,7 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
         @test startswith(root_doc(:calcNavigationEffect!), "    calcNavigationEffect!(model, u, p, t, spacecraft_index)")
         @test startswith(root_doc(:calcControlEffect!), "    calcControlEffect!(model, u, p, t, spacecraft_index)")
         @test !occursin("calcControlEffect!(model::BaseThrusterModel", root_doc(:calcControlEffect!))
-        @test startswith(root_doc(:calcReactionWheelTorque), "    calcReactionWheelTorque(model, u, p, i, t)")
+        @test startswith(root_doc(:calcReactionWheelTorque), "    calcReactionWheelTorque(model, u, p, spacecraft_index, t)")
         @test startswith(root_doc(:getHeatRate), "    getHeatRate(model, S, T, ρ, v, α)")
         @test startswith(root_doc(:touchdown_spec), "    touchdown_spec(effector, spacecraft_index::Int)")
         # The RPO text stays on the RPO method.
