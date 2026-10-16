@@ -1,9 +1,20 @@
 """Build the separate environment in which a contributor repository is tested against this core.
 
-The environment develops this checkout by path, so the tested core is exactly the
-checked-out commit, and the repository's own `[sources]` pin is checked against it
-instead of being installed. The reusable workflow `.github/workflows/contributor-ci.yml`
-calls this script; it also works from a local clone of the pinned commit.
+The repository records its core commit in `SpaceAGORASource.toml`, beside its
+`Project.toml`, not in `[sources]`: Pkg cannot install SpaceAGORA from a url and rev
+(the core has submodules), and `Pkg.test` would read such an entry instead of the
+environment's core. The environment develops this checkout by path, so the tested
+core is exactly the checked-out commit, and the pin file must name that commit. The
+reusable workflow `.github/workflows/contributor-ci.yml` calls this script; it also
+works from a local clone of the pinned commit, after which `Pkg.test` runs in the
+environment as usual.
+
+    # SpaceAGORASource.toml
+    url = "https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git"
+    rev = "<40-character commit SHA>"
+    uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
+    version = "0.2.0"          # optional: the core version at rev
+    companions = ["mujoco"]    # optional: hypr, mujoco, edg, at this commit's pins
 """
 module ContributorEnvironment
 
@@ -18,11 +29,15 @@ const MANIFEST_MODES = ("core", "committed", "resolve")
 const SCANNED_KINDS = ("project", "package")
 const INTERNAL_MODULES = (:SimulationModel, :SimulationEngine)
 const RECORD = "ContributorEnvironment.toml"
-const HELP = """Usage: julia --startup-file=no scripts/contributor_environment.jl <project|package|companion> <repository> <environment> --manifest <core|committed|resolve> [--rev <sha>] [--companions <hypr,mujoco,edg>]
+const PIN_FILE = "SpaceAGORASource.toml"
+const PIN_KEYS = ("url", "rev", "uuid", "version", "companions", "path")
+const HELP = """Usage: julia --startup-file=no scripts/contributor_environment.jl <project|package|companion> <repository> <environment> --manifest <core|committed|resolve> [--rev <sha>]
+       julia --startup-file=no scripts/contributor_environment.jl check <project|package|companion> <repository> [--rev <sha>]
        julia --startup-file=no scripts/contributor_environment.jl scan <project|package|companion> <repository>
        julia --startup-file=no scripts/contributor_environment.jl summary <report-directory> [<environment>]
 The environment directory must be new and outside both the repository and this checkout.
---rev defaults to this checkout's HEAD; the repository's [sources] must pin SpaceAGORA to it."""
+--rev defaults to this checkout's HEAD; the repository's $PIN_FILE must pin SpaceAGORA to it.
+--core-from-caller (core CI only) also accepts a pin file whose path is this checkout."""
 
 full_sha(rev) = rev isa AbstractString && occursin(r"^[0-9a-f]{40}$", rev)
 inside(path, root) = first(splitpath(relpath(path, root))) != ".."
@@ -54,33 +69,44 @@ function verified_core(root, rev)
     isempty(changes) || fail("The SpaceAGORA checkout at $path has tracked changes, so it is not revision $rev:\n$changes")
     project = TOML.parsefile(joinpath(path, "Project.toml"))
     get(project, "name", "") == "SpaceAGORA" || fail("$path is not the SpaceAGORA package.")
-    return (; path, rev, uuid=project["uuid"])
+    return (; path, rev, uuid=project["uuid"], version=get(project, "version", ""))
 end
 
-"""Refuse a `[sources]` entry for SpaceAGORA that does not name the tested commit."""
-function core_pin(project, file, repository, core)
-    sources = get(project, "sources", Dict{String,Any}())
-    entry = get(sources, "SpaceAGORA", nothing)
-    entry isa AbstractDict || fail("$file: [sources] must pin SpaceAGORA to the tested revision, e.g. " *
-        "SpaceAGORA = {url = \"$CORE_URL\", rev = \"$(core.rev)\"}.")
-    if haskey(entry, "path")
-        length(entry) == 1 || fail("$file: the SpaceAGORA [sources] entry mixes path with $(join(sort!(collect(keys(entry))), ", ")).")
-        target = normpath(joinpath(repository, entry["path"]))
+"""The repository's pin file, checked against the tested core: `(; description, companions)`."""
+function core_pin(project, file, repository, core; core_from_caller=false)
+    haskey(get(project, "sources", Dict{String,Any}()), "SpaceAGORA") &&
+        fail("$file: remove the SpaceAGORA entry from [sources]. Pkg cannot install SpaceAGORA from a url and rev " *
+             "(the core has submodules), and Pkg.test would use that entry instead of the tested core. " *
+             "The commit goes in $PIN_FILE.")
+    pinfile = joinpath(repository, PIN_FILE)
+    isfile(pinfile) || fail("$pinfile is missing. It records the SpaceAGORA commit this repository is tested against:\n" *
+        "url = \"$CORE_URL\"\nrev = \"$(core.rev)\"\nuuid = \"$(core.uuid)\"")
+    pin = TOML.parsefile(pinfile)
+    unknown = setdiff(keys(pin), PIN_KEYS)
+    isempty(unknown) || fail("$pinfile: unknown key(s) $(join(sort!(collect(unknown)), ", ")); allowed: $(join(PIN_KEYS, ", ")).")
+    get(pin, "uuid", nothing) == core.uuid || fail("$pinfile: uuid must be SpaceAGORA's \"$(core.uuid)\".")
+    version = get(pin, "version", nothing)
+    version === nothing || version == core.version ||
+        fail("$pinfile: version $(repr(version)) is not $(core.version), the SpaceAGORA version at $(core.rev).")
+    companions = get(pin, "companions", String[])
+    companions isa AbstractVector && all(c -> c isa AbstractString, companions) ||
+        fail("$pinfile: companions must be a list of names, e.g. companions = [\"mujoco\"].")
+    if haskey(pin, "path")
+        core_from_caller || fail("$pinfile: a path pin is for core CI only; record the commit with url and rev.")
+        (haskey(pin, "url") || haskey(pin, "rev")) && fail("$pinfile: give either path or url and rev, not both.")
+        target = normpath(joinpath(repository, pin["path"]))
         isdir(target) && samefile(target, core.path) ||
-            fail("$file: [sources] SpaceAGORA path $(entry["path"]) is not the core under test ($(core.path)). " *
-                 "Pin the commit with url and rev instead.")
-        return "path $(entry["path"])"
+            fail("$pinfile: path $(pin["path"]) is not the core under test ($(core.path)).")
+        return (; description="path $(pin["path"])", companions)
     end
-    url = get(entry, "url", nothing)
-    rev = get(entry, "rev", nothing)
-    url isa AbstractString && same_origin(url, CORE_URL) ||
-        fail("$file: [sources] SpaceAGORA url must be $CORE_URL, not $(repr(url)).")
-    rev isa AbstractString || fail("$file: [sources] SpaceAGORA has no rev; a branch is not a pin. Use rev = \"$(core.rev)\".")
-    full_sha(rev) || fail("$file: [sources] SpaceAGORA rev \"$rev\" is not a full 40-character lowercase commit SHA.")
-    rev == core.rev || fail("$file: [sources] pins SpaceAGORA $rev, but the tested revision is $(core.rev). " *
-        "Use the same commit in [sources] and in the workflow call, so the recorded pair is the tested pair.")
-    haskey(entry, "subdir") && fail("$file: [sources] SpaceAGORA must not set subdir.")
-    return "url + rev"
+    url = get(pin, "url", nothing)
+    rev = get(pin, "rev", nothing)
+    url isa AbstractString && same_origin(url, CORE_URL) || fail("$pinfile: url must be $CORE_URL, not $(repr(url)).")
+    rev isa AbstractString || fail("$pinfile: rev is missing; a branch is not a pin. Use rev = \"$(core.rev)\".")
+    full_sha(rev) || fail("$pinfile: rev \"$rev\" is not a full 40-character lowercase commit SHA.")
+    rev == core.rev || fail("$pinfile: pins SpaceAGORA $rev, but the tested revision is $(core.rev). " *
+        "Use the same commit in $PIN_FILE and in the workflow call, so the recorded pair is the tested pair.")
+    return (; description="rev $rev", companions)
 end
 
 """Name and UUID of the repository's own package, or `nothing` for a project without a module."""
@@ -128,13 +154,13 @@ function companion_package_names(name; root)
     return name == "hypr" ? [registry[name]["name"], "SpaceAGORAHYPR"] : [registry[name]["name"]]
 end
 
-"""A dependency on a companion needs the companion selected, at the core's recorded pin."""
+"""A dependency on a companion needs the companion listed in the pin file, at the core's recorded pin."""
 function check_companion_dependencies(project, file, companions; root)
     used = merge(get(project, "deps", Dict{String,Any}()), get(project, "extras", Dict{String,Any}()))
     sources = get(project, "sources", Dict{String,Any}())
     for name in OptionalPackages.NAMES, dependency in companion_package_names(name; root)
         haskey(used, dependency) || continue
-        name in companions || fail("$file: $dependency is a dependency; select the $name companion.")
+        name in companions || fail("$file: $dependency is a dependency; list \"$name\" in $PIN_FILE companions.")
         rev = get(get(sources, dependency, Dict{String,Any}()), "rev", nothing)
         rev === nothing && continue
         pinned = OptionalPackages.spec(name; root).revision
@@ -142,10 +168,9 @@ function check_companion_dependencies(project, file, companions; root)
     end
 end
 
-"""Check every input and decide the environment's contents; nothing is written or fetched."""
-function plan(kind, repository, environment; manifest="core", rev=nothing, companions="", root=ROOT)
+"""Check the repository against the tested core: its pin file, package identity and companions."""
+function check_repository(kind, repository; rev=nothing, root=ROOT, core_from_caller=false)
     kind in KINDS || fail("Unknown kind '$kind'. Choose from $(join(KINDS, ", ")).")
-    manifest in MANIFEST_MODES || fail("Unknown manifest mode '$manifest'. Choose from $(join(MANIFEST_MODES, ", ")).")
     core = verified_core(root, rev)
     isdir(repository) || fail("Repository directory not found: $repository")
     repository = realpath(repository)
@@ -153,9 +178,19 @@ function plan(kind, repository, environment; manifest="core", rev=nothing, compa
     file === nothing && fail("$repository has no Project.toml.")
     project = TOML.parsefile(file)
     package = package_identity(kind, project, file, repository)
-    pin = core_pin(project, file, repository, core)
-    names = companion_names(companions)
+    pin = core_pin(project, file, repository, core; core_from_caller)
+    names = companion_names(pin.companions)
     check_companion_dependencies(project, file, names; root=core.path)
+    get(get(project, "deps", Dict{String,Any}()), "SpaceAGORA", nothing) == core.uuid ||
+        fail("$file: [deps] must list SpaceAGORA = \"$(core.uuid)\".")
+    return (; kind, core, repository, file, project, package, pin=pin.description, companions=names)
+end
+
+"""Check every input and decide the environment's contents; nothing is written or fetched."""
+function plan(kind, repository, environment; manifest="core", rev=nothing, root=ROOT, core_from_caller=false)
+    manifest in MANIFEST_MODES || fail("Unknown manifest mode '$manifest'. Choose from $(join(MANIFEST_MODES, ", ")).")
+    (; core, repository, file, project, package, pin, companions) =
+        check_repository(kind, repository; rev, root, core_from_caller)
     destination = OptionalPackages.canonical_destination(environment)
     inside(destination, core.path) && fail("Choose an environment directory outside the SpaceAGORA checkout.")
     inside(destination, repository) && fail("Choose an environment directory outside the repository.")
@@ -169,8 +204,6 @@ function plan(kind, repository, environment; manifest="core", rev=nothing, compa
     else
         nothing
     end
-    get(get(project, "deps", Dict{String,Any}()), "SpaceAGORA", nothing) == core.uuid ||
-        fail("$file: [deps] must list SpaceAGORA = \"$(core.uuid)\".")
     deps = merge(get(project, "deps", Dict{String,Any}()), test_dependencies(project, file, repository))
     sources = Dict{String,Any}("SpaceAGORA" => Dict("path" => core.path))
     developed = [core.path]
@@ -191,7 +224,7 @@ function plan(kind, repository, environment; manifest="core", rev=nothing, compa
             (name == "julia" || haskey(deps, name)) && (compat[name] = bound)
         end
     end
-    return (; kind, repository, file, package, pin, core, destination, manifest, seed, companions=names,
+    return (; kind, repository, file, package, pin, core, destination, manifest, seed, companions,
               project=Dict{String,Any}("deps" => deps, "sources" => sources, "compat" => compat), developed)
 end
 
@@ -365,7 +398,7 @@ function summary(directory, environment=nothing)
         r = TOML.parsefile(record)
         package = isempty(r["package"]) ? "" : " (`$(r["package"])`)"
         println(io, "- Kind: $(r["kind"])$package; manifest: $(r["manifest"])")
-        println(io, "- SpaceAGORA: `$(r["spaceagora_rev"])`, pinned in [sources] by $(r["spaceagora_pin"])")
+        println(io, "- SpaceAGORA: `$(r["spaceagora_rev"])`, pinned in $PIN_FILE by $(r["spaceagora_pin"])")
         for (name, companion) in sort!(collect(get(r, "companions", Dict{String,Any}())); by=first)
             println(io, "- Companion $name: $(companion["package"]) `$(companion["revision"])`")
         end
@@ -400,10 +433,12 @@ function options(args)
     i = 1
     while i <= length(args)
         arg = args[i]
-        if startswith(arg, "--")
+        if arg == "--core-from-caller"
+            named["core-from-caller"] = "true"
+        elseif startswith(arg, "--")
             key, value = occursin('=', arg) ? split(arg[3:end], '='; limit=2) :
                 (arg[3:end], i < length(args) ? args[i += 1] : fail("Option $arg needs a value.\n$HELP"))
-            key in ("manifest", "rev", "companions") || fail("Unknown option --$key.\n$HELP")
+            key in ("manifest", "rev") || fail("Unknown option --$key.\n$HELP")
             named[key] = value
         else
             push!(positional, arg)
@@ -415,6 +450,7 @@ end
 
 function main(args=ARGS)
     positional, named = options(args)
+    core_from_caller = get(named, "core-from-caller", "") == "true"
     if length(positional) == 3 && positional[1] == "scan" && isempty(named)
         findings = scan(positional[2], positional[3])
         for (file, line, message) in findings
@@ -426,10 +462,12 @@ function main(args=ARGS)
             "Internal-name scan: a $(positional[2]) is not scanned; it uses its facade's bindings")
     elseif length(positional) in (2, 3) && positional[1] == "summary" && isempty(named)
         print(summary(positional[2], get(positional, 3, nothing)))
+    elseif length(positional) == 3 && positional[1] == "check" && !haskey(named, "manifest")
+        c = check_repository(positional[2], positional[3]; rev=get(named, "rev", nothing), core_from_caller)
+        println("SpaceAGORA pin: ", c.pin, " in ", joinpath(c.repository, PIN_FILE), " matches ", c.core.path)
+        isempty(c.companions) || println("Companions at this core's pins: ", join(c.companions, ", "))
     elseif length(positional) == 3 && haskey(named, "manifest")
-        rev = get(named, "rev", nothing)
-        environment = setup(positional...; manifest=named["manifest"], rev,
-                            companions=get(named, "companions", ""))
+        environment = setup(positional...; manifest=named["manifest"], rev=get(named, "rev", nothing), core_from_caller)
         println("Environment: ", environment)
     else
         fail(HELP)

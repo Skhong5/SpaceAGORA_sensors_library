@@ -2,7 +2,8 @@
 # operation, network access or core import. The contributor workflow runs them in core CI.
 using Test, TOML
 include(joinpath(@__DIR__, "..", "..", "scripts", "contributor_environment.jl"))
-using .ContributorEnvironment: plan, scan, scan_source, summary, options, companion_names, CORE_URL, RECORD
+using .ContributorEnvironment: plan, check_repository, scan, scan_source, summary, options, companion_names,
+    CORE_URL, PIN_FILE, RECORD
 
 const CORE_UUID = "afbfb69f-5c0b-4832-b760-43725dff8540"
 const TEST_UUID = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
@@ -51,22 +52,25 @@ function contributor_fixture(f)
         project = Dict{String,Any}(
             "name" => "MyStudy", "uuid" => "2c0a3d4e-1111-4222-8333-444455556666",
             "deps" => Dict("SpaceAGORA" => CORE_UUID, "Test" => TEST_UUID),
-            "sources" => Dict("SpaceAGORA" => Dict("url" => CORE_URL, "rev" => rev)),
             "compat" => Dict("julia" => "~1.12", "SpaceAGORA" => "0.2", "Unused" => "1"))
+        pin = Dict{String,Any}("url" => CORE_URL, "rev" => rev, "uuid" => CORE_UUID)
         write_toml(joinpath(repo, "Project.toml"), project)
+        write_toml(joinpath(repo, PIN_FILE), pin)
         mkpath(joinpath(repo, "src"))
         write(joinpath(repo, "src", "MyStudy.jl"), "module MyStudy\nusing SpaceAGORA\nend\n")
-        f((; temporary, core, rev, repo, project, companion_rev))
+        f((; temporary, core, rev, repo, project, pin, companion_rev))
     end
 end
 
-reproject(fixture, data) = write_toml(joinpath(fixture.repo, "Project.toml"), data)
-with_project(f, fixture, edit) = begin
-    data = deepcopy(fixture.project)
-    edit(data)
-    reproject(fixture, data)
-    try f() finally reproject(fixture, fixture.project) end
+# Edit a copy of the project or pin file for one block (an edit returning :remove
+# deletes the file), then restore it.
+function with_toml(f, path, original, edit)
+    data = deepcopy(original)
+    edit(data) === :remove ? rm(path) : write_toml(path, data)
+    try f() finally write_toml(path, original) end
 end
+with_project(f, fixture, edit) = with_toml(f, joinpath(fixture.repo, "Project.toml"), fixture.project, edit)
+with_pin(f, fixture, edit) = with_toml(f, joinpath(fixture.repo, PIN_FILE), fixture.pin, edit)
 refused(f, pattern) = @test_throws pattern f()
 # Each refusal names its own reason, so one check cannot mask another.
 function refused_with(f, fragment)
@@ -84,7 +88,8 @@ env(fixture, name="env") = joinpath(fixture.temporary, name)
     contributor_fixture() do fixture
         @testset "Accepted pins and environment contents" begin
             p = plan("project", fixture.repo, env(fixture); root=fixture.core, rev=fixture.rev)
-            @test p.pin == "url + rev"
+            @test p.pin == "rev $(fixture.rev)"
+            @test p.companions == String[]
             @test p.package == (; name="MyStudy", uuid=fixture.project["uuid"])
             @test p.project["deps"] == Dict("SpaceAGORA" => CORE_UUID, "Test" => TEST_UUID, "MyStudy" => fixture.project["uuid"])
             @test p.project["sources"]["SpaceAGORA"] == Dict("path" => fixture.core)
@@ -94,11 +99,19 @@ env(fixture, name="env") = joinpath(fixture.temporary, name)
             @test p.seed == joinpath(fixture.core, "Manifest.toml")
             @test plan("project", fixture.repo, env(fixture); root=fixture.core).core.rev == fixture.rev
             @test plan("project", fixture.repo, env(fixture); root=fixture.core, rev=fixture.rev, manifest="resolve").seed === nothing
-            with_project(fixture, d -> d["sources"]["SpaceAGORA"] = Dict("path" => "../core")) do
-                @test plan("project", fixture.repo, env(fixture); root=fixture.core).pin == "path ../core"
+            @test check_repository("package", fixture.repo; root=fixture.core).pin == "rev $(fixture.rev)"
+            with_pin(fixture, d -> d["url"] = chop(CORE_URL; tail=4)) do
+                @test plan("project", fixture.repo, env(fixture); root=fixture.core).pin == "rev $(fixture.rev)"
             end
-            with_project(fixture, d -> d["sources"]["SpaceAGORA"]["url"] = chop(CORE_URL; tail=4)) do
-                @test plan("project", fixture.repo, env(fixture); root=fixture.core).pin == "url + rev"
+            with_pin(fixture, d -> d["version"] = "0.2.0") do
+                @test plan("project", fixture.repo, env(fixture); root=fixture.core).pin == "rev $(fixture.rev)"
+            end
+            # Core CI's own fixture names the checkout under test by path.
+            with_pin(fixture, d -> (delete!(d, "url"); delete!(d, "rev"); d["path"] = "../core")) do
+                @test plan("project", fixture.repo, env(fixture); root=fixture.core, core_from_caller=true).pin == "path ../core"
+                refused_with("a path pin is for core CI only") do
+                    plan("project", fixture.repo, env(fixture); root=fixture.core)
+                end
             end
             # A package's test target and a test/Project.toml both reach the environment.
             with_project(fixture, d -> begin
@@ -117,50 +130,73 @@ env(fixture, name="env") = joinpath(fixture.temporary, name)
             mv(joinpath(fixture.repo, "src"), joinpath(fixture.temporary, "src-aside"))
             p = plan("project", fixture.repo, env(fixture); root=fixture.core)
             @test p.package === nothing && p.developed == [fixture.core]
-            refused(ArgumentError) do
+            refused_with("module file is missing") do
                 plan("package", fixture.repo, env(fixture); root=fixture.core)
             end
             mv(joinpath(fixture.temporary, "src-aside"), joinpath(fixture.repo, "src"))
         end
 
-        @testset "The [sources] pin must name the tested commit" begin
+        @testset "The pin file must name the tested commit" begin
             other = repeat("a", 40)
             for (label, edit, reason) in (
-                    ("different commit", d -> d["sources"]["SpaceAGORA"]["rev"] = other, "but the tested revision is"),
-                    ("short commit", d -> d["sources"]["SpaceAGORA"]["rev"] = fixture.rev[1:12], "is not a full 40-character"),
-                    ("uppercase commit", d -> d["sources"]["SpaceAGORA"]["rev"] = uppercase(fixture.rev), "is not a full 40-character"),
-                    ("branch", d -> d["sources"]["SpaceAGORA"]["rev"] = "main", "is not a full 40-character"),
-                    ("no rev", d -> delete!(d["sources"]["SpaceAGORA"], "rev"), "has no rev"),
-                    ("other repository", d -> d["sources"]["SpaceAGORA"]["url"] = "https://github.com/someone/SpaceAGORA.jl.git", "url must be"),
-                    ("subdir", d -> d["sources"]["SpaceAGORA"]["subdir"] = "x", "must not set subdir"),
-                    ("path elsewhere", d -> d["sources"]["SpaceAGORA"] = Dict("path" => "."), "is not the core under test"),
-                    ("path and rev", d -> d["sources"]["SpaceAGORA"]["path"] = "../core", "mixes path"),
-                    ("no pin", d -> delete!(d["sources"], "SpaceAGORA"), "[sources] must pin SpaceAGORA"),
+                    ("different commit", d -> d["rev"] = other, "pins SpaceAGORA $other, but the tested revision is $(fixture.rev)"),
+                    ("short commit", d -> d["rev"] = fixture.rev[1:12], "is not a full 40-character"),
+                    ("uppercase commit", d -> d["rev"] = uppercase(fixture.rev), "is not a full 40-character"),
+                    ("branch", d -> d["rev"] = "main", "is not a full 40-character"),
+                    ("no rev", d -> delete!(d, "rev"), "rev is missing"),
+                    ("other repository", d -> d["url"] = "https://github.com/someone/SpaceAGORA.jl.git", "url must be"),
+                    ("no url", d -> delete!(d, "url"), "url must be"),
+                    ("no uuid", d -> delete!(d, "uuid"), "uuid must be SpaceAGORA's"),
+                    ("another uuid", d -> d["uuid"] = TEST_UUID, "uuid must be SpaceAGORA's"),
+                    ("another version", d -> d["version"] = "0.3.0", "is not 0.2.0, the SpaceAGORA version"),
+                    ("unknown key", d -> d["subdir"] = "x", "unknown key(s) subdir"),
+                    ("companions as a string", d -> d["companions"] = "mujoco", "companions must be a list"),
+                    ("unknown companion", d -> d["companions"] = ["visualizer"], "Unknown companion 'visualizer'"),
+                    ("missing pin file", d -> :remove, "SpaceAGORASource.toml is missing"))
+                with_pin(fixture, edit) do
+                    @testset "$label" begin
+                        refused_with(reason) do
+                            plan("package", fixture.repo, env(fixture); root=fixture.core, rev=fixture.rev)
+                        end
+                    end
+                end
+            end
+            for (label, edit, reason) in (
+                    ("path elsewhere", d -> (delete!(d, "url"); delete!(d, "rev"); d["path"] = "."), "is not the core under test"),
+                    ("path and rev", d -> d["path"] = "../core", "either path or url and rev"))
+                with_pin(fixture, edit) do
+                    @testset "$label" begin
+                        refused_with(reason) do
+                            plan("project", fixture.repo, env(fixture); root=fixture.core, core_from_caller=true)
+                        end
+                    end
+                end
+            end
+        end
+
+        @testset "Project.toml carries no SpaceAGORA pin" begin
+            for (label, edit, reason) in (
+                    ("[sources] url and rev", d -> d["sources"] = Dict("SpaceAGORA" => Dict("url" => CORE_URL, "rev" => fixture.rev)),
+                     "remove the SpaceAGORA entry from [sources]"),
+                    ("[sources] path", d -> d["sources"] = Dict("SpaceAGORA" => Dict("path" => "../core")),
+                     "remove the SpaceAGORA entry from [sources]"),
                     ("no SpaceAGORA dependency", d -> delete!(d["deps"], "SpaceAGORA"), "[deps] must list SpaceAGORA"),
                     ("another SpaceAGORA UUID", d -> d["deps"]["SpaceAGORA"] = TEST_UUID, "[deps] must list SpaceAGORA"))
                 with_project(fixture, edit) do
                     @testset "$label" begin
                         refused_with(reason) do
-                            plan("project", fixture.repo, env(fixture); root=fixture.core, rev=fixture.rev)
+                            plan("project", fixture.repo, env(fixture); root=fixture.core, rev=fixture.rev, core_from_caller=true)
                         end
                     end
                 end
             end
-            err = try
-                with_project(fixture, d -> d["sources"]["SpaceAGORA"]["rev"] = other) do
-                    plan("package", fixture.repo, env(fixture); root=fixture.core, rev=fixture.rev)
-                end
-            catch e
-                e
-            end
-            @test err isa ArgumentError && occursin("pins SpaceAGORA $other, but the tested revision is $(fixture.rev)", err.msg)
         end
 
         @testset "The core checkout must be the requested commit" begin
-            # The [sources] pin names the requested commit, so only the checkout check can refuse.
+            # The pin file names the requested commit, so only the checkout check can refuse.
             for (rev, reason) in ((repeat("b", 40), "is at $(fixture.rev), not the requested revision"),
                                   (fixture.rev[1:7], "must be a full 40-character lowercase commit SHA"))
-                with_project(fixture, d -> d["sources"]["SpaceAGORA"]["rev"] = rev) do
+                with_pin(fixture, d -> d["rev"] = rev) do
                     refused_with(reason) do
                         plan("project", fixture.repo, env(fixture); root=fixture.core, rev)
                     end
@@ -179,15 +215,17 @@ env(fixture, name="env") = joinpath(fixture.temporary, name)
         end
 
         @testset "Inputs and destinations" begin
-            for (kind, manifest, destination) in (("library", "core", env(fixture)), ("project", "latest", env(fixture)),
-                    ("project", "core", joinpath(fixture.core, "env")), ("project", "core", joinpath(fixture.repo, "env")),
-                    ("project", "committed", env(fixture)))
-                refused(ArgumentError) do
+            for (kind, manifest, destination, reason) in (
+                    ("library", "core", env(fixture), "Unknown kind"), ("project", "latest", env(fixture), "Unknown manifest mode"),
+                    ("project", "core", joinpath(fixture.core, "env"), "outside the SpaceAGORA checkout"),
+                    ("project", "core", joinpath(fixture.repo, "env"), "outside the repository"),
+                    ("project", "committed", env(fixture), "no committed Manifest.toml"))
+                refused_with(reason) do
                     plan(kind, fixture.repo, destination; manifest, root=fixture.core)
                 end
             end
             mkpath(env(fixture, "used")); write(joinpath(env(fixture, "used"), "x"), "")
-            refused(ArgumentError) do
+            refused_with("new or empty environment directory") do
                 plan("project", fixture.repo, env(fixture, "used"); root=fixture.core)
             end
             write(joinpath(fixture.repo, "Manifest.toml"), "")
@@ -196,25 +234,27 @@ env(fixture, name="env") = joinpath(fixture.temporary, name)
             write(versioned, "")
             @test plan("project", fixture.repo, env(fixture); manifest="committed", root=fixture.core).seed == versioned
             rm(versioned); rm(joinpath(fixture.repo, "Manifest.toml"))
-            @test companion_names("mujoco, edg mujoco\nhypr") == ["mujoco", "edg", "hypr"]
-            @test companion_names("") == String[]
-            refused(ArgumentError) do
-                companion_names("mujoco visualizer")
-            end
+            @test companion_names(["mujoco", "edg", "mujoco", "hypr"]) == ["mujoco", "edg", "hypr"]
+            @test companion_names(String[]) == String[]
         end
 
-        @testset "Companion dependencies follow the core's pins" begin
+        @testset "Companions come from the pin file, at the core's pins" begin
             depend = d -> (d["deps"][MUJOCO.name] = MUJOCO.uuid)
             with_project(fixture, depend) do
-                refused(ArgumentError) do
+                refused_with("list \"mujoco\" in SpaceAGORASource.toml companions") do
                     plan("project", fixture.repo, env(fixture); root=fixture.core)
                 end
-                @test plan("project", fixture.repo, env(fixture); root=fixture.core, companions="mujoco").companions == ["mujoco"]
+                with_pin(fixture, d -> d["companions"] = ["mujoco"]) do
+                    @test plan("project", fixture.repo, env(fixture); root=fixture.core).companions == ["mujoco"]
+                end
             end
             for (rev, accepted) in ((fixture.companion_rev, true), (repeat("d", 40), false))
-                with_project(fixture, d -> (depend(d); d["sources"][MUJOCO.name] = Dict("url" => "https://example.invalid/m.git", "rev" => rev))) do
-                    run_plan = () -> plan("project", fixture.repo, env(fixture); root=fixture.core, companions=["mujoco"])
-                    accepted ? (@test run_plan().companions == ["mujoco"]) : refused(run_plan, ArgumentError)
+                with_project(fixture, d -> (depend(d); d["sources"] = Dict(MUJOCO.name => Dict("url" => "https://example.invalid/m.git", "rev" => rev)))) do
+                    with_pin(fixture, d -> d["companions"] = ["mujoco"]) do
+                        run_plan = () -> plan("project", fixture.repo, env(fixture); root=fixture.core)
+                        accepted ? (@test run_plan().companions == ["mujoco"]) :
+                            refused_with(run_plan, "pins $(MUJOCO.name) $rev, but this core pins $(fixture.companion_rev)")
+                    end
                 end
             end
         end
@@ -262,14 +302,14 @@ end
         @test occursin("scientific validation is the author's", text)
         @test occursin("No conformance reports were written", text)
         write_toml(joinpath(environment, RECORD), Dict("kind" => "package", "package" => "MyGNC", "manifest" => "core",
-            "spaceagora_rev" => repeat("e", 40), "spaceagora_pin" => "url + rev",
+            "spaceagora_rev" => repeat("e", 40), "spaceagora_pin" => "rev $(repeat("e", 40))",
             "companions" => Dict("mujoco" => Dict("package" => MUJOCO.name, "revision" => repeat("c", 40)))))
         write_toml(joinpath(reports, "controller.toml"), Dict("target" => "MyController", "kind" => "control_model",
             "checks" => [Dict("id" => "hooks_present", "status" => "pass", "since" => "0.3.0", "detail" => ""),
                          Dict("id" => "repeatable_run", "status" => "fail", "since" => "0.3.0", "detail" => "u differs | at 3")]))
         text = summary(reports, environment)
         @test occursin("- Kind: package (`MyGNC`); manifest: core", text)
-        @test occursin("`$(repeat("e", 40))`, pinned in [sources] by url + rev", text)
+        @test occursin("`$(repeat("e", 40))`, pinned in SpaceAGORASource.toml by rev $(repeat("e", 40))", text)
         @test occursin("- Companion mujoco: $(MUJOCO.name) `$(repeat("c", 40))`", text)
         @test occursin("| MyController (control_model) | hooks_present | pass | 0.3.0 |  |", text)
         @test occursin("| MyController (control_model) | repeatable_run | fail | 0.3.0 | u differs \\| at 3 |", text)
@@ -277,6 +317,8 @@ end
     end
     @test options(["project", "r", "e", "--manifest=core", "--rev", "x"]) ==
           (["project", "r", "e"], Dict("manifest" => "core", "rev" => "x"))
+    @test options(["check", "project", "r", "--core-from-caller"]) == (["check", "project", "r"], Dict("core-from-caller" => "true"))
     @test_throws ArgumentError options(["project", "r", "e", "--frozen", "x"])
+    @test_throws ArgumentError options(["project", "r", "e", "--companions", "mujoco"])
     @test_throws ArgumentError options(["project", "--manifest"])
 end

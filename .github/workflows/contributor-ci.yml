@@ -2,7 +2,8 @@ name: Contributor CI
 
 # Reusable CI for repositories built on SpaceAGORA: research projects, algorithm
 # packages and companions. A caller pins this file and the core to one commit,
-# which is also the SpaceAGORA rev in its Project.toml [sources]:
+# which is also the rev in its SpaceAGORASource.toml (Project.toml has no
+# [sources] entry for SpaceAGORA):
 #
 #   jobs:
 #     spaceagora:
@@ -12,13 +13,14 @@ name: Contributor CI
 #         kind: package
 #
 # The repository is tested in a separate environment that develops the pinned
-# core by path (scripts/contributor_environment.jl). A pass certifies interface
-# conformance only; scientific validation is the author's.
+# core by path (scripts/contributor_environment.jl); companions listed in the pin
+# file come at that commit's own pins. A pass certifies interface conformance
+# only; scientific validation is the author's.
 on:
   workflow_call:
     inputs:
       spaceagora-rev:
-        description: Full 40-character SpaceAGORA commit, the same as the @ref in `uses:` and the [sources] pin.
+        description: Full 40-character SpaceAGORA commit, the same as the @ref in `uses:` and the rev in SpaceAGORASource.toml.
         type: string
         required: true
       kind:
@@ -45,10 +47,6 @@ on:
         default: "2"
       examples:
         description: Newline-separated scripts, relative to the directory, run after the tests.
-        type: string
-        default: ""
-      companions:
-        description: Companions installed at the core's pins (hypr, mujoco, edg), separated by spaces or commas.
         type: string
         default: ""
       load-orders:
@@ -84,7 +82,6 @@ jobs:
       MANIFEST: ${{ inputs.manifest }}
       DEPWARN: ${{ inputs.depwarn }}
       EXAMPLES: ${{ inputs.examples }}
-      COMPANIONS: ${{ inputs.companions }}
       LOAD_ORDERS: ${{ inputs.load-orders }}
       DIRECTORY: ${{ inputs.directory }}
       CORE_FROM_CALLER: ${{ inputs.core-from-caller }}
@@ -111,7 +108,7 @@ jobs:
           [[ "$LOAD_ORDERS" != true || "$KIND" == companion ]] || fail "load-orders applies to kind companion only."
           case "/$DIRECTORY/" in */../*|//*) fail "directory must be a relative path inside the repository, not '$DIRECTORY'." ;; esac
           if [ -z "$WORKFLOW_SHA" ]; then
-            echo "::warning::This runner does not report the workflow's own commit; only the [sources] pin is checked against spaceagora-rev."
+            echo "::warning::This runner does not report the workflow's own commit; only the pin file is checked against spaceagora-rev."
           elif [ "$WORKFLOW_SHA" != "$SPACEAGORA_REV" ]; then
             fail "This workflow runs from $WORKFLOW_SHA ($WORKFLOW_REF), but spaceagora-rev is $SPACEAGORA_REV. Call it at the same commit."
           fi
@@ -182,22 +179,32 @@ jobs:
         if: inputs.core-from-caller
         run: julia --startup-file=no test/smoke/contributor_environment_tests.jl
 
+      - name: Check the SpaceAGORA pin
+        run: |
+          set -euo pipefail
+          flags=()
+          if [ "$CORE_FROM_CALLER" = true ]; then flags+=(--core-from-caller); fi
+          julia --startup-file=no --project=@stdlib "$SPACEAGORA_CORE/scripts/contributor_environment.jl" \
+            check "$KIND" "$CONTRIBUTOR_REPOSITORY" --rev "$SPACEAGORA_REV" ${flags[@]+"${flags[@]}"}
+
       - name: Internal-name scan
         if: inputs.kind != 'companion'
         run: julia --startup-file=no --project=@stdlib "$SPACEAGORA_CORE/scripts/contributor_environment.jl" scan "$KIND" "$CONTRIBUTOR_REPOSITORY"
 
       - name: Build the separate environment
-        run: >-
-          julia --startup-file=no --project=@stdlib "$SPACEAGORA_CORE/scripts/contributor_environment.jl"
-          "$KIND" "$CONTRIBUTOR_REPOSITORY" "$CONTRIBUTOR_ENVIRONMENT"
-          --manifest "$MANIFEST" --rev "$SPACEAGORA_REV" --companions "$COMPANIONS"
+        run: |
+          set -euo pipefail
+          flags=()
+          if [ "$CORE_FROM_CALLER" = true ]; then flags+=(--core-from-caller); fi
+          julia --startup-file=no --project=@stdlib "$SPACEAGORA_CORE/scripts/contributor_environment.jl" \
+            "$KIND" "$CONTRIBUTOR_REPOSITORY" "$CONTRIBUTOR_ENVIRONMENT" --manifest "$MANIFEST" --rev "$SPACEAGORA_REV" ${flags[@]+"${flags[@]}"}
 
       - name: Precompile strictly
         run: julia --startup-file=no --project="$CONTRIBUTOR_ENVIRONMENT" -e 'using Pkg; Pkg.precompile(; strict=true)'
 
-      # Pkg.test would install SpaceAGORA from the repository's [sources] pin
-      # instead of the checked-out core, so test/runtests.jl runs in the
-      # environment, from the test directory as under Pkg.test.
+      # test/runtests.jl runs in the environment from the test directory, as
+      # under Pkg.test, without Pkg.test's --check-bounds=yes, which would rebuild
+      # every package image. Pkg.test also works in this environment locally.
       - name: Tests
         run: |
           set -euo pipefail
