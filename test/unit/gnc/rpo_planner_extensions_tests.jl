@@ -89,6 +89,14 @@ station()=S.RPOReferenceGeometry(S.RPOStationGeometry(zeros(3,1);keepout_radius_
     @test rpo_geometry_snapshot(provider,base,.31).station.points_body==
         rpo_geometry_snapshot(provider,base,.49).station.points_body
     @test base.station.points_body==zeros(3,1)
+    # Both constructors: a sphere list builds the configuration, and an existing
+    # configuration is used as it is, not read as a sphere list.
+    @test length(provider.config.spheres)==3 && provider.config.sphere_surface_samples==24
+    @test provider.config.observation_window_s==.1
+    wrapped=RPOReplanningSpheres(legacy)
+    @test wrapped isa RPOReplanningSpheres && wrapped.config===legacy
+    @test rpo_geometry_revision(wrapped,"base",1.)==revision(1.)
+    @test length(methods(RPOReplanningSpheres))==2
     @test_throws ArgumentError RPOReplanningSpheres([(center_rtn=(1.,0.,0.),radius_m=0.)])
     @test_throws ArgumentError RPOReplanningSpheres(spheres;sphere_surface_samples=4)
     @test_throws ArgumentError RPOReplanningSpheres(spheres;observation_window_s=-1.)

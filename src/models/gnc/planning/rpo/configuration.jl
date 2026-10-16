@@ -3,6 +3,7 @@ using LinearAlgebra: Diagonal, I
 
 """
     RPOReplanningSpheres(spheres; sphere_surface_samples=96, observation_window_s=0.0)
+    RPOReplanningSpheres(config::GuidanceHooks.RPOReplanningConfig)
 
 A geometry provider (`AbstractRPOGeometryProvider`) for spherical obstacles that
 appear and disappear during a run: the planner-path form of `RPOGuidanceModel`'s
@@ -15,10 +16,14 @@ replanning spheres, built with the same functions. Each sphere is a
 cloud. The revision is the base revision, then `+spheres:` and the active spheres'
 positions in `spheres`; while an active sphere moves, the snapshot time follows
 `@`, so each time has its own revision. With no active sphere it is the base
-revision and geometry.
+revision and geometry. The second form uses the spheres, surface samples and
+observation window of an existing legacy replanning configuration.
 """
 struct RPOReplanningSpheres <: P.AbstractRPOGeometryProvider
     config::S.GuidanceHooks.RPOReplanningConfig
+    # The only inner constructor, so Julia defines no default `(::Any)` constructor
+    # for the keyword form below to overwrite (refused during precompilation).
+    RPOReplanningSpheres(config::S.GuidanceHooks.RPOReplanningConfig) = new(config)
 end
 RPOReplanningSpheres(spheres; sphere_surface_samples::Integer=96, observation_window_s::Real=0.0) =
     RPOReplanningSpheres(S.GuidanceHooks.RPOReplanningConfig(spheres=spheres,
