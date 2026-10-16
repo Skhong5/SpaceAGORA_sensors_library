@@ -356,13 +356,28 @@ end
         @test reference.state.q_ib === nothing
         @test reference.torque == no_cop.torque == zero3
         @test reference.f == no_cop.f
-        # A direct call of the deprecated calcForceTorque gives the force the
-        # dynamics apply, and wrapped/unwrapped agreement holds, because
-        # orientation-off scenarios already use the wrapper.
-        legacy_f, legacy_torque = SimulationModel.calcForceTorque(
-            fm, reference.u.sc[1], reference.p, 1)
-        @test reference.f ≈ legacy_f atol=1e-16 rtol=1e-12
-        @test legacy_torque == zero3
+        # A direct call of the deprecated calcForceTorque warns and gives the
+        # force the dynamics apply. Under --depwarn=error, the probe drivers'
+        # setting, it throws instead (the pre-run check's unit tests check its
+        # value in a normal process).
+        if Base.JLOptions().depwarn == 2
+            err = try
+                SimulationModel.calcForceTorque(fm, reference.u.sc[1], reference.p, 1)
+                nothing
+            catch e
+                e
+            end
+            @test err isa ErrorException
+            @test err isa ErrorException && occursin("calcForceTorque(model, x, p, i) is deprecated", err.msg)
+        else
+            legacy_f, legacy_torque = @test_logs (:warn, r"is deprecated") match_mode=:any SimulationModel.calcForceTorque(
+                fm, reference.u.sc[1], reference.p, 1)
+            @test reference.f ≈ legacy_f atol=1e-16 rtol=1e-12
+            @test legacy_torque == zero3
+        end
+
+        # Wrapped/unwrapped agreement holds, because orientation-off scenarios
+        # already use the wrapper.
 
         for scale in (1.0, 1.7)
             model = TV.ScaledAerodynamicCoefficientfM(fm, scale)
@@ -370,7 +385,7 @@ end
             wrapped_no_cop = dispatch_aero(model; orientation_sim=false, offset=zero3)
             @test wrapped.torque == wrapped_no_cop.torque == zero3
             @test wrapped.f == wrapped_no_cop.f
-            @test wrapped.f ≈ scale * legacy_f atol=1e-16 rtol=1e-12
+            @test wrapped.f ≈ scale * reference.f atol=1e-16 rtol=1e-12
             for (actual, expected) in zip(wrapped.components, reference.components)
                 @test actual ≈ scale * expected atol=1e-16 rtol=1e-12
             end
