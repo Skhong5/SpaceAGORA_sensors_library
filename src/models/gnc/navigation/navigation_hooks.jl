@@ -21,9 +21,10 @@ module NavigationHooks
     - `model`: the navigation effector.
     - `u`: the full integrated state. `u.sc[spacecraft_index]` is the spacecraft, with
       `pos` (m) and `vel` (m/s) relative to the planet's centre in the inertial
-      frame and `mass` (kg); with attitude propagation also `q`, the scalar-last
-      quaternion from inertial to bus axes, and `ω`, the bus angular velocity in
-      rad/s. These are the true values; any sensor noise is the effector's own.
+      frame and `mass` (kg); with attitude propagation also `q = (x, y, z, w)`,
+      scalar last, with `v_body = rot(q) * v_inertial` (body means bus axes), and
+      `ω`, the bus angular velocity in rad/s. These are the true values; any sensor
+      noise is the effector's own.
       Sensors mounted with `add_sensor!` are sampled before navigation ticks at
       the same time; read them with `sensor_measurement(p.args.dynamics_model.spacecraft[spacecraft_index], k)`.
     - `p`: the run's parameters; `p.args` is the `SimulationConfiguration`.
