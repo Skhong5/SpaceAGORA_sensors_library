@@ -150,7 +150,7 @@ end
 
 # A prograde 1 N burn from 300.5 s to 400.5 s, applied ideally or through the
 # mounted engine; the window's ends fall between the 1 s control ticks.
-function burn_run(sc, actuation; mission_time=450.0)
+function burn_run(sc, actuation; mission_time=450.0, scene=false)
     model = SM.BaseThrusterModel(thrust=[1.0], direction=[0.0], Δv=[0.0], start_burn_time=[300.5],
         stop_burn_time=[400.5], Isp=[300.0], actuation=actuation)
     base = make_example_config(planet=SM.Earth(), spacecraft=sc, mission_time=mission_time,
@@ -159,6 +159,8 @@ function burn_run(sc, actuation; mission_time=450.0)
         orientation_sim=true, keplerian=false, EI_km=1.0, verbose=false, results=false)
     args = SM.SimConfig._with_configuration(base;
         control_model=SM.ControlModel(control_effectors=(model,), control_rates=[1.0]))
+    # The scene adds the `thruster_level` field to the returned table.
+    args = scene ? SM.SceneVisualization.with_visualization_scene(args, true) : args
     return run_simulation(args; return_results=true, return_solution=true)
 end
 
@@ -804,6 +806,7 @@ end
         mounted = SM.BaseThrusterModel(thrust=[1.0], direction=[0.0], Δv=[0.0], start_burn_time=[0.0],
             stop_burn_time=[1.0], Isp=[300.0], actuation=:mounted)
         @test SM.ControlHooks.control_thruster_levels(mounted, 1) === nothing      # the mounted engine reports its own level
+        @test SM.ControlHooks._thruster_levels_at(mounted, 1, 0.5) === nothing
         # The engine switches only at the window's ends, through the flag the edge callback flips.
         flag_model = SM.BaseThrusterModel(thrust=[1.0], direction=[0.0], Δv=[0.0], start_burn_time=[300.0],
             stop_burn_time=[400.0], Isp=[300.0], actuation=:mounted)
@@ -855,6 +858,39 @@ end
         inside = (table.time .> 300.5) .& (table.time .< 400.5)
         @test any(inside) && all(==(1.0), table.sc1_actuator_level_1[inside])
         @test all(==(0.0), table.sc1_actuator_level_1[.!inside .& ((table.time .< 300.5) .| (table.time .> 400.5))])
+        # The ideal burn's saved firing level is the burn's state at each sample's
+        # own time: 1 exactly in [start, stop), though the scheduler itself ticks
+        # only at the start of this run. Samples are saved after the callbacks of
+        # the step they fall in; here the steps that end at the window's ends each
+        # hold a sample, which must still read the level at its own time.
+        scene_run = burn_run(orbit_spacecraft(id=27), :ideal; scene=true)
+        sample_times, step_ends = scene_run.table.time, scene_run.solution.t
+        step_start(edge) = maximum(filter(<(edge), step_ends))
+        @test 300.5 in step_ends && 400.5 in step_ends
+        @test any(step_start(300.5) .< sample_times .< 300.5) && any(step_start(400.5) .< sample_times .< 400.5)
+        @test scene_run.table.sc1_thruster_level_1 == Float64.(300.5 .<= sample_times .< 400.5)
+    end
+
+    @testset "two burn runs at once match two in sequence" begin
+        # The scheduler keeps its run state in the model, so concurrent runs of
+        # one configuration trace and fly exactly as sequential ones do.
+        mktempdir() do dir
+            traced(runs, path) = withenv(runs, "SPACEAGORA_MANEUVER_TRACE_CSV" => path)
+            sequential_csv, concurrent_csv = joinpath(dir, "sequential.csv"), joinpath(dir, "concurrent.csv")
+            sequential = traced(sequential_csv) do
+                [burn_run(orbit_spacecraft(id=31), :ideal; scene=true) for _ in 1:2]
+            end
+            concurrent = traced(concurrent_csv) do
+                fetch.([Threads.@spawn(burn_run(orbit_spacecraft(id=31), :ideal; scene=true)) for _ in 1:2])
+            end
+            # Concurrent first writes may each add the header line; the rows match.
+            rows(path) = sort(filter(!startswith("event,"), readlines(path)))
+            @test length(rows(sequential_csv)) == 4      # each run's burn_start and burn_end
+            @test rows(concurrent_csv) == rows(sequential_csv)
+            reference = sequential[1]
+            @test all(isequal(r.solution.u[end], reference.solution.u[end]) && isequal(r.table, reference.table)
+                for r in (sequential[2], concurrent...))
+        end
     end
 end
 

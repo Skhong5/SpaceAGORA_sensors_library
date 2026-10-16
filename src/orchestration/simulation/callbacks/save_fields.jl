@@ -281,8 +281,9 @@ end
 # The firing levels an effector reports for spacecraft `i`: its own
 # `control_thruster_levels`, or, for an effector in `:mounted` actuation that
 # does not report them, the mounted thrusters' fractions at the levels it holds.
-@inline function _effector_thruster_levels(effector, i::Int, spacecraft)
-    reported = control_thruster_levels(effector, i)
+# With a sample time `t`, the levels at that time (see `_thruster_levels_at`).
+@inline function _effector_thruster_levels(effector, i::Int, spacecraft, t=nothing)
+    reported = t === nothing ? control_thruster_levels(effector, i) : _thruster_levels_at(effector, i, t)
     reported === nothing || return reported
     actuation_mode(effector) === :mounted || return nothing
     levels = actuator_levels(effector, i)
@@ -298,7 +299,7 @@ end
         levels = zeros(Float64, counts[i])
         if counts[i] > 0
             for effector in effectors
-                reported = _effector_thruster_levels(effector, i, spacecraft[i])
+                reported = _effector_thruster_levels(effector, i, spacecraft[i], t)
                 reported === nothing && continue
                 for k in 1:min(counts[i], length(reported))
                     value = Float64(reported[k])
