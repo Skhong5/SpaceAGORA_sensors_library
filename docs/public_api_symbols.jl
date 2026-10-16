@@ -279,7 +279,11 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :ActuatorRequirements, rendered = "SpaceAGORA.ActuatorRequirements"),
             (owner = :SpaceAGORA, symbol = :actuator_requirements, rendered = "SpaceAGORA.actuator_requirements"),
             (owner = :SpaceAGORA, symbol = :applied_actuator_levels, rendered = "SpaceAGORA.applied_actuator_levels"),
-            (owner = :SpaceAGORA, symbol = :mounted_power, rendered = "SpaceAGORA.mounted_power")
+            (owner = :SpaceAGORA, symbol = :mounted_power, rendered = "SpaceAGORA.mounted_power"),
+            (owner = :SpaceAGORA, symbol = :SolarArray, rendered = "SpaceAGORA.SolarArray"),
+            (owner = :SpaceAGORA, symbol = :Battery, rendered = "SpaceAGORA.Battery"),
+            (owner = :SpaceAGORA, symbol = :PowerLoad, rendered = "SpaceAGORA.PowerLoad"),
+            (owner = :SpaceAGORA, symbol = :add_power!, rendered = "SpaceAGORA.add_power!")
         ]
     ),
     (

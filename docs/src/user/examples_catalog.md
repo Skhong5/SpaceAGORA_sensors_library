@@ -189,7 +189,7 @@ julia --project=. examples/Cloth_Panel_Attachment_Demo.jl
 
 Use these when the question is about one force, torque, control, or navigation
 surface rather than a full mission case. Every script in this table except
-`Earth_CubeSat_Mounted_Actuators.jl` needs the SPICE files, and none needs the
+the two CubeSat scripts needs the SPICE files, and none needs the
 native GRAM library. `Earth_Navigation.jl` also reads
 `data/planets/gravity/EarthGGM05C.csv`. The descriptions reflect
 the configured model, including files whose historical names say “Control”:
@@ -203,6 +203,7 @@ the configured model, including files whose historical names say “Control”:
 | `Earth_RW_Test.jl` | Quaternion PD attitude control using an ideal body torque; no explicit wheel dynamics |
 | `Earth_Momentum_Manager_Test.jl` | Magnetic unloading of accumulated wheel momentum, with accounting-only and solver-tolerance comparisons |
 | `Earth_CubeSat_Mounted_Actuators.jl` | Mounted actuators: a controller sets levels for three reaction wheels, three torque rods and a laser terminal; the wheels detumble the CubeSat within their limits and the rods unload them; reads the actuator level and power columns |
+| `Earth_CubeSat_Power_Budget.jl` | Power budget: a solar array, a battery, a constant load and a laser terminal over two orbits; the battery fills in sunlight, empties in eclipse with the laser shed, and recovers; reads the power columns |
 | `Earth_Navigation.jl` | Navigation and observer flow |
 | `AGORA_Earth_Control_Test.jl` | Earth attitude propagation with J2 gravity and no active controller |
 | `AGORA_Odyssey_Control_Test.jl` | Mars body-rate damping with a discrete control hook |
@@ -319,7 +320,7 @@ names; they do not define a separate backend or a flight-validation claim.
 | Mission workflow | `AGORA_Mission_Workflow.jl` | Root; an absent or empty output directory |
 | Articulated and compliant bodies | `Articulated_Panels_Demo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl`, `Cloth_Panel_Attachment_Demo.jl` | Root; no external data |
 | SPICE orbit and mission scenarios | `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl`, `AGORA_Earth.jl`, `AGORA_Titan.jl`, `AGORA_Magellan.jl`, `AGORA_LOFTID.jl`, `CYGNSS_test.jl`, `GRIFEX_test.jl` | Root and SPICE; no native GRAM |
-| Controls, torque and navigation | `AGORA_Earth_GG_Test.jl`, `AGORA_Earth_SRP_Test.jl`, `AGORA_Earth_const_torque.jl`, `Earth_Torque_Free_Test.jl`, `Earth_RW_Test.jl`, `Earth_Momentum_Manager_Test.jl`, `Earth_CubeSat_Mounted_Actuators.jl`, `Earth_Navigation.jl`, `AGORA_Earth_Control_Test.jl`, `AGORA_Odyssey_Control_Test.jl`, `AGORA_Titan_Control_Test.jl`, `AGORA_Vex_Control_Test.jl` | Root and SPICE, except the mounted-actuator CubeSat (root only); Earth navigation also needs its gravity coefficients |
+| Controls, torque and navigation | `AGORA_Earth_GG_Test.jl`, `AGORA_Earth_SRP_Test.jl`, `AGORA_Earth_const_torque.jl`, `Earth_Torque_Free_Test.jl`, `Earth_RW_Test.jl`, `Earth_Momentum_Manager_Test.jl`, `Earth_CubeSat_Mounted_Actuators.jl`, `Earth_CubeSat_Power_Budget.jl`, `Earth_Navigation.jl`, `AGORA_Earth_Control_Test.jl`, `AGORA_Odyssey_Control_Test.jl`, `AGORA_Titan_Control_Test.jl`, `AGORA_Vex_Control_Test.jl` | Root and SPICE, except the two CubeSat scripts (root only); Earth navigation also needs its gravity coefficients |
 | Native atmosphere missions | `AGORA_Basic_GRAMEarth.jl`, `AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `AGORA_Mars_RAAN_Scenario.jl` | Root, native GRAM, SPICE and the mission inputs described above |
 | Native atmosphere EDG | `AGORA_Odyssey_Energy_Depletion_Control_Test.jl` | Paired EDG environment, native Mars GRAM and SPICE |
 | Frozen-atmosphere EDG | `odyssey_surrogate.jl` | `odyssey_surrogate_env` setup; downloads public scenario assets on first run |
