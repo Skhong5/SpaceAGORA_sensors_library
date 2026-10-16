@@ -12,6 +12,7 @@ using ..Actuators: ActuatorContext, ActuatorRequirements, STANDARD_GRAVITY_MPS2,
 import ..Actuators: actuator_wrench, actuator_limits, actuator_consumption, actuator_requirements
 export Facet, Thruster, Magnet, ReactionWheelAssembly, create_facet_list
 export six_axis_thrusters, ReactionWheel, wheel_momentum_saturate, wheel_power, Magnetorquer, LaserTerminal, PanelHinge, hinge_step
+export ThrusterGimbal, gimbal_step, thrust_direction
 export SolarArray, Battery, PowerLoad
 export ActuatorFault, FaultSet
 export RateGyro, StarTracker, Magnetometer
@@ -24,6 +25,7 @@ include(joinpath(@__DIR__, "..", "actuators", "reaction_wheel.jl"))
 include(joinpath(@__DIR__, "..", "actuators", "magnetorquer.jl"))
 include(joinpath(@__DIR__, "..", "actuators", "laser.jl"))
 include(joinpath(@__DIR__, "..", "actuators", "hinge.jl"))
+include(joinpath(@__DIR__, "..", "actuators", "gimbal.jl"))
 # Power-system records (mounted with PowerSystems.add_power!).
 include(joinpath(@__DIR__, "..", "power", "power_components.jl"))
 # The actuator-fault record (mounted with ActuatorFaults.add_fault!).

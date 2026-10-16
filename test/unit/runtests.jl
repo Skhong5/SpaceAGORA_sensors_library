@@ -197,6 +197,7 @@ include("vehicle/actuator_contract_tests.jl")
 include("vehicle/power_budget_tests.jl")
 include("vehicle/actuator_fault_tests.jl")
 include("vehicle/sensor_tests.jl")
+include("vehicle/thruster_gimbal_tests.jl")
 include("quality/runtime_any_gate_tests.jl")
 
 # Optional renderer installer planning is stdlib-only and performs no installation.

@@ -23,14 +23,17 @@ end
 end
 
 # After the control tick of an effector in `:mounted` actuation, the engine moves
-# the spacecraft's mounted hinges toward the levels the effector holds.
+# the spacecraft's mounted hinges and thruster gimbals toward the levels the
+# effector holds.
 @inline function _apply_mounted_hinges!(control_model, p, sat_idx::Int, t)
     actuation_mode(control_model) === :mounted || return nothing
     spacecraft = p.args.dynamics_model.spacecraft[sat_idx]
-    mounted_hinge_count(spacecraft) == 0 && return nothing
+    (mounted_hinge_count(spacecraft) == 0 && mounted_gimbal_count(spacecraft) == 0) && return nothing
     levels = actuator_levels(control_model, sat_idx)
     levels === nothing && return nothing
-    apply_hinge_levels!(spacecraft, faulted_levels(spacecraft, levels), t)
+    applied = faulted_levels(spacecraft, levels)
+    apply_hinge_levels!(spacecraft, applied, t)
+    apply_gimbal_levels!(spacecraft, applied, t)
     return nothing
 end
 
