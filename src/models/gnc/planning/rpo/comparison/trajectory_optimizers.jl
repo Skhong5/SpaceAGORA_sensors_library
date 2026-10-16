@@ -350,7 +350,10 @@ function rpo_stomp_waypoint_state_cost(
     return w_obs * obs + w_len * local_len + w_smooth * dot(d2, d2)
 end
 
-"""Plan an RPO path using the STOMP-like comparison optimizer."""
+"""
+Plan an RPO path using the STOMP-like comparison optimizer. The required `rng`
+owns the rollout noise; there is no default global stream.
+"""
 function rpo_stomp_plan_path(
     start_rtn,
     goal_rtn,
@@ -360,7 +363,7 @@ function rpo_stomp_plan_path(
     settings::RPOSTOMPSettings=RPOSTOMPSettings(n_iters=cfg.n_iters),
     optimizer::RPOTrajectoryOptimizerSettings=RPOTrajectoryOptimizerSettings(),
     max_runtime_s::Real=Inf,
-    rng=Random.default_rng(),
+    rng::Random.AbstractRNG,
     initial_path=nothing,
 )
     local_cfg = rpo_pso_config(cfg; w_obs=cfg.w_obs * optimizer.w_obs_scale)

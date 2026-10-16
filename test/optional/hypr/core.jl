@@ -95,7 +95,8 @@ end
     @test robot_arm_clearance_stats_from_samples(model,base,hcat(q0,q0),RobotArmSphereObstacle[],0.).violation_count==0
     @test out.planner===:cloth_quintic
     @test all(isfinite,out.q_ref)
-    @test_throws HYPRUnavailableError plan_robot_arm_motion(model,base,q0,target;planner=:hypr)
+    @test_throws HYPRUnavailableError plan_robot_arm_motion(model,base,q0,target;planner=:hypr,rng=MersenneTwister(1))
+    @test_throws ArgumentError plan_robot_arm_motion(model,base,q0,target;planner=:hypr)
     @test !hypr_available()
 end
 include(joinpath(@__DIR__,"..","..","unit","gnc","rpo_planner_contract_tests.jl"))

@@ -69,7 +69,15 @@ end
 include(joinpath(@__DIR__, "..", "adapters", "hypr", "robot_arm.jl"))
 include(joinpath(@__DIR__, "path_geometry.jl"))
 
-"""Plan a quintic joint-space motion from an initial state to a target surface point."""
+"""
+    plan_robot_arm_motion(model, base_pose, q_start, target; config, planner=:cloth_quintic,
+                          hypr_config=nothing, obstacles=RobotArmSphereObstacle[], rng=nothing)
+
+Plan a joint-space motion from an initial state to a target surface point. The
+default `:cloth_quintic` planner is deterministic and draws no random numbers.
+`planner=:hypr` samples, so it requires an explicit `rng` (an `AbstractRNG`); there
+is no default global stream.
+"""
 function plan_robot_arm_motion(
     model::ClothArmModel,
     base_pose::ClothArmBasePose,
@@ -79,9 +87,11 @@ function plan_robot_arm_motion(
     planner::Symbol=:cloth_quintic,
     hypr_config::Union{RobotArmHYPRConfig, Nothing}=nothing,
     obstacles::AbstractVector{RobotArmSphereObstacle}=RobotArmSphereObstacle[],
-    rng=Random.default_rng(),
+    rng::Union{Nothing, Random.AbstractRNG}=nothing,
 )
     if planner == :hypr
+        rng === nothing && throw(ArgumentError(
+            "plan_robot_arm_motion(...; planner=:hypr) samples and needs an explicit rng, for example rng=MersenneTwister(seed)."))
         hypr = plan_robot_arm_motion_hypr(
             model,
             base_pose,
