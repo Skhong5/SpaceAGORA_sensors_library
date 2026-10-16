@@ -85,7 +85,8 @@ Control effector paired with `ApolloDescentGuidanceModel` through the
 shared [`ApolloDescentState`](@ref). Carries the terrain model so the engine
 registers the touchdown event on it. When a configuration has both models,
 `run_simulation` warns before the run (once per session) if any spacecraft is
-guided or controlled without its counterpart on the same state. A guidance (or
+guided or controlled without its counterpart on the same state, and refuses the
+configuration under `--depwarn=error`. A guidance (or
 control) model of another type in the configuration may write (or fly) the
 state, so the check then skips spacecraft without Apollo guidance (or control).
 
@@ -125,6 +126,7 @@ function ApolloDescentControlModel(config::ApolloDescentControlConfig, guidance:
 end
 
 import ..GuidanceHooks
+using ..HookDeprecation: _preflight_warning
 
 # The guidance hands its commands to this control through the shared state.
 # When a configuration has both models, a spacecraft controlled on a state that
@@ -168,8 +170,9 @@ function SimulationLifecycle.preflight_control(c::ApolloDescentControlModel, arg
     isempty(pairing.uncontrolled) || push!(problems, "spacecraft $(join(pairing.uncontrolled, ", ")) " *
         "have an ApolloDescentGuidanceModel but no ApolloDescentControlModel on the same ApolloDescentState, " *
         "so no control flies their guidance commands")
-    @warn "Apollo descent guidance and control are not paired: $(join(problems, "; ")). Build both models " *
-        "from one ApolloDescentState with the same spacecraft_indices." maxlog=1
+    _preflight_warning((ApolloDescentControlModel, :apollo_pairing),
+        "Apollo descent guidance and control are not paired: $(join(problems, "; ")). Build both models " *
+        "from one ApolloDescentState with the same spacecraft_indices.")
     return nothing
 end
 
@@ -384,24 +387,26 @@ function calcControlEffect!(model::ApolloDescentControlModel, u, p::ODEParams, t
     return nothing
 end
 
-function calcControlForceTorque(model::ApolloDescentControlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+function control_wrench(model::ApolloDescentControlModel, x::StateSample, p::ODEParams, t::Float64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    i = x.spacecraft_index
     n = length(model.actuators.thrust_n)
     (i in model.spacecraft_indices && p.is_active[i]) || return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     thrust = model.actuators.thrust_n[i]
-    q = SVector{4, Float64}(u.q[1], u.q[2], u.q[3], u.q[4])
+    q = x.q_ib::SVector{4, Float64}              # the descent controls attitude, so the run propagates it
     A = rot(q)                                   # rows: body axes in inertial coordinates
     engine_axis_i = -SVector{3, Float64}(A[3, 1], A[3, 2], A[3, 3])   # thrust pushes along body -z
     return thrust * engine_axis_i, model.actuators.torque_nm[i]
 end
 
-function calcControlMassFlowRate(model::ApolloDescentControlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
+function control_propellant_rate(model::ApolloDescentControlModel, x::StateSample, p::ODEParams, t::Float64)::Float64
+    i = x.spacecraft_index
     n = length(model.actuators.thrust_n)
     (i in model.spacecraft_indices && p.is_active[i]) || return 0.0
     cfg = model.config
     dps = propellant_mass_rate(model.actuators.thrust_n[i], cfg.dps_isp_s)
     τ = model.actuators.torque_nm[i]
     rcs = (abs(τ[1]) + abs(τ[2]) + abs(τ[3])) / (cfg.rcs_moment_arm_m * cfg.rcs_isp_s * _DESCENT_G0)
-    return -(dps + rcs)
+    return dps + rcs
 end
 
 function touchdown_spec(model::ApolloDescentControlModel, spacecraft_index::Int)

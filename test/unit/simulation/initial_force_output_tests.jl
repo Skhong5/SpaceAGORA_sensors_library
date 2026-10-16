@@ -47,7 +47,7 @@ mutable struct CountingControl <: SM.AbstractControlEffectorModel
     reads::Int
     updates::Int
 end
-function CH.calcControlForceTorque(model::CountingControl, u, p, i::Int64, t::Float64)
+function CH.control_wrench(model::CountingControl, x, p, t::Float64)
     model.reads += 1
     return ZERO3, ZERO3
 end

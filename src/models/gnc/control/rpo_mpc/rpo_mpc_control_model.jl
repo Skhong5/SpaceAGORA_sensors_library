@@ -52,8 +52,8 @@ function calcControlEffect!(model::RPOMPCControlModel, u, p::ODEParams, t::Float
 end
 
 """Return the held force and torque command for a control effector."""
-function calcControlForceTorque(model::RPOMPCControlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
-    i == model.chaser_idx || return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+function control_wrench(model::RPOMPCControlModel, x::StateSample, p::ODEParams, t::Float64)
+    x.spacecraft_index == model.chaser_idx || return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     return model.held.force_ii, model.held.torque_body
 end
 
@@ -83,9 +83,9 @@ function actuator_levels(model::RPOMPCControlModel, i::Int)
     return model.mounted_levels
 end
 
-"""Return the held reaction-wheel-attributable torque, held constant (ZOH) between control ticks like `calcControlForceTorque`."""
-function calcReactionWheelTorque(model::RPOMPCControlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
-    i == model.chaser_idx || return nothing
+"""Return the held reaction-wheel-attributable torque, held constant (ZOH) between control ticks like `control_wrench`."""
+function control_wheel_torque(model::RPOMPCControlModel, x::StateSample, p::ODEParams, t::Float64)
+    x.spacecraft_index == model.chaser_idx || return nothing
     return model.held.rw_torque_body
 end
 
@@ -106,15 +106,15 @@ function control_thruster_levels(model::RPOMPCControlModel, i::Int)
     return levels
 end
 
-"""Return propellant mass flow for a control effector."""
-function calcControlMassFlowRate(model::RPOMPCControlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
-    i == model.chaser_idx || return 0.0
-    mdot = 0.0
+"""Return the propellant the six jets use, in kg/s (positive while they fire)."""
+function control_propellant_rate(model::RPOMPCControlModel, x::StateSample, p::ODEParams, t::Float64)::Float64
+    x.spacecraft_index == model.chaser_idx || return 0.0
+    rate = 0.0
     @inbounds for j in 1:6
         thrust = model.held.thruster_forces_n[j]
         if thrust > 0.0
-            mdot -= propellant_mass_rate(thrust, model.thrusters.isp_s[j])
+            rate += propellant_mass_rate(thrust, model.thrusters.isp_s[j])
         end
     end
-    return mdot
+    return rate
 end

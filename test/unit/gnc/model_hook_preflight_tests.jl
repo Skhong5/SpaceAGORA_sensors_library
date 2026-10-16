@@ -136,9 +136,13 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
 @testset "Model hook declarations and pre-run check" begin
     @testset "hooks are public with generic docstrings" begin
         for name in (:AbstractNavigationModel, :calcGuidanceEffect!, :calcNavigationEffect!,
-                     :calcReactionWheelTorque, :getHeatRate, :touchdown_spec)
+                     :calcReactionWheelTorque, :getHeatRate, :touchdown_spec,
+                     :control_wrench, :control_propellant_rate, :control_wheel_torque)
             @test name in names(SpaceAGORA)
         end
+        @test SpaceAGORA.control_wrench === HP_SM.ControlHooks.control_wrench
+        @test SpaceAGORA.control_propellant_rate === HP_SM.ControlHooks.control_propellant_rate
+        @test SpaceAGORA.control_wheel_torque === HP_SM.ControlHooks.control_wheel_torque
         @test isabstracttype(SpaceAGORA.AbstractNavigationModel)
         @test SpaceAGORA.AbstractNavigationModel === HP_SM.AbstractTypes.AbstractNavigationModel
         @test SpaceAGORA.calcGuidanceEffect! === HP_SM.GuidanceHooks.calcGuidanceEffect!
@@ -155,6 +159,18 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
         @test startswith(root_doc(:calcControlEffect!), "    calcControlEffect!(model, u, p, t, spacecraft_index)")
         @test !occursin("calcControlEffect!(model::BaseThrusterModel", root_doc(:calcControlEffect!))
         @test startswith(root_doc(:calcReactionWheelTorque), "    calcReactionWheelTorque(model, u, p, spacecraft_index, t)")
+        for name in (:control_wrench, :control_propellant_rate, :control_wheel_torque)
+            @test startswith(root_doc(name), "    $(name)(model, x::StateSample, p, t::Float64)")
+            @test !occursin("::BaseThrusterModel", root_doc(name))
+        end
+        for name in (:calcControlForceTorque, :calcControlMassFlowRate, :calcReactionWheelTorque)
+            @test occursin("\n\nDeprecated, use [`control_", root_doc(name))
+        end
+        # No catch-all control output method during the deprecation window, so
+        # `hasmethod` tells which types implement them.
+        for f in (SpaceAGORA.control_wrench, SpaceAGORA.control_propellant_rate, SpaceAGORA.control_wheel_torque)
+            @test !hasmethod(f, Tuple{Any, Any, Any, Any})
+        end
         @test startswith(root_doc(:getHeatRate), "    getHeatRate(model, S, T, ρ, v, α)")
         @test startswith(root_doc(:touchdown_spec), "    touchdown_spec(effector, spacecraft_index::Int)")
         # The RPO text stays on the RPO method.
@@ -165,6 +181,21 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
 
         # No catch-all navigation method: an effector without one is still a MethodError when called.
         @test_throws MethodError SpaceAGORA.calcNavigationEffect!(HpNavigationNoHook(), Float64[], nothing, 0.0, 1)
+    end
+
+    @testset "the new hook names collide with no package often loaded beside SpaceAGORA" begin
+        # A script that loads these packages with SpaceAGORA must see the new
+        # names unqualified: a name two of them export would be ambiguous.
+        new_names = (:control_wrench, :control_propellant_rate, :control_wheel_torque)
+        scope = Module(:HpNameCollisions)
+        Core.eval(scope, :(using SpaceAGORA, Plots, OrdinaryDiffEq, ComponentArrays, StaticArrays, DataFrames))
+        for pkg in (:Plots, :OrdinaryDiffEq, :ComponentArrays, :StaticArrays, :DataFrames)
+            exported = names(getfield(scope, pkg))
+            @test isempty(filter(in(exported), new_names))
+        end
+        for name in new_names
+            @test isdefined(scope, name) && getfield(scope, name) === getfield(SpaceAGORA, name)
+        end
     end
 
     @testset "the check uses the run's concrete argument types" begin
@@ -185,16 +216,21 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
         control = [hp_package_types(SpaceAGORA.AbstractControlEffectorModel); HP_SM.ThrusterModels.BaseThrusterModel]
         @test aoa in control
         @test length(control) >= 6
+        # Every built-in control effector has control_wrench, and none a method
+        # of its own of a deprecated control output hook.
         for T in control
             @test hp_tick_ok(SpaceAGORA.calcControlEffect!, T) == (T !== aoa)
-            @test hasmethod(SpaceAGORA.calcControlForceTorque, Tuple{T, HP_X, HP_P, Int, Float64})
+            @test hasmethod(SpaceAGORA.control_wrench, Tuple{T, SpaceAGORA.StateSample, HP_P, Float64})
+            for old in (SpaceAGORA.calcControlForceTorque, SpaceAGORA.calcControlMassFlowRate, SpaceAGORA.calcReactionWheelTorque)
+                @test !HP_SE._own_method(old, Tuple{T, HP_X, HP_P, Int, Float64})
+            end
         end
         forces = hp_package_types(SpaceAGORA.AbstractForceTorqueModel)
         @test length(forces) >= 15
         # Every built-in force model has wrench, and none a calcForceTorque method of its own.
         for T in forces
             @test hp_sampled(SpaceAGORA.wrench, T)
-            @test !HP_SE._own_force_torque_method(T, HP_X, HP_P)
+            @test !HP_SE._own_method(SpaceAGORA.calcForceTorque, Tuple{T, HP_X, HP_P, Int})
         end
         # Every built-in backbone declaration has its acceleration hook.
         cores = filter(T -> hp_declares(SpaceAGORA.gravity_backbone_structure, T), forces)
@@ -234,11 +270,13 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
         @test has("guidance_model.guidance_effectors[4] (HpGuidanceVectorState)", "calcGuidanceEffect!", "none accepts the arguments this run passes")
         @test !has("(HpGuidanceNoHook)", "none accepts")
         @test has("navigation_model.navigation_effectors[1] (HpNavigationNoHook)", "calcNavigationEffect!")
-        @test has("control_model.control_effectors[1] (HpControlTickOnly)", "calcControlForceTorque", "actuation_mode :ideal")
+        @test has("control_model.control_effectors[1] (HpControlTickOnly)",
+            "has no method control_wrench(model, x::StateSample, p, t::Float64)", "actuation_mode :ideal")
+        @test !has("(HpControlTickOnly)", "calcControlForceTorque")
         @test has("dynamics_model.dynamic_effectors[1] (HpForceNoHook)", "has no method wrench(model, x::StateSample")
         @test !has("(HpForceNoHook)", "calcForceTorque")
         @test has("environment_model.density_model (HpDensitySixArgs)", "getDensity(", "wind::Bool, p)")
-        # A :mounted effector needs no calcControlForceTorque, and calcForceTorque alone serves a force model.
+        # A :mounted effector needs no control_wrench, and calcForceTorque alone serves a force model.
         for accepted in ("HpGuidanceCounter", "HpGuidanceComponentState", "HpNavigationCounter", "HpMountedControl", "HpLegacyForceCounter", "InverseSquaredJ2GravityModel")
             @test !has(accepted)
         end

@@ -2277,6 +2277,7 @@ end
     q_id = SVector(0.0, 0.0, 0.0, 1.0)          # identity: body == inertial
     w0 = SVector(0.0, 0.0, 0.0)
     mock_u(q) = (sc = [(pos = r0, vel = v0, q = q, ω = w0)],)
+    x1 = SimulationModel.StateSample(r0, v0, 1.0; q_ib=q_id, ω_body=w0, spacecraft_index=1)
     B0 = SVector(0.0, 0.0, 3.0e-5)              # +z inertial field, 30 uT
     bfun = (t, r) -> B0
     tau_const = SVector(1.0e-6, 0.0, 0.0)       # constant commanded torque
@@ -2291,7 +2292,7 @@ end
     CH.calcControlEffect!(m, mock_u(q_id), nothing, 0.0, 1)
     @test m.h_wheels == SVector(0.02, 0.0, 0.0)
     @test m.initialized
-    f, tq = CH.calcControlForceTorque(m, nothing, nothing, 1, 0.0)
+    f, tq = CH.control_wrench(m, x1, nothing, 0.0)
     @test f == SVector(0.0, 0.0, 0.0)
     # unloading: tau_rod = -mu * H_perp; H = (0.02,0,0) fully perp to +z field
     @test isapprox(tq, SVector(-0.01 * 0.02, 0.0, 0.0); rtol=1e-12)
@@ -2299,7 +2300,7 @@ end
 
     # 2) ZOH: held command unchanged until the next tick
     tq_held = m.held_torque_body
-    @test CH.calcControlForceTorque(m, nothing, nothing, 1, 0.37)[2] == tq_held
+    @test CH.control_wrench(m, x1, nothing, 0.37)[2] == tq_held
 
     # 3) accumulator advance: dH = -tau_cmd * dt at the tick
     CH.calcControlEffect!(m, mock_u(q_id), nothing, 1.0, 1)
@@ -2335,7 +2336,7 @@ end
     moff = mk(sat_idx=2)
     CH.calcControlEffect!(moff, mock_u(q_id), nothing, 0.0, 1)
     @test !moff.initialized
-    @test CH.calcControlForceTorque(moff, nothing, nothing, 1, 0.0)[2] == SVector(0.0, 0.0, 0.0)
+    @test CH.control_wrench(moff, x1, nothing, 0.0)[2] == SVector(0.0, 0.0, 0.0)
     mzero = mk(b_field_ii=(t, r) -> SVector(0.0, 0.0, 0.0))
     CH.calcControlEffect!(mzero, mock_u(q_id), nothing, 0.0, 1)
     @test mzero.held_torque_body == SVector(0.0, 0.0, 0.0)
