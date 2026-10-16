@@ -289,6 +289,24 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "Sensors",
+        items = [
+            (owner = :SpaceAGORA, symbol = :AbstractSensor, rendered = "SpaceAGORA.AbstractSensor"),
+            (owner = :SpaceAGORA, symbol = :RateGyro, rendered = "SpaceAGORA.RateGyro"),
+            (owner = :SpaceAGORA, symbol = :StarTracker, rendered = "SpaceAGORA.StarTracker"),
+            (owner = :SpaceAGORA, symbol = :Magnetometer, rendered = "SpaceAGORA.Magnetometer"),
+            (owner = :SpaceAGORA, symbol = :SensorTruth, rendered = "SpaceAGORA.SensorTruth"),
+            (owner = :SpaceAGORA, symbol = :sensor_measure, rendered = "SpaceAGORA.sensor_measure"),
+            (owner = :SpaceAGORA, symbol = :sensor_dimension, rendered = "SpaceAGORA.sensor_dimension"),
+            (owner = :SpaceAGORA, symbol = :sensor_requirements, rendered = "SpaceAGORA.sensor_requirements"),
+            (owner = :SpaceAGORA, symbol = :sensor_period_s, rendered = "SpaceAGORA.sensor_period_s"),
+            (owner = :SpaceAGORA, symbol = :add_sensor!, rendered = "SpaceAGORA.add_sensor!"),
+            (owner = :SpaceAGORA, symbol = :mounted_sensors, rendered = "SpaceAGORA.mounted_sensors"),
+            (owner = :SpaceAGORA, symbol = :sensor_measurement, rendered = "SpaceAGORA.sensor_measurement"),
+            (owner = :SpaceAGORA, symbol = :sensor_measurement_time, rendered = "SpaceAGORA.sensor_measurement_time")
+        ]
+    ),
+    (
         title = "Robotics and Planning",
         items = [
             (owner = :SpaceAGORA, symbol = :RobotArmBasePose, rendered = "SpaceAGORA.RobotArmBasePose"),

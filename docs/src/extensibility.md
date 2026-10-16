@@ -279,6 +279,42 @@ Walkthrough: [Adding an Actuator of Your Own](user/custom_actuator.md).
 Example: `examples/Earth_CubeSat_Mounted_Actuators.jl`, a CubeSat whose
 mounted wheels detumble it while its torque rods unload them.
 
+## Add a sensor
+
+A sensor measures the state of the vehicle for navigation; it does not act on
+the dynamics. A sensor kind is a mutable struct subtyping `AbstractSensor`
+with its parameters and five fields the engine fills or reads: `period_s`
+(the sampling period), `seed` (selects its random stream), `rng`, `latest`
+(a vector of the measurement's components) and `latest_time_s`. It implements:
+
+- `sensor_measure(sensor, truth::SensorTruth, ctx::ActuatorContext, rng)`:
+  one measurement of `truth` (the inertial position and velocity, the
+  attitude, the body rate, the mass, the time and, when the sensor asks for
+  it, the magnetic field in the body frame), with any noise drawn from `rng`.
+  `ctx.link_to_body` maps the sensor's frame, its link's, to the body frame.
+- `sensor_dimension(sensor)`: the number of components.
+- optionally `sensor_requirements(sensor)`: `ActuatorRequirements(magnetic_field=true)`
+  to receive the field (from the run's `MagneticTorqueRodModel`, or the
+  tilted dipole); no other environment is available to sensors.
+
+Mount it with `add_sensor!(spacecraft, link, sensor)`; a sensor on a hinged
+panel turns with it. The built-in kinds are `RateGyro` (body rate with white
+noise, a bias and a bias random walk), `StarTracker` (attitude with cross- and
+about-boresight noise, boresight along its link's +z) and `Magnetometer`
+(field with white noise and a bias).
+
+The engine samples every sensor at the run's start and every period after
+it, from the accepted state; the samples are solver stops, and a checkpointed
+run samples at the same times as a run in one piece. Each sensor's random
+stream comes from its `seed`, the spacecraft's ID and its mounting position,
+so a run repeats with the same seeds; a Monte Carlo campaign varies the seeds
+per sample. A navigation effector reads the latest measurement in
+`calcNavigationEffect!` with `sensor_measurement(p.args.dynamics_model.spacecraft[i], k)`
+(and its time with `sensor_measurement_time`); sensors sample before
+navigation effectors at the same time. Runs with sensors write the
+`sc{i}_sensor_{k}` columns (see [Output Columns](user/output_columns.md#Sensors))
+and cannot resume from a checkpoint file.
+
 ## Planet, ephemerides, thermal, thruster, and guidance extensions
 
 Stable interfaces:

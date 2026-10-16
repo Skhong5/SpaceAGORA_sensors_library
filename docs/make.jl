@@ -19,6 +19,7 @@ const API_REFERENCE_PAGES = (
     (section="Visualization Scene", title="Visualization API", file="visualization_api.md"),
     (section="Lunar Landing", title="Lunar Landing API", file="lunar_landing_api.md"),
     (section="Actuators", title="Actuators API", file="actuators_api.md"),
+    (section="Sensors", title="Sensors API", file="sensors_api.md"),
 )
 const BUILD_DIR = joinpath(@__DIR__, "build")
 const PUBLIC_API_REPORT = joinpath(BUILD_DIR, "undocumented_public_exports.txt")
@@ -221,6 +222,7 @@ makedocs(
             "Visualization API" => "generated/visualization_api.md",
             "Lunar Landing API" => "generated/lunar_landing_api.md",
             "Actuators API" => "generated/actuators_api.md",
+            "Sensors API" => "generated/sensors_api.md",
         ],
     ],
     doctest = true,

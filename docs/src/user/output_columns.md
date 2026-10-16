@@ -276,3 +276,12 @@ faults (`add_fault!`, see [Extensibility](../extensibility.md#Add-an-actuator)):
 | `sc1_fault_active_1` .. `sc1_fault_active_m` | — | 1 while each fault (in the order it was added) is active, 0 otherwise |
 
 The `actuator_level` columns show the levels as the faults leave them.
+
+### Sensors
+
+Written with the default save-field list when a spacecraft carries sensors
+(`add_sensor!`, see [Extensibility](../extensibility.md#Add-a-sensor)):
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_sensor_1` .. `sc1_sensor_n` | the sensor's | The latest measurement of every sensor, sensors in mounting order and their components in order: a rate gyro's three rates (rad/s) and a magnetometer's three field components (T), in the sensor's frame; a star tracker's estimate of the body's attitude (a quaternion, inertial to body, scalar last); NaN before a sensor's first sample |
