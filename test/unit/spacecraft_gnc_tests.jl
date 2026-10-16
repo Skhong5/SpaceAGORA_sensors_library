@@ -7,8 +7,8 @@ struct SgPushEffector <: SpaceAGORA.AbstractControlEffectorModel
     force_n::SVector{3, Float64}
 end
 SpaceAGORA.calcControlEffect!(::SgPushEffector, u, p::SpaceAGORA.SimulationModel.ODEParams, t::Float64, i::Int) = nothing
-SpaceAGORA.calcControlForceTorque(m::SgPushEffector, u::AbstractVector, p::SpaceAGORA.SimulationModel.ODEParams, i::Int, t::Float64) =
-    i == m.sat_idx ? (m.force_n, SVector{3, Float64}(0.0, 0.0, 0.0)) :
+SpaceAGORA.control_wrench(m::SgPushEffector, x::SpaceAGORA.StateSample, p::SpaceAGORA.SimulationModel.ODEParams, t::Float64) =
+    x.spacecraft_index == m.sat_idx ? (m.force_n, SVector{3, Float64}(0.0, 0.0, 0.0)) :
                      (SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
 SpaceAGORA.bind_spacecraft(m::SgPushEffector, sat_idx::Int) = SgPushEffector(sat_idx, m.force_n)
 

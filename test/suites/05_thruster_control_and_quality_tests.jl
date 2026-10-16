@@ -34,54 +34,57 @@
     )
     p = ODEParams(n_sats=1, args=args)
     u = build_initial_conditions(args).sc[1]
+    # The state sample the control output hooks receive for spacecraft `i`.
+    x_of(u_, i) = StateSample(SVector{3, Float64}(u_.pos), SVector{3, Float64}(u_.vel), Float64(u_.mass);
+        spacecraft_index=i)
 
     _burn_plan(p_, sat_idx) = p_.shared_buffers.maneuver_burn_plans[sat_idx]
     _clear_burn_plan!(p_, sat_idx) = (p_.shared_buffers.maneuver_burn_plans[sat_idx] = PropulsiveBurnPlan())
     _expected_burn_duration(mass_kg, thrust_n, isp_s, delta_v_mps) =
         mass_kg * isp_s * 9.80665 * (1.0 - exp(-delta_v_mps / (isp_s * 9.80665))) / thrust_n
 
-    @testset "calcControlForceTorque" begin
+    @testset "control_wrench" begin
         model = make_base_thruster_model(thrust=2.0, direction=0.0, start_burn_time=50.0, stop_burn_time=150.0)
 
-        force_pre, torque_pre = calcControlForceTorque(model, u, p, 1, 49.9)
+        force_pre, torque_pre = control_wrench(model, x_of(u, 1), p, 49.9)
         @test force_pre == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test torque_pre == SVector{3, Float64}(0.0, 0.0, 0.0)
 
         expected_dir = normalize(SVector{3, Float64}(u.vel))
         # At the window's ends the thrust follows the burn's state, which the run
         # switches between integration steps (`refresh_burn!` at each end).
-        @test calcControlForceTorque(model, u, p, 1, 50.0)[1] == SVector{3, Float64}(0.0, 0.0, 0.0)   # not lit yet
+        @test control_wrench(model, x_of(u, 1), p, 50.0)[1] == SVector{3, Float64}(0.0, 0.0, 0.0)   # not lit yet
         SimulationModel.ControlHooks.refresh_burn!(model, p, 1, 50.0)
-        force_start, torque_start = calcControlForceTorque(model, u, p, 1, 50.0)
+        force_start, torque_start = control_wrench(model, x_of(u, 1), p, 50.0)
         @test isapprox(force_start, 2.0 .* expected_dir; atol=1e-12, rtol=0.0)
         @test torque_start == SVector{3, Float64}(0.0, 0.0, 0.0)
 
-        force_mid, _ = calcControlForceTorque(model, u, p, 1, 100.0)
+        force_mid, _ = control_wrench(model, x_of(u, 1), p, 100.0)
         @test isapprox(force_mid, 2.0 .* expected_dir; atol=1e-12, rtol=0.0)
 
-        force_stop, _ = calcControlForceTorque(model, u, p, 1, 150.0)        # the step ending at the stop burns
+        force_stop, _ = control_wrench(model, x_of(u, 1), p, 150.0)        # the step ending at the stop burns
         @test isapprox(force_stop, 2.0 .* expected_dir; atol=1e-12, rtol=0.0)
         SimulationModel.ControlHooks.refresh_burn!(model, p, 1, 150.0)
-        @test calcControlForceTorque(model, u, p, 1, 150.0)[1] == SVector{3, Float64}(0.0, 0.0, 0.0)  # and the next one coasts
+        @test control_wrench(model, x_of(u, 1), p, 150.0)[1] == SVector{3, Float64}(0.0, 0.0, 0.0)  # and the next one coasts
 
-        force_post, _ = calcControlForceTorque(model, u, p, 1, 150.1)
+        force_post, _ = control_wrench(model, x_of(u, 1), p, 150.1)
         @test force_post == SVector{3, Float64}(0.0, 0.0, 0.0)
 
         model.direction[1] = π
-        force_retro, _ = calcControlForceTorque(model, u, p, 1, 100.0)
+        force_retro, _ = control_wrench(model, x_of(u, 1), p, 100.0)
         @test dot(force_retro, expected_dir) < 0.0
 
         u_zero = ComponentVector(pos=[0.0, 0.0, 0.0], vel=[0.0, 0.0, 0.0], mass=1.0, heat_loads=[0.0])
-        force_zero, torque_zero = calcControlForceTorque(model, u_zero, p, 1, 100.0)
+        force_zero, torque_zero = control_wrench(model, x_of(u_zero, 1), p, 100.0)
         @test force_zero == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test torque_zero == SVector{3, Float64}(0.0, 0.0, 0.0)
 
-        force_oob, torque_oob = calcControlForceTorque(model, u, p, 2, 100.0)
+        force_oob, torque_oob = control_wrench(model, x_of(u, 2), p, 100.0)
         @test force_oob == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test torque_oob == SVector{3, Float64}(0.0, 0.0, 0.0)
     end
 
-    @testset "calcControlMassFlowRate" begin
+    @testset "control_propellant_rate" begin
         model = make_base_thruster_model(
             thrust=2.0,
             direction=0.0,
@@ -90,14 +93,14 @@
             Isp=300.0
         )
 
-        mdot_pre = calcControlMassFlowRate(model, u, p, 1, 49.9)
+        mdot_pre = control_propellant_rate(model, x_of(u, 1), p, 49.9)
         @test mdot_pre == 0.0
 
-        mdot_on = calcControlMassFlowRate(model, u, p, 1, 100.0)
-        expected_mdot = -2.0 / (300.0 * 9.80665)
+        mdot_on = control_propellant_rate(model, x_of(u, 1), p, 100.0)
+        expected_mdot = 2.0 / (300.0 * 9.80665)
         @test isapprox(mdot_on, expected_mdot; atol=1e-14, rtol=0.0)
 
-        mdot_post = calcControlMassFlowRate(model, u, p, 1, 150.1)
+        mdot_post = control_propellant_rate(model, x_of(u, 1), p, 150.1)
         @test mdot_post == 0.0
 
         model_bad_isp = make_base_thruster_model(
@@ -107,17 +110,18 @@
             stop_burn_time=150.0,
             Isp=0.0
         )
-        @test calcControlMassFlowRate(model_bad_isp, u, p, 1, 100.0) == 0.0
+        @test control_propellant_rate(model_bad_isp, x_of(u, 1), p, 100.0) == 0.0
 
         u_zero = ComponentVector(pos=[0.0, 0.0, 0.0], vel=[0.0, 0.0, 0.0], mass=1.0, heat_loads=[0.0])
-        @test calcControlMassFlowRate(model, u_zero, p, 1, 100.0) == 0.0
-        @test calcControlMassFlowRate(model, u, p, 2, 100.0) == 0.0
+        @test control_propellant_rate(model, x_of(u_zero, 1), p, 100.0) == 0.0
+        @test control_propellant_rate(model, x_of(u, 2), p, 100.0) == 0.0
 
         model_subtyped = TimedTangentialThrusterModel(1.0, +1.0, 10.0, 20.0)
-        @test calcControlMassFlowRate(model_subtyped, u, p, 1, 15.0) == 0.0
+        # Without a rate hook the dynamics take the rate as zero.
+        @test SpaceAGORA.SimulationEngine._control_propellant_rate(model_subtyped, u, p, 1, 15.0) == 0.0
 
         struct UntypedControlEffector end
-        @test calcControlMassFlowRate(UntypedControlEffector(), u, p, 1, 100.0) == 0.0
+        @test SpaceAGORA.SimulationEngine._control_propellant_rate(UntypedControlEffector(), u, p, 1, 100.0) == 0.0
     end
 
     @testset "calcControlEffect!" begin

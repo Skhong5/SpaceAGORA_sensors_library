@@ -320,59 +320,41 @@ end
 """
     calcControlMassFlowRate(model, u, p, spacecraft_index, t) -> Float64
 
-Stable extension hook for [`AbstractControlEffectorModel`](@ref)
-implementations that consume propellant: the spacecraft's mass derivative in
-kg/s, negative while propellant is used. Effectors that use no propellant need
-no method; the fallback for any effector returns `0.0`.
+Deprecated, use [`control_propellant_rate`](@ref)`(model, x::StateSample, p, t)`;
+this name will be removed in SpaceAGORA 0.5.0. **The sign changes:** this hook
+returns the spacecraft's mass derivative in kg/s, negative while propellant is
+used, and `control_propellant_rate` returns the propellant used, positive.
 
-- `u`: the state of that spacecraft alone (`u.pos`, `u.vel`, `u.mass`, and with
-  attitude propagation `u.q` and `u.ω`), not the full state the tick receives.
-- `p`: the run's parameters.
-- `spacecraft_index`: the spacecraft's position in the run (`Int`, from 1).
-- `t`: elapsed time since the run's start epoch, in seconds (`Float64`).
+Until then the dynamics call an effector's own method of this hook when its
+type has no `control_propellant_rate`, and `run_simulation` warns once per type
+before integration starts. The arguments are those of the deprecated
+`calcControlForceTorque`. An effector with neither method uses no propellant.
 
-The spacecraft index comes before the time here, as in `calcControlForceTorque`
-and `calcReactionWheelTorque`, and after it in `calcControlEffect!`. The engine
-calls this at every right-hand-side evaluation in `:ideal` actuation, so return
-the rate held since the last `calcControlEffect!` tick. The fallback types none
-of its arguments, so a method for your effector's type needs no other
-annotation. The `BaseThrusterModel` method returns `-norm(force) / (Isp * g0)`
-during an active valid burn and `0.0` otherwise.
+A direct call on an effector that implements `control_propellant_rate` returns
+that hook's result negated, and warns once per type that it is deprecated
+(under `julia --depwarn=error` it throws instead). On any other effector it
+returns `0.0`.
 """
 function calcControlMassFlowRate end
-
-function calcControlMassFlowRate(model, u, p, spacecraft_index, t)
-    return 0.0
-end
 
 """
     calcReactionWheelTorque(model, u, p, spacecraft_index, t) -> Union{Nothing, AbstractVector}
 
-Optional hook for a control effector that drives reaction wheels: the part of
-its commanded torque on the spacecraft at `spacecraft_index` that the wheels
-produce, a 3-vector in the bus frame in N·m. Return `nothing`, the default for
-any effector type that does not override this method, when the effector drives
-no wheel.
+Deprecated, use [`control_wheel_torque`](@ref)`(model, x::StateSample, p, t)`;
+this name will be removed in SpaceAGORA 0.5.0. The torque, its frame and how
+the dynamics apply it are unchanged.
 
-The momentum stored in the wheels (the `h_wheels` state) changes at the
-opposite rate, mapped onto the wheel axes. In `:ideal` actuation the engine
-applies this torque only to the wheels: the effector includes it in the torque
-its `calcControlForceTorque` returns. In `:mounted` actuation the engine adds
-it to the torque of the mounted actuators.
+Until then the dynamics call an effector's own method of this hook when its
+type has no `control_wheel_torque`, and `run_simulation` warns once per type
+before integration starts. The arguments are those of the deprecated
+`calcControlForceTorque`. An effector with neither method drives no wheel.
 
-`u` is the state of that spacecraft alone, `p` the run's parameters,
-`spacecraft_index` the spacecraft's position in the run (from 1) and `t` the
-elapsed time in seconds; the index comes before the time, as in
-`calcControlForceTorque`. The engine calls this at every right-hand-side
-evaluation, so return the torque held since the last `calcControlEffect!` tick
-rather than recomputing the control law here. The fallback types none of its
-arguments, so a method for your effector's type needs no other annotation.
+A direct call on an effector that implements `control_wheel_torque` returns
+that hook's result, and warns once per type that it is deprecated (under
+`julia --depwarn=error` it throws instead). On any other effector it returns
+`nothing`.
 """
 function calcReactionWheelTorque end
-
-function calcReactionWheelTorque(model, u, p, spacecraft_index, t)
-    return nothing
-end
 
 """
     control_thruster_levels(controlModel::BaseThrusterModel, i)
@@ -407,11 +389,11 @@ function _thruster_levels_at(controlModel::BaseThrusterModel, i::Int, t)
 end
 
 """
-    calcControlForceTorque(model::BaseThrusterModel, u, p, spacecraft_index, t)
+    control_wrench(model::BaseThrusterModel, x::StateSample, p, t)
 
-The maneuver engine's force and torque on the spacecraft at `spacecraft_index`
-(see the generic `calcControlForceTorque` for the arguments, frames and
-units). During the effective burn window, thrust is parallel or
+The maneuver engine's force and torque on the spacecraft at
+`x.spacecraft_index` (see the generic `control_wrench` for the arguments,
+frames and units). During the effective burn window, thrust is parallel or
 antiparallel to the inertial velocity according to the configured direction;
 torque is zero. Outside the burn window or for invalid thrust inputs, both
 vectors are zero. At the window's ends, where the run stops, the thrust
@@ -419,15 +401,16 @@ follows the burn's state, which the run switches between integration steps
 (see `refresh_burn!`): a step that ends at the start coasts, a step that ends
 at the stop burns.
 """
-function calcControlForceTorque(controlModel::BaseThrusterModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+function control_wrench(controlModel::BaseThrusterModel, x::StateSample, p::ODEParams, t::Float64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     # Calculate the control force and torque based on the thruster model and current state
+    i = x.spacecraft_index
     if i < 1 || i > length(controlModel.thrust)
         return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     end
     start_time, stop_time = _effective_burn_window(controlModel, p, i)
     if _burn_active(controlModel, i, t, start_time, stop_time)
         thrust_mag, _ = _effective_thrust_isp(controlModel, p, i)
-        vel_vec = SVector{3, Float64}(u.vel)
+        vel_vec = x.vel_ii
         vel_mag = norm(vel_vec)
         direction_rad = _effective_direction_rad(controlModel, p, i)
         if vel_mag == 0.0 || !isfinite(vel_mag) || !isfinite(thrust_mag) || thrust_mag <= 0.0 || !isfinite(direction_rad)
@@ -446,7 +429,10 @@ function calcControlForceTorque(controlModel::BaseThrusterModel, u::AbstractVect
     return force, torque
 end
 
-function calcControlMassFlowRate(controlModel::BaseThrusterModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
+# The propellant the maneuver engine uses, in kg/s: `norm(force) / (Isp * g0)`
+# during an active valid burn, 0.0 otherwise.
+function control_propellant_rate(controlModel::BaseThrusterModel, x::StateSample, p::ODEParams, t::Float64)::Float64
+    i = x.spacecraft_index
     if i < 1 || i > length(controlModel.thrust)
         return 0.0
     end
@@ -461,13 +447,13 @@ function calcControlMassFlowRate(controlModel::BaseThrusterModel, u::AbstractVec
         return 0.0
     end
 
-    force, _ = calcControlForceTorque(controlModel, u, p, i, t)
+    force, _ = control_wrench(controlModel, x, p, t)
     applied_thrust = norm(force)
     if !isfinite(applied_thrust) || applied_thrust <= 0.0
         return 0.0
     end
 
-    return -propellant_mass_rate(applied_thrust, Isp)
+    return propellant_mass_rate(applied_thrust, Isp)
 end
 
 """
@@ -478,7 +464,7 @@ the spacecraft), `p` holds the simulation parameters, and `t` is elapsed time
 in seconds. This method schedules eligible maneuvers around apoapsis, updates
 the model's burn times and the stored burn plan, preserves an active burn's
 schedule, and clears completed burns. It does not directly compute or store
-force and torque; [`calcControlForceTorque`](@ref) evaluates the scheduled
+force and torque; [`control_wrench`](@ref) evaluates the scheduled
 thrust during dynamics evaluation.
 """
 function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector, p::ODEParams, t::Float64, i::Int64)

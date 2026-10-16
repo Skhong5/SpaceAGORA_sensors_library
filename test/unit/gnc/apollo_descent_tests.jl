@@ -455,9 +455,10 @@ end
         @test result.u[end].sc[2].mass < sc.dry_mass + sc.prop_mass
         @test control.actuators.thrust_n[2] == 0
         @test control.actuators.torque_nm[2] == zero(SVector{3,Float64})
-        @test CH.calcControlForceTorque(control, result.u[end].sc[2], result.prob.p, 2, result.t[end]) ==
+        x_end = SpaceAGORA.SimulationEngine._control_state_sample(result.u[end].sc[2], result.prob.p, 2)
+        @test CH.control_wrench(control, x_end, result.prob.p, result.t[end]) ==
             (zero(SVector{3,Float64}), zero(SVector{3,Float64}))
-        @test CH.calcControlMassFlowRate(control, result.u[end].sc[2], result.prob.p, 2, result.t[end]) == 0.0
+        @test CH.control_propellant_rate(control, x_end, result.prob.p, result.t[end]) == 0.0
 
     end
 
