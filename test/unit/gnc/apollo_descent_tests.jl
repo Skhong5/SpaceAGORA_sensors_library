@@ -10,6 +10,14 @@ const SM = SpaceAGORA.SimulationModel
 const GH = SM.GuidanceHooks
 const CH = SM.ControlHooks
 
+# A user's own guidance or control model that works through an ApolloDescentState.
+struct CustomDescentGuidance <: SpaceAGORA.AbstractGuidanceModel
+    state::ApolloDescentState
+end
+struct CustomDescentControl <: SpaceAGORA.AbstractControlEffectorModel
+    state::ApolloDescentState
+end
+
 @testset "ApolloDescent" begin
     @testset "quadratic law" begin
         ph = DescentPhaseTargets(name=:test, r_T=SVector(0.0, 0.0, 30.0), v_T=SVector(0.0, 0.0, -1.0), a_T=SVector(0.0, 0.0, 0.0), t_go_initial_s=100.0, t_go_min_s=4.0)
@@ -443,6 +451,16 @@ const CH = SM.ControlHooks
             gnc((guide(state, (1,)),), (ctrl(state, (1, 2)),)))
         @test_logs (:warn, r"not paired: spacecraft 2 have an ApolloDescentGuidanceModel but no ApolloDescentControlModel on the same ApolloDescentState, so no control flies their guidance commands\. Build both") preflight(
             gnc((guide(state, (1, 2)),), (ctrl(state, (1,)),)))
+        # Mixed: spacecraft 1 flies an Apollo pair and spacecraft 2's Apollo control is
+        # fed by a guidance model of another type (or the mirror case). Which spacecraft
+        # that model serves is not declared, so its direction is not checked.
+        @test_logs preflight(gnc((guide(state, (1,)), CustomDescentGuidance(state)), (ctrl(state, (1, 2)),)))
+        @test_logs preflight(gnc((guide(state, (1, 2)),), (ctrl(state, (1,)), CustomDescentControl(state))))
+        # The other direction is still checked.
+        @test_logs (:warn, r"not paired: spacecraft 2 have an ApolloDescentGuidanceModel but no ApolloDescentControlModel on the same ApolloDescentState, so no control flies their guidance commands\. Build both") preflight(
+            gnc((guide(state, (1, 2)), CustomDescentGuidance(state)), (ctrl(state, (1,)),)))
+        @test_logs (:warn, r"not paired: spacecraft 2 have an ApolloDescentControlModel but no ApolloDescentGuidanceModel on the same ApolloDescentState, so their descent engine never receives a command\. Build both") preflight(
+            gnc((guide(state, (1,)),), (ctrl(state, (1, 2)), CustomDescentControl(state))))
     end
 end
 

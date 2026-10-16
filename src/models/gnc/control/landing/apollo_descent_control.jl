@@ -84,7 +84,9 @@ Control effector paired with `ApolloDescentGuidanceModel` through the
 shared [`ApolloDescentState`](@ref). Carries the terrain model so the engine
 registers the touchdown event on it. When a configuration has both models,
 `run_simulation` warns before the run (once per session) if any spacecraft is
-guided or controlled without its counterpart on the same state.
+guided or controlled without its counterpart on the same state. A guidance (or
+control) model of another type in the configuration may write (or fly) the
+state, so the check then skips spacecraft without Apollo guidance (or control).
 
 `actuation=:ideal` applies the slew-limited engine thrust along body -z and
 the clamped attitude torque directly, with the configured specific impulses.
@@ -127,19 +129,32 @@ import ..GuidanceHooks
 # When a configuration has both models, a spacecraft controlled on a state that
 # no Apollo guidance guides it on never gets a command (the engine stays off),
 # and one guided without control is never flown. A configuration with only one
-# side is not checked.
+# side is not checked. Nor is a direction where the configuration also has a
+# guidance (or control) model of another type: it may write (or fly) the
+# state, and which spacecraft it serves is not declared.
 function _apollo_unpaired_spacecraft(args)
     guided = IdDict{ApolloDescentState, Set{Int}}()
     controlled = IdDict{ApolloDescentState, Set{Int}}()
+    other_guidance = false
+    other_control = false
     for g in args.guidance_model.guidance_effectors
-        g isa GuidanceHooks.ApolloDescentGuidanceModel && union!(get!(Set{Int}, guided, g.state), g.spacecraft_indices)
+        if g isa GuidanceHooks.ApolloDescentGuidanceModel
+            union!(get!(Set{Int}, guided, g.state), g.spacecraft_indices)
+        else
+            other_guidance = true
+        end
     end
     for c in args.control_model.control_effectors
-        c isa ApolloDescentControlModel && union!(get!(Set{Int}, controlled, c.state), c.spacecraft_indices)
+        if c isa ApolloDescentControlModel
+            union!(get!(Set{Int}, controlled, c.state), c.spacecraft_indices)
+        else
+            other_control = true
+        end
     end
     (isempty(guided) || isempty(controlled)) && return (unguided=Int[], uncontrolled=Int[])
     unpaired(from, to) = sort!(unique!([i for (state, ids) in from for i in setdiff(ids, get(to, state, Set{Int}()))]))
-    return (unguided=unpaired(controlled, guided), uncontrolled=unpaired(guided, controlled))
+    return (unguided=other_guidance ? Int[] : unpaired(controlled, guided),
+            uncontrolled=other_control ? Int[] : unpaired(guided, controlled))
 end
 
 function SimulationLifecycle.preflight_control(c::ApolloDescentControlModel, args; isolate_state)

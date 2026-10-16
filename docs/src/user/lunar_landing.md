@@ -104,7 +104,9 @@ drains propellant through both. The two effectors share an
 altitude, site-frame state, touchdown record). Build both from the same state
 with the same `spacecraft_indices`: the control flies only the commands its
 guidance writes there, and `run_simulation` warns before the run when a
-spacecraft has one model without the other on that state. Run the simulation with
+spacecraft has one model without the other on that state. A guidance model of
+another type in the configuration may write the state, so the check then skips
+spacecraft without Apollo guidance; likewise for control. Run the simulation with
 `isolate_state=false` when you want to read that state afterwards; the demo
 also saves thrust, throttle, time-to-go, radar altitude, phase and attitude
 error as result columns.
