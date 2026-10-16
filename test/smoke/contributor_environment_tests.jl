@@ -169,6 +169,39 @@ env(fixture, name="env") = joinpath(fixture.temporary, name)
             rm(joinpath(fixture.repo, "test"); recursive=true)
         end
 
+        @testset "Every direct dependency keeps its source" begin
+            # The environment lists the repository's dependencies directly, so a source the
+            # package declares does not reach them through the developed package: carry it.
+            shared = "7e3c1a2b-3333-4444-8555-666677778888"
+            test_project = joinpath(fixture.repo, "test", "Project.toml")
+            own = d -> begin
+                d["deps"]["Shared"] = shared
+                d["sources"] = Dict("Shared" => Dict("path" => "deps/Shared"))
+            end
+            with_project(fixture, own) do
+                for kind in ("package", "project")
+                    @test plan(kind, fixture.repo, env(fixture); root=fixture.core).project["sources"]["Shared"] ==
+                          Dict("path" => joinpath(fixture.repo, "deps", "Shared"))
+                end
+            end
+            # A test-project source for a dependency of the package itself is carried too.
+            write_toml(test_project, Dict("deps" => Dict("Shared" => shared),
+                                          "sources" => Dict("Shared" => Dict("path" => "../vendor/Shared"))))
+            with_project(fixture, d -> d["deps"]["Shared"] = shared) do
+                @test plan("package", fixture.repo, env(fixture); root=fixture.core).project["sources"]["Shared"] ==
+                      Dict("path" => joinpath(fixture.repo, "vendor", "Shared"))
+            end
+            # Both declare one: the test project's wins for a package, as under Pkg.test;
+            # the project's own wins for a project, which is the environment its tests run in.
+            with_project(fixture, own) do
+                @test plan("package", fixture.repo, env(fixture); root=fixture.core).project["sources"]["Shared"] ==
+                      Dict("path" => joinpath(fixture.repo, "vendor", "Shared"))
+                @test plan("project", fixture.repo, env(fixture); root=fixture.core).project["sources"]["Shared"] ==
+                      Dict("path" => joinpath(fixture.repo, "deps", "Shared"))
+            end
+            rm(joinpath(fixture.repo, "test"); recursive=true)
+        end
+
         @testset "The pin file must name the tested commit" begin
             other = repeat("a", 40)
             for (label, edit, reason) in (

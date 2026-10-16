@@ -247,17 +247,14 @@ function plan(kind, repository, environment; manifest="core", rev=nothing, root=
         sources[package.name] = Dict("path" => repository)
         push!(developed, repository)
     end
-    # A project is the environment's template, so its other sources apply. A package's
-    # own sources reach the environment through the package, but sources of test-only
-    # dependencies come from the test project, relative to test/.
-    if kind == "project"
-        for (name, entry) in get(project, "sources", Dict{String,Any}())
-            haskey(sources, name) || (sources[name] = rerooted(entry, repository))
-        end
-    end
-    for (name, entry) in get(tests, "sources", Dict{String,Any}())
-        haskey(sources, name) || haskey(get(project, "deps", Dict{String,Any}()), name) ||
-            (sources[name] = rerooted(entry, joinpath(repository, "test")))
+    # Every direct dependency keeps its source: listed in the environment, it no longer
+    # takes one from the developed package. The test project's entry (relative to test/)
+    # wins for a package, as under Pkg.test; a project's own entry wins, since the
+    # project is the environment its tests run in.
+    own = Dict(name => rerooted(entry, repository) for (name, entry) in get(project, "sources", Dict{String,Any}()))
+    test = Dict(name => rerooted(entry, joinpath(repository, "test")) for (name, entry) in get(tests, "sources", Dict{String,Any}()))
+    for (name, entry) in (kind == "project" ? merge(test, own) : merge(own, test))
+        haskey(deps, name) && !haskey(sources, name) && (sources[name] = entry)
     end
     compat = environment_compat(project, tests, testfile, deps)
     return (; kind, repository, file, package, pin, core, destination, manifest, seed, companions,
