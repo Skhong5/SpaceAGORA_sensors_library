@@ -7,7 +7,9 @@ isfile(joinpath(@__DIR__, "Manifest.toml")) && Pkg.update("GRAMSuite")
 Pkg.instantiate()
 # EDG is a separately installed provider even for the frozen-atmosphere example.
 # Keep its environment outside both source checkouts; persist only the selected
-# dependency in this example's already explicit environment.
+# dependency in this example's already explicit environment. PRESERVE_TIERED keeps
+# every resolved version when it can and otherwise moves indirect packages first:
+# the provider's NLsolve 4 can need an older NonlinearSolve than a fresh resolve picks.
 include(joinpath(@__DIR__, "..", "..", "scripts", "optional_packages.jl"))
 provider = get(ENV, "SPACEAGORA_EDG_PATH", "")
 if isempty(provider)
@@ -16,5 +18,5 @@ else
     include(joinpath(@__DIR__, "..", "..", "scripts", "setup_edg.jl"))
     provider = EDGTestInstallation.provider_path(EDGTestInstallation.ROOT; local_path=provider)
 end
-Pkg.develop(PackageSpec(path=provider); preserve=Pkg.PRESERVE_ALL)
+Pkg.develop(PackageSpec(path=provider); preserve=Pkg.PRESERVE_TIERED)
 println("Odyssey surrogate environment is ready with the EDG provider. No native GRAM setup is required.")
