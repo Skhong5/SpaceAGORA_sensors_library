@@ -16,13 +16,24 @@ const GNC_HIDDEN_STREAM_PATTERNS = (
     r"\bGLOBAL_RNG\b",
     r"\bTaskLocalRNG\s*\(",
 )
-# The in-place forms need a separate stream and destination: a one-argument
-# `rand!(rng_buffer)` still draws from the global stream. Keywords and splats
-# cannot stand in for either of these two explicit positional arguments.
-const GNC_RANDOM_DRAW_NAMES = Tuple(name * suffix for name in
-    ("rand", "randn", "randexp", "randperm", "randcycle", "randsubseq", "shuffle")
-    for suffix in ("", "!"))
-const GNC_INPLACE_RANDOM_DRAWS = ("rand!", "randn!", "randexp!", "shuffle!")
+# Explicit-stream arities: randperm!/randcycle!(rng, A), randsubseq!(rng, S, A, p),
+# and rand!/randn!/randexp!/shuffle!(rng, A, ...). Keywords and splats cannot
+# supply required positional arguments. Extra arguments remain allowed only
+# for the last group. The table also defines every mutating name we scan, so a
+# recognized mutating draw cannot silently bypass its arity check.
+const GNC_INPLACE_RANDOM_ARITIES = Dict(
+    "rand!" => (required=2, allow_extra=true),
+    "randn!" => (required=2, allow_extra=true),
+    "randexp!" => (required=2, allow_extra=true),
+    "shuffle!" => (required=2, allow_extra=true),
+    "randperm!" => (required=2, allow_extra=false),
+    "randcycle!" => (required=2, allow_extra=false),
+    "randsubseq!" => (required=4, allow_extra=false),
+)
+const GNC_RANDOM_DRAW_NAMES = (
+    "rand", "randn", "randexp", "randperm", "randcycle", "randsubseq", "shuffle",
+    keys(GNC_INPLACE_RANDOM_ARITIES)...,
+)
 const _GNC_RANDOM_SYNTAX = Base.JuliaSyntax
 
 function _gnc_random_name(node)
@@ -46,9 +57,13 @@ function _gnc_random_draws!(violations, node, rel)
             end
             stream_name = isempty(args) ? nothing : _gnc_random_name(first(args))
             explicit_stream = stream_name !== nothing && occursin(r"rng"i, stream_name)
-            separate_destination = !(name in GNC_INPLACE_RANDOM_DRAWS) ||
-                (length(args) >= 2 && _GNC_RANDOM_SYNTAX.kind(args[2]) != _GNC_RANDOM_SYNTAX.K"...")
-            if !explicit_stream || !separate_destination
+            arity = get(GNC_INPLACE_RANDOM_ARITIES, name, nothing)
+            explicit_arguments = arity === nothing ||
+                (length(args) >= arity.required &&
+                 (arity.allow_extra || length(args) == arity.required) &&
+                 all(arg -> _GNC_RANDOM_SYNTAX.kind(arg) != _GNC_RANDOM_SYNTAX.K"...",
+                     args[1:arity.required]))
+            if !explicit_stream || !explicit_arguments
                 lineno = _GNC_RANDOM_SYNTAX.source_line(node.source, _GNC_RANDOM_SYNTAX.first_byte(node))
                 call = replace(String(_GNC_RANDOM_SYNTAX.sourcetext(node)), '\n' => ' ')
                 push!(violations, "$rel:$lineno: draw without an explicit stream as its first argument: $call")

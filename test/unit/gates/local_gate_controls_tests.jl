@@ -302,7 +302,7 @@ end
         message = "draw without an explicit stream as its first argument"
         failure = "GNC random-stream gate failed: take an explicit rng argument and pass it to every draw"
 
-        for draw in ("rand!", "randn!", "randexp!", "shuffle!")
+        for draw in ("rand!", "randn!", "randexp!", "shuffle!", "randperm!", "randcycle!")
             @testset "$draw" begin
                 for source in (
                     "rng_buffer = zeros(3); $draw(rng_buffer)\n",
@@ -329,6 +329,56 @@ end
                         @test isnothing(run_gate().failure)
                     end
                 end
+            end
+        end
+        # The permutation APIs have exactly two explicit-stream arguments.
+        for draw in ("randperm!", "randcycle!"), source in (
+            "$draw(rng, buffer, extra)\n",
+            "$draw(rng, buffer, rest...)\n",
+        )
+            _with_probe(probe, source) do
+                rejected = run_gate()
+                @test _failed_with(rejected, failure)
+                @test _reports(rejected, probe, fixture, message)
+            end
+        end
+        @testset "randsubseq!" begin
+            # A destination named rng_output is not the first of four arguments.
+            for source in (
+                "randsubseq!(rng_output, values, p)\n",
+                "Random.randsubseq!(\n    rng_output,\n    view(values, :, 1),\n    p,\n)\n",
+                "randsubseq!(rng, output)\n",
+                "randsubseq!(rng_output, values, p; keyword=rng)\n",
+                "randsubseq!(rng, output, values, p=p)\n",
+                "randsubseq!(rng..., output, values, p)\n",
+                "randsubseq!(rng, outputs..., values, p)\n",
+                "randsubseq!(rng, output, values..., p)\n",
+                "randsubseq!(rng, output, values, probabilities...)\n",
+                "randsubseq!(rng, output, values, p, extra)\n",
+            )
+                _with_probe(probe, source) do
+                    rejected = run_gate()
+                    @test _failed_with(rejected, failure)
+                    @test _reports(rejected, probe, fixture, message)
+                end
+            end
+            for source in (
+                "randsubseq!(rng, output, values, p)\n",
+                "Random.randsubseq!(\n    rng, # caller's stream\n    output,\n    view(values, :, 1),\n    p,\n)\n",
+                "randsubseq!(state.master_rng, output, values, p)\n",
+            )
+                _with_probe(probe, source) do
+                    @test isnothing(run_gate().failure)
+                end
+            end
+        end
+        # Existing variable-arity forms keep optional arguments after rng and A.
+        for draw in ("rand!", "randn!", "randexp!", "shuffle!"), source in (
+            "$draw(rng, buffer, extra)\n",
+            "$draw(rng, buffer, rest...)\n",
+        )
+            _with_probe(probe, source) do
+                @test isnothing(run_gate().failure)
             end
         end
         # Non-mutating calls still require the named first stream argument.
