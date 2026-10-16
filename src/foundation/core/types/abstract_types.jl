@@ -1,7 +1,7 @@
 module AbstractTypes
 
 export AbstractTerrainModel, AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractThermalModel, AbstractThrusterModel, AbstractControlEffectorModel, AbstractEphemeridesModel, AbstractGuidanceModel
-export AbstractActuator
+export AbstractActuator, AbstractSensor
 
 """
     AbstractForceTorqueModel
@@ -67,6 +67,16 @@ it. A kind implements `actuator_wrench` and `actuator_limits`; the other
 actuator methods have defaults. Mount it with `add_actuator!`.
 """
 abstract type AbstractActuator end
+
+"""
+    AbstractSensor
+
+Stable extension interface for a measuring instrument mounted on a spacecraft
+link: a rate gyro, a star tracker, a magnetometer, and kinds users add. A kind
+implements `sensor_measure` and `sensor_dimension`; mount it with
+`add_sensor!`. Sensors observe the state; they do not act on the dynamics.
+"""
+abstract type AbstractSensor end
 
 """
     AbstractGuidanceModel

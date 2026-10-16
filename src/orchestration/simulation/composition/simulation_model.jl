@@ -71,6 +71,9 @@ include(joinpath(@__DIR__, "..", "..", "..", "foundation", "core", "numerics", "
 # 2. Simple hardware data structs: the actuator contract, then the records
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "actuators", "actuators.jl"))
 @reexport using .Actuators
+# The sensor contract (its kinds are records of Components).
+include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "sensors", "sensors.jl"))
+@reexport using .Sensors
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "spacecraft", "components.jl"))
 @reexport using .Components
 
@@ -95,6 +98,9 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "power", "powe
 # Actuator failure modes (needs ActuatorMounting).
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "actuators", "faults.jl"))
 @reexport using .ActuatorFaults
+# Mounting sensors and reading their measurements (needs ActuatorMounting).
+include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "sensors", "mounting.jl"))
+@reexport using .SensorMounting
 
 # Articulated-body dynamics library (needs only the spacecraft model types; the runtime
 # types below hold its per-spacecraft run data).

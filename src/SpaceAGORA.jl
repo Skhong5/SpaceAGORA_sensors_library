@@ -171,7 +171,7 @@ using .SimulationModel: StateAnchor, get_state_anchor_callback
 using .SimulationModel.AbstractTypes: AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel
 using .SimulationModel.AbstractTypes: AbstractControlEffectorModel, AbstractEphemeridesModel
 using .SimulationModel.AbstractTypes: AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
-using .SimulationModel.AbstractTypes: AbstractActuator
+using .SimulationModel.AbstractTypes: AbstractActuator, AbstractSensor
 using .SimulationModel: StateSample, PlanetFrameSample, AtmosphereSample, SolarEphemerisSample
 using .SimulationModel: ThirdBodyEphemerisSample, EnvironmentSample, EffectorEnvironmentRequirements
 # Compliant multibody dynamics and robot kinematics. Historical Cloth names below
@@ -259,6 +259,8 @@ using .SimulationModel: add_actuator!, mounted_actuators, actuator_context, allo
 using .SimulationModel: propellant_mass_rate, ActuatorRequirements, actuator_requirements, applied_actuator_levels, mounted_power
 using .SimulationModel: SolarArray, Battery, PowerLoad, add_power!
 using .SimulationModel: ActuatorFault, add_fault!
+using .SimulationModel: RateGyro, StarTracker, Magnetometer, SensorTruth, sensor_measure, sensor_dimension, sensor_requirements, sensor_period_s
+using .SimulationModel: add_sensor!, mounted_sensors, sensor_measurement, sensor_measurement_time
 using .SimulationLifecycle: bind_spacecraft
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
@@ -340,6 +342,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.AbstractTypes.AbstractThermalModel) AbstractThermalModel
 @doc (@doc SimulationModel.AbstractTypes.AbstractThrusterModel) AbstractThrusterModel
 @doc (@doc SimulationModel.AbstractTypes.AbstractActuator) AbstractActuator
+@doc (@doc SimulationModel.AbstractTypes.AbstractSensor) AbstractSensor
 @doc (@doc SimulationModel.Thruster) Thruster
 @doc (@doc SimulationModel.ReactionWheel) ReactionWheel
 @doc (@doc SimulationModel.Magnetorquer) Magnetorquer
@@ -372,6 +375,18 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.add_power!) add_power!
 @doc (@doc SimulationModel.ActuatorFault) ActuatorFault
 @doc (@doc SimulationModel.add_fault!) add_fault!
+@doc (@doc SimulationModel.RateGyro) RateGyro
+@doc (@doc SimulationModel.StarTracker) StarTracker
+@doc (@doc SimulationModel.Magnetometer) Magnetometer
+@doc (@doc SimulationModel.SensorTruth) SensorTruth
+@doc (@doc SimulationModel.sensor_measure) sensor_measure
+@doc (@doc SimulationModel.sensor_dimension) sensor_dimension
+@doc (@doc SimulationModel.sensor_requirements) sensor_requirements
+@doc (@doc SimulationModel.sensor_period_s) sensor_period_s
+@doc (@doc SimulationModel.add_sensor!) add_sensor!
+@doc (@doc SimulationModel.mounted_sensors) mounted_sensors
+@doc (@doc SimulationModel.sensor_measurement) sensor_measurement
+@doc (@doc SimulationModel.sensor_measurement_time) sensor_measurement_time
 @doc (@doc SimulationModel.AbstractTypes.AbstractGuidanceModel) AbstractGuidanceModel
 @doc (@doc SimulationModel.StateSample) StateSample
 @doc (@doc SimulationModel.PlanetFrameSample) PlanetFrameSample
@@ -642,6 +657,8 @@ export add_actuator!, mounted_actuators, actuator_context, allocation_matrix, mo
 export propellant_mass_rate, ActuatorRequirements, actuator_requirements, applied_actuator_levels, mounted_power
 export SolarArray, Battery, PowerLoad, add_power!
 export ActuatorFault, add_fault!
+export AbstractSensor, RateGyro, StarTracker, Magnetometer, SensorTruth, sensor_measure, sensor_dimension, sensor_requirements, sensor_period_s
+export add_sensor!, mounted_sensors, sensor_measurement, sensor_measurement_time
 export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 export SolarPanelAngleOfAttackControlModel

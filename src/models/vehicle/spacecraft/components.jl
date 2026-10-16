@@ -2,7 +2,11 @@ module Components
 
 using StaticArrays
 using LinearAlgebra
-using ..AbstractTypes: AbstractActuator
+using ..AbstractTypes: AbstractActuator, AbstractSensor
+using ..QuaternionMath: rot, dcm_to_quaternion
+using Random: randn
+using ..Sensors: SensorTruth
+import ..Sensors: sensor_measure, sensor_dimension, sensor_requirements
 using ..ThrusterModels: SixAxisThrusterModel
 using ..Actuators: ActuatorContext, ActuatorRequirements, STANDARD_GRAVITY_MPS2, actuator_saturate, propellant_mass_rate
 import ..Actuators: actuator_wrench, actuator_limits, actuator_consumption, actuator_requirements
@@ -10,6 +14,7 @@ export Facet, Thruster, Magnet, ReactionWheelAssembly, create_facet_list
 export six_axis_thrusters, ReactionWheel, wheel_momentum_saturate, wheel_power, Magnetorquer, LaserTerminal, PanelHinge, hinge_step
 export SolarArray, Battery, PowerLoad
 export ActuatorFault, FaultSet
+export RateGyro, StarTracker, Magnetometer
 
 const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 
@@ -23,6 +28,8 @@ include(joinpath(@__DIR__, "..", "actuators", "hinge.jl"))
 include(joinpath(@__DIR__, "..", "power", "power_components.jl"))
 # The actuator-fault record (mounted with ActuatorFaults.add_fault!).
 include(joinpath(@__DIR__, "..", "actuators", "fault.jl"))
+# The built-in sensor kinds (mounted with SensorMounting.add_sensor!).
+include(joinpath(@__DIR__, "..", "sensors", "sensor_kinds.jl"))
 
 @kwdef mutable struct Facet
     area::Float64 = 0.0 # Area of the facet
