@@ -645,6 +645,7 @@ function default_save_fields(args::SimulationConfiguration)
     append!(fields, actuator_save_fields(args))
     append!(fields, power_save_fields(args))
     append!(fields, fault_save_fields(args))
+    append!(fields, sensor_save_fields(args))
     for field in visualization_save_fields(args)
         push!(fields, field)
     end

@@ -4,7 +4,7 @@ using StaticArrays
 using LinearAlgebra
 
 using ..Components
-using ..AbstractTypes: AbstractActuator
+using ..AbstractTypes: AbstractActuator, AbstractSensor
 using ..Geodesy: geodetic_altitude, ellipsoid_surface_radius, radius_for_geodetic_altitude
 using ..OrbitalGeometry
 using ..EphemeridesModels: SpiceEphemeridesModel, ephemerides_time_seconds, planet_frame_lpi
@@ -253,6 +253,8 @@ mutable struct Link
     power_loads::Vector{PowerLoad}
     # Actuator faults of the spacecraft (kept on its root link; see ActuatorFaults.add_fault!).
     faults::FaultSet
+    # Sensors mounted on the link (see SensorMounting.add_sensor!); the link's frame is theirs.
+    sensors::Vector{AbstractSensor}
 
     function Link(; root=false,
         r=MVector{3, Float64}(0, 0, 0),
@@ -290,7 +292,8 @@ mutable struct Link
         solar_arrays=SolarArray[],
         batteries=Battery[],
         power_loads=PowerLoad[],
-        faults=FaultSet())
+        faults=FaultSet(),
+        sensors=AbstractSensor[])
 
         n_rw = size(J_rw, 2)
         rw_assembly = ReactionWheelAssembly(
@@ -303,7 +306,8 @@ mutable struct Link
             tau_body_net=MVector{3, Float64}(zeros(3))      # tau_body_net
         )
         new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, reflection_coefficient, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, thrusters, magnets, cop_offset_b, Vector{Magnetorquer}(magnetorquers), Vector{LaserTerminal}(laser_terminals), Vector{PanelHinge}(hinges), Vector{AbstractActuator}(custom_actuators),
-            Vector{SolarArray}(solar_arrays), Vector{Battery}(batteries), Vector{PowerLoad}(power_loads), faults)
+            Vector{SolarArray}(solar_arrays), Vector{Battery}(batteries), Vector{PowerLoad}(power_loads), faults,
+            Vector{AbstractSensor}(sensors))
     end
 end
 

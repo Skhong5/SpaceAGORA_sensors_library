@@ -24,6 +24,8 @@ module NavigationHooks
       frame and `mass` (kg); with attitude propagation also `q`, the scalar-last
       quaternion from inertial to bus axes, and `ω`, the bus angular velocity in
       rad/s. These are the true values; any sensor noise is the effector's own.
+      Sensors mounted with `add_sensor!` are sampled before navigation ticks at
+      the same time; read them with `sensor_measurement(p.args.dynamics_model.spacecraft[spacecraft_index], k)`.
     - `p`: the run's parameters; `p.args` is the `SimulationConfiguration`.
     - `t`: elapsed time since the run's start epoch, in seconds (`Float64`).
     - `spacecraft_index`: the spacecraft's position in the run (`Int`, from 1), not its ID.

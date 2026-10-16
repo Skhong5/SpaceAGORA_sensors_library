@@ -95,7 +95,6 @@ const RETIRED_PATHS = (
     # the laser-terminal placeholder; the kind is src/models/vehicle/actuators/laser.jl
     joinpath("experimental", "vehicle", "laser_terminal"),
     joinpath("src", "models", "vehicle", "resources"),
-    joinpath("src", "models", "vehicle", "sensors"),
     joinpath("src", "models", "gnc", "guidance", "targeting_control"),
     joinpath("src", "models", "gnc", "control", "heatload_control"),
     # browser rendering belongs to the optional SpaceAGORAVisualizer companion

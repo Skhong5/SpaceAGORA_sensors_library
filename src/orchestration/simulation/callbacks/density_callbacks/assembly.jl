@@ -252,6 +252,8 @@ function get_callbacks(
     end
 
     if !backbone_mode
+        # Sensors sample before navigation reads them at the same time.
+        callbacks = _append_callbacks(callbacks, get_sensor_callbacks(num_sats, args))
         callbacks = _append_callbacks(callbacks, get_navigation_callbacks(num_sats, args))
         guidance_callbacks = get_guidance_callbacks(num_sats, args)
         guidance_models = args.guidance_model.guidance_effectors

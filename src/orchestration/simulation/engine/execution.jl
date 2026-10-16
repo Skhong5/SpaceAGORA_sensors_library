@@ -186,6 +186,13 @@ end
         throw(ArgumentError("A spacecraft with a battery needs a solver mode that integrates the full right-hand side; " *
             "solver_mode=$(repr(mode)) splits it. Use :tsit5, :dp8, :rodas5p or :auto_stiff."))
     end
+    # The gravity backbone runs no sensor sampling, and multirate subsolves
+    # revisit overlapping intervals, which would sample twice or out of order.
+    if mode in (:gravity_backbone_split, :multirate) &&
+            any(sc -> !isempty(SimulationModel.mounted_sensors(sc)), p.args.dynamics_model.spacecraft)
+        throw(ArgumentError("Mounted sensors need a solver mode that takes each step once with the run's callbacks; " *
+            "solver_mode=$(repr(mode)) does not. Use :tsit5, :dp8, :rodas5p, :auto_stiff or :split_imex."))
+    end
     if mode == :gravity_backbone_split
         q0, dq0 = _gravity_backbone_initial_states(u0, p.args)
         return SecondOrderODEProblem(

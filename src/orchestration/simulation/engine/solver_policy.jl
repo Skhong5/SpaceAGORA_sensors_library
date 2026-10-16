@@ -196,6 +196,8 @@ end
     isempty(args.control_model.control_effectors) || return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires no control effectors."
     isempty(args.guidance_model.guidance_effectors) || return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires no guidance effectors."
     isempty(args.navigation_model.navigation_effectors) || return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires no navigation effectors."
+    any(sc -> !isempty(SimulationModel.mounted_sensors(sc)), args.dynamics_model.spacecraft) &&
+        return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires no mounted sensors (it runs no sensor sampling)."
     effectors = args.dynamics_model.dynamic_effectors
     isempty(effectors) && return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires at least one supported gravity effector."
     has_core = false
