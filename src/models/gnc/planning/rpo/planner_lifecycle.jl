@@ -18,8 +18,8 @@ struct RPOPlanningEvent
     end
 end
 
-"""Planning failure with copied run diagnostics, original cause and backtrace."""
-struct RPOPlanningError <: Exception
+"""Planning failure with copied run diagnostics, original cause and backtrace; a `GNCAlgorithms.GNCAlgorithmError`."""
+struct RPOPlanningError <: GA.GNCAlgorithmError
     chaser_id::Int
     request_id::Int
     reason::Symbol

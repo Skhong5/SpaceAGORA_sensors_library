@@ -106,6 +106,26 @@ lifecycle to install validated references. The current pilot refuses checkpoint
 writing and resume because they do not restore its complete run-owned state;
 a planner capability declaration does not remove that restriction.
 
+## The general algorithm contract
+
+The RPO contract is the first family of SpaceAGORA's general algorithm contract,
+the [GNC Algorithm Contract API](../generated/gnc_algorithm_contract_api.md).
+`AbstractRPOPlanner` is an `AbstractGNCAlgorithm` of the `RPOReferenceFamily`,
+and the general functions forward to the RPO names:
+
+| General | RPO |
+| --- | --- |
+| `propose!(state, algorithm, request, rng)` | `plan_rpo!` |
+| `propose_revision!(state, algorithm, request, active_product, rng)` | `retime_rpo!` |
+| `algorithm_capabilities`, `initialize_algorithm`, `require_algorithm_support` | `planner_capabilities`, `initialize_planner`, `require_planner_support` |
+| `validate_capabilities(family, ...)`, `validate_proposal(family, ...)` | `validate_rpo_capabilities`, `validate_rpo_result` |
+| `is_current(family, ...)` | `rpo_reference_is_current` |
+
+The family's rejection policy is `:fail`, and `RPOPlanningError` is a
+`GNCAlgorithmError`. A planner that draws no random numbers declares
+`consumes_rng(planner) = false`, as `DirectRPOPlanner` does; contract tests then
+check that a proposal leaves the stream unchanged. The RPO names remain the
+supported way to write an RPO planner.
 
 ## Built-in planners
 
