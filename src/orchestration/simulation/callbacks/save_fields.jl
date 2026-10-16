@@ -280,14 +280,20 @@ end
 
 # The firing levels an effector reports for spacecraft `i`: its own
 # `control_thruster_levels`, or, for an effector in `:mounted` actuation that
-# does not report them, the mounted thrusters' fractions at the levels it holds.
+# does not report them, the mounted thrusters' fractions at the levels it
+# holds, as the faults and the shedding leave them. A `:mounted` effector on a
+# spacecraft with faults always takes the mounted fractions, so the columns
+# and the plumes show what the faulted thrusters deliver.
 @inline function _effector_thruster_levels(effector, i::Int, spacecraft)
-    reported = control_thruster_levels(effector, i)
-    reported === nothing || return reported
-    actuation_mode(effector) === :mounted || return nothing
+    mounted = actuation_mode(effector) === :mounted
+    if !(mounted && has_faults(spacecraft))
+        reported = control_thruster_levels(effector, i)
+        reported === nothing || return reported
+    end
+    mounted || return nothing
     levels = actuator_levels(effector, i)
     levels === nothing && return nothing
-    return mounted_thruster_fractions(spacecraft, levels)
+    return mounted_thruster_fractions(spacecraft, shed_levels(spacecraft, faulted_levels(spacecraft, levels)))
 end
 
 @inline function _save_thruster_levels(num_sats::Int, counts::Vector{Int}, u, t, integrator)
@@ -373,7 +379,7 @@ function _save_actuator_levels(num_sats::Int, counts::Vector{Int}, u, t, integra
     @inbounds for i in 1:num_sats
         levels = counts[i] == 0 ? nothing : _mounted_effector_levels(effectors, i, counts[i])
         out[i] = levels === nothing ? zeros(Float64, counts[i]) :
-            applied_actuator_levels(spacecraft[i], levels; wheel_momentum=_saved_wheel_momentum(u, i))
+            applied_actuator_levels(spacecraft[i], shed_levels(spacecraft[i], faulted_levels(spacecraft[i], levels)); wheel_momentum=_saved_wheel_momentum(u, i))
     end
     return out
 end
@@ -385,7 +391,7 @@ function _save_actuator_power(num_sats::Int, counts::Vector{Int}, u, t, integrat
     @inbounds for i in 1:num_sats
         levels = counts[i] == 0 ? nothing : _mounted_effector_levels(effectors, i, counts[i])
         out[i] = levels === nothing ? 0.0 :
-            mounted_power(spacecraft[i], levels; wheel_momentum=_saved_wheel_momentum(u, i))
+            mounted_power(spacecraft[i], shed_levels(spacecraft[i], faulted_levels(spacecraft[i], levels)); wheel_momentum=_saved_wheel_momentum(u, i))
     end
     return out
 end
@@ -636,6 +642,8 @@ function default_save_fields(args::SimulationConfiguration)
     append!(fields, attachment_save_fields(args))
     append!(fields, plume_save_fields(args))
     append!(fields, actuator_save_fields(args))
+    append!(fields, power_save_fields(args))
+    append!(fields, fault_save_fields(args))
     for field in visualization_save_fields(args)
         push!(fields, field)
     end

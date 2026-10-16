@@ -411,7 +411,7 @@ function rpo_plan_comparison_path(
             planner_refinement_time=0.0,
             planner_iteration_count=plan.iterations,
         ))
-    else
+    elseif planner == :stomp
         settings = RPOSTOMPSettings(
             n_iters=runtime_limited_iters(cfg.stomp.n_iters),
             n_rollouts=cfg.stomp.n_rollouts,
@@ -451,6 +451,8 @@ function rpo_plan_comparison_path(
             planner_refinement_time=0.0,
             planner_iteration_count=plan.iterations,
         ))
+    else
+        throw(ArgumentError("Unsupported RPO comparison planner $(planner). Expected :hypr, :pso_unrefined, :rrt_connect, :rrt_connect_bezier, :rrt_star, :chomp, or :stomp."))
     end
 end
 

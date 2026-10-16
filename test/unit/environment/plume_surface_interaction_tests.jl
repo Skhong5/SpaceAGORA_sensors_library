@@ -341,4 +341,20 @@ end
     @test errors[3] < errors[1]
     @test errors[3] < 1e-3*reference
 end
+
+@testset "the sample's run index selects the plume's spacecraft" begin
+    cfg = PlumeSurfaceConfig(nozzle_offset_m=1.0)
+    two = PlumeSurfaceInteractionModel(control([1000.0, 2000.0]); config=cfg)
+    x, env = state_environment(2.0)
+    for i in 1:2
+        xi = SM.StateSample(x.pos_ii, x.vel_ii, x.mass_kg; spacecraft_index=i)
+        @test wrench(two, xi, env, 0.0) === wrench(two, x, env, 0.0, i)
+        @test SM.DynamicEffectors.wrench_caching!(two, xi, env, 0.0, nothing, i) === wrench(two, x, env, 0.0, i)
+    end
+    @test wrench(two, x, env, 0.0, 2)[1] != wrench(two, x, env, 0.0, 1)[1]
+    @test_throws ArgumentError wrench(two, x, env, 0.0)
+    one = PlumeSurfaceInteractionModel(control([1000.0]); config=cfg)
+    @test wrench(one, x, env, 0.0) === wrench(one, x, env, 0.0, 1)
+end
+
 end # module PlumeInteractionTests

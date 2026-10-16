@@ -209,6 +209,9 @@ propellant). Both are read from the last row of the results table.
 - **Let the nozzle feel its surroundings.** Define
   `SpaceAGORA.actuator_requirements(::ColdGasNozzle) = ActuatorRequirements(atmosphere=true)`
   and the context carries the sampled atmosphere in `ctx.environment`.
+- **Make it fail.** `add_fault!(spacecraft, ActuatorFault(nozzle; kind=:failed,
+  start_s=100.0))` stops the nozzle 100 s into the burn; the speed gained
+  drops accordingly.
 - **Read what it did.** The results table has `sc1_actuator_level_1`, the
   level the nozzle applied at each saved step, and `sc1_actuator_power`, the
   power it reported through `actuator_consumption` (zero here).

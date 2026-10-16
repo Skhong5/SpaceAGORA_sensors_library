@@ -107,7 +107,7 @@ end
 function _segment_context(u, t, configuration)
     samples = map(eachindex(configuration.dynamics_model.spacecraft)) do i
         sample = SimulationEngine.build_state_sample(u.sc[i], nothing,
-            configuration.mission_configuration.orientation_sim)
+            configuration.mission_configuration.orientation_sim, i)
         sample
     end
     return (; time_s=Float64(t), configuration, spacecraft=Tuple(samples), state=deepcopy(u))

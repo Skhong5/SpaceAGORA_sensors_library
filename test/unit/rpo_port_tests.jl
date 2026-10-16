@@ -525,6 +525,16 @@ end
             write_plotly_outputs=false,
             rng_seed=cfg.rng_seed,
         )
+        # A misspelled planner is refused with the valid names, never run as another planner.
+        valid_planner_names = (":hypr", ":pso_unrefined", ":rrt_connect", ":rrt_connect_bezier", ":rrt_star", ":chomp", ":stomp")
+        typo_message = try
+            SM.normalize_rpo_comparison_planner_type(:stopm)
+            ""
+        catch err
+            err isa ArgumentError ? err.msg : ""
+        end
+        @test occursin("planner stopm.", typo_message)
+        @test all(occursin(name, typo_message) for name in valid_planner_names)
         if !SpaceAGORA.hypr_available()
             # Core keeps this explicit boundary; the required optional-HYPR job
             # runs this same file with the companion and exercises the results below.
@@ -537,6 +547,10 @@ end
         @test SM.normalize_rpo_comparison_planner_type(:rrt_connect_bezier) == :rrt_connect_bezier
         @test SM.normalize_rpo_comparison_planner_type(:unrefined_pso) == :pso_unrefined
         @test SM.normalize_rpo_comparison_planner_type(:rrtstar) == :rrt_star
+        @test_throws ArgumentError SM.rpo_plan_comparison_path(:stopm, cases[1].start_rtn, cases[1].goal_rtn, geom, cfg)
+        typo_cfg = SM.RPOPlannerComparisonConfig(planners=[:hypr, :stopm], pso_config=cfg.pso_config,
+            output_dir=output_dir, write_plotly_outputs=false, show_progress=false)
+        @test_throws ArgumentError SM.rpo_run_planner_comparison_batch(cases, geom, typo_cfg)
         @test Set([row.planner for row in rows]) == Set([:hypr, :pso_unrefined, :rrt_connect, :rrt_connect_bezier, :rrt_star, :chomp, :stomp])
         @test all(isfinite(row.fuel_used) && row.fuel_used > 0.0 for row in rows)
         @test all(isfinite(row.fuel_used_pct) && row.fuel_used_pct > 0.0 for row in rows)

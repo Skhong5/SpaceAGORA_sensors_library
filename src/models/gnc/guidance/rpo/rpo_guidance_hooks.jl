@@ -275,7 +275,14 @@ function maybe_update_rpo_replanning!(model::RPOGuidanceModel, u, t::Float64)
     return false
 end
 
-"""Advance guidance-side plan state for a guidance model during simulation."""
+"""
+    calcGuidanceEffect!(model::RPOGuidanceModel, u, p, t, spacecraft_index)
+
+Advance the RPO plan for the chaser, spacecraft `model.chaser_idx`; other
+spacecraft indices return at once. The first tick builds a plan when the plan
+buffer holds none; later ticks retime or replan it when the replanning rules
+call for it.
+"""
 function calcGuidanceEffect!(model::RPOGuidanceModel, u, p, t::Float64, sat_idx::Int)
     sat_idx == model.chaser_idx || return nothing
     if !model.plan_buffer.valid

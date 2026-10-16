@@ -355,14 +355,27 @@ function calcControlMassFlowRate(controlModel, u::AbstractVector, p::ODEParams, 
 end
 
 """
-calcReactionWheelTorque(controlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
+    calcReactionWheelTorque(model, u, p, i, t) -> Union{Nothing, AbstractVector}
 
-Optional hook: return the portion of an effector's commanded body torque that is
-produced *through a reaction wheel* (i.e. reacts against stored wheel angular
-momentum) rather than an idealized direct-body actuator. Effectors that don't
-drive reaction wheels return `nothing` (the default for any effector type that
-doesn't override this method).
+Optional hook for a control effector that drives reaction wheels: the part of
+its commanded torque on spacecraft `i` that the wheels produce, a 3-vector in
+the bus frame in N·m. Return `nothing`, the default for any effector type that
+does not override this method, when the effector drives no wheel.
+
+The momentum stored in the wheels (the `h_wheels` state) changes at the
+opposite rate, mapped onto the wheel axes. In `:ideal` actuation the engine
+applies this torque only to the wheels: the effector includes it in the torque
+its `calcControlForceTorque` returns. In `:mounted` actuation the engine adds
+it to the torque of the mounted actuators.
+
+`u` is the state of spacecraft `i` alone, `p` the run's parameters, `i` the
+spacecraft's position in the run and `t` the elapsed time in seconds. The
+engine calls this at every right-hand-side evaluation, so return the torque
+held since the last `calcControlEffect!` tick rather than recomputing the
+control law here.
 """
+function calcReactionWheelTorque end
+
 function calcReactionWheelTorque(controlModel::AbstractControlEffectorModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
     return nothing
 end
@@ -466,12 +479,7 @@ function calcControlMassFlowRate(controlModel::BaseThrusterModel, u::AbstractVec
 end
 
 """
-    calcControlEffect!(model, u, p, t, i)
     calcControlEffect!(model::BaseThrusterModel, u::ComponentVector, p, t, i)
-
-Stable extension hook for [`AbstractControlEffectorModel`](@ref)
-implementations that update control-related shared state during the simulation
-loop.
 
 For `BaseThrusterModel`, `u` is the full simulation state (`u.sc[i]` selects
 the spacecraft), `p` holds the simulation parameters, and `t` is elapsed time
