@@ -237,6 +237,24 @@ The built-in kinds:
   control ticks. The energy-depletion controller also moves its panels through
   a hinge mounted on them.
 
+The actuators' power feeds the spacecraft's power budget when it carries one:
+solar arrays, a battery and constant loads mounted with `add_power!`. See
+[Powering a Spacecraft](user/power_budget.md).
+
+A mounted actuator can fail: `add_fault!(spacecraft, ActuatorFault(actuator;
+kind, start_s, stop_s, value))` makes it apply level zero (`:failed`; a failed
+hinge holds its angle), hold a level (`:stuck`, by default the one it was
+commanded to when the fault began), act at a fraction of its level and limits
+(`:degraded`) or with an offset (`:biased`) between `start_s` and `stop_s`. The
+fault switches exactly at those times, and acts on what the vehicle feels, the
+propellant, the power and the `actuator_level` columns; the controller keeps
+seeing its own commands. On a thruster with firing dynamics the fault acts on
+the thrust it delivers, so it takes effect at its start, between control
+ticks. Runs with faults write `sc{i}_fault_active_{j}`. A
+checkpointed run keeps the faults' state from one segment to the next, but a
+`:stuck` fault without a `value` refuses `resume_from_checkpoint`: the
+checkpoint file does not hold the level it captured at onset.
+
 Registration: `add_actuator!(spacecraft, link, actuator)`.
 
 A control effector drives the mounted actuators by declaring

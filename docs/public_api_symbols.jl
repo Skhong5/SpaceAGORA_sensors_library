@@ -220,6 +220,7 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :AbstractThermalModel, rendered = "SpaceAGORA.AbstractThermalModel"),
             (owner = :SpaceAGORA, symbol = :AbstractThrusterModel, rendered = "SpaceAGORA.AbstractThrusterModel"),
             (owner = :SpaceAGORA, symbol = :AbstractGuidanceModel, rendered = "SpaceAGORA.AbstractGuidanceModel"),
+            (owner = :SpaceAGORA, symbol = :AbstractNavigationModel, rendered = "SpaceAGORA.AbstractNavigationModel"),
             (owner = :SpaceAGORA, symbol = :StateSample, rendered = "SpaceAGORA.StateSample"),
             (owner = :SpaceAGORA, symbol = :PlanetFrameSample, rendered = "SpaceAGORA.PlanetFrameSample"),
             (owner = :SpaceAGORA, symbol = :AtmosphereSample, rendered = "SpaceAGORA.AtmosphereSample"),
@@ -246,7 +247,12 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :calcControlEffect!, rendered = "SpaceAGORA.calcControlEffect!"),
             (owner = :SpaceAGORA, symbol = :calcControlForceTorque, rendered = "SpaceAGORA.calcControlForceTorque"),
             (owner = :SpaceAGORA, symbol = :calcControlMassFlowRate, rendered = "SpaceAGORA.calcControlMassFlowRate"),
+            (owner = :SpaceAGORA, symbol = :calcReactionWheelTorque, rendered = "SpaceAGORA.calcReactionWheelTorque"),
             (owner = :SpaceAGORA, symbol = :control_thruster_levels, rendered = "SpaceAGORA.control_thruster_levels"),
+            (owner = :SpaceAGORA, symbol = :touchdown_spec, rendered = "SpaceAGORA.touchdown_spec"),
+            (owner = :SpaceAGORA, symbol = :calcGuidanceEffect!, rendered = "SpaceAGORA.calcGuidanceEffect!"),
+            (owner = :SpaceAGORA, symbol = :calcNavigationEffect!, rendered = "SpaceAGORA.calcNavigationEffect!"),
+            (owner = :SpaceAGORA, symbol = :getHeatRate, rendered = "SpaceAGORA.getHeatRate"),
             (owner = :SpaceAGORA, symbol = :bind_spacecraft, rendered = "SpaceAGORA.bind_spacecraft")
         ]
     ),
@@ -279,7 +285,13 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :ActuatorRequirements, rendered = "SpaceAGORA.ActuatorRequirements"),
             (owner = :SpaceAGORA, symbol = :actuator_requirements, rendered = "SpaceAGORA.actuator_requirements"),
             (owner = :SpaceAGORA, symbol = :applied_actuator_levels, rendered = "SpaceAGORA.applied_actuator_levels"),
-            (owner = :SpaceAGORA, symbol = :mounted_power, rendered = "SpaceAGORA.mounted_power")
+            (owner = :SpaceAGORA, symbol = :mounted_power, rendered = "SpaceAGORA.mounted_power"),
+            (owner = :SpaceAGORA, symbol = :SolarArray, rendered = "SpaceAGORA.SolarArray"),
+            (owner = :SpaceAGORA, symbol = :Battery, rendered = "SpaceAGORA.Battery"),
+            (owner = :SpaceAGORA, symbol = :PowerLoad, rendered = "SpaceAGORA.PowerLoad"),
+            (owner = :SpaceAGORA, symbol = :add_power!, rendered = "SpaceAGORA.add_power!"),
+            (owner = :SpaceAGORA, symbol = :ActuatorFault, rendered = "SpaceAGORA.ActuatorFault"),
+            (owner = :SpaceAGORA, symbol = :add_fault!, rendered = "SpaceAGORA.add_fault!")
         ]
     ),
     (

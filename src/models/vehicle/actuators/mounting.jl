@@ -285,10 +285,34 @@ function mounted_requirements(model::SpacecraftModel)::ActuatorRequirements
     return req
 end
 
-# The thrust a thruster delivers: its saturated command, or, with firing
-# dynamics, the average thrust its last control tick scheduled (`thrust`).
-@inline _delivered_thrust(thruster::Thruster, level)::Float64 =
-    thruster.firing_dynamics ? Float64(thruster.thrust) : actuator_saturate(thruster, level)
+# The thrust the `k`-th mounted thruster delivers: its saturated command, or,
+# with firing dynamics, the average thrust its last control tick scheduled
+# (`thrust`) as its active faults leave it. Faults act on that thrust, not on
+# the command the tick scheduled from, so they switch at their own times
+# rather than at the next tick: a failed thruster delivers nothing, a stuck
+# one its held level, a degraded one the fraction `value`, a biased one the
+# offset `value` within its limits. (Without firing dynamics the faults act
+# on the level, through `ActuatorFaults.faulted_levels`.)
+@inline _delivered_thrust(model::SpacecraftModel, k::Int, thruster::Thruster, level)::Float64 =
+    thruster.firing_dynamics ? _firing_thrust(model, k, thruster) : actuator_saturate(thruster, level)
+
+function _firing_thrust(model::SpacecraftModel, k::Int, thruster::Thruster)::Float64
+    thrust = Float64(thruster.thrust)
+    for f in model.root.faults.faults
+        (f.active && f.index == k) || continue
+        if f.kind === :failed
+            return 0.0
+        elseif f.kind === :stuck
+            return actuator_saturate(thruster, f.held_level)
+        elseif f.kind === :degraded
+            thrust *= f.value
+        else   # :biased
+            lo, hi = actuator_limits(thruster)
+            thrust = clamp(thrust + f.value, Float64(lo), Float64(hi))
+        end
+    end
+    return thrust
+end
 
 """
     allocation_matrix(model::SpacecraftModel) -> Matrix{Float64}
@@ -363,7 +387,7 @@ function mounted_wrench(model::SpacecraftModel, levels::AbstractVector, mass_kg:
         ctx = actuator_context(link, mass_kg, q_ib, ω_body, magnetic_field_body, environment)
         for thruster in link.thrusters
             k += 1
-            force, torque, mass_rate = _add_actuator(thruster, _delivered_thrust(thruster, levels[k]), ctx, force, torque, mass_rate)
+            force, torque, mass_rate = _add_actuator(thruster, _delivered_thrust(model, k, thruster, levels[k]), ctx, force, torque, mass_rate)
         end
     end
     assembly = model.root.rw_assembly
@@ -423,7 +447,7 @@ function mounted_thruster_fractions(model::SpacecraftModel, levels::AbstractVect
     k = 0
     for link in model.links, thruster in link.thrusters
         k += 1
-        x = k <= length(levels) ? _delivered_thrust(thruster, levels[k]) : 0.0
+        x = k <= length(levels) ? _delivered_thrust(model, k, thruster, levels[k]) : 0.0
         push!(out, actuator_fraction(thruster, x))
     end
     return out
@@ -444,7 +468,7 @@ function applied_actuator_levels(model::SpacecraftModel, levels::AbstractVector;
     k = 0
     for link in model.links, thruster in link.thrusters
         k += 1
-        out[k] = _delivered_thrust(thruster, levels[k])
+        out[k] = _delivered_thrust(model, k, thruster, levels[k])
     end
     assembly = model.root.rw_assembly
     first_mounted = assembly.n_wheels - length(assembly.wheels)

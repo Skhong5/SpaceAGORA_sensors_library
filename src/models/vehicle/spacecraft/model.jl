@@ -246,6 +246,13 @@ mutable struct Link
     # kinds keep their own concretely typed lists above; this one is evaluated through
     # a function barrier per actuator.
     custom_actuators::Vector{AbstractActuator}
+    # Power-system parts mounted on the link (see PowerSystems.add_power!): solar
+    # arrays, the battery (root link, at most one) and constant loads.
+    solar_arrays::Vector{SolarArray}
+    batteries::Vector{Battery}
+    power_loads::Vector{PowerLoad}
+    # Actuator faults of the spacecraft (kept on its root link; see ActuatorFaults.add_fault!).
+    faults::FaultSet
 
     function Link(; root=false,
         r=MVector{3, Float64}(0, 0, 0),
@@ -279,7 +286,11 @@ mutable struct Link
         magnetorquers=Magnetorquer[],
         laser_terminals=LaserTerminal[],
         hinges=PanelHinge[],
-        custom_actuators=AbstractActuator[])
+        custom_actuators=AbstractActuator[],
+        solar_arrays=SolarArray[],
+        batteries=Battery[],
+        power_loads=PowerLoad[],
+        faults=FaultSet())
 
         n_rw = size(J_rw, 2)
         rw_assembly = ReactionWheelAssembly(
@@ -291,7 +302,8 @@ mutable struct Link
             h_dot_wheels=zeros(Float64, n_rw),
             tau_body_net=MVector{3, Float64}(zeros(3))      # tau_body_net
         )
-        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, reflection_coefficient, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, thrusters, magnets, cop_offset_b, Vector{Magnetorquer}(magnetorquers), Vector{LaserTerminal}(laser_terminals), Vector{PanelHinge}(hinges), Vector{AbstractActuator}(custom_actuators))
+        new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, reflection_coefficient, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, thrusters, magnets, cop_offset_b, Vector{Magnetorquer}(magnetorquers), Vector{LaserTerminal}(laser_terminals), Vector{PanelHinge}(hinges), Vector{AbstractActuator}(custom_actuators),
+            Vector{SolarArray}(solar_arrays), Vector{Battery}(batteries), Vector{PowerLoad}(power_loads), faults)
     end
 end
 

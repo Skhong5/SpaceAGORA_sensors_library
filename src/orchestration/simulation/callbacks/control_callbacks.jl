@@ -30,14 +30,16 @@ end
     mounted_hinge_count(spacecraft) == 0 && return nothing
     levels = actuator_levels(control_model, sat_idx)
     levels === nothing && return nothing
-    apply_hinge_levels!(spacecraft, levels, t)
+    apply_hinge_levels!(spacecraft, faulted_levels(spacecraft, levels), t)
     return nothing
 end
 
 # After the control tick of an effector in `:mounted` actuation, each mounted
 # thruster with firing dynamics schedules the average thrust it delivers until
 # the next tick: the command as an on-time within the control period, through
-# its minimum on-time, Schmitt trigger and thrust ramp.
+# its minimum on-time, Schmitt trigger and thrust ramp. The schedule follows
+# the command; the thruster's faults act on the thrust it delivers
+# (`ActuatorMounting._delivered_thrust`), so they switch at their own times.
 function _apply_mounted_thruster_firing!(control_model, p, sat_idx::Int, t, period::Float64)
     actuation_mode(control_model) === :mounted || return nothing
     spacecraft = p.args.dynamics_model.spacecraft[sat_idx]

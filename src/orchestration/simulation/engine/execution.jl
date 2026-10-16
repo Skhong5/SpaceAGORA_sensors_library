@@ -181,6 +181,11 @@ end
 @inline function _build_typed_solver_problem(u0, tspan, p, callbacks, solver_mode::Symbol,
     jac_prototype::Union{Nothing, SparseMatrixCSC{Float64, Int}}=nothing)
     mode = solver_mode
+    if mode in (:gravity_backbone_split, :split_imex, :multirate) &&
+            any(SimulationModel.has_battery, p.args.dynamics_model.spacecraft)
+        throw(ArgumentError("A spacecraft with a battery needs a solver mode that integrates the full right-hand side; " *
+            "solver_mode=$(repr(mode)) splits it. Use :tsit5, :dp8, :rodas5p or :auto_stiff."))
+    end
     if mode == :gravity_backbone_split
         q0, dq0 = _gravity_backbone_initial_states(u0, p.args)
         return SecondOrderODEProblem(
@@ -586,6 +591,7 @@ function run_simulation(
     _validate_interlinks!(args, solver_mode)
     _validate_orientation_inertia!(args)
     _validate_thermal_model_support!(args)
+    _validate_model_hooks!(args, solver_mode)
     _validate_ephemerides_support!(args)
     _warn_density_without_atmospheric_effector(args)
     if args.interlink_model !== nothing

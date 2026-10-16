@@ -385,6 +385,9 @@ end
     zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
     levels = SimulationModel.actuator_levels(effector, sat_idx)
     levels === nothing && return (zero3, zero3, 0.0, zero3)
+    # Active faults change the levels, then actuators an empty battery sheds act at level zero.
+    levels = SimulationModel.shed_levels(p.args.dynamics_model.spacecraft[sat_idx],
+        SimulationModel.faulted_levels(p.args.dynamics_model.spacecraft[sat_idx], levels))
     hasproperty(sc_view, :q) || throw(ArgumentError(
         "Mounted actuation needs the attitude state: set orientation_sim=true (spacecraft $(sat_idx))."))
     q = SVector{4, Float64}(sc_view.q[1], sc_view.q[2], sc_view.q[3], sc_view.q[4])
@@ -3246,7 +3249,26 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
     else
         rhs_width_trial_step!(du, u, p, t, trial, _spacecraft_dynamics_dispatch!)
     end
+    _apply_power_rhs!(du, u, p, t)
     SimulationModel.SimulationCallbacks._publish_initial_force_outputs!(u, t, p)
+    return nothing
+end
+
+# The battery's stored energy, after every route: its rate is the battery's
+# response to the net power (generation minus the loads, the mounted actuators
+# with their shedding applied). Spacecraft without a battery have no state.
+function _apply_power_rhs!(du, u, p, t::Float64)
+    spacecraft = p.args.dynamics_model.spacecraft
+    @inbounds for i in eachindex(spacecraft)
+        sc = spacecraft[i]
+        SimulationModel.has_battery(sc) || continue
+        if !p.is_active[i]
+            du.sc[i].battery_wh = 0.0
+            continue
+        end
+        snap = SimulationModel.SimulationCallbacks._power_snapshot(u.sc[i], sc, p, i, t)
+        du.sc[i].battery_wh = SimulationModel.battery_rate_wh_s(SimulationModel.battery(sc), snap.net_w)
+    end
     return nothing
 end
 
@@ -3876,6 +3898,8 @@ function build_initial_conditions(args)::ComponentVector
         end
         n_rw = args.mission_configuration.orientation_sim ? sc.root.rw_assembly.n_wheels : 0
         base_shape = n_rw > 0 ? merge(base_shape, (h_wheels = zeros(n_rw),)) : base_shape
+        # The battery's stored energy, Wh, only when a battery is mounted.
+        base_shape = SimulationModel.has_battery(sc) ? merge(base_shape, (battery_wh = 0.0,)) : base_shape
         if args.interlink_model !== nothing
             base_shape = merge(base_shape, (laser_dv = zeros(3), laser_delta_sma = 0.0))
         end
@@ -3914,6 +3938,9 @@ function build_initial_conditions(args)::ComponentVector
             if spacecraft.root.rw_assembly.n_wheels > 0
                 sc_view.h_wheels .= spacecraft.root.rw_assembly.h_wheels
             end
+        end
+        if SimulationModel.has_battery(spacecraft)
+            sc_view.battery_wh = SimulationModel.initial_battery_wh(spacecraft)
         end
         init_tree = nothing
         if SimulationModel.articulated_has_moving_joints(spacecraft)
