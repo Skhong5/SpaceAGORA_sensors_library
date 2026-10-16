@@ -10,6 +10,14 @@ const SM = SpaceAGORA.SimulationModel
 const GH = SM.GuidanceHooks
 const CH = SM.ControlHooks
 
+# A user's own guidance or control model that works through an ApolloDescentState.
+struct CustomDescentGuidance <: SpaceAGORA.AbstractGuidanceModel
+    state::ApolloDescentState
+end
+struct CustomDescentControl <: SpaceAGORA.AbstractControlEffectorModel
+    state::ApolloDescentState
+end
+
 @testset "ApolloDescent" begin
     @testset "quadratic law" begin
         ph = DescentPhaseTargets(name=:test, r_T=SVector(0.0, 0.0, 30.0), v_T=SVector(0.0, 0.0, -1.0), a_T=SVector(0.0, 0.0, 0.0), t_go_initial_s=100.0, t_go_min_s=4.0)
@@ -385,6 +393,16 @@ const CH = SM.ControlHooks
         @test isnan(copied_guidance.state.phase_start_s[1, 1])
         @test CH.touchdown_spec(control, 1) === nothing
         @test CH.control_thruster_levels(control, 1) === nothing
+        # Guidance on a state of its own: the control never receives a command,
+        # and the run says so before it starts.
+        lone = ApolloDescentGuidanceModel(gcfg, ApolloDescentState(2), NoTerrainModel(); spacecraft_indices=(2,))
+        split = SM.SimConfig._with_configuration(short;
+            guidance_model=SM.GuidanceModel(guidance_effectors=(lone,), guidance_rates=[1.0]))
+        unpaired = @test_logs (:warn, r"not paired: spacecraft 2 have an ApolloDescentControlModel but no ApolloDescentGuidanceModel") match_mode=:any run_simulation(
+            split; return_solution=true)
+        unpaired_control = only(unpaired.prob.p.args.control_model.control_effectors)
+        @test all(isnan, unpaired_control.state.phase_start_s)
+        @test all(iszero, unpaired_control.actuators.thrust_n)
 
         result = run_simulation(args; isolate_state=false, return_solution=true)
         @test state.phase[2] == :landed
@@ -407,6 +425,42 @@ const CH = SM.ControlHooks
             (zero(SVector{3,Float64}), zero(SVector{3,Float64}))
         @test CH.calcControlMassFlowRate(control, result.u[end].sc[2], result.prob.p, 2, result.t[end]) == 0.0
 
+    end
+
+    @testset "guidance and control pairing check" begin
+        b, ap = apollo11_descent_targets()
+        gcfg = ApolloDescentConfig(reference_radius_m=1_737_400.0, site_lat_deg=0.0, site_lon_deg=0.0, braking=b, approach=ap)
+        guide(st, ids) = ApolloDescentGuidanceModel(gcfg, st; spacecraft_indices=ids)
+        ctrl(st, ids) = ApolloDescentControlModel(ApolloDescentControlConfig(), gcfg, st; spacecraft_indices=ids)
+        gnc(gs, cs) = (guidance_model=SM.GuidanceModel(guidance_effectors=Tuple(gs), guidance_rates=fill(1.0, length(gs))),
+            control_model=SM.ControlModel(control_effectors=Tuple(cs), control_rates=fill(0.05, length(cs))))
+        # run_simulation calls this once per control effector before the run.
+        preflight(args) = foreach(c -> SpaceAGORA.SimulationLifecycle.preflight_control(c, args; isolate_state=true),
+            args.control_model.control_effectors)
+        state, other = ApolloDescentState(2), ApolloDescentState(2)
+        # Paired: one pair for both spacecraft, or one bound pair per spacecraft.
+        @test_logs preflight(gnc((guide(state, (1, 2)),), (ctrl(state, (1, 2)),)))
+        @test_logs preflight(gnc((guide(state, (1,)), guide(state, (2,))), (ctrl(state, (2,)), ctrl(state, (1,)))))
+        # A configuration with only one side is not checked.
+        @test_logs preflight(gnc((), (ctrl(state, (1, 2)),)))
+        # Separate states: both directions, one warning for two control models.
+        @test_logs (:warn, r"not paired: spacecraft 1, 2 have an ApolloDescentControlModel but no ApolloDescentGuidanceModel on the same ApolloDescentState, so their descent engine never receives a command; spacecraft 1, 2 have an ApolloDescentGuidanceModel but no ApolloDescentControlModel") preflight(
+            gnc((guide(other, (1, 2)),), (ctrl(state, (1,)), ctrl(state, (2,)))))
+        # Same state, different spacecraft selections.
+        @test_logs (:warn, r"not paired: spacecraft 2 have an ApolloDescentControlModel but no ApolloDescentGuidanceModel on the same ApolloDescentState, so their descent engine never receives a command\. Build both") preflight(
+            gnc((guide(state, (1,)),), (ctrl(state, (1, 2)),)))
+        @test_logs (:warn, r"not paired: spacecraft 2 have an ApolloDescentGuidanceModel but no ApolloDescentControlModel on the same ApolloDescentState, so no control flies their guidance commands\. Build both") preflight(
+            gnc((guide(state, (1, 2)),), (ctrl(state, (1,)),)))
+        # Mixed: spacecraft 1 flies an Apollo pair and spacecraft 2's Apollo control is
+        # fed by a guidance model of another type (or the mirror case). Which spacecraft
+        # that model serves is not declared, so its direction is not checked.
+        @test_logs preflight(gnc((guide(state, (1,)), CustomDescentGuidance(state)), (ctrl(state, (1, 2)),)))
+        @test_logs preflight(gnc((guide(state, (1, 2)),), (ctrl(state, (1,)), CustomDescentControl(state))))
+        # The other direction is still checked.
+        @test_logs (:warn, r"not paired: spacecraft 2 have an ApolloDescentGuidanceModel but no ApolloDescentControlModel on the same ApolloDescentState, so no control flies their guidance commands\. Build both") preflight(
+            gnc((guide(state, (1, 2)), CustomDescentGuidance(state)), (ctrl(state, (1,)),)))
+        @test_logs (:warn, r"not paired: spacecraft 2 have an ApolloDescentControlModel but no ApolloDescentGuidanceModel on the same ApolloDescentState, so their descent engine never receives a command\. Build both") preflight(
+            gnc((guide(state, (1,)),), (ctrl(state, (1, 2)), CustomDescentControl(state))))
     end
 end
 

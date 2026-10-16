@@ -2,9 +2,6 @@ using ..FrameTransforms
 using ComponentArrays
 using Logging
 
-const _MANEUVER_TRACE_LOCK = ReentrantLock()
-const _MANEUVER_TRACE_LAST_WINDOW = Dict{Tuple{UInt64, Int64}, Tuple{Float64, Float64}}()
-const _MANEUVER_TRACE_BURN_ACTIVE = Dict{Tuple{UInt64, Int64}, Bool}()
 const _STANDARD_GRAVITY_MPS2 = 9.80665
 
 @inline function _control_effector_log_enabled(p)::Bool
@@ -35,10 +32,6 @@ end
 @inline function _maneuver_trace_path()::String
     raw = strip(get(ENV, "SPACEAGORA_MANEUVER_TRACE_CSV", ""))
     return isempty(raw) ? "/tmp/spaceagora_maneuver_trace.csv" : raw
-end
-
-@inline function _maneuver_trace_key(controlModel::BaseThrusterModel, i::Int64)::Tuple{UInt64, Int64}
-    return (UInt64(objectid(controlModel.start_burn_time)), i)
 end
 
 @inline function _safe_orbit_counter(p, i::Int64)::Int64
@@ -295,30 +288,21 @@ function _trace_maneuver_event!(
     thrust_n = i <= length(controlModel.thrust) ? Float64(controlModel.thrust[i]) : NaN
     burn_duration_s = (isfinite(start_burn_s) && isfinite(stop_burn_s)) ? (stop_burn_s - start_burn_s) : NaN
 
-    lock(_MANEUVER_TRACE_LOCK) do
-        mkpath(dirname(path))
-        new_file = !isfile(path)
-        open(path, "a") do io
-            if new_file
-                println(io, "event,t_s,spacecraft_idx,orbit_counter,dv_cmd_mps,direction_rad,thrust_n,start_burn_s,stop_burn_s,burn_duration_s,alt_m,e,nu_rad,a_m")
-            end
-            println(io,
-                string(event), ",",
-                string(t), ",",
-                string(i), ",",
-                string(orbit_counter), ",",
-                string(dv_cmd), ",",
-                string(direction), ",",
-                string(thrust_n), ",",
-                string(start_burn_s), ",",
-                string(stop_burn_s), ",",
-                string(burn_duration_s), ",",
-                string(alt_m), ",",
-                string(e), ",",
-                string(nu_rad), ",",
-                string(a_m)
-            )
-        end
+    # Each row is one write to a file opened with the system's append flag, so
+    # runs tracing to the same file at once add whole rows and never overwrite
+    # each other's (`open(path, "a")` seeks to the end only once, when opened).
+    # Runs that create the file at the same moment may each write the header.
+    row = join((event, t, i, orbit_counter, dv_cmd, direction, thrust_n, start_burn_s, stop_burn_s,
+                burn_duration_s, alt_m, e, nu_rad, a_m), ",") * "\n"
+    mkpath(dirname(path))
+    if !isfile(path)
+        row = "event,t_s,spacecraft_idx,orbit_counter,dv_cmd_mps,direction_rad,thrust_n,start_burn_s,stop_burn_s,burn_duration_s,alt_m,e,nu_rad,a_m\n" * row
+    end
+    file = Base.Filesystem.open(path, Base.Filesystem.JL_O_WRONLY | Base.Filesystem.JL_O_CREAT | Base.Filesystem.JL_O_APPEND, 0o644)
+    try
+        write(file, row)
+    finally
+        close(file)
     end
     return nothing
 end
@@ -384,28 +368,36 @@ function calcReactionWheelTorque(controlModel, u::AbstractVector, p::ODEParams, 
     return nothing
 end
 
-# Whether spacecraft `i`'s burn window is open right now. The flag is kept by
-# `calcControlEffect!` on every control cycle (not only while tracing), so it
-# is the effector's record of the throttle it is commanding.
-@inline function _maneuver_burn_active(controlModel::BaseThrusterModel, i::Int64)::Bool
-    key = _maneuver_trace_key(controlModel, i)
-    return lock(_MANEUVER_TRACE_LOCK) do
-        get(_MANEUVER_TRACE_BURN_ACTIVE, key, false)
-    end
-end
-
 """
     control_thruster_levels(controlModel::BaseThrusterModel, i)
 
-The commanded throttle of the maneuver engine: 1 while the burn window for
-spacecraft `i` is open and 0 otherwise. A maneuver burn drives one engine, so
-the vector covers the first thruster only and the vehicle's remaining
-thrusters stay idle.
+The commanded throttle of the maneuver engine: 1 while spacecraft `i`'s burn
+is on, inside its `[start, stop)` window, and 0 otherwise. It follows the
+burn state that `refresh_burn!` keeps, which switches exactly at the window's
+ends, as the thrust does. A maneuver burn drives one engine, so the vector
+covers the first thruster only and the vehicle's remaining thrusters stay
+idle.
 """
 function control_thruster_levels(controlModel::BaseThrusterModel, i::Int)
-    (1 <= i <= length(controlModel.thrust)) || return nothing
+    (1 <= i <= length(controlModel.burning)) || return nothing
     controlModel.actuation === :mounted && return nothing   # the mounted thrusters' own levels report it
-    return [_maneuver_burn_active(controlModel, Int64(i)) ? 1.0 : 0.0]
+    return [controlModel.burning[i] ? 1.0 : 0.0]
+end
+
+# Internal: the firing levels an effector reports for spacecraft `i` at time `t`,
+# for the saved `thruster_level` field. A sample is saved after the callbacks of
+# the step it falls in, so held levels can belong to the end of that step; an
+# effector that knows its levels over time answers for the sample's own time.
+# The default is the held levels.
+_thruster_levels_at(effector, i::Int, t) = control_thruster_levels(effector, i)
+
+# The burn scheduler's level at `t` from the recorded window: 1 inside
+# `[start, stop)` and 0 outside, as the burn itself switches.
+function _thruster_levels_at(controlModel::BaseThrusterModel, i::Int, t)
+    (1 <= i <= length(controlModel.burn_windows)) || return nothing
+    controlModel.actuation === :mounted && return nothing   # the mounted thrusters' own levels report it
+    start_s, stop_s, _ = controlModel.burn_windows[i]
+    return [isfinite(start_s) && isfinite(stop_s) && start_s <= t < stop_s ? 1.0 : 0.0]
 end
 
 """
@@ -494,7 +486,10 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
     if i < 1 || i > length(controlModel.start_burn_time)
         return
     end
-    trace_key = _maneuver_trace_key(controlModel, i)
+    # The window this spacecraft's schedule was last recorded with (by
+    # `refresh_burn!`, which runs after every scheduling call), to tell a new
+    # schedule from an update in the trace.
+    recorded_start, recorded_stop, _ = controlModel.burn_windows[i]
 
     active_plan = _active_burn_plan(p, i)
     model_start_time, model_stop_time = _model_burn_window(controlModel, i)
@@ -507,38 +502,17 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
     end
     if isfinite(start_time) && isfinite(stop_time) && stop_time > start_time
         in_burn_window = t >= start_time - 1e-9 && t <= stop_time + 1e-9
-        # `calcControlEffect!` runs concurrently across spacecraft under
-        # control-callback parallelism (see threaded_foreach_persistent(:control_callback, ...)
-        # in control_callbacks.jl), so these process-global Dicts need the same lock
-        # guarding them everywhere they're touched — Dict mutation from multiple
-        # threads is unsafe even across disjoint keys (internal resize/rehash is
-        # shared state).
-        in_burn_window, just_started, just_ended, schedule_cleared = lock(_MANEUVER_TRACE_LOCK) do
-            was_in_burn_window = get(_MANEUVER_TRACE_BURN_ACTIVE, trace_key, false)
-            started = in_burn_window && !was_in_burn_window
-            ended = !in_burn_window && was_in_burn_window && t > stop_time + 1e-9
-            started && (_MANEUVER_TRACE_BURN_ACTIVE[trace_key] = true)
-            ended && (_MANEUVER_TRACE_BURN_ACTIVE[trace_key] = false)
-            cleared = !in_burn_window && t > stop_time + 1e-9
-            if cleared
-                _MANEUVER_TRACE_BURN_ACTIVE[trace_key] = false
-                pop!(_MANEUVER_TRACE_LAST_WINDOW, trace_key, nothing)
-            end
-            (in_burn_window, started, ended, cleared)
-        end
-        just_started && _trace_maneuver_event!("burn_start", controlModel, p, i, t; start_burn_s=start_time, stop_burn_s=stop_time)
-        just_ended && _trace_maneuver_event!("burn_end", controlModel, p, i, t; start_burn_s=start_time, stop_burn_s=stop_time)
-
         # Lock the schedule only after ignition begins and until burn stop.
         if in_burn_window
             return
         end
         # Burn completed: clear the schedule so future campaign maneuvers can be planned.
-        if schedule_cleared
+        if t > stop_time + 1e-9
             _trace_maneuver_event!("schedule_clear", controlModel, p, i, t; start_burn_s=start_time, stop_burn_s=stop_time)
             controlModel.start_burn_time[i] = -1.0
             controlModel.stop_burn_time[i] = -1.0
             _clear_burn_plan!(p, i)
+            recorded_start, recorded_stop = NaN, NaN
         end
     end
     pos = SVector{3, Float64}(u.sc[i].pos)
@@ -611,12 +585,11 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
         )
         _set_burn_plan!(p, i, new_plan)
 
-        prev_window = get(_MANEUVER_TRACE_LAST_WINDOW, trace_key, (NaN, NaN))
-        same_window = isfinite(prev_window[1]) && isfinite(prev_window[2]) &&
-            abs(prev_window[1] - start_burn_time) <= 1e-9 &&
-            abs(prev_window[2] - stop_burn_time) <= 1e-9
+        same_window = isfinite(recorded_start) && isfinite(recorded_stop) &&
+            abs(recorded_start - start_burn_time) <= 1e-9 &&
+            abs(recorded_stop - stop_burn_time) <= 1e-9
         if !same_window
-            event = (isfinite(prev_window[1]) && isfinite(prev_window[2])) ? "schedule_update" : "schedule_set"
+            event = (isfinite(recorded_start) && isfinite(recorded_stop)) ? "schedule_update" : "schedule_set"
             _trace_maneuver_event!(
                 event,
                 controlModel,
@@ -630,7 +603,6 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
                 nu_rad=ν_wrapped,
                 a_m=a
             )
-            _MANEUVER_TRACE_LAST_WINDOW[trace_key] = (start_burn_time, stop_burn_time)
         end
     end
 end
@@ -657,10 +629,13 @@ burn is on at time `t` (inside `[start, stop)`). Called when burns are
 scheduled, at the window's ends, where the solver stops, and, in `:mounted`
 actuation, at each control tick, where it also sizes the level vector to the
 mounted actuators and sets the engine's level. Between those calls the burn's
-state holds, so no integration step sees it change.
+state holds, so no integration step sees it change. The maneuver trace records
+`burn_start` and `burn_end` here, when the burn switches.
 """
 function refresh_burn!(model::BaseThrusterModel, p, i::Int, t::Real)
     (1 <= i <= length(model.burning)) || return nothing
+    was_burning = model.burning[i]
+    previous_start, previous_stop, _ = model.burn_windows[i]
     start_s, stop_s = _effective_burn_window(model, p, i)
     thrust_n, _ = _effective_thrust_isp(model, p, i)
     direction_rad = _effective_direction_rad(model, p, i)
@@ -670,6 +645,12 @@ function refresh_burn!(model::BaseThrusterModel, p, i::Int, t::Real)
     burning = valid && start_s <= t < stop_s
     model.burning[i] = burning
     model.actuation === :mounted && _refresh_mounted_engine!(model, p, i, burning ? Float64(thrust_n) : 0.0)
+    if burning != was_burning
+        # A burn that ends with its schedule cleared reports the window it ran.
+        window_start, window_stop = burning || valid ? (Float64(start_s), Float64(stop_s)) : (previous_start, previous_stop)
+        _trace_maneuver_event!(burning ? "burn_start" : "burn_end", model, p, Int64(i), Float64(t);
+            start_burn_s=window_start, stop_burn_s=window_stop)
+    end
     return nothing
 end
 

@@ -155,7 +155,10 @@ that same axis, so augmentation returns no reference-point torque.
 accepted-step callback owns the diagnostic state and mass quadrature. Default
 save fields sample the supplied saved state and the held interval thrust, with
 mass interpolated from accepted-step quadrature. The four-argument pure wrench
-is valid for one spacecraft; pass an explicit fifth spacecraft index otherwise.
+selects the spacecraft by `x.spacecraft_index`, which every sample the engine
+builds carries; a sample built outside a run (index 0) is valid for a
+one-spacecraft plume only. The five-argument form with an explicit index remains
+for existing callers.
 """
 struct PlumeSurfaceInteractionModel{C, T <: AbstractTerrainModel} <: AbstractForceTorqueModel
     config::PlumeSurfaceConfig
@@ -349,9 +352,13 @@ function _plume_sample(model, x, env, t::Float64, i::Int;
 end
 
 function wrench(model::PlumeSurfaceInteractionModel, x::StateSample, env::EnvironmentSample, t::Float64)
-    length(model.state.height_m) == 1 || throw(ArgumentError(
-        "A multi-spacecraft plume needs wrench(model, state, environment, time, sat_idx)."))
-    return wrench(model, x, env, t, 1)
+    i = x.spacecraft_index
+    if i == 0
+        length(model.state.height_m) == 1 || throw(ArgumentError(
+            "A multi-spacecraft plume needs the spacecraft's run index: build the StateSample with spacecraft_index."))
+        i = 1
+    end
+    return wrench(model, x, env, t, i)
 end
 function wrench(model::PlumeSurfaceInteractionModel, x::StateSample, env::EnvironmentSample, t::Float64, i::Int)
     sample = _plume_sample(model, x, env, t, i)

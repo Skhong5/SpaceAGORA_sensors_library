@@ -21,7 +21,10 @@ joins the configuration-level GNC tuples.
 
 Implement it for an effector that selects its vehicle by an index field: return a
 shallow copy (sharing mutable members with the original) with that field set, or
-`effector` itself when it already targets `sat_idx`. The fallback throws an
+`effector` itself when it already targets `sat_idx`. A member that holds one
+spacecraft's run state (a held command, a controller's warm start) needs its own
+copy, so spacecraft bound from one template do not share it; members indexed by
+spacecraft, such as an `ApolloDescentState`, stay shared. The fallback throws an
 `ArgumentError`, because an effector without such a field acts on every
 spacecraft and an effector that couples several vehicles (for example the RPO
 chaser and target types) cannot belong to one; declare both at configuration

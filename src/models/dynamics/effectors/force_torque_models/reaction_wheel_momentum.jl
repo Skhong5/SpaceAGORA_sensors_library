@@ -319,8 +319,9 @@ end
 
 @inline environment_requirements(::ReactionWheelMomentumModel) = EffectorEnvironmentRequirements()
 
-# The context-free public hook is pure. A StateSample carries a spacecraft
-# object but no run index, so target selection belongs to wrench_caching!.
+# The context-free public hook is pure and selects nothing, as the docstring
+# promises, so a wrapper that forwards to it sees the torque for any sample.
+# Target selection (by the run index) and the diagnostics stay in wrench_caching!.
 function wrench(
     model::ReactionWheelMomentumModel,
     x::StateSample,

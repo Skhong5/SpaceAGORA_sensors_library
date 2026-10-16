@@ -161,7 +161,7 @@ end
     needs_state_sample = any(_wrench_method_available, dynamic_effectors)
     state_sample = if needs_state_sample
         spacecraft = p.args.dynamics_model.spacecraft[sat_idx]
-        build_state_sample(sc_view, spacecraft, p.args.mission_configuration.orientation_sim)
+        build_state_sample(sc_view, spacecraft, p.args.mission_configuration.orientation_sim, sat_idx)
     else
         nothing
     end
@@ -223,7 +223,7 @@ end
 
     state_sample = if _partition_needs_state_sample(dynamic_effectors, partition)
         spacecraft = p.args.dynamics_model.spacecraft[sat_idx]
-        build_state_sample(sc_view, spacecraft, p.args.mission_configuration.orientation_sim)
+        build_state_sample(sc_view, spacecraft, p.args.mission_configuration.orientation_sim, sat_idx)
     else
         nothing
     end
@@ -402,7 +402,7 @@ end
         SVector{3, Float64}(NaN, NaN, NaN)
     environment = SimulationModel.Actuators.needs_environment(req) ?
         sample_environment(SimulationModel.Actuators.effector_requirements(req), nothing,
-            build_state_sample(sc_view, spacecraft, true), p, sat_idx, t; write_buffers=false) :
+            build_state_sample(sc_view, spacecraft, true, sat_idx), p, sat_idx, t; write_buffers=false) :
         nothing
     # Each mounted wheel's momentum rate goes to the orientation right-hand side
     # wheel by wheel (through the assembly's `mounted_rates`), not through the
@@ -526,6 +526,7 @@ end
         q_ib=orientation_sim ? shared_buffers.rhs_flat_state_q_ib[][sat_idx] : nothing,
         ω_body=orientation_sim ? shared_buffers.rhs_flat_state_omega_body[][sat_idx] : nothing,
         spacecraft=spacecraft[sat_idx],
+        spacecraft_index=sat_idx,
     )
 end
 
@@ -2597,7 +2598,7 @@ end
     pos_ii = _gravity_backbone_xyz_chunk(q_state, sat_idx)
     vel_ii = _gravity_backbone_xyz_chunk(dq_state, sat_idx)
     mass_kg = spacecraft.dry_mass + spacecraft.prop_mass
-    return StateSample(pos_ii, vel_ii, mass_kg; spacecraft=spacecraft)
+    return StateSample(pos_ii, vel_ii, mass_kg; spacecraft=spacecraft, spacecraft_index=sat_idx)
 end
 
 @inline function _gravity_backbone_state_sample(u_state, p, sat_idx::Int)::StateSample
@@ -2878,6 +2879,7 @@ end
         p, t, _planet_lpi_at_engine(p, t),
         p.args.dynamics_model.spacecraft[sat_idx],
         dynamic_effectors,
+        sat_idx,
     )
     SimulationModel.apply_attachments_rigid!(du_view, sc_view, rt, t, forces, torques, gravity)
     return nothing
@@ -2941,6 +2943,7 @@ point-mass and J2; the generic harmonics hook allocates a scratch workspace per 
         p, t, _planet_lpi_at_engine(p, t),
         p.args.dynamics_model.spacecraft[sat_idx],
         p.args.dynamics_model.dynamic_effectors,
+        sat_idx,
     )(r_ii)
 end
 
@@ -2951,12 +2954,13 @@ struct _ArticulatedGravity{P, S, E}
     l_pi::SMatrix{3, 3, Float64, 9}
     spacecraft::S
     effectors::E
+    spacecraft_index::Int
 end
 
 @inline function (g::_ArticulatedGravity)(r::SVector{3, Float64})::SVector{3, Float64}
     planet = g.p.args.environment_model.planet
     v0 = SVector{3, Float64}(0.0, 0.0, 0.0)
-    x = StateSample(r, v0, 1.0; spacecraft=g.spacecraft)
+    x = StateSample(r, v0, 1.0; spacecraft=g.spacecraft, spacecraft_index=g.spacecraft_index)
     frame = _gravity_needs_planet_frame(g.effectors) ?
         sample_planet_frame_with_lpi((pos_ii=r, vel_ii=v0), planet, g.l_pi) : nothing
     return _sum_position_gravity(g.effectors, x, EnvironmentSample(planet; planet_frame=frame), g.t)
@@ -2978,8 +2982,8 @@ end
     planet = g.p.args.environment_model.planet
     v0 = SVector{3, Float64}(0.0, 0.0, 0.0)
     r_far = r_base + ρ
-    xb = StateSample(r_base, v0, 1.0; spacecraft=g.spacecraft)
-    xf = StateSample(r_far, v0, 1.0; spacecraft=g.spacecraft)
+    xb = StateSample(r_base, v0, 1.0; spacecraft=g.spacecraft, spacecraft_index=g.spacecraft_index)
+    xf = StateSample(r_far, v0, 1.0; spacecraft=g.spacecraft, spacecraft_index=g.spacecraft_index)
     needs_frame = _gravity_needs_planet_frame(g.effectors)
     fb = needs_frame ? sample_planet_frame_with_lpi((pos_ii=r_base, vel_ii=v0), planet, g.l_pi) : nothing
     ff = needs_frame ? sample_planet_frame_with_lpi((pos_ii=r_far, vel_ii=v0), planet, g.l_pi) : nothing
@@ -3141,6 +3145,7 @@ end
         p, t, _planet_lpi_at_engine(p, t),
         p.args.dynamics_model.spacecraft[sat_idx],
         dynamic_effectors,
+        sat_idx,
     )
     # Effector torques are about the bus origin (root link COM); the base is the root composite
     # COM at `tree.root_com_bus`, so move the torque there: tau_com = tau_origin - c x F_body.
