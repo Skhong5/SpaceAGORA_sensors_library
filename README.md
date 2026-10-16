@@ -1,351 +1,93 @@
 # SpaceAGORA.jl
 
-SpaceAGORA.jl is a Julia toolkit for spacecraft orbit and atmospheric-flight
-simulation, including aerobraking, entry, and aerocapture workflows. The main
-user-facing surfaces are:
+[![Julia CI](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/actions/workflows/julia-ci.yml/badge.svg?branch=main)](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/actions/workflows/julia-ci.yml)
+[![Documentation](https://img.shields.io/badge/docs-online-blue.svg)](https://space-falcon-lab.github.io/SpaceAGORA.jl/)
+[![Julia 1.12](https://img.shields.io/badge/julia-1.12-9558b2.svg)](https://julialang.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-- the root `SpaceAGORA` Julia API
-- the repository CLI wrapper at `./bin/spaceagora` on Linux/macOS or
-  `bin\spaceagora.bat` on Windows
-- runnable example scripts under `examples/`
+SpaceAGORA is a Julia simulator for spacecraft that fly in or near a planet's
+atmosphere. It models aerobraking, entry, aerocapture and orbital flight around
+Earth, Mars, Venus, Titan and the Moon, with guidance and control in the loop.
+It is developed by the Space-FALCON Lab at the University of Michigan.
 
-Cross-platform command conventions used below:
+![A simulated Mars aerobraking pass in the SpaceAGORA viewer: the Mars Odyssey spacecraft model coloured by its heating, with the Martian limb behind it and a panel listing altitude, density, heat rate and drag.](docs/src/assets/figures/viewer_heating_closeup.jpg)
 
-- `julia --project=. src/interfaces/cli/main.jl ...` works on Windows, Linux, and macOS
-- `julia --project=. scripts/ensure_gram_native.jl ...` works on Windows,
-  Linux, and macOS
-- `./bin/spaceagora` and `./scripts/ensure_gram_native.sh` remain available as
-  convenience wrappers on Linux/macOS
-- command blocks say where they are typed: **Terminal** means a shell prompt
-  (PowerShell or Command Prompt on Windows, a terminal on Linux/macOS) and
-  **Julia REPL** means the `julia>` prompt of a running Julia session. Unless
-  a block says otherwise, terminal commands run from the repository root, the
-  directory that contains `Project.toml`
+*A Mars aerobraking pass in the interactive viewer. Spacecraft model: NASA/JPL/Eyes on the Solar System.*
 
-## Installation
+**[Documentation](https://space-falcon-lab.github.io/SpaceAGORA.jl/)** ·
+[Quickstart](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/quickstart/) ·
+[Tutorial](https://space-falcon-lab.github.io/SpaceAGORA.jl/tutorials/odyssey_surrogate/) ·
+[Publications](https://space-falcon-lab.github.io/SpaceAGORA.jl/publications/)
 
-**SpaceAGORA requires Julia 1.12** (any 1.12.x release). Other releases,
-including Julia 1.13, are not supported and the package manager refuses them;
-check with `julia --version` before anything else. See
-[Julia version](docs/src/user/installation_environment.md#julia-version) for
-what an unsupported release reports.
+## Get started
 
-Use the repository root environment as the canonical committed execution environment for examples, tests, and normal local runs.
-
-Terminal, Linux/macOS. The first line creates the checkout; the other lines
-run inside it, which is the repository root for every later command:
+SpaceAGORA needs Julia 1.12. In a terminal on Linux or macOS:
 
 ```text
 GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 cd SpaceAGORA.jl
 julia --project=. -e "using Pkg; Pkg.instantiate(julia_version_strict=true)"
-```
-
-`julia_version_strict=true` makes the package manager stop with one clear
-message when the running Julia is not a 1.12 release, instead of continuing
-into unrelated errors.
-
-On Windows the variable is set in a separate statement, and the `cd` and
-`julia` lines above then run unchanged. Terminal, Windows PowerShell:
-
-```text
-$env:GIT_LFS_SKIP_SMUDGE = "1"
-git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
-```
-
-Terminal, Windows Command Prompt:
-
-```text
-set GIT_LFS_SKIP_SMUDGE=1
-git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
-```
-
-`GIT_LFS_SKIP_SMUDGE=1` leaves the seven GRAM surrogate grids under `data/planets/gram_surrogate/` as small Git LFS pointers instead of downloading about 2.5 GB that nothing on the quickstart path reads (a benchmark study is their only consumer; `git lfs pull --include "data/planets/gram_surrogate/*"` fetches them later if you need that study). The `--filter=blob:none` keeps the clone to the current tree: the repository history carries large data blobs that no longer exist in `main`, and a plain clone downloads all of them.
-
-That gives you the baseline open-data onboarding path immediately. You do not
-need GRAM or SPICE to run the first quickstart example, and there is no bootstrap step beyond instantiating the committed root environment.
-
-### Check the installation
-
-A successful setup looks like this. Terminal, from the repository root:
-
-```text
-julia --version
-julia --project=. -e "using SpaceAGORA; println(pkgdir(SpaceAGORA))"
-```
-
-The first command prints `julia version 1.12.` followed by the patch number.
-The second prints the absolute path of your checkout; the first time it runs
-it also compiles the package, which takes several minutes and shows
-precompilation progress, and nothing else should be printed. The same check
-from a Julia REPL started from the repository root with `julia --project=.`:
-
-```julia
-julia> Base.active_project()
-"/absolute/path/to/SpaceAGORA.jl/Project.toml"
-
-julia> using SpaceAGORA
-
-julia>
-```
-
-If the path does not end in `SpaceAGORA.jl/Project.toml`, Julia was started
-from another directory or without `--project=.`; see
-[Troubleshooting](docs/src/user/troubleshooting.md#wrong-working-directory).
-
-Helpful first checks. Terminal, from the repository root:
-
-```text
-julia --project=. src/interfaces/cli/main.jl assets check
-julia --project=. src/interfaces/cli/main.jl assets setup-open
-```
-
-`assets check` reports whether each local asset root has payload bytes, is missing or empty, or still contains Git LFS pointers. It exits with status 1 when a required entry is not usable; this inventory does not validate payload contents.
-`assets setup-open` summarizes the baseline repo-only path and which licensed
-external assets remain user-provided.
-
-## Optional MuJoCo scenes
-
-MuJoCo proximity scenes are provided by the independent
-[SpaceAGORAMuJoCo.jl companion](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl).
-It owns the native binding, scene dynamics, adapter tests and Basilisk comparison
-harness. Native scenes support Linux x86_64 with MuJoCo 3.11.0.
-
-Install the companion in a separate environment and explicitly load it when
-needed; see [installation and environment](docs/src/user/installation_environment.md#optional-mujoco-companion).
-Its connection to SpaceAGORA follows the same
-[versioned adapter standard](docs/src/reference/adapter_contract.md) as other
-optional integrations. Loading SpaceAGORA alone does not load the companion or
-download MuJoCo.
-
-## Guidance and control with a surrogate atmosphere
-
-The bounded Mars Odyssey P20 preset supplies a reproducible frozen atmosphere
-without native GRAM. From a normal clone, set up the example's own environment,
-which pins the public GRAMSuite wrapper and resolves the other packages, and
-run the active solar-panel control comparison. Terminal, from the repository
-root (the directory that contains `Project.toml`); the paths below are
-relative to it:
-
-```sh
-julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate_env/setup.jl
-julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl
-```
-
-The setup clones the EDG guidance companion from GitHub and adds it to the
-example environment, which edits the tracked
-`examples/odyssey_surrogate_env/Project.toml`; the walkthrough linked below
-describes both. On the first example run, only the selected grid and the
-public scenario assets download. Their
-checksums are verified before simulation. The example compares 90-degree and
-30-degree panel-angle limits and saves the actual commands, trajectory, heating
-and atmosphere provenance in `odyssey_surrogate_results/`, or the directory given
-with `--output=DIR`; it prints that location when it finishes. See the [Odyssey walkthrough](docs/src/tutorials/odyssey_surrogate.md)
-for the supported domain, frozen epoch, offline use and changing the controller.
-Native GRAM remains an optional advanced backend for atmosphere studies.
-
-## Asset model
-
-SpaceAGORA supports two common setup modes. A third, native-free route supplies
-a named frozen atmosphere through its own example environment; see "Guidance and
-control with a surrogate atmosphere" above.
-
-### 1. Baseline no-GRAM mode
-
-This mode is fully repository-local and is the recommended first run.
-
-- uses built-in planets such as `Earth()`, `Mars()`, and `Venus()`
-- uses fallback atmospheres such as `NoAtmosphereModel()` or
-  `ExponentialAtmosphereModel(planet)`
-- uses `SimpleEphemeridesModel()` instead of SPICE-backed ephemerides
-
-### 2. GRAM/SPICE-backed mode
-
-This mode is for higher-fidelity atmosphere and ephemeris workflows.
-
-- requires a usable GRAM installation under
-  `data/GRAMSuite.jl/GRAM Suite 2.0`
-- requires local SPICE kernels under
-  `data/GRAMSuite.jl/GRAM Suite 2.0/SPICE`
-- loads the `GRAMSuite` package extension automatically when `GRAMSuite` is
-  importable
-
-Need the exact process for pulling the `GRAMSuite.jl` submodule and copying the
-official NASA GRAM Suite folders into the expected repo path after access is
-approved? See
-[docs/src/user/gramsuite_setup.md](docs/src/user/gramsuite_setup.md). It is a
-step-by-step local setup guide for licensed GRAM assets. The full GRAM submodule
-checkout uses Git LFS and downloads several GB of binary data, so it is separate
-from the default baseline installation path.
-
-If the native GRAM shared library for your operating system is missing, build
-it with:
-
-```text
-julia --project=. scripts/ensure_gram_native.jl
-```
-
-The command checks whether the library file exists; it does not check its
-architecture or test whether it can load. If you copied an existing build from
-another machine, force a clean rebuild with:
-
-```text
-julia --project=. scripts/ensure_gram_native.jl --clean
-```
-
-## Quick Start
-
-The fastest first run. Terminal, from the repository root (the directory that
-contains `Project.toml`):
-
-```text
 julia --project=. examples/AGORA_Basic_Quickstart.jl
 ```
 
-Or through the CLI, from the same directory:
+The example flies an Earth orbit without atmosphere, GRAM or SPICE data, and
+writes its results and plots under `output/`. The clone options skip large data
+files that the first run does not need. On Windows, set `GIT_LFS_SKIP_SMUDGE`
+in its own command first; the
+[Quickstart](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/quickstart/)
+shows both Windows shells, a setup check and what the run prints.
 
-```text
-julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl
-```
-
-That example is intentionally simple:
-
-- Earth orbit
-- no atmosphere drag
-- no SPICE dependency
-- no GRAM dependency
-- results written under `output/`
-
-If you only want to verify the end-to-end path with a short run, use:
+For a short check run through the command-line tool, from the same directory:
 
 ```text
 julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --smoke
 ```
 
-## Basic Example
+## What you can simulate
 
-The quickstart script lives at
-`examples/AGORA_Basic_Quickstart.jl` and is the recommended first code sample
-to read. It demonstrates the minimum pieces needed to run a simulation:
+- **Atmospheric flight**: aerobraking, entry and aerocapture with analytic,
+  NRLMSISE-00, frozen GRAM grid or native NASA GRAM atmospheres, including heat
+  rates and heat loads.
+- **Gravity and perturbations**: point mass, J2, spherical harmonics, third
+  bodies, solar radiation pressure and gravity-gradient torque.
+- **Vehicles**: rigid, articulated and compliant spacecraft carrying thrusters,
+  reaction wheels, torque rods, panel hinges, laser terminals or actuator kinds
+  of your own.
+- **Guidance and control**: your own controllers in the loop, energy-depletion
+  aerobraking guidance, rendezvous planning and powered lunar descent with
+  plume-surface interaction.
+- **Missions and campaigns**: operational segments, phases and events within a
+  run, and Monte Carlo and constellation ensembles in parallel.
+- **Results**: CSV and Feather tables with a manifest, plots, an interactive 3D
+  viewer and a packaged verification study against flight telemetry.
 
-1. activate the shared example helpers
-2. choose a no-GRAM planet model
-3. build a simple spacecraft
-4. assemble a `SimulationConfiguration`
-5. run the simulation and save a CSV report
+Optional companion packages add HYPR motion planning, MuJoCo contact scenes,
+energy-depletion guidance and the 3D viewer. Each installs into its own Julia
+environment, as the
+[installation guide](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/installation_environment/)
+describes.
 
-Key ideas in that example:
+## Learn more
 
-- `make_no_gram_planet(:earth)` avoids SPICE and uses built-in Earth constants
-- `NoAtmosphereModel()` gives a vacuum baseline so installation is easier to
-  validate
-- `SimpleEphemeridesModel()` keeps the frame/ephemeris path open-data and
-  lightweight
-- `make_three_body_spacecraft(...)` builds a simple bus-plus-panels geometry
-- `make_example_config(...)` packages common example defaults into a single
-  configuration object
+- [Configuring a Simulation](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/simulation_configuration/):
+  build your own scenario.
+- [Odyssey guidance with a frozen atmosphere](https://space-falcon-lab.github.io/SpaceAGORA.jl/tutorials/odyssey_surrogate/):
+  a complete aerobraking exercise without licensed data.
+- [Interactive Visualization](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/visualization/):
+  open a run in the 3D viewer.
+- [GRAMSuite setup](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/gramsuite_setup/):
+  the higher-fidelity path with NASA GRAM and SPICE.
+- [Extensibility](https://space-falcon-lab.github.io/SpaceAGORA.jl/extensibility/):
+  add your own forces, atmospheres, actuators and controllers.
 
-## GRAM Access
+## Citing
 
-Once GRAM assets are available locally, the smallest GRAM-backed example is:
+If you use SpaceAGORA, please cite it with the metadata in
+[CITATION.cff](CITATION.cff); GitHub's "Cite this repository" button turns it
+into BibTeX. Papers built on SpaceAGORA are listed on
+[Publications](https://space-falcon-lab.github.io/SpaceAGORA.jl/publications/).
 
-```text
-julia --project=. examples/AGORA_Basic_GRAMEarth.jl
-```
+## Contributing and license
 
-That example adds the minimum GRAM-specific pieces on top of the baseline path:
-
-1. `setup_gram_example!()` loads the vendored `GRAMSuite` project if needed
-2. `Earth("", SPICE_PATH)` uses the SPICE-backed planet constructor
-3. `GRAMAtmosphereModel(planet_name="earth")` switches the atmosphere source
-   from the built-in fallback model to GRAM
-
-Before running it, verify:
-
-- `data/GRAMSuite.jl/GRAM Suite 2.0` exists
-- `data/GRAMSuite.jl/GRAM Suite 2.0/SPICE` exists
-- the platform-native GRAM shared library exists, or can be built with
-  `julia --project=. scripts/ensure_gram_native.jl`
-
-Useful commands:
-
-```text
-julia --project=. src/interfaces/cli/main.jl assets check
-julia --project=. scripts/ensure_gram_native.jl
-julia --project=. examples/AGORA_Basic_GRAMEarth.jl
-```
-
-If you want fuller mission examples after that, start with:
-
-- `examples/AGORA_Vex.jl`
-- `examples/AGORA_Odyssey.jl`
-
-Both of those use the same GRAM access pattern as the basic GRAM example, but
-add mission-specific guidance, maneuvers, and higher-fidelity dynamics.
-
-## Reusable missions and viewing results
-
-A `MissionPlan` builds a fresh configuration for each run. `run_mission` saves
-results into a new directory and returns the table, configuration and portable
-viewer payload together. Named phases describe observation windows; named events
-construct fresh callbacks against the configuration that actually runs.
-See the [mission workflow guide](docs/src/user/mission_workflows.md) and
-`examples/AGORA_Mission_Workflow.jl` for a complete example.
-
-The browser viewer is the independent
-[SpaceAGORAVisualizer.jl package](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl).
-Install the tested pair with `julia --project=. scripts/setup_visualizer.jl .visualizer-env`,
-then load both packages in that environment. A saved viewer JSON can also be
-opened with the companion alone, after moving the output directory or closing
-the simulation process. See the [visualization guide](docs/src/user/visualization.md).
-
-## CLI and docs
-
-- Docs site: [space-falcon-lab.github.io/SpaceAGORA.jl](https://space-falcon-lab.github.io/SpaceAGORA.jl)
-- Cross-platform CLI entrypoint: `julia --project=. src/interfaces/cli/main.jl`
-- Linux/macOS wrapper: `./bin/spaceagora`
-- Windows wrapper: `bin\spaceagora.bat`
-- Run an example: `julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl`
-- Asset check: `julia --project=. src/interfaces/cli/main.jl assets check`
-- Verification study: `julia --project=. src/interfaces/cli/main.jl telemetry quick --output-dir=output/telemetry_cli --enforce=1`
-
-## For contributors
-
-Choose a location by what the code is responsible for. The repository has these
-main entry points:
-
-| Location | What belongs here |
-| --- | --- |
-| [src/](src/README.md) | Installed implementation, grouped into interfaces, orchestration, models and foundation. |
-| [examples/](docs/src/user/examples_catalog.md) | Runnable scenarios that demonstrate supported usage, with their shared support code and any separate environments. |
-| [templates/](docs/src/extensibility.md) | Starting points to copy and complete when implementing an extension. |
-| [benchmarks/](docs/src/user/studies_benchmarks.md) | Evaluation procedures, comparison studies and their analysis tools. |
-| [scripts/](scripts/) | Installation, maintenance, diagnostics and operational tools. |
-| [test/](test/README.md) | Automated verification, test helpers and required fixtures. |
-| [docs/](docs/) | User guides, reference documentation and maintained design contracts. |
-| [data/](docs/src/assets.md) | Declared input assets and external-data setup, including the GRAMSuite checkout. |
-| [packages/](packages/README.md) | Optional companion checkouts, installation metadata and the HYPR compatibility loader. |
-| [ext/](ext/) | Julia package extensions owned by SpaceAGORA. |
-| [bin/](bin/) | Thin command launchers for users. |
-| [build/](build/) | The separate environment and driver for building a system image. |
-| [.github/](.github/) | Repository automation and contribution templates. |
-
-`experimental/` remains a separate research area. Browser rendering is maintained in
-[SpaceAGORAVisualizer.jl](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl),
-with installation and usage linked above.
-
-Keep related files together and reuse an existing home before creating another
-folder. The [topology contract](docs/architecture/canonical_topology_contract.md)
-describes the placement and retirement rules. The
-[source directory guide](src/README.md) explains the four source groups and the
-composition loader; the groups do not introduce new Julia namespaces.
-
-- The [user documentation](docs/src/index.md) covers installation, simulations,
-  results and supported extension interfaces.
-- Start with [How a Simulation Fits Together](docs/src/user/architecture.md)
-  for the simulation flow and spacecraft composition.
-- Repository changes, documentation builds, ownership rules and release checks
-  are covered separately in the [contributor guide](docs/contributing/index.md).
-
-Generated reports, docs builds, and other local outputs stay in ignored paths
-such as `output/`, `docs/build/`, `docs/site/`, and `docs/src/generated/`.
+The [contributor guide](CONTRIBUTING.md) covers repository layout, ownership
+rules and release checks. SpaceAGORA is released under the [MIT License](LICENSE).

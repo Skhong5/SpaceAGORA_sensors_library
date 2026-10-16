@@ -591,6 +591,7 @@ function run_simulation(
     _validate_interlinks!(args, solver_mode)
     _validate_orientation_inertia!(args)
     _validate_thermal_model_support!(args)
+    _validate_model_hooks!(args, solver_mode)
     _validate_ephemerides_support!(args)
     _warn_density_without_atmospheric_effector(args)
     if args.interlink_model !== nothing

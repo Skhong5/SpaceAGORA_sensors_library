@@ -312,7 +312,7 @@ function build_ensemble_frames(
             if has_heat
                 _resample_linear!(col, t, df[!, "sc$(k)_heat_rate"], times)
                 @inbounds for f in 1:N
-                    heat[(f - 1) * S + s] = col[f]
+                    heat[(f - 1) * S + s] = col[f] * HEAT_RATE_W_CM2_TO_W_M2
                 end
             end
             if has_q

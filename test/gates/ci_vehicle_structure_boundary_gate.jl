@@ -4,7 +4,6 @@ const SPACECRAFT_ROOT = joinpath(REPO_ROOT, "src", "models", "vehicle", "spacecr
 
 required_structure_files = (
     joinpath("src", "models", "vehicle", "structure", "structure_models.jl"),
-    joinpath("src", "models", "vehicle", "structure", "assembly_graph.jl"),
     joinpath("src", "models", "vehicle", "structure", "mass_properties.jl"),
     joinpath("src", "models", "vehicle", "structure", "geometry_properties.jl"),
 )
@@ -18,15 +17,9 @@ isfile(joinpath(REPO_ROOT, "src", "models", "vehicle", "spacecraft", "spacecraft
     error("Vehicle structure boundary violation: retired file still exists at src/models/vehicle/spacecraft/spacecraft_analysis.jl")
 
 const STRUCTURE_OWNER_FUNCTIONS = (
-    "traverse_bodies",
     "get_COM",
-    "update_inertia_tensor!",
-    "update_inertia_tensor",
     "get_inertia_tensor",
-    "set_inertia_tensor!",
-    "get_spacecraft_mass",
     "get_spacecraft_reference_area",
-    "get_spacecraft_length",
     "get_SA_area",
     "get_SC_area",
     "get_normal_vector",

@@ -1,6 +1,7 @@
 module AbstractTypes
 
 export AbstractTerrainModel, AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractThermalModel, AbstractThrusterModel, AbstractControlEffectorModel, AbstractEphemeridesModel, AbstractGuidanceModel
+export AbstractNavigationModel
 export AbstractActuator, AbstractSensor
 
 """
@@ -15,7 +16,9 @@ abstract type AbstractForceTorqueModel end
     AbstractControlEffectorModel
 
 Stable extension interface for control/execution effectors that produce runtime
-commands or actuation-side control behavior.
+commands or actuation-side control behavior. A subtype implements
+`calcControlEffect!(model, u, p, t, spacecraft_index)` and, unless its `actuation_mode`
+is `:mounted`, `calcControlForceTorque(model, u, p, i, t)`.
 """
 abstract type AbstractControlEffectorModel end
 
@@ -82,9 +85,20 @@ abstract type AbstractSensor end
     AbstractGuidanceModel
 
 Stable extension interface for guidance strategy models that produce guidance-side
-commands or trajectory directives.
+commands or trajectory directives. A subtype implements
+`calcGuidanceEffect!(model, u, p, t, spacecraft_index)`.
 """
 abstract type AbstractGuidanceModel end
+
+"""
+    AbstractNavigationModel
+
+Stable extension interface for navigation models: sensor and state-estimator
+effectors listed in a `NavigationModel`. A subtype implements
+`calcNavigationEffect!(model, u, p, t, spacecraft_index)`.
+"""
+abstract type AbstractNavigationModel end
+
 """
     AbstractTerrainModel
 

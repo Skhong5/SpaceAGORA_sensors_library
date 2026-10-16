@@ -171,6 +171,7 @@ using .SimulationModel: StateAnchor, get_state_anchor_callback
 using .SimulationModel.AbstractTypes: AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel
 using .SimulationModel.AbstractTypes: AbstractControlEffectorModel, AbstractEphemeridesModel
 using .SimulationModel.AbstractTypes: AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
+using .SimulationModel.AbstractTypes: AbstractNavigationModel
 using .SimulationModel.AbstractTypes: AbstractActuator, AbstractSensor
 using .SimulationModel: StateSample, PlanetFrameSample, AtmosphereSample, SolarEphemerisSample
 using .SimulationModel: ThirdBodyEphemerisSample, EnvironmentSample, EffectorEnvironmentRequirements
@@ -250,8 +251,9 @@ using .SimulationModel: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeS
 using .SimulationModel: getDensity, getDensityBatch!, with_density_model_epoch
 using .SimulationModel: DescentPhaseTargets, apollo11_descent_targets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel
 using .SimulationModel: ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
-using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
-using .SimulationModel: control_thruster_levels
+using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate, calcReactionWheelTorque
+using .SimulationModel: control_thruster_levels, touchdown_spec
+using .SimulationModel: calcGuidanceEffect!, calcNavigationEffect!, getHeatRate
 # Actuators: the contract (Actuators), the thruster kind (Components) and mounting (ActuatorMounting).
 using .SimulationModel: Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
 using .SimulationModel: actuator_wrench, actuator_limits, actuator_saturate, actuator_consumption, actuator_fraction, actuator_unit_wrench, actuation_mode, actuator_levels, allocate_actuators
@@ -388,6 +390,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.sensor_measurement) sensor_measurement
 @doc (@doc SimulationModel.sensor_measurement_time) sensor_measurement_time
 @doc (@doc SimulationModel.AbstractTypes.AbstractGuidanceModel) AbstractGuidanceModel
+@doc (@doc SimulationModel.AbstractTypes.AbstractNavigationModel) AbstractNavigationModel
 @doc (@doc SimulationModel.StateSample) StateSample
 @doc (@doc SimulationModel.PlanetFrameSample) PlanetFrameSample
 @doc (@doc SimulationModel.AtmosphereSample) AtmosphereSample
@@ -509,11 +512,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EnvironmentModels.with_density_model_epoch(
     ::SimulationModel.AbstractDensityModel, ::Any,
 ))).text) with_density_model_epoch
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlEffect!(
-    ::SimulationModel.ControlHooks.BaseThrusterModel,
-    ::SimulationModel.ControlHooks.ComponentVector,
-    ::SimulationModel.ODEParams, ::Float64, ::Int64,
-))).text) calcControlEffect!
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlEffect!)).text) calcControlEffect!
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlForceTorque(
     ::SimulationModel.ControlHooks.BaseThrusterModel,
     ::AbstractVector, ::SimulationModel.ODEParams, ::Int64, ::Float64,
@@ -523,6 +522,11 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
     ::AbstractVector, ::SimulationModel.ODEParams, ::Int64, ::Float64,
 ))).text) calcControlMassFlowRate
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_thruster_levels(::Any, ::Int))).text) control_thruster_levels
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcReactionWheelTorque)).text) calcReactionWheelTorque
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.touchdown_spec(::Any, ::Int))).text) touchdown_spec
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.GuidanceHooks.calcGuidanceEffect!)).text) calcGuidanceEffect!
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.NavigationHooks.calcNavigationEffect!)).text) calcNavigationEffect!
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.VehicleThermalModels.getHeatRate)).text) getHeatRate
 
 # 3.4. RPO Station Assets
 @doc (@doc RPOStationAssets.station_geometry_path) station_geometry_path
@@ -610,6 +614,7 @@ export run_constellation_ensemble
 export StateAnchor, get_state_anchor_callback
 export AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractControlEffectorModel
 export AbstractEphemeridesModel, AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
+export AbstractNavigationModel
 export StateSample, PlanetFrameSample, AtmosphereSample, SolarEphemerisSample
 export ThirdBodyEphemerisSample, EnvironmentSample, EffectorEnvironmentRequirements
 export ClothArmBasePose, ClothArmLink, ClothArmJoint, ClothArmModel, ClothArmPose, ClothArmState
@@ -649,8 +654,9 @@ export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState, plum
 export DescentPhaseTargets, apollo11_descent_targets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel
 export ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 export getDensity, getDensityBatch!, with_density_model_epoch
-export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate
-export control_thruster_levels, bind_spacecraft
+export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate, calcReactionWheelTorque
+export control_thruster_levels, touchdown_spec, bind_spacecraft
+export calcGuidanceEffect!, calcNavigationEffect!, getHeatRate
 export AbstractActuator, Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
 export actuator_wrench, actuator_limits, actuator_saturate, actuator_consumption, actuator_fraction, actuator_unit_wrench, actuation_mode, actuator_levels, allocate_actuators
 export add_actuator!, mounted_actuators, actuator_context, allocation_matrix, mounted_wrench, six_axis_thrusters

@@ -5,11 +5,11 @@ const SM = SpaceAGORA.SimulationModel
 
 # A navigation effector that keeps the readings of the first sensor of the
 # spacecraft of the run at its ticks.
-mutable struct ReadingLog
+mutable struct ReadingLog <: AbstractNavigationModel
     readings::Vector{Vector{Float64}}
     times::Vector{Float64}
 end
-function SM.calcNavigationEffect!(n::ReadingLog, u, p, t::Float64, i::Int)
+function SpaceAGORA.calcNavigationEffect!(n::ReadingLog, u, p, t::Float64, i::Int)
     sc = p.args.dynamics_model.spacecraft[i]
     push!(n.readings, collect(sensor_measurement(sc, 1))); push!(n.times, sensor_measurement_time(sc, 1))
     return nothing

@@ -48,12 +48,21 @@
         @test torque_pre == SVector{3, Float64}(0.0, 0.0, 0.0)
 
         expected_dir = normalize(SVector{3, Float64}(u.vel))
+        # At the window's ends the thrust follows the burn's state, which the run
+        # switches between integration steps (`refresh_burn!` at each end).
+        @test calcControlForceTorque(model, u, p, 1, 50.0)[1] == SVector{3, Float64}(0.0, 0.0, 0.0)   # not lit yet
+        SimulationModel.ControlHooks.refresh_burn!(model, p, 1, 50.0)
         force_start, torque_start = calcControlForceTorque(model, u, p, 1, 50.0)
         @test isapprox(force_start, 2.0 .* expected_dir; atol=1e-12, rtol=0.0)
         @test torque_start == SVector{3, Float64}(0.0, 0.0, 0.0)
 
-        force_stop, _ = calcControlForceTorque(model, u, p, 1, 150.0)
+        force_mid, _ = calcControlForceTorque(model, u, p, 1, 100.0)
+        @test isapprox(force_mid, 2.0 .* expected_dir; atol=1e-12, rtol=0.0)
+
+        force_stop, _ = calcControlForceTorque(model, u, p, 1, 150.0)        # the step ending at the stop burns
         @test isapprox(force_stop, 2.0 .* expected_dir; atol=1e-12, rtol=0.0)
+        SimulationModel.ControlHooks.refresh_burn!(model, p, 1, 150.0)
+        @test calcControlForceTorque(model, u, p, 1, 150.0)[1] == SVector{3, Float64}(0.0, 0.0, 0.0)  # and the next one coasts
 
         force_post, _ = calcControlForceTorque(model, u, p, 1, 150.1)
         @test force_post == SVector{3, Float64}(0.0, 0.0, 0.0)

@@ -93,11 +93,11 @@ function _mounted_burn_tick_callback(control_model::BaseThrusterModel, period::F
     return PeriodicCallback(tick!, period)
 end
 
-# The engine of a mounted burn switches only between integration steps: the
-# solver stops at the window's ends (registered as stops when the burn is set)
-# and this callback flips the engine there. A discrete callback counts as a
-# derivative discontinuity unless it clears the flag, so the solver evaluates
-# the derivative again, with the new thrust, before the next step; the callback
+# A burn switches only between integration steps: the solver stops at the
+# window's ends (registered as stops when the burn is set) and this callback
+# switches the burn there. A discrete callback counts as a derivative
+# discontinuity unless it clears the flag, so the solver evaluates the
+# derivative again, with the new thrust, before the next step; the callback
 # must not call `derivative_discontinuity!(integrator, false)`, which would keep
 # the stale one.
 function _burn_edge_callback(control_model::BaseThrusterModel, num_sats::Int)
@@ -139,7 +139,13 @@ function _thruster_schedule_callbacks(control_model::BaseThrusterModel, num_sats
     init_callback = DiscreteCallback(
         (u, t, integrator) -> false,
         schedule_all!;
-        initialize=(cb, u, t, integrator) -> schedule_all!(integrator),
+        initialize=(cb, u, t, integrator) -> begin
+            schedule_all!(integrator)
+            # A burn already on at the start: the first derivative must thrust.
+            if any(control_model.burning) && applicable(DiffEqBase.derivative_discontinuity!, integrator, true)
+                DiffEqBase.derivative_discontinuity!(integrator, true)
+            end
+        end,
         save_positions=(false, false)
     )
     return (init_callback,)
@@ -164,10 +170,9 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
         end
         if !control_requires_periodic_callback(control_model)
             append!(callbacks, _thruster_schedule_callbacks(control_model, num_sats, args))
-            if actuation_mode(control_model) === :mounted
+            push!(callbacks, _burn_edge_callback(control_model, num_sats))
+            actuation_mode(control_model) === :mounted &&
                 push!(callbacks, _mounted_burn_tick_callback(control_model, Float64(control_rate), num_sats))
-                push!(callbacks, _burn_edge_callback(control_model, num_sats))
-            end
             continue
         end
         # Each control effector callback runs at its own rate and updates

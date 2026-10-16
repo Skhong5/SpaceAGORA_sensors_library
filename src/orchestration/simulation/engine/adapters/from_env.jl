@@ -33,42 +33,50 @@ function _parse_bool(raw, default::Bool)
     return default
 end
 
+# The accepted names are SolverConfig's own (SimConfig._SOLVER_MODES and
+# friends); these tables only add the extra spellings the environment accepts.
+const _SOLVER_MODE_ALIASES = Dict{String, Symbol}(
+    "default" => :tsit5, "" => :tsit5,
+    "gravity-backbone-split" => :gravity_backbone_split,
+    "gravity_backbone" => :gravity_backbone_split, "gravity-backbone" => :gravity_backbone_split,
+    "auto-stiff" => :auto_stiff, "autostiff" => :auto_stiff, "auto" => :auto_stiff,
+    "rodas" => :rodas5p, "stiff" => :rodas5p,
+    "split-imex" => :split_imex, "split" => :split_imex, "imex" => :split_imex,
+    "multirate_split" => :multirate, "split_multirate" => :multirate, "mr" => :multirate,
+    "dormandprince8" => :dp8, "dop8" => :dp8,
+)
+const _SYMPLECTIC_MODE_SPELLINGS = ("symplectic", "kahanli8", "verlet")
+const _MULTIRATE_SOLVER_ALIASES = Dict{String, Symbol}(
+    "tsit" => :tsit5, "default" => :tsit5,
+    "auto-stiff" => :auto_stiff, "autostiff" => :auto_stiff, "auto" => :auto_stiff,
+    "rodas" => :rodas5p, "stiff" => :rodas5p,
+    "ken4" => :kencarp4,
+    "dormandprince8" => :dp8, "dop8" => :dp8,
+)
+const _SPLIT_IMEX_SOLVER_ALIASES = Dict{String, Symbol}(
+    "ken4" => :kencarp4, "default" => :kencarp4,
+    "ken47" => :kencarp47,
+    "ken58" => :kencarp58,
+)
+
+function _parse_solver_name(raw::String, env_name::String, names, aliases)::Symbol
+    token = lowercase(strip(raw))
+    name = get(aliases, token, Symbol(token))
+    name in names && return name
+    throw(ArgumentError("Unsupported $(env_name)='$raw'. Use one of: $(join(names, ", "))."))
+end
+
 function _parse_solver_mode_sym(raw::String)::Symbol
-    mode = lowercase(strip(raw))
-    mode in ("tsit5", "default", "") && return :tsit5
-    mode in ("symplectic", "kahanli8", "verlet") && return :symplectic
-    mode in ("gravity_backbone_split", "gravity-backbone-split", "gravity_backbone", "gravity-backbone") && return :gravity_backbone_split
-    mode in ("auto_stiff", "auto-stiff", "autostiff", "auto") && return :auto_stiff
-    mode in ("rodas5p", "rodas", "stiff") && return :rodas5p
-    mode in ("split_imex", "split-imex", "split", "imex") && return :split_imex
-    mode in ("multirate", "multirate_split", "split_multirate", "mr") && return :multirate
-    mode in ("dp8", "dormandprince8", "dop8") && return :dp8
-    throw(ArgumentError(
-        "Unsupported SPACEAGORA_SOLVER_MODE='$raw'. Use one of: tsit5, symplectic, gravity_backbone_split, dp8, auto_stiff, rodas5p, split_imex, multirate."
-    ))
+    lowercase(strip(raw)) in _SYMPLECTIC_MODE_SPELLINGS &&
+        throw(ArgumentError("SPACEAGORA_SOLVER_MODE='$raw' is not supported: " * SimulationModel.SimConfig._SYMPLECTIC_MODE_MESSAGE))
+    return _parse_solver_name(raw, "SPACEAGORA_SOLVER_MODE", SimulationModel.SimConfig._SOLVER_MODES, _SOLVER_MODE_ALIASES)
 end
 
-function _parse_multirate_solver_sym(raw::String, env_name::String)::Symbol
-    mode = lowercase(strip(raw))
-    mode in ("tsit5", "tsit", "default") && return :tsit5
-    mode in ("auto_stiff", "auto-stiff", "autostiff", "auto") && return :auto_stiff
-    mode in ("rodas5p", "rodas", "stiff") && return :rodas5p
-    mode in ("kencarp4", "ken4") && return :kencarp4
-    mode in ("dp8", "dormandprince8", "dop8") && return :dp8
-    throw(ArgumentError(
-        "Unsupported $(env_name)='$raw'. Use one of: tsit5, dp8, auto_stiff, rodas5p, kencarp4."
-    ))
-end
+_parse_multirate_solver_sym(raw::String, env_name::String)::Symbol =
+    _parse_solver_name(raw, env_name, SimulationModel.SimConfig._MULTIRATE_SOLVERS, _MULTIRATE_SOLVER_ALIASES)
 
-function _parse_split_imex_solver_sym(raw::String)::Symbol
-    mode = lowercase(strip(raw))
-    mode in ("kencarp4", "ken4", "default") && return :kencarp4
-    mode in ("kencarp47", "ken47") && return :kencarp47
-    mode in ("kencarp58", "ken58") && return :kencarp58
-    throw(ArgumentError(
-        "Unsupported SPACEAGORA_SPLIT_IMEX_SOLVER='$raw'. Use one of: kencarp4, kencarp47, kencarp58."
-    ))
-end
+_parse_split_imex_solver_sym(raw::String)::Symbol =
+    _parse_solver_name(raw, "SPACEAGORA_SPLIT_IMEX_SOLVER", SimulationModel.SimConfig._SPLIT_IMEX_SOLVERS, _SPLIT_IMEX_SOLVER_ALIASES)
 
 """
     _solver_config_from_env([env_get]) -> SolverConfig
@@ -90,12 +98,15 @@ end
 # unit-test-facing accessors) propagates malformed `SPACEAGORA_SOLVER_*` values as
 # ArgumentError, matching this repo's other env parsers. `strict=false` (used by
 # `simulation_engine_config_from_env`'s general/introspection contract) instead
-# swallows a malformed individual knob and falls back to its default, so a typo'd
-# solver knob can't crash construction of the whole SimulationEngineConfig.
+# falls back to the knob's default for a malformed individual knob, so a typo'd
+# solver knob can't crash construction of the whole SimulationEngineConfig. The
+# fallback warns, so the typo does not silently select a different solver.
 _parse_or_default(f::Function, strict::Bool, default) = strict ? f() : (try
     f()
 catch e
-    e isa ArgumentError ? default : rethrow()
+    e isa ArgumentError || rethrow()
+    @warn "$(e.msg) Using the default $(repr(default)) instead (solver_strict=false)."
+    default
 end)
 
 function _solver_config_from_env(env_get=_engine_env_get; strict::Bool=true)::SolverConfig
@@ -169,6 +180,11 @@ end
 Build a typed `SimulationEngineConfig` from the supported `SPACEAGORA_*`
 environment variables. This is the adapter boundary for environment-driven
 runtime control.
+
+A malformed solver variable (an unknown `SPACEAGORA_SOLVER_MODE`, say) falls
+back to that setting's default with a warning; pass `solver_strict=true` to
+throw an `ArgumentError` instead, as `run_simulation` does when it reads the
+environment itself.
 
 # Examples
 ```jldoctest

@@ -253,7 +253,6 @@ occursin("using ..GravityEffectors: InverseSquaredJ2GravityModel", callback_regi
 for rel in (
     joinpath("src", "models", "vehicle", "actuators", "thruster_hooks.jl"),
     joinpath("src", "models", "vehicle", "structure", "structure_models.jl"),
-    joinpath("src", "models", "vehicle", "structure", "assembly_graph.jl"),
     joinpath("src", "models", "vehicle", "structure", "mass_properties.jl"),
     joinpath("src", "models", "vehicle", "structure", "geometry_properties.jl"),
     joinpath("src", "models", "dynamics", "effectors", "force_torque_models.jl"),
