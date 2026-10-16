@@ -681,6 +681,13 @@ end
     @test StateSample(pos, vel, 500.0; spacecraft_index=3).spacecraft_index == 3
     @test StateSample(pos, vel, 500.0, nothing, nothing, nothing).spacecraft_index == 0
     @test StateSample(pos, vel, 500.0, nothing, nothing, nothing, 2).spacecraft_index == 2
+    # The parameterized six-field form of the default constructor before the
+    # field existed: it still converts each argument to its field type.
+    six = StateSample{Nothing}(pos, vel, 500, nothing, nothing, nothing)
+    @test six.spacecraft_index == 0 && six.mass_kg === 500.0 && six.spacecraft === nothing
+    @test StateSample{Nothing}(pos, vel, 500.0, nothing, nothing, nothing, 4).spacecraft_index == 4
+    constructors = vcat(collect(methods(StateSample)), collect(methods(StateSample{Nothing})))
+    @test !any(Base.isambiguous(a, b) for a in constructors, b in constructors if a !== b)
 
     n = 3
     probe = _RHSDAIndexProbe()

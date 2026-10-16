@@ -49,7 +49,11 @@ struct StateSample{S}
     spacecraft_index::Int
 end
 
-# The six-field form that predates `spacecraft_index`: a sample outside a run.
+# The six-field forms that predate `spacecraft_index`, as Julia's default
+# constructors defined them (the parameterized one converts each argument to its
+# field type): a sample outside a run.
+StateSample{S}(pos_ii, vel_ii, mass_kg, q_ib, ω_body, spacecraft) where {S} =
+    StateSample{S}(pos_ii, vel_ii, mass_kg, q_ib, ω_body, spacecraft, 0)
 StateSample(
     pos_ii::SVector{3, Float64},
     vel_ii::SVector{3, Float64},
