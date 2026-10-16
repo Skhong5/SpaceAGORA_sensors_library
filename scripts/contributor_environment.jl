@@ -72,12 +72,14 @@ function verified_core(root, rev)
     return (; path, rev, uuid=project["uuid"], version=get(project, "version", ""))
 end
 
+refuse_core_source(project, file) = haskey(get(project, "sources", Dict{String,Any}()), "SpaceAGORA") &&
+    fail("$file: remove the SpaceAGORA entry from [sources]. Pkg cannot install SpaceAGORA from a url and rev " *
+         "(the core has submodules), and Pkg.test would use that entry instead of the tested core. " *
+         "The commit goes in $PIN_FILE.")
+
 """The repository's pin file, checked against the tested core: `(; description, companions)`."""
 function core_pin(project, file, repository, core; core_from_caller=false)
-    haskey(get(project, "sources", Dict{String,Any}()), "SpaceAGORA") &&
-        fail("$file: remove the SpaceAGORA entry from [sources]. Pkg cannot install SpaceAGORA from a url and rev " *
-             "(the core has submodules), and Pkg.test would use that entry instead of the tested core. " *
-             "The commit goes in $PIN_FILE.")
+    refuse_core_source(project, file)
     pinfile = joinpath(repository, PIN_FILE)
     isfile(pinfile) || fail("$pinfile is missing. It records the SpaceAGORA commit this repository is tested against:\n" *
         "url = \"$CORE_URL\"\nrev = \"$(core.rev)\"\nuuid = \"$(core.uuid)\"")
@@ -121,8 +123,17 @@ function package_identity(kind, project, file, repository)
     return has_module && uuid isa AbstractString ? (; name=String(name), uuid=String(uuid)) : nothing
 end
 
-"""Dependencies that `test/runtests.jl` imports: `[targets] test`, or a `test/Project.toml`."""
-function test_dependencies(project, file, repository)
+"""The repository's `test/Project.toml` as `(data, file)`; empty data when there is none."""
+function test_project(repository)
+    file = project_file(joinpath(repository, "test"))
+    file === nothing && return (Dict{String,Any}(), nothing)
+    data = TOML.parsefile(file)
+    refuse_core_source(data, file)
+    return (data, file)
+end
+
+"""Dependencies that `test/runtests.jl` imports: `[targets] test`, and a `test/Project.toml`'s `[deps]`."""
+function test_dependencies(project, file, tests)
     deps = Dict{String,Any}()
     for name in get(get(project, "targets", Dict{String,Any}()), "test", String[])
         uuid = get(get(project, "extras", Dict{String,Any}()), name,
@@ -130,13 +141,35 @@ function test_dependencies(project, file, repository)
         uuid === nothing && fail("$file: test target $name is not in [extras] or [weakdeps].")
         deps[name] = uuid
     end
-    test_project = project_file(joinpath(repository, "test"))
-    if test_project !== nothing
-        merge!(deps, get(TOML.parsefile(test_project), "deps", Dict{String,Any}()))
-        delete!(deps, get(project, "name", ""))
-    end
+    merge!(deps, get(tests, "deps", Dict{String,Any}()))
+    delete!(deps, get(project, "name", ""))
     return deps
 end
+
+"""A compat entry for the versions both bounds admit; refused when they admit none."""
+function compat_intersection(name, a, b, file)
+    a == b && return a
+    spec = intersect(Pkg.Versions.semver_spec(a), Pkg.Versions.semver_spec(b))
+    isempty(spec) && fail("$file: [compat] $name = \"$b\" does not overlap the bound \"$a\" of the repository's Project.toml.")
+    bound(v) = v.n == 0 ? "0" : join(Int.(v.t[1:v.n]), ".")
+    # Each range as "lower - upper": a single version would read as a caret bound.
+    return join((r.upper.n == 0 ? ">= $(bound(r.lower))" : "$(bound(r.lower)) - $(bound(r.upper))" for r in spec.ranges), ", ")
+end
+
+"""Bounds for the environment's direct dependencies: the repository's and its test project's, intersected."""
+function environment_compat(project, tests, testfile, deps)
+    compat = Dict{String,Any}()
+    for (data, file) in ((project, nothing), (tests, testfile))
+        for (name, bound) in get(data, "compat", Dict{String,Any}())
+            name == "julia" || haskey(deps, name) || continue
+            compat[name] = haskey(compat, name) ? compat_intersection(name, compat[name], bound, file) : bound
+        end
+    end
+    return compat
+end
+
+# A [sources] entry with a path written relative to `directory`, made absolute.
+rerooted(entry, directory) = haskey(entry, "path") ? merge(entry, Dict("path" => normpath(joinpath(directory, entry["path"])))) : entry
 
 companion_names(list::AbstractVector) = companion_names(join(list, ' '))
 function companion_names(list::AbstractString)
@@ -155,9 +188,10 @@ function companion_package_names(name; root)
 end
 
 """A dependency on a companion needs the companion listed in the pin file, at the core's recorded pin."""
-function check_companion_dependencies(project, file, companions; root)
-    used = merge(get(project, "deps", Dict{String,Any}()), get(project, "extras", Dict{String,Any}()))
-    sources = get(project, "sources", Dict{String,Any}())
+function check_companion_dependencies(project, file, companions; root, tests=Dict{String,Any}())
+    used = merge(get(project, "deps", Dict{String,Any}()), get(project, "extras", Dict{String,Any}()),
+                 get(tests, "deps", Dict{String,Any}()))
+    sources = merge(get(tests, "sources", Dict{String,Any}()), get(project, "sources", Dict{String,Any}()))
     for name in OptionalPackages.NAMES, dependency in companion_package_names(name; root)
         haskey(used, dependency) || continue
         name in companions || fail("$file: $dependency is a dependency; list \"$name\" in $PIN_FILE companions.")
@@ -179,17 +213,18 @@ function check_repository(kind, repository; rev=nothing, root=ROOT, core_from_ca
     project = TOML.parsefile(file)
     package = package_identity(kind, project, file, repository)
     pin = core_pin(project, file, repository, core; core_from_caller)
+    tests, testfile = test_project(repository)
     names = companion_names(pin.companions)
-    check_companion_dependencies(project, file, names; root=core.path)
+    check_companion_dependencies(project, file, names; root=core.path, tests)
     get(get(project, "deps", Dict{String,Any}()), "SpaceAGORA", nothing) == core.uuid ||
         fail("$file: [deps] must list SpaceAGORA = \"$(core.uuid)\".")
-    return (; kind, core, repository, file, project, package, pin=pin.description, companions=names)
+    return (; kind, core, repository, file, project, tests, testfile, package, pin=pin.description, companions=names)
 end
 
 """Check every input and decide the environment's contents; nothing is written or fetched."""
 function plan(kind, repository, environment; manifest="core", rev=nothing, root=ROOT, core_from_caller=false)
     manifest in MANIFEST_MODES || fail("Unknown manifest mode '$manifest'. Choose from $(join(MANIFEST_MODES, ", ")).")
-    (; core, repository, file, project, package, pin, companions) =
+    (; core, repository, file, project, tests, testfile, package, pin, companions) =
         check_repository(kind, repository; rev, root, core_from_caller)
     destination = OptionalPackages.canonical_destination(environment)
     inside(destination, core.path) && fail("Choose an environment directory outside the SpaceAGORA checkout.")
@@ -204,7 +239,7 @@ function plan(kind, repository, environment; manifest="core", rev=nothing, root=
     else
         nothing
     end
-    deps = merge(get(project, "deps", Dict{String,Any}()), test_dependencies(project, file, repository))
+    deps = merge(get(project, "deps", Dict{String,Any}()), test_dependencies(project, file, tests))
     sources = Dict{String,Any}("SpaceAGORA" => Dict("path" => core.path))
     developed = [core.path]
     if package !== nothing
@@ -212,18 +247,19 @@ function plan(kind, repository, environment; manifest="core", rev=nothing, root=
         sources[package.name] = Dict("path" => repository)
         push!(developed, repository)
     end
-    compat = Dict{String,Any}()
+    # A project is the environment's template, so its other sources apply. A package's
+    # own sources reach the environment through the package, but sources of test-only
+    # dependencies come from the test project, relative to test/.
     if kind == "project"
-        # The project is the environment's template: its other sources and its bounds apply.
         for (name, entry) in get(project, "sources", Dict{String,Any}())
-            haskey(sources, name) && continue
-            sources[name] = haskey(entry, "path") ?
-                merge(entry, Dict("path" => normpath(joinpath(repository, entry["path"])))) : entry
-        end
-        for (name, bound) in get(project, "compat", Dict{String,Any}())
-            (name == "julia" || haskey(deps, name)) && (compat[name] = bound)
+            haskey(sources, name) || (sources[name] = rerooted(entry, repository))
         end
     end
+    for (name, entry) in get(tests, "sources", Dict{String,Any}())
+        haskey(sources, name) || haskey(get(project, "deps", Dict{String,Any}()), name) ||
+            (sources[name] = rerooted(entry, joinpath(repository, "test")))
+    end
+    compat = environment_compat(project, tests, testfile, deps)
     return (; kind, repository, file, package, pin, core, destination, manifest, seed, companions,
               project=Dict{String,Any}("deps" => deps, "sources" => sources, "compat" => compat), developed)
 end
@@ -306,25 +342,162 @@ function internal_path(chain, roots)
     return index === nothing ? nothing : join(chain[1:index+1], ".")
 end
 
-# Names bound to the SpaceAGORA module: `import SpaceAGORA as S` and `const S = SpaceAGORA`.
-function aliases!(roots, ex)
+# Aliases of SpaceAGORA follow lexical scope. A module (or file) collects its top-level
+# aliases: `import SpaceAGORA as S` and `const S = SpaceAGORA`. A function, `let`, loop,
+# comprehension or `catch` scope drops each alias that its arguments, bindings or
+# assignments shadow, and adds the aliases it assigns itself (`S = SpaceAGORA`).
+
+"""Add the names that an argument or assignment target binds: `x`, `x::T`, `x=default`, `(a, b)`, `x...`."""
+function bound_names!(names, ex)
+    if ex isa Symbol
+        push!(names, ex)
+    elseif ex isa Expr
+        if ex.head in (:tuple, :parameters, :block, :local)
+            foreach(arg -> bound_names!(names, arg), ex.args)
+        elseif ex.head in (:kw, :(=), :...) || (ex.head === :(::) && length(ex.args) == 2)
+            bound_names!(names, ex.args[1])
+        end
+    end
+    return names
+end
+
+is_signature(ex) = ex isa Expr && (ex.head === :call || (ex.head in (:where, :(::)) && is_signature(ex.args[1])))
+
+"""`(callee, arguments, body)` of a function, macro or anonymous function; `nothing` otherwise."""
+function function_parts(ex)
+    ex isa Expr && length(ex.args) == 2 || return nothing
+    if ex.head in (:function, :macro) || (ex.head === :(=) && is_signature(ex.args[1]))
+        signature = ex.args[1]
+        while signature isa Expr && signature.head in (:where, :(::)) && signature.args[1] isa Expr &&
+                signature.args[1].head in (:call, :tuple, :where, :(::))
+            signature = signature.args[1]
+        end
+        signature isa Expr && signature.head === :call && return (signature.args[1], signature.args[2:end], ex.args[2])
+        signature isa Expr && signature.head === :tuple && return (nothing, signature.args, ex.args[2])
+        return (nothing, Any[signature], ex.args[2])
+    elseif ex.head === :->
+        signature = ex.args[1]
+        arguments = signature isa Expr && signature.head in (:tuple, :block) ?
+            filter(arg -> !(arg isa LineNumberNode), signature.args) : Any[signature]
+        return (nothing, arguments, ex.args[2])
+    end
+    return nothing
+end
+
+const SCOPE_HEADS = (:module, :let, :for, :while, :try, :generator)
+
+"""Collect a module's top-level aliases of SpaceAGORA into `roots`, without entering local scopes."""
+function module_aliases!(roots, ex)
     ex isa Expr || return roots
+    (function_parts(ex) !== nothing || ex.head in SCOPE_HEADS) && return roots
     if ex.head === :as && dotted(ex.args[1]) == [:SpaceAGORA] && ex.args[2] isa Symbol
         push!(roots, ex.args[2])
-    elseif ex.head === :(=) && length(ex.args) == 2 && ex.args[1] isa Symbol && ex.args[2] === :SpaceAGORA
+    elseif ex.head === :(=) && length(ex.args) == 2 && ex.args[1] isa Symbol && ex.args[2] isa Symbol && ex.args[2] in roots
         push!(roots, ex.args[1])
     end
-    foreach(arg -> aliases!(roots, arg), ex.args)
+    foreach(arg -> module_aliases!(roots, arg), ex.args)
     return roots
+end
+
+"""Collect the names a scope body assigns (its locals), the aliases among them, and its `global` names."""
+function assigned!(locals, aliases, globals, ex, roots)
+    ex isa Expr || return
+    (function_parts(ex) !== nothing || ex.head === :module) && return
+    if ex.head === :(=) && length(ex.args) == 2
+        bound_names!(locals, ex.args[1])
+        ex.args[1] isa Symbol && ex.args[2] isa Symbol && (ex.args[2] in roots || ex.args[2] in aliases) &&
+            push!(aliases, ex.args[1])
+    elseif ex.head === :local
+        bound_names!(locals, ex)
+    elseif ex.head === :global
+        foreach(arg -> bound_names!(globals, arg), ex.args)
+    elseif ex.head === :tuple
+        # Named-tuple fields, `(S = 1,)`, bind nothing.
+        for arg in ex.args
+            assigned!(locals, aliases, globals, arg isa Expr && arg.head === :(=) ? arg.args[2] : arg, roots)
+        end
+        return
+    end
+    foreach(arg -> assigned!(locals, aliases, globals, arg, roots), ex.args)
+end
+
+"""The aliases visible in a scope that binds `bound` and runs `body`, inside a scope that sees `roots`."""
+function scope_roots(roots, bound, body)
+    locals, aliases, globals = Set{Symbol}(bound), Set{Symbol}(), Set{Symbol}()
+    assigned!(locals, aliases, globals, body, roots)
+    return union(setdiff(roots, setdiff(locals, globals)), aliases)
 end
 
 internal!(found, line, name) = name === nothing || push!(found, (line, "$name is internal to SpaceAGORA"))
 
+# Iteration specifications `x = iter` of a loop or generator: bind the targets, scan the iterables outside.
+function iteration!(found, specs, line, roots, bound)
+    for spec in specs
+        spec isa LineNumberNode && continue
+        if spec isa Expr && spec.head === :block
+            line = iteration!(found, spec.args, line, roots, bound)
+        elseif spec isa Expr && spec.head === :filter
+            line = iteration!(found, spec.args[2:end], line, roots, bound)
+        elseif spec isa Expr && spec.head === :(=)
+            bound_names!(bound, spec.args[1])
+            line = scan_expression!(found, spec.args[2], line, roots)
+        end
+    end
+    return line
+end
+
 function scan_expression!(found, ex, line, roots)
     ex isa LineNumberNode && return ex.line
     ex isa Expr || return line
+    parts = function_parts(ex)
     if ex.head in (:error, :incomplete)
         push!(found, (line, "the file does not parse"))
+        return line
+    elseif ex.head === :module
+        return scan_expression!(found, ex.args[end], line, module_aliases!(Set([:SpaceAGORA]), ex.args[end]))
+    elseif parts !== nothing
+        callee, arguments, body = parts
+        callee === nothing || (line = scan_expression!(found, callee, line, roots))
+        inner = scope_roots(roots, bound_names!(Set{Symbol}(), Expr(:tuple, arguments...)), body)
+        for argument in arguments
+            line = scan_expression!(found, argument, line, inner)
+        end
+        return scan_expression!(found, body, line, inner)
+    elseif ex.head === :let
+        bindings, body = ex.args
+        bound, aliases = Set{Symbol}(), Set{Symbol}()
+        for binding in (bindings isa Expr && bindings.head === :block ? bindings.args : Any[bindings])
+            binding isa LineNumberNode && continue
+            bound_names!(bound, binding)
+            if binding isa Expr && binding.head === :(=)
+                line = scan_expression!(found, binding.args[2], line, roots)
+                binding.args[1] isa Symbol && binding.args[2] isa Symbol && binding.args[2] in roots && push!(aliases, binding.args[1])
+            end
+        end
+        return scan_expression!(found, body, line, union(scope_roots(roots, bound, body), aliases))
+    elseif ex.head in (:for, :while)
+        bound = Set{Symbol}()
+        ex.head === :for ? (line = iteration!(found, Any[ex.args[1]], line, roots, bound)) :
+            (line = scan_expression!(found, ex.args[1], line, roots))
+        return scan_expression!(found, ex.args[2], line, scope_roots(roots, bound, ex.args[2]))
+    elseif ex.head === :generator
+        bound = Set{Symbol}()
+        line = iteration!(found, ex.args[2:end], line, roots, bound)
+        inner = setdiff(roots, bound)
+        for spec in ex.args[2:end]
+            spec isa Expr && spec.head === :filter && (line = scan_expression!(found, spec.args[1], line, inner))
+        end
+        return scan_expression!(found, ex.args[1], line, inner)
+    elseif ex.head === :try
+        line = scan_expression!(found, ex.args[1], line, roots)
+        if length(ex.args) >= 3
+            variable = ex.args[2]
+            bound = variable isa Symbol ? Set([variable]) : Set{Symbol}()
+            line = scan_expression!(found, ex.args[3], line, scope_roots(roots, bound, ex.args[3]))
+        end
+        for rest in ex.args[4:end]
+            line = scan_expression!(found, rest, line, roots)
+        end
         return line
     elseif ex.head === :.
         name = internal_path(dotted(ex), roots)
@@ -363,7 +536,7 @@ end
 function scan_source(text::AbstractString, filename::AbstractString)
     ex = Meta.parseall(text; filename)
     found = Tuple{Int,String}[]
-    scan_expression!(found, ex, 0, aliases!(Set([:SpaceAGORA]), ex))
+    scan_expression!(found, ex, 0, module_aliases!(Set([:SpaceAGORA]), ex))
     return found
 end
 
