@@ -17,6 +17,11 @@ module ExtensionHooks
 # - `fallback`: `none` (every type needs its own method), `returns ...` or
 #   `throws ...`; the gate compares it with the method table at each documented
 #   arity. What the fallback returns is for the hook's own tests.
+# - `base`: the type a model that implements the hook subtypes. A method counts
+#   as the hook's fallback only when its dispatch argument is untyped or typed
+#   with `base` or a supertype of it, so that every such model reaches it. Each
+#   group sets a `base`; a row sets its own only where it differs. `:Any` where
+#   the hook has no such type.
 # - `status`: `current` or `deprecated`, which must agree with the docstring: a
 #   row is deprecated exactly when its docstring opens with "Deprecated". A
 #   deprecated row names its `replacement` (itself a row) and `removed_in`, which
@@ -45,13 +50,14 @@ function hook(symbol::Symbol; shape::String, signature::String, called::String,
               arguments::String, fallback::String, status::String="current",
               replacement::Union{Nothing, Symbol}=nothing,
               removed_in::Union{Nothing, String}=nothing,
+              base::Union{Nothing, Symbol}=nothing,
               page::Union{Nothing, String})
     return (; symbol, shape, signature, called, arguments, fallback, status,
-            replacement, removed_in, page)
+            replacement, removed_in, base, page)
 end
 
 const EXTENSION_HOOK_GROUPS = [
-    (title = "Physical effectors", core_owned = false, note = nothing, rows = [
+    (title = "Physical effectors", core_owned = false, base = :AbstractForceTorqueModel, note = nothing, rows = [
         hook(:calcForceTorque; shape = "R", status = "deprecated", replacement = :wrench,
             removed_in = "0.5.0",
             signature = "calcForceTorque(model, x, p, i) -> (force_n, torque_n_m)",
@@ -102,65 +108,65 @@ const EXTENSION_HOOK_GROUPS = [
             fallback = "none",
             page = "extensibility.md"),
     ]),
-    (title = "Environment queries", core_owned = false, note = nothing, rows = [
-        hook(:getDensity; shape = "Q",
+    (title = "Environment queries", core_owned = false, base = :Any, note = nothing, rows = [
+        hook(:getDensity; shape = "Q", base = :AbstractDensityModel,
             signature = "getDensity(model, h, lat, lon, el_time, wind[, p]) -> (rho, temperature, wind_vec)",
             called = "each atmosphere query: the density callback and the force and heating samples",
             arguments = "`h` geodetic altitude (m), `lat` geodetic latitude and `lon` east longitude (rad), `el_time` elapsed s, `wind::Bool`; density (kg/m³), temperature (K), wind east, north, up relative to the rotating planet (m/s)",
             fallback = "none",
             page = "extensibility.md"),
-        hook(:getDensityBatch!; shape = "Q",
+        hook(:getDensityBatch!; shape = "Q", base = :AbstractDensityModel,
             signature = "getDensityBatch!(rhos, Ts, winds, model, hs, lats, lons, el_time, wind, p)",
             called = "batched atmosphere queries",
             arguments = "outputs first, then the queries in the units of `getDensity`; `el_time` is one elapsed time or one per query",
             fallback = "returns after filling each output from `getDensity`, query by query",
             page = "extensibility.md"),
-        hook(:with_density_model_epoch; shape = "L",
+        hook(:with_density_model_epoch; shape = "L", base = :AbstractDensityModel,
             signature = "with_density_model_epoch(model::AbstractDensityModel, initial_time)",
             called = "once, by `run_simulation`, before state isolation",
             arguments = "`initial_time` the run's start epoch; returns a model whose elapsed-time origin matches it",
             fallback = "returns `model` unchanged",
             page = "user/gramsuite_setup.md"),
-        hook(:getHeatRate; shape = "Q",
+        hook(:getHeatRate; shape = "Q", base = :AbstractThermalModel,
             signature = "getHeatRate(model, S, T, ρ, v, α) -> Float64",
             called = "each heating sample where the density is positive, once per thermal link",
             arguments = "`S` molecular speed ratio, `T` free-stream temperature (K), `ρ` density (kg/m³), `v` speed relative to the atmosphere (m/s), `α` incidence (rad); heat rate (W/cm²)",
             fallback = "none",
             page = nothing),
-        hook(:terrain_height; shape = "Q",
+        hook(:terrain_height; shape = "Q", base = :AbstractTerrainModel,
             signature = "terrain_height(model, lat_deg, lon_deg) -> Float64",
             called = "each terrain query, such as a touchdown check",
             arguments = "planetocentric latitude and east longitude (degrees); height above the model's reference sphere (m)",
             fallback = "none",
             page = "user/lunar_landing.md"),
-        hook(:terrain_radius; shape = "Q",
+        hook(:terrain_radius; shape = "Q", base = :AbstractTerrainModel,
             signature = "terrain_radius(model, lat_deg, lon_deg, reference_radius_m) -> Float64",
             called = "each terrain query that needs a distance from the body centre",
             arguments = "as `terrain_height`, with the reference-sphere radius (m); distance from the centre (m)",
             fallback = "returns `reference_radius_m + terrain_height(model, lat_deg, lon_deg)`",
             page = "user/concepts.md"),
     ]),
-    (title = "GNC ticks", core_owned = false, note = nothing, rows = [
-        hook(:calcControlEffect!; shape = "T",
+    (title = "GNC ticks", core_owned = false, base = :Any, note = nothing, rows = [
+        hook(:calcControlEffect!; shape = "T", base = :AbstractControlEffectorModel,
             signature = "calcControlEffect!(model, u, p, t, spacecraft_index) -> nothing",
             called = "every `control_rates[k]` seconds, once per spacecraft",
             arguments = "`u` the full integrated state, `p` the run's parameters, `t` elapsed s, `spacecraft_index` the spacecraft's position in the run (from 1)",
             fallback = "none",
             page = "extensibility.md"),
-        hook(:calcGuidanceEffect!; shape = "T",
+        hook(:calcGuidanceEffect!; shape = "T", base = :AbstractGuidanceModel,
             signature = "calcGuidanceEffect!(model, u, p, t, spacecraft_index) -> nothing",
             called = "every `guidance_rates[k]` seconds, once per spacecraft; after navigation and control when ticks coincide",
             arguments = "as `calcControlEffect!`",
             fallback = "none",
             page = nothing),
-        hook(:calcNavigationEffect!; shape = "T",
+        hook(:calcNavigationEffect!; shape = "T", base = :AbstractNavigationModel,
             signature = "calcNavigationEffect!(model, u, p, t, spacecraft_index) -> nothing",
             called = "every `navigation_rates[k]` seconds, once per spacecraft; before guidance and control when ticks coincide",
             arguments = "as `calcControlEffect!`; mounted sensors are sampled first",
             fallback = "none",
             page = "extensibility.md"),
     ]),
-    (title = "Control outputs", core_owned = false, note = nothing, rows = [
+    (title = "Control outputs", core_owned = false, base = :AbstractControlEffectorModel, note = nothing, rows = [
         hook(:calcControlForceTorque; shape = "R",
             signature = "calcControlForceTorque(model, u, p, spacecraft_index, t) -> (force, torque)",
             called = "every right-hand-side evaluation in `:ideal` actuation",
@@ -180,14 +186,14 @@ const EXTENSION_HOOK_GROUPS = [
             fallback = "returns `nothing`",
             page = nothing),
     ]),
-    (title = "GNC accessors", core_owned = false, note = nothing, rows = [
-        hook(:control_thruster_levels; shape = "A",
+    (title = "GNC accessors", core_owned = false, base = :Any, note = nothing, rows = [
+        hook(:control_thruster_levels; shape = "A", base = :AbstractControlEffectorModel,
             signature = "control_thruster_levels(effector, spacecraft_index::Int) -> Union{Nothing, AbstractVector{<:Real}}",
             called = "at save time",
             arguments = "the firing level (0 to 1) of each thruster of the spacecraft, in the visualization scene's order",
             fallback = "returns `nothing`",
             page = "user/lunar_landing.md"),
-        hook(:touchdown_spec; shape = "A",
+        hook(:touchdown_spec; shape = "A", base = :AbstractControlEffectorModel,
             signature = "touchdown_spec(effector, spacecraft_index::Int) -> Union{Nothing, NamedTuple}",
             called = "at setup, to create terrain-contact events",
             arguments = "`(terrain, reference_radius_m, height_m, on_touchdown)`, lengths in m",
@@ -200,7 +206,7 @@ const EXTENSION_HOOK_GROUPS = [
             fallback = "throws `ArgumentError`",
             page = "extensibility.md"),
     ]),
-    (title = "Actuators", core_owned = false, note = nothing, rows = [
+    (title = "Actuators", core_owned = false, base = :AbstractActuator, note = nothing, rows = [
         hook(:actuator_wrench; shape = "H",
             signature = "actuator_wrench(actuator, level, ctx::ActuatorContext) -> (force_body, torque_body)",
             called = "every right-hand-side evaluation in `:mounted` actuation, inside the mounted wrench",
@@ -243,20 +249,20 @@ const EXTENSION_HOOK_GROUPS = [
             arguments = "what the actuator needs sampled, such as the magnetic field",
             fallback = "returns `ActuatorRequirements()`, nothing sampled",
             page = "user/custom_actuator.md"),
-        hook(:actuation_mode; shape = "D",
+        hook(:actuation_mode; shape = "D", base = :AbstractControlEffectorModel,
             signature = "actuation_mode(controller) -> Symbol",
             called = "at the pre-run check and in the dynamics, for each control effector",
             arguments = "`:ideal` (the effector's own control outputs) or `:mounted` (the mounted actuators at `actuator_levels`)",
             fallback = "returns `:ideal`",
             page = "user/custom_actuator.md"),
-        hook(:actuator_levels; shape = "A",
+        hook(:actuator_levels; shape = "A", base = :AbstractControlEffectorModel,
             signature = "actuator_levels(controller, i) -> Union{Nothing, AbstractVector{<:Real}}",
             called = "every right-hand-side evaluation in `:mounted` actuation",
             arguments = "`i` the spacecraft's position in the run; one level per mounted actuator, in mounting order",
             fallback = "returns `nothing`",
             page = "user/custom_actuator.md"),
     ]),
-    (title = "Sensors", core_owned = false, note = nothing, rows = [
+    (title = "Sensors", core_owned = false, base = :AbstractSensor, note = nothing, rows = [
         hook(:sensor_measure; shape = "H",
             signature = "sensor_measure(sensor, truth::SensorTruth, ctx::ActuatorContext, rng) -> measurement",
             called = "at the run's start and every sensor period after it",
@@ -282,7 +288,7 @@ const EXTENSION_HOOK_GROUPS = [
             fallback = "returns the sensor's `period_s` field",
             page = nothing),
     ]),
-    (title = "RPO planners", core_owned = false, note = nothing, rows = [
+    (title = "RPO planners", core_owned = false, base = :AbstractRPOPlanner, note = nothing, rows = [
         hook(:planner_capabilities; shape = "D",
             signature = "planner_capabilities(planner) -> RPOPlannerCapabilities",
             called = "before each planning request, by the capability check",
@@ -308,7 +314,7 @@ const EXTENSION_HOOK_GROUPS = [
             fallback = "returns an `:unsupported` result",
             page = "user/rpo_planner_pilot.md"),
     ]),
-    (title = "GNC algorithm contract", core_owned = false,
+    (title = "GNC algorithm contract", core_owned = false, base = :AbstractGNCAlgorithm,
      note = "What an algorithm author implements. In a run, the shared request driver, `run_algorithm_request!`, calls them at its steps; for RPO planners they forward to the RPO names above.",
      rows = [
         hook(:algorithm_family; shape = "D",
@@ -354,7 +360,7 @@ const EXTENSION_HOOK_GROUPS = [
             fallback = "returns `true`",
             page = "reference/rpo_planner_contract.md"),
     ]),
-    (title = "GNC algorithm contract: family side", core_owned = true,
+    (title = "GNC algorithm contract: family side", core_owned = true, base = :AbstractAlgorithmFamily,
      note = "Core-owned: an algorithm family is trusted code in SpaceAGORA, so these are implemented once per family by its maintainers, never by an algorithm author. The request driver calls them at its steps.",
      rows = [
         hook(:default_capabilities; shape = "D",
@@ -417,7 +423,7 @@ const EXTENSION_HOOK_GROUPS = [
             arguments = "whether `request` revises the installed product (RPO: `reason === :retime`)",
             fallback = "returns `false`",
             page = nothing),
-        hook(:proposed_product; shape = "P",
+        hook(:proposed_product; shape = "P", base = :AbstractAlgorithmResult,
             signature = "proposed_product(result)",
             called = "after each proposal's type check, before validation",
             arguments = "the product a candidate `result` proposes; it must return, not throw, for a result validation will refuse. `AlgorithmResult` has a method (its `product`), and a family with its own result type adds one",
@@ -436,7 +442,7 @@ const EXTENSION_HOOK_GROUPS = [
             fallback = "returns a record with the proposal's termination, or `:not_proposed`",
             page = nothing),
     ]),
-    (title = "GNC algorithm contract: binding side", core_owned = true,
+    (title = "GNC algorithm contract: binding side", core_owned = true, base = :Any,
      note = "Core-owned: a binding is the guidance model that runs one algorithm in a simulation (for RPO, the planner guidance), and trusted code builds its requests. The request driver calls these at its steps.",
      rows = [
         hook(:algorithm_runtime; shape = "D",

@@ -9,7 +9,8 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 # 2. every exported function in the hook sections is a row or in NOT_HOOKS;
 # 3. the signature cell is the first line of the docstring's signature block;
 # 4. the signature's arity matches a method, and the fallback cell matches the
-#    method table at each documented arity;
+#    method table at each documented arity, counting as fallbacks only methods
+#    that every model of the row's `base` type reaches;
 # 5. the row is deprecated exactly when its docstring opens with "Deprecated"; a
 #    deprecated row names a replacement row and is removed in REMOVAL_RELEASE;
 # 6. the row's page exists under docs/src and names the hook;
@@ -105,15 +106,22 @@ function _hook_dispatch_type(m::Method, position::Int)
     return T
 end
 
-const _HOOK_PUBLIC_ABSTRACT_TYPES = [
-    value for value in (getproperty(SpaceAGORA, name) for name in names(SpaceAGORA)
-        if isdefined(SpaceAGORA, name))
-    if value isa Type && isabstracttype(Base.unwrap_unionall(value))
-]
+# The row's contract type: `:Any`, or a public abstract type of SpaceAGORA.
+function _hook_base(name::Symbol)
+    name === :Any && return Any
+    name in names(SpaceAGORA) && isdefined(SpaceAGORA, name) || return nothing
+    T = getproperty(SpaceAGORA, name)
+    return T isa Type && isabstracttype(Base.unwrap_unionall(T)) ? T : nothing
+end
 
-# A fallback is a method every user type reaches: its dispatch argument is
-# untyped or typed with a public abstract type.
-_hook_is_fallback(T) = T === Any || any(A -> T == A, _HOOK_PUBLIC_ABSTRACT_TYPES)
+# A fallback is a method every model of the row's base type reaches: its dispatch
+# argument is untyped or typed with the base or a supertype of it. A method typed
+# with some other abstract type (an RPO planner type on a force hook, say) is not.
+_hook_is_fallback(T, base) = T === Any || (T isa Type && base <: T)
+
+_hook_fallback_phrase(name, base) = base === Any ?
+    "no method with an untyped `$(name)`" :
+    "no method with `$(name)` untyped or typed with $(nameof(base)) or a supertype"
 
 _hook_mentions(text::AbstractString, symbol::Symbol) =
     occursin(Regex("(?<![A-Za-z0-9_])\\Q$(symbol)\\E(?![A-Za-z0-9_!])"), text)
@@ -168,6 +176,12 @@ _hook_unverified_arity = let hook_api = _hook_gate_inputs.PublicAPISymbols,
     for group in hook_registry.EXTENSION_HOOK_GROUPS, row in group.rows
         s = row.symbol
         isempty(strip(group.title)) && push!(violations, "$(s): its group has no title.")
+        base_name = row.base === nothing ? (hasproperty(group, :base) ? group.base : nothing) : row.base
+        base = base_name isa Symbol ? _hook_base(base_name) : nothing
+        if base === nothing
+            push!(violations, "$(s): base $(repr(base_name)) is not :Any or a public abstract type of SpaceAGORA (set `base` on the group or the row).")
+            base = Any
+        end
         row.shape in _HOOK_SHAPES || push!(violations, "$(s): shape $(repr(row.shape)) is not one of $(join(_HOOK_SHAPES, ", ")).")
         for field in (:called, :arguments)
             isempty(strip(getproperty(row, field))) && push!(violations, "$(s): empty $(field) cell.")
@@ -229,15 +243,17 @@ _hook_unverified_arity = let hook_api = _hook_gate_inputs.PublicAPISymbols,
         else
             fallbacks = filter(ms) do m
                 T = _hook_dispatch_type(m, position)
-                T !== nothing && _hook_is_fallback(T)
+                T !== nothing && _hook_is_fallback(T, base)
             end
+            # Only fallbacks a documented call can reach count against `none`.
+            documented = filter(m -> any(a -> _hook_accepts(m, a), arities), fallbacks)
             if row.fallback == "none"
-                isempty(fallbacks) ||
-                    push!(violations, "$(s): fallback cell says none, but $(first(fallbacks)) is a fallback method.")
+                isempty(documented) ||
+                    push!(violations, "$(s): fallback cell says none, but $(first(documented)) is a fallback method.")
             elseif startswith(row.fallback, "returns ") || startswith(row.fallback, "throws ")
                 for arity in arities
                     any(m -> _hook_accepts(m, arity), fallbacks) ||
-                        push!(violations, "$(s): fallback cell says \"$(row.fallback)\", but no method with an untyped or public abstract $(parsed.names[position]) takes $(arity) positional arguments.")
+                        push!(violations, "$(s): fallback cell says \"$(row.fallback)\", but $(_hook_fallback_phrase(parsed.names[position], base)) takes $(arity) positional arguments.")
                 end
             else
                 push!(violations, "$(s): fallback cell must be none, \"returns ...\" or \"throws ...\".")

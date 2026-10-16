@@ -325,7 +325,7 @@ end
                 @test rejects(run_gate(), "environment_requirements: fallback cell says none, but")
             end
             with_registry(in_row("wrench", "fallback = \"none\"" => "fallback = \"returns `0.0`\"")) do
-                @test rejects(run_gate(), "wrench: fallback cell says \"returns `0.0`\", but no method with an untyped or public abstract model takes 4 positional arguments.")
+                @test rejects(run_gate(), "wrench: fallback cell says \"returns `0.0`\", but no method with `model` untyped or typed with AbstractForceTorqueModel or a supertype takes 4 positional arguments.")
             end
             with_registry(in_row("environment_requirements", "fallback = \"returns no sampled fields\"" => "fallback = \"defaults\"")) do
                 @test rejects(run_gate(), "environment_requirements: fallback cell must be none")
@@ -387,8 +387,13 @@ end
             #   its row still says current;
             # - arity: environment_requirements loses its one-argument fallback and gains an
             #   untyped two-argument one, so a type with no method of its own, called with
-            #   the documented one argument, has no fallback.
-            # The hook is one the hook design keeps unchanged, so later PRs leave it alone.
+            #   the documented one argument, has no fallback;
+            # - foreign: wrench gains a method typed with AbstractRPOPlanner, which no force
+            #   model reaches, so it is no fallback: a `none` row passes and a `returns` row
+            #   fails;
+            # - other_arity / documented_arity: an untyped wrench at an arity the row does
+            #   not document leaves a `none` row passing; one at the documented arity fails it.
+            # The hooks are ones the hook design keeps unchanged, so later PRs leave them alone.
             mutations = joinpath(fixture, "hook_gate_mutations.jl")
             write(mutations, raw"""
                 using SpaceAGORA
@@ -425,6 +430,34 @@ end
                 for (d, text, object) in saved
                     d.text, d.object = text, object
                 end
+                registry = joinpath(fixture, "docs", "extension_hooks.jl")
+                registry_text = read(registry, String)
+                wrench_row = match(r"        hook\(:wrench;.*?\),\n"s, registry_text).match
+                function with_wrench_methods(f, definition)
+                    before = Set(methods(SpaceAGORA.wrench))
+                    Core.eval(parentmodule(SpaceAGORA.wrench), definition)
+                    try
+                        f()
+                    finally
+                        foreach(Base.delete_method, setdiff(Set(methods(SpaceAGORA.wrench)), before))
+                    end
+                end
+                with_wrench_methods(:(wrench(model::$(SpaceAGORA.AbstractRPOPlanner), x, env, t) = (nothing, nothing))) do
+                    report("foreign_none")
+                    write(registry, replace(registry_text, wrench_row =>
+                        replace(wrench_row, "fallback = " * repr("none") => "fallback = " * repr("returns a zero wrench"); count=1); count=1))
+                    try
+                        report("foreign_returns")
+                    finally
+                        write(registry, registry_text)
+                    end
+                end
+                with_wrench_methods(:(wrench(model, x) = (nothing, nothing))) do
+                    report("other_arity")
+                end
+                with_wrench_methods(:(wrench(model, x, env, t) = (nothing, nothing))) do
+                    report("documented_arity")
+                end
                 generic = only(m for m in methods(hook) if m.module === owner && m.nargs == 2 &&
                     all(T -> T === Any, Base.unwrap_unionall(m.sig).parameters[2:end]))
                 Base.delete_method(generic)
@@ -438,8 +471,16 @@ end
             @test "status violation: environment_requirements: the docstring's first paragraph opens with \"Deprecated\", but the row says current." in lines
             @test count(startswith("status violation: "), lines) == 1
             @test "arity failed=true" in lines
-            @test "arity violation: environment_requirements: fallback cell says \"returns no sampled fields\", but no method with an untyped or public abstract model takes 1 positional arguments." in lines
+            @test "arity violation: environment_requirements: fallback cell says \"returns no sampled fields\", but no method with `model` untyped or typed with AbstractForceTorqueModel or a supertype takes 1 positional arguments." in lines
             @test count(startswith("arity violation: "), lines) == 1
+            @test "foreign_none failed=false" in lines
+            @test "foreign_returns failed=true" in lines
+            @test "foreign_returns violation: wrench: fallback cell says \"returns a zero wrench\", but no method with `model` untyped or typed with AbstractForceTorqueModel or a supertype takes 4 positional arguments." in lines
+            @test count(startswith("foreign_returns violation: "), lines) == 1
+            @test "other_arity failed=false" in lines
+            @test "documented_arity failed=true" in lines
+            @test any(startswith("documented_arity violation: wrench: fallback cell says none, but wrench(model, x, env, t)"), lines)
+            @test count(startswith("documented_arity violation: "), lines) == 1
             rm(mutations)
             @test isnothing(run_gate().failure)
         end
