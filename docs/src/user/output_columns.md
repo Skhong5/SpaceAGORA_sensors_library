@@ -291,4 +291,4 @@ Written with the default save-field list when a spacecraft carries sensors
 
 | Column | Unit | Description |
 |---|---|---|
-| `sc1_sensor_1` .. `sc1_sensor_n` | the sensor's | The latest measurement of every sensor, sensors in mounting order and their components in order: a rate gyro's three rates (rad/s) and a magnetometer's three field components (T), in the sensor's frame; a star tracker's estimate of the body's attitude (a quaternion, inertial to body, scalar last); NaN before a sensor's first sample |
+| `sc1_sensor_1` .. `sc1_sensor_n` | the sensor's | The latest measurement of every sensor, sensors in mounting order and their components in order: a rate gyro's three rates (rad/s), a magnetometer's three field components (T), a sun sensor's unit vector to the Sun and an accelerometer's three specific-force components (m/s²), in the sensor's frame; a star tracker's estimate of the body's attitude (a quaternion, inertial to body, scalar last); a GNSS receiver's inertial position and velocity (m, then m/s); NaN before a sensor's first sample and, for a sun sensor, whenever the Sun is out of view or eclipsed |
