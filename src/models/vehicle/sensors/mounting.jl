@@ -9,7 +9,7 @@ using SHA
 using Random: Xoshiro
 using ..AbstractTypes: AbstractSensor
 using ..SpacecraftModels: Link, SpacecraftModel
-using ..Sensors: sensor_dimension, sensor_requirements
+using ..Sensors: sensor_dimension, sensor_requirements, sensor_period_s
 
 export add_sensor!, mounted_sensors, sensor_measurement, sensor_measurement_time, reset_sensors!
 
@@ -34,6 +34,7 @@ function add_sensor!(model::SpacecraftModel, link::Link, sensor::AbstractSensor)
     (req.planet_frame | req.atmosphere | req.solar) && throw(ArgumentError(
         "Sensors may ask for the magnetic field only; this sensor asks for other environment."))
     sensor_dimension(sensor) >= 1 || throw(ArgumentError("A sensor's sensor_dimension must be positive."))
+    _check_period(sensor)
     any(s -> s === sensor, (s for l in model.links for s in l.sensors)) &&
         throw(ArgumentError("This sensor is already mounted on the spacecraft."))
     push!(link.sensors, sensor)
@@ -74,6 +75,14 @@ sample).
 """
 sensor_measurement_time(sensor::AbstractSensor)::Float64 = sensor.latest_time_s
 sensor_measurement_time(model::SpacecraftModel, k::Int)::Float64 = sensor_measurement_time(mounted_sensors(model)[k].sensor)
+
+# A sensor's sampling period must be finite and positive.
+function _check_period(sensor::AbstractSensor)
+    period = sensor_period_s(sensor)
+    (period isa Real && isfinite(period) && period > 0) || throw(ArgumentError(
+        "A sensor's sampling period must be finite and positive; $(typeof(sensor)) has $(repr(period))."))
+    return Float64(period)
+end
 
 # The random stream of a sensor: seeded from the SHA-256 digest of the
 # sensor's seed, the spacecraft's ID and the sensor's mounting position, so

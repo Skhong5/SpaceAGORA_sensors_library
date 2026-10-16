@@ -70,9 +70,10 @@ Optional: the sampling period, s. Default: the sensor's `period_s` field.
 
 Besides its parameters, a sensor kind holds its run state in four fields the
 engine fills: `seed` (an integer the user sets, which selects the random
-stream), `rng` (the stream), `latest` (the latest measurement, a vector of
-`sensor_dimension` components, NaN before the first sample) and
-`latest_time_s` (its time, s into the run).
+stream), `rng` (the stream), `latest` (the latest measurement: a vector of
+`sensor_dimension` components, or a number for a one-component sensor; NaN
+before the first sample) and `latest_time_s` (its time, s into the run). The
+period must be finite and positive.
 """
 @inline sensor_period_s(sensor) = Float64(sensor.period_s)
 

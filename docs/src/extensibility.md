@@ -284,8 +284,9 @@ mounted wheels detumble it while its torque rods unload them.
 A sensor measures the state of the vehicle for navigation; it does not act on
 the dynamics. A sensor kind is a mutable struct subtyping `AbstractSensor`
 with its parameters and five fields the engine fills or reads: `period_s`
-(the sampling period), `seed` (selects its random stream), `rng`, `latest`
-(a vector of the measurement's components) and `latest_time_s`. It implements:
+(the sampling period, finite and positive), `seed` (selects its random
+stream), `rng`, `latest` (the measurement's components as a vector, or a
+number for a one-component sensor) and `latest_time_s`. It implements:
 
 - `sensor_measure(sensor, truth::SensorTruth, ctx::ActuatorContext, rng)`:
   one measurement of `truth` (the inertial position and velocity, the
@@ -307,13 +308,16 @@ The engine samples every sensor at the run's start and every period after
 it, from the accepted state; the samples are solver stops, and a checkpointed
 run samples at the same times as a run in one piece. Each sensor's random
 stream comes from its `seed`, the spacecraft's ID and its mounting position,
-so a run repeats with the same seeds; a Monte Carlo campaign varies the seeds
-per sample. A navigation effector reads the latest measurement in
+so a run repeats with the same seeds. Seeds are not varied for you: the
+built-in kinds default to `seed=1`, so in a Monte Carlo campaign set each
+sensor's `seed` from the sample's seed where the sample's spacecraft is
+built, or the samples share one noise stream. A navigation effector reads the latest measurement in
 `calcNavigationEffect!` with `sensor_measurement(p.args.dynamics_model.spacecraft[i], k)`
 (and its time with `sensor_measurement_time`); sensors sample before
 navigation effectors at the same time. Runs with sensors write the
 `sc{i}_sensor_{k}` columns (see [Output Columns](user/output_columns.md#Sensors))
-and cannot resume from a checkpoint file.
+and cannot resume from a checkpoint file; the gravity-backbone and multirate
+solver modes refuse mounted sensors.
 
 ## Planet, ephemerides, thermal, thruster, and guidance extensions
 

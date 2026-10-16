@@ -32,6 +32,18 @@ function SpaceAGORA.sensor_measure(s::SampleClock, truth::SensorTruth, ctx, rng)
     return SVector(rand(rng))
 end
 
+# A one-component sensor whose measurement is a number: the body's mass.
+mutable struct MassGauge <: AbstractSensor
+    period_s::Float64
+    seed::Int
+    rng::Any
+    latest::Float64
+    latest_time_s::Float64
+end
+MassGauge() = MassGauge(1.0, 1, nothing, NaN, NaN)
+SpaceAGORA.sensor_dimension(::MassGauge) = 1
+SpaceAGORA.sensor_measure(::MassGauge, truth::SensorTruth, ctx, rng) = truth.mass_kg
+
 const ω0 = SVector(0.01, -0.02, 0.005)
 
 function sensor_spacecraft(; sensors=(RateGyro(period_s=0.5), StarTracker(period_s=1.0), Magnetometer(period_s=0.5)), panel_q=nothing)
@@ -51,20 +63,22 @@ function sensor_spacecraft(; sensors=(RateGyro(period_s=0.5), StarTracker(period
     return sc
 end
 
-function sensor_run(sc; mission_time=10.0, navigation=(), settings=(;))
+function sensor_args(sc; mission_time=10.0, navigation=(), settings=(;), solver=nothing, orientation_sim=true)
     base = make_example_config(planet=SM.Earth(), spacecraft=sc, mission_time=mission_time,
         initial_time=SM.InitialTime(year=2024, month=3, day=20, hour=0, minute=0, second=0.0),
-        dynamic_effectors=(), ephemerides_model=SM.SimpleEphemeridesModel(), orientation_sim=true,
-        keplerian=false, EI_km=100.0, verbose=false, results=false)
+        dynamic_effectors=(), ephemerides_model=SM.SimpleEphemeridesModel(), orientation_sim=orientation_sim,
+        keplerian=false, EI_km=100.0, verbose=false, results=false,
+        solver_config=solver === nothing ? nothing : SM.SolverConfig(solver_mode=solver))
     extra = isempty(navigation) ? (;) : (; navigation_model=SM.NavigationModel(navigation_effectors=navigation, navigation_rates=fill(1.0, length(navigation))))
     if !isempty(settings)
         st = base.simulation_settings
         fields = NamedTuple{fieldnames(typeof(st))}(map(n -> getfield(st, n), fieldnames(typeof(st))))
         extra = merge(extra, (; simulation_settings=SM.SimulationSettings(; merge(fields, settings)...)))
     end
-    args = SM.SimConfig._with_configuration(base; extra...)
-    return run_simulation(args; isolate_state=false, return_results=true, return_solution=true)
+    return SM.SimConfig._with_configuration(base; extra...)
 end
+
+sensor_run(sc; kw...) = run_simulation(sensor_args(sc; kw...); isolate_state=false, return_results=true, return_solution=true)
 
 # The row of `table` at time `t` (a sample time that is also a saved time).
 row_at(table, t) = findfirst(==(t), table.time)
@@ -83,6 +97,9 @@ row_at(table, t) = findfirst(==(t), table.time)
         @test sensor_measurement(sc, 1) === sensor_measurement(g) && isnan(sensor_measurement_time(sc, 1))
         @test sensor_dimension(g) == 3 && sensor_dimension(StarTracker()) == 4 && sensor_requirements(Magnetometer()).magnetic_field
         @test sensor_period_s(g) == 0.1
+        for bad in (0.0, -1.0, NaN, Inf)                                                # a user kind's period is checked
+            @test_throws ArgumentError add_sensor!(sc, root, SampleClock(bad))
+        end
     end
 
     @testset "the noise models follow their parameters" begin
@@ -164,6 +181,28 @@ row_at(table, t) = findfirst(==(t), table.time)
         # Navigation ticks every second; each reads the sample taken at its own time,
         # since sensors sample before navigation effectors at the same time.
         @test length(log.times) >= 4 && log.times ≈ collect(1.0:1.0:length(log.times))
+    end
+
+    @testset "a one-component sensor may measure a number" begin
+        gauge = MassGauge()
+        res = sensor_run(sensor_spacecraft(sensors=(gauge,)); mission_time=3.0)
+        @test sensor_measurement(gauge) isa Float64 && sensor_measurement(gauge) ≈ 50.0
+        @test res.table.sc1_sensor_1[end] ≈ 50.0 && !("sc1_sensor_2" in names(res.table))
+    end
+
+    @testset "solver modes that cannot sample sensors refuse them" begin
+        err = try
+            sensor_run(sensor_spacecraft(sensors=(RateGyro(),)); mission_time=1.0, solver=:multirate)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError && occursin("sensors", err.msg)
+        reason = SpaceAGORA.SimulationEngine._gravity_backbone_reject_reason(
+            sensor_args(sensor_spacecraft(sensors=(RateGyro(),)); orientation_sim=false))
+        @test reason !== nothing && occursin("sensors", reason)
+        @test !occursin("sensors", something(SpaceAGORA.SimulationEngine._gravity_backbone_reject_reason(
+            sensor_args(sensor_spacecraft(sensors=()); orientation_sim=false)), ""))
     end
 
     @testset "sensors are opt-in and do not change the dynamics" begin

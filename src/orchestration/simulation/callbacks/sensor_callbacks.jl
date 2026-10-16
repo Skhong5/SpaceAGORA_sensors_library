@@ -59,7 +59,7 @@ function get_sensor_callbacks(num_sats::Int, args::SimulationConfiguration)
     spacecraft = args.dynamics_model.spacecraft
     groups = Dict{Float64, Vector{Tuple{Int, Int}}}()
     for i in eachindex(spacecraft), (k, entry) in enumerate(mounted_sensors(spacecraft[i]))
-        push!(get!(groups, sensor_period_s(entry.sensor), Tuple{Int, Int}[]), (i, k))
+        push!(get!(groups, SensorMounting._check_period(entry.sensor), Tuple{Int, Int}[]), (i, k))
     end
     isempty(groups) && return ()
     args.simulation_settings.resume_from_checkpoint && throw(ArgumentError(
