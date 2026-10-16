@@ -383,11 +383,12 @@ end
             # Package faults that no registry edit can express. A child process changes
             # SpaceAGORA in memory and runs the gate on this fixture, so this process's
             # package is never touched:
-            # - status: calcControlMassFlowRate's docstring opens with a deprecation while
+            # - status: environment_requirements's docstring opens with a deprecation while
             #   its row still says current;
-            # - arity: calcControlMassFlowRate loses its five-argument fallback and gains an
+            # - arity: environment_requirements loses its one-argument fallback and gains an
             #   untyped two-argument one, so a type with no method of its own, called with
-            #   the documented five arguments, has no fallback.
+            #   the documented one argument, has no fallback.
+            # The hook is one the hook design keeps unchanged, so later PRs leave it alone.
             mutations = joinpath(fixture, "hook_gate_mutations.jl")
             write(mutations, raw"""
                 using SpaceAGORA
@@ -406,38 +407,38 @@ end
                     println(name, " failed=", failed)
                     foreach(v -> println(name, " violation: ", v), Core.eval(m, :violations))
                 end
-                hook = SpaceAGORA.calcControlMassFlowRate
+                hook = SpaceAGORA.environment_requirements
                 owner = parentmodule(hook)
                 saved = []
                 for mod in Base.Docs.modules, (binding, multidoc) in Base.Docs.meta(mod)
-                    binding.var === :calcControlMassFlowRate || continue
+                    binding.var === :environment_requirements || continue
                     for d in values(multidoc.docs)
                         text = join(string.(d.text))
-                        startswith(lstrip(text), "calcControlMassFlowRate(") || continue
+                        startswith(lstrip(text), "environment_requirements(") || continue
                         push!(saved, (d, d.text, d.object))
-                        d.text = Core.svec(replace(text, "\n\n" => "\n\nDeprecated: use `wrench` instead; `calcControlMassFlowRate` will be removed in SpaceAGORA 0.5.0.\n\n"; count=1))
+                        d.text = Core.svec(replace(text, "\n\n" => "\n\nDeprecated: use `wrench` instead; `environment_requirements` will be removed in SpaceAGORA 0.5.0.\n\n"; count=1))
                         d.object = nothing
                     end
                 end
-                isempty(saved) && error("calcControlMassFlowRate's docstring was not found")
+                isempty(saved) && error("environment_requirements's docstring was not found")
                 report("status")
                 for (d, text, object) in saved
                     d.text, d.object = text, object
                 end
-                generic = only(m for m in methods(hook) if m.module === owner && m.nargs == 6 &&
+                generic = only(m for m in methods(hook) if m.module === owner && m.nargs == 2 &&
                     all(T -> T === Any, Base.unwrap_unionall(m.sig).parameters[2:end]))
                 Base.delete_method(generic)
-                Core.eval(owner, :(calcControlMassFlowRate(model, u) = 0.0))
+                Core.eval(owner, :(environment_requirements(model, extra) = nothing))
                 report("arity")
                 """)
             gate_path = joinpath(repo, "test", "gates", "ci_extension_hook_reference_gate.jl")
             child = `$(Base.julia_cmd()) --startup-file=no --project=$(Base.active_project()) $mutations $fixture $gate_path $_GATE_ROOT_LINE`
             lines = split(read(child, String), '\n')
             @test "status failed=true" in lines
-            @test "status violation: calcControlMassFlowRate: the docstring's first paragraph opens with \"Deprecated\", but the row says current." in lines
+            @test "status violation: environment_requirements: the docstring's first paragraph opens with \"Deprecated\", but the row says current." in lines
             @test count(startswith("status violation: "), lines) == 1
             @test "arity failed=true" in lines
-            @test "arity violation: calcControlMassFlowRate: fallback cell says \"returns `0.0`\", but no method with an untyped or public abstract model takes 5 positional arguments." in lines
+            @test "arity violation: environment_requirements: fallback cell says \"returns no sampled fields\", but no method with an untyped or public abstract model takes 1 positional arguments." in lines
             @test count(startswith("arity violation: "), lines) == 1
             rm(mutations)
             @test isnothing(run_gate().failure)
