@@ -16,6 +16,7 @@ kind.
 | `fault.jl` | the `ActuatorFault` record (failed, stuck, degraded or biased between two times) and the spacecraft's `FaultSet`, owned by `Components` |
 | `faults.jl` | `ActuatorFaults`: `add_fault!`, the faulted levels the mounted path uses, and the fault switching the engine runs at the faults' window ends |
 | `hinge.jl` | the hinge kind: the `PanelHinge` record (level: the commanded angle of the link it turns; angle and rate limits), applied at control ticks |
+| `gimbal.jl` | the thruster-gimbal kind: the `ThrusterGimbal` record (level: the gimbal angle of the thruster it turns, about an axis in the link frame; angle and rate limits), applied at control ticks; the thruster's `gimbal_rotation` carries the turn |
 | `thruster_models.jl` | `BaseThrusterModel` (a burn schedule per spacecraft; with `actuation=:mounted` it fires a mounted engine and points it with the mounted wheels, the control code being in `gnc/control/propulsive_maneuvers.jl`) and `SixAxisThrusterModel` (six fixed jets) |
 | `thruster_models_module.jl` | the `ThrusterModels` owner module |
 | `thruster_hooks.jl` | thruster firing dynamics over a link's jets: Schmitt trigger, impulse integration, ramp factor; the engine applies them to mounted thrusters with `firing_dynamics` at control ticks |
