@@ -113,3 +113,6 @@ Required sections:
 
 ## Nightly Policy
 Nightly stress checks remain required for release readiness and run through `.github/workflows/nightly-stress.yml`.
+
+## Windows Install Check
+`.github/workflows/windows-install.yml` runs the documented install path and the README quickstart smoke on `windows-latest` with Julia 1.12, weekly, on manual dispatch and on pull requests that change the install path. It is not a required check. A non-blocking job in the same workflow records how Julia 1.13 is refused or fails on that path.
