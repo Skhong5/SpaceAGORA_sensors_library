@@ -70,15 +70,6 @@ function _validate_thermal_model_support!(args)
     return nothing
 end
 
-# Whether some method of `f` can take arguments of these types: its signature
-# intersects them. An untyped or abstractly typed argument matches, so a method
-# written for the engine's arguments is never refused; a missing method, a wrong
-# argument count or a wrong time or index type is.
-function _hook_method_may_apply(f, argtypes::Type{<:Tuple})::Bool
-    tt = Tuple{typeof(f), argtypes.parameters...}
-    return any(m -> typeintersect(m.sig, tt) !== Union{}, methods(f))
-end
-
 # Where a model of this kind is configured, from the abstract type it subtypes.
 function _model_kind_container(model)::Union{Nothing, String}
     AT = SimulationModel.AbstractTypes
@@ -89,9 +80,14 @@ function _model_kind_container(model)::Union{Nothing, String}
     return nothing
 end
 
-function _missing_hook_line(location::String, container::String, model, needed::String)::String
+# Whether `f` has some method for `T` in its first argument, whatever the others.
+_has_methods_for(f, ::Type{T}) where {T} =
+    any(m -> typeintersect(m.sig, Tuple{typeof(f), T, Vararg{Any}}) !== Union{}, methods(f))
+
+function _missing_hook_line(location::String, container::String, model, f, needed::String)::String
     T = typeof(model)
     line = "$location ($(nameof(T))) has no method $needed."
+    _has_methods_for(f, T) && (line *= " It has methods of that function, but none accepts the arguments this run passes.")
     kind = _model_kind_container(model)
     if kind !== nothing && kind != container
         line *= " Its type belongs in $kind."
@@ -99,69 +95,93 @@ function _missing_hook_line(location::String, container::String, model, needed::
     return line
 end
 
+# The argument types the engine passes to the hooks in this run: the full state at
+# the GNC ticks, one spacecraft's state view in the dynamics (every spacecraft of a
+# run shares one state layout; each distinct view type is kept regardless) and the
+# run's parameters. The time is a Float64 and the spacecraft index an Int.
+function _hook_call_types(u0, p)
+    views = unique!(Any[typeof(u0.sc[i]) for i in eachindex(u0.sc)])
+    return (state=typeof(u0), spacecraft=views, params=typeof(p))
+end
+
 # The hooks the engine calls on each guidance, navigation and control effector,
-# force/torque model and density model, checked against each model's concrete
-# type before integration so that a missing method stops the run with the
-# model's name instead of a MethodError in the middle of the solve. The argument
-# types are those every call site guarantees: a state that is an AbstractVector
-# (the full state for the GNC ticks, one spacecraft's for the dynamics hooks),
-# the run's ODEParams, the time as Float64 and the spacecraft index as Int. The
-# thermal model is checked by `_validate_thermal_model_support!`.
-function _missing_model_hooks(args, solver_mode::Symbol=:tsit5)::Vector{String}
-    P = SimulationModel.ODEParams
-    tick(T) = Tuple{T, AbstractVector, P, Float64, Int}
+# force/torque model and density model, checked before integration so that a
+# missing method stops the run with the model's name instead of a MethodError in
+# the middle of the solve. `hasmethod` on the run's concrete argument types is
+# the same lookup the calls make, so a method typed more narrowly than what the
+# engine passes (`u::Vector{Float64}` for a ComponentVector state) is refused
+# and one typed more broadly (`u`, `u::AbstractVector`, `u::ComponentVector`) is
+# accepted; on abstract argument types it would refuse the latter. The thermal
+# model is checked by `_validate_thermal_model_support!`.
+function _missing_model_hooks(args, call, solver_mode::Symbol=:tsit5)::Vector{String}
+    U, P, views = call.state, call.params, call.spacecraft
+    tick(T) = Tuple{T, U, P, Float64, Int}
+    sampled(f, T) = hasmethod(f, Tuple{T, SimulationModel.StateSample, SimulationModel.EnvironmentSample, Float64})
     problems = String[]
     for (k, model) in enumerate(args.guidance_model.guidance_effectors)
-        _hook_method_may_apply(SimulationModel.calcGuidanceEffect!, tick(typeof(model))) ||
-            push!(problems, _missing_hook_line("guidance_model.guidance_effectors[$k]", "guidance_model", model,
+        f = SimulationModel.calcGuidanceEffect!
+        hasmethod(f, tick(typeof(model))) ||
+            push!(problems, _missing_hook_line("guidance_model.guidance_effectors[$k]", "guidance_model", model, f,
                 "calcGuidanceEffect!(model, u, p, t::Float64, spacecraft_index::Int)"))
     end
     for (k, model) in enumerate(args.navigation_model.navigation_effectors)
-        _hook_method_may_apply(SimulationModel.calcNavigationEffect!, tick(typeof(model))) ||
-            push!(problems, _missing_hook_line("navigation_model.navigation_effectors[$k]", "navigation_model", model,
+        f = SimulationModel.calcNavigationEffect!
+        hasmethod(f, tick(typeof(model))) ||
+            push!(problems, _missing_hook_line("navigation_model.navigation_effectors[$k]", "navigation_model", model, f,
                 "calcNavigationEffect!(model, u, p, t::Float64, spacecraft_index::Int)"))
     end
     for (k, model) in enumerate(args.control_model.control_effectors)
         location = "control_model.control_effectors[$k]"
-        _hook_method_may_apply(SimulationModel.calcControlEffect!, tick(typeof(model))) ||
-            push!(problems, _missing_hook_line(location, "control_model", model,
+        T = typeof(model)
+        hasmethod(SimulationModel.calcControlEffect!, tick(T)) ||
+            push!(problems, _missing_hook_line(location, "control_model", model, SimulationModel.calcControlEffect!,
                 "calcControlEffect!(model, u, p, t::Float64, spacecraft_index::Int)"))
         # The dynamics read a `:mounted` effector's wrench from its mounted
         # actuators and never call calcControlForceTorque on it.
         mode = SimulationModel.actuation_mode(model)
         mode === :mounted && continue
-        _hook_method_may_apply(SimulationModel.calcControlForceTorque, Tuple{typeof(model), AbstractVector, P, Int, Float64}) ||
-            push!(problems, _missing_hook_line(location, "control_model", model,
+        f = SimulationModel.calcControlForceTorque
+        all(X -> hasmethod(f, Tuple{T, X, P, Int, Float64}), views) ||
+            push!(problems, _missing_hook_line(location, "control_model", model, f,
                 "calcControlForceTorque(model, u, p, i::Int, t::Float64), which the dynamics call in actuation_mode $(repr(mode))"))
     end
     for (k, model) in enumerate(args.dynamics_model.dynamic_effectors)
+        location = "dynamics_model.dynamic_effectors[$k]"
+        T = typeof(model)
+        if solver_mode === :gravity_backbone_split
+            # This mode evaluates an effector only through the backbone hook its
+            # declaration names; its own validation refuses an effector that
+            # declares neither structure.
+            core = SimulationModel.gravity_backbone_acceleration_ii
+            SimulationModel.gravity_backbone_structure(model) === :position_only_static_gravity && !sampled(core, T) &&
+                push!(problems, _missing_hook_line(location, "dynamics_model.dynamic_effectors", model, core,
+                    "gravity_backbone_acceleration_ii(model, x::StateSample, env::EnvironmentSample, t::Float64), which its :position_only_static_gravity declaration needs"))
+            kick = SimulationModel.gravity_backbone_kick_acceleration_ii
+            SimulationModel.gravity_backbone_kick_structure(model) === :velocity_kick_explicit && !sampled(kick, T) &&
+                push!(problems, _missing_hook_line(location, "dynamics_model.dynamic_effectors", model, kick,
+                    "gravity_backbone_kick_acceleration_ii(model, x::StateSample, env::EnvironmentSample, t::Float64), which its :velocity_kick_explicit declaration needs"))
+            continue
+        end
         # The dynamics call `wrench` when it has a method for the sampled
         # arguments and the older calcForceTorque otherwise; either one suffices.
         _wrench_method_available(model) && continue
-        _hook_method_may_apply(SimulationModel.calcForceTorque, Tuple{typeof(model), AbstractVector, P, Int}) && continue
+        all(X -> hasmethod(SimulationModel.calcForceTorque, Tuple{T, X, P, Int}), views) && continue
         # A model that opts into the per-link kernel is evaluated through
         # link_wrench on articulated spacecraft with live-pose loads; it is
         # accepted without the base-body hooks the other runs would need.
         SimulationModel.link_wrench_capable(model) && continue
-        # gravity_backbone_split evaluates its effectors through the backbone
-        # hooks only (its own validation refuses every other effector).
-        solver_mode === :gravity_backbone_split && _gravity_backbone_declared(model) && continue
-        push!(problems, _missing_hook_line("dynamics_model.dynamic_effectors[$k]", "dynamics_model.dynamic_effectors", model,
+        push!(problems, _missing_hook_line(location, "dynamics_model.dynamic_effectors", model, SimulationModel.calcForceTorque,
             "wrench(model, x::StateSample, env::EnvironmentSample, t::Float64), nor the older calcForceTorque(model, x, p, i::Int)"))
     end
     density_model = args.environment_model.density_model
-    _hook_method_may_apply(SimulationModel.getDensity, Tuple{typeof(density_model), Float64, Float64, Float64, Float64, Bool, P}) ||
+    hasmethod(SimulationModel.getDensity, Tuple{typeof(density_model), Float64, Float64, Float64, Float64, Bool, P}) ||
         push!(problems, _missing_hook_line("environment_model.density_model", "environment_model.density_model", density_model,
-            "getDensity(model, h, lat, lon, el_time, wind::Bool, p), the form with `p` that the run calls"))
+            SimulationModel.getDensity, "getDensity(model, h, lat, lon, el_time, wind::Bool, p), the form with `p` that the run calls"))
     return problems
 end
 
-@inline _gravity_backbone_declared(model)::Bool =
-    SimulationModel.gravity_backbone_structure(model) === :position_only_static_gravity ||
-    SimulationModel.gravity_backbone_kick_structure(model) === :velocity_kick_explicit
-
-function _validate_model_hooks!(args, solver_mode::Symbol=:tsit5)
-    problems = _missing_model_hooks(args, solver_mode)
+function _validate_model_hooks!(args, u0, p, solver_mode::Symbol=:tsit5)
+    problems = _missing_model_hooks(args, _hook_call_types(u0, p), solver_mode)
     isempty(problems) && return nothing
     throw(ArgumentError(
         "The run calls methods these models do not have:\n" *

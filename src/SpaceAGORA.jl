@@ -4,6 +4,7 @@ module SpaceAGORA
 
 ## 1. Include package modules
 # Internal contract only; runtime guidance still uses its existing path.
+include(joinpath(@__DIR__, "models", "gnc", "interfaces", "gnc_algorithms.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "interfaces", "rpo_planner.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "interfaces", "simulation_lifecycle.jl"))
 include(joinpath(@__DIR__, "orchestration", "parallel", "routing", "parallel_profiles.jl"))
@@ -49,6 +50,10 @@ export export_viewer_payload
 # Opt-in public RPO planner pilot.
 using .RPOPlannerInterfaces: AbstractRPOPlanner, RPOPlanningConstraints, RPOValidationSettings, RPOPlanningRequest, RPOReference, RPOPlanningResult, RPOPlannerCapabilities, RPOValidationResult, RPOPlanningHeadroom, planner_capabilities, initialize_planner, plan_rpo!, retime_rpo!, validate_rpo_result, validate_rpo_capabilities, rpo_reference_is_current
 using .DirectRPOPlanning: DirectRPOPlanner
+using .RPOPlannerInterfaces: RPOReferenceFamily
+using .GNCAlgorithms: AbstractGNCAlgorithm, AbstractAlgorithmFamily, AbstractAlgorithmRequest, AbstractAlgorithmResult, AbstractValidationResult, GNCAlgorithmError, AlgorithmResult, ValidationResult
+using .GNCAlgorithms: algorithm_family, default_capabilities, algorithm_capabilities, require_algorithm_support, initialize_algorithm, propose!, propose_revision!, consumes_rng
+using .GNCAlgorithms: validate_capabilities, validate_proposal, install!, is_current, on_rejection, fallback_product, family_contract_version
 using .HYPRRPOPlanning: HYPRRPOPlanner
 using .SimulationModel.HYPRSupport: HYPRUnavailableError, hypr_available
 export HYPRUnavailableError, hypr_available
@@ -143,6 +148,9 @@ preserves the existing configuration owner and calculations; pass the result to
 """ rpo_pso_config
 
 using .RPOPlannerLifecycle: RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
+export AbstractGNCAlgorithm, AbstractAlgorithmFamily, AbstractAlgorithmRequest, AbstractAlgorithmResult, AbstractValidationResult, GNCAlgorithmError, AlgorithmResult, ValidationResult, RPOReferenceFamily
+export algorithm_family, default_capabilities, algorithm_capabilities, require_algorithm_support, initialize_algorithm, propose!, propose_revision!, consumes_rng
+export validate_capabilities, validate_proposal, install!, is_current, on_rejection, fallback_product, family_contract_version
 export AbstractRPOPlanner, RPOPlanningConstraints, RPOValidationSettings, RPOPlanningRequest, RPOReference, RPOPlanningResult, RPOPlannerCapabilities, RPOValidationResult, RPOPlanningHeadroom, planner_capabilities, initialize_planner, plan_rpo!, retime_rpo!, validate_rpo_result, validate_rpo_capabilities, rpo_reference_is_current, DirectRPOPlanner, HYPRRPOPlanner, RPOPSOConfig, rpo_pso_config, RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
 
 ## 2. Bring needed names from package modules into the scope of SpaceAGORA.jl
@@ -521,14 +529,8 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
     ::SimulationModel.AbstractDensityModel, ::Any,
 ))).text) with_density_model_epoch
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlEffect!)).text) calcControlEffect!
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlForceTorque(
-    ::SimulationModel.ControlHooks.BaseThrusterModel,
-    ::AbstractVector, ::SimulationModel.ODEParams, ::Int64, ::Float64,
-))).text) calcControlForceTorque
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlMassFlowRate(
-    ::SimulationModel.AbstractTypes.AbstractControlEffectorModel,
-    ::AbstractVector, ::SimulationModel.ODEParams, ::Int64, ::Float64,
-))).text) calcControlMassFlowRate
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlForceTorque)).text) calcControlForceTorque
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlMassFlowRate)).text) calcControlMassFlowRate
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_thruster_levels(::Any, ::Int))).text) control_thruster_levels
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcReactionWheelTorque)).text) calcReactionWheelTorque
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.touchdown_spec(::Any, ::Int))).text) touchdown_spec

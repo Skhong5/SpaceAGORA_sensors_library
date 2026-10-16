@@ -1,12 +1,15 @@
-# RPO planner contracts. This module loads with Julia standard libraries alone.
+# RPO planner contracts, the first family of the general GNC algorithm contract
+# (gnc_algorithms.jl). Both modules load with Julia standard libraries alone.
 # The opt-in public RPO pilot connects them to accepted simulation updates.
 module RPOPlannerInterfaces
 
 using LinearAlgebra: norm, cross
 using Random: AbstractRNG
+import ..GNCAlgorithms
+const GA = GNCAlgorithms
 
-"""An algorithm producing a timed target-relative RPO reference."""
-abstract type AbstractRPOPlanner end
+"""An algorithm producing a timed target-relative RPO reference; a `GNCAlgorithms.AbstractGNCAlgorithm` of the `RPOReferenceFamily`."""
+abstract type AbstractRPOPlanner <: GA.AbstractGNCAlgorithm end
 
 _finite(x, name) = isfinite(x) ? x : throw(ArgumentError("$name must be finite."))
 function _nonnegative(x, name)
@@ -79,7 +82,7 @@ and velocity. Geometry must be static and target-RTN aligned in this first
 contract. The caller retains a separate snapshot for validation; pass a deep
 copy to untrusted planner code. No integrator or live model belongs here.
 """
-struct RPOPlanningRequest{E,G}
+struct RPOPlanningRequest{E,G} <: GA.AbstractAlgorithmRequest
     request_id::Int
     reason::Symbol
     chaser_id::Int
@@ -166,7 +169,7 @@ struct RPOReference
 end
 
 """Algorithm outcome; `:candidate` still requires independent validation."""
-struct RPOPlanningResult{D}
+struct RPOPlanningResult{D} <: GA.AbstractAlgorithmResult
     request_id::Int
     status::Symbol
     termination::Symbol
@@ -213,7 +216,7 @@ function retime_rpo!(state, planner::AbstractRPOPlanner, request::RPOPlanningReq
 end
 
 """Pure validation outcome with a machine-readable reason and measured values."""
-struct RPOValidationResult{M}
+struct RPOValidationResult{M} <: GA.AbstractValidationResult
     accepted::Bool
     reason::Symbol
     metrics::M
@@ -243,4 +246,37 @@ end
 
 include("rpo_reference_validation.jl")
 include("rpo_planning_headroom.jl")
+
+"""
+    RPOReferenceFamily()
+
+The RPO reference-planning family of the general GNC algorithm contract. Its
+request is an `RPOPlanningRequest`, its product an `RPOReference`, its trusted
+validation `validate_rpo_result`, its currency rule `rpo_reference_is_current`
+and its rejection policy `:fail`. Every `AbstractRPOPlanner` belongs to it, and
+the general functions forward to the RPO names: `propose!` to `plan_rpo!`,
+`propose_revision!` to `retime_rpo!`, `algorithm_capabilities` to
+`planner_capabilities`, `initialize_algorithm` to `initialize_planner` and
+`require_algorithm_support` to `require_planner_support`.
+"""
+struct RPOReferenceFamily <: GA.AbstractAlgorithmFamily end
+
+GA.algorithm_family(::AbstractRPOPlanner) = RPOReferenceFamily()
+GA.default_capabilities(::RPOReferenceFamily) = RPOPlannerCapabilities()
+GA.algorithm_capabilities(planner::AbstractRPOPlanner) = planner_capabilities(planner)
+GA.require_algorithm_support(planner::AbstractRPOPlanner) = require_planner_support(planner)
+GA.initialize_algorithm(planner::AbstractRPOPlanner, run_context) = initialize_planner(planner, run_context)
+GA.propose!(state, planner::AbstractRPOPlanner, request::RPOPlanningRequest, rng) =
+    plan_rpo!(state, planner, request, rng)
+GA.propose_revision!(state, planner::AbstractRPOPlanner, request::RPOPlanningRequest,
+        active_reference::RPOReference, rng) = retime_rpo!(state, planner, request, active_reference, rng)
+GA.validate_capabilities(::RPOReferenceFamily, planner::AbstractRPOPlanner, request::RPOPlanningRequest;
+        checkpoint::Bool=false) = validate_rpo_capabilities(planner, request; checkpoint=checkpoint)
+# `trusted` carries the lifecycle's own queries as keywords of `validate_rpo_result`.
+GA.validate_proposal(::RPOReferenceFamily, request::RPOPlanningRequest, result::RPOPlanningResult,
+        trusted::NamedTuple) = validate_rpo_result(request, result; trusted...)
+GA.is_current(::RPOReferenceFamily, request::RPOPlanningRequest, reference::RPOReference, time_s) =
+    rpo_reference_is_current(request, reference, time_s)
+GA.on_rejection(::RPOReferenceFamily) = :fail
+GA.family_contract_version(::RPOReferenceFamily) = v"1.0.0"
 end

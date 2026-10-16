@@ -4,6 +4,7 @@ using LinearAlgebra: norm
 using ..RPOPlannerInterfaces
 const P = RPOPlannerInterfaces
 import ..RPOPlannerInterfaces: planner_capabilities, plan_rpo!
+import ..GNCAlgorithms: consumes_rng
 
 """
 Direct segment with a cubic rest-to-rest time law. The assembly supplies a trusted
@@ -22,6 +23,8 @@ struct DirectRPOPlanner{F} <: P.AbstractRPOPlanner
     end
 end
 planner_capabilities(::DirectRPOPlanner) = P.RPOPlannerCapabilities(state_sources=(:truth,), frames=(:target_rtn,))
+# The direct segment and its time law are deterministic: no random draws.
+consumes_rng(::DirectRPOPlanner) = false
 
 function plan_rpo!(::Nothing, planner::DirectRPOPlanner, request::P.RPOPlanningRequest, rng::P.AbstractRNG)
     reject(status, reason; diagnostics=NamedTuple()) = P.RPOPlanningResult(

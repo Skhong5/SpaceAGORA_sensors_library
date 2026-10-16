@@ -603,7 +603,6 @@ function run_simulation(
     _validate_interlinks!(args, solver_mode)
     _validate_orientation_inertia!(args)
     _validate_thermal_model_support!(args)
-    _validate_model_hooks!(args, solver_mode)
     _validate_ephemerides_support!(args)
     _warn_density_without_atmospheric_effector(args)
     if args.interlink_model !== nothing
@@ -632,6 +631,9 @@ function run_simulation(
 
     # Define the ODE parameters and callbacks
     p = SimulationModel.ODEParams(n_sats=length(args.dynamics_model.spacecraft), args=args) # Define the parameters for the ODE problem, including the shared buffers for the callbacks
+    # Before any setup that evaluates a model: the hooks are checked against the
+    # exact argument types of this run's state and parameters.
+    _validate_model_hooks!(args, initial_conditions, p, solver_mode)
     _initialize_in_atmosphere_flags!(p, initial_conditions)
     # Snapshot env-derived runtime config (policy/RHS-plan/callback knobs) once,
     # inside the active SimulationEngineConfig override scope, so hot paths read
