@@ -101,7 +101,10 @@ slew limit, runs a rate-limited attitude loop whose torques are bounded by the
 RCS authority, applies the thrust along the vehicle's actual engine axis, and
 drains propellant through both. The two effectors share an
 `SM.ApolloDescentState` (phase, time-to-go, thrust, commanded attitude, radar
-altitude, site-frame state, touchdown record). Run the simulation with
+altitude, site-frame state, touchdown record). Build both from the same state
+with the same `spacecraft_indices`: the control flies only the commands its
+guidance writes there, and `run_simulation` warns before the run when a
+spacecraft has one model without the other on that state. Run the simulation with
 `isolate_state=false` when you want to read that state afterwards; the demo
 also saves thrust, throttle, time-to-go, radar altitude, phase and attitude
 error as result columns.

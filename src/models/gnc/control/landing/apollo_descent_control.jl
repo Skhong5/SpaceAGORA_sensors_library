@@ -82,7 +82,9 @@ end
 
 Control effector paired with `ApolloDescentGuidanceModel` through the
 shared [`ApolloDescentState`](@ref). Carries the terrain model so the engine
-registers the touchdown event on it.
+registers the touchdown event on it. When a configuration has both models,
+`run_simulation` warns before the run (once per session) if any spacecraft is
+guided or controlled without its counterpart on the same state.
 
 `actuation=:ideal` applies the slew-limited engine thrust along body -z and
 the clamped attitude torque directly, with the configured specific impulses.
@@ -117,6 +119,42 @@ function ApolloDescentControlModel(config::ApolloDescentControlConfig, guidance:
     actuation in (:ideal, :mounted) || throw(ArgumentError("actuation must be :ideal or :mounted, got $(repr(actuation))"))
     return ApolloDescentControlModel(config, guidance, state, terrain,
         ApolloDescentControlState(length(state.phase)), _descent_indices(state, spacecraft_indices), actuation)
+end
+
+import ..GuidanceHooks
+
+# The guidance hands its commands to this control through the shared state.
+# When a configuration has both models, a spacecraft controlled on a state that
+# no Apollo guidance guides it on never gets a command (the engine stays off),
+# and one guided without control is never flown. A configuration with only one
+# side is not checked.
+function _apollo_unpaired_spacecraft(args)
+    guided = IdDict{ApolloDescentState, Set{Int}}()
+    controlled = IdDict{ApolloDescentState, Set{Int}}()
+    for g in args.guidance_model.guidance_effectors
+        g isa GuidanceHooks.ApolloDescentGuidanceModel && union!(get!(Set{Int}, guided, g.state), g.spacecraft_indices)
+    end
+    for c in args.control_model.control_effectors
+        c isa ApolloDescentControlModel && union!(get!(Set{Int}, controlled, c.state), c.spacecraft_indices)
+    end
+    (isempty(guided) || isempty(controlled)) && return (unguided=Int[], uncontrolled=Int[])
+    unpaired(from, to) = sort!(unique!([i for (state, ids) in from for i in setdiff(ids, get(to, state, Set{Int}()))]))
+    return (unguided=unpaired(controlled, guided), uncontrolled=unpaired(guided, controlled))
+end
+
+function SimulationLifecycle.preflight_control(c::ApolloDescentControlModel, args; isolate_state)
+    pairing = _apollo_unpaired_spacecraft(args)
+    isempty(pairing.unguided) && isempty(pairing.uncontrolled) && return nothing
+    problems = String[]
+    isempty(pairing.unguided) || push!(problems, "spacecraft $(join(pairing.unguided, ", ")) " *
+        "have an ApolloDescentControlModel but no ApolloDescentGuidanceModel on the same ApolloDescentState, " *
+        "so their descent engine never receives a command")
+    isempty(pairing.uncontrolled) || push!(problems, "spacecraft $(join(pairing.uncontrolled, ", ")) " *
+        "have an ApolloDescentGuidanceModel but no ApolloDescentControlModel on the same ApolloDescentState, " *
+        "so no control flies their guidance commands")
+    @warn "Apollo descent guidance and control are not paired: $(join(problems, "; ")). Build both models " *
+        "from one ApolloDescentState with the same spacecraft_indices." maxlog=1
+    return nothing
 end
 
 const _DESCENT_G0 = 9.80665
