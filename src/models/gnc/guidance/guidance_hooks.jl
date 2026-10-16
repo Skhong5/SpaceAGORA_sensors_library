@@ -69,9 +69,9 @@ module GuidanceHooks
     - `model`: the guidance effector.
     - `u`: the full integrated state. `u.sc[spacecraft_index]` is the spacecraft, with
       `pos` (m) and `vel` (m/s) relative to the planet's centre in the inertial
-      frame and `mass` (kg); with attitude propagation also `q`, the scalar-last
-      quaternion from inertial to bus axes, and `ω`, the bus angular velocity in
-      rad/s.
+      frame and `mass` (kg); with attitude propagation also `q = (x, y, z, w)`,
+      scalar last, with `v_body = rot(q) * v_inertial` (body means bus axes), and
+      `ω`, the bus angular velocity in rad/s.
     - `p`: the run's parameters; `p.args` is the `SimulationConfiguration`.
     - `t`: elapsed time since the run's start epoch, in seconds (`Float64`).
     - `spacecraft_index`: the spacecraft's position in the run (`Int`, from 1), not its ID.

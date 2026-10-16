@@ -93,9 +93,10 @@ const DESCENT_PHASES = (:braking, :approach, :vertical, :landed)
 
 Per-spacecraft guidance state shared with the control effector: the phase,
 time-to-go, the commanded thrust (N), its inertial direction, the commanded
-attitude (scalar-last, body to inertial) and body rate, the radial terrain clearance
-above the terrain, the site-frame position and velocity, the phase start
-times and the touchdown record.
+attitude and body rate, the radial terrain clearance above the terrain, the
+site-frame position and velocity, the phase start times and the touchdown record.
+The commanded attitude uses `q = (x, y, z, w)`, scalar last, with
+`v_body = rot(q) * v_inertial`.
 """
 mutable struct ApolloDescentState
     phase::Vector{Symbol}
@@ -264,13 +265,13 @@ end
 """
     descent_attitude_command(thrust_dir_i, up_i, forward_i=zero) -> SVector{4}
 
-Attitude (scalar-last, body to inertial) that points the descent engine's
-thrust axis, body -z, along `thrust_dir_i`, rolled so the body +x axis (the
-windows) lies along the projection of `up_i + forward_i` on the plane
-normal to the thrust: windows up while the engine fires retrograde during
-braking, and facing the site along the direction of flight once the
-vehicle pitches back to vertical. The sum keeps the roll reference well
-conditioned through the whole descent; a zero `forward_i` uses up alone
+Attitude `q = (x, y, z, w)`, scalar last, with `v_body = rot(q) * v_inertial`,
+that points the descent engine's thrust axis, body -z, along `thrust_dir_i`,
+rolled so the body +x axis (the windows) lies along the projection of
+`up_i + forward_i` on the plane normal to the thrust: windows up while the
+engine fires retrograde during braking, and facing the site along the direction
+of flight once the vehicle pitches back to vertical. The sum keeps the roll
+reference well conditioned through the whole descent; a zero `forward_i` uses up alone
 and a fixed horizontal seed when the thrust is vertical.
 """
 function descent_attitude_command(thrust_dir_i::SVector{3, Float64}, up_i::SVector{3, Float64}, forward_i::SVector{3, Float64}=SVector{3, Float64}(0.0, 0.0, 0.0))::SVector{4, Float64}
