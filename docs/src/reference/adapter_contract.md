@@ -46,10 +46,20 @@ then again in runtime initialization. A rejected version must leave the adapter
 unavailable. Start a fresh Julia process after a failed package load; method
 definitions already evaluated by Julia cannot be assumed to roll back.
 
-Version 1 uses exact matching, including additive changes. Changes to signatures,
-units, frames, result fields, mutability, ownership or failure semantics require a
-new reviewed contract version. A package compatibility range is an outer resolver
+Contract versions are matched exactly, including additive changes. Changes to
+signatures, units, frames, result fields, mutability, ownership or failure
+semantics require a new reviewed contract version. A package compatibility range is an outer resolver
 constraint, not evidence that every release in the range has been tested.
+
+## Contract history
+
+Each facade's reference page describes its current contract. A new contract
+version is listed here with what changed.
+
+| Facade | Contract | Change |
+|---|---|---|
+| `ExternalPropagationServices` | 2.0.0 | `external_state` and `external_acceleration` take `(rt, t, slot)`, time before the owner-local position, instead of `(rt, k, t)`. The attitude quaternion is defined by formula. No numerical change. SpaceAGORAMuJoCo implements it from version 0.2.0. |
+| `HYPRServices`, `ExternalPropagationServices`, `EDGServices` | 1.0.0 | First reviewed contracts. |
 
 ## Package and installation rules
 

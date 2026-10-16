@@ -159,7 +159,7 @@ end
 @inline function _assign_external_shadow_rhs!(du_view, sc_view, p, sat_idx::Int, t::Float64)
     buffers = p.shared_buffers
     rt = buffers.external_runtimes[buffers.external_owner[sat_idx]]
-    a = SVector{3, Float64}(SimulationModel.ExternalPropagation.external_acceleration(rt, buffers.external_local[sat_idx], t))
+    a = SVector{3, Float64}(SimulationModel.ExternalPropagation.external_acceleration(rt, t, buffers.external_local[sat_idx]))
     du_view .= 0.0
     @inbounds for k in 1:3
         du_view.pos[k] = sc_view.vel[k]

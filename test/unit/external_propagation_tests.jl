@@ -21,7 +21,8 @@ const OMEGA_ORBIT = sqrt(MU / RADIUS^3)
 const SPIN = 0.05                                    # rad/s about the body z axis
 const T0 = SM.InitialTime(year=2014, month=5, day=27, hour=5, minute=0, second=0.0)
 
-# Analytic owner state at time t: circular orbit in the x-y plane, spin about z (body to inertial q, scalar-last).
+# Analytic owner state at time t: circular orbit in the x-y plane, spin about z
+# (q scalar last, v_body = rot(q) * v_inertial).
 orbit_pos(t) = RADIUS * SVector(cos(OMEGA_ORBIT * t), sin(OMEGA_ORBIT * t), 0.0)
 orbit_vel(t) = RADIUS * OMEGA_ORBIT * SVector(-sin(OMEGA_ORBIT * t), cos(OMEGA_ORBIT * t), 0.0)
 spin_quat(t) = SVector(0.0, 0.0, sin(SPIN * t / 2), cos(SPIN * t / 2))
@@ -50,11 +51,11 @@ function EP.external_sync!(rt::CircleRuntime, t::Float64)
     return max(steps, 0)
 end
 EP.external_time(rt::CircleRuntime) = rt.n * rt.dt
-function EP.external_state(rt::CircleRuntime, k::Int, t::Float64)
+function EP.external_state(rt::CircleRuntime, t::Float64, slot::Int)
     push!(rt.state_calls, (t, rt.n * rt.dt))
     return (pos = orbit_pos(t), vel = orbit_vel(t), q = spin_quat(t), ω = SVector(0.0, 0.0, SPIN))
 end
-EP.external_acceleration(rt::CircleRuntime, k::Int, t::Float64) = -OMEGA_ORBIT^2 * orbit_pos(t)
+EP.external_acceleration(rt::CircleRuntime, t::Float64, slot::Int) = -OMEGA_ORBIT^2 * orbit_pos(t)
 
 mklink(; root=false, m, dims) = SM.Link(root=root, m=m, dims=MVector{3, Float64}(dims...), r=MVector{3, Float64}(0, 0, 0), q=MVector{4, Float64}(0, 0, 0, 1))
 function sc_at(pos, vel; m=10.0, q=SVector(0.0, 0.0, 0.0, 1.0), ang_vel=SVector(0.0, 0.0, 0.0))
@@ -85,10 +86,10 @@ arg_error(f) = try; f(); nothing; catch e; e isa ArgumentError ? sprint(showerro
 refuses(f, rx) = (m = arg_error(f); m !== nothing && occursin(rx, m))
 
 @testset "versioned external propagation service boundary" begin
-    @test EP.CONTRACT_VERSION == v"1.0.0"
-    @test EP.require_version(v"1.0.0") === nothing
-    @test_throws EP.CompatibilityError EP.require_version(v"2.0.0")
-    mismatch = try; EP.require_version(v"2.0.0"); catch error; sprint(showerror, error); end
+    @test EP.CONTRACT_VERSION == v"2.0.0"
+    @test EP.require_version(v"2.0.0") === nothing
+    @test_throws EP.CompatibilityError EP.require_version(v"1.0.0")
+    mismatch = try; EP.require_version(v"1.0.0"); catch error; sprint(showerror, error); end
     @test occursin("2.0.0", mismatch) && occursin("1.0.0", mismatch)
     @test EP.AbstractExternalPropagator === SM.ExternalPropagation.AbstractExternalPropagator
     for name in EP.IMPLEMENTED_FUNCTIONS
@@ -143,6 +144,21 @@ refuses(f, rx) = (m = arg_error(f); m !== nothing && occursin(rx, m))
     @test isempty(EP.external_runtimes((p=(shared_buffers=(external_runtimes=Any[],),),)))
 end
 
+@testset "documented quaternion convention is the engine's rot" begin
+    # external_state's docstring defines q by v_body = rot(q) * v_inertial with this matrix.
+    function documented(q)
+        e = SVector(q[1], q[2], q[3]); w = q[4]
+        cross_matrix = SMatrix{3, 3}(0.0, e[3], -e[2], -e[3], 0.0, e[1], e[2], -e[1], 0.0)
+        return (w^2 - dot(e, e)) * I + 2 * e * e' - 2 * w * cross_matrix
+    end
+    for q in (spin_quat(0.0), spin_quat(7.3), normalize(SVector(0.1, -0.4, 0.3, 0.8)))
+        @test documented(q) ≈ SM.rot(q) atol=1e-15
+    end
+    # a body turned by θ about z sees the inertial x axis at (cos θ, -sin θ, 0)
+    θ = SPIN * 7.3
+    @test SM.rot(spin_quat(7.3)) * SVector(1.0, 0.0, 0.0) ≈ SVector(cos(θ), -sin(θ), 0.0) atol=1e-15
+end
+
 @testset "public planet frame sampling preserves rotating-frame velocity" begin
     planet = make_no_gram_planet(:earth)
     l_pi = @SMatrix [0.0 0.0 1.0; 0.0 1.0 0.0; -1.0 0.0 0.0]
@@ -167,8 +183,11 @@ end
     @test_throws ErrorException EP.external_prepare(bare, nothing, nothing)
     @test_throws ErrorException EP.external_sync!(nothing, 1.0)
     @test_throws ErrorException EP.external_time(nothing)
-    @test_throws ErrorException EP.external_state(nothing, 1, 1.0)
-    @test_throws ErrorException EP.external_acceleration(nothing, 1, 1.0)
+    @test_throws ErrorException EP.external_state(nothing, 1.0, 1)
+    @test_throws ErrorException EP.external_acceleration(nothing, 1.0, 1)
+    # contract 2.0.0 order is (rt, t, slot); the 1.0.0 order (rt, k, t) has no method
+    @test_throws MethodError EP.external_state(nothing, 1, 1.0)
+    @test_throws MethodError EP.external_acceleration(nothing, 1, 1.0)
     @test EP.external_preflight(bare, nothing) === nothing        # the one hook with a usable default
     msg = try; EP.external_step(bare); catch e; sprint(showerror, e); end
     @test occursin("Not implemented", msg)

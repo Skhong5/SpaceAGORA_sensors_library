@@ -5,13 +5,18 @@ binding_path(name::Symbol) = (name,)
 binding_path(path::Tuple{Vararg{Symbol}}) = path
 resolve_binding(facade, path) = foldl(getproperty, binding_path(path); init=facade)
 
+# Each facade's reviewed contract version; a bump changes its entry here.
+const CONTRACT_VERSIONS = (HYPRServices=v"1.0.0", ExternalPropagationServices=v"2.0.0", EDGServices=v"1.0.0")
+
 @testset "Optional adapter facade conformance" begin
     for facade in (SpaceAGORA.HYPRServices, SpaceAGORA.ExternalPropagationServices, SpaceAGORA.EDGServices)
         @testset "$(nameof(facade))" begin
-            @test facade.CONTRACT_VERSION == v"1.0.0"
+            expected = CONTRACT_VERSIONS[nameof(facade)]
+            @test facade.CONTRACT_VERSION == expected
             @test facade.CompatibilityError <: Exception
             @test facade.require_version(facade.CONTRACT_VERSION) === nothing
-            for incompatible in (v"0.0.0", v"1.0.1", v"2.0.0")
+            for incompatible in (v"0.0.0", v"1.0.0", v"1.0.1", v"2.0.0", v"2.0.1", v"3.0.0")
+                incompatible == expected && continue
                 @test_throws facade.CompatibilityError facade.require_version(incompatible)
             end
             # Reject duplicate/overlapping declarations, missing bindings and a
