@@ -13,8 +13,10 @@ const GNC_HIDDEN_STREAM_PATTERNS = (
     r"\bGLOBAL_RNG\b",
     r"\bTaskLocalRNG\s*\(",
 )
-# A draw names its stream as the first argument (`rand(rng)`, `randn(master_rng, n)`).
-const GNC_RANDOM_DRAW = r"\b(rand|randn|randexp|randperm|randcycle|randsubseq|shuffle!?)\(\s*([^,()\s]*)"
+# A draw names its stream as the first argument (`rand(rng)`, `randn(master_rng, n)`),
+# including the in-place forms (`rand!(rng, buffer)`), which otherwise fill the
+# buffer from the global stream.
+const GNC_RANDOM_DRAW = r"\b(rand|randn|randexp|randperm|randcycle|randsubseq|shuffle)!?\(\s*([^,()\s]*)"
 
 # Source text without docstrings and comments, keeping line numbers.
 function _gnc_random_active_lines(path::String)
