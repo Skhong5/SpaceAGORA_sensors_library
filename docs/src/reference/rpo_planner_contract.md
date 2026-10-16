@@ -131,7 +131,10 @@ The pilot lifecycle runs each request through the shared driver,
 `run_algorithm_request!`. It builds and records the request, checks capabilities,
 asks for a proposal with a separate copy, validates the copy against the retained
 request, installs the validated reference into the plan buffer (`install!`) and
-records the install. Records, reasons and reports are the same as before. The
+records the install. Records, reasons and reports are the same as before, with one
+exception: an `RPOPlanningError` thrown by the planner's own code now fails the run
+as `:planner_exception`, with that error as the cause, like any other planner
+exception. The
 planner's stream comes from `gnc_stream_words("RPO/v1", seed, chaser_id,
 target_id)`, the same SHA-256 mapping as before.
 

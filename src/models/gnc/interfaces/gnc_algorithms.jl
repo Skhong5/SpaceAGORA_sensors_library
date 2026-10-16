@@ -385,7 +385,9 @@ is_revision_request(family, request) = false
     proposed_product(result)
 
 The product a candidate `result` proposes: `result.product` for an
-`AlgorithmResult` (RPO: the reference).
+`AlgorithmResult` (RPO: the reference). The request driver calls it on every
+proposal of the family's result type before validation, so it must also return,
+not throw, for a result that validation will refuse.
 """
 proposed_product(result::AlgorithmResult) = result.product
 
@@ -445,10 +447,10 @@ function _reject_request!(binding, runtime, family, request, result, validation,
         push!(runtime.records, _rejection(family, request, result, validation, reason, t))
         return false
     elseif policy === :install_fallback
-        product = deepcopy(fallback_product(family, deepcopy(request)))
         push!(runtime.records, _rejection(family, request, result, validation, reason, t))
-        install!(bound_link(binding), family, product, request, t; validation=validation,
-            diagnostics=NamedTuple())
+        link = bound_link(binding)
+        product = deepcopy(fallback_product(family, deepcopy(request)))
+        install!(link, family, product, request, t; validation=validation, diagnostics=NamedTuple())
         runtime.product, runtime.installed_request, runtime.last_request_time = product, request, t
         push!(runtime.records, deepcopy((event=:fallback_installed, time_s=t,
             request_id=_request_id(request), reason=reason, product=product)))
@@ -467,11 +469,12 @@ Run one request of `binding` at time `t` through the contract's steps:
 4. ask for a proposal, passing a separate copy of the request (`propose!`, or
    `propose_revision!` with a copy of the installed product when
    `is_revision_request`);
-5. check the proposal's type and copy it;
-6. validate it against the retained request (`validate_proposal` with the binding's
-   `trusted_queries`);
-7. install a copy of the product (`install!`), with no yield or user callback
-   between validation and installation;
+5. check the proposal's type and copy it, then resolve the link (`bound_link`) and
+   copy the product (`proposed_product`);
+6. validate the copy against the retained request (`validate_proposal` with the
+   binding's `trusted_queries`);
+7. install the product (`install!`) and update the runtime. Nothing else runs
+   between validation and installation: no yield, no hook and no user callback;
 8. record the install (`installed_record`, called after installation on copies).
 
 A refusal follows the family's `on_rejection` policy. Any error thrown by algorithm
@@ -496,13 +499,15 @@ function run_algorithm_request!(binding, u, p, t, reason; exception_reason::Symb
             propose!(runtime.state, algorithm, deepcopy(request), runtime.rng)
         result isa algorithm_result_type(family) || _fail_request!(binding, :invalid_result_type)
         result = deepcopy(result)
+        # Resolve the link and the product before validating, so that only install!
+        # and the runtime update run between validation and installation.
+        link = bound_link(binding)
+        product = deepcopy(proposed_product(result))
         checked = validate_proposal(family, request, result, trusted_queries(binding))
         checked.accepted ||
             return _reject_request!(binding, runtime, family, request, result, checked, reason, t)
-        product = deepcopy(proposed_product(result))
         # No yield or user callback between validation and installation.
-        install!(bound_link(binding), family, product, request, t; validation=checked,
-            diagnostics=result.diagnostics)
+        install!(link, family, product, request, t; validation=checked, diagnostics=result.diagnostics)
         runtime.product, runtime.installed_request, runtime.last_request_time = product, request, t
         # The record hook runs after installation, on isolated copies.
         push!(runtime.records, deepcopy(installed_record(family, deepcopy(request), deepcopy(result),
