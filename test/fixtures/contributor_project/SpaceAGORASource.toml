@@ -1,0 +1,5 @@
+# The SpaceAGORA commit this project is tested against. A repository of its own
+# records url and rev (the same commit as its workflow call); this fixture lives
+# inside the core, so core CI accepts a path to the checkout under test instead.
+path = "../../.."
+uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
