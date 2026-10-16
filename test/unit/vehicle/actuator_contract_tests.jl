@@ -871,6 +871,26 @@ end
         @test scene_run.table.sc1_thruster_level_1 == Float64.(300.5 .<= sample_times .< 400.5)
     end
 
+    @testset "the saved burn level and actuator faults" begin
+        # A mounted burn with a failed engine reports what the fault leaves (the
+        # mounted fractions); an ideal burn does not fly the link thrusters, so a
+        # fault there leaves its level, read at the sample's time, unchanged.
+        burn_model(actuation) = SM.BaseThrusterModel(thrust=[1.0], direction=[0.0], Δv=[0.0], start_burn_time=[300.0],
+            stop_burn_time=[400.0], Isp=[300.0], actuation=actuation)
+        faulted(id) = (sc = orbit_spacecraft(id=id);
+            add_fault!(sc, ActuatorFault(sc.root.thrusters[1]; kind=:failed, start_s=0.0));
+            SM.ActuatorFaults.resolve_faults!(sc); sc)
+        mounted_sc, mounted = faulted(28), burn_model(:mounted)
+        SM.ControlHooks.refresh_burn!(mounted, readout_params(SM.SpacecraftModel[mounted_sc], (mounted,)), 1, 350.0)
+        @test mounted.burning[1] && SpaceAGORA.actuator_levels(mounted, 1)[1] == 1.0
+        SM.ActuatorFaults.refresh_faults!(mounted_sc, mounted.mounted_levels[1], 350.0)
+        @test SM.SimulationCallbacks._effector_thruster_levels(mounted, 1, mounted_sc, 350.0) == [0.0]
+        ideal_sc, ideal = faulted(29), burn_model(:ideal)
+        SM.ControlHooks.refresh_burn!(ideal, readout_params(SM.SpacecraftModel[ideal_sc], (ideal,)), 1, 0.0)
+        @test SM.SimulationCallbacks._effector_thruster_levels(ideal, 1, ideal_sc, 350.0) == [1.0]
+        @test SM.SimulationCallbacks._effector_thruster_levels(ideal, 1, ideal_sc, 400.0) == [0.0]
+    end
+
     @testset "two burn runs at once match two in sequence" begin
         # The scheduler keeps its run state in the model, so concurrent runs of
         # one configuration trace and fly exactly as sequential ones do.
