@@ -139,6 +139,14 @@ final_state(args) = collect(run_simulation(args; return_solution=true).u[end])
         SpaceAGORA.robot_arm_joint_mpc_control(r2.controller, preview[:, 1] .+ 0.1, preview)
         @test any(!iszero, r2.controller.U_prev)
         @test all(iszero, template.controller.U_prev) && all(iszero, r3.controller.U_prev)
+        # A configured held command (here with no plan, so no tick replaces it)
+        # carries over to each bound copy, in storage of its own.
+        commanded = RobotArmControlEffector(spacecraft_idx=1, held=RobotArmHeldActuation(joint_torque_nm=[0.5, -0.25],
+            base_force_ii=SVector(1.0, 2.0, 3.0), base_torque_body=SVector(0.0, 0.1, 0.0)))
+        c2 = bind_spacecraft(commanded, 2)
+        @test c2.held !== commanded.held && c2.held.joint_torque_nm !== commanded.held.joint_torque_nm
+        @test c2.held.joint_torque_nm == [0.5, -0.25] && c2.held.base_force_ii == SVector(1.0, 2.0, 3.0) &&
+              c2.held.base_torque_body == SVector(0.0, 0.1, 0.0)
 
         # Apollo guidance and control, state sized for two spacecraft.
         tg, ta = apollo11_descent_targets()
