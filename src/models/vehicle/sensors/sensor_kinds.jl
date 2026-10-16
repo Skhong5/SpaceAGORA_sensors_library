@@ -132,3 +132,113 @@ function sensor_measure(m::Magnetometer, truth::SensorTruth, ctx::ActuatorContex
     noise = m.noise_t > 0.0 ? m.noise_t * _gaussian3(rng) : _ZERO_V3
     return field + m.bias_t + noise
 end
+
+"""
+    GNSSReceiver(; period_s=1.0, position_noise_m=0.0, velocity_noise_mps=0.0, seed=1)
+
+A GNSS receiver: it measures the position and velocity in the run's inertial
+frame (m, m/s; six components, position first), with white noise
+`position_noise_m` and `velocity_noise_mps` per axis and sample. The antenna
+is taken at the centre of mass; there are no outages.
+"""
+mutable struct GNSSReceiver <: AbstractSensor
+    period_s::Float64
+    position_noise_m::Float64
+    velocity_noise_mps::Float64
+    seed::Int
+    latest::SVector{6, Float64}
+    latest_time_s::Float64
+    rng::Any
+end
+
+function GNSSReceiver(; period_s::Real=1.0, position_noise_m::Real=0.0, velocity_noise_mps::Real=0.0, seed::Integer=1)
+    (isfinite(period_s) && period_s > 0.0) || throw(ArgumentError("GNSSReceiver period_s must be finite and positive, got $(period_s)."))
+    (isfinite(position_noise_m) && position_noise_m >= 0.0) || throw(ArgumentError("GNSSReceiver position_noise_m must be finite and nonnegative."))
+    (isfinite(velocity_noise_mps) && velocity_noise_mps >= 0.0) || throw(ArgumentError("GNSSReceiver velocity_noise_mps must be finite and nonnegative."))
+    return GNSSReceiver(Float64(period_s), Float64(position_noise_m), Float64(velocity_noise_mps), Int(seed),
+                        SVector{6, Float64}(ntuple(_ -> NaN, 6)), NaN, nothing)
+end
+
+sensor_dimension(::GNSSReceiver) = 6
+
+function sensor_measure(g::GNSSReceiver, truth::SensorTruth, ctx::ActuatorContext, rng)
+    pos = g.position_noise_m > 0.0 ? truth.pos_ii + g.position_noise_m * _gaussian3(rng) : truth.pos_ii
+    vel = g.velocity_noise_mps > 0.0 ? truth.vel_ii + g.velocity_noise_mps * _gaussian3(rng) : truth.vel_ii
+    return SVector{6, Float64}(pos[1], pos[2], pos[3], vel[1], vel[2], vel[3])
+end
+
+"""
+    SunSensor(; period_s=0.1, noise_rad=0.0, field_of_view_rad=π/2, min_lit_fraction=0.5, seed=1)
+
+A sun sensor whose boresight is its link's +z axis: it measures the direction
+to the Sun as a unit vector in its link's frame, turned by a small rotation
+with `noise_rad` (one standard deviation) about each axis. It reports no
+direction (NaN) when the Sun is more than `field_of_view_rad` from the
+boresight or when less than `min_lit_fraction` of the Sun's disk is lit
+(eclipse). The Sun's direction comes from the run's ephemerides, the lit
+fraction from the eclipse model of solar radiation pressure.
+"""
+mutable struct SunSensor <: AbstractSensor
+    period_s::Float64
+    noise_rad::Float64
+    field_of_view_rad::Float64
+    min_lit_fraction::Float64
+    seed::Int
+    latest::SVector{3, Float64}
+    latest_time_s::Float64
+    rng::Any
+end
+
+function SunSensor(; period_s::Real=0.1, noise_rad::Real=0.0, field_of_view_rad::Real=π / 2, min_lit_fraction::Real=0.5, seed::Integer=1)
+    (isfinite(period_s) && period_s > 0.0) || throw(ArgumentError("SunSensor period_s must be finite and positive, got $(period_s)."))
+    (isfinite(noise_rad) && noise_rad >= 0.0) || throw(ArgumentError("SunSensor noise_rad must be finite and nonnegative."))
+    (0.0 < field_of_view_rad <= π) || throw(ArgumentError("SunSensor field_of_view_rad must be in (0, π], got $(field_of_view_rad)."))
+    (0.0 <= min_lit_fraction <= 1.0) || throw(ArgumentError("SunSensor min_lit_fraction must be in [0, 1], got $(min_lit_fraction)."))
+    return SunSensor(Float64(period_s), Float64(noise_rad), Float64(field_of_view_rad), Float64(min_lit_fraction), Int(seed), _NAN_V3, NaN, nothing)
+end
+
+sensor_dimension(::SunSensor) = 3
+sensor_requirements(::SunSensor) = ActuatorRequirements(solar=true)
+
+function sensor_measure(s::SunSensor, truth::SensorTruth, ctx::ActuatorContext, rng)
+    d = ctx.link_to_body' * truth.sun_direction_body
+    (all(isfinite, d) && truth.sun_lit_fraction >= s.min_lit_fraction) || return _NAN_V3
+    acos(clamp(d[3], -1.0, 1.0)) <= s.field_of_view_rad || return _NAN_V3
+    s.noise_rad > 0.0 || return d
+    turned = _rotation_matrix(s.noise_rad * _gaussian3(rng)) * d
+    return turned / norm(turned)
+end
+
+"""
+    Accelerometer(; period_s=0.1, noise_mps2=0.0, bias_mps2=zero, seed=1)
+
+A three-axis accelerometer at the centre of mass: it measures the specific
+force, the vehicle's acceleration less gravity (m/s²), in its link's frame,
+plus a constant `bias_mps2` and white noise `noise_mps2` per axis and sample.
+Gravity is the force of the run's effectors for which `is_gravitational` is
+true, so in free fall it reads zero and under thrust, drag or radiation
+pressure it reads their acceleration.
+"""
+mutable struct Accelerometer <: AbstractSensor
+    period_s::Float64
+    noise_mps2::Float64
+    bias_mps2::SVector{3, Float64}
+    seed::Int
+    latest::SVector{3, Float64}
+    latest_time_s::Float64
+    rng::Any
+end
+
+function Accelerometer(; period_s::Real=0.1, noise_mps2::Real=0.0, bias_mps2=_ZERO_V3, seed::Integer=1)
+    (isfinite(period_s) && period_s > 0.0) || throw(ArgumentError("Accelerometer period_s must be finite and positive, got $(period_s)."))
+    (isfinite(noise_mps2) && noise_mps2 >= 0.0) || throw(ArgumentError("Accelerometer noise_mps2 must be finite and nonnegative."))
+    return Accelerometer(Float64(period_s), Float64(noise_mps2), SVector{3, Float64}(bias_mps2), Int(seed), _NAN_V3, NaN, nothing)
+end
+
+sensor_dimension(::Accelerometer) = 3
+sensor_needs_specific_force(::Accelerometer) = true
+
+function sensor_measure(a::Accelerometer, truth::SensorTruth, ctx::ActuatorContext, rng)
+    f = ctx.link_to_body' * truth.specific_force_body + a.bias_mps2
+    return a.noise_mps2 > 0.0 ? f + a.noise_mps2 * _gaussian3(rng) : f
+end

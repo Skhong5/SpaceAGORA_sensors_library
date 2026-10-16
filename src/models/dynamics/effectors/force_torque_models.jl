@@ -87,4 +87,17 @@ module DynamicEffectors
     export wheel_speed_spline, wheel_spline_value, wheel_spline_derivative
     export wheel_momentum_body, wheel_momentum_rate_body, wheel_reaction_torque, wheel_speeds_rad_s
     export force_on_endpoint, laser_force_on_spacecraft
+    export is_gravitational
+
+    """
+        is_gravitational(effector) -> Bool
+
+    Whether a dynamic effector models gravity: the central body's field and its
+    harmonics, third bodies, and the gravity-gradient torque. An accelerometer
+    does not feel these effectors' forces (see `Accelerometer`). A user-defined
+    gravity model should add a method returning true.
+    """
+    is_gravitational(::Any) = false
+    is_gravitational(::Union{ConstantGravityModel, InverseSquaredGravityModel, InverseSquaredJ2GravityModel,
+                             NBodyGravityModel, GravitationalHarmonicsModel, GravityGradientTorqueModel}) = true
 end
