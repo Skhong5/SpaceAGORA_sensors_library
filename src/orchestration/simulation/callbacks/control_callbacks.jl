@@ -64,8 +64,9 @@ end
     return nothing
 end
 
-@inline control_requires_periodic_callback(::Any) = true
-@inline control_requires_periodic_callback(::BaseThrusterModel) = false
+# Whether the engine ticks `control_model` with a periodic callback (internal;
+# the model declares it with `tick_schedule`).
+@inline control_requires_periodic_callback(control_model) = tick_schedule(control_model) === :periodic
 
 @inline function _run_guidance_for_thruster_schedule!(integrator, sat_idx::Int)
     @inbounds for guidance_model in integrator.p.args.guidance_model.guidance_effectors
@@ -114,10 +115,16 @@ function _burn_edge_callback(control_model::BaseThrusterModel, num_sats::Int)
     return DiscreteCallback(condition, affect!; save_positions=(false, false))
 end
 
+# When spacecraft `sat_idx` leaves the atmosphere, the event-driven control
+# models plan again; the burn scheduler schedules its next burn.
+_reschedule_event_driven!(integrator, control_model, sat_idx::Int) = nothing
+_reschedule_event_driven!(integrator, control_model::BaseThrusterModel, sat_idx::Int) =
+    _schedule_thruster_control!(integrator, control_model, sat_idx)
+
 function schedule_event_driven_thruster_controls!(integrator, sat_idx::Int)
     @inbounds for control_model in integrator.p.args.control_model.control_effectors
-        if control_model isa BaseThrusterModel
-            _schedule_thruster_control!(integrator, control_model, sat_idx)
+        if tick_schedule(control_model) === :event_driven
+            _reschedule_event_driven!(integrator, control_model, sat_idx)
         end
     end
     return nothing
@@ -154,6 +161,28 @@ function _thruster_schedule_callbacks(control_model::BaseThrusterModel, num_sats
     return (init_callback,)
 end
 
+# The run-time declarations of the built-in control models (GNCRuntime). The
+# burn scheduler is event-driven: its callbacks schedule each burn, switch it at
+# the window's ends and, in `:mounted` actuation, tick the mounted actuators at
+# the control rate.
+GNCRuntime.tick_schedule(::BaseThrusterModel) = :event_driven
+function GNCRuntime.gnc_callbacks(control_model::BaseThrusterModel, num_sats, args, period_s)
+    callbacks = Any[_thruster_schedule_callbacks(control_model, num_sats, args)...]
+    push!(callbacks, _burn_edge_callback(control_model, num_sats))
+    actuation_mode(control_model) === :mounted &&
+        push!(callbacks, _mounted_burn_tick_callback(control_model, Float64(period_s), num_sats))
+    return Tuple(callbacks)
+end
+GNCRuntime.register_tstops!(integrator, control_model::BaseThrusterModel, spacecraft_index) =
+    _register_control_tstops!(integrator, control_model, spacecraft_index)
+# The EDG controller keeps the clock of its own ticks; recording the actual start
+# matches the periodic callback's phase on resumes.
+function GNCRuntime.gnc_clock_started!(control_model::_simulation_model_module.AerobrakingEnergyDepletionControlModel,
+                                       period_s, origin_s)
+    control_model.state.control_clock_origin_s = Float64(origin_s)
+    return nothing
+end
+
 function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
     # Perform the control effects' calculations at specific rates given by the control_rates field in the ControlModel
     control_models = args.control_model.control_effectors
@@ -162,20 +191,11 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
     for i in eachindex(control_models)
         control_model = control_models[i]
         control_rate = control_rates[i]
-        if control_model isa BaseThrusterModel
-            n_slots = length(control_model.thrust)
-            if n_slots != num_sats
-                throw(ArgumentError(
-                    "BaseThrusterModel vector length ($n_slots) must match number of spacecraft ($num_sats). " *
-                    "Use one shared model with per-spacecraft vectors."
-                ))
-            end
-        end
-        if !control_requires_periodic_callback(control_model)
-            append!(callbacks, _thruster_schedule_callbacks(control_model, num_sats, args))
-            push!(callbacks, _burn_edge_callback(control_model, num_sats))
-            actuation_mode(control_model) === :mounted &&
-                push!(callbacks, _mounted_burn_tick_callback(control_model, Float64(control_rate), num_sats))
+        schedule_kind = tick_schedule(control_model)
+        schedule_kind in (:periodic, :event_driven) || throw(ArgumentError(
+            "tick_schedule($(nameof(typeof(control_model)))) must return :periodic or :event_driven, not $(repr(schedule_kind))."))
+        if schedule_kind === :event_driven
+            append!(callbacks, gnc_callbacks(control_model, num_sats, args, control_rate))
             continue
         end
         # Each control effector callback runs at its own rate and updates
@@ -184,9 +204,7 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
         apply_control! = (integrator, sat_idx) -> begin
             calcControlEffect!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
             _apply_mounted_tick!(control_model, integrator.p, sat_idx, integrator.t, Float64(control_rate))
-            if control_model isa BaseThrusterModel
-                _register_control_tstops!(integrator, control_model, sat_idx)
-            end
+            register_tstops!(integrator, control_model, sat_idx)
         end
         control_func = (integrator) -> begin
             decision = _control_callback_thread_decision(integrator.p, control_model, num_sats)
@@ -213,17 +231,13 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
                 )
             end
         end
-        if control_model isa _simulation_model_module.AerobrakingEnergyDepletionControlModel
-            initialize_control_clock = (cb, u, t, integrator) -> begin
-                # Match PeriodicCallback's actual solve-start phase on resumes.
-                control_model.state.control_clock_origin_s = Float64(t)
-                DiffEqBase.derivative_discontinuity!(integrator, false)
-            end
-            push!(callbacks, PeriodicCallback(control_func, control_rate;
-                initialize=initialize_control_clock))
-        else
-            push!(callbacks, PeriodicCallback(control_func, control_rate))
+        # At each solve's start the model learns its clock's period and origin.
+        # The flag reset is PeriodicCallback's own default initialization.
+        start_clock = (cb, u, t, integrator) -> begin
+            gnc_clock_started!(control_model, Float64(control_rate), Float64(t))
+            DiffEqBase.derivative_discontinuity!(integrator, false)
         end
+        push!(callbacks, PeriodicCallback(control_func, control_rate; initialize=start_clock))
     end
     return callbacks
 end

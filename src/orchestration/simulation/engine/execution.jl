@@ -737,6 +737,11 @@ function run_simulation(
     # println("ODE parameters:")
     # println(p)
     # println("args.mission_configuration.mission_time: $(args.mission_configuration.mission_time)")
+    # Navigation first, then guidance, then control: each stage may read what the
+    # previous one set up.
+    for navigation in args.navigation_model.navigation_effectors
+        SimulationLifecycle.initialize_navigation!(navigation, u_start, p, t_start)
+    end
     for guidance in args.guidance_model.guidance_effectors
         SimulationLifecycle.initialize_guidance!(guidance, u_start, p, t_start)
     end

@@ -90,6 +90,12 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :installed_record, rendered = "SpaceAGORA.installed_record"),
         (owner = :SpaceAGORA, symbol = :rejected_record, rendered = "SpaceAGORA.rejected_record"),
     ]),
+    (title = "GNC runtime", items = [
+        (owner = :SpaceAGORA, symbol = :tick_schedule, rendered = "SpaceAGORA.tick_schedule"),
+        (owner = :SpaceAGORA, symbol = :gnc_callbacks, rendered = "SpaceAGORA.gnc_callbacks"),
+        (owner = :SpaceAGORA, symbol = :register_tstops!, rendered = "SpaceAGORA.register_tstops!"),
+        (owner = :SpaceAGORA, symbol = :gnc_clock_started!, rendered = "SpaceAGORA.gnc_clock_started!"),
+    ]),
     (
         title = "Simulation Setup",
         items = [
@@ -352,6 +358,7 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :sensor_dimension, rendered = "SpaceAGORA.sensor_dimension"),
             (owner = :SpaceAGORA, symbol = :sensor_requirements, rendered = "SpaceAGORA.sensor_requirements"),
             (owner = :SpaceAGORA, symbol = :sensor_period_s, rendered = "SpaceAGORA.sensor_period_s"),
+            (owner = :SpaceAGORA, symbol = :initialize_sensor!, rendered = "SpaceAGORA.initialize_sensor!"),
             (owner = :SpaceAGORA, symbol = :add_sensor!, rendered = "SpaceAGORA.add_sensor!"),
             (owner = :SpaceAGORA, symbol = :mounted_sensors, rendered = "SpaceAGORA.mounted_sensors"),
             (owner = :SpaceAGORA, symbol = :sensor_measurement, rendered = "SpaceAGORA.sensor_measurement"),
