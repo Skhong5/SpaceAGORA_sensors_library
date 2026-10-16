@@ -356,8 +356,9 @@ end
         @test reference.state.q_ib === nothing
         @test reference.torque == no_cop.torque == zero3
         @test reference.f == no_cop.f
-        # Pin the existing legacy force contract as well as wrapped/unwrapped
-        # agreement, because orientation-off scenarios already use the wrapper.
+        # A direct call of the deprecated calcForceTorque gives the force the
+        # dynamics apply, and wrapped/unwrapped agreement holds, because
+        # orientation-off scenarios already use the wrapper.
         legacy_f, legacy_torque = SimulationModel.calcForceTorque(
             fm, reference.u.sc[1], reference.p, 1)
         @test reference.f ≈ legacy_f atol=1e-16 rtol=1e-12

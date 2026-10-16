@@ -162,16 +162,19 @@ function _missing_model_hooks(args, call, solver_mode::Symbol=:tsit5)::Vector{St
                     "gravity_backbone_kick_acceleration_ii(model, x::StateSample, env::EnvironmentSample, t::Float64), which its :velocity_kick_explicit declaration needs"))
             continue
         end
-        # The dynamics call `wrench` when it has a method for the sampled
-        # arguments and the older calcForceTorque otherwise; either one suffices.
-        _wrench_method_available(model) && continue
-        all(X -> hasmethod(SimulationModel.calcForceTorque, Tuple{T, X, P, Int}), views) && continue
+        # The dynamics call `wrench` when the model has a method for the sampled
+        # arguments, and otherwise the model's own method of the deprecated
+        # calcForceTorque (`_deprecated_model_hooks` warns about it). The
+        # harmonics model has `wrench`; the dynamics evaluate it through its own
+        # preallocated kernel instead.
+        sampled(SimulationModel.wrench, T) && continue
+        all(X -> _own_force_torque_method(T, X, P), views) && continue
         # A model that opts into the per-link kernel is evaluated through
         # link_wrench on articulated spacecraft with live-pose loads; it is
         # accepted without the base-body hooks the other runs would need.
         SimulationModel.link_wrench_capable(model) && continue
-        push!(problems, _missing_hook_line(location, "dynamics_model.dynamic_effectors", model, SimulationModel.calcForceTorque,
-            "wrench(model, x::StateSample, env::EnvironmentSample, t::Float64), nor the older calcForceTorque(model, x, p, i::Int)"))
+        push!(problems, _missing_hook_line(location, "dynamics_model.dynamic_effectors", model, SimulationModel.wrench,
+            "wrench(model, x::StateSample, env::EnvironmentSample, t::Float64)"))
     end
     density_model = args.environment_model.density_model
     hasmethod(SimulationModel.getDensity, Tuple{typeof(density_model), Float64, Float64, Float64, Float64, Bool, P}) ||
@@ -180,9 +183,49 @@ function _missing_model_hooks(args, call, solver_mode::Symbol=:tsit5)::Vector{St
     return problems
 end
 
+# Whether `T` has a calcForceTorque method of its own for these argument types,
+# rather than only the forwarder for direct calls (`effector_sampling.jl`), which
+# accepts any arguments.
+function _own_force_torque_method(::Type{T}, ::Type{X}, ::Type{P})::Bool where {T, X, P}
+    f = SimulationModel.calcForceTorque
+    tt = Tuple{T, X, P, Int}
+    hasmethod(f, tt) || return false
+    return which(f, tt) !== which(f, Tuple{Any, Any, Any, Any})
+end
+
+# The deprecated hooks this run's models implement, as (key, message) pairs for
+# `_hook_deprecation`, one per model type and hook.
+function _deprecated_model_hooks(args, call)::Vector{Tuple{Tuple, String}}
+    P, views = call.params, call.spacecraft
+    found = Tuple{Tuple, String}[]
+    for model in args.dynamics_model.dynamic_effectors
+        T = typeof(model)
+        any(X -> _own_force_torque_method(T, X, P), views) || continue
+        key = (T, :calcForceTorque)
+        any(entry -> first(entry) == key, found) && continue
+        has_wrench = hasmethod(SimulationModel.wrench,
+            Tuple{T, SimulationModel.StateSample, SimulationModel.EnvironmentSample, Float64})
+        message = has_wrench ?
+            "$(nameof(T)) implements both wrench and calcForceTorque(model, x, p, i). The dynamics call " *
+            "wrench, so the calcForceTorque method is never used; delete it. calcForceTorque is deprecated " *
+            "and will be removed in SpaceAGORA 0.5.0." :
+            "$(nameof(T)) implements calcForceTorque(model, x, p, i), which is deprecated and will be " *
+            "removed in SpaceAGORA 0.5.0. Implement wrench(model, x::StateSample, env::EnvironmentSample, " *
+            "t::Float64) instead: the spacecraft's index in the run is x.spacecraft_index."
+        push!(found, (key, message))
+    end
+    return found
+end
+
 function _validate_model_hooks!(args, u0, p, solver_mode::Symbol=:tsit5)
-    problems = _missing_model_hooks(args, _hook_call_types(u0, p), solver_mode)
-    isempty(problems) && return nothing
+    call = _hook_call_types(u0, p)
+    problems = _missing_model_hooks(args, call, solver_mode)
+    if isempty(problems)
+        for (key, message) in _deprecated_model_hooks(args, call)
+            SimulationModel.HookDeprecation._hook_deprecation(key, message)
+        end
+        return nothing
+    end
     throw(ArgumentError(
         "The run calls methods these models do not have:\n" *
         join(("  - " * line for line in problems), "\n") *

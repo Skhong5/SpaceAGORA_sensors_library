@@ -21,12 +21,6 @@ that would count the central-field torque twice.
     gravity_gradient::Bool = true
 end
 
-function calcForceTorque(model::GravityGradientTorqueModel, x::ComponentVector, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
-    torque_body = _gravity_gradient_torque_body(model, pos_ii, x, param, i)
-    return SVector{3, Float64}(0.0, 0.0, 0.0), torque_body
-end
-
 @inline function wrench(
     model::GravityGradientTorqueModel,
     x::StateSample,

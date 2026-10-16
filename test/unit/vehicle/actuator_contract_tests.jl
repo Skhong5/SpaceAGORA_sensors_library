@@ -469,8 +469,9 @@ end
         x = ComponentVector(pos=[7.0e6, 1.0e6, 2.0e5], vel=[0.0, 7.5e3, 0.0], mass=50.0, q=collect(q), ω=zeros(3))
         passive_root = SM.Link(root=true, m=50.0)
         push!(passive_root.magnets, SM.Magnet(m=MVector(0.3, -0.2, 0.8)))
-        _, torque_passive = SM.calcForceTorque(SM.MagneticTorqueRodModel(), x,
-            readout_params(SM.SpacecraftModel[spacecraft_with(passive_root)], ()), 1)
+        passive = spacecraft_with(passive_root)
+        _, torque_passive = SE._evaluate_dynamic_effector(SM.MagneticTorqueRodModel(), x,
+            SE.build_state_sample(x, passive, true, 1), readout_params(SM.SpacecraftModel[passive], ()), 1, 0.0)
         rod_root = SM.Link(root=true, m=50.0)
         rods = spacecraft_with(rod_root)
         for axis in (SVector(1.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(0.0, 0.0, 1.0))

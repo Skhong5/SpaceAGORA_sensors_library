@@ -48,7 +48,7 @@ Stable interface:
 - `SpaceAGORA.gravity_backbone_acceleration_ii`
 - `SpaceAGORA.gravity_backbone_kick_structure`
 - `SpaceAGORA.gravity_backbone_kick_acceleration_ii`
-- `SpaceAGORA.calcForceTorque`
+- `SpaceAGORA.calcForceTorque` (deprecated, removed in 0.5.0)
 
 Preferred additive methods:
 
@@ -62,15 +62,19 @@ SpaceAGORA.gravity_backbone_kick_acceleration_ii(model, x::SpaceAGORA.StateSampl
 SpaceAGORA.wrench(model, x::SpaceAGORA.StateSample, env::SpaceAGORA.EnvironmentSample, t::Float64) -> (force_ii, torque_body)
 ```
 
-Compatibility method:
+Deprecated method, removed in SpaceAGORA 0.5.0:
 
 ```julia
 SpaceAGORA.calcForceTorque(model, x, p, i) -> (force_n, torque_n_m)
 ```
 
-Use `wrench` for new work when possible. The engine owns stage-consistent
-sampling and passes typed state/environment data into the effector. Keep
-`calcForceTorque` only for compatibility or when migrating existing models.
+Implement `wrench`. The engine owns stage-consistent sampling and passes typed
+state/environment data into the effector; `x.spacecraft_index` is the
+spacecraft's position in the run. A model with only `calcForceTorque` still runs
+through it, and the run warns before integration (an error under
+`julia --depwarn=error`). Calling `calcForceTorque` on a model that implements
+`wrench`, as every built-in model does, returns the force and torque the
+dynamics apply.
 Override `solver_partition` only if the effector should move to the implicit
 side of `split_imex`; the default is `:explicit`.
 Override the gravity-backbone hooks only if the effector should participate in
@@ -357,9 +361,9 @@ The four files under `templates/` define different extension contracts: a force
 or torque, an atmosphere density model, a control hook and an actuator. They define model
 types and methods; they do not construct or run a mission. Copy the relevant
 file into your model's owning package and add tests for the behavior you implement.
-The force/torque template demonstrates the `calcForceTorque` compatibility hook;
-for a new typed `wrench` implementation, follow
-[Adding a Force or Torque of Your Own](user/custom_effector.md).
+The force/torque template implements `wrench`;
+[Adding a Force or Torque of Your Own](user/custom_effector.md) walks through
+one in detail.
 
 Use the [Examples Catalog](user/examples_catalog.md) when you want a complete
 scenario to run or adapt. Helpers under `examples/support/` serve those scenarios

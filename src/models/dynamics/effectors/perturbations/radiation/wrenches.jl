@@ -170,35 +170,6 @@ function srp(
     )
 end
 
-function calcForceTorque(model::SolarRadiationPressureModel, x::AbstractVector{Float64}, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    if model.A == 0.0
-        return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
-    end
-
-    planet = param.args.environment_model.planet
-    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
-    mass = Float64(x[7])
-    et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
-    primary_body_name = _spice_query_name(planet.name)
-    spice_rhs_memo_enabled = param.shared_buffers.spice_rhs_memo_enabled[]
-    spice_rhs_memo = param.shared_buffers.spice_rhs_memo
-    pos_primary_sun = if model.direct || model.albedo
-        cache_entry = param.shared_buffers.srp_sun_ephemeris_cache[]
-        pos_primary_sun_j2000_m = if cache_entry isa SRPSunEphemerisCache
-            cached = _srp_sun_position_from_cache_j2000_m(cache_entry, et)
-            cached === nothing ? _srp_sun_position_from_spice_j2000_m(et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls) : cached
-        else
-            _srp_sun_position_from_spice_j2000_m(et, primary_body_name, spice_rhs_memo_enabled, spice_rhs_memo, param.shared_buffers.spice_runtime_counters.srp_spkpos_runtime_calls)
-        end
-        SVector{3, Float64}(pos_primary_sun_j2000_m)
-    else
-        SVector{3, Float64}(0.0, 0.0, 0.0)
-    end
-    accel_ii = _srp_total_acceleration_ii(model, planet, pos_ii, pos_primary_sun, mass)
-    force_ii = mass * SVector{3, Float64}(accel_ii)
-    return force_ii, SVector{3, Float64}(0.0, 0.0, 0.0)
-end
-
 @inline environment_requirements(model::SolarRadiationPressureModel) = EffectorEnvironmentRequirements(solar=(model.direct || model.albedo))
 @inline gravity_backbone_kick_structure(::SolarRadiationPressureModel) = :velocity_kick_explicit
 

@@ -461,3 +461,23 @@ end
         Tuple{typeof(effector), SimulationModel.StateSample, SimulationModel.EnvironmentSample, Float64},
     )
 end
+
+# A direct call of the deprecated calcForceTorque on a model that implements
+# `wrench` (every built-in model) evaluates the model as the dynamics do:
+# `wrench_caching!` with the state sample and environment they build for
+# spacecraft `i`, at the run's current time, so diagnostics such as the drag
+# caches are written as before. The dynamics call `wrench_caching!` themselves,
+# so they never take this path for such a model; for a model with neither
+# method it raises the MethodError the pre-run check reports first.
+function SimulationModel.calcForceTorque(model, x, p, i)
+    hasmethod(SimulationModel.wrench,
+        Tuple{typeof(model), SimulationModel.StateSample, SimulationModel.EnvironmentSample, Float64}) ||
+        throw(MethodError(SimulationModel.calcForceTorque, (model, x, p, i)))
+    sat_idx = Int(i)
+    t = Float64(p.shared_buffers.current_time[])
+    sample = build_state_sample(x, p.args.dynamics_model.spacecraft[sat_idx],
+        p.args.mission_configuration.orientation_sim, sat_idx)
+    req = SimulationModel.environment_requirements(model)
+    env = sample_environment_with_reusable_buffers(req, model, x, p, sat_idx, t)
+    return SimulationModel.wrench_caching!(model, sample, env, t, p, sat_idx)
+end

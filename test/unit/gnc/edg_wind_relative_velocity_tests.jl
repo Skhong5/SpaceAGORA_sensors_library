@@ -100,7 +100,9 @@ end
         # The aerodynamic wrench's drag opposes the same relative velocity.
         cb = CB.get_density_callback(1, s.args.dynamics_model.dynamic_effectors, s.args)
         cb.affect!((p=s.p, u=s.u, t=0.0))
-        SM.calcForceTorque(AerodynamicCoefficientfM(), s.u.sc[1], s.p, 1)
+        sample = SE.build_state_sample(s.u.sc[1], s.args.dynamics_model.spacecraft[1],
+            s.args.mission_configuration.orientation_sim, 1)
+        SE._evaluate_dynamic_effector(AerodynamicCoefficientfM(), s.u.sc[1], sample, s.p, 1, 0.0)
         drag_ii = s.p.save_cache.drag_cache[1]
         @test norm(drag_ii) > 0.0
         drag_hat_pp = env.l_pi * (drag_ii / norm(drag_ii))

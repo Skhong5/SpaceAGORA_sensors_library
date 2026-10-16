@@ -337,11 +337,13 @@ function SimulationModel.calcControlEffect!(
     return nothing
 end
 
-function SimulationModel.calcForceTorque(
+include(joinpath(@__DIR__, "..", "helpers", "dynamics_force_torque.jl"))
+
+function SimulationModel.wrench(
     model::ThrowingForceModel,
-    x::AbstractVector{Float64},
-    p::ODEParams,
-    i::Int64
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
 )
     error("intentional derivative failure")
 end

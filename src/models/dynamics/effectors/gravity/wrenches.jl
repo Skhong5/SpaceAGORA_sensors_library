@@ -39,15 +39,6 @@ function aerobraking_gravity_force_ii(
     return force_ii
 end
 
-function calcForceTorque(model::ConstantGravityModel, x::ComponentVector, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
-    mass = Float64(x[7])
-    gravity_ii = _inverse_squared_gravity_accel(pos_ii, param.args.environment_model.planet)
-    force_ii = mass * gravity_ii
-    torque_body = _gravity_gradient_torque_body(model, pos_ii, x, param, i)
-    return force_ii, torque_body
-end
-
 @inline function wrench(
     model::ConstantGravityModel,
     x::StateSample,
@@ -76,15 +67,6 @@ end
     return encke_point_mass_difference(Float64(env_base.planet.μ), x_base.pos_ii, ρ)
 end
 
-function calcForceTorque(model::InverseSquaredGravityModel, x::ComponentVector, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
-    mass = Float64(x[7])
-    gravity_ii = _inverse_squared_gravity_accel(pos_ii, param.args.environment_model.planet)
-    force_ii = mass * gravity_ii
-    torque_body = _gravity_gradient_torque_body(model, pos_ii, x, param, i)
-    return force_ii, torque_body
-end
-
 @inline function wrench(
     model::InverseSquaredGravityModel,
     x::StateSample,
@@ -111,15 +93,6 @@ end
     model::InverseSquaredGravityModel, x_base::StateSample, ρ, x_far::StateSample, env_base::EnvironmentSample, env_far::EnvironmentSample, t::Float64,
 )::SVector{3, Float64}
     return encke_point_mass_difference(Float64(env_base.planet.μ), x_base.pos_ii, ρ)
-end
-
-function calcForceTorque(model::InverseSquaredJ2GravityModel, x::ComponentVector, param::ODEParams, i::Int64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
-    pos_ii = SVector{3, Float64}(x[1], x[2], x[3])
-    mass = Float64(x[7])
-    gravity_ii = _inverse_squared_j2_gravity_accel(pos_ii, param.args.environment_model.planet)
-    force_ii = mass * gravity_ii
-    torque_body = _gravity_gradient_torque_body(model, pos_ii, x, param, i)
-    return force_ii, torque_body
 end
 
 @inline environment_requirements(::InverseSquaredJ2GravityModel) = EffectorEnvironmentRequirements(planet_frame=true)

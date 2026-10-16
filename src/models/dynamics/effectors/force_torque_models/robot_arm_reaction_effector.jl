@@ -5,7 +5,8 @@ using StaticArrays
 using ...AbstractTypes: AbstractForceTorqueModel
 using ...ClothMultibody: CompliantJointActuator
 using ...RobotArmPlanning: RobotArmPlan, robot_arm_plan_sample
-import ..DynamicEffectors: calcForceTorque
+using ...EffectorSampling: StateSample, EnvironmentSample
+import ..DynamicEffectors: wrench
 
 export RobotArmReactionEffector
 
@@ -23,13 +24,15 @@ Base.@kwdef mutable struct RobotArmReactionEffector <: AbstractForceTorqueModel
     joint_actuators::Vector{CompliantJointActuator} = CompliantJointActuator[]
 end
 
-"""Compute the robot-arm reaction force and torque applied to the spacecraft."""
-function calcForceTorque(model::RobotArmReactionEffector, sc_view, p, sat_idx::Int)
-    sat_idx == model.spacecraft_idx || return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
-    model.plan === nothing && return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+# The robot-arm reaction force and torque on the spacecraft at `x.spacecraft_index`.
+function wrench(model::RobotArmReactionEffector, x::StateSample, env::EnvironmentSample, t::Float64)
+    zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
+    x.spacecraft_index == model.spacecraft_idx || return zero3, zero3
+    model.plan === nothing && return zero3, zero3
     # Placeholder hook for the coupled backend: the feedforward path is present,
     # but reaction wrench estimation belongs with compliant multibody/RNEA dynamics.
-    return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    return zero3, zero3
 end
+
 
 end # module RobotArmReactionEffectors

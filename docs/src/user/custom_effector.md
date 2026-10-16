@@ -201,9 +201,9 @@ EnvironmentSample, Float64)`. Annotating the model argument with your type is
 what makes the method yours. The other three arguments may be left untyped, or
 annotated with the types above or with types that contain them (`t::Real`
 works); all three forms were checked. A method annotated with a type that does
-not accept the argument (say `x::AbstractVector`) is not a match, so for an
-ordinary custom effector the engine falls back to the older `calcForceTorque`
-hook and the run stops with a `MethodError` that names `calcForceTorque`.
+not accept the argument (say `x::AbstractVector`) is not a match, so the run
+stops before integration with an `ArgumentError` saying the effector has no
+`wrench` method that accepts the arguments the run passes.
 
 **Attaching it.** Effectors are passed as a tuple to `DynamicsModel` (or to
 `make_example_config`'s `dynamic_effectors`). Order does not matter for the
@@ -243,8 +243,8 @@ agreement.
 For this configuration, a ratio near `1/520` is a clue that acceleration was
 returned instead of force, and a negative rise is a clue that the force points
 against the velocity. Inspect the force units and direction when the comparison
-is unexpected. A `MethodError` naming `calcForceTorque` means the `wrench` method
-was not matched (check its annotations).
+is unexpected. An `ArgumentError` before the run saying the effector has no
+`wrench` method means the method was not matched (check its annotations).
 
 Both runs write the standard three files under `output/effector_walkthrough`
 beside the script, with a separate directory per arm; see
@@ -341,7 +341,7 @@ and the gravity-backbone hooks.
 | `SpaceAGORA.StateSample` | Fields `pos_ii`, `vel_ii` (m, m/s, inertial), `mass_kg`, `q_ib` (inertial-to-body quaternion, scalar-last `[x, y, z, w]`, or `nothing`), `ω_body` (rad/s, or `nothing`), `spacecraft` (the typed spacecraft model, for geometry and inertia), `spacecraft_index` (the spacecraft's position in the run, from 1; 0 for a sample built outside a run). |
 | `SpaceAGORA.EnvironmentSample` | Fields `planet` (always), `planet_frame` (`alt_m`, `lat_rad`, `lon_rad`, `pos_pp`, `vel_pp`, `l_pi`: position and velocity in the planet-fixed frame and the inertial-to-planet-fixed rotation matrix), `atmosphere` (`rho_kg_m3`, `temperature_k`, `wind_pp` as east, north, up components, in that order), `solar` (`sun_pos_ii`), `third_bodies` (`names`, `positions_ii`). Each optional field is `nothing` unless requested. |
 | `SpaceAGORA.environment_requirements(model)` | Returns `EffectorEnvironmentRequirements(planet_frame=, atmosphere=, solar=, third_body_names=)`; the default requests nothing. |
-| `SpaceAGORA.calcForceTorque(model, x, p, i)` | The older hook, kept for existing models; `x` is the spacecraft's raw state block, `p` the engine parameters, `i` the spacecraft index. Same return convention. Used when no `wrench` method matches; the built-in gravitational-harmonics model is routed to it deliberately for its buffer reuse. |
+| `SpaceAGORA.calcForceTorque(model, x, p, i)` | Deprecated, removed in 0.5.0. The older hook: `x` is the spacecraft's raw state block, `p` the engine parameters, `i` the spacecraft index. Same return convention. The dynamics call a model's own method only when no `wrench` method matches, and the run warns before integration. Called on a model that implements `wrench`, it returns the force and torque the dynamics apply. |
 | `SpaceAGORA.solver_partition(model)` | `:explicit` (default) or `:implicit`; only matters under the `split_imex` solver mode. |
 | `DynamicsModel([spacecraft], effectors)` | Where the effector tuple is attached. |
 

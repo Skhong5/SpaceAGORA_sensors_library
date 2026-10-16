@@ -131,23 +131,6 @@ end
     return workspace
 end
 
-# One body's third-body force on the spacecraft. Both the serial and the
-# threaded n-body loops call this same function, so the per-body values are
-# identical and the sum below runs in body order either way.
-@inline function _nbody_body_force_ii(
-    pos_primary_k::SVector{3, Float64},
-    pos_ii::SVector{3, Float64},
-    mass::Float64,
-    mu_k::Float64
-)::SVector{3, Float64}
-    pos_spacecraft_k = pos_primary_k - pos_ii
-    pos_spacecraft_k_mag = norm(pos_spacecraft_k)
-    pos_primary_k_mag = norm(pos_primary_k)
-    return mass * mu_k * (
-        (pos_spacecraft_k / pos_spacecraft_k_mag^3) - (pos_primary_k / (pos_primary_k_mag * pos_primary_k_mag * pos_primary_k_mag))
-    )
-end
-
 @inline function _nbody_workspace_for_sat!(
     param::ODEParams,
     sat_idx::Int,

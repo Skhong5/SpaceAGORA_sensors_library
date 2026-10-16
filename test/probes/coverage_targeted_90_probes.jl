@@ -1148,7 +1148,7 @@ end
     p_legacy_aero = ODEParams(n_sats=1, args=args_legacy_aero)
     u_legacy_aero = build_initial_conditions(args_legacy_aero)
     p_legacy_aero.shared_buffers.current_time[] = 0.0
-    force_legacy, torque_legacy = SimulationModel.calcForceTorque(
+    force_legacy, torque_legacy = dynamics_force_torque(
         AerodynamicCoefficientfM(),
         u_legacy_aero.sc[1],
         p_legacy_aero,
