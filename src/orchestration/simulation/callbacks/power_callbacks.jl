@@ -8,7 +8,8 @@ const _NO_SUN = SVector{3, Float64}(NaN, NaN, NaN)
 # Generation, load and net power of spacecraft `sat_idx` in state `sc_view` at
 # time `t`: the arrays lit by the Sun of the run's ephemerides (none when they
 # cannot place it), the constant loads, and the mounted actuators at the levels
-# of the first control effector in `:mounted` actuation that holds them.
+# of every control effector in `:mounted` actuation that holds them, as the
+# faults leave them.
 function _power_snapshot(sc_view, spacecraft, p, sat_idx::Int, t::Float64)
     args = p.args
     planet = args.environment_model.planet
@@ -28,13 +29,36 @@ function _power_snapshot(sc_view, spacecraft, p, sat_idx::Int, t::Float64)
             generation = solar_generation_w(spacecraft, rot(q) * (to_sun / distance), solar_flux_w_m2(distance), lit)
         end
     end
-    n = mounted_actuator_count(spacecraft)
-    levels = n == 0 ? nothing : _mounted_effector_levels(args.control_model.control_effectors, sat_idx, n)
-    levels === nothing || (levels = faulted_levels(spacecraft, levels))
     wheel_momentum = hasproperty(sc_view, :h_wheels) ? sc_view.h_wheels : nothing
-    balance = power_balance(spacecraft, levels, generation; wheel_momentum=wheel_momentum)
+    balance = _mounted_power_balance(spacecraft, args.control_model.control_effectors, sat_idx, generation, wheel_momentum)
     return (generation_w = generation, load_w = balance.load_w, unshed_load_w = balance.unshed_load_w,
             by_tier = balance.by_tier, net_w = balance.net_w)
+end
+
+# The power balance (as `PowerSystems.power_balance` gives it for one set of
+# levels) with the mounted actuators of every control effector in `:mounted`
+# actuation that holds levels for spacecraft `sat_idx`, at the levels its faults
+# leave them: the dynamics apply each one's actuators, so each one's draw is a
+# load.
+function _mounted_power_balance(spacecraft, effectors, sat_idx::Int, generation_w::Float64, wheel_momentum)
+    n = mounted_actuator_count(spacecraft)
+    bus = bus_load_w(spacecraft)
+    unshed = (0.0, 0.0, 0.0, 0.0)
+    shed = 0.0
+    if n > 0
+        for effector in effectors
+            actuation_mode(effector) === :mounted || continue
+            levels = actuator_levels(effector, sat_idx)
+            (levels === nothing || length(levels) != n) && continue
+            levels = faulted_levels(spacecraft, levels)
+            by_tier = actuator_power_by_tier(spacecraft, levels; wheel_momentum=wheel_momentum)
+            applied = shed_levels(spacecraft, levels)
+            unshed = unshed .+ by_tier
+            shed += sum(applied === levels ? by_tier : actuator_power_by_tier(spacecraft, applied; wheel_momentum=wheel_momentum))
+        end
+    end
+    load = bus + shed
+    return (load_w = load, unshed_load_w = bus + sum(unshed), by_tier = unshed, net_w = generation_w - load)
 end
 
 # Spacecraft with a battery, whose stored energy is a state.
@@ -72,10 +96,18 @@ capacity, which marks it empty or full, and a step-end update of its flags and
 shedding tier (see `PowerSystems.update_power_state!`). Both mark the
 derivative discontinuous when they change anything, so no integration step
 sees the battery's state change. Empty for runs without a battery.
+
+The flags carry over from one checkpoint segment to the next. A run with a
+battery cannot resume from a checkpoint file, which holds the stored energy but
+not the flags.
 """
 function get_power_callbacks(num_sats::Int, args::SimulationConfiguration)
     sats = _battery_spacecraft(args)
     isempty(sats) && return ()
+    args.simulation_settings.resume_from_checkpoint && throw(ArgumentError(
+        "A spacecraft with a battery does not support resume_from_checkpoint: the checkpoint holds the battery's " *
+        "stored energy but not whether it is empty and recharging or full, so a resumed run could end its shedding " *
+        "early. Run it from the start."))
     spacecraft = args.dynamics_model.spacecraft
     function condition!(out, u, t, integrator)
         @inbounds for (k, i) in enumerate(sats)
@@ -99,14 +131,22 @@ function get_power_callbacks(num_sats::Int, args::SimulationConfiguration)
         return nothing
     end
     boundary = VectorContinuousCallback(condition!, boundary!, 2 * length(sats); save_positions=(false, false))   # both crossing directions
+    # A fresh callback is built for every run. Its initialization also runs at
+    # checkpoint-segment boundaries, which keep the flags: they depend on the
+    # run so far (an empty battery recharging below `recovery_soc` is still
+    # empty), not only on the stored energy.
+    initialized = Ref(false)
     function initialize!(cb, u, t, integrator)
-        for i in sats
-            sc = integrator.p.args.dynamics_model.spacecraft[i]
-            b = battery(sc)
-            energy = u.sc[i].battery_wh
-            b.full = energy >= b.capacity_wh * (1.0 - 1.0e-9)
-            b.empty = energy <= 1.0e-9 * b.capacity_wh
-            b.shed_tier = 0
+        if !initialized[]
+            for i in sats
+                sc = integrator.p.args.dynamics_model.spacecraft[i]
+                b = battery(sc)
+                energy = u.sc[i].battery_wh
+                b.full = energy >= b.capacity_wh * (1.0 - 1.0e-9)
+                b.empty = energy <= 1.0e-9 * b.capacity_wh
+                b.shed_tier = 0
+            end
+            initialized[] = true
         end
         _update_power_states!(integrator, sats)
         _mark_discontinuity!(integrator, true)

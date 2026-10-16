@@ -33,7 +33,7 @@ using ..ActuatorMounting: applied_actuator_levels, mounted_power
 using ..Actuators: actuator_saturate
 using ..ThrusterHooks: thrust_calculation_schmitt_trigger!
 using ..PowerSystems: has_battery, has_power_parts, battery, solar_generation_w, solar_flux_w_m2, mean_solar_distance_m
-using ..PowerSystems: power_balance, battery_boundary!, update_power_state!, shed_levels
+using ..PowerSystems: bus_load_w, actuator_power_by_tier, battery_boundary!, update_power_state!, shed_levels
 using ..DynamicEffectors: eclipse_area_calc
 using ..ActuatorFaults: has_faults, faulted_levels, refresh_faults!, fault_edge, resolve_faults!
 using ..TerrainModels: AbstractTerrainModel, DEMTerrainModel, terrain_radius

@@ -19,26 +19,32 @@ const ORBIT_R = PLANET.Rp_e + 500e3
 # A 10 kg bus in a 500 km equatorial orbit, attitude held at the identity, with
 # an array facing the Sun at the start (24.5 W lit), a 5 Wh battery, a 5 W load
 # and a laser terminal drawing 10 W at its 2 W command.
-function power_spacecraft(; soc=0.5, battery=true, laser=true, wheel=false, facing=1.0)
+function power_spacecraft(; soc=0.5, battery=true, laser=true, wheel=false, facing=1.0, area=0.06, recovery_soc=0.05)
     sun0 = SM.ephemerides_sun_direction_ii(PLANET, SM.ephemerides_time_seconds(EPOCH, EPHEM), EPHEM)
     ic = SM.CartesianInitialCondition(SVector(ORBIT_R, 0.0, 0.0), SVector(0.0, sqrt(PLANET.μ / ORBIT_R), 0.0); q=SVector(0.0, 0.0, 0.0, 1.0))
     bus = SM.Link(root=true, m=10.0, dims=MVector(0.1, 0.2, 0.3))
     sc = SM.SpacecraftModel(links=[bus], root=bus, inertia_tensor=bus.inertia, initial_condition=ic, id=1)
-    add_power!(sc, bus, SolarArray(normal=facing * sun0, area_m2=0.06, efficiency=0.3))
+    add_power!(sc, bus, SolarArray(normal=facing * sun0, area_m2=area, efficiency=0.3))
     wheel && add_actuator!(sc, bus, ReactionWheel(spin_axis=SVector(0.0, 0.0, 1.0)))
-    battery && add_power!(sc, bus, Battery(capacity_wh=5.0, initial_soc=soc))
+    battery && add_power!(sc, bus, Battery(capacity_wh=5.0, initial_soc=soc, recovery_soc=recovery_soc))
     add_power!(sc, bus, PowerLoad(power_w=5.0, name="avionics"))
     laser && add_actuator!(sc, bus, LaserTerminal(boresight=SVector(1.0, 0.0, 0.0), max_power_w=2.0, efficiency=0.2))
     return sc
 end
 
-function power_run(sc; mission_time=2 * 5677.0, solver=nothing, levels=[2.0], kw...)
+function power_run(sc; mission_time=2 * 5677.0, solver=nothing, levels=[2.0], effectors=(HoldLevels(collect(Float64, levels)),),
+                   settings=(;), kw...)
     base = make_example_config(planet=PLANET, spacecraft=sc, mission_time=mission_time, initial_time=EPOCH,
         dynamic_effectors=(SM.InverseSquaredGravityModel(),), ephemerides_model=EPHEM,
         orientation_sim=true, keplerian=false, EI_km=100.0, verbose=false, results=false)
     extra = solver === nothing ? (;) : (; solver_config=SM.SolverConfig(solver_mode=solver))
+    if !isempty(settings)
+        st = base.simulation_settings
+        fields = NamedTuple{fieldnames(typeof(st))}(map(n -> getfield(st, n), fieldnames(typeof(st))))
+        extra = merge(extra, (; simulation_settings=SM.SimulationSettings(; merge(fields, settings)...)))
+    end
     args = SM.SimConfig._with_configuration(base;
-        control_model=SM.ControlModel(control_effectors=(HoldLevels(collect(Float64, levels)),), control_rates=[10.0]), extra...)
+        control_model=SM.ControlModel(control_effectors=effectors, control_rates=fill(10.0, length(effectors))), extra...)
     return run_simulation(args; return_results=true, isolate_state=false, kw...)
 end
 
@@ -148,6 +154,31 @@ end
         @test norm(shed.solution.u[end].sc[1].ω) < 1e-12
         free = power_run(power_spacecraft(battery=false, wheel=true, facing=-1.0); mission_time=20.0, levels=[0.01, 2.0], return_solution=true)
         @test norm(free.solution.u[end].sc[1].ω) > 1e-3                         # without a battery nothing is shed
+    end
+
+    @testset "the load counts the actuators of every mounted control effector" begin
+        # Two effectors each command the laser to 2 W, and the dynamics apply
+        # both: the bus carries both draws (10 W each) besides the 5 W load.
+        table = power_run(power_spacecraft(); mission_time=10.0, effectors=(HoldLevels([2.0]), HoldLevels([2.0]))).table
+        @test table.sc1_power_load_w[1] ≈ 25.0
+        @test table.sc1_power_net_w[1] ≈ table.sc1_power_generated_w[1] - 25.0
+        @test table.sc1_actuator_power[1] ≈ 10.0                                 # the actuator columns follow the first effector
+    end
+
+    @testset "checkpoint segments keep an empty battery shedding until it recovers" begin
+        # 12.25 W of arrays against a 15 W load: the battery starts empty, the
+        # laser is shed while the arrays recharge it, and shedding lasts until
+        # 20 % of its capacity (about 500 s), past the 50 s segments.
+        sc() = power_spacecraft(soc=0.0, area=0.03, recovery_soc=0.2)
+        dir = mktempdir()
+        straight = power_run(sc(); mission_time=300.0).table
+        split = power_run(sc(); mission_time=300.0, settings=(checkpoint_enabled=true, checkpoint_interval_s=50.0, checkpoint_directory=dir)).table
+        @test all(==(0.0), straight.sc1_actuator_level_1)
+        @test all(==(0.0), split.sc1_actuator_level_1)
+        @test split.sc1_battery_wh[end] ≈ straight.sc1_battery_wh[end] rtol=1e-6
+        @test 0.1 < straight.sc1_battery_soc[end] < 0.2                            # recharging, still below recovery
+        # A checkpoint file holds the energy, not the flags: resume is refused.
+        @test_throws ArgumentError power_run(sc(); mission_time=10.0, settings=(resume_from_checkpoint=true, checkpoint_directory=dir))
     end
 
     @testset "power parts are opt-in; split solver modes refuse a battery" begin
