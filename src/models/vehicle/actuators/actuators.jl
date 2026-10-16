@@ -196,13 +196,13 @@ kind whose wrench is linear in its level.
 
 How a control effector acts on the vehicle.
 
-- `:ideal`, the default: the effector's own `calcControlForceTorque`,
-  `calcControlMassFlowRate` and `calcReactionWheelTorque` give the wrench and
-  the mass rate.
+- `:ideal`, the default: the effector's own `control_wrench`,
+  `control_propellant_rate` and `control_wheel_torque` give the wrench and the
+  mass rate.
 - `:mounted`: the engine derives the wrench, the propellant mass rate and the
   thruster firing levels from the actuators mounted on the spacecraft, at the
   levels [`actuator_levels`](@ref) returns. A reaction-wheel torque the
-  effector reports through `calcReactionWheelTorque` is still applied.
+  effector reports through `control_wheel_torque` is still applied.
 """
 @inline actuation_mode(::Any) = :ideal
 

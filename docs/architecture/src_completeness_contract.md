@@ -49,10 +49,10 @@ This contract defines how canonical source files are classified and what is forb
 10. Visualization scene ownership is `src/interfaces/analysis/visualization/scene/*` (a canonical owner inside `SimulationModel`); portable payload export stays with that scene owner. The browser viewer lives in independent `SpaceAGORAVisualizer.jl`; `ext/SpaceAGORAVisualizerExt.jl` connects it, and duplicated renderer source under `src/viewer/*` or top-level `viewer/*` is forbidden.
 
 ## GNC Aerobraking Boundary
-1. `E-EDG` and `T-EDG` strategy ownership is `src/models/gnc/guidance/aerobraking/*`.
-2. `src/models/gnc/control/aerobraking/*` is tracking/execution only and must not define strategy solvers.
+1. Typed EDG guidance ownership is `src/models/gnc/guidance/aerobraking/*` (`typed_edg/` and `energy_depletion_lifecycle.jl`).
+2. The older E-EDG and T-EDG strategy routes, their `control/aerobraking/*` execution paths, `internal/bridge_helpers.jl` and the mission-owned `operations/aerobraking_policy/*` selector were removed; `test/gates/ci_path_policy_gate.jl` keeps those paths retired.
 3. Guidance files must not include control source files directly.
-4. Strategy selection contracts are mission-owned in `src/orchestration/mission/operations/aerobraking_policy/*`.
+4. EDG control code in `src/models/gnc/control/` does not define numerical EDG solvers; its compatibility bindings import the typed calculations.
 5. Propulsive maneuver guidance/control coupling must use typed command buffers; guidance must not mutate thruster runtime state directly.
 6. The typed EDG numerical kernels live in the optional `SpaceAGORAEDG.jl` package.
    Core `typed_edg/algorithms.jl` is a compatibility dispatcher, not an include
@@ -74,12 +74,10 @@ This contract defines how canonical source files are classified and what is forb
 ## Enforced Gates
 1. `test/gates/ci_src_completeness_contract_gate.jl`
 2. `test/gates/ci_no_legacy_include_chains_gate.jl`
-3. `test/gates/ci_no_inert_force_terms_gate.jl`
-4. `test/gates/ci_scaffold_interface_gate.jl`
-5. `test/gates/ci_translational_ownership_gate.jl`
-6. `test/gates/ci_path_policy_gate.jl`
-7. `test/gates/ci_vehicle_structure_boundary_gate.jl`
-8. `test/gates/ci_gnc_aerobraking_boundary_gate.jl`
-9. `test/gates/ci_no_guidance_control_cross_include_gate.jl`
-10. `test/gates/ci_gnc_typed_command_boundary_gate.jl`
-11. `test/gates/ci_aerobraking_strategy_contract_gate.jl`
+3. `test/gates/ci_scaffold_interface_gate.jl`
+4. `test/gates/ci_translational_ownership_gate.jl`
+5. `test/gates/ci_path_policy_gate.jl`
+6. `test/gates/ci_vehicle_structure_boundary_gate.jl`
+7. `test/gates/ci_gnc_aerobraking_boundary_gate.jl`
+8. `test/gates/ci_no_guidance_control_cross_include_gate.jl`
+9. `test/gates/ci_gnc_typed_command_boundary_gate.jl`

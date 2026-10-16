@@ -28,11 +28,12 @@ export StateSample,
 
 Typed state view passed to the additive [`wrench`](@ref) force/torque hook.
 
-`pos_ii` and `vel_ii` are inertial-frame SI vectors, `mass_kg` is spacecraft
-mass, `q_ib` is the inertial-to-body attitude quaternion when available, and
-`ω_body` is the body-frame angular velocity when available. `spacecraft` is the
-typed spacecraft model handle for effectors that need static geometry or
-inertia data without reaching back into the integrator state.
+`pos_ii` and `vel_ii` are inertial-frame SI vectors and `mass_kg` is spacecraft
+mass. When available, `q_ib` stores the attitude quaternion `q = (x, y, z, w)`,
+scalar last, with `v_body = rot(q) * v_inertial`, and `ω_body` is the body-frame
+angular velocity. `spacecraft` is the typed spacecraft model handle for effectors
+that need static geometry or inertia data without reaching back into the
+integrator state.
 
 `spacecraft_index` is the spacecraft's position in the run (1-based, in the
 order of `dynamics_model.spacecraft`) for every sample the engine builds, and 0
@@ -118,7 +119,11 @@ end
 """
     ThirdBodyEphemerisSample{N}
 
-Stage-consistent third-body inertial positions for an N-body effector.
+Stage-consistent positions of the third bodies a model declares in
+`environment_requirements(model).third_body_names`, in the declared order:
+`positions_ii[k]` is the position of `names[k]` relative to the run's planet,
+in metres along the J2000 axes. `NBodyGravityModel` measures from its own
+`primary_body_name`.
 """
 struct ThirdBodyEphemerisSample{N}
     names::NTuple{N, String}

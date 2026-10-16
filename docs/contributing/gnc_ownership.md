@@ -51,7 +51,7 @@ and serialized function references continue to resolve to the same defining
 names. The namespace is an implementation boundary, not a new public API. This
 change does not make plotting an optional package dependency.
 
-## EDG and legacy bridges
+## EDG
 
 The independent experimental `SpaceAGORAEDG.jl` companion owns the EDG numerical
 kernels. Core retains public model types, run-owned state and passage resets,
@@ -61,10 +61,20 @@ physical integration, queries, outputs and panel actuation.
 The short files in `control/` that import EDG calculations are compatibility
 bindings, not additional algorithms.
 
-The older `e_edg/` and `t_edg/` strategies and `control/aerobraking/` execution
-paths remain separate. `internal/bridge_helpers.jl` supplies their legacy runtime
-context conversions. This organization does not retire either path or certify
-their scientific equivalence. The [EDG adapter contract](../src/reference/edg_adapter_boundary.md)
+SpaceAGORA no longer carries the older E-EDG and T-EDG strategy routes: the
+`guidance/aerobraking/e_edg/` and `t_edg/` solvers, their `control/aerobraking/`
+execution paths, the `internal/bridge_helpers.jl` runtime context conversions and
+the mission-owned `operations/aerobraking_policy/` selector. They were
+SpaceAGORA's port of the original energy depletion guidance (Falcone and Putnam,
+JGCD 45(4), 2022) and of the earlier targeting route, and no simulation path had
+reached them since 2026-03-07. The typed path and the companion implement the
+generalized formulation (Simha, Yu and Falcone, SciTech 2026) and make no claim of
+exact reproduction of the 2022 paper. Every main commit up to and including
+`bc823fecc`, the base this removal was prepared on, still contains the routes. To
+reproduce them, use tag `parallel-paper-freeze-2026-03-05`, the last tag with the
+routes wired into the simulation path, or tag `v1.0.0`, whose older example
+scripts configure them.
+The [EDG adapter contract](../src/reference/edg_adapter_boundary.md)
 defines the supported service boundary; the [EDG guide](../src/user/edg_guidance.md)
 describes installation and the bounded experimental scope. Extraction and
 interface conformance do not establish broader scientific qualification.

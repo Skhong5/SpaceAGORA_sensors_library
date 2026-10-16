@@ -188,8 +188,9 @@ end
 
 Attitude for runs without orientation simulation: body +x along the inertial
 velocity and body +z along the nadir direction with its velocity component
-removed. Returned in the state convention (scalar-last, `rot(q)` maps
-inertial to body), so it can stand in for the saved `sc{i}_q` columns.
+removed. Returned in the state convention: `q = (x, y, z, w)`, scalar last,
+with `v_body = rot(q) * v_inertial`, so it can stand in for the saved `sc{i}_q`
+columns.
 """
 function velocity_aligned_quaternion(r_i::AbstractVector{<:Real}, v_i::AbstractVector{<:Real})::SVector{4, Float64}
     r = _svec3(r_i)

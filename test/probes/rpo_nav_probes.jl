@@ -288,6 +288,9 @@ end
     # ---------------------------------------------------------------
     min_config = build_min_config()
     P1 = SM.ODEParams(n_sats=1, args=min_config)
+    # The state sample a control output hook receives for spacecraft `i`.
+    x_at(i) = SM.StateSample(SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0), 1.0;
+        spacecraft_index=i)
     P2 = SM.ODEParams(n_sats=2, args=min_config)
 
     arm = SM.default_cloth_arm_model()
@@ -457,13 +460,14 @@ end
         @test norm(eff_ref.held.joint_torque_nm) < 1.0e-8
 
         # Held wrench accessors.
-        f, τ = SM.calcControlForceTorque(eff, Float64[], P1, 1, 0.0)
+        f, τ = SM.control_wrench(eff, x_at(1), P1, 0.0)
         @test f == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test τ == SVector{3, Float64}(0.0, 0.0, 0.0)
-        f2, τ2 = SM.calcControlForceTorque(eff, Float64[], P1, 2, 0.0)
+        f2, τ2 = SM.control_wrench(eff, x_at(2), P1, 0.0)
         @test f2 == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test τ2 == SVector{3, Float64}(0.0, 0.0, 0.0)
-        @test SM.calcControlMassFlowRate(eff, Float64[], P1, 1, 0.0) == 0.0
+        # The arm uses no propellant: it has no rate hook, so the dynamics take zero.
+        @test !hasmethod(SM.control_propellant_rate, Tuple{typeof(eff), SM.StateSample, typeof(P1), Float64})
     end
 
     # ---------------------------------------------------------------
@@ -523,26 +527,26 @@ end
         # Default thrusters act through the COM: no thruster torque, no RW command.
         @test model.held.torque_body ≈ SVector{3, Float64}(0.0, 0.0, 0.0) atol=1e-12
 
-        f, τ = SM.calcControlForceTorque(model, Float64[], P2, 1, 0.0)
+        f, τ = SM.control_wrench(model, x_at(1), P2, 0.0)
         @test f == model.held.force_ii
         @test τ == model.held.torque_body
-        f0, τ0 = SM.calcControlForceTorque(model, Float64[], P2, 2, 0.0)
+        f0, τ0 = SM.control_wrench(model, x_at(2), P2, 0.0)
         @test f0 == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test τ0 == SVector{3, Float64}(0.0, 0.0, 0.0)
 
-        # Mass flow: negative when thrusters fire, zero for the other satellite.
-        mdot = SM.calcControlMassFlowRate(model, Float64[], P2, 1, 0.0)
-        @test mdot < 0.0
-        expected_mdot = -sum(
+        # Propellant use: positive when thrusters fire, zero for the other satellite.
+        rate = SM.control_propellant_rate(model, x_at(1), P2, 0.0)
+        @test rate > 0.0
+        expected_rate = sum(
             model.held.thruster_forces_n[j] > 0.0 ?
                 model.held.thruster_forces_n[j] / (model.thrusters.isp_s[j] * 9.80665) : 0.0
             for j in 1:6
         )
-        @test mdot ≈ expected_mdot
-        @test SM.calcControlMassFlowRate(model, Float64[], P2, 2, 0.0) == 0.0
+        @test rate ≈ expected_rate
+        @test SM.control_propellant_rate(model, x_at(2), P2, 0.0) == 0.0
 
         idle = SM.RPOMPCControlModel()
-        @test SM.calcControlMassFlowRate(idle, Float64[], P2, 1, 0.0) == 0.0
+        @test SM.control_propellant_rate(idle, x_at(1), P2, 0.0) == 0.0
     end
 
     # ---------------------------------------------------------------

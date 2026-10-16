@@ -152,11 +152,11 @@ end
             @test isnothing(run_gate().failure)
 
             # A shared forbidden token in a listed file.
-            stub = _unique_source(fixture, "selector_stub.jl")
-            _with_text(stub, read(stub, String) * "\ngravity_const(1.0)\n") do
+            listed = _unique_source(fixture, "io_paths.jl")
+            _with_text(listed, read(listed, String) * "\ngravity_const(1.0)\n") do
                 rejected = run_gate()
                 @test _failed_with(rejected, "Runtime legacy surface gate failed")
-                @test _reports(rejected, stub, fixture, "gravity_const")
+                @test _reports(rejected, listed, fixture, "gravity_const")
             end
             # A file-specific forbidden token.
             setup = _unique_source(fixture, "setup.jl")
@@ -166,8 +166,8 @@ end
                 @test _reports(rejected, setup, fixture, "_compat_")
             end
             # Directory targets are scanned recursively.
-            control_dir = dirname(_unique_source(fixture, "tracking_executor.jl"))
-            nested_probe = joinpath(control_dir, "nested", "legacy_probe.jl")
+            guidance_dir = dirname(_unique_source(fixture, "adapter_queries.jl"))
+            nested_probe = joinpath(guidance_dir, "nested", "legacy_probe.jl")
             _with_probe(nested_probe, "gravity_GRAM(x)\n") do
                 rejected = run_gate()
                 @test _failed_with(rejected, "Runtime legacy surface gate failed")
@@ -175,14 +175,14 @@ end
             end
             rm(dirname(nested_probe))
             # A missing listed target is an explicit failure, not a silent skip.
-            helpers = _unique_source(fixture, "bridge_helpers.jl")
-            helpers_source = read(helpers, String)
-            rm(helpers)
+            persistence = _unique_source(fixture, "persistence.jl")
+            persistence_source = read(persistence, String)
+            rm(persistence)
             try
                 @test _failed_with(run_gate(),
-                    "Missing runtime legacy-surface target: " * relpath(helpers, fixture))
+                    "Missing runtime legacy-surface target: " * relpath(persistence, fixture))
             finally
-                write(helpers, helpers_source)
+                write(persistence, persistence_source)
             end
             @test isnothing(run_gate().failure)
         end
@@ -539,7 +539,149 @@ end
                     @test any(v -> occursin("forwarder for direct calls (four untyped positional arguments) is missing", v), rejected.violations)
                 end
             end
+            # The deprecated control output hooks are refused the same way, and
+            # each keeps its five-argument forwarder.
+            for (hook, text) in (
+                    ("calcControlForceTorque", "SpaceAGORA.calcControlForceTorque(model::Probe, u, p, i, t) = (0.0, 0.0)\n"),
+                    ("calcControlMassFlowRate", "function ControlHooks.calcControlMassFlowRate(model::Probe, u::AbstractVector, p, i::Int, t::Float64)\n    return -1.0\nend\n"),
+                    ("calcReactionWheelTorque", "(::typeof(calcReactionWheelTorque))(model::Probe, u, p, i, t) = nothing\n"))
+                _with_probe(probe, text) do
+                    rejected = run_gate()
+                    @test _failed_with(rejected, message)
+                    @test _reports(rejected, probe, fixture, "deprecated hook $(hook)")
+                end
+            end
+            bridges = joinpath(fixture, "src", "orchestration", "simulation", "engine", "control_hook_bridges.jl")
+            original = read(bridges, String)
+            for hook in ("calcControlForceTorque", "calcControlMassFlowRate", "calcReactionWheelTorque")
+                needle = "function SimulationModel.$(hook)(model, u, p, i, t)"
+                @test occursin(needle, original)
+                for changed in ("function SimulationModel.$(hook)(model, u, p, i::Int, t)",
+                                "function SimulationModel.$(hook)(model, u, p, i)")
+                    _with_text(bridges, replace(original, needle => changed; count=1)) do
+                        rejected = run_gate()
+                        @test _failed_with(rejected, message)
+                        @test any(v -> occursin("the $(hook) forwarder for direct calls (five untyped positional arguments) is missing", v), rejected.violations)
+                    end
+                end
+            end
             @test isnothing(run_gate().failure)
         end
+    end
+end
+
+@testset "Random-stream gate distinguishes in-place destinations" begin
+    repo = normpath(joinpath(@__DIR__, "..", "..", ".."))
+    mktempdir() do fixture
+        _copy_into!(fixture, repo, joinpath("src", "models", "gnc"))
+        _copy_into!(fixture, repo, joinpath("packages", "SpaceAGORAHYPR", "src"))
+        run_gate = _gate_runner(repo, fixture, "ci_gnc_random_stream_gate.jl")
+        @test isnothing(run_gate().failure)
+        probe = joinpath(fixture, "src", "models", "gnc", "random_stream_probe.jl")
+        message = "draw without an explicit stream as its first argument"
+        failure = "GNC random-stream gate failed: take an explicit rng argument and pass it to every draw"
+
+        for draw in ("rand!", "randn!", "randexp!", "shuffle!", "randperm!", "randcycle!")
+            @testset "$draw" begin
+                for source in (
+                    "rng_buffer = zeros(3); $draw(rng_buffer)\n",
+                    "Random.$draw(\n    rng_buffer,\n)\n",
+                    "$draw(view(rng_buffer, :, 1))\n",
+                    "$draw((rng_buffer,))\n",
+                    "$draw(rng_buffer; keyword=rng)\n",
+                    "$draw(rng_buffer, keyword=rng)\n",
+                    "$draw(rng_buffer, rest...)\n",
+                    "$draw(rng..., buffer)\n",
+                )
+                    _with_probe(probe, source) do
+                        rejected = run_gate()
+                        @test _failed_with(rejected, failure)
+                        @test _reports(rejected, probe, fixture, message)
+                    end
+                end
+                for source in (
+                    "$draw(rng, buffer)\n",
+                    "Random.$draw(\n    rng, # caller's stream\n    view(buffer, :, 1),\n)\n",
+                    "$draw(state.master_rng, buffer)\n",
+                )
+                    _with_probe(probe, source) do
+                        @test isnothing(run_gate().failure)
+                    end
+                end
+            end
+        end
+        # The permutation APIs have exactly two explicit-stream arguments.
+        for draw in ("randperm!", "randcycle!"), source in (
+            "$draw(rng, buffer, extra)\n",
+            "$draw(rng, buffer, rest...)\n",
+        )
+            _with_probe(probe, source) do
+                rejected = run_gate()
+                @test _failed_with(rejected, failure)
+                @test _reports(rejected, probe, fixture, message)
+            end
+        end
+        @testset "randsubseq!" begin
+            # A destination named rng_output is not the first of four arguments.
+            for source in (
+                "randsubseq!(rng_output, values, p)\n",
+                "Random.randsubseq!(\n    rng_output,\n    view(values, :, 1),\n    p,\n)\n",
+                "randsubseq!(rng, output)\n",
+                "randsubseq!(rng_output, values, p; keyword=rng)\n",
+                "randsubseq!(rng, output, values, p=p)\n",
+                "randsubseq!(rng..., output, values, p)\n",
+                "randsubseq!(rng, outputs..., values, p)\n",
+                "randsubseq!(rng, output, values..., p)\n",
+                "randsubseq!(rng, output, values, probabilities...)\n",
+                "randsubseq!(rng, output, values, p, extra)\n",
+            )
+                _with_probe(probe, source) do
+                    rejected = run_gate()
+                    @test _failed_with(rejected, failure)
+                    @test _reports(rejected, probe, fixture, message)
+                end
+            end
+            for source in (
+                "randsubseq!(rng, output, values, p)\n",
+                "Random.randsubseq!(\n    rng, # caller's stream\n    output,\n    view(values, :, 1),\n    p,\n)\n",
+                "randsubseq!(state.master_rng, output, values, p)\n",
+            )
+                _with_probe(probe, source) do
+                    @test isnothing(run_gate().failure)
+                end
+            end
+        end
+        # Existing variable-arity forms keep optional arguments after rng and A.
+        for draw in ("rand!", "randn!", "randexp!", "shuffle!"), source in (
+            "$draw(rng, buffer, extra)\n",
+            "$draw(rng, buffer, rest...)\n",
+        )
+            _with_probe(probe, source) do
+                @test isnothing(run_gate().failure)
+            end
+        end
+        # Non-mutating calls still require the named first stream argument.
+        for source in ("rand()\n", "randn(3)\n", "randexp(Float64)\n", "rand!(buffer, rng)\n")
+            _with_probe(probe, source) do
+                rejected = run_gate()
+                @test _failed_with(rejected, failure)
+                @test _reports(rejected, probe, fixture, message)
+            end
+        end
+        _with_probe(probe, "rand(rng)\nrandn(master_rng, 3)\nrandexp(state.rng)\n") do
+            @test isnothing(run_gate().failure)
+        end
+        # Comments and string examples are not draw call sites.
+        _with_probe(probe, "# rand!(rng_buffer)\nexample = \"rand!(rng_buffer)\"\n") do
+            @test isnothing(run_gate().failure)
+        end
+        # Both roots remain covered, with the draw's source line in the report.
+        hypr_probe = joinpath(fixture, "packages", "SpaceAGORAHYPR", "src", "random_stream_probe.jl")
+        _with_probe(hypr_probe, "rng_buffer = zeros(3)\nrand!(\n    rng_buffer\n)\n") do
+            rejected = run_gate()
+            @test _failed_with(rejected, failure)
+            @test _reports(rejected, hypr_probe, fixture, "random_stream_probe.jl:2: " * message)
+        end
+        @test isnothing(run_gate().failure)
     end
 end

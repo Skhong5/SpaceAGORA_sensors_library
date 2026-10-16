@@ -36,7 +36,7 @@ or repository-backed runtime analysis workflows.
 ## Architecture
 
 - [Canonical topology contract](../architecture/canonical_topology_contract.md): the locked file-placement and ownership model for the repository.
-- [GNC aerobraking boundary contract](../architecture/gnc_aerobraking_boundary_contract.md): the aerobraking strategy and typed-command separation rules.
+- [GNC aerobraking boundary contract](../architecture/gnc_aerobraking_boundary_contract.md): typed EDG ownership and the typed-command separation rules.
 - [Canonical owner audit](../architecture/src_canonical_owner_audit.md): the high-level ownership summary for examples, scripts, runtime services, and verification helpers.
 - [Completeness contract](../architecture/src_completeness_contract.md): the source-file categories and forbidden-path rules for canonical code.
 

@@ -169,27 +169,17 @@ runtime configuration: `time_switch_list` / `lambda_switch_list` and
 `time_list` / `lamv_list`. Its seconds and lambda labels perform no conversion,
 shape checking, sorting, normalization or passage segmentation. Lambda units
 and scaling are producer-specific; the labels alone do not establish them. The
-legacy formula retains the sign of `CD_slope`, while the typed threshold uses
-its absolute value. These traces cannot be silently aliased across the two paths.
-The runtime constructor initializes all four as empty `Float64` vectors.
+removed legacy T-EDG formula kept the sign of `CD_slope`, while the typed
+threshold uses its absolute value, so histories from the two cannot be silently
+aliased. The runtime constructor initializes all four as empty `Float64` vectors.
 
-On the inspected main revision, no tracked writes or resets populate the
-costate pair `time_list` / `lamv_list`. Empty arrays are absence of recorded
-costates, not a zero costate solution. The legacy T_EDG plotting producer
-appends sampled switch-threshold values and its solver sample times with
-matched, splatted pushes. Repeated calls append in call order, including duplicate
-or nonmonotone times, with no implicit epoch shift or passage reset. The solve spans
-`(time_0, time_0 + 1500)` and its RHS evaluates the environment date as
-`date_initial + t0 * seconds`: these are elapsed simulation seconds, not
-prediction-relative zero-based samples. The legacy arrays carry no spacecraft
-or passage identity. This proves an append contract, not an active supported
-mission route or a safely segmented cross-passage history. Its complete producer has no established tracked caller on main.
-
-The separate `constraint_tracking.jl` producer attempts an unsplatted vector
-push into a `Vector{Float64}` and accesses `time_list2`, which is absent from
-the inspected runtime type. Deterministic tests preserve evidence of both
-failures. It must not be treated as a second working costate-history source or
-silently repaired as a plotting refactor.
+On the inspected main revision, no tracked code writes or resets any of the four
+arrays. Empty arrays are absence of recorded costates, not a zero costate
+solution. The two legacy producers, the T-EDG plotting producer and the
+constraint-tracking producer, were removed with the older E-EDG/T-EDG strategy
+routes. Neither had a tracked caller, and the second failed on its own pushes. Their arrays carried no spacecraft or
+passage identity, so a history recorded by older code is an unsegmented append
+log in elapsed simulation seconds.
 
 The typed EDG strategy has separate, call-local predicted lambda/alpha data and
 an optional saved targeting switch time. The Odyssey example's

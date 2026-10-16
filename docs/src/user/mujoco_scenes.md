@@ -30,7 +30,7 @@ Use the source revisions recorded by the companion's installer and
 [release preparation notes](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl/blob/988bd957de44799f8aacb0ef87f6bedf4fab16c6/docs/releases/v0.1.0.md).
 The core and companion are qualified as a pair; a matching version-family
 constraint is insufficient to establish compatibility. The connection follows
-the shared [adapter standard](../reference/adapter_contract.md) and version 1.0.0
+the shared [adapter standard](../reference/adapter_contract.md) and version 2.0.0
 of [ExternalPropagationServices](../reference/external_propagation_services.md).
 
 ## Understand the coordinates and ownership
@@ -43,8 +43,11 @@ inertial positions and velocities, in metres and metres per second.
 
 The scene quaternion uses scalar-first order `(w, x, y, z)`, while SpaceAGORA's
 spacecraft quaternion uses scalar-last order `(x, y, z, w)`. Both describe the
-active rotation from body to inertial axes. The companion's conversion helpers
-reorder the components; they do not reverse the rotation. Body angular velocity
+same attitude; for SpaceAGORA's quaternion, `v_body = rot(q) * v_inertial`, with
+`rot` defined in the
+[external propagation reference](../reference/external_propagation_services.md).
+The companion's conversion helpers reorder the components; they do not reverse
+the rotation. Body angular velocity
 is expressed in body axes, in radians per second.
 
 In a coupled run, each assigned spacecraft has one propagation owner. MuJoCo

@@ -139,16 +139,40 @@ Stable interface:
 
 - `SpaceAGORA.AbstractControlEffectorModel`
 - `SpaceAGORA.calcControlEffect!`
-- `SpaceAGORA.calcControlForceTorque`
-- `SpaceAGORA.calcControlMassFlowRate`
+- `SpaceAGORA.control_wrench`
+- `SpaceAGORA.control_propellant_rate`
+- `SpaceAGORA.control_wheel_torque`
+- `SpaceAGORA.calcControlForceTorque`, `SpaceAGORA.calcControlMassFlowRate` and
+  `SpaceAGORA.calcReactionWheelTorque` (deprecated, removed in 0.5.0)
 
 Typical methods:
 
 ```julia
-SpaceAGORA.calcControlEffect!(model, u, p, t, i)
-SpaceAGORA.calcControlForceTorque(model, u, p, i, t)
-SpaceAGORA.calcControlMassFlowRate(model, u, p, i, t)
+SpaceAGORA.calcControlEffect!(model, u, p, t, spacecraft_index)
+SpaceAGORA.control_wrench(model, x::SpaceAGORA.StateSample, p, t::Float64) -> (force_ii, torque_body)
+SpaceAGORA.control_propellant_rate(model, x::SpaceAGORA.StateSample, p, t::Float64) -> kg/s, positive
+SpaceAGORA.control_wheel_torque(model, x::SpaceAGORA.StateSample, p, t::Float64) -> nothing or torque_body
 ```
+
+`calcControlEffect!` is the control tick: it computes the command and holds it.
+The three output hooks return the held command at every right-hand-side
+evaluation, and `x.spacecraft_index` is the spacecraft's position in the run.
+An effector that uses no propellant, or drives no wheel, leaves out
+`control_propellant_rate` or `control_wheel_torque`.
+
+The deprecated output hooks, removed in SpaceAGORA 0.5.0:
+
+| Deprecated | Replacement | What changes |
+|---|---|---|
+| `calcControlForceTorque(model, u, p, i, t)` | `control_wrench(model, x, p, t)` | a state sample, the time before the index, the index in `x.spacecraft_index` |
+| `calcControlMassFlowRate(model, u, p, i, t)` | `control_propellant_rate(model, x, p, t)` | the same, and **the sign**: the new hook returns the propellant used, positive, and the old one the mass derivative, negative |
+| `calcReactionWheelTorque(model, u, p, i, t)` | `control_wheel_torque(model, x, p, t)` | the same as for the wrench |
+
+An effector with only the old hooks still runs through them, and the run warns
+before integration (an error under `julia --depwarn=error`). Calling an old
+name on an effector that implements its replacement, as every built-in
+effector does, returns the replacement's result, the mass rate negated, and
+warns once per effector type.
 
 Registration:
 

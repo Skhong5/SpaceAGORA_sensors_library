@@ -13,7 +13,6 @@ type and function identities remain stable, including qualified compatibility na
 | `planning/common/` | Path geometry and RRT tree operations shared by RPO and robot-arm planning. |
 | `planning/adapters/hypr/` | Core-owned HYPR configuration, availability and versioned services, compatibility entry points and simulation integration. HYPR search execution remains in the external HYPR repository. |
 | `interfaces/` | Planner request/result/validation contracts and simulation lifecycle extension points. These are domain contracts, not the top-level CLI/file-interface group. |
-| `internal/` | Legacy aerobraking state/context bridges shared by guidance and control. |
 
 Completed planner-comparison CSVs and plots are implemented in
 `src/interfaces/analysis/planning/rpo_comparison_reports.jl`, inside the internal
@@ -26,11 +25,10 @@ shared controller reference. The existing `RPOGuidanceModel` remains a separate
 HYPR-specific entry path used by existing studies. For typed EDG,
 `guidance/aerobraking/typed_edg/` owns core model types, services and compatibility
 dispatch; the optional SpaceAGORAEDG package owns the numerical kernels. Core
-retains lifecycle and panel actuation. The older E-EDG/T-EDG paths and their control
-bridges remain available, with shared typed calculations forwarded to the
-companion. See the [EDG package boundary](../../../docs/src/reference/edg_adapter_boundary.md)
-for ownership and supported calls. This split does not establish numerical
-equivalence between the scientific formulations.
+retains lifecycle and panel actuation, and its shared typed calculations forward to
+the companion. The older E-EDG/T-EDG strategy routes were removed; the companion is
+the only EDG implementation. See the [EDG package boundary](../../../docs/src/reference/edg_adapter_boundary.md)
+for ownership and supported calls.
 
 Interlink scoring and terminal matching live in `control/interlink_scheduling.jl`.
 They choose actuation from a candidate

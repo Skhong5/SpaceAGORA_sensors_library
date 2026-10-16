@@ -17,7 +17,7 @@ zero-order-hold control effector on the discrete `ControlModel` callback path:
 `calcControlEffect!` fires at the configured control rate (a
 `PeriodicCallback`, i.e. only at accepted solver steps), advances the internal
 wheel-momentum accumulator from the re-evaluated attitude-control command,
-and refreshes the held rod torque; `calcControlForceTorque` returns that held
+and refreshes the held rod torque; `control_wrench` returns that held
 torque on every RHS evaluation. Keeping the accumulator on the discrete path
 is what makes it correct under adaptive stepping — a continuous effector
 cannot hold integration state because trial evaluations of rejected steps
@@ -163,11 +163,11 @@ function actuator_levels(model::MagneticMomentumManagerModel, i::Int)
 end
 
 """Return the held rod torque (body frame); no force."""
-function calcControlForceTorque(model::MagneticMomentumManagerModel, u, p, i::Int64, t::Float64)
+function control_wrench(model::MagneticMomentumManagerModel, x::StateSample, p, t::Float64)
     zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
-    i == model.sat_idx || return zero3, zero3
+    x.spacecraft_index == model.sat_idx || return zero3, zero3
     return zero3, model.held_torque_body
 end
 
-# No calcControlMassFlowRate method: torque rods consume no propellant, and
-# the fallback (propulsive_maneuvers.jl) already returns 0.0.
+# No control_propellant_rate method: torque rods consume no propellant, and
+# the dynamics then take the rate as zero.

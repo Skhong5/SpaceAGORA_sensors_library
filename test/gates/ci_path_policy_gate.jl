@@ -97,6 +97,14 @@ const RETIRED_PATHS = (
     joinpath("src", "models", "vehicle", "resources"),
     joinpath("src", "models", "gnc", "guidance", "targeting_control"),
     joinpath("src", "models", "gnc", "control", "heatload_control"),
+    # the older E-EDG/T-EDG strategy routes; typed EDG and the SpaceAGORAEDG
+    # companion are the only EDG implementation
+    joinpath("src", "models", "gnc", "guidance", "aerobraking", "e_edg"),
+    joinpath("src", "models", "gnc", "guidance", "aerobraking", "t_edg"),
+    joinpath("src", "models", "gnc", "guidance", "aerobraking", "common"),
+    joinpath("src", "models", "gnc", "control", "aerobraking"),
+    joinpath("src", "models", "gnc", "internal"),
+    joinpath("src", "orchestration", "mission", "operations", "aerobraking_policy"),
     # browser rendering belongs to the optional SpaceAGORAVisualizer companion
     joinpath("src", "viewer"),
     # retired source files
@@ -106,6 +114,8 @@ const RETIRED_PATHS = (
     joinpath("src", "models", "gnc", "guidance", "effectors.jl"),
     joinpath("src", "models", "gnc", "navigation", "effectors.jl"),
     joinpath("src", "models", "gnc", "control", "bridge_helpers.jl"),
+    joinpath("src", "models", "gnc", "guidance", "aerobraking", "interfaces.jl"),
+    joinpath("src", "models", "gnc", "guidance", "aerobraking", "dispatcher.jl"),
     joinpath("src", "orchestration", "mission", "campaigns", "run.jl"),
     joinpath("src", "orchestration", "mission", "campaigns", "set_and_run.jl"),
     joinpath("src", "orchestration", "mission", "campaigns", "define_mission.jl"),

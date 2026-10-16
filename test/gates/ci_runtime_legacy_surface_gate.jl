@@ -13,14 +13,6 @@ function _active_source(path::String)
 end
 
 const FILE_TARGETS = [
-    joinpath(REPO_ROOT, "src", "orchestration", "mission", "operations", "aerobraking_policy", "selector_stub.jl"),
-    joinpath(REPO_ROOT, "src", "models", "gnc", "internal", "bridge_helpers.jl"),
-    joinpath(REPO_ROOT, "src", "models", "gnc", "control", "aerobraking", "control_commands.jl"),
-    joinpath(REPO_ROOT, "src", "models", "gnc", "control", "aerobraking", "constraint_tracking.jl"),
-    joinpath(REPO_ROOT, "src", "models", "gnc", "control", "aerobraking", "tracking_executor.jl"),
-    joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "aerobraking", "t_edg", "trajectory_predictor.jl"),
-    joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "aerobraking", "t_edg", "eom_predictor.jl"),
-    joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "aerobraking", "t_edg", "targeting_solver.jl"),
     joinpath(REPO_ROOT, "src", "interfaces", "io", "paths", "io_paths.jl"),
     joinpath(REPO_ROOT, "src", "interfaces", "io", "outputs", "io_outputs.jl"),
     joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "persistence.jl"),
@@ -29,8 +21,7 @@ const FILE_TARGETS = [
 ]
 
 const DIR_TARGETS = [
-    joinpath(REPO_ROOT, "src", "models", "gnc", "control", "aerobraking"),
-    joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "aerobraking", "t_edg"),
+    joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "aerobraking"),
 ]
 
 const FORBIDDEN_REGEXES = (
@@ -42,42 +33,6 @@ const FORBIDDEN_REGEXES = (
 )
 
 const FILE_SPECIFIC_FORBIDDEN = Dict(
-    joinpath(REPO_ROOT, "src", "orchestration", "mission", "operations", "aerobraking_policy", "selector_stub.jl") => (
-        r"args\s*\[",
-        r"_compat_",
-    ),
-    joinpath(REPO_ROOT, "src", "models", "gnc", "internal", "bridge_helpers.jl") => (
-        r"_compat_",
-    ),
-    joinpath(REPO_ROOT, "src", "models", "gnc", "control", "aerobraking", "control_commands.jl") => (
-        r"args\s*\[",
-        r"param\[[0-9]+\]",
-        r"_compat_",
-    ),
-    joinpath(REPO_ROOT, "src", "models", "gnc", "control", "aerobraking", "constraint_tracking.jl") => (
-        r"args\s*\[",
-        r"param\[[0-9]+\]",
-        r"_compat_",
-    ),
-    joinpath(REPO_ROOT, "src", "models", "gnc", "control", "aerobraking", "tracking_executor.jl") => (
-        r"args\s*\[",
-        r"_compat_",
-        r"monte_carlo_guidance_environment\s*\(",
-    ),
-    joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "aerobraking", "t_edg", "trajectory_predictor.jl") => (
-        r"args\s*\[",
-        r"param\[[0-9]+\]",
-        r"_compat_",
-    ),
-    joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "aerobraking", "t_edg", "eom_predictor.jl") => (
-        r"args\s*\[",
-        r"param\[[0-9]+\]",
-        r"_compat_",
-    ),
-    joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "aerobraking", "t_edg", "targeting_solver.jl") => (
-        r"args\s*\[",
-        r"_compat_",
-    ),
     joinpath(REPO_ROOT, "src", "interfaces", "io", "paths", "io_paths.jl") => (
         r"_compat_results_csv_path",
     ),

@@ -384,24 +384,26 @@ function calcControlEffect!(model::ApolloDescentControlModel, u, p::ODEParams, t
     return nothing
 end
 
-function calcControlForceTorque(model::ApolloDescentControlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+function control_wrench(model::ApolloDescentControlModel, x::StateSample, p::ODEParams, t::Float64)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    i = x.spacecraft_index
     n = length(model.actuators.thrust_n)
     (i in model.spacecraft_indices && p.is_active[i]) || return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     thrust = model.actuators.thrust_n[i]
-    q = SVector{4, Float64}(u.q[1], u.q[2], u.q[3], u.q[4])
+    q = x.q_ib::SVector{4, Float64}              # the descent controls attitude, so the run propagates it
     A = rot(q)                                   # rows: body axes in inertial coordinates
     engine_axis_i = -SVector{3, Float64}(A[3, 1], A[3, 2], A[3, 3])   # thrust pushes along body -z
     return thrust * engine_axis_i, model.actuators.torque_nm[i]
 end
 
-function calcControlMassFlowRate(model::ApolloDescentControlModel, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
+function control_propellant_rate(model::ApolloDescentControlModel, x::StateSample, p::ODEParams, t::Float64)::Float64
+    i = x.spacecraft_index
     n = length(model.actuators.thrust_n)
     (i in model.spacecraft_indices && p.is_active[i]) || return 0.0
     cfg = model.config
     dps = propellant_mass_rate(model.actuators.thrust_n[i], cfg.dps_isp_s)
     τ = model.actuators.torque_nm[i]
     rcs = (abs(τ[1]) + abs(τ[2]) + abs(τ[3])) / (cfg.rcs_moment_arm_m * cfg.rcs_isp_s * _DESCENT_G0)
-    return -(dps + rcs)
+    return dps + rcs
 end
 
 function touchdown_spec(model::ApolloDescentControlModel, spacecraft_index::Int)
