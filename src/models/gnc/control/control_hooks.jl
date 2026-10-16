@@ -45,10 +45,11 @@ module ControlHooks
     export rpo_allocate_six_axis_thrusters, rpo_thruster_wrench_body
 
     """
-        control_thruster_levels(effector, i::Int) -> Union{Nothing, AbstractVector{<:Real}}
+        control_thruster_levels(effector, spacecraft_index::Int) -> Union{Nothing, AbstractVector{<:Real}}
 
-    Optional hook: the firing level (0 to 1) of every thruster of spacecraft `i`,
-    in the order the visualization scene lists them (the spacecraft's links in
+    Optional hook: the firing level (0 to 1) of every thruster of the spacecraft
+    at `spacecraft_index` (its position in the run, from 1), in the order the
+    visualization scene lists them (the spacecraft's links in
     order, each link's `thrusters` in order). Effectors that drive no named
     thruster return `nothing`, the default for any effector type that does not
     override this method; an effector that drives only some of them may return a
@@ -58,7 +59,7 @@ module ControlHooks
     in `calcControlEffect!` and keep them in its own actuator state rather than
     recomputing them here.
     """
-    control_thruster_levels(effector, i::Int) = nothing
+    control_thruster_levels(effector, spacecraft_index::Int) = nothing
 
     """
         touchdown_spec(effector, spacecraft_index::Int) -> Union{Nothing, NamedTuple}
@@ -77,6 +78,39 @@ module ControlHooks
     stop remains active for every spacecraft with no touchdown specification.
     """
     touchdown_spec(effector, spacecraft_index::Int) = nothing
+
+    """
+        calcControlForceTorque(model, u, p, spacecraft_index, t) -> (force, torque)
+
+    The force and torque a control effector applies to the spacecraft at
+    `spacecraft_index`, which the dynamics evaluate at every right-hand-side
+    evaluation in `:ideal` actuation, the default `actuation_mode`. Every
+    control effector whose actuation is not `:mounted` needs a method for its
+    own type. There is no fallback: `run_simulation` checks for the method
+    before integration starts, as it does for `calcControlEffect!`.
+
+    Return a tuple of two 3-vectors:
+
+    - `force`: in the inertial frame, in N;
+    - `torque`: in the bus frame, about the root body's centre of mass, in N·m.
+      The dynamics apply it only when the run propagates attitude.
+
+    An effector that applies neither returns two zero vectors. The arguments:
+
+    - `model`: the control effector.
+    - `u`: the state of that spacecraft alone (`u.pos`, `u.vel`, `u.mass`, and
+      with attitude propagation `u.q` and `u.ω`), not the full state the tick
+      receives.
+    - `p`: the run's parameters.
+    - `spacecraft_index`: the spacecraft's position in the run (`Int`, from 1), not its ID.
+    - `t`: elapsed time since the run's start epoch, in seconds (`Float64`).
+
+    The spacecraft index comes before the time here, as in
+    `calcControlMassFlowRate` and `calcReactionWheelTorque`, and after it in
+    `calcControlEffect!`. Return the command held since the last
+    `calcControlEffect!` tick rather than recomputing the control law here.
+    """
+    function calcControlForceTorque end
 
     """
         calcControlEffect!(model, u, p, t, spacecraft_index) -> nothing

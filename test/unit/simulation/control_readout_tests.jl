@@ -104,6 +104,38 @@ include(joinpath(@__DIR__, "..", "..", "..", "templates", "control_hook_template
     @test readout(p, 1) == (model.force_n, model.torque_n_m, ZERO3, -0.125)
 end
 
+# Hook methods typed on the effector alone. The fallbacks typed `u`, `p`, the
+# index and the time, which made such methods ambiguous; they now type nothing.
+struct LooseHooks <: SM.AbstractControlEffectorModel end
+SpaceAGORA.calcControlForceTorque(::LooseHooks, u, p, spacecraft_index, t) = (SVector(1.0, 0.0, 0.0), ZERO3)
+SpaceAGORA.calcControlMassFlowRate(::LooseHooks, u, p, spacecraft_index, t) = -0.25
+SpaceAGORA.calcReactionWheelTorque(::LooseHooks, u, p, spacecraft_index, t) = SVector(0.0, 0.0, 0.5)
+
+@testset "control hook fallbacks type none of their arguments" begin
+    p = readout_params((LooseHooks(),); n_sats=1)
+    u = ComponentVector(mass=500.0)
+    @test SpaceAGORA.calcControlMassFlowRate(LooseHooks(), u, p, 1, 0.0) === -0.25
+    @test SpaceAGORA.calcReactionWheelTorque(LooseHooks(), u, p, 1, 0.0) == SVector(0.0, 0.0, 0.5)
+    @test readout(p, 1) == (SVector(1.0, 0.0, 0.0), ZERO3, SVector(0.0, 0.0, 0.5), -0.25)
+    # Any effector, a control effector or not, uses no propellant and drives no wheels by default.
+    for effector in (GlobalForceOnly(Tuple{Symbol,Symbol,Int}[]), SM.MagneticMomentumManagerModel(sat_idx=1), nothing)
+        @test SpaceAGORA.calcControlMassFlowRate(effector, u, p, 1, 0.0) === 0.0
+        @test SpaceAGORA.calcReactionWheelTorque(effector, u, p, 1, 0.0) === nothing
+    end
+    # No two methods of a control hook are ambiguous, the package's or the tests'.
+    for f in (SpaceAGORA.calcControlForceTorque, SpaceAGORA.calcControlMassFlowRate,
+              SpaceAGORA.calcReactionWheelTorque, SpaceAGORA.control_thruster_levels)
+        ms = collect(methods(f))
+        @test !any(Base.isambiguous(a, b) for a in ms, b in ms if a !== b)
+    end
+    # The public names show the generic docstrings, not a method's.
+    root_doc(name) = string(Docs.meta(SpaceAGORA)[Docs.Binding(SpaceAGORA, name)].docs[Union{}].text...)
+    @test startswith(root_doc(:calcControlForceTorque), "    calcControlForceTorque(model, u, p, spacecraft_index, t)")
+    @test !occursin("calcControlForceTorque(model::BaseThrusterModel", root_doc(:calcControlForceTorque))
+    @test startswith(root_doc(:calcControlMassFlowRate), "    calcControlMassFlowRate(model, u, p, spacecraft_index, t)")
+    @test startswith(root_doc(:control_thruster_levels), "    control_thruster_levels(effector, spacecraft_index::Int)")
+end
+
 @testset "control readout retains held torque ownership without updating control state" begin
     managers = held_managers(32)
     p = readout_params(managers)

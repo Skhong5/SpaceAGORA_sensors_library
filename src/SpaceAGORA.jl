@@ -498,14 +498,8 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
     ::SimulationModel.AbstractDensityModel, ::Any,
 ))).text) with_density_model_epoch
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlEffect!)).text) calcControlEffect!
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlForceTorque(
-    ::SimulationModel.ControlHooks.BaseThrusterModel,
-    ::AbstractVector, ::SimulationModel.ODEParams, ::Int64, ::Float64,
-))).text) calcControlForceTorque
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlMassFlowRate(
-    ::SimulationModel.AbstractTypes.AbstractControlEffectorModel,
-    ::AbstractVector, ::SimulationModel.ODEParams, ::Int64, ::Float64,
-))).text) calcControlMassFlowRate
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlForceTorque)).text) calcControlForceTorque
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlMassFlowRate)).text) calcControlMassFlowRate
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_thruster_levels(::Any, ::Int))).text) control_thruster_levels
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcReactionWheelTorque)).text) calcReactionWheelTorque
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.touchdown_spec(::Any, ::Int))).text) touchdown_spec
