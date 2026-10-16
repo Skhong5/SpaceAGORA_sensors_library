@@ -240,8 +240,9 @@ function _validate_ephemerides_support!(args)
     if ephemerides_model isa SimulationModel.SimpleEphemeridesModel
         if _has_active_nbody_effector(args.dynamics_model.dynamic_effectors)
             throw(ArgumentError(
-                "SimpleEphemeridesModel does not support active N-body gravity effectors. " *
-                "Use SpiceEphemeridesModel() for high-fidelity third-body runs."
+                "SimpleEphemeridesModel does not support third-body ephemerides: active N-body gravity " *
+                "effectors and models declaring environment_requirements(model).third_body_names need them. " *
+                "Use SpiceEphemeridesModel() for third-body runs."
             ))
         end
         if _has_active_srp_effector(args.dynamics_model.dynamic_effectors)
@@ -2042,11 +2043,15 @@ end
     )
 end
 
+# An effector needs third-body ephemerides either as an N-body gravity model or
+# by declaring environment_requirements(model).third_body_names (the public
+# extension hook), which the effector sampler serves for any model.
 @inline function _has_active_nbody_effector(dynamic_effectors::Tuple)::Bool
     @inbounds for effector in dynamic_effectors
         if _is_nbody_effector_like(effector) && !isempty(effector.body_names)
             return true
         end
+        isempty(SimulationModel.environment_requirements(effector).third_body_names) || return true
     end
     return false
 end
@@ -2055,10 +2060,9 @@ function _collect_nbody_query_names(dynamic_effectors::Tuple)::Vector{String}
     names = String[]
     seen = Set{String}()
     @inbounds for effector in dynamic_effectors
-        if !_is_nbody_effector_like(effector)
-            continue
-        end
-        for body_name in effector.body_names
+        declared = SimulationModel.environment_requirements(effector).third_body_names
+        sources = _is_nbody_effector_like(effector) ? (effector.body_names, declared) : (declared,)
+        for body_names in sources, body_name in body_names
             query_name = SimulationModel.DynamicEffectors._spice_query_name(body_name)
             if !(query_name in seen)
                 push!(names, query_name)
@@ -2265,7 +2269,8 @@ function _prewarm_nbody_ephemeris_cache(
 )::SimulationModel.NBodyEphemerisCache
     _validate_ephemerides_support!(args)
     _has_active_nbody_effector(args.dynamics_model.dynamic_effectors) || throw(ArgumentError(
-        "prewarm_nbody_ephemeris_cache requires at least one active NBodyGravityModel with non-empty body_names."
+        "prewarm_nbody_ephemeris_cache requires at least one active NBodyGravityModel with non-empty body_names " *
+        "or a model declaring environment_requirements(model).third_body_names."
     ))
 
     resolved_dt_s = isnothing(dt_s) ? _nbody_ephemeris_cache_dt_s() : Float64(dt_s)

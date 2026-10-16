@@ -118,7 +118,11 @@ end
 """
     ThirdBodyEphemerisSample{N}
 
-Stage-consistent third-body inertial positions for an N-body effector.
+Stage-consistent positions of the third bodies a model declares in
+`environment_requirements(model).third_body_names`, in the declared order:
+`positions_ii[k]` is the position of `names[k]` relative to the run's planet,
+in metres along the J2000 axes. `NBodyGravityModel` measures from its own
+`primary_body_name`.
 """
 struct ThirdBodyEphemerisSample{N}
     names::NTuple{N, String}

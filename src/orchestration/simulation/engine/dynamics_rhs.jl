@@ -3066,7 +3066,10 @@ end
         link = sc.links[l]
         xl, d = _live_link_sample(ws, tree, link, l, l + offset, base_pos, base_vel)
         frame = req.planet_frame ? sample_planet_frame_with_lpi((pos_ii=xl.pos_ii, vel_ii=xl.vel_ii), planet, l_pi) : nothing
-        env_l = EnvironmentSample(planet; planet_frame=frame, atmosphere=env_root.atmosphere, solar=env_root.solar)
+        # Third-body positions are measured from the planet, not from the
+        # spacecraft, so the root sample holds for every link.
+        env_l = EnvironmentSample(planet; planet_frame=frame, atmosphere=env_root.atmosphere, solar=env_root.solar,
+            third_bodies=env_root.third_bodies)
         F, τ, drag, lift, cross_f = SimulationModel.link_wrench(effector, link, xl, env_l, t, p, sat_idx)
         b = xl.body
         ws.ext_force[b] += F
