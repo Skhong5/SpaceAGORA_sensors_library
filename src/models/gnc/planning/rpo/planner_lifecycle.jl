@@ -305,10 +305,11 @@ function S.GuidanceHooks.calcGuidanceEffect!(g::PlannerGuidance, u, p, t::Float6
             max(0.0,t-g.plan_buffer.updated_at_s),g.reference_dt_s,1)
         # Guidance tick subtraction can round just below the requested interval.
         # Use the same time tolerance as scheduled events, without widening expiry.
-        # A hold is not tracked: braking onto it is expected, so only the hold's
-        # own triggers replace it.
-        if t-r.last_request_time >= g.replan_interval_s - g.validation.time_atol_s ||
-                (g.triggers.hold === :none && norm(x[1:3]-preview[1:3,1]) > g.tracking_error_limit_m)
+        # While a hold is installed, interval and tracking-error replans wait: braking
+        # onto it is expected, and only the hold's own triggers replace it, so a
+        # planner that keeps refusing is asked again at a bounded rate.
+        if g.triggers.hold === :none && (t-r.last_request_time >= g.replan_interval_s - g.validation.time_atol_s ||
+                norm(x[1:3]-preview[1:3,1]) > g.tracking_error_limit_m)
             request_plan!(g,u,p,t,:replan)
         else
             request_triggered!(g,u,p,t,x,preview)

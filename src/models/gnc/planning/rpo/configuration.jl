@@ -69,8 +69,8 @@ Three opt-in extensions, all off by default:
   instead of stopping the run when a request is rejected. A hold is retried once
   the chaser settles on it (within `hold_position_tolerance_m` and
   `hold_speed_tolerance_mps`), renewed by a new request before it expires and
-  replanned when the geometry revision changes; tracking-error replans are
-  suspended while it holds.
+  replanned when the geometry revision changes; interval and tracking-error
+  replans are suspended while it holds.
 - `retime_tracking_error_m` requests `:retime` when the tracking error exceeds it
   (and stays within `tracking_error_limit_m`). It needs a planner that declares
   retiming.

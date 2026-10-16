@@ -134,8 +134,10 @@ reference at the chaser's position with zero velocity, which the controller brak
 onto. A hold is not validated and does not reach the goal. It is retried once with
 a `:replan` request when the chaser settles on it (`hold_position_tolerance_m`,
 `hold_speed_tolerance_mps`), renewed by a request before it expires, and replanned
-when the geometry revision changes. Tracking-error replans are suspended while it
-holds. The default, `on_rejection=:fail`, stops the run as before.
+when the geometry revision changes. Interval and tracking-error replans are
+suspended while it holds, so a planner that keeps refusing is asked again only by
+these triggers or a planning event. The default, `on_rejection=:fail`, stops the
+run as before.
 
 `retime_tracking_error_m` requests `:retime` when the tracking error exceeds it and
 stays within `tracking_error_limit_m`. It needs a planner that declares retiming.

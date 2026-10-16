@@ -224,6 +224,14 @@ end
     move_chaser!(u,(3.5,0.,0.))
     tick!(g,u,p,.2)
     @test g.runtime.request_id==2 && g.triggers.hold===:holding
+    # Interval replans wait too: with an interval of one guidance tick, a planner that
+    # keeps refusing is asked once more when the chaser settles, not at every tick.
+    sol=run_simulation(still(planner=StepPlanner((:replan,)),mission_time_s=1.,replan_interval_s=.1,
+        planning_events=(RPOPlanningEvent(.1;reason=:replan),));return_solution=true)
+    report=only(rpo_run_report(sol).planners)
+    @test report.request_id==3 # the initial plan, the refused event and one settled retry
+    @test [x.trigger for x in triggers(report.records)]==[:hold_settled]
+    @test count(x->x.event===:fallback_installed,report.records)==2
 end
 
 @testset "Retiming: events and tracking error" begin
