@@ -1,5 +1,6 @@
 using SpaceAGORA, Test
 using StaticArrays
+using ComponentArrays: ComponentVector
 
 const HP_SM = SpaceAGORA.SimulationModel
 const HP_SE = SpaceAGORA.SimulationEngine
@@ -19,6 +20,13 @@ function SpaceAGORA.calcGuidanceEffect!(m::HpGuidanceCounter, u, p, t::Float64, 
     m.calls += 1
     return nothing
 end
+
+# A state argument typed narrower than the ComponentVector the engine passes is
+# refused; one typed as that ComponentVector is accepted.
+struct HpGuidanceVectorState <: SpaceAGORA.AbstractGuidanceModel end
+SpaceAGORA.calcGuidanceEffect!(::HpGuidanceVectorState, u::Vector{Float64}, p, t::Float64, spacecraft_index::Int) = nothing
+struct HpGuidanceComponentState <: SpaceAGORA.AbstractGuidanceModel end
+SpaceAGORA.calcGuidanceEffect!(::HpGuidanceComponentState, u::ComponentVector, p::HP_SM.ODEParams, t::Float64, spacecraft_index::Int) = nothing
 
 struct HpNavigationNoHook <: SpaceAGORA.AbstractNavigationModel end
 mutable struct HpNavigationCounter <: SpaceAGORA.AbstractNavigationModel
@@ -49,10 +57,16 @@ function SpaceAGORA.calcForceTorque(m::HpLegacyForceCounter, x::AbstractVector, 
     return HP_ZERO3, HP_ZERO3
 end
 
-# A gravity core with only the gravity_backbone_split hooks, and a model that
-# opts into the per-link kernel without the base-body hooks.
+# Backbone declarations: a gravity core with its acceleration hook, one without,
+# and a kick without its kick hook; none has wrench or calcForceTorque. Then a
+# model that opts into the per-link kernel without the base-body hooks.
+struct HpBackboneCore <: SpaceAGORA.AbstractForceTorqueModel end
+SpaceAGORA.gravity_backbone_structure(::HpBackboneCore) = :position_only_static_gravity
+SpaceAGORA.gravity_backbone_acceleration_ii(::HpBackboneCore, x::SpaceAGORA.StateSample, env::SpaceAGORA.EnvironmentSample, t::Float64) = HP_ZERO3
 struct HpBackboneOnly <: SpaceAGORA.AbstractForceTorqueModel end
 SpaceAGORA.gravity_backbone_structure(::HpBackboneOnly) = :position_only_static_gravity
+struct HpKickNoAccel <: SpaceAGORA.AbstractForceTorqueModel end
+SpaceAGORA.gravity_backbone_kick_structure(::HpKickNoAccel) = :velocity_kick_explicit
 struct HpLinkOnly <: SpaceAGORA.AbstractForceTorqueModel end
 HP_SM.link_wrench_capable(::HpLinkOnly) = true
 
@@ -94,10 +108,7 @@ function hp_package_types(T::Type)
     return unique(found)
 end
 
-const HP_P = HP_SM.ODEParams
-hp_tick_ok(f, T) = HP_SE._hook_method_may_apply(f, Tuple{T, AbstractVector, HP_P, Float64, Int})
-
-function hp_run_config(; guidance=(), navigation=(), effectors=())
+function hp_run_config(; guidance=(), navigation=(), effectors=(), solver_mode=:tsit5)
     planet = HP_SM.make_no_gram_planet(:earth)
     root = HP_SM.Link(root=true, m=100.0, ref_area=2.0)
     ic = HP_SM.InitialCondition(ra=planet.Rp_e + 700e3, rp=planet.Rp_e + 650e3, i=45.0, ω=0.0, Ω=0.0, ν=10.0)
@@ -113,11 +124,25 @@ function hp_run_config(; guidance=(), navigation=(), effectors=())
             number_of_orbits=1, mission_time=60.0, orientation_sim=false, num_steps_to_save=100),
         environment_model=env,
         dynamics_model=HP_SM.DynamicsModel(HP_SM.SpacecraftModel[sc], (HP_SM.InverseSquaredJ2GravityModel(), effectors...)),
+        solver_config=HP_SM.SolverConfig(; solver_mode),
         guidance_model=HP_SM.GuidanceModel(guidance, fill(10.0, length(guidance))),
         navigation_model=HP_SM.NavigationModel(navigation, fill(15.0, length(navigation))),
         control_model=HP_SM.ControlModel((), Float64[]),
         initial_time=HP_SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0))
 end
+
+# The concrete state, spacecraft-view and parameter types of a real run, which the
+# check uses.
+const HP_FIXTURE = hp_run_config()
+const HP_U0 = HP_SE.build_initial_conditions(HP_FIXTURE)
+const HP_PARAMS = HP_SM.ODEParams(n_sats=1, args=HP_FIXTURE)
+const HP_CALL = HP_SE._hook_call_types(HP_U0, HP_PARAMS)
+const HP_P = HP_CALL.params
+const HP_X = only(HP_CALL.spacecraft)
+hp_tick_ok(f, T) = hasmethod(f, Tuple{T, HP_CALL.state, HP_P, Float64, Int})
+hp_sampled(f, T) = hasmethod(f, Tuple{T, SpaceAGORA.StateSample, SpaceAGORA.EnvironmentSample, Float64})
+# Whether `T` has its own method of a backbone declaration hook, not the default.
+hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
 
 @testset "Model hook declarations and pre-run check" begin
     @testset "hooks are public with generic docstrings" begin
@@ -153,6 +178,12 @@ end
         @test_throws MethodError SpaceAGORA.calcNavigationEffect!(HpNavigationNoHook(), Float64[], nothing, 0.0, 1)
     end
 
+    @testset "the check uses the run's concrete argument types" begin
+        @test HP_CALL.state === typeof(HP_U0) && HP_CALL.state <: ComponentVector
+        @test HP_X === typeof(HP_U0.sc[1]) && HP_X <: ComponentVector
+        @test HP_P === typeof(HP_PARAMS)
+    end
+
     @testset "built-in models pass the check" begin
         guidance = hp_package_types(SpaceAGORA.AbstractGuidanceModel)
         @test length(guidance) >= 5
@@ -167,14 +198,24 @@ end
         @test length(control) >= 6
         for T in control
             @test hp_tick_ok(SpaceAGORA.calcControlEffect!, T) == (T !== aoa)
-            @test HP_SE._hook_method_may_apply(SpaceAGORA.calcControlForceTorque, Tuple{T, AbstractVector, HP_P, Int, Float64})
+            @test hasmethod(SpaceAGORA.calcControlForceTorque, Tuple{T, HP_X, HP_P, Int, Float64})
         end
         forces = hp_package_types(SpaceAGORA.AbstractForceTorqueModel)
         @test length(forces) >= 15
         for T in forces
-            wrench_ok = hasmethod(SpaceAGORA.wrench, Tuple{T, SpaceAGORA.StateSample, SpaceAGORA.EnvironmentSample, Float64})
-            legacy_ok = HP_SE._hook_method_may_apply(SpaceAGORA.calcForceTorque, Tuple{T, AbstractVector, HP_P, Int})
+            wrench_ok = hp_sampled(SpaceAGORA.wrench, T)
+            legacy_ok = hasmethod(SpaceAGORA.calcForceTorque, Tuple{T, HP_X, HP_P, Int})
             @test wrench_ok || legacy_ok
+        end
+        # Every built-in backbone declaration has its acceleration hook.
+        cores = filter(T -> hp_declares(SpaceAGORA.gravity_backbone_structure, T), forces)
+        kicks = filter(T -> hp_declares(SpaceAGORA.gravity_backbone_kick_structure, T), forces)
+        @test !isempty(cores) && !isempty(kicks)
+        for T in cores
+            @test hp_sampled(SpaceAGORA.gravity_backbone_acceleration_ii, T)
+        end
+        for T in kicks
+            @test hp_sampled(SpaceAGORA.gravity_backbone_kick_acceleration_ii, T)
         end
         # The GRAM-backed density models get getDensity from the GRAMSuite extension.
         em = HP_SM.EnvironmentModels
@@ -183,35 +224,37 @@ end
         densities = hp_package_types(SpaceAGORA.AbstractDensityModel)
         @test length(densities) >= 10
         for T in densities
-            ok = HP_SE._hook_method_may_apply(SpaceAGORA.getDensity, Tuple{T, Float64, Float64, Float64, Float64, Bool, HP_P})
+            ok = hasmethod(SpaceAGORA.getDensity, Tuple{T, Float64, Float64, Float64, Float64, Bool, HP_P})
             @test ok == (gram_loaded || !any(G -> Base.unwrap_unionall(T) <: G, gram))
         end
     end
 
     @testset "missing hooks are named" begin
         args = hp_args(
-            guidance=(HpGuidanceNoHook(), HpGuidanceWrongTime(), HpGuidanceCounter()),
+            guidance=(HpGuidanceNoHook(), HpGuidanceWrongTime(), HpGuidanceCounter(), HpGuidanceVectorState(), HpGuidanceComponentState()),
             navigation=(HpNavigationNoHook(), HpNavigationCounter()),
             control=(HpControlTickOnly(), HpMountedControl()),
             effectors=(HpForceNoHook(), HpLegacyForceCounter(0), HP_SM.InverseSquaredJ2GravityModel()),
             density=HpDensitySixArgs(),
         )
-        lines = HP_SE._missing_model_hooks(args)
+        lines = HP_SE._missing_model_hooks(args, HP_CALL)
         has(parts...) = any(line -> all(part -> occursin(part, line), parts), lines)
-        @test length(lines) == 6
+        @test length(lines) == 7
         @test has("guidance_model.guidance_effectors[1] (HpGuidanceNoHook)", "calcGuidanceEffect!(model, u, p, t::Float64, spacecraft_index::Int)")
-        @test has("guidance_model.guidance_effectors[2] (HpGuidanceWrongTime)", "calcGuidanceEffect!")
+        @test has("guidance_model.guidance_effectors[2] (HpGuidanceWrongTime)", "calcGuidanceEffect!", "none accepts the arguments this run passes")
+        @test has("guidance_model.guidance_effectors[4] (HpGuidanceVectorState)", "calcGuidanceEffect!", "none accepts the arguments this run passes")
+        @test !has("(HpGuidanceNoHook)", "none accepts")
         @test has("navigation_model.navigation_effectors[1] (HpNavigationNoHook)", "calcNavigationEffect!")
         @test has("control_model.control_effectors[1] (HpControlTickOnly)", "calcControlForceTorque", "actuation_mode :ideal")
         @test has("dynamics_model.dynamic_effectors[1] (HpForceNoHook)", "wrench(", "calcForceTorque(")
         @test has("environment_model.density_model (HpDensitySixArgs)", "getDensity(", "wind::Bool, p)")
         # A :mounted effector needs no calcControlForceTorque, and calcForceTorque alone serves a force model.
-        for accepted in ("HpGuidanceCounter", "HpNavigationCounter", "HpMountedControl", "HpLegacyForceCounter", "InverseSquaredJ2GravityModel")
+        for accepted in ("HpGuidanceCounter", "HpGuidanceComponentState", "HpNavigationCounter", "HpMountedControl", "HpLegacyForceCounter", "InverseSquaredJ2GravityModel")
             @test !has(accepted)
         end
 
         err = try
-            HP_SE._validate_model_hooks!(args)
+            HP_SE._validate_model_hooks!(args, HP_U0, HP_PARAMS)
             nothing
         catch e
             e
@@ -222,18 +265,25 @@ end
         @test HP_SE._validate_model_hooks!(hp_args(
             guidance=(HpGuidanceCounter(),), navigation=(HpNavigationCounter(),), control=(HpMountedControl(),),
             effectors=(HpLegacyForceCounter(0),), density=HpDensitySevenArgs(),
-        )) === nothing
+        ), HP_U0, HP_PARAMS) === nothing
 
-        # Backbone-only gravity passes only where gravity_backbone_split evaluates it;
-        # a per-link model passes in any mode.
-        special = hp_args(effectors=(HpBackboneOnly(), HpLinkOnly()))
-        @test occursin("dynamic_effectors[1] (HpBackboneOnly) has no method wrench(", only(HP_SE._missing_model_hooks(special)))
-        @test isempty(HP_SE._missing_model_hooks(special, :gravity_backbone_split))
+        # Outside gravity_backbone_split the backbone hooks do not count; a per-link
+        # model passes in any mode.
+        special = hp_args(effectors=(HpBackboneCore(), HpBackboneOnly(), HpKickNoAccel(), HpLinkOnly()))
+        plain = HP_SE._missing_model_hooks(special, HP_CALL)
+        @test length(plain) == 3
+        @test all(k -> any(l -> occursin("dynamic_effectors[$k] (", l) && occursin("has no method wrench(", l), plain), 1:3)
+        # In gravity_backbone_split a declaration needs its acceleration hook.
+        split = HP_SE._missing_model_hooks(special, HP_CALL, :gravity_backbone_split)
+        @test length(split) == 2
+        @test any(l -> occursin("dynamic_effectors[2] (HpBackboneOnly) has no method gravity_backbone_acceleration_ii(", l), split)
+        @test any(l -> occursin("dynamic_effectors[3] (HpKickNoAccel) has no method gravity_backbone_kick_acceleration_ii(", l), split)
+        @test !any(l -> occursin("HpBackboneCore", l) || occursin("HpLinkOnly", l), split)
 
         # A model in the wrong container is pointed to its own.
-        @test occursin("Its type belongs in control_model.", only(HP_SE._missing_model_hooks(hp_args(guidance=(HpControlTickOnly(),)))))
+        @test occursin("Its type belongs in control_model.", only(HP_SE._missing_model_hooks(hp_args(guidance=(HpControlTickOnly(),)), HP_CALL)))
         # The energy depletion controller's panel actuator cannot run on its own.
-        aoa_line = only(HP_SE._missing_model_hooks(hp_args(control=(SpaceAGORA.SolarPanelAngleOfAttackControlModel(),))))
+        aoa_line = only(HP_SE._missing_model_hooks(hp_args(control=(SpaceAGORA.SolarPanelAngleOfAttackControlModel(),)), HP_CALL))
         @test occursin("(SolarPanelAngleOfAttackControlModel) has no method calcControlEffect!", aoa_line)
     end
 
@@ -252,6 +302,28 @@ end
         # Nothing was integrated: no dynamics evaluation and no navigation tick.
         @test force.calls == 0
         @test navigation.calls == 0
+
+        # A guidance method typed for a Vector state is refused before the run too:
+        # the run passes a ComponentVector.
+        err = try
+            run_simulation(hp_run_config(guidance=(HpGuidanceVectorState(),), effectors=(force,)); isolate_state=false)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        @test occursin("(HpGuidanceVectorState) has no method calcGuidanceEffect!", err.msg)
+        @test force.calls == 0
+
+        # A backbone gravity core without its acceleration hook, in gravity_backbone_split.
+        err = try
+            run_simulation(hp_run_config(effectors=(HpBackboneOnly(),), solver_mode=:gravity_backbone_split); isolate_state=false)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        @test occursin("(HpBackboneOnly) has no method gravity_backbone_acceleration_ii(", err.msg)
 
         # With the hook present the same run integrates, through the older calcForceTorque path too.
         guidance = HpGuidanceCounter()
