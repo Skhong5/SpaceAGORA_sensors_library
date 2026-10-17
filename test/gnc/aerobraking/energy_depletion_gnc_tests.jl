@@ -86,6 +86,9 @@ function _edg_test_context(;
     )
 
     state = _EDG_SM.AerobrakingEnergyDepletionState(num_sats=1)
+    # A solve reports the EDG control clock when it starts; direct calls here use the
+    # configured 1 s control period from the origin.
+    state.control_clock_period_s = 1.0
     config = _EDG_SM.AerobrakingEnergyDepletionConfig(
         guidance_modes=guidance_modes,
         max_energy_submodes=max_energy_submodes,
@@ -133,6 +136,10 @@ function _edg_test_context(;
     u = ComponentVector(sc=[(pos=collect(pos), vel=collect(vel), mass=461.0, heat_loads=zeros(3))])
     return (; config, state, guidance, control, args, p, u, spacecraft)
 end
+
+# A prediction context with the control clock of the context's EDG state, for direct
+# calls of prediction kernels that take no EDG state.
+_edg_clocked(ctx) = _EDG_SM.EDGServices._borrow_context(ctx.p, _EDG_SM.EDGServices._edg_state_clock(ctx.state))
 
 @testset "VEX N-body target-energy correction" begin
     hooks = _EDG_SM.ControlHooks
@@ -264,7 +271,7 @@ end
     vel = SVector{3, Float64}(sc.vel)
     low_drag, max_energy = _EDG_SM.ControlHooks._edg_targeting_bracket_outcomes(
         ctx_targeting.config,
-        ctx_targeting.p,
+        _edg_clocked(ctx_targeting),
         ctx_targeting.spacecraft,
         pos,
         vel,
@@ -663,7 +670,7 @@ end
     sc=ctx.u.sc[1];pos=SVector{3,Float64}(sc.pos);vel=SVector{3,Float64}(sc.vel)
     times=[0.0,1/3,2/3,1.0]
     predict(sw)=_EDG_SM.ControlHooks._edg_integrated_max_energy_depletion_trajectory(
-        ctx.config,ctx.p,ctx.spacecraft,pos,vel,Float64(sc.mass),30.0,times,sw;
+        ctx.config,_edg_clocked(ctx),ctx.spacecraft,pos,vel,Float64(sc.mass),30.0,times,sw;
         heat_rate_control=false,structural_control=false)
     empty=predict((Inf,Inf));zero=predict((30.0,30.0));window=predict((30.0,30.0+1/3))
     @test zero.alpha_profile == empty.alpha_profile
@@ -692,21 +699,26 @@ end
     @test_throws ArgumentError hooks._edg_targeting_prediction_time_grid(Inf)
 
     ctx = _edg_test_context(max_energy_submodes=(:heat_rate,),heat_rate_limit_w_cm2=Inf)
-    ctx.args.control_model.control_rates[1] = period
+    ctx.state.control_clock_period_s = period
     ctx.state.control_clock_origin_s = 0.1
-    clock = hooks._edg_targeting_control_clock(ctx.config,ctx.p)
+    clock = hooks._edg_targeting_control_clock(_edg_clocked(ctx))
     @test clock == (period=period,origin=0.1)
     for link in ctx.spacecraft.links[2:3]; link.α = 0.37; end
     t = 0.2
     grid = hooks._edg_targeting_prediction_time_grid(1.0;t0=t,period=period,origin=clock.origin)
     R=SVector{3,Float64}(ctx.u.sc[1].pos); V=SVector{3,Float64}(ctx.u.sc[1].vel)
-    track=hooks._edg_integrated_targeting_trajectory(ctx.config,ctx.p,ctx.spacecraft,R,V,461.0,t,grid,t;
+    track=hooks._edg_integrated_targeting_trajectory(ctx.config,_edg_clocked(ctx),ctx.spacecraft,R,V,461.0,t,grid,t;
         heat_rate_control=false,structural_control=false)
     @test track.alpha_profile[1] == 0.37
     @test all(track.alpha_profile[2:end-1] .== ctx.config.min_alpha_rad)
     @test_throws ErrorException hooks._edg_exact_targeting_exit(ctx.config,ctx.p,ctx.spacecraft,461.0,t,track)
-    ctx.args.control_model.control_rates[1]=0.0
-    @test_throws ArgumentError hooks._edg_targeting_control_clock(ctx.config,ctx.p)
+    ctx.state.control_clock_period_s=0.0
+    @test_throws ArgumentError hooks._edg_targeting_control_clock(_edg_clocked(ctx))
+    # Before its solve starts the clock has no period, and a call without an EDG
+    # state has no clock at all; neither is read from the configuration.
+    ctx.state.control_clock_period_s=NaN
+    @test_throws ArgumentError hooks._edg_targeting_control_clock(_edg_clocked(ctx))
+    @test_throws ArgumentError hooks._edg_targeting_control_clock(_EDG_SM.EDGServices._borrow_context(ctx.p))
 
     # A known crossing inside a coarse interval must not return its endpoint.
     r=SVector(0.0,0.0,0.0);v=SVector(1.0,0.0,0.0)
@@ -724,6 +736,7 @@ end
 
 @testset "EDG callback clock follows a nonzero solve start" begin
     ctx=_edg_test_context()
+    ctx.state.control_clock_period_s=NaN   # set again by the solve's start below
     hooks=_EDG_SM.ControlHooks
     cb=only(_EDG_SM.SimulationCallbacks.get_control_callbacks(1,ctx.args))
     de=_EDG_SM.SimulationCallbacks
@@ -732,15 +745,16 @@ end
     prob=de.ODEProblem((du,u,p,t)->fill!(du,0.0),[1.0],(12.345,12.445),ctx.p)
     sol=de.solve(prob,de.Tsit5();callback=cb,save_everystep=false)
     @test ctx.state.control_clock_origin_s==12.345
+    @test ctx.state.control_clock_period_s==ctx.args.control_model.control_rates[1]
     @test sol.u[end]==[1.0]
-    @test hooks._edg_targeting_control_clock(ctx.config,ctx.p).origin==12.345
+    @test hooks._edg_targeting_control_clock(_edg_clocked(ctx)).origin==12.345
 end
 
 @testset "EDG refuses a dense passage without an outbound interface" begin
     c = _edg_test_context()
     sc = c.u.sc[1]
     @test_throws ErrorException _EDG_SM.ControlHooks._edg_predict_targeting_outcome(
-        c.config,c.p,c.spacecraft,SVector{3,Float64}(sc.pos),SVector{3,Float64}(sc.vel),
+        c.config,_edg_clocked(c),c.spacecraft,SVector{3,Float64}(sc.pos),SVector{3,Float64}(sc.vel),
         Float64(sc.mass),0.0,0.0;heat_rate_control=true,structural_control=true)
 end
 
@@ -765,7 +779,7 @@ end
     for t in (0.125,0.225)
         first_tick = t == 0.125 ? t : 1.125
         last_tick = 2000.125
-        outcome(sw) = CH._edg_predict_targeting_outcome(c.config,c.p,c.spacecraft,pos,vel,mass,t,sw;
+        outcome(sw) = CH._edg_predict_targeting_outcome(c.config,_edg_clocked(c),c.spacecraft,pos,vel,mass,t,sw;
             heat_rate_control=true,structural_control=true)
         c.state.target_energy_jkg[1] = (outcome(first_tick).energy_jkg+outcome(last_tick).energy_jkg)/2
         cert = CH._edg_targeting_switch_solution(c.config,c.state,c.p,c.spacecraft,pos,vel,mass,t,1;

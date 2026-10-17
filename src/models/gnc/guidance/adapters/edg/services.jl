@@ -1,4 +1,19 @@
-"""Versioned value and prediction services for the optional experimental EDG package."""
+"""
+Versioned value and prediction services for the optional experimental EDG package,
+contract 2.0.0. The provider implements the two decision services with the EDG
+run state first:
+
+- `guidance_decision!(state, config, u, p, t, spacecraft_index)`;
+- `control_decision!(state, config, controlled_panel_links, u, p, t, spacecraft_index)`.
+
+`state` is the run's `AerobrakingEnergyDepletionState`, which the provider
+updates, `config` its `AerobrakingEnergyDepletionConfig`, `u` a copied
+observation, `p` a borrowed prediction context, `t` elapsed seconds and
+`spacecraft_index` the spacecraft's position in the run, from 1. The queries take
+the context first: `_edg_environment_state(p, u, t, spacecraft_index)` and
+`_edg_targeting_control_clock(p)`, which returns the control clock the engine
+reported to that state when the solve started.
+"""
 module EDGServices
 using ..SimulationModel.EDGServices: CONTRACT_VERSION, CompatibilityError, EDGUnavailableError,
     require_version, require_provider, available,
@@ -11,13 +26,14 @@ import ..SimulationModel.EDGServices: _edg_environment_state as _environment,
     _edg_in_drag_passage as _in_passage, _edg_ephemeris_time as _epoch,
     _edg_planet_frame_lpi as _frame, _edg_targeting_prediction_environment as _trajectory,
     _edg_sample_prediction_atmosphere as _atmosphere, _edg_targeting_control_clock as _clock
-_edg_environment_state(u, p::AbstractPredictionContext, t::Float64, i::Int) = _environment(u, p, t, i)
+_edg_environment_state(p::AbstractPredictionContext, u, t::Float64, spacecraft_index::Int) =
+    _environment(p, u, t, spacecraft_index)
 _edg_in_drag_passage(p::AbstractPredictionContext, env) = _in_passage(p, env)
 _edg_ephemeris_time(p::AbstractPredictionContext, t::Float64) = _epoch(p, t)
 _edg_planet_frame_lpi(p::AbstractPredictionContext, t::Float64) = _frame(p, t)
 _edg_targeting_prediction_environment(p::AbstractPredictionContext, r, v, t::Float64) = _trajectory(p, r, v, t)
 _edg_sample_prediction_atmosphere(p::AbstractPredictionContext, h::Float64, t::Float64) = _atmosphere(p, h, t)
-_edg_targeting_control_clock(config, p::AbstractPredictionContext) = _clock(config, p)
+_edg_targeting_control_clock(p::AbstractPredictionContext) = _clock(p)
 using ..SimulationModel.GuidanceHooks: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 using ..SimulationModel.CommandTypes: AerobrakingControlCommand
 using ..SimulationModel.AerodynamicEffectors: aerodynamic_coefficient_fM

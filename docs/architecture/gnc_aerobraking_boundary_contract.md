@@ -30,11 +30,18 @@ boundary. The [EDG package boundary](@ref)
 defines the supported calls, units, state ownership, installation and errors.
 
 Guidance and control model types remain in `GuidanceHooks` and `ControlHooks`.
-Core owns lifecycle, scheduling, physical integration and panel actuation. The
-provider receives configuration, run-owned EDG state, copied observations and
-call-scoped prediction queries. `ODEParams`, live physical state and mutable
-vehicle geometry remain inside core. Shared typed numerical calls forward to the
-companion.
+Core owns lifecycle, scheduling, physical integration and panel actuation. Under
+contract 2.0.0 the provider receives the run-owned EDG state first, then the
+configuration, copied observations and call-scoped prediction queries. The
+prediction clock is the one the engine reported to that state when the solve
+started (`gnc_clock_started!`); core does not search the configuration for it.
+`ODEParams`, live physical state and mutable vehicle geometry remain inside core.
+Shared typed numerical calls forward to the companion.
+
+The guidance decision is also the EDG guidance family of the GNC algorithm
+contract (`EDGGuidanceFamily`, in `edg_guidance_family.jl`): `AlgorithmGuidance`
+can run it, and trusted core code validates each decision before installing it
+in the EDG state.
 
 The control hook requests `control_decision!` at its existing control times and
 applies the returned `EDGControlDecision.command` only when `apply` is true.

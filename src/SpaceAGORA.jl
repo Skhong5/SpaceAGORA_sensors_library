@@ -20,6 +20,7 @@ include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "comparison", "pl
 include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "lifecycle.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "algorithm_lifecycle.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "control", "burn_planning.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "guidance", "aerobraking", "edg_guidance_family.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "adapters", "hypr", "services.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "engine", "simulation_engine.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "campaigns", "simulation_campaigns.jl"))
@@ -169,6 +170,9 @@ using .SimulationModel.ControlHooks: burn_plan_rejections
 export family_request, family_link, preflight_family
 export AlgorithmEvent, AlgorithmGuidance, AlgorithmGuidanceError, algorithm_run_report
 export AbstractBurnPlanner, BurnPlanFamily, BurnPlanRequest, BurnPlanSlot, ApoapsisBurnPlanner, validate_burn_plan, burn_plan_is_current, burn_plan_rejections
+# The EDG guidance family, served by the EDGServices facade.
+using .EDGGuidanceFamilies: EDGGuidanceFamily, EDGGuidanceCapabilities, EDGGuidanceAlgorithm, EDGGuidanceSettings, EDGGuidanceRequest, EDGGuidanceDecision, validate_edg_guidance_decision
+export EDGGuidanceFamily, EDGGuidanceCapabilities, EDGGuidanceAlgorithm, EDGGuidanceSettings, EDGGuidanceRequest, EDGGuidanceDecision, validate_edg_guidance_decision
 
 using .RPOPlannerLifecycle: RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
 using .RPOPlannerLifecycle: RPOReplanningSpheres

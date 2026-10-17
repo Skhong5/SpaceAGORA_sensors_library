@@ -146,7 +146,7 @@ function update_control!(
     i::Int64,
 )
     decision = EDGAlgorithms.control_decision!(
-        model.config, model.state, model.aoa_effector.controlled_panel_links, u, p, t, i,
+        model.state, model.config, model.aoa_effector.controlled_panel_links, u, p, t, i,
     )
     decision.apply || return nothing
     _apply_solar_panel_aoa!(model.aoa_effector, p.args.dynamics_model.spacecraft[i], decision.command.alpha_command, t)
@@ -242,10 +242,6 @@ using ..EDGAlgorithms: _edg_at_control_tick,
     _edg_weighted_aero_coefficients
 
 using ..EDGServices: _edg_targeting_control_clock
-
-import ..EDGServices: _edg_control_clock_entry
-_edg_control_clock_entry(model::AerobrakingEnergyDepletionControlModel) =
-    (config=model.config, origin=model.state.control_clock_origin_s)
 
 using ..EDGAlgorithms: _edg_replan_due, _edg_candidate_constraint_sample, _edg_targeting_candidate_certificate, _edg_ordered_feasible_prefix, _edg_candidate_energy_mapping, _edg_select_mapped_candidate, _edg_journal_targeting_plan
 

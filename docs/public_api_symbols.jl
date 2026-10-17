@@ -559,6 +559,18 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "EDG guidance family",
+        items = [
+            (owner = :SpaceAGORA, symbol = :EDGGuidanceFamily, rendered = "SpaceAGORA.EDGGuidanceFamily"),
+            (owner = :SpaceAGORA, symbol = :EDGGuidanceCapabilities, rendered = "SpaceAGORA.EDGGuidanceCapabilities"),
+            (owner = :SpaceAGORA, symbol = :EDGGuidanceAlgorithm, rendered = "SpaceAGORA.EDGGuidanceAlgorithm"),
+            (owner = :SpaceAGORA, symbol = :EDGGuidanceSettings, rendered = "SpaceAGORA.EDGGuidanceSettings"),
+            (owner = :SpaceAGORA, symbol = :EDGGuidanceRequest, rendered = "SpaceAGORA.EDGGuidanceRequest"),
+            (owner = :SpaceAGORA, symbol = :EDGGuidanceDecision, rendered = "SpaceAGORA.EDGGuidanceDecision"),
+            (owner = :SpaceAGORA, symbol = :validate_edg_guidance_decision, rendered = "SpaceAGORA.validate_edg_guidance_decision")
+        ]
+    ),
+    (
         title = "Visualization Scene",
         items = [
             (owner = :SpaceAGORA, symbol = :VisualizationScene, rendered = "SpaceAGORA.VisualizationScene"),

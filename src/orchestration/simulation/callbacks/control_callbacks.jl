@@ -182,10 +182,12 @@ function GNCRuntime.gnc_callbacks(control_model::BaseThrusterModel, num_sats, ar
 end
 GNCRuntime.register_tstops!(integrator, control_model::BaseThrusterModel, spacecraft_index) =
     _register_control_tstops!(integrator, control_model, spacecraft_index)
-# The EDG controller keeps the clock of its own ticks; recording the actual start
-# matches the periodic callback's phase on resumes.
+# The EDG controller keeps the clock of its own ticks in the EDG state, where its
+# predictions read it; recording the actual start matches the periodic callback's
+# phase on resumes.
 function GNCRuntime.gnc_clock_started!(control_model::_simulation_model_module.AerobrakingEnergyDepletionControlModel,
                                        period_s, origin_s)
+    control_model.state.control_clock_period_s = Float64(period_s)
     control_model.state.control_clock_origin_s = Float64(origin_s)
     return nothing
 end

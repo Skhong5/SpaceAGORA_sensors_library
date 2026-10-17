@@ -13,7 +13,7 @@ state_values(s) = Tuple(copy(getfield(s, f)) for f in fieldnames(typeof(s)))
 geometry(sc) = [(r=Tuple(l.r), q=Tuple(l.q), alpha=l.α, a=Tuple(l.aᵇ), b=Tuple(l.bᵇ),
                  inertia=Tuple(l.inertia), force=Tuple(l.net_force), torque=Tuple(l.net_torque)) for l in sc.links]
 decision(x, t=0.0, i=1; links=x.control.aoa_effector.controlled_panel_links) =
-    A.control_decision!(x.config, x.state, links, x.u, x.p, t, i)
+    A.control_decision!(x.state, x.config, links, x.u, x.p, t, i)
 
 # Public hook composition reference. The mathematical policy is supplied by
 # the independently reviewed published algorithms, with one canonical owner.
@@ -25,7 +25,7 @@ function reference_control!(model, u, p, t, i)
         state.selected_mode[i] = (:max_energy_depletion in config.guidance_modes) ? :max_energy_depletion : :safe_low_drag
     end
     sc = C._edg_control_sat_state(u, i)
-    env = C._edg_environment_state(u, p, Float64(t), i)
+    env = C._edg_environment_state(p, u, Float64(t), i)
     spacecraft = p.args.dynamics_model.spacecraft[i]
     pos, vel, mass = C._edg_control_pos_vel_mass(sc)
     heat_load = C._edg_max_heat_load_for_links(sc, model.aoa_effector.controlled_panel_links)
@@ -247,7 +247,7 @@ end
     @test P._edg_sample_prediction_atmosphere(x.p,-2.,7.) == (1e-9,150.)
     @test x.events == [(:density,0.,0.,0.,7.,true)]
     empty!(x.events)
-    current_env=P._edg_environment_state(x.u,x.p,7.,1)
+    current_env=P._edg_environment_state(x.p,x.u,7.,1)
     @test current_env.speed ≈ norm(expected) rtol=1e-13
     @test x.events == [(:frame,12352.),(:density,lla[1],lla[2],lla[3],7.,true)]
     empty!(x.events)
@@ -280,7 +280,7 @@ end
     @test A._edg_predict_mass(x.spacecraft,321.)==321.
     structured=decision(x)
     y=_edg_test_context(max_energy_submodes=(:heat_rate,),heat_rate_limit_w_cm2=Inf)
-    flat=A.control_decision!(y.config,y.state,(2,3),collect(y.u.sc[1])[1:7],y.p,0.,1)
+    flat=A.control_decision!(y.state,y.config,(2,3),collect(y.u.sc[1])[1:7],y.p,0.,1)
     @test structured.command.alpha_command==flat.command.alpha_command
     @test isequal(state_values(x.state),state_values(y.state))
 end

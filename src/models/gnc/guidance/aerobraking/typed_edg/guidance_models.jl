@@ -117,7 +117,10 @@ end
 
 Per-spacecraft mutable state for energy-depletion guidance: the selected
 mode, targeting/bracketing activity flags and counters, and the target and
-bracket specific-energy values (J/kg) maintained across guidance calls.
+bracket specific-energy values (J/kg) maintained across guidance calls. It also
+keeps the clock of the EDG control ticks, which the engine reports when each
+solve starts (`gnc_clock_started!`): `control_clock_period_s` (`NaN` until then)
+and `control_clock_origin_s`, in seconds.
 """
 mutable struct AerobrakingEnergyDepletionState
     selected_mode::Vector{Symbol}
@@ -154,6 +157,7 @@ mutable struct AerobrakingEnergyDepletionState
     heat_load_exit_j_cm2::Vector{Vector{Float64}}
     last_pass_heat_load_j_cm2::Vector{Float64}
     control_clock_origin_s::Float64
+    control_clock_period_s::Float64
     targeting_diagnostics::Vector{NamedTuple}
     heat_boundary_inside::Vector{Union{Nothing, Bool}}
     heat_boundary_entry_time_s::Vector{Float64}
@@ -199,6 +203,7 @@ function AerobrakingEnergyDepletionState(; num_sats::Integer)
         [Float64[] for _ in 1:n],
         fill(NaN, n),
         0.0,
+        NaN,
         NamedTuple[(status=:unplanned,) for _ in 1:n],
         Union{Nothing, Bool}[nothing for _ in 1:n],
         fill(NaN, n),
@@ -222,6 +227,10 @@ struct AerobrakingEnergyDepletionGuidanceModel <: AbstractGuidanceModel
     state::AerobrakingEnergyDepletionState
 end
 
+# A provider call passed this state predicts on the control clock it keeps.
+EDGServices._edg_state_clock(s::AerobrakingEnergyDepletionState) =
+    (period=s.control_clock_period_s, origin=s.control_clock_origin_s)
+
 const _edg_sat_state = EDGServices._edg_control_sat_state
 
 const _edg_pos_vel_mass = EDGServices._edg_control_pos_vel_mass
@@ -233,7 +242,7 @@ function update_guidance!(
     t::Float64,
     i::Int64,
 )
-    return _edg_algorithms().guidance_decision!(model.config, model.state, u, p, t, i)
+    return _edg_algorithms().guidance_decision!(model.state, model.config, u, p, t, i)
 end
 
 @inline _edg_algorithms() = getfield(_PARENT, :EDGAlgorithms)

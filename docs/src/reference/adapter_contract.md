@@ -17,7 +17,7 @@ share the rules below, not a universal callback or provider registry.
 |---|---|---|---|
 | HYPR planning | `HYPR.jl` extension; `SpaceAGORAHYPR` is a compatibility shim | [`SpaceAGORA.HYPRServices`](hypr_services.md) | Explicit provider activation; per-request planner state |
 | External propagation, including MuJoCo | Independent [SpaceAGORAMuJoCo.jl companion](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl) for MuJoCo scenes; each other adapter owns its domain implementation | [`SpaceAGORA.ExternalPropagationServices`](external_propagation_services.md) | Configured owners; separate mutable runtime for every simulation |
-| Experimental EDG guidance | Independent `SpaceAGORAEDG.jl` companion | [`SpaceAGORA.EDGServices`](edg_adapter_boundary.md), contract `v"1.0.0"` | Core-owned callbacks and per-run state; copied observations and call-scoped prediction queries |
+| Experimental EDG guidance | Independent `SpaceAGORAEDG.jl` companion | [`SpaceAGORA.EDGServices`](edg_adapter_boundary.md), contract `v"2.0.0"` | Core-owned callbacks and per-run state; copied observations and call-scoped prediction queries |
 
 EDG remains experimental; interface conformance does not establish scientific
 qualification. The HYPR compatibility shim stays at `packages/SpaceAGORAHYPR/`;
@@ -60,6 +60,7 @@ version is listed here with what changed.
 |---|---|---|
 | `ExternalPropagationServices` | 2.0.0 | `external_state` and `external_acceleration` take `(rt, t, slot)`, time before the owner-local position, instead of `(rt, k, t)`. The attitude quaternion is defined by formula. No numerical change. SpaceAGORAMuJoCo implements it from version 0.2.0. |
 | `HYPRServices` | 2.0.0 | The planners HYPR supplies require an explicit `rng::AbstractRNG` keyword instead of defaulting to the global stream. Only HYPR 0.2.0 is accepted. No binding changes. |
+| `EDGServices` | 2.0.0 | `guidance_decision!` and `control_decision!` take the EDG state before the configuration; `_edg_environment_state(p, u, t, spacecraft_index)` takes the context first; `_edg_targeting_control_clock(p)` returns the clock the engine reported to the call's EDG state instead of searching the configuration. No numerical change. The EDG guidance family of the GNC algorithm contract is served by this contract. SpaceAGORAEDG implements it from version 0.2.0. |
 | `HYPRServices`, `ExternalPropagationServices`, `EDGServices` | 1.0.0 | First reviewed contracts. |
 
 ## Package and installation rules
