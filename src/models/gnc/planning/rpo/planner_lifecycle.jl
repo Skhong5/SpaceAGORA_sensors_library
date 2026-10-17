@@ -141,12 +141,42 @@ function L.preflight_guidance(g::PlannerGuidance, args; isolate_state)
     g.chaser_id in ids && g.target_id in ids || throw(ArgumentError("Planner spacecraft ID is missing."))
     count(x -> x isa PlannerGuidance && x.chaser_id == g.chaser_id,
         args.guidance_model.guidance_effectors) == 1 || throw(ArgumentError("One planner owner per chaser is required."))
-    controls = [c for c in args.control_model.control_effectors if
-        c isa S.RPOMPCControlModel && c.plan_buffer === g.plan_buffer]
+    # Its pairing with the controller is a check of the plan-buffer link (below).
+    return nothing
+end
+
+# The planner writes the plan buffer that its controller reads (GNCRuntime link).
+GR.gnc_links(g::PlannerGuidance) = (GR.Produces(g.plan_buffer),)
+
+# A plan buffer written by a planner: exactly one RPO MPC controller reads it, with
+# the planner's preview settings. A buffer written only by the deprecated
+# RPOGuidanceModel gets no check.
+function GR.check_link(b::S.RPOPlanBuffer, producers, consumers, args)
+    planners = [x for x in producers if x isa PlannerGuidance]
+    isempty(planners) && return nothing
+    controls = [c for c in consumers if c isa S.RPOMPCControlModel]
     length(controls) == 1 || throw(ArgumentError("Planner and one controller must share their reference buffer."))
     c = only(controls)
-    c.control_dt_s == g.reference_dt_s && c.controller.horizon == g.preview_horizon_steps ||
-        throw(ArgumentError("Planner and controller preview settings disagree."))
+    for g in planners
+        c.control_dt_s == g.reference_dt_s && c.controller.horizon == g.preview_horizon_steps ||
+            throw(ArgumentError("Planner and controller preview settings disagree."))
+    end
+    return nothing
+end
+
+# At the run's start the planner's controller is bound to the planner's spacecraft
+# and its run state reset, before either model's own initializer.
+function GR.link_initialize!(b::S.RPOPlanBuffer, producers, consumers, u, p, t)
+    planners = [x for x in producers if x isa PlannerGuidance]
+    isempty(planners) && return nothing
+    g = only(planners)
+    c = only(c for c in consumers if c isa S.RPOMPCControlModel)
+    ids = [sc.id for sc in p.args.dynamics_model.spacecraft]
+    c.chaser_index = only(findall(==(g.chaser_id), ids))
+    c.target_index = only(findall(==(g.target_id), ids))
+    c.held = S.RPOHeldActuation()
+    c.command_log = S.RPOControlCommandLog()
+    fill!(c.controller.U_prev, 0)
     return nothing
 end
 
@@ -154,12 +184,6 @@ function L.initialize_guidance!(g::PlannerGuidance, u, p, t)
     ids = [sc.id for sc in p.args.dynamics_model.spacecraft]
     g.chaser_index = only(findall(==(g.chaser_id), ids))
     g.target_index = only(findall(==(g.target_id), ids))
-    c = only(c for c in p.args.control_model.control_effectors if
-        c isa S.RPOMPCControlModel && c.plan_buffer === g.plan_buffer)
-    c.chaser_index, c.target_index = g.chaser_index, g.target_index
-    c.held = S.RPOHeldActuation()
-    c.command_log = S.RPOControlCommandLog()
-    fill!(c.controller.U_prev, 0)
     words = stream_words(g.seed,g.chaser_id,g.target_id)
     g.runtime = GA.AlgorithmRuntime(words)
     g.triggers = TriggerState(:none, g.geometry_revision)

@@ -187,4 +187,57 @@ end
     @test retime(constraints=P.RPOPlanningConstraints(clearance_m=.2,max_speed_mps=.5,
         max_acceleration_mps2=.1)).termination===:completed
 end
+
+@testset "Replaying a retained path" begin
+    for (mode,accel) in ((:legacy,false),(:legacy,true),(:manuscript,true))
+        constraints=P.RPOPlanningConstraints(clearance_m=.2,max_speed_mps=.5,
+            max_acceleration_mps2=accel ? .1 : nothing)
+        req=request(constraints=constraints)
+        planned=P.plan_rpo!(nothing,H.HYPRRPOPlanner(config(mode;retime_accel_limit_enable=accel)),req,MersenneTwister(742))
+        @test planned.status===:candidate
+        d=planned.diagnostics
+        # The optimizer's path and configuration, replayed for the same request, give
+        # the same reference without searching or drawing.
+        retained=H.RetainedPathRPOPlanner(d.path,d.effective_config)
+        rng=MersenneTwister(5);untouched=copy(rng)
+        out=P.plan_rpo!(nothing,retained,deepcopy(req),rng)
+        @test out.status===:candidate && out.termination===:completed && validate(req,out).accepted
+        @test rand(rng)==rand(untouched)
+        @test (out.reference.t_ref_s,out.reference.r_ref_rtn_m,out.reference.v_ref_rtn_mps)==
+            (planned.reference.t_ref_s,planned.reference.r_ref_rtn_m,planned.reference.v_ref_rtn_mps)
+        @test out.diagnostics.planner===:retained_path && out.diagnostics.path==d.path
+        @test SpaceAGORA.propose!(nothing,retained,deepcopy(req),MersenneTwister(5)).reference.r_ref_rtn_m==
+            out.reference.r_ref_rtn_m
+    end
+    cfg=config();path=[3. 4. 5.;0. 0. 1.;0. .5 0.]
+    retained=H.RetainedPathRPOPlanner(path,cfg)
+    @test !SpaceAGORA.consumes_rng(retained)
+    caps=P.planner_capabilities(retained)
+    @test caps.state_sources==(:truth,) && caps.frames==(:target_rtn,) && !caps.retiming && !caps.restart
+    @test P.validate_rpo_capabilities(retained,request(reason=:retime)).reason===:unsupported_retiming
+    # Copies at construction: later edits to the caller's arrays change nothing.
+    path[1,2]=99.;@test retained.path_rtn[1,2]==4.
+    replay(r;planner=retained)=P.plan_rpo!(nothing,planner,r,MersenneTwister(1))
+    # End points within the tolerance are set to the request's; beyond it, refused.
+    near=replay(request(x_rtn=(3.0+5e-7,0.,0.,0.,0.,0.)))
+    @test near.status===:candidate && near.reference.r_ref_rtn_m[:,1]==[3.0+5e-7,0.,0.]
+    @test near.reference.r_ref_rtn_m[:,end]==[5.,1.,0.]
+    @test replay(request(x_rtn=(3.1,0.,0.,0.,0.,0.))).termination===:start_not_on_path
+    @test replay(request(goal_rtn_m=(5.,1.1,0.))).termination===:goal_not_on_path
+    @test replay(request(x_rtn=(3.1,0.,0.,0.,0.,0.));planner=H.RetainedPathRPOPlanner(retained.path_rtn,cfg;
+        endpoint_tolerance_m=.2)).status===:candidate
+    @test replay(request(reason=:retime)).termination===:retiming_not_implemented
+    @test replay(request(geometry=nothing)).termination===:unsupported_geometry
+    @test replay(request(valid_until_s=1.)).termination===:insufficient_reference_lifetime
+    # The same request mapping as HYPRRPOPlanner: a requested acceleration limit needs
+    # the acceleration-limited retimer.
+    @test replay(request();planner=H.RetainedPathRPOPlanner(retained.path_rtn,config(retime_accel_limit_enable=false))).termination===
+        :acceleration_limited_retimer_required
+    for bad in (zeros(2,3),zeros(3,1),[0. NaN;0. 0.;0. 0.])
+        @test_throws ArgumentError H.RetainedPathRPOPlanner(bad,cfg)
+    end
+    @test_throws ArgumentError H.RetainedPathRPOPlanner(retained.path_rtn,cfg;max_reference_samples=1)
+    @test_throws ArgumentError H.RetainedPathRPOPlanner(retained.path_rtn,cfg;endpoint_tolerance_m=-1.)
+    @test SpaceAGORA.RetainedPathRPOPlanner===H.RetainedPathRPOPlanner
+end
 end
