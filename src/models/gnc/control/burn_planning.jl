@@ -120,7 +120,9 @@ _agrees(stated, trusted) = abs(stated - trusted) <= 1e-9 * abs(trusted)
     validate_burn_plan(request::BurnPlanRequest, result) -> ValidationResult
 
 The burn-plan family's trusted validation of a proposal `result` against the
-lifecycle's own copy of `request`. A `:candidate` is accepted, with reason
+lifecycle's own copy of `request`. A result for another request (a different
+`request_id`, such as a stale or cached one) is refused with `:request_mismatch`,
+whatever its status. A `:candidate` for this request is accepted, with reason
 `:accepted` and metrics `propellant_required_kg`, `commanded_impulse_n_s` and
 `burn_duration_s`, when its product is a valid `PropulsiveBurnPlan` that:
 
@@ -145,6 +147,8 @@ draws from no random stream.
 """
 function validate_burn_plan(request::BurnPlanRequest, result)
     refuse(reason, metrics=NamedTuple()) = GA.ValidationResult(false, reason, metrics)
+    result.request_id == request.request_id ||
+        return refuse(:request_mismatch, (result_request_id=result.request_id, request_id=request.request_id))
     result.status === :candidate || return refuse(result.status, (termination=result.termination,))
     plan = result.product
     (plan isa PropulsiveBurnPlan && plan.valid) || return refuse(:invalid_product)

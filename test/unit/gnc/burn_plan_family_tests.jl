@@ -127,6 +127,12 @@ end
     plan = good.product
     @test validate_burn_plan(r, good).reason === :accepted
     @test keys(validate_burn_plan(r, good).metrics) == (:propellant_required_kg, :commanded_impulse_n_s, :burn_duration_s)
+    stale = AlgorithmResult(request_id=2, status=:candidate, termination=:planned, product=plan)
+    mismatch = validate_burn_plan(r, stale)
+    @test mismatch.reason === :request_mismatch && !mismatch.accepted
+    @test mismatch.metrics == (result_request_id=2, request_id=1)
+    @test reason(r, AlgorithmResult(request_id=2, status=:infeasible, termination=:past_apoapsis)) === :request_mismatch
+    @test reason(request(request_id=2), stale) === :accepted
     @test reason(r, AlgorithmResult(request_id=1, status=:infeasible, termination=:past_apoapsis)) === :infeasible
     @test reason(r, AlgorithmResult(request_id=1, status=:unsupported, termination=:x)) === :unsupported
     @test reason(r, AlgorithmResult(request_id=1, status=:candidate, termination=:x, product=(start=1.0,))) === :invalid_product
@@ -236,6 +242,33 @@ end
     windows = ran_scheduler(solution).burn_windows
     @test [w[1] for w in windows] == [r.product.start_burn_s for r in reports]
     @test all(i -> solution.u[1].sc[i].mass - solution.u[end].sc[i].mass > 0.5, 1:2)
+end
+
+# A planner that returns its first result again for every later request, as a
+# stale or cached result would arrive.
+struct CachedResultPlanner <: AbstractBurnPlanner end
+GA.initialize_algorithm(::CachedResultPlanner, run_context) = Ref{Any}(nothing)
+function GA.propose!(state, ::CachedResultPlanner, r::BurnPlanRequest, rng)
+    state[] === nothing && (state[] = GA.propose!(nothing, ApoapsisBurnPlanner(delta_v_mps=10.0), r, rng))
+    return state[]
+end
+
+@testset "Negative control: a result for another request is refused" begin
+    events = [AlgorithmEvent(0.0), AlgorithmEvent(500.0; token=2)]
+    cached = run_simulation(burn_config(guidance=(AlgorithmGuidance(algorithm=CachedResultPlanner(),
+        spacecraft_index=1, events=events),), rates=[10.0]); return_solution=true)
+    once = run_simulation(burn_config(guidance=(AlgorithmGuidance(algorithm=CachedResultPlanner(),
+        spacecraft_index=1, events=events[1:1]),), rates=[10.0]); return_solution=true)
+    report = algorithm_run_report(cached).bindings[1]
+    @test [r.event for r in report.records] == [:request, :installed, :request, :rejected]
+    rejection = report.records[4]
+    @test rejection.rejection === :request_mismatch && rejection.request_id == 2
+    @test rejection.validation.metrics == (result_request_id=1, request_id=2)
+    # The installed plan is the first request's, and the run equals one without the
+    # second request.
+    @test report.installed_request.request_id == 1
+    @test report.product == algorithm_run_report(once).bindings[1].product
+    @test same_states(cached, once)
 end
 
 @testset "Negative control: a refused plan keeps the coast" begin
