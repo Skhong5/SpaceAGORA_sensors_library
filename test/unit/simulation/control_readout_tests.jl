@@ -89,7 +89,7 @@ end
 
 function held_managers(n)
     return ntuple(n) do i
-        SM.MagneticMomentumManagerModel(sat_idx=i,
+        SM.MagneticMomentumManagerModel(spacecraft_index=i,
             held_torque_body=SVector(i / 1024.0, i / 512.0, -i / 256.0))
     end
 end
@@ -122,7 +122,7 @@ SpaceAGORA.control_wheel_torque(::LooseHooks, x, p, t) = SVector(0.0, 0.0, 0.5)
     @test readout(p, 1) == (SVector(1.0, 0.0, 0.0), ZERO3, SVector(0.0, 0.0, 0.5), -0.25)
     # Any effector, a control effector or not, uses no propellant and drives no
     # wheels unless it implements those hooks.
-    for effector in (GlobalForceOnly(Tuple{Symbol,Symbol,Int}[]), SM.MagneticMomentumManagerModel(sat_idx=1), nothing)
+    for effector in (GlobalForceOnly(Tuple{Symbol,Symbol,Int}[]), SM.MagneticMomentumManagerModel(spacecraft_index=1), nothing)
         @test SE._control_propellant_rate(effector, state, p, 1, 0.0) == 0.0
         @test SE._control_wheel_torque(effector, state, p, 1, 0.0) === nothing
     end

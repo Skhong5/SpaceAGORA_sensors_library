@@ -571,7 +571,7 @@ end
     abase = SM.ClothArmBasePose(SVector{3, Float64}(0.0, 0.0, 0.0), SVector{4, Float64}(0.0, 0.0, 0.0, 1.0))
     target = SM.cloth_fk(arm_model, abase, [-0.12, -0.08, 0.06]).end_effector_position
     plan = SM.plan_robot_arm_motion(arm_model, abase, [0.08, 0.95, -0.85], target; config=SM.RobotArmPlannerConfig(dt_s=0.1, duration_s=2.0))
-    arm = SM.RobotArmControlEffector(plan=plan, spacecraft_idx=1, controller=SM.init_robot_arm_joint_mpc(plan; dt_s=0.1, horizon=6), control_dt_s=0.1)
+    arm = SM.RobotArmControlEffector(plan=plan, spacecraft_index=1, controller=SM.init_robot_arm_joint_mpc(plan; dt_s=0.1, horizon=6), control_dt_s=0.1)
     @test_throws ArgumentError SE._validate_attachments!(engine_args(sc; mission_time=1.0, control=(arm,), control_rates=[0.1]), :tsit5)
     # mixed runs: every spacecraft must carry the same attachment body count
     plain, _ = rigid_sc(SM.CompliantAttachment[])

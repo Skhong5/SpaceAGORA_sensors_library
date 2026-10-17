@@ -17,20 +17,40 @@ mutable struct RobotArmJointMPCController
     joint_inertia_kg_m2::Vector{Float64}
 end
 
-"""Control effector that tracks a robot-arm plan and emits joint torque commands."""
-Base.@kwdef mutable struct RobotArmControlEffector <: AbstractControlEffectorModel
-    spacecraft_idx::Int = 1
-    plan::Union{Nothing, RobotArmPlan} = nothing
-    controller::Any = nothing
-    updated_at_s::Float64 = 0.0
-    joint_kp::Float64 = 0.0
-    joint_kd::Float64 = 0.0
-    control_dt_s::Float64 = 0.1
-    k_translation_n_m::Float64 = 5.0e3
-    c_translation_n_s_m::Float64 = 30.0
-    k_rotation_n_m_rad::Float64 = 15.0
-    c_rotation_n_m_s_rad::Float64 = 0.5
-    held::RobotArmHeldActuation = RobotArmHeldActuation()
+"""
+Control effector that tracks a robot-arm plan and emits joint torque commands for
+the spacecraft at run position `spacecraft_index`. `spacecraft_idx`, its old name,
+still works with a deprecation warning until SpaceAGORA 0.5.0.
+"""
+mutable struct RobotArmControlEffector <: AbstractControlEffectorModel
+    spacecraft_index::Int
+    plan::Union{Nothing, RobotArmPlan}
+    controller::Any
+    updated_at_s::Float64
+    joint_kp::Float64
+    joint_kd::Float64
+    control_dt_s::Float64
+    k_translation_n_m::Float64
+    c_translation_n_s_m::Float64
+    k_rotation_n_m_rad::Float64
+    c_rotation_n_m_s_rad::Float64
+    held::RobotArmHeldActuation
+end
+# The deprecated name forwards, as a keyword and as a property.
+function RobotArmControlEffector(; spacecraft_index=nothing, spacecraft_idx=nothing, plan=nothing, controller=nothing,
+        updated_at_s=0.0, joint_kp=0.0, joint_kd=0.0, control_dt_s=0.1, k_translation_n_m=5.0e3,
+        c_translation_n_s_m=30.0, k_rotation_n_m_rad=15.0, c_rotation_n_m_s_rad=0.5, held=RobotArmHeldActuation())
+    T = RobotArmControlEffector
+    return T(_renamed_keyword(T, :spacecraft_idx, spacecraft_idx, :spacecraft_index, spacecraft_index, 1),
+        plan, controller, updated_at_s, joint_kp, joint_kd, control_dt_s, k_translation_n_m, c_translation_n_s_m,
+        k_rotation_n_m_rad, c_rotation_n_m_s_rad, held)
+end
+@inline _robot_arm_field(name::Symbol) = name === :spacecraft_idx ?
+    _renamed_field_warning(RobotArmControlEffector, :spacecraft_idx, :spacecraft_index) : name
+@inline Base.getproperty(m::RobotArmControlEffector, name::Symbol) = getfield(m, _robot_arm_field(name))
+@inline function Base.setproperty!(m::RobotArmControlEffector, name::Symbol, x)
+    field = _robot_arm_field(name)
+    return setfield!(m, field, convert(fieldtype(RobotArmControlEffector, field), x))
 end
 
 """Estimate default joint inertias from link masses and lengths."""
@@ -181,13 +201,13 @@ end
 
 """Apply the robot-arm controller at the current simulation time and cache the joint actuation command."""
 function update_control!(model::RobotArmControlEffector, u, p::ODEParams, t::Float64, sat_idx::Int)
-    sat_idx == model.spacecraft_idx || return nothing
+    sat_idx == model.spacecraft_index || return nothing
     model.plan === nothing && return nothing
     plan_t = max(0.0, t - model.updated_at_s)
     sample = robot_arm_plan_sample(model.plan, plan_t)
     joint_torque = zeros(length(sample.q))
     if model.controller isa RobotArmJointMPCController
-        sc_view = _robot_arm_control_spacecraft_state(u, model.spacecraft_idx)
+        sc_view = _robot_arm_control_spacecraft_state(u, model.spacecraft_index)
         x_meas = sc_view === nothing ? nothing : robot_arm_measured_joint_state(model.plan, sc_view)
         x = x_meas === nothing ? _robot_arm_control_reference_state(model.plan, plan_t) : x_meas
         x_ref = robot_arm_joint_mpc_reference_preview(model.plan, plan_t, model.control_dt_s, model.controller.horizon)
@@ -203,7 +223,7 @@ end
 
 """Return the held force and torque command for a control effector."""
 function control_wrench(model::RobotArmControlEffector, x::StateSample, p::ODEParams, t::Float64)
-    x.spacecraft_index == model.spacecraft_idx || return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    x.spacecraft_index == model.spacecraft_index || return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     return model.held.base_force_ii, model.held.base_torque_body
 end
 

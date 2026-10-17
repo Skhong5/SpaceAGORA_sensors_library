@@ -2742,8 +2742,8 @@ function _validate_articulated_spacecraft!(args, solver_mode::Symbol)
         tree = SimulationModel.build_articulated_tree(sc; prop_mass=sc.prop_mass)
         offset = any(l -> l === sc.root, sc.links) ? 0 : 1
         for effector in _all_gnc_effectors(args)
-            if hasproperty(effector, :spacecraft_idx) && getproperty(effector, :spacecraft_idx) isa Integer &&
-               getproperty(effector, :spacecraft_idx) != i
+            bound = _effector_spacecraft_index(effector)
+            if bound isa Integer && bound != i
                 continue
             end
             for idx in _effector_controlled_panel_links(effector)

@@ -325,7 +325,7 @@ end
         forces = SVector{6}(0.4, 0.0, 0.0, 0.25, 0.1, 0.0)
         rw = SVector(1e-4, -2e-4, 3e-4)
         function held_model(actuation)
-            model = SM.RPOMPCControlModel(chaser_idx=1, target_idx=2, thrusters=six, actuation=actuation)
+            model = SM.RPOMPCControlModel(chaser_index=1, target_index=2, thrusters=six, actuation=actuation)
             f_body, tq_body = SM.rpo_thruster_wrench_body(forces, six)
             model.held = SM.ControlHooks.RPOHeldActuation(force_ii=f_body, torque_body=tq_body + rw,
                 thruster_forces_n=forces, rw_torque_body=rw)          # held at an identity attitude
@@ -430,13 +430,13 @@ end
         for axis in (SVector(1.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(0.0, 0.0, 1.0))
             add_actuator!(sc, root, ReactionWheel(spin_axis=axis))
         end
-        manager = SM.MagneticMomentumManagerModel(sat_idx=1, mu_gain=0.01, h_wheels_0=SVector(9.0, 9.0, 9.0),
+        manager = SM.MagneticMomentumManagerModel(spacecraft_index=1, mu_gain=0.01, h_wheels_0=SVector(9.0, 9.0, 9.0),
             commanded_torque=(t, r, v, q, w) -> SVector(0.0, 0.0, 0.0), b_field_ii=(t, r) -> SVector(0.0, 0.0, 3.0e-5))
         p = readout_params(SM.SpacecraftModel[sc], (manager,))
         u = (sc=[(pos=[7.0e6, 0.0, 0.0], vel=[0.0, 7.5e3, 0.0], q=[0.0, 0.0, 0.0, 1.0], ω=zeros(3), h_wheels=[0.02, -0.01, 0.0])],)
         CH.update_control!(manager, u, p, 0.0, 1)
         @test manager.h_wheels == SVector(0.02, -0.01, 0.0)       # not the configured h_wheels_0
-        bare = SM.MagneticMomentumManagerModel(sat_idx=1, h_wheels_0=SVector(9.0, 9.0, 9.0),
+        bare = SM.MagneticMomentumManagerModel(spacecraft_index=1, h_wheels_0=SVector(9.0, 9.0, 9.0),
             commanded_torque=(t, r, v, q, w) -> SVector(0.0, 0.0, 0.0), b_field_ii=(t, r) -> SVector(0.0, 0.0, 3.0e-5))
         CH.update_control!(bare, (sc=[(pos=[7.0e6, 0.0, 0.0], vel=[0.0, 7.5e3, 0.0], q=[0.0, 0.0, 0.0, 1.0], ω=zeros(3))],),
             readout_params(SM.SpacecraftModel[spacecraft_with(SM.Link(root=true, m=50.0))], (bare,)), 0.0, 1)
@@ -489,7 +489,7 @@ end
             add_actuator!(sc, root, Magnetorquer(axis=axis))
         end
         estimate(t, r) = SVector(1.0e-5, -2.0e-5, 3.0e-5)
-        manager = SM.MagneticMomentumManagerModel(sat_idx=1, mu_gain=0.01, h_wheels_0=SVector(0.02, 0.0, 0.01),
+        manager = SM.MagneticMomentumManagerModel(spacecraft_index=1, mu_gain=0.01, h_wheels_0=SVector(0.02, 0.0, 0.01),
             commanded_torque=(t, r, v, q, w) -> ZERO3, b_field_ii=estimate, actuation=:mounted)
         p = readout_params(SM.SpacecraftModel[sc], (manager,))
         u = (sc=[(pos=[7.0e6, 0.0, 0.0], vel=[0.0, 7.5e3, 0.0], q=[0.0, 0.0, 0.0, 1.0], ω=zeros(3))],)
@@ -503,7 +503,7 @@ end
         @test torque ≈ cross(manager.held_dipole_am2, truth) rtol=1e-12          # the run's field, not the estimate
         bound = SpaceAGORA.bind_spacecraft(manager, 2)
         @test bound.mounted_levels !== manager.mounted_levels && isempty(bound.mounted_levels)
-        rodless = SM.MagneticMomentumManagerModel(sat_idx=1, h_wheels_0=SVector(0.02, 0.0, 0.0),
+        rodless = SM.MagneticMomentumManagerModel(spacecraft_index=1, h_wheels_0=SVector(0.02, 0.0, 0.0),
             commanded_torque=(t, r, v, q, w) -> ZERO3, b_field_ii=estimate, actuation=:mounted)
         @test_throws ArgumentError CH.update_control!(rodless, u,
             readout_params(SM.SpacecraftModel[spacecraft_with(SM.Link(root=true, m=50.0))], (rodless,)), 0.0, 1)

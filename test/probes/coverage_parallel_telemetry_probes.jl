@@ -2333,7 +2333,7 @@ end
     @test isapprox(R' * mrot.held_torque_body, m0.held_torque_body; atol=1e-18)
 
     # 7) other-sat and degenerate-field guards; no propellant
-    moff = mk(sat_idx=2)
+    moff = mk(spacecraft_index=2)
     CH.update_control!(moff, mock_u(q_id), nothing, 0.0, 1)
     @test !moff.initialized
     @test CH.control_wrench(moff, x1, nothing, 0.0)[2] == SVector(0.0, 0.0, 0.0)

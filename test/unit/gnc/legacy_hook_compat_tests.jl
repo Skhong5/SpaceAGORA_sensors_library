@@ -196,7 +196,7 @@ twin(T) = T(TWIN.thrust_n, TWIN.gain, TWIN.propellant_kg_s)
         # A :mounted effector needs no wrench hook.
         @test isempty(SE._missing_model_hooks(check_args((MountedNoOutputHooks(),)), call))
         # The built-in effectors give no warning.
-        manager = SM.MagneticMomentumManagerModel(sat_idx=1)
+        manager = SM.MagneticMomentumManagerModel(spacecraft_index=1)
         @test isempty(SE._deprecated_model_hooks(check_args((manager, SM.RPOMPCControlModel())), call))
     end
 
@@ -259,7 +259,7 @@ twin(T) = T(TWIN.thrust_n, TWIN.gain, TWIN.propellant_kg_s)
         @test occursin("GuideBoth implements both update_guidance! and calcGuidanceEffect!", last(found[2]))
         @test occursin("never used", last(found[2]))
         # The built-in GNC effectors give no tick warning.
-        manager = SM.MagneticMomentumManagerModel(sat_idx=1)
+        manager = SM.MagneticMomentumManagerModel(spacecraft_index=1)
         @test isempty(SE._deprecated_model_hooks(check_args((manager, SM.RPOMPCControlModel())), call))
     end
 
@@ -267,7 +267,7 @@ twin(T) = T(TWIN.thrust_n, TWIN.gain, TWIN.propellant_kg_s)
         manager_args = twin_args((); n_spacecraft=1)
         p = SM.ODEParams(n_sats=1, args=manager_args)
         u = SE.build_initial_conditions(manager_args)
-        make() = SM.MagneticMomentumManagerModel(sat_idx=1, mu_gain=0.01, h_wheels_0=SVector(0.02, 0.0, 0.0),
+        make() = SM.MagneticMomentumManagerModel(spacecraft_index=1, mu_gain=0.01, h_wheels_0=SVector(0.02, 0.0, 0.0),
             commanded_torque=(t, r, v, q, w) -> SVector(1.0e-6, 0.0, 0.0), b_field_ii=(t, r) -> SVector(0.0, 0.0, 3.0e-5))
         by_old, by_new = make(), make()
         warning = (:warn, r"^calcControlEffect!\(model, u, p, t, spacecraft_index\) is deprecated .* called directly on a MagneticMomentumManagerModel\.")
@@ -288,10 +288,10 @@ twin(T) = T(TWIN.thrust_n, TWIN.gain, TWIN.propellant_kg_s)
 
     @testset "a direct old-name call on a built-in returns the new hook's value and warns" begin
         six = SM.SixAxisThrusterModel(max_thrust_n=SVector{6}(fill(1.0, 6)), isp_s=SVector{6}(fill(65.0, 6)))
-        rpo = SM.RPOMPCControlModel(chaser_idx=1, target_idx=2, thrusters=six)
+        rpo = SM.RPOMPCControlModel(chaser_index=1, target_index=2, thrusters=six)
         rpo.held = CH.RPOHeldActuation(force_ii=SVector(0.3, -0.1, 0.2), torque_body=SVector(1e-3, 0.0, -2e-3),
             thruster_forces_n=SVector{6}(0.4, 0.0, 0.0, 0.25, 0.1, 0.0), rw_torque_body=SVector(1e-4, -2e-4, 3e-4))
-        manager = SM.MagneticMomentumManagerModel(sat_idx=2, held_torque_body=SVector(1e-5, 2e-5, -3e-5))
+        manager = SM.MagneticMomentumManagerModel(spacecraft_index=2, held_torque_body=SVector(1e-5, 2e-5, -3e-5))
         args = twin_args((rpo, manager); n_spacecraft=2)
         p = SM.ODEParams(n_sats=2, args=args)
         u = SE.build_initial_conditions(args)
