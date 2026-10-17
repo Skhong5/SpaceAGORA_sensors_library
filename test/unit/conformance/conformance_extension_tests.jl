@@ -74,7 +74,7 @@ failing_report() = ConformanceReport("T", :force_torque_model, [
     @testset "the extension defines the test functions and records each check" begin
         ext = Base.get_extension(SpaceAGORA, :SpaceAGORATestExt)
         @test ext isa Module
-        for f in (test_report, test_force_torque_model, test_service_facade)
+        for f in (test_report, test_force_torque_model, test_service_facade, test_sensor)
             @test !isempty(methods(f)) && all(m -> m.module === ext, methods(f))
         end
         local recorded

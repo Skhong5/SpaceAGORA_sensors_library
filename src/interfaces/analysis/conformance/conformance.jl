@@ -29,14 +29,15 @@ import ..SimulationModel
 import ..SimulationEngine
 
 export ConformanceCheck, ConformanceReport, ConformanceFixture, passed, conformance_fixture
-export check_force_torque_model, check_service_facade
-export test_report, test_force_torque_model, test_service_facade
+export check_force_torque_model, check_service_facade, check_sensor
+export test_report, test_force_torque_model, test_service_facade, test_sensor
 
 include(joinpath(@__DIR__, "reports.jl"))
 include(joinpath(@__DIR__, "fixtures.jl"))
 include(joinpath(@__DIR__, "walker.jl"))
 include(joinpath(@__DIR__, "effectors.jl"))
 include(joinpath(@__DIR__, "facades.jl"))
+include(joinpath(@__DIR__, "sensors.jl"))
 
 # The check ids of each report kind, in report order. Core's negative controls
 # fail when an id here has no control.
@@ -44,12 +45,14 @@ const CHECK_IDS = (
     force_torque_model = (:hooks_present, :supported_sample_signature, :repeatable_run, :deepcopy_equivalent,
         :global_rng_independent, :concurrent_equals_sequential, :output_hook_pure, :environment_declared),
     service_facade = (:facade_shape,),
+    sensor = (:run_state_fields, :requirements_supported, :measurement_shape, :repeatable_run, :deepcopy_equivalent,
+        :global_rng_independent, :concurrent_equals_sequential, :seed_repeatable, :custom_state_reset),
 )
 
 # Defined by ext/SpaceAGORATestExt.jl when Test is loaded. Today Test is always
 # loaded with SpaceAGORA (MathOptInterface, a dependency of OSQP, loads it), so the
 # hint below matters only if that changes.
-const _TEST_FUNCTIONS = (test_report, test_force_torque_model, test_service_facade)
+const _TEST_FUNCTIONS = (test_report, test_force_torque_model, test_service_facade, test_sensor)
 
 function _test_extension_hint(io::IO, exc::MethodError, extension_loaded::Bool)
     extension_loaded && return nothing
