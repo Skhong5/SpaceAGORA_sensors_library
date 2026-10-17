@@ -294,7 +294,9 @@ makedocs(
         ],
         "Extend SpaceAGORA" => Any[
             "Extensibility" => "extensibility.md",
+            "Extension Conventions" => "reference/extension_conventions.md",
             "Extension Hook Reference" => "generated/extension_hook_reference.md",
+            "Migrating Extension Hooks" => "reference/migrating_extension_hooks.md",
             "Public API and Compatibility" => "public_api_policy.md",
             "Optional Adapter Contract" => "reference/adapter_contract.md",
             "EDG Service Contract" => "reference/edg_adapter_boundary.md",
