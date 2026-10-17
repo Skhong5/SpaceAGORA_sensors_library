@@ -17,8 +17,11 @@ end
     if sat_idx < 1 || sat_idx > length(control_model.start_burn_time)
         return nothing
     end
-    _maybe_add_control_tstop!(integrator, control_model.start_burn_time[sat_idx])
-    _maybe_add_control_tstop!(integrator, control_model.stop_burn_time[sat_idx])
+    # The effective window: the scheduler's own, or else the plan installed in
+    # its burn-plan buffer (by the burn-plan family).
+    start_s, stop_s = _effective_burn_window(control_model, integrator.p, sat_idx)
+    _maybe_add_control_tstop!(integrator, start_s)
+    _maybe_add_control_tstop!(integrator, stop_s)
     return nothing
 end
 
@@ -103,11 +106,15 @@ end
 # discontinuity unless it clears the flag, so the solver evaluates the
 # derivative again, with the new thrust, before the next step; the callback
 # must not call `derivative_discontinuity!(integrator, false)`, which would keep
-# the stale one.
+# the stale one. The callback also takes up a plan installed in the burn-plan
+# buffer since the scheduler's last pass: it adds the plan's window ends as stops
+# and records it, at the end of the step it was installed in.
 function _burn_edge_callback(control_model::BaseThrusterModel, num_sats::Int)
-    condition = (u, t, integrator) -> burn_edge(control_model, t)
+    condition = (u, t, integrator) -> burn_edge(control_model, t) || _burn_window_pending(control_model, integrator.p)
     affect! = integrator -> begin
         @inbounds for sat_idx in 1:num_sats
+            _burn_window_changed(control_model, integrator.p, sat_idx) &&
+                _register_control_tstops!(integrator, control_model, sat_idx)
             refresh_burn!(control_model, integrator.p, sat_idx, integrator.t)
         end
         return nothing

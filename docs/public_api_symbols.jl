@@ -79,6 +79,13 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :on_rejection, rendered = "SpaceAGORA.on_rejection"),
         (owner = :SpaceAGORA, symbol = :fallback_product, rendered = "SpaceAGORA.fallback_product"),
         (owner = :SpaceAGORA, symbol = :family_contract_version, rendered = "SpaceAGORA.family_contract_version"),
+        (owner = :SpaceAGORA, symbol = :family_request, rendered = "SpaceAGORA.family_request"),
+        (owner = :SpaceAGORA, symbol = :family_link, rendered = "SpaceAGORA.family_link"),
+        (owner = :SpaceAGORA, symbol = :preflight_family, rendered = "SpaceAGORA.preflight_family"),
+        (owner = :SpaceAGORA, symbol = :AlgorithmGuidance, rendered = "SpaceAGORA.AlgorithmGuidance"),
+        (owner = :SpaceAGORA, symbol = :AlgorithmEvent, rendered = "SpaceAGORA.AlgorithmEvent"),
+        (owner = :SpaceAGORA, symbol = :AlgorithmGuidanceError, rendered = "SpaceAGORA.AlgorithmGuidanceError"),
+        (owner = :SpaceAGORA, symbol = :algorithm_run_report, rendered = "SpaceAGORA.algorithm_run_report"),
         (owner = :SpaceAGORA, symbol = :gnc_stream_words, rendered = "SpaceAGORA.gnc_stream_words"),
         (owner = :SpaceAGORA, symbol = :AlgorithmRuntime, rendered = "SpaceAGORA.AlgorithmRuntime"),
         (owner = :SpaceAGORA, symbol = :run_algorithm_request!, rendered = "SpaceAGORA.run_algorithm_request!"),
@@ -497,6 +504,19 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :load_rpo_station_pointcloud, rendered = "SpaceAGORA.load_rpo_station_pointcloud"),
             (owner = :SpaceAGORA, symbol = :load_rpo_station_cad_triangles, rendered = "SpaceAGORA.load_rpo_station_cad_triangles"),
             (owner = :SpaceAGORA, symbol = :load_rpo_station_cad_pointcloud, rendered = "SpaceAGORA.load_rpo_station_cad_pointcloud")
+        ]
+    ),
+    (
+        title = "Burn-plan family",
+        items = [
+            (owner = :SpaceAGORA, symbol = :BurnPlanFamily, rendered = "SpaceAGORA.BurnPlanFamily"),
+            (owner = :SpaceAGORA, symbol = :AbstractBurnPlanner, rendered = "SpaceAGORA.AbstractBurnPlanner"),
+            (owner = :SpaceAGORA, symbol = :BurnPlanRequest, rendered = "SpaceAGORA.BurnPlanRequest"),
+            (owner = :SpaceAGORA, symbol = :BurnPlanSlot, rendered = "SpaceAGORA.BurnPlanSlot"),
+            (owner = :SpaceAGORA, symbol = :ApoapsisBurnPlanner, rendered = "SpaceAGORA.ApoapsisBurnPlanner"),
+            (owner = :SpaceAGORA, symbol = :validate_burn_plan, rendered = "SpaceAGORA.validate_burn_plan"),
+            (owner = :SpaceAGORA, symbol = :burn_plan_is_current, rendered = "SpaceAGORA.burn_plan_is_current"),
+            (owner = :SpaceAGORA, symbol = :burn_plan_rejections, rendered = "SpaceAGORA.burn_plan_rejections")
         ]
     ),
     (

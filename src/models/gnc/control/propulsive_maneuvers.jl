@@ -188,30 +188,31 @@ end
     return max(0.0, current_mass_kg - sc.dry_mass)
 end
 
-function _validated_burn_plan(
-    controlModel::BaseThrusterModel,
-    p,
-    i::Int64,
+# The trusted size check of a constant-thrust burn of `delta_v_mps` from
+# `mass_kg`: the propellant it takes, its impulse and its duration, with the
+# reason `:accepted`, or the reason it cannot be planned (the other values are
+# then NaN, except for `:insufficient_propellant`, which keeps them).
+# `available_propellant_kg === nothing` means the vehicle declares no
+# propellant limit. The burn scheduler checks every burn it plans with it, and
+# the burn-plan family (`BurnPlanFamily`) validates proposed plans with it.
+function _burn_plan_sizing(
     mass_kg::Float64,
-    maneuver
-)::Union{Nothing, PropulsiveBurnPlan}
-    thrust_n, isp_s = _effective_thrust_isp(controlModel, p, i)
-    delta_v_mps = Float64(maneuver.delta_v_mps)
-    direction_rad = Float64(maneuver.direction_rad)
-
-    if !(isfinite(mass_kg) && mass_kg > 0.0 &&
-         isfinite(delta_v_mps) && delta_v_mps > 0.0 &&
-         isfinite(direction_rad) &&
-         isfinite(thrust_n) && thrust_n > 0.0 &&
-         isfinite(isp_s) && isp_s > 0.0)
-        return nothing
-    end
+    delta_v_mps::Float64,
+    direction_rad::Float64,
+    thrust_n::Float64,
+    isp_s::Float64,
+    available_propellant_kg::Union{Nothing, Float64}
+)
+    refused(reason::Symbol) = (reason=reason, propellant_required_kg=NaN, commanded_impulse_n_s=NaN, burn_duration_s=NaN)
+    (isfinite(mass_kg) && mass_kg > 0.0) || return refused(:invalid_mass)
+    (isfinite(delta_v_mps) && delta_v_mps > 0.0) || return refused(:invalid_delta_v)
+    isfinite(direction_rad) || return refused(:invalid_direction)
+    (isfinite(thrust_n) && thrust_n > 0.0) || return refused(:invalid_thrust)
+    (isfinite(isp_s) && isp_s > 0.0) || return refused(:invalid_isp)
 
     exhaust_velocity_mps = isp_s * _STANDARD_GRAVITY_MPS2
     mass_fraction = exp(-delta_v_mps / exhaust_velocity_mps)
-    if !(isfinite(mass_fraction) && 0.0 < mass_fraction < 1.0)
-        return nothing
-    end
+    (isfinite(mass_fraction) && 0.0 < mass_fraction < 1.0) || return refused(:invalid_mass_fraction)
 
     propellant_required_kg = mass_kg * (1.0 - mass_fraction)
     commanded_impulse_n_s = propellant_required_kg * exhaust_velocity_mps
@@ -219,24 +220,98 @@ function _validated_burn_plan(
     if !(isfinite(propellant_required_kg) && propellant_required_kg > 0.0 &&
          isfinite(commanded_impulse_n_s) && commanded_impulse_n_s > 0.0 &&
          isfinite(burn_duration_s) && burn_duration_s > 0.0)
-        return nothing
+        return refused(:invalid_burn_size)
     end
 
-    available_propellant_kg = _available_propellant_kg(p, i, mass_kg)
-    if available_propellant_kg !== nothing && propellant_required_kg > available_propellant_kg + 1e-9
-        return nothing
-    end
+    affordable = available_propellant_kg === nothing || !(propellant_required_kg > available_propellant_kg + 1e-9)
+    return (reason=affordable ? :accepted : :insufficient_propellant, propellant_required_kg=propellant_required_kg,
+            commanded_impulse_n_s=commanded_impulse_n_s, burn_duration_s=burn_duration_s)
+end
 
-    return PropulsiveBurnPlan(
+# The scheduler's plan for `maneuver` (not yet timed), or `nothing`, with the
+# reason from `_burn_plan_sizing`.
+function _sized_burn_plan(controlModel::BaseThrusterModel, p, i::Int64, mass_kg::Float64, maneuver)
+    thrust_n, isp_s = _effective_thrust_isp(controlModel, p, i)
+    delta_v_mps = Float64(maneuver.delta_v_mps)
+    direction_rad = Float64(maneuver.direction_rad)
+    sizing = _burn_plan_sizing(mass_kg, delta_v_mps, direction_rad, thrust_n, isp_s,
+                               _available_propellant_kg(p, i, mass_kg))
+    sizing.reason === :accepted || return (nothing, sizing.reason)
+    plan = PropulsiveBurnPlan(
         valid=true,
         delta_v_mps=delta_v_mps,
         direction_rad=direction_rad,
         source_orbit=Int64(maneuver.source_orbit),
         thrust_n=thrust_n,
         isp_s=isp_s,
-        commanded_impulse_n_s=commanded_impulse_n_s,
-        propellant_required_kg=propellant_required_kg,
+        commanded_impulse_n_s=sizing.commanded_impulse_n_s,
+        propellant_required_kg=sizing.propellant_required_kg,
     )
+    return plan, sizing.reason
+end
+
+function _validated_burn_plan(
+    controlModel::BaseThrusterModel,
+    p,
+    i::Int64,
+    mass_kg::Float64,
+    maneuver
+)::Union{Nothing, PropulsiveBurnPlan}
+    return first(_sized_burn_plan(controlModel, p, i, mass_kg, maneuver))
+end
+
+# Keep a refused plan's reason, one record per refusal, for `burn_plan_rejections`.
+function _record_burn_rejection!(controlModel::BaseThrusterModel, i::Int64, t::Float64, reason::Symbol, maneuver)
+    1 <= i <= length(controlModel.plan_rejections) || return nothing
+    push!(controlModel.plan_rejections[i], (time_s=t, rejection=reason,
+        delta_v_mps=Float64(maneuver.delta_v_mps), direction_rad=Float64(maneuver.direction_rad),
+        source_orbit=Int64(maneuver.source_orbit)))
+    return nothing
+end
+
+"""
+    burn_plan_rejections(model::BaseThrusterModel, spacecraft_index) -> Vector{NamedTuple}
+
+The burns the scheduler refused to plan for the spacecraft at `spacecraft_index`
+(its position in the run, from 1) in the run, oldest first, as copies. Each
+record has `time_s` (elapsed s), the `rejection` reason, and the commanded
+`delta_v_mps`, `direction_rad` and `source_orbit`. The reasons are those of the
+burn-plan family's validation (`validate_burn_plan`): `:invalid_mass`,
+`:invalid_delta_v`, `:invalid_direction`, `:invalid_thrust`, `:invalid_isp`,
+`:invalid_mass_fraction`, `:invalid_burn_size` and `:insufficient_propellant`.
+A command of exactly zero Δv asks for no burn and leaves no record. A refused
+command leaves any burn already planned in place. The records start empty at
+each run's start; after `run_simulation` with the default `isolate_state=true`,
+read them from the configuration that ran (`solution.prob.p.args`).
+"""
+function burn_plan_rejections(model::BaseThrusterModel, spacecraft_index::Integer)
+    1 <= spacecraft_index <= length(model.plan_rejections) || throw(ArgumentError(
+        "BaseThrusterModel has no spacecraft $(spacecraft_index); it serves $(length(model.plan_rejections))."))
+    return copy(model.plan_rejections[spacecraft_index])
+end
+
+function SimulationLifecycle.initialize_control!(model::BaseThrusterModel, u, p, t)
+    foreach(empty!, model.plan_rejections)
+    return nothing
+end
+
+# The window of a burn of `burn_time_s` centred on the next apoapsis after `t`,
+# from the osculating elements `a`, `e` and the wrapped true anomaly
+# `ν_wrapped` about a body of gravitational parameter `μ`, or `nothing` when the
+# timing is not finite. The scheduler and `ApoapsisBurnPlanner` share it.
+function _apoapsis_burn_window(t::Float64, a, e, ν_wrapped::Float64, μ, burn_time_s::Float64)
+    ψ = 2*atan(sqrt((1-e)/(1+e))*tan(ν_wrapped/2))
+    M = ψ - e*sin(ψ)
+    n = sqrt(μ/a^3)
+    if !isfinite(M) || !isfinite(n) || n <= 0.0
+        return nothing
+    end
+    time_to_apoapsis = (π - M)/n
+    apoapsis_time = t + time_to_apoapsis
+    if !isfinite(apoapsis_time)
+        return nothing
+    end
+    return apoapsis_time - burn_time_s / 2, apoapsis_time + burn_time_s / 2
 end
 
 @inline function _constant_thrust_burn_duration_s(
@@ -530,8 +605,10 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
     ν_wrapped = _wrap_2pi(Float64(ν))
     pre_apoapsis = e <= circular_e_tol || ν_wrapped < π - 1e-12
     if alt >= p.args.environment_model.EI * 1000 - 1e-6 && pre_apoapsis
-        plan = _validated_burn_plan(controlModel, p, i, mass, maneuver)
+        plan, reason = _sized_burn_plan(controlModel, p, i, mass, maneuver)
         if plan === nothing
+            # A zero Δv asks for no burn; any other refusal keeps its reason.
+            maneuver.delta_v_mps == 0.0 || _record_burn_rejection!(controlModel, i, t, reason, maneuver)
             return
         end
         burn_time = _constant_thrust_burn_duration_s(mass, plan.delta_v_mps, plan.thrust_n, plan.isp_s)
@@ -539,22 +616,10 @@ function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector,
             return
         end
 
-        # Estimate the time of apoapsis and set the burn to be symmetric about that time
-        ψ = 2*atan(sqrt((1-e)/(1+e))*tan(ν_wrapped/2))
-
-        M = ψ - e*sin(ψ)
-        n = sqrt(p.args.environment_model.planet.μ/a^3)
-        if !isfinite(M) || !isfinite(n) || n <= 0.0
-            return
-        end
-        time_to_apoapsis = (π - M)/n
-        apoapsis_time = t + time_to_apoapsis
-        if !isfinite(apoapsis_time)
-            return
-        end
-        # Calculate start/end time as symmetric about the apoapsis time
-        start_burn_time = apoapsis_time - burn_time / 2
-        stop_burn_time = apoapsis_time + burn_time / 2
+        # Set the burn symmetric about the estimated time of the next apoapsis.
+        window = _apoapsis_burn_window(t, a, e, ν_wrapped, p.args.environment_model.planet.μ, burn_time)
+        window === nothing && return
+        start_burn_time, stop_burn_time = window
         controlModel.start_burn_time[i] = start_burn_time
         controlModel.stop_burn_time[i] = stop_burn_time
         new_plan = PropulsiveBurnPlan(
@@ -607,6 +672,27 @@ function actuator_levels(model::BaseThrusterModel, i::Int)
     return levels
 end
 
+# The window that `refresh_burn!` records for spacecraft `i`, as (start, stop,
+# thrust), or (NaN, NaN, 0.0) when no valid burn is set.
+@inline function _recordable_burn_window(model::BaseThrusterModel, p, i::Int)
+    start_s, stop_s = _effective_burn_window(model, p, i)
+    thrust_n, _ = _effective_thrust_isp(model, p, i)
+    direction_rad = _effective_direction_rad(model, p, i)
+    valid = isfinite(start_s) && isfinite(stop_s) && stop_s > start_s &&
+            isfinite(thrust_n) && thrust_n > 0.0 && isfinite(direction_rad)
+    return valid ? (Float64(start_s), Float64(stop_s), Float64(thrust_n)) : (NaN, NaN, 0.0)
+end
+
+# Whether spacecraft `i`'s effective burn differs from the one `refresh_burn!`
+# last recorded. The scheduler records every burn it plans in the same pass, so
+# this finds a plan installed in the burn-plan buffer between its passes, by an
+# `AlgorithmGuidance` of the burn-plan family.
+@inline _burn_window_changed(model::BaseThrusterModel, p, i::Int)::Bool =
+    !isequal(_recordable_burn_window(model, p, i), model.burn_windows[i])
+
+_burn_window_pending(model::BaseThrusterModel, p)::Bool =
+    any(i -> _burn_window_changed(model, p, i), eachindex(model.burn_windows))
+
 """
     refresh_burn!(model::BaseThrusterModel, p, i, t) -> Nothing
 
@@ -622,12 +708,10 @@ function refresh_burn!(model::BaseThrusterModel, p, i::Int, t::Real)
     (1 <= i <= length(model.burning)) || return nothing
     was_burning = model.burning[i]
     previous_start, previous_stop, _ = model.burn_windows[i]
-    start_s, stop_s = _effective_burn_window(model, p, i)
-    thrust_n, _ = _effective_thrust_isp(model, p, i)
-    direction_rad = _effective_direction_rad(model, p, i)
-    valid = isfinite(start_s) && isfinite(stop_s) && stop_s > start_s &&
-            isfinite(thrust_n) && thrust_n > 0.0 && isfinite(direction_rad)
-    model.burn_windows[i] = valid ? (Float64(start_s), Float64(stop_s), Float64(thrust_n)) : (NaN, NaN, 0.0)
+    window = _recordable_burn_window(model, p, i)
+    start_s, stop_s, thrust_n = window
+    valid = isfinite(start_s)
+    model.burn_windows[i] = window
     burning = valid && start_s <= t < stop_s
     model.burning[i] = burning
     model.actuation === :mounted && _refresh_mounted_engine!(model, p, i, burning ? Float64(thrust_n) : 0.0)

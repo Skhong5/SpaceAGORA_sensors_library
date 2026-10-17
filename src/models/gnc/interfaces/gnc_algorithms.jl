@@ -264,9 +264,10 @@ family_contract_version(family) = nothing
 
 # ---- Shared lifecycle machinery ----------------------------------------------
 #
-# A binding is the guidance model that runs one algorithm in a simulation (for RPO,
-# `PlannerGuidance`). It implements the binding functions below; the request driver
-# then runs the contract's steps in a fixed order for every family.
+# A binding is the guidance model that runs one algorithm in a simulation: the
+# generic `AlgorithmGuidance` for any family, or for RPO `PlannerGuidance`. It
+# implements the binding functions below; the request driver then runs the
+# contract's steps in a fixed order for every family.
 
 """
     gnc_stream_words(namespace, seed, ids...) -> Vector{UInt32}
@@ -542,5 +543,53 @@ function run_algorithm_request!(binding, u, p, t, reason; exception_reason::Symb
         end
     end
 end
+
+# ---- Family side for the generic binding -------------------------------------
+#
+# `AlgorithmGuidance` runs an algorithm of any family through the request driver,
+# with no family-specific orchestration. It asks the family for the three pieces
+# below; the burn-plan family (`BurnPlanFamily`) implements them.
+
+"""
+    family_request(family, settings, u, p, t, spacecraft_index, reason, request_id) -> AbstractAlgorithmRequest
+
+Required for a family that `AlgorithmGuidance` runs: the owned request snapshot
+for the spacecraft at `spacecraft_index` (its position in the run, from 1) at
+elapsed time `t` in seconds. Trusted family code builds it from the simulation
+state `u`, the run's parameters `p` and the binding's `settings`, which the
+family defines (`nothing` when it needs none). `reason` is the request's reason
+and `request_id` its positive number. The fallback throws an `ArgumentError`
+that names the family.
+"""
+function family_request(family, settings, u, p, t, spacecraft_index, reason, request_id)
+    throw(ArgumentError("$(nameof(typeof(family))) builds no requests for AlgorithmGuidance: implement SpaceAGORA.family_request."))
+end
+
+"""
+    family_link(family, link, settings, p, spacecraft_index)
+
+The object `AlgorithmGuidance` installs accepted products into for the
+spacecraft at `spacecraft_index`, resolved once per run before the first
+request. `link` is the binding's configured link and `p` the run's parameters,
+so a family whose install target belongs to the run (the burn-plan family: the
+spacecraft's slot in the burn scheduler's plan buffer) finds it there. The
+fallback returns `link`, and throws an `ArgumentError` when it is `nothing`.
+"""
+function family_link(family, link, settings, p, spacecraft_index)
+    link === nothing && throw(ArgumentError(
+        "$(nameof(typeof(family))) has no install target of its own: configure the binding's `link`."))
+    return link
+end
+
+"""
+    preflight_family(family, algorithm, settings, args, spacecraft_index; isolate_state) -> nothing
+
+Check, before a run starts, that the configuration `args` can run `algorithm`
+of `family` for the spacecraft at `spacecraft_index` with the binding's
+`settings`, and throw an `ArgumentError` naming the problem otherwise (for
+example a missing consumer of the family's products). `isolate_state` is the
+run's `isolate_state` setting. The default checks nothing.
+"""
+preflight_family(family, algorithm, settings, args, spacecraft_index; isolate_state::Bool=true) = nothing
 
 end # module GNCAlgorithms

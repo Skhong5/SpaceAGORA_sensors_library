@@ -17,6 +17,8 @@ include(joinpath(@__DIR__, "orchestration", "simulation", "composition", "simula
 include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "direct_planner.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "adapters", "hypr", "rpo_planner_adapter.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "lifecycle.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "planning", "algorithm_lifecycle.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "control", "burn_planning.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "adapters", "hypr", "services.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "engine", "simulation_engine.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "campaigns", "simulation_campaigns.jl"))
@@ -153,6 +155,16 @@ Copy the existing HYPR configuration with explicit field overrides. This root al
 preserves the existing configuration owner and calculations; pass the result to
 `HYPRRPOPlanner`. Request-owned limits and interval still apply at planning time.
 """ rpo_pso_config
+
+# The generic algorithm binding and the burn-plan family.
+using .GNCAlgorithms: family_request, family_link, preflight_family
+using .AlgorithmLifecycle: AlgorithmEvent, AlgorithmGuidance, AlgorithmGuidanceError, algorithm_run_report
+using .BurnPlanning: AbstractBurnPlanner, BurnPlanFamily, BurnPlanRequest, BurnPlanSlot, ApoapsisBurnPlanner, validate_burn_plan, burn_plan_is_current
+using .SimulationModel.ControlHooks: burn_plan_rejections
+@doc (@doc SimulationModel.ControlHooks.burn_plan_rejections) burn_plan_rejections
+export family_request, family_link, preflight_family
+export AlgorithmEvent, AlgorithmGuidance, AlgorithmGuidanceError, algorithm_run_report
+export AbstractBurnPlanner, BurnPlanFamily, BurnPlanRequest, BurnPlanSlot, ApoapsisBurnPlanner, validate_burn_plan, burn_plan_is_current, burn_plan_rejections
 
 using .RPOPlannerLifecycle: RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
 using .RPOPlannerLifecycle: RPOReplanningSpheres
