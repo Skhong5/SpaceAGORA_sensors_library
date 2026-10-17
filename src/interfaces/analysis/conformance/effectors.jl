@@ -24,6 +24,8 @@ in report order:
 
 - `hooks_present`: the engine's own pre-run hook check, on the fixture's concrete
   argument types, reports nothing for the fixture.
+- `no_deprecated_hooks`: the pre-run check has no deprecated hook to warn about (a
+  `calcForceTorque` method of the model's own).
 - `supported_sample_signature`: no method of `wrench`, `wrench_caching!` or a gravity
   backbone hook that applies to the model types a sample argument narrower than
   `StateSample` or `EnvironmentSample` (such as `x::StateSample{MySpacecraft}`); the
@@ -66,6 +68,7 @@ function check_force_torque_model(model; fixture::ConformanceFixture=conformance
     since = FIRST_RELEASE
     configuration = fixture.configuration
     hooks = _hooks_present_check(fixture, since)
+    deprecated = _no_deprecated_hooks_check(fixture, model, since)
     signature = _sample_signature_check(model, since)
     base = _solve(configuration)
     again = _solve(configuration)
@@ -84,6 +87,7 @@ function check_force_torque_model(model; fixture::ConformanceFixture=conformance
     seed_gap = _run_difference(seeded...)
     checks = [
         hooks,
+        deprecated,
         signature,
         _check(:repeatable_run, since, repeat_gap === nothing,
             "two runs of the fixture with isolate_state=true differ: $(repeat_gap)"),
@@ -115,6 +119,25 @@ function _hooks_present_check(fixture::ConformanceFixture, since::VersionNumber)
         "the engine's pre-run hook check reports:\n" * join(("- " * line for line in lines), "\n"))
 end
 
+# The checks that need no run: the pre-run check, the deprecated hooks and the sample
+# signature. Core's tests use them on built-in models that cannot run in the fixture.
+function _static_force_report(model; fixture::ConformanceFixture=conformance_fixture(effectors=(model,)))
+    since = FIRST_RELEASE
+    checks = [_hooks_present_check(fixture, since), _no_deprecated_hooks_check(fixture, model, since),
+        _sample_signature_check(model, since)]
+    return ConformanceReport(string(nameof(typeof(model))), :force_torque_model, checks)
+end
+
+# The deprecated hooks the engine's pre-run check would warn about for the model's own
+# type (`_deprecated_model_hooks`, the list behind its depwarn-group warnings, keyed by
+# type and hook). Other models of a caller's fixture are not the model's to answer for.
+function _no_deprecated_hooks_check(fixture::ConformanceFixture, model, since::VersionNumber)
+    found = [entry for entry in SimulationEngine._deprecated_model_hooks(fixture.arguments, fixture.call)
+        if first(first(entry)) === typeof(model)]
+    return _check(:no_deprecated_hooks, since, isempty(found),
+        "the engine's pre-run check warns:\n" * join(("- " * last(entry) for entry in found), "\n"))
+end
+
 _has_wrench(model) = hasmethod(SimulationModel.wrench,
     Tuple{typeof(model), SimulationModel.StateSample, SimulationModel.EnvironmentSample, Float64})
 
@@ -127,10 +150,10 @@ function _signature_slot(sig, i::Int)
     return Base.rewrap_unionall(slot, sig)
 end
 
-function _sample_signature_check(model, since::VersionNumber)
+function _sample_signature_check(model, since::VersionNumber; hooks::Tuple=_SAMPLED_FORCE_HOOKS)
     T = typeof(model)
     problems = String[]
-    for hook in _SAMPLED_FORCE_HOOKS, method in methods(hook)
+    for hook in hooks, method in methods(hook)
         n = length(Base.unwrap_unionall(method.sig).parameters)
         n >= 2 && T <: _signature_slot(method.sig, 2) || continue
         for i in 3:n
@@ -193,9 +216,11 @@ _concurrency_check(configuration::SimulationModel.SimulationConfiguration, base:
         timeout_s)
 
 # `run(factories)` runs the fixture with the extra callback factories given and
-# returns its outcome; `noun` names what the outcomes compare.
+# returns its outcome; `difference(a, b)` compares two outcomes (`noun` names what
+# the default comparison compares).
 function _concurrency_check(run::Function, base::_RunOutcome, again::_RunOutcome, since::VersionNumber;
-        timeout_s::Float64=_RENDEZVOUS_TIMEOUT_S, noun::AbstractString="state")
+        timeout_s::Float64=_RENDEZVOUS_TIMEOUT_S, noun::AbstractString="state",
+        difference::Function=(a, b) -> _run_difference(a, b; noun))
     Threads.nthreads() >= 2 || return _skip(:concurrent_equals_sequential, since,
         "needs Julia started with at least two threads; this session has $(Threads.nthreads())")
     rendezvous = _Rendezvous()
@@ -207,7 +232,7 @@ function _concurrency_check(run::Function, base::_RunOutcome, again::_RunOutcome
         end
     end
     runs = fetch.(tasks)
-    gaps = (_run_difference(base, runs[1]; noun), _run_difference(again, runs[2]; noun))
+    gaps = (difference(base, runs[1]), difference(again, runs[2]))
     problems = String["concurrent run $k and sequential run $k differ: $(gap)" for (k, gap) in enumerate(gaps) if gap !== nothing]
     # Equal results from runs that did not overlap certify nothing about concurrency.
     timeouts = rendezvous.timeouts[]

@@ -3,7 +3,8 @@
 # test/unit/conformance/builtin_conformance_tests.jl fails when a concrete built-in
 # type is neither here nor exempted, so a new model is covered when it is added.
 # The models that need SPICE ephemerides run on a SPICE fixture when the kernels of
-# data/GRAMSuite.jl are present (as in CI) and are exempt otherwise.
+# data/GRAMSuite.jl are present (as in CI); otherwise their checks that need no run
+# are applied (`runs=false`).
 module ConformanceInstances
 
 using LinearAlgebra: I
@@ -14,7 +15,8 @@ using SpaceAGORA.Conformance: ConformanceFixture, conformance_fixture
 const SM = SpaceAGORA.SimulationModel
 const C = SpaceAGORA.Conformance
 
-export force_torque_instances, force_torque_exemptions, spice_available, sensor_instances, sensor_exemptions
+export force_torque_instances, force_torque_exemptions, spice_available, sensor_instances, sensor_exemptions,
+    gnc_instances, gnc_exemptions
 
 const SPICE_PATH = joinpath(pkgdir(SpaceAGORA), "data", "GRAMSuite.jl", "GRAM Suite 2.0", "SPICE")
 spice_available() = isdir(SPICE_PATH)
@@ -33,7 +35,8 @@ function harmonics_instance()
     file = joinpath(pkgdir(SpaceAGORA), "data", "planets", "gravity", "EarthGGM05C.csv")
     model = SpaceAGORA.GravitationalHarmonicsModel(4, 4, file, planet)
     dynamics = SM.DynamicsModel(base.dynamics_model.spacecraft, (base.dynamics_model.dynamic_effectors..., model))
-    return (model=model, fixture=ConformanceFixture(SM.SimConfig._with_configuration(base; dynamics_model=dynamics)))
+    return (model=model, fixture=ConformanceFixture(SM.SimConfig._with_configuration(base; dynamics_model=dynamics)),
+        runs=true, reason="")
 end
 
 function mesh_surrogate_model()
@@ -55,11 +58,14 @@ function on_spice(build)
     model = build(planet)
     fixture = ConformanceFixture(C._fixture_configuration(effectors=(model,), planet=planet,
         ephemerides_model=SM.SpiceEphemeridesModel()))
-    return (model=model, fixture=fixture)
+    return (model=model, fixture=fixture, runs=true, reason="")
 end
 
-on_fixture(model) = (model=model, fixture=conformance_fixture(effectors=(model,)))
-on_atmosphere(model) = (model=model, fixture=atmosphere_fixture(model))
+on_fixture(model) = (model=model, fixture=conformance_fixture(effectors=(model,)), runs=true, reason="")
+on_atmosphere(model) = (model=model, fixture=atmosphere_fixture(model), runs=true, reason="")
+const SPICE_REASON = "needs SPICE ephemerides (the engine refuses it under SimpleEphemeridesModel before the run), " *
+    "and the SPICE kernels of data/GRAMSuite.jl are absent here; checked without a run"
+without_run(model) = (model=model, fixture=nothing, runs=false, reason=SPICE_REASON)
 
 """
 Fresh instances of the built-in force/torque models, each with its fixture.
@@ -86,9 +92,17 @@ function force_torque_instances()
         on_fixture(SpaceAGORA.PlumeSurfaceInteractionModel((; actuators=(; thrust_n=[1000.0])))),
         on_fixture(wheel_model()),
         on_fixture(SpaceAGORA.RobotArmReactionEffector()),
-        (spice_available() ? spice_instances() : [])...,
+        (spice_available() ? spice_instances() : spice_models_without_run())...,
     ]
 end
+
+# Without the kernels: the same models, checked without a run.
+spice_models_without_run() = [
+    without_run(SpaceAGORA.NBodyGravityModel(body_names=("Moon", "Sun"), primary_body_name="Earth",
+        planet=SM.Earth(), body_mus=(4.9028e12, 1.32712440018e20))),
+    without_run(SM.DynamicEffectors.PerturbationEffectors.SolarRadiationPressureModel(1.2, 12.0)),
+    without_run(SM.DynamicEffectors.PerturbationEffectors.FacetSolarRadiationPressureModel()),
+]
 
 # The N-body model declares its bodies as third bodies, so its environment check
 # covers a declared third-body sample.
@@ -100,16 +114,10 @@ spice_instances() = [
 ]
 
 """
-Concrete built-in force/torque types without an instance, each with the reason.
+Concrete built-in force/torque types without an instance, each with the reason (none:
+the models that cannot run here are checked without a run).
 """
-function force_torque_exemptions()
-    spice_available() && return Dict{Any, String}()
-    reason = "needs SPICE ephemerides (the engine refuses it under SimpleEphemeridesModel before the run), " *
-        "and the SPICE kernels of data/GRAMSuite.jl are absent here; it runs on a SPICE fixture where they are present"
-    return Dict{Any, String}(T => reason for T in (SpaceAGORA.NBodyGravityModel,
-        SM.DynamicEffectors.PerturbationEffectors.SolarRadiationPressureModel,
-        SM.DynamicEffectors.PerturbationEffectors.FacetSolarRadiationPressureModel))
-end
+force_torque_exemptions() = Dict{Any, String}()
 
 """
 Fresh instances of the built-in sensor kinds, with noise so that the seed check
@@ -125,5 +133,58 @@ sensor_instances() = [
 Concrete built-in sensor kinds without an instance, each with the reason.
 """
 sensor_exemptions() = Dict{Any, String}()
+
+"""
+Instances of the built-in guidance and control models. `runs=false` marks a model that
+cannot run in the fixture; its checks that need no run are applied, and `reason` says
+why. `BaseThrusterModel` is not a control effector type but runs in the control model.
+"""
+function gnc_instances()
+    planet = SpaceAGORA.make_no_gram_planet(:earth)
+    braking, approach = SpaceAGORA.apollo11_descent_targets()
+    apollo = SpaceAGORA.ApolloDescentConfig(reference_radius_m=planet.Rp_e - 2_000.0, site_lat_deg=30.0,
+        site_lon_deg=0.0, braking=braking, approach=approach)
+    edg = SpaceAGORA.AerobrakingEnergyDepletionConfig()
+    edg_state() = SpaceAGORA.AerobrakingEnergyDepletionState(num_sats=1)
+    full(kind, model) = (kind=kind, model=model, runs=true, reason="")
+    static(kind, model, reason) = (kind=kind, model=model, runs=false, reason=reason)
+    edg_reason = "energy-depletion guidance and control need the optional SpaceAGORAEDG package, an atmosphere " *
+        "and each other; checked without a run"
+    apollo_reason = "a lunar descent law that needs its landing-site configuration and terrain; checked without a run"
+    return [
+        full(:guidance_model, SM.GuidanceModels.AerobrakingCampaignPropulsiveManeuverGuidanceModel(
+            maneuver_orbit_number=[2, 3], maneuver_Δv=[5.0, -3.0])),
+        full(:guidance_model, SpaceAGORA.ApoapsisTargetPeriapsisRaiseGuidanceModel(target_apoapsis_radius_m=planet.Rp_e + 800e3)),
+        static(:guidance_model, SpaceAGORA.AerobrakingEnergyDepletionGuidanceModel(edg, edg_state()), edg_reason),
+        static(:guidance_model, SpaceAGORA.ApolloDescentGuidanceModel(apollo, SpaceAGORA.ApolloDescentState(1)), apollo_reason),
+        static(:guidance_model, SM.GuidanceModels.RPOGuidanceModel(),
+            "deprecated, and its run needs the optional HYPR package; checked without a run"),
+        full(:control_model, SM.ControlHooks.MagneticMomentumManagerModel()),
+        # Its declared control period matches the fixture's 1 s control rate.
+        full(:control_model, SM.ControlHooks.RobotArmControlEffector(control_dt_s=1.0)),
+        full(:control_model, SM.ControlHooks.RPOMPCControlModel()),
+        full(:control_model, SM.ThrusterModels.BaseThrusterModel(thrust=[0.5], direction=[0.0], Δv=[0.1],
+            start_burn_time=[5.0], stop_burn_time=[20.0], Isp=[300.0])),
+        static(:control_model, SpaceAGORA.AerobrakingEnergyDepletionControlModel(edg, edg_state()), edg_reason),
+        static(:control_model, SpaceAGORA.ApolloDescentControlModel(SpaceAGORA.ApolloDescentControlConfig(), apollo,
+            SpaceAGORA.ApolloDescentState(1)), apollo_reason),
+    ]
+end
+
+"""
+Concrete built-in guidance, navigation and control types without an instance, each
+with the reason.
+"""
+gnc_exemptions() = Dict{Any, String}(
+    SpaceAGORA.RPOPlannerLifecycle.PlannerGuidance =>
+        "the binding that runs an RPO planner in a simulation; it is built by make_rpo_configuration and checked " *
+        "with the algorithm contract",
+    SpaceAGORA.SolarPanelAngleOfAttackControlModel =>
+        "the panel actuator inside AerobrakingEnergyDepletionControlModel, with no control tick of its own",
+    SpaceAGORA.AlgorithmGuidance =>
+        "the generic binding that runs an algorithm of any family in a simulation; its family's preflight needs " *
+        "that family's configuration (the burn-plan family: one burn scheduler sized for the run's spacecraft), " *
+        "and it is checked with the algorithm contract",
+)
 
 end # module ConformanceInstances
