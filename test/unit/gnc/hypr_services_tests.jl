@@ -2,12 +2,17 @@ module HYPRServiceContractTests
 using Test, SpaceAGORA
 const C=SpaceAGORA.HYPRServices
 @testset "HYPR versioned service identity" begin
-    @test C.CONTRACT_VERSION == v"1.0.0"
-    @test C.SUPPORTED_HYPR_VERSIONS == (v"0.1.0",v"0.1.1")
-    @test_throws C.CompatibilityError C.check_provider(:HYPR,v"0.1.2",v"1.0.0")
-    @test C.require_version(v"1.0.0") === nothing
-    @test_throws SpaceAGORA.SimulationModel.HYPRSupport.HYPRCompatibilityError C.require_version(v"2.0.0")
-    @test_throws SpaceAGORA.SimulationModel.HYPRSupport.HYPRCompatibilityError C.check_provider(:HYPR,v"9.0.0",v"1.0.0")
+    @test C.CONTRACT_VERSION == v"2.0.0"
+    @test C.SUPPORTED_HYPR_VERSIONS == (v"0.2.0",)
+    @test C.require_version(v"2.0.0") === nothing
+    @test_throws SpaceAGORA.SimulationModel.HYPRSupport.HYPRCompatibilityError C.require_version(v"1.0.0")
+    # contract 2.0.0 requires the provider's rng keyword, so 0.1 providers are refused
+    for old in (v"0.1.0", v"0.1.1")
+        @test_throws C.CompatibilityError C.check_provider(:HYPR,old,v"2.0.0")
+    end
+    @test_throws C.CompatibilityError C.check_provider(:HYPR,v"0.2.0",v"1.0.0")
+    @test_throws C.CompatibilityError C.check_provider(:HYPR,v"0.2.1",v"2.0.0")
+    @test_throws SpaceAGORA.SimulationModel.HYPRSupport.HYPRCompatibilityError C.check_provider(:HYPR,v"9.0.0",v"2.0.0")
     @test C.SwarmPolicy.hypr_iteration_weights === SpaceAGORA.SimulationModel.HYPRUtils.hypr_iteration_weights
     @test C.SwarmPolicy.hypr_material_improvement === SpaceAGORA.SimulationModel.HYPRUtils.hypr_material_improvement
     @test C.SwarmPolicy.hypr_protected_particle_mask === SpaceAGORA.SimulationModel.HYPRUtils.hypr_protected_particle_mask

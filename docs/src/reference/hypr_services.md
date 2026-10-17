@@ -6,9 +6,9 @@ SpaceAGORA.HYPRServices
 
 `SpaceAGORA.HYPRServices` is the supported boundary for HYPR's optional extension.
 It follows the shared [optional adapter standard](adapter_contract.md).
-SpaceAGORA **0.2.0** provides contract **1.0.0**, supporting HYPR **0.1.0** and **0.1.1** and the
-`SpaceAGORAHYPR` **0.2.0** compatibility package. The setup helper pins the exact
-HYPR source revision.
+This SpaceAGORA source provides contract **2.0.0**, supporting HYPR **0.2.0** and
+the `SpaceAGORAHYPR` **0.2.0** compatibility package. The setup helper pins the
+exact HYPR source revision.
 
 ## Loading and failure behavior
 
@@ -46,8 +46,26 @@ spelling. Those listed below are now part of this versioned integration contract
 through the facade. Their original internal-module paths are not a supported
 integration API. Unlisted internals are outside the contract. A breaking change
 to signatures, semantics, required fields or ownership requires a new contract
-version and coordinated adapter review. Version 1 is checked exactly; additive
-changes also require an explicitly reviewed version pair while this API settles.
+version and coordinated adapter review. Contract versions are checked exactly;
+additive changes also require an explicitly reviewed version pair while this API
+settles.
+
+## Changes from contract 1.0.0
+
+Contract 2.0.0 changes one rule for the methods HYPR supplies; no binding is added,
+removed or renamed, and SpaceAGORA's own calls are unchanged.
+
+- **The random stream is required.** `rpo_pso_plan_path`, the HYPR-configured
+  methods of `rpo_rrt_connect_plan_path`, `rpo_rrt_star_plan_path` and
+  `rpo_rrt_connect_bezier_plan_path`, and `plan_robot_arm_motion_hypr` take
+  `rng::AbstractRNG` as a required keyword. A call without it fails instead of
+  drawing from the task-local global stream. SpaceAGORA's GNC planning kernels
+  already require it, and every SpaceAGORA caller passes one.
+- **Providers.** The contract accepts HYPR 0.2.0, which implements the rule above;
+  HYPR 0.1.0 and 0.1.1 are refused before their methods are defined.
+- **Argument order.** `_plan_hypr_rpo!(state, planner, request, rng)` already puts
+  the mutated state first and the stream last, and is unchanged. The inventory
+  names, underscores included, are unchanged.
 
 This boundary covers configured RPO and robot-arm planning. It does not make
 SpaceAGORA geometry or dynamics independent of the simulator.
@@ -89,7 +107,7 @@ are not permitted.
 `compliant_state_parts`. These narrow namespaces preserve the original function
 identities; they do not expose the entire dynamics implementation.
 
-These are the literal names in contract 1.0.0. They continue to identify the
+These are the literal names in contracts 1.0.0 and 2.0.0. They continue to identify the
 compliant multibody services even though ordinary core code now prefers
 `RobotArmModel`, `robot_arm_fk` and the `CompliantRobotArm` names. The `Cloth`
 namespace, `CLOTH_SERVICES`, and the binding inventory above are unchanged.
