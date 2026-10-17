@@ -3,6 +3,7 @@ module ControlHooks
     using ..Structure
 
     using ..ConfigTypes: ODEParams
+    using ..EffectorSampling: StateSample
     using ..AbstractTypes: AbstractPlanet, AbstractControlEffectorModel, AbstractThrusterModel
     using ..RobotArmPlanning: RobotArmPlan, robot_arm_plan_sample
     using ..ThrusterModels: BaseThrusterModel, SixAxisThrusterModel
@@ -32,6 +33,7 @@ module ControlHooks
 
     const config = Structure
 
+    export control_wrench, control_propellant_rate, control_wheel_torque
     export calcControlForceTorque, calcControlEffect!, calcControlMassFlowRate, calcReactionWheelTorque
     export control_thruster_levels, touchdown_spec, refresh_burn!, mounted_burn_tick!, burn_edge
     export AerobrakingEnergyDepletionControlModel, SolarPanelAngleOfAttackControlModel
@@ -80,35 +82,102 @@ module ControlHooks
     touchdown_spec(effector, spacecraft_index::Int) = nothing
 
     """
-        calcControlForceTorque(model, u, p, spacecraft_index, t) -> (force, torque)
+        control_wrench(model, x::StateSample, p, t::Float64) -> (force_ii, torque_body)
 
-    The force and torque a control effector applies to the spacecraft at
-    `spacecraft_index`, which the dynamics evaluate at every right-hand-side
-    evaluation in `:ideal` actuation, the default `actuation_mode`. Every
-    control effector whose actuation is not `:mounted` needs a method for its
-    own type. There is no fallback: `run_simulation` checks for the method
-    before integration starts, as it does for `calcControlEffect!`.
+    The force and torque a control effector applies to its spacecraft, which the
+    dynamics evaluate at every right-hand-side evaluation in `:ideal` actuation,
+    the default `actuation_mode`. Every control effector whose actuation is not
+    `:mounted` needs a method for its own type. There is no fallback:
+    `run_simulation` checks for the method before integration starts, as it does
+    for `calcControlEffect!`.
 
     Return a tuple of two 3-vectors:
 
-    - `force`: in the inertial frame, in N;
-    - `torque`: in the bus frame, about the root body's centre of mass, in N·m.
-      The dynamics apply it only when the run propagates attitude.
+    - `force_ii`: in the inertial frame, in N;
+    - `torque_body`: in the bus frame, about the root body's centre of mass, in
+      N·m. The dynamics apply it only when the run propagates attitude.
 
     An effector that applies neither returns two zero vectors. The arguments:
 
     - `model`: the control effector.
-    - `u`: the state of that spacecraft alone (`u.pos`, `u.vel`, `u.mass`, and
-      with attitude propagation `u.q` and `u.ω`), not the full state the tick
-      receives.
+    - `x`: the [`StateSample`](@ref) of that spacecraft. `x.pos_ii` (m) and
+      `x.vel_ii` (m/s) are relative to the planet's centre in the inertial frame
+      and `x.mass_kg` is its mass. With attitude propagation, `x.q_ib` is the
+      quaternion `q = (x, y, z, w)`, scalar last, with
+      `v_body = rot(q) * v_inertial` (body means bus axes), and `x.ω_body` the bus
+      angular velocity in rad/s; both are `nothing` otherwise.
+      `x.spacecraft_index` is the spacecraft's position in the run (`Int`, from
+      1), not its ID.
     - `p`: the run's parameters.
-    - `spacecraft_index`: the spacecraft's position in the run (`Int`, from 1), not its ID.
     - `t`: elapsed time since the run's start epoch, in seconds (`Float64`).
 
-    The spacecraft index comes before the time here, as in
-    `calcControlMassFlowRate` and `calcReactionWheelTorque`, and after it in
-    `calcControlEffect!`. Return the command held since the last
-    `calcControlEffect!` tick rather than recomputing the control law here.
+    Return the command held since the last `calcControlEffect!` tick rather than
+    recomputing the control law here. A method typed `x::StateSample`, or with
+    `x` untyped, is the one the dynamics call. This hook replaces the deprecated
+    `calcControlForceTorque`.
+    """
+    function control_wrench end
+
+    """
+        control_propellant_rate(model, x::StateSample, p, t::Float64) -> Float64
+
+    The propellant a control effector uses, in kg/s: **positive** while
+    propellant is used, and `0.0` when none is. The engine subtracts it from the
+    spacecraft's mass derivative. This is the opposite sign of the deprecated
+    `calcControlMassFlowRate`, which returned the mass derivative itself. A
+    nonfinite rate is ignored.
+
+    The dynamics call it at every right-hand-side evaluation in `:ideal`
+    actuation, so return the rate held since the last `calcControlEffect!` tick.
+    An effector that uses no propellant needs no method: the dynamics then take
+    the rate as zero. The arguments are those of [`control_wrench`](@ref); the
+    spacecraft's index in the run is `x.spacecraft_index`. The
+    `BaseThrusterModel` method returns `norm(force) / (Isp * g0)` during an
+    active valid burn and `0.0` otherwise.
+    """
+    function control_propellant_rate end
+
+    """
+        control_wheel_torque(model, x::StateSample, p, t::Float64) -> Union{Nothing, AbstractVector}
+
+    Optional hook for a control effector that drives reaction wheels: the part
+    of its commanded torque on the spacecraft that the wheels produce, a 3-vector
+    in the bus frame in N·m. An effector that drives no wheel needs no method:
+    the dynamics then take it as `nothing`.
+
+    The momentum stored in the wheels (the `h_wheels` state) changes at the
+    opposite rate, mapped onto the wheel axes. In `:ideal` actuation the engine
+    applies this torque only to the wheels: the effector includes it in the
+    torque its `control_wrench` returns. In `:mounted` actuation the engine adds
+    it to the torque of the mounted actuators.
+
+    The dynamics call it at every right-hand-side evaluation, so return the
+    torque held since the last `calcControlEffect!` tick. The arguments are
+    those of [`control_wrench`](@ref); the spacecraft's index in the run is
+    `x.spacecraft_index`. This hook replaces the deprecated
+    `calcReactionWheelTorque`.
+    """
+    function control_wheel_torque end
+
+    """
+        calcControlForceTorque(model, u, p, spacecraft_index, t) -> (force, torque)
+
+    Deprecated, use [`control_wrench`](@ref)`(model, x::StateSample, p, t)`; this
+    name will be removed in SpaceAGORA 0.5.0. The new hook takes the
+    spacecraft's state as a sample, the time before the index, and the index from
+    `x.spacecraft_index`. Its frames and units are this hook's.
+
+    Until then the dynamics call an effector's own method of this hook when its
+    type has no `control_wrench`, and `run_simulation` warns once per type before
+    integration starts. `u` is the state of that spacecraft alone (`u.pos`,
+    `u.vel`, `u.mass`, and with attitude propagation `u.q` and `u.ω`), and
+    `spacecraft_index` its position in the run (`Int`, from 1). The returned
+    `force` is inertial, in N, and `torque` is in the bus frame, about the root
+    body's centre of mass, in N·m.
+
+    A direct call on an effector that implements `control_wrench` returns that
+    hook's result, and warns once per type that it is deprecated (under
+    `julia --depwarn=error` it throws instead).
     """
     function calcControlForceTorque end
 
@@ -121,11 +190,11 @@ module ControlHooks
     return value and applies the held command until the next tick:
 
     - in `:ideal` actuation, the default `actuation_mode`, through the effector's
-      `calcControlForceTorque`, `calcControlMassFlowRate` and
-      `calcReactionWheelTorque`, which the dynamics evaluate at every step;
+      `control_wrench`, `control_propellant_rate` and `control_wheel_torque`,
+      which the dynamics evaluate at every step;
     - in `:mounted` actuation, through the levels `actuator_levels` returns for
-      the actuators mounted on the spacecraft; `calcControlForceTorque` and
-      `calcControlMassFlowRate` are not called.
+      the actuators mounted on the spacecraft; `control_wrench` and
+      `control_propellant_rate` are not called.
 
     The arguments:
 
@@ -151,8 +220,9 @@ module ControlHooks
 
     Before integration starts, `run_simulation` checks that every control
     effector has a method of this function and, unless its actuation is
-    `:mounted`, of `calcControlForceTorque`, and stops with an `ArgumentError`
-    naming the effector otherwise.
+    `:mounted`, of `control_wrench` (or of the deprecated
+    `calcControlForceTorque`), and stops with an `ArgumentError` naming the
+    effector otherwise.
     """
     function calcControlEffect! end
 

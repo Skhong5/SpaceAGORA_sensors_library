@@ -7,6 +7,7 @@ module SpaceAGORA
 include(joinpath(@__DIR__, "models", "gnc", "interfaces", "gnc_algorithms.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "interfaces", "rpo_planner.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "interfaces", "simulation_lifecycle.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "interfaces", "gnc_runtime.jl"))
 include(joinpath(@__DIR__, "orchestration", "parallel", "routing", "parallel_profiles.jl"))
 include(joinpath(@__DIR__, "orchestration", "parallel", "process", "parallel_process.jl"))
 include(joinpath(@__DIR__, "interfaces", "analysis", "visualization", "visualizer_services.jl"))
@@ -51,10 +52,13 @@ export export_viewer_payload
 using .RPOPlannerInterfaces: AbstractRPOPlanner, RPOPlanningConstraints, RPOValidationSettings, RPOPlanningRequest, RPOReference, RPOPlanningResult, RPOPlannerCapabilities, RPOValidationResult, RPOPlanningHeadroom, planner_capabilities, initialize_planner, plan_rpo!, retime_rpo!, validate_rpo_result, validate_rpo_capabilities, rpo_reference_is_current
 using .DirectRPOPlanning: DirectRPOPlanner
 using .RPOPlannerInterfaces: RPOReferenceFamily
+using .RPOPlannerInterfaces: AbstractRPOGeometryProvider, rpo_geometry_revision, rpo_geometry_snapshot
+using .GNCAlgorithms: bound_family
 using .GNCAlgorithms: AbstractGNCAlgorithm, AbstractAlgorithmFamily, AbstractAlgorithmRequest, AbstractAlgorithmResult, AbstractValidationResult, GNCAlgorithmError, AlgorithmResult, ValidationResult
 using .GNCAlgorithms: algorithm_family, default_capabilities, algorithm_capabilities, require_algorithm_support, initialize_algorithm, propose!, propose_revision!, consumes_rng
 using .GNCAlgorithms: validate_capabilities, validate_proposal, install!, is_current, on_rejection, fallback_product, family_contract_version
 using .GNCAlgorithms: gnc_stream_words, AlgorithmRuntime, run_algorithm_request!, algorithm_runtime, bound_algorithm, bound_link, build_algorithm_request, trusted_queries, fail_algorithm_request!, algorithm_result_type, is_revision_request, proposed_product, installed_record, rejected_record
+using .GNCRuntime: tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!
 using .HYPRRPOPlanning: HYPRRPOPlanner
 using .SimulationModel.HYPRSupport: HYPRUnavailableError, hypr_available
 export HYPRUnavailableError, hypr_available
@@ -149,11 +153,14 @@ preserves the existing configuration owner and calculations; pass the result to
 """ rpo_pso_config
 
 using .RPOPlannerLifecycle: RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
+using .RPOPlannerLifecycle: RPOReplanningSpheres
 export AbstractGNCAlgorithm, AbstractAlgorithmFamily, AbstractAlgorithmRequest, AbstractAlgorithmResult, AbstractValidationResult, GNCAlgorithmError, AlgorithmResult, ValidationResult, RPOReferenceFamily
 export algorithm_family, default_capabilities, algorithm_capabilities, require_algorithm_support, initialize_algorithm, propose!, propose_revision!, consumes_rng
 export validate_capabilities, validate_proposal, install!, is_current, on_rejection, fallback_product, family_contract_version
 export gnc_stream_words, AlgorithmRuntime, run_algorithm_request!, algorithm_runtime, bound_algorithm, bound_link, build_algorithm_request, trusted_queries, fail_algorithm_request!, algorithm_result_type, is_revision_request, proposed_product, installed_record, rejected_record
+export tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!
 export AbstractRPOPlanner, RPOPlanningConstraints, RPOValidationSettings, RPOPlanningRequest, RPOReference, RPOPlanningResult, RPOPlannerCapabilities, RPOValidationResult, RPOPlanningHeadroom, planner_capabilities, initialize_planner, plan_rpo!, retime_rpo!, validate_rpo_result, validate_rpo_capabilities, rpo_reference_is_current, DirectRPOPlanner, HYPRRPOPlanner, RPOPSOConfig, rpo_pso_config, RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
+export bound_family, AbstractRPOGeometryProvider, rpo_geometry_revision, rpo_geometry_snapshot, RPOReplanningSpheres
 
 ## 2. Bring needed names from package modules into the scope of SpaceAGORA.jl
 # 2.1. Parallel Profiles
@@ -262,6 +269,7 @@ using .SimulationModel: getDensity, getDensityBatch!, with_density_model_epoch
 using .SimulationModel: DescentPhaseTargets, apollo11_descent_targets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel
 using .SimulationModel: ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate, calcReactionWheelTorque
+using .SimulationModel: control_wrench, control_propellant_rate, control_wheel_torque
 using .SimulationModel: control_thruster_levels, touchdown_spec
 using .SimulationModel: calcGuidanceEffect!, calcNavigationEffect!, getHeatRate
 # Actuators: the contract (Actuators), the thruster kind (Components) and mounting (ActuatorMounting).
@@ -273,7 +281,7 @@ using .SimulationModel: add_actuator!, mounted_actuators, actuator_context, allo
 using .SimulationModel: propellant_mass_rate, ActuatorRequirements, actuator_requirements, applied_actuator_levels, mounted_power
 using .SimulationModel: SolarArray, Battery, PowerLoad, add_power!
 using .SimulationModel: ActuatorFault, add_fault!
-using .SimulationModel: RateGyro, StarTracker, Magnetometer, SensorTruth, sensor_measure, sensor_dimension, sensor_requirements, sensor_period_s
+using .SimulationModel: RateGyro, StarTracker, Magnetometer, SensorTruth, sensor_measure, sensor_dimension, sensor_requirements, sensor_period_s, initialize_sensor!
 using .SimulationModel: add_sensor!, mounted_sensors, sensor_measurement, sensor_measurement_time
 using .SimulationLifecycle: bind_spacecraft
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
@@ -403,6 +411,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.sensor_dimension) sensor_dimension
 @doc (@doc SimulationModel.sensor_requirements) sensor_requirements
 @doc (@doc SimulationModel.sensor_period_s) sensor_period_s
+@doc (@doc SimulationModel.initialize_sensor!) initialize_sensor!
 @doc (@doc SimulationModel.add_sensor!) add_sensor!
 @doc (@doc SimulationModel.mounted_sensors) mounted_sensors
 @doc (@doc SimulationModel.sensor_measurement) sensor_measurement
@@ -531,6 +540,9 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
     ::SimulationModel.AbstractDensityModel, ::Any,
 ))).text) with_density_model_epoch
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlEffect!)).text) calcControlEffect!
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_wrench)).text) control_wrench
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_propellant_rate)).text) control_propellant_rate
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_wheel_torque)).text) control_wheel_torque
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlForceTorque)).text) calcControlForceTorque
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlMassFlowRate)).text) calcControlMassFlowRate
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_thruster_levels(::Any, ::Int))).text) control_thruster_levels
@@ -667,6 +679,7 @@ export DescentPhaseTargets, apollo11_descent_targets, ApolloDescentConfig, Apoll
 export ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 export getDensity, getDensityBatch!, with_density_model_epoch
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate, calcReactionWheelTorque
+export control_wrench, control_propellant_rate, control_wheel_torque
 export control_thruster_levels, touchdown_spec, bind_spacecraft
 export calcGuidanceEffect!, calcNavigationEffect!, getHeatRate
 export AbstractActuator, Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
@@ -677,7 +690,7 @@ export add_actuator!, mounted_actuators, actuator_context, allocation_matrix, mo
 export propellant_mass_rate, ActuatorRequirements, actuator_requirements, applied_actuator_levels, mounted_power
 export SolarArray, Battery, PowerLoad, add_power!
 export ActuatorFault, add_fault!
-export AbstractSensor, RateGyro, StarTracker, Magnetometer, SensorTruth, sensor_measure, sensor_dimension, sensor_requirements, sensor_period_s
+export AbstractSensor, RateGyro, StarTracker, Magnetometer, SensorTruth, sensor_measure, sensor_dimension, sensor_requirements, sensor_period_s, initialize_sensor!
 export add_sensor!, mounted_sensors, sensor_measurement, sensor_measurement_time
 export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel

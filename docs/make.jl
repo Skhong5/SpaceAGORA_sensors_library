@@ -13,6 +13,7 @@ const API_REFERENCE_PAGES = (
     (section="Simulation Setup", title="Simulation Setup API", file="simulation_setup_api.md"),
     (section="RPO planner pilot", title="RPO Planner API", file="rpo_planner_api.md"),
     (section="GNC algorithm contract", title="GNC Algorithm Contract API", file="gnc_algorithm_contract_api.md"),
+    (section="GNC runtime", title="GNC Runtime API", file="gnc_runtime_api.md"),
     (section="Robotics and Planning", title="Robotics API", file="robotics_api.md"),
     (section="Compliant Multibody Dynamics", title="Compliant Multibody API", file="compliant_multibody_api.md"),
     (section="Terrain Queries", title="Terrain API", file="terrain_api.md"),
@@ -22,6 +23,7 @@ const API_REFERENCE_PAGES = (
     (section="Actuators", title="Actuators API", file="actuators_api.md"),
     (section="Sensors", title="Sensors API", file="sensors_api.md"),
     (section="Model Extension Hooks", title="Extension Hooks API", file="extension_hooks_api.md"),
+    (section="Deprecated hooks", title="Deprecated Hooks API", file="deprecated_hooks_api.md"),
 )
 const BUILD_DIR = joinpath(@__DIR__, "build")
 const PUBLIC_API_REPORT = joinpath(BUILD_DIR, "undocumented_public_exports.txt")
@@ -218,6 +220,7 @@ makedocs(
             "Simulation Setup API" => "generated/simulation_setup_api.md",
             "RPO Planner API" => "generated/rpo_planner_api.md",
             "GNC Algorithm Contract API" => "generated/gnc_algorithm_contract_api.md",
+            "GNC Runtime API" => "generated/gnc_runtime_api.md",
             "Robotics API" => "generated/robotics_api.md",
             "Compliant Multibody API" => "generated/compliant_multibody_api.md",
             "Terrain API" => "generated/terrain_api.md",
@@ -227,6 +230,7 @@ makedocs(
             "Actuators API" => "generated/actuators_api.md",
             "Sensors API" => "generated/sensors_api.md",
             "Extension Hooks API" => "generated/extension_hooks_api.md",
+            "Deprecated Hooks API" => "generated/deprecated_hooks_api.md",
         ],
     ],
     doctest = true,

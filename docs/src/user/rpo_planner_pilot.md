@@ -75,18 +75,19 @@ args = make_rpo_configuration(planner=DirectRPOPlanner(), planning_events=events
 A token names one event. Duplicate delivery is ignored; different tokens at the
 same tick are distinct requests. Optional positive `replan_interval_s` or
 `tracking_error_limit_m` enable background requests. These policies operate on the
-static scene; moving obstacles and replanning around a newly changed geometry are
-outside this pilot. Periodic and scheduled requests use the same configured
+configured geometry; a geometry provider supplies geometry that changes during the
+run (see [Changing geometry, holds and retiming](@ref)). Periodic and scheduled requests use the same configured
 absolute time tolerance at tick boundaries. There is no guidance tick at the
 mission end. Events without an eligible guidance tick before the end remain
 undelivered; inspect the recorded requests rather than assuming every configured
 event ran.
 
-Every failed initial, forced, background or retiming request stops this route with
-`RPOPlanningError`, which carries copied diagnostics, spacecraft/request IDs, and
-any original exception and backtrace. There is no implicit retain-old-plan or
-emergency-controller fallback. An explicit `:retime` event requires the planner's
-retiming capability; the two built-in adapters do not advertise it.
+By default, every failed initial, forced, background or retiming request stops this
+route with `RPOPlanningError`, which carries copied diagnostics, spacecraft/request
+IDs, and any original exception and backtrace. There is no implicit retain-old-plan
+or emergency-controller fallback; `on_rejection=:install_fallback` opts into an
+explicit hold instead. An explicit `:retime` event requires the planner's retiming
+capability; `HYPRRPOPlanner` advertises it and `DirectRPOPlanner` does not.
 
 Immediately before control reads a reference, the lifecycle checks its lifetime
 through the entire preview. Repeating the last reference column cannot bypass
@@ -102,6 +103,53 @@ before the replacement. Other intervals must cover the next eligible guidance
 tick plus the preview. Without replanning, validity must reach the last control
 update plus the preview. These bounds describe consumption timing; a planner may
 require a longer lifetime to fit its maneuver.
+
+## Changing geometry, holds and retiming
+
+Three opt-in keywords of `make_rpo_configuration` extend the loop above. Each
+request still carries one owned geometry snapshot, and every installed reference
+still passes the same validation.
+
+`geometry_provider` supplies the geometry when it changes during the run. The
+built-in `RPOReplanningSpheres` adds spheres that appear and disappear to the
+station geometry:
+
+```julia
+spheres = RPOReplanningSpheres([(center_rtn=(4.0, 0.0, 0.0), radius_m=0.25,
+                                 appear_time_s=0.2, disappear_time_s=0.8)])
+args = make_rpo_configuration(planner=HYPRRPOPlanner(config), geometry_provider=spheres)
+```
+
+Each geometry has a revision string; equal revisions mean equal geometry. When the
+revision changes, the remaining path of the installed reference is checked against
+the new geometry with the same clearance query and sampling as validation. If it
+still clears, the reference is kept; otherwise a `:replan` request follows. To
+write a provider, subtype `AbstractRPOGeometryProvider` and implement
+`rpo_geometry_revision(provider, revision, time_s)` and
+`rpo_geometry_snapshot(provider, geometry, time_s)`; both receive the configured
+station geometry or its revision.
+
+`on_rejection=:install_fallback` replaces a rejected request with a hold: a
+reference at the chaser's position with zero velocity, which the controller brakes
+onto. A hold is not validated and does not reach the goal. It is retried once with
+a `:replan` request when the chaser settles on it (`hold_position_tolerance_m`,
+`hold_speed_tolerance_mps`), renewed by a request before it expires, and replanned
+when the geometry revision changes. Interval and tracking-error replans are
+suspended while it holds, so a planner that keeps refusing is asked again only by
+these triggers or a planning event. The default, `on_rejection=:fail`, stops the
+run as before.
+
+`retime_tracking_error_m` requests `:retime` when the tracking error exceeds it and
+stays within `tracking_error_limit_m`. It needs a planner that declares retiming.
+`HYPRRPOPlanner` retimes the installed reference's validated path from the point
+nearest the chaser, with the same limits as a new plan; a retime cannot reach a
+changed goal, so it is then refused. Validation can also refuse a retimed
+reference, for example where HYPR's tangential profile turns faster than the
+common acceleration limit; with `on_rejection=:install_fallback` the chaser then
+holds.
+
+The run records mark each of these requests, and each kept geometry revision, with
+`event=:trigger`, and each hold with `event=:fallback_installed`.
 
 ## Ownership, reproducibility and inspection
 
@@ -227,8 +275,19 @@ HYPR planning, pass `planner=HYPRRPOPlanner(RPOPSOConfig(...))`; the configurati
 then uses a `PlannerGuidance`, which validates each reference before installing
 it.
 
-The model stays until the planner path supports three of its features:
-time-varying replanning spheres, a safe hold when replanning fails, and retiming of
-the installed reference. A run on the planner path draws from a different random
-stream, and its validation can refuse a reference the model would install, so its
-trajectories are not identical to the model's.
+The planner path covers the model's replanning features:
+
+| `RPOGuidanceModel` | `make_rpo_configuration` |
+| --- | --- |
+| `replanning_config` spheres | `geometry_provider=RPOReplanningSpheres(spheres)` |
+| safe hold when replanning fails | `on_rejection=:install_fallback`, `hold_position_tolerance_m`, `hold_speed_tolerance_mps` |
+| retiming on tracking error | `retime_tracking_error_m`, or a `:retime` planning event |
+| `safe_distance_m` | the clearance in `constraints` |
+| `force_replan` | `RPOPlanningEvent(time_s; reason=:forced)` |
+
+The two differ in policy. The model brakes to a hold before every replan and
+retimes when clearance falls below a margin; the planner path replans at once and
+holds only when a request is rejected. A run on the planner path also draws from a
+different random stream, and its validation can refuse a reference the model would
+install, so its trajectories are not identical to the model's. The model will be
+removed in a later release.

@@ -273,18 +273,17 @@ function SimulationModel.EnvironmentModels.getDensity(
     return model.rho, model.temp, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-function SimulationModel.calcControlForceTorque(
+function SimulationModel.control_wrench(
     model::TimedTangentialThrusterModel,
-    u::AbstractVector{Float64},
+    x::SimulationModel.StateSample,
     p::ODEParams,
-    i::Int64,
     t::Float64
 )
     if t < model.start_time || t > model.stop_time
         return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     end
 
-    v = SVector{3, Float64}(u.vel)
+    v = x.vel_ii
     vm = norm(v)
     if vm == 0.0 || !isfinite(vm)
         return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)

@@ -20,7 +20,9 @@
 using PackageCompiler
 
 # All packages from the root Project.toml that should be baked into the
-# full local sysimage. PackageCompiler needs them listed by symbol.
+# full local sysimage. PackageCompiler needs them listed by symbol, and each
+# name must be :SpaceAGORA or a root Project.toml [deps] entry
+# (test/gates/ci_sysimage_package_lists_gate.jl checks both lists).
 # :SpaceAGORA itself is included so the package's own ~40+ src/ files get
 # compiled into the image too -- without it, PackageCompiler only bakes in
 # the dependencies, and `using SpaceAGORA` still recompiles the package's own
@@ -40,11 +42,9 @@ const FULL_PACKAGES = [
     :OrdinaryDiffEq,
     :PlotlyJS,
     :Polyester,
-    :Quaternions,
     :Reexport,
     :Roots,
     :SPICE,
-    :SatelliteToolbox,
     :SatelliteToolboxGeomagneticField,
     :SatelliteToolboxGravityModels,
     :SpecialFunctions,
@@ -66,11 +66,9 @@ const CI_PACKAGES = [
     :Interpolations,
     :OrdinaryDiffEq,
     :Polyester,
-    :Quaternions,
     :Reexport,
     :Roots,
     :SPICE,
-    :SatelliteToolbox,
     :SatelliteToolboxGeomagneticField,
     :SatelliteToolboxGravityModels,
     :SpecialFunctions,

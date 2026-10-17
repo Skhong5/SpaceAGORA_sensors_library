@@ -440,7 +440,9 @@ end
         ctx_constraints.config.max_alpha_rad,
     ) == ctx_constraints.config.min_alpha_rad
 
-    force, torque = _EDG_SM.calcControlForceTorque(ctx_constraints.control, ctx_constraints.u.sc[1], ctx_constraints.p, 1, 0.0)
+    sc1 = ctx_constraints.u.sc[1]
+    x_ctx = _EDG_SM.StateSample(SVector{3, Float64}(sc1.pos), SVector{3, Float64}(sc1.vel), sc1.mass; spacecraft_index=1)
+    force, torque = _EDG_SM.control_wrench(ctx_constraints.control, x_ctx, ctx_constraints.p, 0.0)
     @test force == SVector{3, Float64}(0.0, 0.0, 0.0)
     @test torque == SVector{3, Float64}(0.0, 0.0, 0.0)
 end
