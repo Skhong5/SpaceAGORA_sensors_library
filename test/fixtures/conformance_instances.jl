@@ -181,6 +181,10 @@ gnc_exemptions() = Dict{Any, String}(
         "with the algorithm contract",
     SpaceAGORA.SolarPanelAngleOfAttackControlModel =>
         "the panel actuator inside AerobrakingEnergyDepletionControlModel, with no control tick of its own",
+    SpaceAGORA.AlgorithmGuidance =>
+        "the generic binding that runs an algorithm of any family in a simulation; its family's preflight needs " *
+        "that family's configuration (the burn-plan family: one burn scheduler sized for the run's spacecraft), " *
+        "and it is checked with the algorithm contract",
 )
 
 end # module ConformanceInstances

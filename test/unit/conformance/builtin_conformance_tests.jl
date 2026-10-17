@@ -86,11 +86,12 @@ end
             entry.runs || @test !isempty(strip(entry.reason))
         end
     end
-    @testset "the exempt RPO planner binding has its guidance tick" begin
+    @testset "the exempt algorithm bindings have their guidance tick" begin
         fixture = C.conformance_fixture()
-        planner_guidance = SpaceAGORA.RPOPlannerLifecycle.PlannerGuidance
-        @test hasmethod(SpaceAGORA.calcGuidanceEffect!,
-            Tuple{planner_guidance, fixture.call.state, fixture.call.params, Float64, Int})
+        for binding in (SpaceAGORA.RPOPlannerLifecycle.PlannerGuidance, SpaceAGORA.AlgorithmGuidance)
+            @test hasmethod(SpaceAGORA.calcGuidanceEffect!,
+                Tuple{binding, fixture.call.state, fixture.call.params, Float64, Int})
+        end
     end
     @testset "the energy depletion panel actuator has outputs but no tick of its own" begin
         aoa = SpaceAGORA.SolarPanelAngleOfAttackControlModel
