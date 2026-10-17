@@ -18,7 +18,7 @@ using Printf
 planet = Earth()
 ephemerides = SimpleEphemeridesModel()
 epoch = InitialTime(year=2024, month=3, day=20, hour=0, minute=0, second=0.0)
-sun_at_start = SM.ephemerides_sun_direction_ii(planet, SM.ephemerides_time_seconds(epoch, ephemerides), ephemerides)
+sun_at_start = SM.ephemerides_sun_ii(ephemerides, planet, SM.ephemerides_epoch_seconds(ephemerides, epoch))
 
 radius = planet.Rp_e + 500e3
 ic = CartesianInitialCondition(SVector(radius, 0.0, 0.0), SVector(0.0, sqrt(planet.μ / radius), 0.0); q=SVector(0.0, 0.0, 0.0, 1.0))

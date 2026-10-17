@@ -1,6 +1,6 @@
 # Central body description and the sampled J2000 -> body-fixed rotation table.
 #
-# The rotation comes from the same `planet_frame_lpi` the runtime uses for
+# The rotation comes from the same `ephemerides_frame_lpi` the runtime uses for
 # latitude/longitude, for both the SPICE and simple ephemerides paths, so a
 # ground track drawn by the viewer lands where the CSV says it does. Sampling
 # it here means the viewer needs no SPICE kernels; it interpolates between
@@ -49,7 +49,7 @@ function planet_rotation_table(
     table = Vector{SVector{4, Float64}}(undef, length(t_s))
     previous = nothing
     for (k, t) in enumerate(t_s)
-        dcm = planet_frame_lpi(planet, Float64(et_start_s) + Float64(t), ephemerides_model)
+        dcm = _ephemerides_frame_lpi(ephemerides_model, planet, Float64(et_start_s) + Float64(t))
         q = _continuous_quaternion(_svec4(dcm_to_quaternion(SMatrix{3, 3, Float64}(dcm))), previous)
         table[k] = q
         previous = q

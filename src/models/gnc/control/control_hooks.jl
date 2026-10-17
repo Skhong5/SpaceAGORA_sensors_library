@@ -21,7 +21,7 @@ module ControlHooks
     using ..AbstractTypes: AbstractTerrainModel
     using ..TerrainModels: NoTerrainModel, DEMTerrainModel
     using ..EnvironmentModels: getDensity, _environment_wind
-    using ..EphemeridesModels: ephemerides_requires_spice, planet_frame_lpi
+    using ..EphemeridesModels: ephemerides_requires_spice
     using ..ReferenceSystems
     using ..LinearAlgebra
     using ..StaticArrays

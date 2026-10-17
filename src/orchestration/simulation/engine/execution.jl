@@ -687,9 +687,9 @@ function run_simulation(
             candidate_force=SimulationModel.force_on_endpoint))
     end
     ephemerides_model = args.environment_model.ephemerides_model
-    et_start = SimulationModel.ephemerides_time_seconds(args.initial_time, ephemerides_model)
+    et_start = SimulationModel.EphemeridesModels._ephemerides_epoch_seconds(ephemerides_model, args.initial_time)
     p.shared_buffers.et_start[] = et_start
-    args.environment_model.planet.L_PI .= SimulationModel.planet_frame_lpi(args.environment_model.planet, et_start, ephemerides_model)
+    args.environment_model.planet.L_PI .= SimulationModel.EphemeridesModels._ephemerides_frame_lpi(ephemerides_model, args.environment_model.planet, et_start)
     if SimulationModel.ephemerides_requires_spice(ephemerides_model)
         Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.planet_pxform_runtime_calls, 1)
     end

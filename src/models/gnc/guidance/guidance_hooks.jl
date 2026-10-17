@@ -14,7 +14,7 @@ module GuidanceHooks
     using ..NavigationHooks: RPOReferenceGeometry, RPOStationGeometry
     using ..NavigationHooks: rpo_clearance_distance_to_station, rpo_clearance_to_station, rpo_path_clearance_stats
     using ..CommandTypes: PropulsiveManeuverCommand, AerobrakingControlCommand
-    using ..EphemeridesModels: planet_frame_lpi
+    using ..EphemeridesModels: _ephemerides_frame_lpi
     using ..GravityEffectors: aerobraking_gravity_force_ii
     using ..ReferenceSystems
     using ..LinearAlgebra

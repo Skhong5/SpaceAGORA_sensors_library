@@ -20,7 +20,7 @@ given.
 @kwdef struct SimpleEphemeridesModel <: AbstractEphemeridesModel
     reference_epoch_seconds::Float64 = 0.0
     # NaN is a sentinel meaning "planet-true prime meridian": Earth uses GMST
-    # (see planet_frame_lpi below), other planets keep a zero angle at the
+    # (see ephemerides_frame_lpi below), other planets keep a zero angle at the
     # reference epoch. An explicit finite value selects the legacy linear model
     # θ = pm + ω₃·(et − reference_epoch_seconds) exactly as given.
     prime_meridian_at_reference_rad::Float64 = NaN
@@ -82,14 +82,14 @@ which SPICE read as 4.1 s.
     return Dates.format(_initial_time_datetime(initial_time), _INITIAL_TIME_UTC_FORMAT)
 end
 
-@inline function ephemerides_time_seconds(initial_time, ::SpiceEphemeridesModel)::Float64
+@inline function ephemerides_epoch_seconds(::SpiceEphemeridesModel, initial_time)::Float64
     utc = _initial_time_utc_string(initial_time)
     return lock(tracked_lock(:spice_body)) do
         utc2et(utc)
     end
 end
 
-@inline function ephemerides_time_seconds(initial_time, model::SimpleEphemeridesModel)::Float64
+@inline function ephemerides_epoch_seconds(model::SimpleEphemeridesModel, initial_time)::Float64
     start_time = _initial_time_datetime(initial_time)
     elapsed_ms = Dates.value(start_time - _J2000_UTC)
     return model.reference_epoch_seconds + elapsed_ms / 1000.0
@@ -122,7 +122,7 @@ function _spice_planet_frame_lpi(planet, et::Float64)::SMatrix{3, 3, Float64}
     end
 end
 
-@inline function planet_frame_lpi(planet, et::Float64, ::SpiceEphemeridesModel)::SMatrix{3, 3, Float64}
+@inline function ephemerides_frame_lpi(::SpiceEphemeridesModel, planet, et::Float64)::SMatrix{3, 3, Float64}
     return _spice_planet_frame_lpi(planet, et)
 end
 
@@ -135,7 +135,7 @@ end
     return mod2pi(rem(gmst_s, 86400.0) * (2π / 86400.0))
 end
 
-@inline function planet_frame_lpi(planet, et::Float64, model::SimpleEphemeridesModel)::SMatrix{3, 3, Float64}
+@inline function ephemerides_frame_lpi(model::SimpleEphemeridesModel, planet, et::Float64)::SMatrix{3, 3, Float64}
     elapsed = et - model.reference_epoch_seconds
     pm = model.prime_meridian_at_reference_rad
     θ = if isnan(pm)
@@ -190,20 +190,9 @@ end
 
 @inline _sun_observer_name(planet)::String = replace(lowercase(strip(String(planet.name))), ' ' => '_')
 
-"""
-    ephemerides_sun_direction_ii(planet, et, ephemerides_model) -> Union{Nothing, SVector{3, Float64}}
-
-Unit vector from the planet's center to the Sun, in the inertial (J2000) frame
-the integrated state uses, or `nothing` when this ephemeris backend cannot
-resolve the Sun for this body.
-
-`SpiceEphemeridesModel` asks SPICE for the Sun's position relative to the
-planet, so it works for every body whose SPK is furnished. `SimpleEphemeridesModel`
-carries no planetary ephemeris, so it answers only for Earth, from the
-low-precision analytic Sun above; it returns `nothing` for any other body
-rather than inventing a direction.
-"""
-function ephemerides_sun_direction_ii(planet, et::Float64, ::SpiceEphemeridesModel)::Union{Nothing, SVector{3, Float64}}
+# The Sun direction (`ephemerides_sun_ii`): SPICE for any body whose SPK is
+# furnished, the low-precision analytic Sun above for Earth only.
+function ephemerides_sun_ii(::SpiceEphemeridesModel, planet, et::Float64)::Union{Nothing, SVector{3, Float64}}
     observer = _sun_observer_name(planet)
     position = try
         spice_position_j2000_m("sun", et, observer)
@@ -222,7 +211,7 @@ function ephemerides_sun_direction_ii(planet, et::Float64, ::SpiceEphemeridesMod
     return position / distance
 end
 
-function ephemerides_sun_direction_ii(planet, et::Float64, model::SimpleEphemeridesModel)::Union{Nothing, SVector{3, Float64}}
+function ephemerides_sun_ii(model::SimpleEphemeridesModel, planet, et::Float64)::Union{Nothing, SVector{3, Float64}}
     _sun_observer_name(planet) == "earth" || return nothing
     return _low_precision_sun_direction_eme((et - model.reference_epoch_seconds) / 86400.0)
 end

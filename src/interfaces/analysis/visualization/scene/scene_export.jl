@@ -30,7 +30,7 @@ function build_visualization_scene(
 )::VisualizationScene
     ephemerides_model = args.environment_model.ephemerides_model
     planet = args.environment_model.planet
-    et_start = ephemerides_time_seconds(args.initial_time, ephemerides_model)
+    et_start = _ephemerides_epoch_seconds(ephemerides_model, args.initial_time)
     mission = args.mission_configuration
     sample_times = rotation_sample_times(mission.mission_time, mission.data_rate; max_samples=rotation_max_samples)
     spacecraft = SpacecraftGeometry[

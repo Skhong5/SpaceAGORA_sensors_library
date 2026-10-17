@@ -72,7 +72,7 @@ function configure_case(model, assets, panel_cap_deg)
     cap = validate_panel_cap(panel_cap_deg)
     planet = SM.Mars()
     epoch = initial_time()
-    start_et = SM.ephemerides_time_seconds(epoch, SM.SpiceEphemeridesModel())
+    start_et = SM.ephemerides_epoch_seconds(SM.SpiceEphemeridesModel(), epoch)
     state = SP.spkezr("-53", start_et, "J2000", "NONE", "499")[1] .* 1000.0
     spacecraft = make_three_body_spacecraft(
         bus_dims=(2.2, 2.6, 1.7), panel_dims=(0.01, 1.945, 1.7),

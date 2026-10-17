@@ -2,7 +2,7 @@
     if ephemerides_requires_spice(ephemerides_model)
         Base.Threads.atomic_add!(counter, 1)
     end
-    return planet_frame_lpi(planet, et, ephemerides_model)
+    return _ephemerides_frame_lpi(ephemerides_model, planet, et)
 end
 
 # The environment helpers below are compiled once and never inlined: the
@@ -87,7 +87,7 @@ function update_planet_frame_callback()
 
     function init_affect!(cb, u, t, integrator)
         p = integrator.p
-        p.shared_buffers.et_start[] = ephemerides_time_seconds(p.args.initial_time, p.args.environment_model.ephemerides_model)
+        p.shared_buffers.et_start[] = _ephemerides_epoch_seconds(p.args.environment_model.ephemerides_model, p.args.initial_time)
         affect!(integrator) # Call the affect! function at the start of the simulation to initialize the planet frame
     end
 

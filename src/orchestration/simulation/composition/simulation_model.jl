@@ -130,7 +130,7 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "dynamics", "external_pro
 module FrameTransforms
 using ..Geodesy
 using ..OrbitalGeometry
-using ..EphemeridesModels: ephemerides_requires_spice, planet_frame_lpi
+using ..EphemeridesModels: ephemerides_requires_spice, _ephemerides_frame_lpi
 include(joinpath(@__DIR__, "..", "..", "..", "foundation", "core", "interfaces", "reference_system.jl"))
 export _EARTH_HIGH_PREC_BODY_FIXED_FRAME, _EARTH_FALLBACK_BODY_FIXED_FRAME
 export _spice_lock, _spice_frame_lock, r_intor_p!, r_pintor_i

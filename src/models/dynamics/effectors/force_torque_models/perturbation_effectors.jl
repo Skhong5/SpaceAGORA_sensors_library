@@ -4,11 +4,11 @@ module PerturbationEffectors
     using ...EffectorSampling: StateSample, EnvironmentSample, ThirdBodyEphemerisSample, EffectorEnvironmentRequirements, LinkStateSample
     import ...EffectorSampling: link_wrench_capable, link_wrench
     using ...Planets: Earth, Mars, Venus, Moon, Titan
-    using ...EphemeridesModels: spice_position_j2000_m
+    using ...EphemeridesModels: spice_position_j2000_m, _ephemerides_frame_lpi
     using ...ParallelPolicy
     using ....RuntimeServices: SPICE_LOCK
     using ...SimulationModel: SRPSunEphemerisCache, NBodyEphemerisCache, SpiceRhsMemo
-    using ...SimulationModel: ephemerides_cache_key, ephemerides_requires_spice, planet_frame_lpi
+    using ...SimulationModel: ephemerides_cache_key, ephemerides_requires_spice
     using ..GravityEffectors: encke_point_mass_difference
     using ...ParallelPolicy: _multibody_thread_decision
     # Shared geodetic conversion for the IGRF field option.

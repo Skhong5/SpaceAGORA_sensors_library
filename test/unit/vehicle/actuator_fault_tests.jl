@@ -181,7 +181,7 @@ end
         sc, root = far_spacecraft()
         ephem = SM.SimpleEphemeridesModel()
         epoch = SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
-        sun = SM.ephemerides_sun_direction_ii(SM.Earth(), SM.ephemerides_time_seconds(epoch, ephem), ephem)
+        sun = SM.ephemerides_sun_ii(ephem, SM.Earth(), SM.ephemerides_epoch_seconds(ephem, epoch))
         add_power!(sc, root, SolarArray(normal=sun, area_m2=0.03, efficiency=0.3))
         add_power!(sc, root, Battery(capacity_wh=5.0, initial_soc=0.0, recovery_soc=0.5))
         add_power!(sc, root, PowerLoad(power_w=5.0))

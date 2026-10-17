@@ -624,6 +624,30 @@ end
                     @test any(v -> occursin("the $(hook) forwarder for direct calls (five untyped positional arguments) is missing", v), rejected.violations)
                 end
             end
+            # The model-last ephemerides hooks too, each with its untyped fallback.
+            for (hook, text) in (
+                    ("planet_frame_lpi", "SpaceAGORA.planet_frame_lpi(planet, et, model::Probe) = nothing\n"),
+                    ("ephemerides_sun_direction_ii", "function EphemeridesModels.ephemerides_sun_direction_ii(planet, et::Float64, ::Probe)\n    return nothing\nend\n"),
+                    ("ephemerides_time_seconds", "(::typeof(ephemerides_time_seconds))(initial_time, model::Probe) = 0.0\n"))
+                _with_probe(probe, text) do
+                    rejected = run_gate()
+                    @test _failed_with(rejected, message)
+                    @test _reports(rejected, probe, fixture, "deprecated hook $(hook)")
+                end
+            end
+            ephemerides_hooks = joinpath(fixture, "src", "models", "environment", "ephemerides", "ephemerides_hooks.jl")
+            ephemerides_original = read(ephemerides_hooks, String)
+            for (hook, needle, changed, count) in (
+                    ("planet_frame_lpi", "function planet_frame_lpi(planet, et, model)", "function planet_frame_lpi(planet, et::Float64, model)", "three"),
+                    ("ephemerides_sun_direction_ii", "function ephemerides_sun_direction_ii(planet, et, model)", "function ephemerides_sun_direction_ii(planet, et)", "three"),
+                    ("ephemerides_time_seconds", "function ephemerides_time_seconds(initial_time, model)", "function ephemerides_time_seconds(initial_time, model::AbstractEphemeridesModel)", "two"))
+                @test occursin(needle, ephemerides_original)
+                _with_text(ephemerides_hooks, replace(ephemerides_original, needle => changed; count=1)) do
+                    rejected = run_gate()
+                    @test _failed_with(rejected, message)
+                    @test any(v -> occursin("the $(hook) forwarder for direct calls ($(count) untyped positional arguments) is missing", v), rejected.violations)
+                end
+            end
             bridges = joinpath(fixture, "src", "orchestration", "simulation", "engine", "control_hook_bridges.jl")
             original = read(bridges, String)
             for hook in ("calcControlForceTorque", "calcControlMassFlowRate", "calcReactionWheelTorque")

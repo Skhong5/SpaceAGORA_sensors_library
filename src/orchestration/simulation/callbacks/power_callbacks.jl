@@ -16,7 +16,7 @@ function _power_snapshot(sc_view, spacecraft, p, sat_idx::Int, t::Float64)
     generation = 0.0
     if any(link -> !isempty(link.solar_arrays), spacecraft.links)
         et = p.shared_buffers.et_start[] + t
-        sun_dir = ephemerides_sun_direction_ii(planet, et, args.environment_model.ephemerides_model)
+        sun_dir = _ephemerides_sun_ii(args.environment_model.ephemerides_model, planet, et)
         if sun_dir !== nothing
             pos = SVector{3, Float64}(sc_view.pos[1], sc_view.pos[2], sc_view.pos[3])
             sun_ii = SVector{3, Float64}(sun_dir) * mean_solar_distance_m(planet)

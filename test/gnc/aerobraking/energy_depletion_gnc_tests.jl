@@ -129,7 +129,7 @@ function _edg_test_context(;
         ),
     )
     p = _EDG_SM.ODEParams(n_sats=1, args=args)
-    p.shared_buffers.et_start[] = _EDG_SM.ephemerides_time_seconds(args.initial_time, args.environment_model.ephemerides_model)
+    p.shared_buffers.et_start[] = _EDG_SM.ephemerides_epoch_seconds(args.environment_model.ephemerides_model, args.initial_time)
     u = ComponentVector(sc=[(pos=collect(pos), vel=collect(vel), mass=461.0, heat_loads=zeros(3))])
     return (; config, state, guidance, control, args, p, u, spacecraft)
 end
@@ -201,7 +201,7 @@ end
     )
     p_without_nbody = _EDG_SM.ODEParams(n_sats=1, args=args_without_nbody)
     p_with_nbody = _EDG_SM.ODEParams(n_sats=1, args=args_with_nbody)
-    et = _EDG_SM.ephemerides_time_seconds(epoch, ephemerides_model)
+    et = _EDG_SM.ephemerides_epoch_seconds(ephemerides_model, epoch)
     p_without_nbody.shared_buffers.et_start[] = et
     p_with_nbody.shared_buffers.et_start[] = et
 
