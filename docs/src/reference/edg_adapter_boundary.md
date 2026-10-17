@@ -17,7 +17,7 @@ the scientific policy and its current limits.
 | Observation copies, atmosphere, epoch, frames, gravity and vehicle queries | SpaceAGORA, behind the versioned facade. |
 | Integrator, heat integrals, event roots, solver masks, callback order, output and panel actuation | SpaceAGORA. |
 | Fresh-run initialization, per-passage bookkeeping and shared guidance/control state | Core lifecycle hooks, operating on the run's own EDG state. |
-| Older E-EDG/T-EDG bridge routes | Retained in core; shared typed numerical calls forward to the optional provider. |
+| Older E-EDG/T-EDG strategy routes | Removed from core; SpaceAGORAEDG is the only EDG implementation. |
 
 ## Supported calls and values
 

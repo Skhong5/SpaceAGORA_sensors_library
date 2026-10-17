@@ -49,6 +49,10 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :RPOPlanningError, rendered = "SpaceAGORA.RPOPlanningError"),
         (owner = :SpaceAGORA, symbol = :make_rpo_configuration, rendered = "SpaceAGORA.make_rpo_configuration"),
         (owner = :SpaceAGORA, symbol = :rpo_run_report, rendered = "SpaceAGORA.rpo_run_report"),
+        (owner = :SpaceAGORA, symbol = :AbstractRPOGeometryProvider, rendered = "SpaceAGORA.AbstractRPOGeometryProvider"),
+        (owner = :SpaceAGORA, symbol = :rpo_geometry_revision, rendered = "SpaceAGORA.rpo_geometry_revision"),
+        (owner = :SpaceAGORA, symbol = :rpo_geometry_snapshot, rendered = "SpaceAGORA.rpo_geometry_snapshot"),
+        (owner = :SpaceAGORA, symbol = :RPOReplanningSpheres, rendered = "SpaceAGORA.RPOReplanningSpheres"),
     ]),
     (title = "GNC algorithm contract", items = [
         (owner = :SpaceAGORA, symbol = :AbstractGNCAlgorithm, rendered = "SpaceAGORA.AbstractGNCAlgorithm"),
@@ -80,6 +84,7 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :run_algorithm_request!, rendered = "SpaceAGORA.run_algorithm_request!"),
         (owner = :SpaceAGORA, symbol = :algorithm_runtime, rendered = "SpaceAGORA.algorithm_runtime"),
         (owner = :SpaceAGORA, symbol = :bound_algorithm, rendered = "SpaceAGORA.bound_algorithm"),
+        (owner = :SpaceAGORA, symbol = :bound_family, rendered = "SpaceAGORA.bound_family"),
         (owner = :SpaceAGORA, symbol = :bound_link, rendered = "SpaceAGORA.bound_link"),
         (owner = :SpaceAGORA, symbol = :build_algorithm_request, rendered = "SpaceAGORA.build_algorithm_request"),
         (owner = :SpaceAGORA, symbol = :trusted_queries, rendered = "SpaceAGORA.trusted_queries"),
@@ -280,7 +285,6 @@ const PUBLIC_API_SECTIONS = [
     (
         title = "Model Extension Hooks",
         items = [
-            (owner = :SpaceAGORA, symbol = :calcForceTorque, rendered = "SpaceAGORA.calcForceTorque"),
             (owner = :SpaceAGORA, symbol = :wrench, rendered = "SpaceAGORA.wrench"),
             (owner = :SpaceAGORA, symbol = :environment_requirements, rendered = "SpaceAGORA.environment_requirements"),
             (owner = :SpaceAGORA, symbol = :solver_partition, rendered = "SpaceAGORA.solver_partition"),
@@ -292,15 +296,24 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :getDensityBatch!, rendered = "SpaceAGORA.getDensityBatch!"),
             (owner = :SpaceAGORA, symbol = :with_density_model_epoch, rendered = "SpaceAGORA.with_density_model_epoch"),
             (owner = :SpaceAGORA, symbol = :calcControlEffect!, rendered = "SpaceAGORA.calcControlEffect!"),
-            (owner = :SpaceAGORA, symbol = :calcControlForceTorque, rendered = "SpaceAGORA.calcControlForceTorque"),
-            (owner = :SpaceAGORA, symbol = :calcControlMassFlowRate, rendered = "SpaceAGORA.calcControlMassFlowRate"),
-            (owner = :SpaceAGORA, symbol = :calcReactionWheelTorque, rendered = "SpaceAGORA.calcReactionWheelTorque"),
+            (owner = :SpaceAGORA, symbol = :control_wrench, rendered = "SpaceAGORA.control_wrench"),
+            (owner = :SpaceAGORA, symbol = :control_propellant_rate, rendered = "SpaceAGORA.control_propellant_rate"),
+            (owner = :SpaceAGORA, symbol = :control_wheel_torque, rendered = "SpaceAGORA.control_wheel_torque"),
             (owner = :SpaceAGORA, symbol = :control_thruster_levels, rendered = "SpaceAGORA.control_thruster_levels"),
             (owner = :SpaceAGORA, symbol = :touchdown_spec, rendered = "SpaceAGORA.touchdown_spec"),
             (owner = :SpaceAGORA, symbol = :calcGuidanceEffect!, rendered = "SpaceAGORA.calcGuidanceEffect!"),
             (owner = :SpaceAGORA, symbol = :calcNavigationEffect!, rendered = "SpaceAGORA.calcNavigationEffect!"),
             (owner = :SpaceAGORA, symbol = :getHeatRate, rendered = "SpaceAGORA.getHeatRate"),
             (owner = :SpaceAGORA, symbol = :bind_spacecraft, rendered = "SpaceAGORA.bind_spacecraft")
+        ]
+    ),
+    (
+        title = "Deprecated hooks",
+        items = [
+            (owner = :SpaceAGORA, symbol = :calcForceTorque, rendered = "SpaceAGORA.calcForceTorque"),
+            (owner = :SpaceAGORA, symbol = :calcControlForceTorque, rendered = "SpaceAGORA.calcControlForceTorque"),
+            (owner = :SpaceAGORA, symbol = :calcControlMassFlowRate, rendered = "SpaceAGORA.calcControlMassFlowRate"),
+            (owner = :SpaceAGORA, symbol = :calcReactionWheelTorque, rendered = "SpaceAGORA.calcReactionWheelTorque")
         ]
     ),
     (

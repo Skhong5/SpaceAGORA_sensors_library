@@ -117,6 +117,7 @@ function _missing_model_hooks(args, call, solver_mode::Symbol=:tsit5)::Vector{St
     U, P, views = call.state, call.params, call.spacecraft
     tick(T) = Tuple{T, U, P, Float64, Int}
     sampled(f, T) = hasmethod(f, Tuple{T, SimulationModel.StateSample, SimulationModel.EnvironmentSample, Float64})
+    controlled(f, T) = hasmethod(f, Tuple{T, SimulationModel.StateSample, P, Float64})
     problems = String[]
     for (k, model) in enumerate(args.guidance_model.guidance_effectors)
         f = SimulationModel.calcGuidanceEffect!
@@ -137,13 +138,17 @@ function _missing_model_hooks(args, call, solver_mode::Symbol=:tsit5)::Vector{St
             push!(problems, _missing_hook_line(location, "control_model", model, SimulationModel.calcControlEffect!,
                 "calcControlEffect!(model, u, p, t::Float64, spacecraft_index::Int)"))
         # The dynamics read a `:mounted` effector's wrench from its mounted
-        # actuators and never call calcControlForceTorque on it.
+        # actuators and never call control_wrench on it. Otherwise they call
+        # control_wrench when the type has it (the query `_control_wrench`
+        # makes), and else the type's own method of the deprecated
+        # calcControlForceTorque, which `_deprecated_model_hooks` warns about;
+        # the untyped fallback for direct calls does not count.
         mode = SimulationModel.actuation_mode(model)
         mode === :mounted && continue
-        f = SimulationModel.calcControlForceTorque
-        all(X -> hasmethod(f, Tuple{T, X, P, Int, Float64}), views) ||
-            push!(problems, _missing_hook_line(location, "control_model", model, f,
-                "calcControlForceTorque(model, u, p, i::Int, t::Float64), which the dynamics call in actuation_mode $(repr(mode))"))
+        controlled(SimulationModel.control_wrench, T) && continue
+        all(X -> _own_method(SimulationModel.calcControlForceTorque, Tuple{T, X, P, Int, Float64}), views) && continue
+        push!(problems, _missing_hook_line(location, "control_model", model, SimulationModel.control_wrench,
+            "control_wrench(model, x::StateSample, p, t::Float64), which the dynamics call in actuation_mode $(repr(mode))"))
     end
     for (k, model) in enumerate(args.dynamics_model.dynamic_effectors)
         location = "dynamics_model.dynamic_effectors[$k]"
@@ -168,7 +173,7 @@ function _missing_model_hooks(args, call, solver_mode::Symbol=:tsit5)::Vector{St
         # harmonics model has `wrench`; the dynamics evaluate it through its own
         # preallocated kernel instead.
         sampled(SimulationModel.wrench, T) && continue
-        all(X -> _own_force_torque_method(T, X, P), views) && continue
+        all(X -> _own_method(SimulationModel.calcForceTorque, Tuple{T, X, P, Int}), views) && continue
         # A model that opts into the per-link kernel is evaluated through
         # link_wrench on articulated spacecraft with live-pose loads; it is
         # accepted without the base-body hooks the other runs would need.
@@ -183,14 +188,32 @@ function _missing_model_hooks(args, call, solver_mode::Symbol=:tsit5)::Vector{St
     return problems
 end
 
-# Whether `T` has a calcForceTorque method of its own for these argument types,
-# rather than only the forwarder for direct calls (`effector_sampling.jl`), which
-# accepts any arguments.
-function _own_force_torque_method(::Type{T}, ::Type{X}, ::Type{P})::Bool where {T, X, P}
-    f = SimulationModel.calcForceTorque
-    tt = Tuple{T, X, P, Int}
+# Whether the deprecated hook `f` has a method of the model's own for the
+# argument types `tt`, rather than only the untyped fallback for direct calls
+# (`effector_sampling.jl` for calcForceTorque, `control_hook_bridges.jl` for the
+# control hooks), which accepts any arguments.
+function _own_method(f, tt::Type{<:Tuple})::Bool
     hasmethod(f, tt) || return false
-    return which(f, tt) !== which(f, Tuple{Any, Any, Any, Any})
+    return which(f, tt) !== which(f, Tuple{ntuple(_ -> Any, fieldcount(tt))...})
+end
+
+# The deprecated control output hooks, each with its replacement.
+_control_output_hooks() = (
+    (SimulationModel.calcControlForceTorque, SimulationModel.control_wrench),
+    (SimulationModel.calcControlMassFlowRate, SimulationModel.control_propellant_rate),
+    (SimulationModel.calcReactionWheelTorque, SimulationModel.control_wheel_torque),
+)
+
+function _deprecated_control_hook_message(::Type{T}, old, new, has_new::Bool)::String where {T}
+    sign = new === SimulationModel.control_propellant_rate ?
+        " control_propellant_rate returns the propellant used, positive, where calcControlMassFlowRate " *
+        "returns the mass derivative, negative." : ""
+    has_new && return "$(nameof(T)) implements both $(nameof(new)) and $(nameof(old))(model, u, p, i, t). " *
+        "The dynamics call $(nameof(new)), so the $(nameof(old)) method is never used; delete it. " *
+        "$(nameof(old)) is deprecated and will be removed in SpaceAGORA 0.5.0." * sign
+    return "$(nameof(T)) implements $(nameof(old))(model, u, p, i, t), which is deprecated and will be " *
+        "removed in SpaceAGORA 0.5.0. Implement $(nameof(new))(model, x::StateSample, p, t::Float64) " *
+        "instead: the spacecraft's index in the run is x.spacecraft_index." * sign
 end
 
 # The deprecated hooks this run's models implement, as (key, message) pairs for
@@ -200,7 +223,7 @@ function _deprecated_model_hooks(args, call)::Vector{Tuple{Tuple, String}}
     found = Tuple{Tuple, String}[]
     for model in args.dynamics_model.dynamic_effectors
         T = typeof(model)
-        any(X -> _own_force_torque_method(T, X, P), views) || continue
+        any(X -> _own_method(SimulationModel.calcForceTorque, Tuple{T, X, P, Int}), views) || continue
         key = (T, :calcForceTorque)
         any(entry -> first(entry) == key, found) && continue
         has_wrench = hasmethod(SimulationModel.wrench,
@@ -213,6 +236,16 @@ function _deprecated_model_hooks(args, call)::Vector{Tuple{Tuple, String}}
             "removed in SpaceAGORA 0.5.0. Implement wrench(model, x::StateSample, env::EnvironmentSample, " *
             "t::Float64) instead: the spacecraft's index in the run is x.spacecraft_index."
         push!(found, (key, message))
+    end
+    for model in args.control_model.control_effectors
+        T = typeof(model)
+        for (old, new) in _control_output_hooks()
+            any(X -> _own_method(old, Tuple{T, X, P, Int, Float64}), views) || continue
+            key = (T, nameof(old))
+            any(entry -> first(entry) == key, found) && continue
+            has_new = hasmethod(new, Tuple{T, SimulationModel.StateSample, P, Float64})
+            push!(found, (key, _deprecated_control_hook_message(T, old, new, has_new)))
+        end
     end
     return found
 end
@@ -283,8 +316,9 @@ function _validate_ephemerides_support!(args)
     if ephemerides_model isa SimulationModel.SimpleEphemeridesModel
         if _has_active_nbody_effector(args.dynamics_model.dynamic_effectors)
             throw(ArgumentError(
-                "SimpleEphemeridesModel does not support active N-body gravity effectors. " *
-                "Use SpiceEphemeridesModel() for high-fidelity third-body runs."
+                "SimpleEphemeridesModel does not support third-body ephemerides: active N-body gravity " *
+                "effectors and models declaring environment_requirements(model).third_body_names need them. " *
+                "Use SpiceEphemeridesModel() for third-body runs."
             ))
         end
         if _has_active_srp_effector(args.dynamics_model.dynamic_effectors)
@@ -2085,11 +2119,15 @@ end
     )
 end
 
+# An effector needs third-body ephemerides either as an N-body gravity model or
+# by declaring environment_requirements(model).third_body_names (the public
+# extension hook), which the effector sampler serves for any model.
 @inline function _has_active_nbody_effector(dynamic_effectors::Tuple)::Bool
     @inbounds for effector in dynamic_effectors
         if _is_nbody_effector_like(effector) && !isempty(effector.body_names)
             return true
         end
+        isempty(SimulationModel.environment_requirements(effector).third_body_names) || return true
     end
     return false
 end
@@ -2098,10 +2136,9 @@ function _collect_nbody_query_names(dynamic_effectors::Tuple)::Vector{String}
     names = String[]
     seen = Set{String}()
     @inbounds for effector in dynamic_effectors
-        if !_is_nbody_effector_like(effector)
-            continue
-        end
-        for body_name in effector.body_names
+        declared = SimulationModel.environment_requirements(effector).third_body_names
+        sources = _is_nbody_effector_like(effector) ? (effector.body_names, declared) : (declared,)
+        for body_names in sources, body_name in body_names
             query_name = SimulationModel.DynamicEffectors._spice_query_name(body_name)
             if !(query_name in seen)
                 push!(names, query_name)
@@ -2308,7 +2345,8 @@ function _prewarm_nbody_ephemeris_cache(
 )::SimulationModel.NBodyEphemerisCache
     _validate_ephemerides_support!(args)
     _has_active_nbody_effector(args.dynamics_model.dynamic_effectors) || throw(ArgumentError(
-        "prewarm_nbody_ephemeris_cache requires at least one active NBodyGravityModel with non-empty body_names."
+        "prewarm_nbody_ephemeris_cache requires at least one active NBodyGravityModel with non-empty body_names " *
+        "or a model declaring environment_requirements(model).third_body_names."
     ))
 
     resolved_dt_s = isnothing(dt_s) ? _nbody_ephemeris_cache_dt_s() : Float64(dt_s)

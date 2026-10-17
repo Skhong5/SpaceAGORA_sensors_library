@@ -19,10 +19,8 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
    - `test/gates/ci_vehicle_structure_boundary_gate.jl`
    - `test/gates/ci_src_completeness_contract_gate.jl`
    - `test/gates/ci_no_legacy_include_chains_gate.jl`
-   - `test/gates/ci_no_inert_force_terms_gate.jl`
    - `test/gates/ci_gnc_aerobraking_boundary_gate.jl`
    - `test/gates/ci_no_guidance_control_cross_include_gate.jl`
-   - `test/gates/ci_aerobraking_strategy_contract_gate.jl`
    - `test/gates/ci_rotational_ownership_gate.jl`
    - `test/gates/ci_scaffold_interface_gate.jl`
    - `test/gates/ci_typed_config_equivalence_gate.jl`
@@ -35,6 +33,7 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
    - `test/gates/ci_gnc_typed_command_boundary_gate.jl` (GNC reaches actuators through the typed command boundary; algorithm directories stay in scan scope)
    - `test/gates/ci_gnc_random_stream_gate.jl` (GNC and the in-repo HYPR adapter draw random numbers only from an explicit stream argument: no `default_rng()`, `seed!` or stream-less `rand`/`randn`)
    - `test/gates/ci_project_compat_gate.jl` (every non-standard-library `[deps]` entry has a `[compat]` bound)
+   - `test/gates/ci_sysimage_package_lists_gate.jl` (every package named in the sysimage builder's `FULL_PACKAGES` and `CI_PACKAGES` is `:SpaceAGORA` or a root `[deps]` entry; parses `build/build_sysimage.jl` and `Project.toml`, builds nothing)
    - `test/gates/ci_runtime_legacy_surface_gate.jl` (the active runtime does not regain prohibited legacy entry surfaces)
    - `test/gates/ci_translational_ownership_gate.jl` (translational equations stay with their owner directory)
    - `test/gates/ci_runtime_any_hotpath_gate.jl` (no new explicit `Vector{Any}` or `Dict{Symbol, Any}` in runtime hot paths, including whitespace and qualified spellings; each inventoried heterogeneous boundary must occur exactly once in its declared owner)
@@ -118,3 +117,6 @@ Nightly stress checks remain required for release readiness and run through `.gi
 
 ## Windows Install Check
 `.github/workflows/windows-install.yml` runs the documented install path and the README quickstart smoke on `windows-latest` with Julia 1.12, weekly, on manual dispatch and on pull requests that change the install path or the pages that document its commands. It is not a required check. A non-blocking job in the same workflow records how Julia 1.13 is refused or fails on that path.
+
+## Contributor CI Workflow
+`.github/workflows/contributor-ci.yml` is a reusable workflow (`on: workflow_call`) for repositories built on SpaceAGORA. The caller passes the same full commit SHA as the `uses:` ref and as `spaceagora-rev`, and records it in `SpaceAGORASource.toml` beside its `Project.toml`, which has no `[sources]` entry for SpaceAGORA. The workflow refuses a mismatch, tests the repository in a separate environment built by `scripts/contributor_environment.jl` with that core developed by path, and certifies interface conformance only. The `contributor-kit` job in `julia-ci.yml` runs it on `test/fixtures/contributor_project/` with this checkout as the core. It is not a required check.

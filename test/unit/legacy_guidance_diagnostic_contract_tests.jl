@@ -1,15 +1,12 @@
 module LegacyGuidanceDiagnosticContractTests
 using Test
-using LinearAlgebra
 using SpaceAGORA: SimulationModel
 
 const ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const Cnf = SimulationModel.ConfigTypes.Cnf
 const EDG = SimulationModel.EDGAlgorithms
 const Guidance = SimulationModel.GuidanceHooks
 
-# Characterize the retained storage boundary without running a shooting solve,
-# loading SPICE kernels, or claiming a physical qualification of its trajectory.
+# Load single definitions from retained sources without running a simulation.
 function source_function(path, name)
     definitions = Expr[]
     for form in Meta.parseall(read(joinpath(ROOT, path), String)).args
@@ -23,82 +20,6 @@ function source_function(path, name)
         push!(definitions, form)
     end
     return only(definitions)
-end
-
-const TARGETING = source_function("src/models/gnc/guidance/aerobraking/t_edg/eom_predictor.jl", :asim_ctrl_targeting_plot)
-const TARGETING_BODY = filter(x -> !(x isa LineNumberNode), TARGETING.args[2].args)
-const TAIL_START = only(findall(x -> x isa Expr && x.head === :(=) && x.args[1] === :v_ii_mag, TARGETING_BODY))
-# Execute the original speed extraction, switching formula and two append calls.
-# The final return is also retained; the solver result is a synthetic boundary input.
-Core.eval(@__MODULE__, Expr(:function,
-    :(record_targeting!(cnf_state, sol, m, CD_slope)),
-    Expr(:block, TARGETING_BODY[TAIL_START:end]...)))
-const TIME_INITIALIZATION = only(filter(TARGETING_BODY) do x
-    x isa Expr && x.head === :(=) && x.args[1] == :(initial_time, final_time)
-end)
-Core.eval(@__MODULE__, Expr(:function, :(targeting_time_span(time_0)),
-    Expr(:block, TIME_INITIALIZATION, :(return (initial_time, final_time)))))
-
-const CONSTRAINT = source_function("src/models/gnc/control/aerobraking/constraint_tracking.jl", :asim_ctrl_plot)
-const CONSTRAINT_BODY = filter(x -> !(x isa LineNumberNode), CONSTRAINT.args[2].args)
-function original_push(field)
-    return only(filter(CONSTRAINT_BODY) do x
-        x isa Expr && x.head === :call && x.args[1] === :push! &&
-            x.args[2] == Expr(:., :cnf_state, QuoteNode(field))
-    end)
-end
-Core.eval(@__MODULE__, Expr(:function, :(constraint_value_append!(cnf_state, lambda_switch_list)),
-    Expr(:block, original_push(:lambda_switch_list))))
-Core.eval(@__MODULE__, Expr(:function, :(constraint_time_append!(cnf_state, sol)),
-    Expr(:block, original_push(:time_list2))))
-
-struct SyntheticSolution
-    t::Vector{Float64}
-    values::Matrix{Float64}
-end
-Base.getindex(sol::SyntheticSolution, rows, column) = sol.values[rows, column]
-function solver_samples(times, velocities)
-    values = zeros(10, length(times))
-    for (i, velocity) in enumerate(velocities)
-        values[4:6, i] .= velocity
-    end
-    return SyntheticSolution(Float64.(times), values)
-end
-
-@testset "legacy runtime arrays and T-EDG recording boundary" begin
-    first_runtime, second_runtime = Cnf(), Cnf()
-    for field in (:lambda_switch_list, :time_switch_list, :time_list, :lamv_list)
-        @test fieldtype(Cnf, field) === Vector{Float64}
-        @test isempty(getfield(first_runtime, field))
-        @test getfield(first_runtime, field) !== getfield(second_runtime, field)
-    end
-    @test !hasproperty(first_runtime, :time_list2)
-    @test targeting_time_span(123.0) == (123.0, 1623.0)
-
-    # Repeated/nonmonotone solver times deliberately demonstrate no sorting or
-    # local-origin subtraction in this recording boundary, not solver behavior.
-    sol = solver_samples([123, 125, 125, 124],
-        [(3.0, -4.0, 0.0), (-5.0, 0.0, 12.0), (0.0, 0.0, 0.0), (0.0, 8.0, -15.0)])
-    model = (body=(mass=3.0, area_tot=2.0),)
-    @test record_targeting!(first_runtime, sol, model, 2.0) === sol
-    expected = 1.5 .* [5.0, 13.0, 0.0, 17.0] ./ pi
-    @test first_runtime.lambda_switch_list ≈ expected
-    @test first_runtime.time_switch_list == sol.t
-    @test first_runtime.time_switch_list !== sol.t
-    @test isempty(first_runtime.time_list)
-    @test isempty(first_runtime.lamv_list)
-
-    # Same caller-owned Cnf accumulates another invocation without segmentation.
-    record_targeting!(first_runtime, sol, model, -2.0)
-    @test first_runtime.lambda_switch_list ≈ vcat(expected, -expected)
-    @test first_runtime.time_switch_list == vcat(sol.t, sol.t)
-    @test isempty(second_runtime.lambda_switch_list)
-    @test isempty(second_runtime.time_switch_list)
-
-    # Record actual defect behavior rather than silently fixing the producer.
-    @test_throws MethodError constraint_value_append!(second_runtime, expected)
-    @test isempty(second_runtime.lambda_switch_list)
-    @test_throws ErrorException constraint_time_append!(second_runtime, sol)
 end
 
 @testset "typed costates remain separate call-local prediction arrays" begin
@@ -118,7 +39,7 @@ end
     @test costate !== other_costate
     negative_slope, _ = EDG._edg_heat_load_lambdas(track, seed,
         merge(coeffs, (cd_slope=-2.0,)), 3.0, 2.0, planet, 10.0, 4.0)
-    @test negative_slope == threshold # Typed denominator uses abs; legacy does not.
+    @test negative_slope == threshold # The typed denominator uses abs(cd_slope).
     negative_gain, _ = EDG._edg_heat_load_lambdas(track, seed, coeffs, 3.0, 2.0, planet, 10.0, -4.0)
     @test negative_gain == -threshold
 

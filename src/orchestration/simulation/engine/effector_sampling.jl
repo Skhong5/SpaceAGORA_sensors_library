@@ -301,9 +301,37 @@ end
     return SolarEphemerisSample(SVector{3, Float64}(pos_primary_sun_j2000_m))
 end
 
-@inline function sample_third_body_ephemerides(model::SimulationModel.NBodyGravityModel, x, p, sat_idx::Int, t::Float64)
+# The body the sampled third-body positions are measured from.
+# NBodyGravityModel names its own primary; any other model gets the run's
+# planet, which is also what the N-body ephemeris cache and the solar sample are
+# measured from.
+@inline _third_body_primary_name(model::SimulationModel.NBodyGravityModel, p)::String = model.primary_body_name
+@inline _third_body_primary_name(::Any, p)::String = p.args.environment_model.planet.name
+
+# The third bodies a model declares through `environment_requirements`, for any
+# model. NBodyGravityModel declares its own `body_names`, so its sample is the
+# one it always had.
+@inline function sample_third_body_ephemerides(model, x, p, sat_idx::Int, t::Float64)
+    return sample_third_body_ephemerides(
+        SimulationModel.environment_requirements(model).third_body_names,
+        _third_body_primary_name(model, p),
+        x,
+        p,
+        sat_idx,
+        t,
+    )
+end
+
+@inline function sample_third_body_ephemerides(
+    body_names::Tuple{Vararg{String}},
+    primary_name::String,
+    x,
+    p,
+    sat_idx::Int,
+    t::Float64,
+)
     et = p.shared_buffers.et_start[] + t
-    primary_body_name = SimulationModel.DynamicEffectors._spice_query_name(model.primary_body_name)
+    primary_body_name = SimulationModel.DynamicEffectors._spice_query_name(primary_name)
     spice_rhs_memo_enabled = p.shared_buffers.spice_rhs_memo_enabled[]
     spice_rhs_memo = p.shared_buffers.spice_rhs_memo
     cache_entry = p.shared_buffers.nbody_ephemeris_cache[]
@@ -312,11 +340,11 @@ end
     # that reference rather than the whole `p::ODEParams{...}` and its
     # SimulationConfiguration.
     nbody_spkpos_runtime_calls = p.shared_buffers.spice_runtime_counters.nbody_spkpos_runtime_calls
-    # `map` over the model's own body-name tuple, not `ntuple` over its length:
-    # the length is part of `NBodyGravityModel`'s type, so mapping the tuple
-    # gives the compiler a concrete result type, while `ntuple(f, n::Int)` with
-    # a runtime `n` does not. Body order is preserved: `positions_ii[k]`
-    # belongs to `model.body_names[k]`.
+    # `map` over the declared body-name tuple, not `ntuple` over its length:
+    # the length is part of the tuple's type, so mapping the tuple gives the
+    # compiler a concrete result type, while `ntuple(f, n::Int)` with a runtime
+    # `n` does not. Body order is preserved: `positions_ii[k]` belongs to
+    # `body_names[k]`.
     # See docs/architecture/third_body_cost.md for the current routing constraints.
     #
     # The `cache_entry isa ...` branch is taken outside the `map`, not inside
@@ -328,7 +356,7 @@ end
     # `NTuple{N, SVector{3, Float64}}`, so the `if` itself stays allocation-free.
     positions_ii = if cache_entry isa SimulationModel.NBodyEphemerisCache
         concrete_cache = cache_entry
-        map(model.body_names) do body_name
+        map(body_names) do body_name
             body_name_spice = SimulationModel.DynamicEffectors._spice_query_name(body_name)
             cached = SimulationModel.DynamicEffectors._nbody_body_position_from_cache_j2000_m(
                 concrete_cache,
@@ -349,7 +377,7 @@ end
             return SVector{3, Float64}(pos_primary_body_j2000_m)
         end
     else
-        map(model.body_names) do body_name
+        map(body_names) do body_name
             body_name_spice = SimulationModel.DynamicEffectors._spice_query_name(body_name)
             pos_primary_body_j2000_m = perturbation_effectors._nbody_body_position_from_spice_j2000_m(
                 body_name_spice,
@@ -362,7 +390,7 @@ end
             return SVector{3, Float64}(pos_primary_body_j2000_m)
         end
     end
-    return ThirdBodyEphemerisSample(model.body_names, positions_ii)
+    return ThirdBodyEphemerisSample(body_names, positions_ii)
 end
 
 @inline function sample_environment(
@@ -379,7 +407,8 @@ end
     planet_frame = need_planet_frame ? sample_planet_frame(x, p, sat_idx, t) : nothing
     atmosphere = req.atmosphere ? _sample_atmosphere_from_planet_frame(x, planet_frame, p, sat_idx, t; write_buffers=write_buffers) : nothing
     solar = req.solar ? sample_solar_ephemeris(x, p, sat_idx, t) : nothing
-    third_bodies = isempty(req.third_body_names) ? nothing : sample_third_body_ephemerides(model, x, p, sat_idx, t)
+    third_bodies = isempty(req.third_body_names) ? nothing :
+        sample_third_body_ephemerides(req.third_body_names, _third_body_primary_name(model, p), x, p, sat_idx, t)
     return EnvironmentSample(
         planet;
         planet_frame=req.planet_frame ? planet_frame : nothing,
@@ -428,7 +457,8 @@ end
     sampled_planet_frame = _sample_reusable_planet_frame(req, x, p, sat_idx, t)
     atmosphere = _sample_reusable_atmosphere(req, x, sampled_planet_frame, p, sat_idx, t)
     solar = _sample_reusable_solar(req, x, p, sat_idx, t)
-    third_bodies = isempty(req.third_body_names) ? nothing : sample_third_body_ephemerides(model, x, p, sat_idx, t)
+    third_bodies = isempty(req.third_body_names) ? nothing :
+        sample_third_body_ephemerides(req.third_body_names, _third_body_primary_name(model, p), x, p, sat_idx, t)
     return EnvironmentSample(
         planet;
         planet_frame=req.planet_frame ? sampled_planet_frame : nothing,

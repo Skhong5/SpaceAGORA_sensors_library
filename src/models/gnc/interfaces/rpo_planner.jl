@@ -77,10 +77,42 @@ struct RPOValidationSettings
 end
 
 """
+    AbstractRPOGeometryProvider
+
+Supplies RPO request geometry that changes during a run, such as obstacles that
+appear and disappear. A provider implements `rpo_geometry_revision` and
+`rpo_geometry_snapshot`. The binding takes one owned snapshot per request, so the
+geometry stays static within a request and validation uses the request's copy.
+Equal revisions must mean equal snapshots.
+"""
+abstract type AbstractRPOGeometryProvider end
+
+"""
+    rpo_geometry_revision(provider, revision, time_s) -> String
+
+Required for each provider: the nonempty revision of the geometry at simulation
+time `time_s` (s), given the configured base `revision`. The binding calls it at
+every guidance tick, so it must be cheap and deterministic, draw no random numbers
+and change whenever the snapshot changes.
+"""
+function rpo_geometry_revision end
+
+"""
+    rpo_geometry_snapshot(provider, geometry, time_s) -> geometry
+
+Required for each provider: the geometry at simulation time `time_s` (s), given the
+configured base `geometry`, which it must not modify. The binding calls it to build
+a request and, when the revision changes, to check the installed reference's
+remaining path against the new geometry.
+"""
+function rpo_geometry_snapshot end
+
+"""
 Owned planning snapshot in SI units. `x_rtn` is rotating-frame relative position
-and velocity. Geometry must be static and target-RTN aligned in this first
-contract. The caller retains a separate snapshot for validation; pass a deep
-copy to untrusted planner code. No integrator or live model belongs here.
+and velocity. Geometry must be static within a request and target-RTN aligned; a
+geometry provider supplies a new snapshot and revision for later requests. The
+caller retains a separate snapshot for validation; pass a deep copy to untrusted
+planner code. No integrator or live model belongs here.
 """
 struct RPOPlanningRequest{E,G} <: GA.AbstractAlgorithmRequest
     request_id::Int
@@ -248,18 +280,29 @@ include("rpo_reference_validation.jl")
 include("rpo_planning_headroom.jl")
 
 """
-    RPOReferenceFamily()
+    RPOReferenceFamily(; on_rejection=:fail)
 
 The RPO reference-planning family of the general GNC algorithm contract. Its
 request is an `RPOPlanningRequest`, its product an `RPOReference`, its trusted
-validation `validate_rpo_result`, its currency rule `rpo_reference_is_current`
-and its rejection policy `:fail`. Every `AbstractRPOPlanner` belongs to it, and
-the general functions forward to the RPO names: `propose!` to `plan_rpo!`,
-`propose_revision!` to `retime_rpo!`, `algorithm_capabilities` to
-`planner_capabilities`, `initialize_algorithm` to `initialize_planner` and
-`require_algorithm_support` to `require_planner_support`.
+validation `validate_rpo_result` and its currency rule `rpo_reference_is_current`.
+Every `AbstractRPOPlanner` belongs to it, and the general functions forward to the
+RPO names: `propose!` to `plan_rpo!`, `propose_revision!` to `retime_rpo!`,
+`algorithm_capabilities` to `planner_capabilities`, `initialize_algorithm` to
+`initialize_planner` and `require_algorithm_support` to `require_planner_support`.
+
+`on_rejection` is the rejection policy: `:fail` (the default) stops the run with an
+`RPOPlanningError`; `:install_fallback` installs a hold at the chaser's position
+(`fallback_product`). A planner declares the default family; a binding configures
+the policy (`bound_family`).
 """
-struct RPOReferenceFamily <: GA.AbstractAlgorithmFamily end
+struct RPOReferenceFamily <: GA.AbstractAlgorithmFamily
+    on_rejection::Symbol
+    function RPOReferenceFamily(; on_rejection::Symbol=:fail)
+        on_rejection in (:fail, :install_fallback) || throw(ArgumentError(
+            "The RPO rejection policy must be :fail or :install_fallback; a kept reference can expire or conflict with new geometry."))
+        new(on_rejection)
+    end
+end
 
 GA.algorithm_family(::AbstractRPOPlanner) = RPOReferenceFamily()
 GA.default_capabilities(::RPOReferenceFamily) = RPOPlannerCapabilities()
@@ -277,7 +320,24 @@ GA.validate_proposal(::RPOReferenceFamily, request::RPOPlanningRequest, result::
         trusted::NamedTuple) = validate_rpo_result(request, result; trusted...)
 GA.is_current(::RPOReferenceFamily, request::RPOPlanningRequest, reference::RPOReference, time_s) =
     rpo_reference_is_current(request, reference, time_s)
-GA.on_rejection(::RPOReferenceFamily) = :fail
+GA.on_rejection(family::RPOReferenceFamily) = family.on_rejection
+"""
+    fallback_product(family::RPOReferenceFamily, request) -> RPOReference
+
+The RPO hold: two samples one reference step apart, both at the chaser's position
+in `request` with zero velocity, valid for the request's lifetime and tagged with
+its spacecraft, frame and geometry revision. The controller repeats the last
+sample, so it brakes to that position and holds it. Installed under the
+`:install_fallback` policy without validation; it does not reach the goal.
+"""
+function GA.fallback_product(::RPOReferenceFamily, request::RPOPlanningRequest)
+    position = collect(request.x_rtn[1:3])
+    return RPOReference(t_ref_s=[0.0, request.reference_dt_s],
+        r_ref_rtn_m=hcat(position, position), v_ref_rtn_mps=zeros(3, 2),
+        origin_time_s=request.time_s, valid_until_s=request.valid_until_s,
+        chaser_id=request.chaser_id, target_id=request.target_id, frame=request.frame,
+        geometry_revision=request.geometry_revision)
+end
 GA.family_contract_version(::RPOReferenceFamily) = v"1.0.0"
 # Lifecycle hooks of the shared request driver; the install record keeps RPO's
 # historical field names, so run reports are unchanged.

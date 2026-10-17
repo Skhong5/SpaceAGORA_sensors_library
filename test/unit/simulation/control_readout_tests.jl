@@ -50,36 +50,40 @@ function probe(id::Symbol, force, torque, wheel_torque, mass_rate, calls; sat_id
     return ReadoutProbe{id,typeof(force),typeof(torque),typeof(wheel_torque)}(
         force, torque, wheel_torque, mass_rate, sat_idx, calls)
 end
-function CH.calcControlForceTorque(m::ReadoutProbe{ID}, u::AbstractVector,
-        p::SM.ODEParams, i::Int64, t::Float64) where {ID}
-    push!(m.calls, (ID, :force, i))
+# `mass_rate` is the propellant the probe reports using, positive.
+function CH.control_wrench(m::ReadoutProbe{ID}, x::SM.StateSample,
+        p::SM.ODEParams, t::Float64) where {ID}
+    push!(m.calls, (ID, :force, x.spacecraft_index))
     return m.force, m.torque
 end
-function CH.calcControlMassFlowRate(m::ReadoutProbe{ID}, u::AbstractVector,
-        p::SM.ODEParams, i::Int64, t::Float64) where {ID}
-    push!(m.calls, (ID, :mass, i))
+function CH.control_propellant_rate(m::ReadoutProbe{ID}, x::SM.StateSample,
+        p::SM.ODEParams, t::Float64) where {ID}
+    push!(m.calls, (ID, :mass, x.spacecraft_index))
     return m.mass_rate
 end
-function CH.calcReactionWheelTorque(m::ReadoutProbe{ID}, u::AbstractVector,
-        p::SM.ODEParams, i::Int64, t::Float64) where {ID}
-    push!(m.calls, (ID, :wheel, i))
+function CH.control_wheel_torque(m::ReadoutProbe{ID}, x::SM.StateSample,
+        p::SM.ODEParams, t::Float64) where {ID}
+    push!(m.calls, (ID, :wheel, x.spacecraft_index))
     return m.wheel_torque
 end
 
 # ControlModel accepts arbitrary extension types. Only the force hook is
-# implemented here, so generic mass-flow and reaction-wheel fallbacks matter.
+# implemented here, so the propellant and wheel defaults matter.
 struct GlobalForceOnly
     calls::Vector{Tuple{Symbol,Symbol,Int}}
 end
-function CH.calcControlForceTorque(m::GlobalForceOnly, u::AbstractVector, p::SM.ODEParams,
-        i::Int64, t::Float64)
-    push!(m.calls, (:global, :force, i))
-    return SVector(0.0, 0.0, Float64(i)), ZERO3
+function CH.control_wrench(m::GlobalForceOnly, x::SM.StateSample, p::SM.ODEParams, t::Float64)
+    push!(m.calls, (:global, :force, x.spacecraft_index))
+    return SVector(0.0, 0.0, Float64(x.spacecraft_index)), ZERO3
 end
+
+# One spacecraft's state view, of the type the dynamics pass: the bridges build
+# the hooks' state sample from it.
+readout_state(p) = SE.build_initial_conditions(p.args).sc[1]
 
 function readout(p, i; force=ZERO3, torque=ZERO3, wheel=ZERO3)
     f, tq, rw = MVector{3,Float64}(force), MVector{3,Float64}(torque), MVector{3,Float64}(wheel)
-    rate = SE._accumulate_control_effectors!(f, tq, rw, Float64[], p, i, 2.0, false)
+    rate = SE._accumulate_control_effectors!(f, tq, rw, readout_state(p), p, i, 2.0, false)
     return SVector{3,Float64}(f), SVector{3,Float64}(tq), SVector{3,Float64}(rw), rate
 end
 
@@ -94,45 +98,46 @@ include(joinpath(@__DIR__, "..", "..", "..", "templates", "control_hook_template
 
 @testset "control template dispatches through the engine parameter boundary" begin
     model = ExampleControlHookTemplate.ExampleControlHook(
-        SVector(1.0, 2.0, 3.0), SVector(0.1, 0.2, 0.3), -0.125)
+        SVector(1.0, 2.0, 3.0), SVector(0.1, 0.2, 0.3), 0.125)
     p = readout_params((model,); n_sats=1)
     u = ComponentVector(mass=500.0)
+    x = SE._control_state_sample(readout_state(p), p, 1)
     @test SpaceAGORA.calcControlEffect!(model, u, p, 0.0, 1) === nothing
-    @test SpaceAGORA.calcControlForceTorque(model, u, p, 1, 0.0) ==
-        (model.force_n, model.torque_n_m)
-    @test SpaceAGORA.calcControlMassFlowRate(model, u, p, 1, 0.0) === -0.125
+    @test SpaceAGORA.control_wrench(model, x, p, 0.0) == (model.force_n, model.torque_n_m)
+    @test SpaceAGORA.control_propellant_rate(model, x, p, 0.0) === 0.125
+    # The engine subtracts the propellant used from the mass derivative.
     @test readout(p, 1) == (model.force_n, model.torque_n_m, ZERO3, -0.125)
 end
 
-# Hook methods typed on the effector alone. The fallbacks typed `u`, `p`, the
-# index and the time, which made such methods ambiguous; they now type nothing.
+# Hook methods typed on the effector alone, as the template's could be: the
+# new hooks have no catch-all method, so nothing can be ambiguous with them.
 struct LooseHooks <: SM.AbstractControlEffectorModel end
-SpaceAGORA.calcControlForceTorque(::LooseHooks, u, p, spacecraft_index, t) = (SVector(1.0, 0.0, 0.0), ZERO3)
-SpaceAGORA.calcControlMassFlowRate(::LooseHooks, u, p, spacecraft_index, t) = -0.25
-SpaceAGORA.calcReactionWheelTorque(::LooseHooks, u, p, spacecraft_index, t) = SVector(0.0, 0.0, 0.5)
+SpaceAGORA.control_wrench(::LooseHooks, x, p, t) = (SVector(1.0, 0.0, 0.0), ZERO3)
+SpaceAGORA.control_propellant_rate(::LooseHooks, x, p, t) = 0.25
+SpaceAGORA.control_wheel_torque(::LooseHooks, x, p, t) = SVector(0.0, 0.0, 0.5)
 
-@testset "control hook fallbacks type none of their arguments" begin
+@testset "control hooks typed on the effector alone" begin
     p = readout_params((LooseHooks(),); n_sats=1)
-    u = ComponentVector(mass=500.0)
-    @test SpaceAGORA.calcControlMassFlowRate(LooseHooks(), u, p, 1, 0.0) === -0.25
-    @test SpaceAGORA.calcReactionWheelTorque(LooseHooks(), u, p, 1, 0.0) == SVector(0.0, 0.0, 0.5)
+    state = readout_state(p)
     @test readout(p, 1) == (SVector(1.0, 0.0, 0.0), ZERO3, SVector(0.0, 0.0, 0.5), -0.25)
-    # Any effector, a control effector or not, uses no propellant and drives no wheels by default.
+    # Any effector, a control effector or not, uses no propellant and drives no
+    # wheels unless it implements those hooks.
     for effector in (GlobalForceOnly(Tuple{Symbol,Symbol,Int}[]), SM.MagneticMomentumManagerModel(sat_idx=1), nothing)
-        @test SpaceAGORA.calcControlMassFlowRate(effector, u, p, 1, 0.0) === 0.0
-        @test SpaceAGORA.calcReactionWheelTorque(effector, u, p, 1, 0.0) === nothing
+        @test SE._control_propellant_rate(effector, state, p, 1, 0.0) == 0.0
+        @test SE._control_wheel_torque(effector, state, p, 1, 0.0) === nothing
     end
     # No two methods of a control hook are ambiguous, the package's or the tests'.
-    for f in (SpaceAGORA.calcControlForceTorque, SpaceAGORA.calcControlMassFlowRate,
+    for f in (SpaceAGORA.control_wrench, SpaceAGORA.control_propellant_rate, SpaceAGORA.control_wheel_torque,
+              SpaceAGORA.calcControlForceTorque, SpaceAGORA.calcControlMassFlowRate,
               SpaceAGORA.calcReactionWheelTorque, SpaceAGORA.control_thruster_levels)
         ms = collect(methods(f))
         @test !any(Base.isambiguous(a, b) for a in ms, b in ms if a !== b)
     end
     # The public names show the generic docstrings, not a method's.
     root_doc(name) = string(Docs.meta(SpaceAGORA)[Docs.Binding(SpaceAGORA, name)].docs[Union{}].text...)
-    @test startswith(root_doc(:calcControlForceTorque), "    calcControlForceTorque(model, u, p, spacecraft_index, t)")
-    @test !occursin("calcControlForceTorque(model::BaseThrusterModel", root_doc(:calcControlForceTorque))
-    @test startswith(root_doc(:calcControlMassFlowRate), "    calcControlMassFlowRate(model, u, p, spacecraft_index, t)")
+    @test startswith(root_doc(:control_wrench), "    control_wrench(model, x::StateSample, p, t::Float64)")
+    @test !occursin("control_wrench(model::BaseThrusterModel", root_doc(:control_wrench))
+    @test startswith(root_doc(:control_propellant_rate), "    control_propellant_rate(model, x::StateSample, p, t::Float64)")
     @test startswith(root_doc(:control_thruster_levels), "    control_thruster_levels(effector, spacecraft_index::Int)")
 end
 
@@ -155,9 +160,9 @@ end
     calls = Tuple{Symbol,Symbol,Int}[]
     # The sat_idx field is deliberately unrelated to the evaluated spacecraft:
     # field naming is not a contract permitting generic ownership filtering.
-    vector_model = probe(:vector, [1.0,2.0,3.0], SVector(4.0,5.0,6.0), nothing, -2.0, calls)
+    vector_model = probe(:vector, [1.0,2.0,3.0], SVector(4.0,5.0,6.0), nothing, 2.0, calls)
     static_model = probe(:static, SVector(-4.0,5.0,-6.0), [-2.0,4.0,5.0],
-        [3.0,-4.0,5.0], -3.0, calls; sat_idx=1)
+        [3.0,-4.0,5.0], 3.0, calls; sat_idx=1)
     p = readout_params((vector_model, GlobalForceOnly(calls), static_model); n_sats=2)
     for i in 1:2
         empty!(calls)
@@ -185,7 +190,8 @@ end
     end
     p = readout_params(effectors; n_sats=1)
     f, tq, rw, rate = readout(p, 1)
-    @test rate === 1.0
+    # ((0 - 1e16) - (-1e16)) - 1: the propellant rates are subtracted in order.
+    @test rate === -1.0
     @test f == SVector(7.0,0.0,0.0)
     @test tq == SVector(0.0,7.0,0.0)
     @test rw == SVector(0.0,0.0,7.0)
@@ -228,7 +234,7 @@ end
 
 @testset "warmed 32-manager control readout has bounded allocation" begin
     p = readout_params(held_managers(32))
-    state = Float64[]
+    state = readout_state(p)
     f, tq, rw = MVector{3,Float64}(ZERO3), MVector{3,Float64}(ZERO3), MVector{3,Float64}(ZERO3)
     checksum = Ref(0.0)
     repetitions = 32
@@ -259,7 +265,7 @@ end
     # runtime dispatch: no boxed time argument, and the caller's accumulators
     # stay where they are. Unlike the 32-manager bound above, this one is zero.
     p = readout_params((); n_sats=4)
-    state = Float64[]
+    state = readout_state(p)
     f, tq, rw = MVector{3,Float64}(ZERO3), MVector{3,Float64}(ZERO3), MVector{3,Float64}(ZERO3)
     checksum = Ref(0.0)
     repetitions = 64

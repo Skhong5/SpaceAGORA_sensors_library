@@ -1,4 +1,4 @@
-"""Deprecation warnings for extension hooks that have been renamed or retired."""
+"""Shared pre-run warnings, including renamed or retired extension hooks."""
 module HookDeprecation
 
 """
@@ -16,8 +16,19 @@ about the first type only, and it is silent unless Julia runs with
 `--depwarn=yes`.
 """
 function _hook_deprecation(key::Tuple, msg::String)
+    return _preflight_warning(key, msg; group=:depwarn)
+end
+
+"""
+    _preflight_warning(key::Tuple, msg::String; group::Symbol=:preflight)
+
+Emit a pre-run warning once per key through the active logger. Refuse the
+configuration under `--depwarn=error`, even if the logger has already seen the
+key. Non-deprecation configuration checks use the default `:preflight` group.
+"""
+function _preflight_warning(key::Tuple, msg::String; group::Symbol=:preflight)
     Base.JLOptions().depwarn == 2 && throw(ErrorException(msg))
-    @warn msg _group=:depwarn _id=key maxlog=1
+    @warn msg _group=group _id=key maxlog=1
     return nothing
 end
 

@@ -2,7 +2,7 @@
     SpaceAGORA.ExternalPropagationServices
 
 Versioned services for optional external spacecraft integrators. Call
-`require_version(v"1.0.0")` before defining adapter hook methods, and again at
+`require_version(v"2.0.0")` before defining adapter hook methods, and again at
 runtime initialization. `IMPLEMENTED_FUNCTIONS` lists the extension points;
 `CONSUMED_SERVICES` lists the types and core helpers adapters may use. Existing
 hook/type aliases retain their implementation owners and method identity.
@@ -16,7 +16,7 @@ requires a reviewed contract version. Internal module paths are unsupported.
 module ExternalPropagationServices
 
 """Exact version of this external-propagation adapter contract."""
-const CONTRACT_VERSION = v"1.0.0"
+const CONTRACT_VERSION = v"2.0.0"
 
 """Error raised when the requested external-propagation service version is unsupported."""
 struct CompatibilityError <: Exception
@@ -120,9 +120,10 @@ external_runtimes(integrator) = integrator.p.shared_buffers.external_runtimes
 Read one spacecraft's initial state from the `u0` passed to
 [`external_prepare`](@ref). The index is 1-based in the configuration's
 spacecraft list, not local to the owner. Returns immutable copies: inertial
-position `pos` [m], inertial velocity `vel` [m/s], scalar-last body-to-inertial
-quaternion `q`, and body angular velocity `ω` [rad/s]. If orientation simulation
-is disabled, `q` is the identity `(0, 0, 0, 1)` and `ω` is zero.
+position `pos` [m], inertial velocity `vel` [m/s], attitude quaternion `q`
+(scalar last, `v_body = rot(q) * v_inertial`, the convention of
+[`external_state`](@ref)), and body angular velocity `ω` [rad/s]. If orientation
+simulation is disabled, `q` is the identity `(0, 0, 0, 1)` and `ω` is zero.
 """
 function external_initial_state(u0, spacecraft_index::Integer)
     sc = u0.sc[spacecraft_index]

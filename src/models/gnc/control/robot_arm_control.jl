@@ -203,12 +203,10 @@ function calcControlEffect!(model::RobotArmControlEffector, u, p::ODEParams, t::
 end
 
 """Return the held force and torque command for a control effector."""
-function calcControlForceTorque(model::RobotArmControlEffector, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)
-    i == model.spacecraft_idx || return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+function control_wrench(model::RobotArmControlEffector, x::StateSample, p::ODEParams, t::Float64)
+    x.spacecraft_index == model.spacecraft_idx || return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     return model.held.base_force_ii, model.held.base_torque_body
 end
 
-"""Return propellant mass flow for a control effector."""
-function calcControlMassFlowRate(model::RobotArmControlEffector, u::AbstractVector, p::ODEParams, i::Int64, t::Float64)::Float64
-    return 0.0
-end
+# No control_propellant_rate method: the arm uses no propellant, and the
+# dynamics then take the rate as zero.

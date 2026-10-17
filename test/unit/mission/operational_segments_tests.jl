@@ -24,14 +24,14 @@ mutable struct CommandedThrust <: SM.AbstractControlEffectorModel
     spacecraft_idx::Int
 end
 SM.calcControlEffect!(::CommandedThrust, u, p, t::Float64, i::Int) = nothing
-function SM.calcControlForceTorque(model::CommandedThrust, u::AbstractVector,
-        p::SM.ODEParams, i::Int, t::Float64)
-    level = i == model.spacecraft_idx ? model.throttle : 0.0
+function SM.control_wrench(model::CommandedThrust, x::SM.StateSample,
+        p::SM.ODEParams, t::Float64)
+    level = x.spacecraft_index == model.spacecraft_idx ? model.throttle : 0.0
     return SVector(THRUST * level, 0.0, 0.0), ZERO3
 end
-function SM.calcControlMassFlowRate(model::CommandedThrust, u::AbstractVector,
-        p::SM.ODEParams, i::Int, t::Float64)
-    return i == model.spacecraft_idx ? -CONSUMPTION * model.throttle : 0.0
+function SM.control_propellant_rate(model::CommandedThrust, x::SM.StateSample,
+        p::SM.ODEParams, t::Float64)
+    return x.spacecraft_index == model.spacecraft_idx ? CONSUMPTION * model.throttle : 0.0
 end
 
 function configuration(; duration_s=8.0, dtmax=2.0, n_spacecraft=1, solver=:tsit5)

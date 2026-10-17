@@ -16,7 +16,6 @@ module GuidanceHooks
     using ..CommandTypes: PropulsiveManeuverCommand, AerobrakingControlCommand
     using ..EphemeridesModels: planet_frame_lpi
     using ..GravityEffectors: aerobraking_gravity_force_ii
-    using ..AerobrakingPolicy: AbstractAerobrakingPolicySelector, AerobrakingPolicyConfig, E_EDG, T_EDG, select_strategy
     using ..ReferenceSystems
     using ..LinearAlgebra
     using ..StaticArrays
@@ -33,15 +32,6 @@ module GuidanceHooks
 
     @inline function _control_module()
         return getfield(_PARENT, :ControlHooks)
-    end
-    @inline function _control_asim_ctrl(args...; kwargs...)
-        return _control_module().asim_ctrl(args...; kwargs...)
-    end
-    @inline function _control_asim_ctrl_rf(args...; kwargs...)
-        return _control_module().asim_ctrl_rf(args...; kwargs...)
-    end
-    @inline function _control_solarpanels_heatrate(args...; kwargs...)
-        return _control_module().control_solarpanels_heatrate(args...; kwargs...)
     end
 
     export calcGuidanceEffect!
@@ -62,9 +52,7 @@ module GuidanceHooks
     export rpo_plan_comparison_path, rpo_run_planner_comparison_batch
     export rpo_track_retimed_path_lqmpc, rpo_flatten_planner_results
     export rpo_comparison_cost_iteration_plot, rpo_write_planner_comparison_outputs
-    export AbstractAerobrakingStrategy, EEdgStrategy, TEdgStrategy
-    export AerobrakingGuidanceInput, AerobrakingGuidanceOutput, AerobrakingControlCommand
-    export compute_aerobraking_guidance, dispatch_aerobraking_guidance
+    export AerobrakingControlCommand
     export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
     export AerobrakingEnergyDepletionGuidanceModel
     export DescentPhaseTargets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel
@@ -81,9 +69,9 @@ module GuidanceHooks
     - `model`: the guidance effector.
     - `u`: the full integrated state. `u.sc[spacecraft_index]` is the spacecraft, with
       `pos` (m) and `vel` (m/s) relative to the planet's centre in the inertial
-      frame and `mass` (kg); with attitude propagation also `q`, the scalar-last
-      quaternion from inertial to bus axes, and `ω`, the bus angular velocity in
-      rad/s.
+      frame and `mass` (kg); with attitude propagation also `q = (x, y, z, w)`,
+      scalar last, with `v_body = rot(q) * v_inertial` (body means bus axes), and
+      `ω`, the bus angular velocity in rad/s.
     - `p`: the run's parameters; `p.args` is the `SimulationConfiguration`.
     - `t`: elapsed time since the run's start epoch, in seconds (`Float64`).
     - `spacecraft_index`: the spacecraft's position in the run (`Int`, from 1), not its ID.
@@ -103,7 +91,6 @@ module GuidanceHooks
     """
     function calcGuidanceEffect! end
 
-    include(joinpath(@__DIR__, "..", "internal", "bridge_helpers.jl"))
     using ..FrameTransforms
     # Shared calculations and compatibility types/bindings retain this module.
     include(joinpath(@__DIR__, "..", "planning", "rpo", "sampling_settings.jl"))
@@ -119,20 +106,8 @@ module GuidanceHooks
     include(joinpath(@__DIR__, "..", "planning", "rpo", "comparison", "planner_comparison.jl"))
     include(joinpath(@__DIR__, "..", "planning", "adapters", "hypr", "replanning.jl"))
     include(joinpath(@__DIR__, "rpo", "rpo_guidance_hooks.jl"))
-    include(joinpath(@__DIR__, "aerobraking", "interfaces.jl"))
     include(joinpath(@__DIR__, "aerobraking", "typed_edg", "guidance_models.jl"))
     include(joinpath(@__DIR__, "aerobraking", "energy_depletion_lifecycle.jl"))
-    include(joinpath(@__DIR__, "aerobraking", "common", "closed_form_solution.jl"))
-    include(joinpath(@__DIR__, "aerobraking", "common", "heat_rate_models.jl"))
-    include(joinpath(@__DIR__, "aerobraking", "t_edg", "trajectory_predictor.jl"))
-    include(joinpath(@__DIR__, "aerobraking", "t_edg", "eom_predictor.jl"))
-    include(joinpath(@__DIR__, "aerobraking", "t_edg", "targeting_solver.jl"))
-    include(joinpath(@__DIR__, "aerobraking", "e_edg", "switch_window_solver.jl"))
-    include(joinpath(@__DIR__, "aerobraking", "e_edg", "second_switch_solver.jl"))
-    include(joinpath(@__DIR__, "aerobraking", "e_edg", "energy_profile_solver.jl"))
-    include(joinpath(@__DIR__, "aerobraking", "e_edg", "e_edg_strategy.jl"))
-    include(joinpath(@__DIR__, "aerobraking", "t_edg", "t_edg_strategy.jl"))
-    include(joinpath(@__DIR__, "aerobraking", "dispatcher.jl"))
 
     include(joinpath(@__DIR__, "thruster_guidance", "thruster_guidance_functions.jl"))
     include(joinpath(@__DIR__, "landing", "apollo_descent_guidance.jl"))

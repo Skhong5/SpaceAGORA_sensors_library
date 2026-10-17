@@ -4,7 +4,8 @@
 # packages that stay in the dependency list after their last use is deleted.
 #
 # The ignore list is deliberate and short. Aqua, Documenter and Plots serve
-# the test harness, the examples and the documentation build;
+# the test harness, the examples and the documentation build; Roots serves the
+# examples' apsis searches and the typed EDG repair test;
 # SatelliteToolboxGravityModels is the independent reference the harmonics
 # parity test in suite 04 checks the in-house spherical-harmonics model
 # against. None of them is used by the package, and they live in [deps] only
@@ -14,5 +15,5 @@
 using Aqua
 using SpaceAGORA
 
-Aqua.test_stale_deps(SpaceAGORA; ignore=[:Aqua, :Documenter, :Plots, :SatelliteToolboxGravityModels])
+Aqua.test_stale_deps(SpaceAGORA; ignore=[:Aqua, :Documenter, :Plots, :Roots, :SatelliteToolboxGravityModels])
 println("stale_deps_gate_ok")

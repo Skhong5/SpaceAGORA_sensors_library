@@ -324,12 +324,12 @@ struct ConstantThrust <: SM.AbstractControlEffectorModel
     mdot::Float64
 end
 SM.calcControlEffect!(::ConstantThrust, u, p, t::Float64, i::Int64) = nothing
-SM.calcControlForceTorque(m::ConstantThrust, u::AbstractVector, p::SM.ODEParams, i::Int64, t::Float64) = (m.force, SVector(0.0, 0.0, 0.0))
-SM.calcControlMassFlowRate(m::ConstantThrust, u::AbstractVector, p::SM.ODEParams, i::Int64, t::Float64)::Float64 = m.mdot
+SM.control_wrench(m::ConstantThrust, x::SM.StateSample, p::SM.ODEParams, t::Float64) = (m.force, SVector(0.0, 0.0, 0.0))
+SM.control_propellant_rate(m::ConstantThrust, x::SM.StateSample, p::SM.ODEParams, t::Float64)::Float64 = m.mdot
 
 @testset "mass flow lowers the root mass only" begin
     sc = hinge_spacecraft(k = 4.0, c = 0.0, θ0 = 0.0, prop = 5.0)
-    thrust = ConstantThrust(SVector(0.5, 0.0, 0.0), -1e-2)
+    thrust = ConstantThrust(SVector(0.5, 0.0, 0.0), 1e-2)
     res = SpaceAGORA.run_simulation(engine_args(sc; mission_time = 100.0, data_rate = 10.0, control = (thrust,), control_rates = [1.0]); return_results = true)
     m0 = 10.0 + 2.0 + 5.0
     @test res.table.sc1_mass[1] ≈ m0

@@ -414,20 +414,6 @@ end
     ))
 end
 
-@testset "Aerobraking Selector Contract" begin
-    selector = SimulationModel.DefaultAerobrakingPolicySelector()
-    cfg_default = SimulationModel.AerobrakingPolicyConfig()
-    cfg_targeting = SimulationModel.AerobrakingPolicyConfig(default_strategy=SimulationModel.T_EDG)
-    input = SimulationModel.GuidanceHooks.AerobrakingGuidanceInput(
-        ip=nothing,
-        mission=nothing,
-        args=Dict{Symbol, Any}(:aerobraking_strategy => "e_edg"),
-    )
-
-    @test SimulationModel.select_strategy(selector, cfg_default, input) == SimulationModel.E_EDG
-    @test SimulationModel.select_strategy(selector, cfg_targeting, input) == SimulationModel.T_EDG
-end
-
 @testset "Root Environment Contract" begin
     agora_project = joinpath(REPO_ROOT, "Project.toml")
     agora_manifest = joinpath(REPO_ROOT, "Manifest.toml")

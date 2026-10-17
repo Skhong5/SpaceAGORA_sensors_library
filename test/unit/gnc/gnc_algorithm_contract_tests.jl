@@ -384,6 +384,78 @@ end
     @test keys(record) == (:event, :time_s, :request_id, :reason, :termination, :validation, :reference, :diagnostics)
     @test record.reference === proposed.reference && record.event === :installed
 end
+
+# A binding that configures the family its algorithm declares (`bound_family`).
+mutable struct FamilyBinding
+    algorithm::Any
+    family::Any
+    runtime::G.AlgorithmRuntime
+    link::Base.RefValue{Any}
+end
+FamilyBinding(algorithm, family) =
+    FamilyBinding(algorithm, family, G.AlgorithmRuntime(G.gnc_stream_words("Toy/v1", 1, 4)), Ref{Any}(nothing))
+G.algorithm_runtime(b::FamilyBinding) = b.runtime
+G.bound_algorithm(b::FamilyBinding) = b.algorithm
+G.bound_family(b::FamilyBinding) = b.family === nothing ? error("no family configured") : b.family
+G.bound_link(b::FamilyBinding) = b.link
+G.trusted_queries(::FamilyBinding) = (limit=10.0,)
+G.build_algorithm_request(b::FamilyBinding, u, p, t, reason, request_id) = DriverRequest(request_id, reason, u)
+function G.fail_algorithm_request!(b::FamilyBinding, reason; cause=nothing, backtrace=nothing, details=NamedTuple())
+    push!(b.runtime.records, (event=:failure, reason=reason))
+    throw(DriverFailure(reason, cause, details))
+end
+
+@testset "A binding configures its algorithm's family" begin
+    # By default the binding runs the family the algorithm declares.
+    @test G.bound_family(DriverBinding(Doubler{:fail}(:ok))) === DriverFamily{:fail}()
+    # The same algorithm under a binding that configures another policy of its family.
+    b = FamilyBinding(Doubler{:fail}(:ok), DriverFamily{:install_fallback}())
+    @test run_request!(b, 20.0, 1.0) === true            # 40 exceeds the limit
+    @test b.link[] == (product=0.0, t=1.0, validated=:above_limit)
+    @test events(b)[end-1:end] == [:rejected, :fallback_installed]
+    b = FamilyBinding(Doubler{:fail}(:ok), DriverFamily{:fail}())
+    e = failure(() -> run_request!(b, 20.0, 1.0))
+    @test e isa DriverFailure && e.reason === :above_limit
+    # Another family type is refused before a request is built; the counter advances.
+    b = FamilyBinding(Doubler{:fail}(:ok), LoggedFamily())
+    e = failure(() -> run_request!(b, 2.0, 1.0))
+    @test e isa DriverFailure && e.reason === :family_mismatch
+    @test b.runtime.request_id == 1 && events(b) == [:failure] && b.link[] === nothing
+    # A binding that throws while resolving its family fails like any other binding code.
+    b = FamilyBinding(Doubler{:fail}(:ok), nothing)
+    e = failure(() -> run_request!(b, 2.0, 1.0))
+    @test e isa DriverFailure && e.reason === :algorithm_exception && e.cause isa ErrorException
+end
+
+@testset "RPO rejection policy, hold fallback and geometry providers" begin
+    @test G.on_rejection(P.RPOReferenceFamily()) === :fail
+    fallback = P.RPOReferenceFamily(on_rejection=:install_fallback)
+    @test G.on_rejection(fallback) === :install_fallback
+    @test fallback == P.RPOReferenceFamily(on_rejection=:install_fallback) != P.RPOReferenceFamily()
+    @test G.algorithm_family(direct()) === P.RPOReferenceFamily()      # planners declare the default
+    for policy in (:keep_previous, :hold)
+        @test_throws ArgumentError P.RPOReferenceFamily(on_rejection=policy)
+    end
+    # The hold: two samples one step apart at the chaser's position, zero velocity,
+    # the request's lifetime, spacecraft, frame and geometry revision.
+    request = rpo_request(time_s=4.0, x_rtn=(3.,1.,-.5,.02,0.,0.), valid_until_s=60.)
+    for family in (P.RPOReferenceFamily(), fallback)
+        hold = G.fallback_product(family, request)
+        @test hold isa P.RPOReference
+        @test hold.t_ref_s == [0.0, request.reference_dt_s]
+        @test hold.r_ref_rtn_m == [3. 3.; 1. 1.; -.5 -.5] && hold.v_ref_rtn_mps == zeros(3, 2)
+        @test (hold.origin_time_s, hold.valid_until_s) == (4.0, 60.0)
+        @test (hold.chaser_id, hold.target_id, hold.frame) == (101, 201, :target_rtn)
+        @test hold.geometry_revision == "sphere-v1" && hold.terminal_policy === :repeat_last_sample
+        @test P.rpo_reference_is_current(request, hold, 4.0)
+        # It is installed without validation: it does not reach the goal.
+        held = P.RPOPlanningResult(request_id=1, status=:candidate, termination=:completed, reference=hold)
+        @test P.validate_rpo_result(request, held; clearance_at=point_clearance).reason === :endpoint_mismatch
+    end
+    # Providers implement both functions; neither has a fallback.
+    @test isabstracttype(P.AbstractRPOGeometryProvider)
+    @test isempty(methods(P.rpo_geometry_revision)) && isempty(methods(P.rpo_geometry_snapshot))
+end
 end # module GNCAlgorithmContractTests
 
 # The package exposes the same contract at its root, with the lifecycle's error type.
@@ -399,7 +471,7 @@ using Test, SpaceAGORA
     @test !SpaceAGORA.consumes_rng(SpaceAGORA.DirectRPOPlanner())
     for name in (:AbstractGNCAlgorithm, :AlgorithmResult, :ValidationResult, :RPOReferenceFamily,
                  :propose!, :propose_revision!, :consumes_rng, :validate_proposal, :install!,
-                 :is_current, :on_rejection, :family_contract_version)
+                 :is_current, :on_rejection, :family_contract_version, :bound_family)
         @test Base.isexported(SpaceAGORA, name)
     end
 end
