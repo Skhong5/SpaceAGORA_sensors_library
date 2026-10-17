@@ -38,6 +38,14 @@ clean_checkout() = isempty(readchomp(`git -C $ROOT status --porcelain=v1 --untra
         for bad in ("myPlanner", "My-Planner", "My Planner", "SpaceAGORA", "StarterName", "MyPlanner.jl", "")
             @test refused(() -> G.check_name(bad), "--name")
         end
+        # A name that contains the placeholder is refused before anything is written.
+        @test refused(() -> G.check_name("MyStarterName"), "the starters' placeholder")
+        mktempdir() do parent
+            target = joinpath(parent, "MyStarterName")
+            @test refused(() -> G.generate("package", target; name="MyStarterName", require_clean=false),
+                "the starters' placeholder")
+            @test !ispath(target)
+        end
         @test G.compat_series(v"0.2.0") == "0.2" && G.compat_series(v"0.3.4") == "0.3" && G.compat_series(v"1.4.0") == "1"
         mktempdir() do dir
             write(joinpath(dir, "keep.txt"), "")
@@ -61,6 +69,34 @@ clean_checkout() = isempty(readchomp(`git -C $ROOT status --porcelain=v1 --untra
             write(facade, "const CONTRACT_VERSION = v\"2.1.0\"\n")
             @test refused(() -> G.core_identity(root), "has tracked changes")
             @test G.core_identity(root; require_clean=false).contract == v"2.1.0"
+        end
+    end
+
+    @testset "the starter comes from the commit, not from untracked files" begin
+        mktempdir() do root
+            write(joinpath(root, "Project.toml"), "name = \"SpaceAGORA\"\nuuid = \"afbfb69f-5c0b-4832-b760-43725dff8540\"\nversion = \"0.2.0\"\n")
+            facade = joinpath(root, G.FACADE_SOURCE)
+            mkpath(dirname(facade))
+            write(facade, "const CONTRACT_VERSION = v\"2.0.0\"\n")
+            template = joinpath(root, "templates", "starters", "package")
+            mkpath(dirname(template))
+            cp(joinpath(STARTERS, "package"), template)
+            git(root, "init", "-q")
+            git(root, "add", ".")
+            git(root, "commit", "-q", "-m", "fixture")
+            folder = joinpath("templates", "starters", "package")
+            committed = sort!([relpath(path, folder) for path in
+                split(readchomp(`git -C $root ls-tree -r --name-only HEAD -- $folder`), '\n')])
+            write(joinpath(template, "untracked.jl"), "error(\"not part of the commit\")\n")
+            write(joinpath(template, "src", "untracked_helper.jl"), "x = 1\n")
+            @test isempty(readchomp(`git -C $root status --porcelain=v1 --untracked-files=no`))
+            mktempdir() do parent
+                target = G.generate("package", joinpath(parent, "LinePlanner"); name="LinePlanner", root)
+                @test sort!(map(path -> replace(path, "LinePlanner" => "StarterName"), files_under(target))) == committed
+                @test !isfile(joinpath(target, "untracked.jl")) && !isfile(joinpath(target, "src", "untracked_helper.jl"))
+            end
+            # Work on the templates themselves uses the working tree.
+            @test "untracked.jl" in first.(G.template_files(root, "package"; committed=false))
         end
     end
 

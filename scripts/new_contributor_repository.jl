@@ -9,10 +9,12 @@
 The new repository pins this checkout's commit: its `SpaceAGORASource.toml` and its
 workflow call name `HEAD`, its `[compat]` admits this core's release series, and a
 companion requires the facade's current contract version. It gets a fresh UUID; a
-project also gets this checkout's Manifest as its committed Manifest. The command
-refuses a checkout with tracked changes (the pinned commit would not be the code the
-starter was made from), an existing non-empty directory, a directory inside this
-checkout, and a name that is not a package name.
+project also gets the commit's Manifest as its committed Manifest. The starter's files
+come from the commit itself, so an untracked or edited file in the checkout never
+reaches the new repository. The command refuses a checkout with tracked changes (the
+pinned commit would not be the code the starter was made from), an existing non-empty
+directory, a directory inside this checkout, and a name that is not a package name or
+that contains the starters' placeholder `StarterName`.
 """
 module NewContributorRepository
 
@@ -64,7 +66,10 @@ compat_series(version::VersionNumber) = version.major == 0 ? "0.$(version.minor)
 function check_name(name::AbstractString)
     occursin(r"^[A-Z][A-Za-z0-9]*$", name) ||
         fail("--name must be a package name: a capital letter, then letters and digits (got \"$name\").")
-    name in ("SpaceAGORA", NAME_TOKEN) && fail("--name $name is reserved; choose the repository's own name.")
+    name == "SpaceAGORA" && fail("--name $name is reserved; choose the repository's own name.")
+    # The placeholder must not survive in a generated file, so it cannot be part of a name.
+    occursin(NAME_TOKEN, name) &&
+        fail("--name must not contain \"$(NAME_TOKEN)\", the starters' placeholder for the name (got \"$name\").")
     endswith(name, "jl") && fail("--name is the package name without .jl (got \"$name\").")
     return String(name)
 end
@@ -79,6 +84,30 @@ function check_target(directory, root)
     return target
 end
 
+# A file's text at `HEAD`, as committed.
+committed_text(root, path) = read(`git -c maintenance.auto=false -c gc.auto=0 -C $root show HEAD:$path`, String)
+
+"""
+    template_files(root, kind; committed=true) -> Vector{Pair{String, String}}
+
+The `kind` starter's files, relative to its folder, with their text: from the commit
+`HEAD` (`committed=true`), or from the working tree, untracked files included, for
+work on the templates themselves (`committed=false`).
+"""
+function template_files(root, kind; committed::Bool=true)
+    folder = joinpath(STARTERS, kind)
+    if committed
+        listed = git(root, "ls-tree", "-r", "-z", "--name-only", "HEAD", "--", folder)
+        paths = filter(!isempty, split(listed, '\0'))
+        isempty(paths) && fail("$(folder) is not in the commit HEAD.")
+        return [relpath(path, folder) => committed_text(root, path) for path in paths]
+    end
+    template = joinpath(root, folder)
+    isdir(template) || fail("$template is missing.")
+    return [relpath(joinpath(dir, file), template) => read(joinpath(dir, file), String)
+            for (dir, _, files) in walkdir(template) for file in files]
+end
+
 """The text of a starter file with every placeholder filled in."""
 function fill_in(text::AbstractString, values)
     for (token, value) in values
@@ -91,6 +120,8 @@ end
     generate(kind, directory; name, root=ROOT, require_clean=true) -> directory
 
 Write the `kind` starter, filled in for `name` and this checkout, into `directory`.
+With `require_clean=false` (tests and work on the templates) the checkout may have
+changes, and the starter comes from the working tree.
 """
 function generate(kind::AbstractString, directory::AbstractString; name::AbstractString, root=ROOT,
         require_clean::Bool=true)
@@ -98,8 +129,7 @@ function generate(kind::AbstractString, directory::AbstractString; name::Abstrac
     name = check_name(name)
     core = core_identity(root; require_clean)
     target = check_target(directory, root)
-    template = joinpath(root, STARTERS, kind)
-    isdir(template) || fail("$template is missing.")
+    files = template_files(root, kind; committed=require_clean)
     values = (
         NAME_TOKEN => name,
         UUID_TOKEN => string(uuid4()),
@@ -109,14 +139,16 @@ function generate(kind::AbstractString, directory::AbstractString; name::Abstrac
         CONTRACT_TOKEN => "const CORE_CONTRACT_VERSION = v\"$(core.contract)\"",
     )
     mkpath(target)
-    for (folder, _, files) in walkdir(template), file in files
-        source = joinpath(folder, file)
-        destination = joinpath(target, fill_in(relpath(source, template), (NAME_TOKEN => name,)))
+    for (path, text) in files
+        destination = joinpath(target, fill_in(path, (NAME_TOKEN => name,)))
         mkpath(dirname(destination))
-        write(destination, fill_in(read(source, String), values))
+        write(destination, fill_in(text, values))
     end
     # A study commits the exact versions behind its results; it starts from the core's.
-    kind == "project" && cp(joinpath(root, "Manifest.toml"), joinpath(target, "Manifest.toml"))
+    if kind == "project"
+        manifest = require_clean ? committed_text(root, "Manifest.toml") : read(joinpath(root, "Manifest.toml"), String)
+        write(joinpath(target, "Manifest.toml"), manifest)
+    end
     for (folder, _, files) in walkdir(target), file in files
         text = read(joinpath(folder, file), String)
         for token in (NAME_TOKEN, UUID_TOKEN, REV_TOKEN)
