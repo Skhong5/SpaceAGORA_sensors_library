@@ -74,20 +74,30 @@ end
 
 # The built-in fixture configuration. `density_model`, `planet` and
 # `ephemerides_model` are for core's own instances of the built-in models that need
-# an atmosphere or SPICE ephemerides.
+# an atmosphere or SPICE ephemerides. `per_spacecraft` declares GNC models on every
+# spacecraft, (guidance=(...), navigation=(...), control=(...)), which the engine
+# binds to each one with `bind_spacecraft`.
 function _fixture_configuration(; spacecraft_count::Integer=1, mission_time_s::Real=60.0, guidance::Tuple=(),
         navigation::Tuple=(), control::Tuple=(), effectors::Tuple=(), sensors::Tuple=(), guidance_rate_s::Real=10.0,
         navigation_rate_s::Real=10.0, control_rate_s::Real=1.0, orientation::Bool=true,
         density_model=SimulationModel.NoAtmosphereModel(), planet=SimulationModel.make_no_gram_planet(:earth),
-        ephemerides_model=SimulationModel.SimpleEphemeridesModel())
+        ephemerides_model=SimulationModel.SimpleEphemeridesModel(), per_spacecraft::NamedTuple=NamedTuple())
     spacecraft_count >= 1 || throw(ArgumentError("conformance_fixture: spacecraft_count must be at least 1."))
     mission_time_s > 0 || throw(ArgumentError("conformance_fixture: mission_time_s must be positive."))
     spacecraft = map(1:spacecraft_count) do id
         root = SimulationModel.Link(root=true, m=100.0, ref_area=2.0)
         orbit = SimulationModel.InitialCondition(ra=planet.Rp_e + 700e3, rp=planet.Rp_e + 650e3, i=45.0,
             ω=0.0, Ω=0.0, ν=10.0 + 5.0 * (id - 1))
-        SimulationModel.SpacecraftModel(joints=SimulationModel.Joint[], links=[root], root=root, prop_mass=0.0,
-            inertia_tensor=root.inertia, initial_condition=orbit, id=id)
+        declared = (
+            guidance=SimulationModel.GuidanceModel(get(per_spacecraft, :guidance, ()),
+                fill(Float64(guidance_rate_s), length(get(per_spacecraft, :guidance, ())))),
+            navigation=SimulationModel.NavigationModel(get(per_spacecraft, :navigation, ()),
+                fill(Float64(navigation_rate_s), length(get(per_spacecraft, :navigation, ())))),
+            control=SimulationModel.ControlModel(get(per_spacecraft, :control, ()),
+                fill(Float64(control_rate_s), length(get(per_spacecraft, :control, ())))),
+        )
+        SimulationModel.SpacecraftModel(; joints=SimulationModel.Joint[], links=[root], root=root, prop_mass=0.0,
+            inertia_tensor=root.inertia, initial_condition=orbit, id=id, declared...)
     end
     first_spacecraft = first(spacecraft)
     for sensor in sensors
