@@ -13,6 +13,7 @@ function prepare(args)
     owned=deepcopy(args)
     u=E.build_initial_conditions(owned)
     p=S.ODEParams(n_sats=length(owned.dynamics_model.spacecraft),args=owned)
+    SpaceAGORA.SimulationModel.SimulationCallbacks.initialize_gnc_links!(owned,u,p,0.)   # links first, as the engine does
     for g in owned.guidance_model.guidance_effectors
         Hooks.initialize_guidance!(g,u,p,0.)
     end
@@ -31,6 +32,9 @@ end
     @test g.plan_buffer===only(owned.control_model.control_effectors).plan_buffer
     g2=deepcopy(g); @test g2.runtime.rng!==g.runtime.rng
     c=only(owned.control_model.control_effectors)
+    # The engine calls the planner that writes the controller's buffer before its tick.
+    @test SpaceAGORA.SimulationModel.SimulationCallbacks._linked_producers(c,owned)==(g,)
+    Hooks.before_reference_control!(g,c,u,p,.1)
     S.calcControlEffect!(c,u,p,.1,1)
     @test last(g.runtime.records).event===:control && last(g.runtime.records).request_id==1
     S.GuidanceHooks.calcGuidanceEffect!(g,u,p,.1,1)

@@ -128,7 +128,6 @@ const HP_PARAMS = HP_SM.ODEParams(n_sats=1, args=HP_FIXTURE)
 const HP_CALL = HP_SE._hook_call_types(HP_U0, HP_PARAMS)
 const HP_P = HP_CALL.params
 const HP_X = only(HP_CALL.spacecraft)
-hp_tick_ok(f, T) = hasmethod(f, Tuple{T, HP_CALL.state, HP_P, Float64, Int})
 hp_sampled(f, T) = hasmethod(f, Tuple{T, SpaceAGORA.StateSample, SpaceAGORA.EnvironmentSample, Float64})
 # Whether `T` has its own method of a backbone declaration hook, not the default.
 hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
@@ -205,33 +204,10 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
     end
 
     @testset "built-in models pass the check" begin
-        guidance = hp_package_types(SpaceAGORA.AbstractGuidanceModel)
-        @test length(guidance) >= 5
-        for T in guidance
-            @test hp_tick_ok(SpaceAGORA.calcGuidanceEffect!, T)
-        end
-        # SolarPanelAngleOfAttackControlModel is the panel actuator inside the
-        # energy depletion control model and has no control tick of its own.
-        aoa = SpaceAGORA.SolarPanelAngleOfAttackControlModel
-        control = [hp_package_types(SpaceAGORA.AbstractControlEffectorModel); HP_SM.ThrusterModels.BaseThrusterModel]
-        @test aoa in control
-        @test length(control) >= 6
-        # Every built-in control effector has control_wrench, and none a method
-        # of its own of a deprecated control output hook.
-        for T in control
-            @test hp_tick_ok(SpaceAGORA.calcControlEffect!, T) == (T !== aoa)
-            @test hasmethod(SpaceAGORA.control_wrench, Tuple{T, SpaceAGORA.StateSample, HP_P, Float64})
-            for old in (SpaceAGORA.calcControlForceTorque, SpaceAGORA.calcControlMassFlowRate, SpaceAGORA.calcReactionWheelTorque)
-                @test !HP_SE._own_method(old, Tuple{T, HP_X, HP_P, Int, Float64})
-            end
-        end
+        # Guidance, control and force/torque models: the conformance tests
+        # (test/unit/conformance/builtin_conformance_tests.jl) run this check, the
+        # deprecated-hook list and the sample signatures on an instance of each.
         forces = hp_package_types(SpaceAGORA.AbstractForceTorqueModel)
-        @test length(forces) >= 15
-        # Every built-in force model has wrench, and none a calcForceTorque method of its own.
-        for T in forces
-            @test hp_sampled(SpaceAGORA.wrench, T)
-            @test !HP_SE._own_method(SpaceAGORA.calcForceTorque, Tuple{T, HP_X, HP_P, Int})
-        end
         # Every built-in backbone declaration has its acceleration hook.
         cores = filter(T -> hp_declares(SpaceAGORA.gravity_backbone_structure, T), forces)
         kicks = filter(T -> hp_declares(SpaceAGORA.gravity_backbone_kick_structure, T), forces)

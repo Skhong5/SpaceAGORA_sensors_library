@@ -6,7 +6,9 @@ module ConformanceNegativeControlsTests
 
 using Test, SpaceAGORA, Logging
 using StaticArrays: SVector
-using SpaceAGORA.Conformance: CHECK_IDS, check_force_torque_model, check_service_facade, conformance_fixture, passed
+using SpaceAGORA.Conformance: CHECK_IDS, check_force_torque_model, check_service_facade, check_sensor, conformance_fixture,
+    passed, check_guidance_model, check_navigation_model, check_control_model
+using Random: Random
 
 const SM = SpaceAGORA.SimulationModel
 const C = SpaceAGORA.Conformance
@@ -107,6 +109,249 @@ SpaceAGORA.wrench(::NcUndeclaredThirdBody, x::Sample, env::Env, t::Float64) =
 include(joinpath(@__DIR__, "..", "..", "fixtures", "conformance_instances.jl"))
 using .ConformanceInstances: on_spice, spice_available
 
+# Sensors: one record shape, a 3-component measurement every second, and a counter
+# some controls keep. The clean one adds noise from its own stream to the body rate.
+for name in (:NcCleanSensor, :NcShortSensor, :NcNaNSensor, :NcRunEpochSensor, :NcIdentitySensor, :NcGlobalRandSensor,
+        :NcSharedSensor, :NcFixedSeedSensor, :NcCountingSensor, :NcAtmosphereSensor)
+    @eval begin
+        mutable struct $name <: SpaceAGORA.AbstractSensor
+            period_s::Float64
+            seed::Int
+            rng::Any
+            latest::Any
+            latest_time_s::Float64
+            count::Int
+        end
+        $name() = $name(1.0, 1, nothing, SVector(NaN, NaN, NaN), NaN, 0)
+        SpaceAGORA.sensor_dimension(::$name) = 3
+    end
+end
+noisy(truth, rng) = truth.ω_body + 1.0e-4 * SVector(randn(rng), randn(rng), randn(rng))
+SpaceAGORA.sensor_measure(::NcCleanSensor, truth, ctx, rng) = noisy(truth, rng)
+# measurement_shape: two components where it declares three; a NaN component.
+SpaceAGORA.sensor_measure(::NcShortSensor, truth, ctx, rng) = SVector(truth.ω_body[1], truth.ω_body[2])
+SpaceAGORA.sensor_measure(::NcNaNSensor, truth, ctx, rng) = SVector(NaN, truth.ω_body[2], truth.ω_body[3])
+# repeatable_run: state outside the sensor, advanced at every run start.
+const NC_SENSOR_EPOCH = Ref(0)
+SpaceAGORA.initialize_sensor!(::NcRunEpochSensor, truth, ctx, rng) = (NC_SENSOR_EPOCH[] += 1; nothing)
+SpaceAGORA.sensor_measure(::NcRunEpochSensor, truth, ctx, rng) = noisy(truth, rng) .+ 1.0e-3 * NC_SENSOR_EPOCH[]
+# deepcopy_equivalent: an offset registered under the identity of the sensor.
+const NC_SENSOR_OFFSETS = IdDict{Any, Float64}()
+NcRegisteredSensor() = (s = NcIdentitySensor(); NC_SENSOR_OFFSETS[s] = 1.0e-3; s)
+SpaceAGORA.sensor_measure(s::NcIdentitySensor, truth, ctx, rng) = noisy(truth, rng) .+ get(NC_SENSOR_OFFSETS, s, 0.0)
+# global_rng_independent: noise from the global generator.
+SpaceAGORA.sensor_measure(::NcGlobalRandSensor, truth, ctx, rng) = truth.ω_body .+ 1.0e-4 * rand()
+# concurrent_equals_sequential: scratch shared by every instance, reset at a run's start.
+const NC_SENSOR_SCRATCH = Ref(0.0)
+function SpaceAGORA.sensor_measure(::NcSharedSensor, truth, ctx, rng)
+    truth.t_s == 0.0 && (NC_SENSOR_SCRATCH[] = 0.0)
+    NC_SENSOR_SCRATCH[] += 1.0
+    return noisy(truth, rng) .+ 1.0e-6 * NC_SENSOR_SCRATCH[]
+end
+# seed_repeatable: noise from its stream, but the stream is reset to a fixed seed.
+SpaceAGORA.initialize_sensor!(::NcFixedSeedSensor, truth, ctx, rng) = (Random.seed!(rng, 1234); nothing)
+SpaceAGORA.sensor_measure(::NcFixedSeedSensor, truth, ctx, rng) = noisy(truth, rng)
+# custom_state_reset: a sample counter that initialize_sensor! does not reset.
+SpaceAGORA.sensor_measure(s::NcCountingSensor, truth, ctx, rng) = (s.count += 1; noisy(truth, rng) .+ 1.0e-6 * s.count)
+# requirements_supported: asks for the atmosphere.
+SpaceAGORA.sensor_requirements(::NcAtmosphereSensor) = SpaceAGORA.ActuatorRequirements(atmosphere=true)
+SpaceAGORA.sensor_measure(::NcAtmosphereSensor, truth, ctx, rng) = noisy(truth, rng)
+# run_state_fields: not mutable; without latest_time_s.
+struct NcImmutableSensor <: SpaceAGORA.AbstractSensor
+    period_s::Float64
+    seed::Int
+    rng::Any
+    latest::Any
+    latest_time_s::Float64
+end
+NcImmutableSensor() = NcImmutableSensor(1.0, 1, nothing, SVector(NaN, NaN, NaN), NaN)
+SpaceAGORA.sensor_dimension(::NcImmutableSensor) = 3
+SpaceAGORA.sensor_measure(::NcImmutableSensor, truth, ctx, rng) = noisy(truth, rng)
+mutable struct NcNoTimeSensor <: SpaceAGORA.AbstractSensor
+    period_s::Float64
+    seed::Int
+    rng::Any
+    latest::Any
+end
+NcNoTimeSensor() = NcNoTimeSensor(1.0, 1, nothing, SVector(NaN, NaN, NaN))
+SpaceAGORA.sensor_dimension(::NcNoTimeSensor) = 3
+SpaceAGORA.sensor_measure(::NcNoTimeSensor, truth, ctx, rng) = noisy(truth, rng)
+# Clean, and it needs initialize_sensor!: its offset is NaN until that sets it.
+mutable struct NcNeedsInitSensor <: SpaceAGORA.AbstractSensor
+    period_s::Float64
+    seed::Int
+    rng::Any
+    latest::Any
+    latest_time_s::Float64
+    offset::Float64
+end
+NcNeedsInitSensor() = NcNeedsInitSensor(1.0, 1, nothing, SVector(NaN, NaN, NaN), NaN, NaN)
+SpaceAGORA.sensor_dimension(::NcNeedsInitSensor) = 3
+SpaceAGORA.initialize_sensor!(s::NcNeedsInitSensor, truth, ctx, rng) = (s.offset = 0.0; nothing)
+SpaceAGORA.sensor_measure(s::NcNeedsInitSensor, truth, ctx, rng) = noisy(truth, rng) .+ s.offset
+# seed_repeatable: like a gyro whose bias walks, its first reading draws nothing (the
+# current bias) and later ones do; initialize_sensor! resets the stream to a fixed seed.
+mutable struct NcFixedSeedWalkSensor <: SpaceAGORA.AbstractSensor
+    period_s::Float64
+    seed::Int
+    rng::Any
+    latest::Any
+    latest_time_s::Float64
+    bias::SVector{3, Float64}
+end
+NcFixedSeedWalkSensor() = NcFixedSeedWalkSensor(1.0, 1, nothing, SVector(NaN, NaN, NaN), NaN, SVector(0.0, 0.0, 0.0))
+SpaceAGORA.sensor_dimension(::NcFixedSeedWalkSensor) = 3
+SpaceAGORA.initialize_sensor!(s::NcFixedSeedWalkSensor, truth, ctx, rng) =
+    (Random.seed!(rng, 1234); s.bias = SVector(0.0, 0.0, 0.0); nothing)
+function SpaceAGORA.sensor_measure(s::NcFixedSeedWalkSensor, truth, ctx, rng)
+    reading = truth.ω_body + s.bias
+    s.bias += 1.0e-4 * SVector(randn(rng), randn(rng), randn(rng))
+    return reading
+end
+
+const SENSOR_RUN_LEVEL = (:repeatable_run, :deepcopy_equivalent, :global_rng_independent, :concurrent_equals_sequential,
+    :seed_repeatable, :custom_state_reset)
+sensor_except(ids...) = filter(id -> !(id in ids), CHECK_IDS.sensor)
+
+# no_deprecated_hooks (force/torque): a calcForceTorque method of its own beside wrench.
+struct NcDeprecatedForce <: ForceModel end
+SpaceAGORA.wrench(::NcDeprecatedForce, x::Sample, env::Env, t::Float64) = along_velocity(x, -1.0e-3)
+SpaceAGORA.calcForceTorque(::NcDeprecatedForce, x, p, i) = (Z3, Z3)
+
+# Guidance and navigation models: one record shape and one behaviour per control.
+# `acc` is the model's own state, which the run-level checks compare at the end of a
+# run; `ticked` marks a run's first tick; `buffer` is what bind_spacecraft shares.
+const NC_GNC_EPOCH = Ref(0)
+const NC_GNC_SCRATCH = Ref(0.0)
+const NC_GNC_GAINS = IdDict{Any, Float64}()
+gnc_step(::Val{:Clean}, m, u, i) = 1.0e-9 * u.sc[i].pos[1]
+gnc_step(::Val{:RunEpoch}, m, u, i) = (m.ticked || (m.ticked = true; NC_GNC_EPOCH[] += 1); Float64(NC_GNC_EPOCH[]))
+gnc_step(::Val{:Identity}, m, u, i) = get(NC_GNC_GAINS, m, 0.0) + 1.0e-9 * u.sc[i].pos[1]
+gnc_step(::Val{:Rand}, m, u, i) = rand()
+gnc_step(::Val{:Shared}, m, u, i) = (m.ticked || (m.ticked = true; NC_GNC_SCRATCH[] = 0.0); NC_GNC_SCRATCH[] += 1.0)
+gnc_step(::Val{:SharedBind}, m, u, i) = (m.buffer[1] += 1.0; m.buffer[1])
+gnc_step(::Val{:NoReset}, m, u, i) = 1.0
+for (prefix, Abstract, tick) in ((:NcG, SpaceAGORA.AbstractGuidanceModel, :calcGuidanceEffect!),
+        (:NcN, SpaceAGORA.AbstractNavigationModel, :calcNavigationEffect!))
+    for variant in (:Clean, :NoTick, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoReset)
+        name = Symbol(prefix, variant)
+        @eval begin
+            mutable struct $name <: $Abstract
+                acc::Float64
+                ticked::Bool
+                buffer::Vector{Float64}
+            end
+            $name() = $name(0.0, false, [0.0])
+        end
+        variant === :NoTick && continue
+        @eval SpaceAGORA.$tick(m::$name, u, p, t::Float64, i::Int) = (m.acc += gnc_step(Val($(QuoteNode(variant))), m, u, i); nothing)
+        # Navigation models reset their own state at a run's start, except NoReset.
+        prefix === :NcN && variant !== :NoReset &&
+            @eval SpaceAGORA.SimulationLifecycle.initialize_navigation!(m::$name, u, p, t) = (m.acc = 0.0; m.ticked = false; nothing)
+        variant === :SharedBind && @eval SpaceAGORA.bind_spacecraft(m::$name, i::Int) = $name(m.acc, m.ticked, m.buffer)
+    end
+end
+registered(model) = (NC_GNC_GAINS[model] = 1.0e-3; model)
+# Clean, and its bound copies need the fixture's mounted sensor: each tick reads it.
+mutable struct NcNSensorReader <: SpaceAGORA.AbstractNavigationModel
+    acc::Float64
+end
+SpaceAGORA.calcNavigationEffect!(m::NcNSensorReader, u, p, t::Float64, i::Int) =
+    (m.acc += length(SpaceAGORA.sensor_measurement(p.args.dynamics_model.spacecraft[i], 1)); nothing)
+SpaceAGORA.SimulationLifecycle.initialize_navigation!(m::NcNSensorReader, u, p, t) = (m.acc = 0.0; nothing)
+SpaceAGORA.bind_spacecraft(m::NcNSensorReader, i::Int) = NcNSensorReader(m.acc)
+
+# Control models: the tick sets `cmd`, and the output hooks read it.
+mutable struct NcCtl{V} <: SpaceAGORA.AbstractControlEffectorModel
+    acc::Float64
+    ticked::Bool
+    buffer::Vector{Float64}
+    calls::Int
+end
+NcCtl{V}() where {V} = NcCtl{V}(0.0, false, [0.0], 0)
+const NC_CTL_STEPS = (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind)
+for variant in (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoWrench, :Deprecated, :Narrow, :Impure, :Negative)
+    step = variant in NC_CTL_STEPS ? variant : :Clean
+    @eval SpaceAGORA.calcControlEffect!(m::NcCtl{$(QuoteNode(variant))}, u, p, t::Float64, i::Int) =
+        (m.acc += gnc_step(Val($(QuoteNode(step))), m, u, i); nothing)
+    variant === :NoWrench && continue
+    @eval SpaceAGORA.control_wrench(m::NcCtl{$(QuoteNode(variant))}, x::Sample, p, t::Float64) =
+        (SVector(1.0e-4 * m.acc / (1 + abs(m.acc)), 0.0, 0.0), Z3)
+    variant === :Negative || @eval SpaceAGORA.control_propellant_rate(m::NcCtl{$(QuoteNode(variant))}, x::Sample, p, t::Float64) =
+        1.0e-6 * abs(m.acc) / (1 + abs(m.acc))
+end
+SpaceAGORA.bind_spacecraft(m::NcCtl{:SharedBind}, i::Int) = NcCtl{:SharedBind}(m.acc, m.ticked, m.buffer, m.calls)
+SpaceAGORA.calcControlForceTorque(::NcCtl{:Deprecated}, u, p, i, t) = (Z3, Z3)
+SpaceAGORA.control_wrench(m::NcCtl{:Narrow}, x::Sample{Nothing}, p, t::Float64) = (Z3, Z3)
+SpaceAGORA.control_wrench(m::NcCtl{:Impure}, x::Sample, p, t::Float64) = (m.calls += 1; (Z3, Z3))
+SpaceAGORA.control_propellant_rate(m::NcCtl{:Negative}, x::Sample, p, t::Float64) = -1.0e-5
+
+gnc_except(kind, ids...) = filter(id -> !(id in ids), CHECK_IDS[kind])
+const GNC_RUN_LEVEL = (:repeatable_run, :deepcopy_equivalent, :global_rng_independent, :concurrent_equals_sequential,
+    :initialize_resets)
+function gnc_controls()
+    controls = Any[]
+    for (kind, prefix, check) in ((:guidance_model, :NcG, check_guidance_model), (:navigation_model, :NcN, check_navigation_model))
+        model(variant) = getfield(@__MODULE__, Symbol(prefix, variant))()
+        resets = kind === :navigation_model ? (:initialize_resets,) : ()
+        push!(controls,
+            (kind=kind, id=:hooks_present, broken="no tick method", expect="has no method",
+                report=() -> check(model(:NoTick)), passing=(:bind_fresh_state,)),
+            (kind=kind, id=:repeatable_run, broken="state outside the model advanced at every run start",
+                expect="two runs of the fixture with isolate_state=true differ: ", report=() -> check(model(:RunEpoch)),
+                passing=(:hooks_present, :bind_fresh_state)),
+            (kind=kind, id=:deepcopy_equivalent, broken="a gain keyed by the model's identity",
+                expect="and a run of its deep copy (isolate_state=true) differ: ",
+                report=() -> check(registered(model(:Identity))), passing=gnc_except(kind, :deepcopy_equivalent)),
+            (kind=kind, id=:global_rng_independent, broken="rand() in the tick", expect="seeded 1 and 2 differ: ",
+                report=() -> check(model(:Rand)), passing=(:hooks_present, :bind_fresh_state)),
+            (kind=kind, id=:concurrent_equals_sequential, broken="scratch shared by every instance",
+                expect="and sequential run ", report=() -> check(model(:Shared)),
+                passing=gnc_except(kind, :concurrent_equals_sequential)),
+            (kind=kind, id=:bind_fresh_state, broken="bind_spacecraft copies share a buffer the tick changes",
+                expect="changed during the run", report=() -> check(model(:SharedBind)),
+                passing=gnc_except(kind, :bind_fresh_state, resets...)))
+        kind === :navigation_model && push!(controls,
+            (kind=kind, id=:initialize_resets, broken="its own state never reset in initialize_navigation!",
+                expect="two runs with isolate_state=false on one configuration differ: ",
+                report=() -> check(model(:NoReset)), passing=gnc_except(kind, :initialize_resets)))
+    end
+    ctl(variant) = NcCtl{variant}()
+    kind = :control_model
+    push!(controls,
+        (kind=kind, id=:hooks_present, broken="a tick but no control_wrench", expect="has no method",
+            report=() -> check_control_model(ctl(:NoWrench)), passing=(:no_deprecated_hooks, :supported_sample_signature)),
+        (kind=kind, id=:no_deprecated_hooks, broken="a calcControlForceTorque method beside control_wrench",
+            expect="implements both control_wrench and calcControlForceTorque",
+            report=() -> check_control_model(ctl(:Deprecated)), passing=(:hooks_present, :supported_sample_signature)),
+        (kind=kind, id=:supported_sample_signature, broken="a control_wrench method on StateSample{Nothing}",
+            expect="StateSample{Nothing}, narrower than StateSample",
+            report=() -> check_control_model(ctl(:Narrow)), passing=gnc_except(kind, :supported_sample_signature)),
+        (kind=kind, id=:repeatable_run, broken="state outside the model advanced at every run start",
+            expect="two runs of the fixture with isolate_state=true differ: ",
+            report=() -> check_control_model(ctl(:RunEpoch)), passing=(:hooks_present, :no_deprecated_hooks)),
+        (kind=kind, id=:deepcopy_equivalent, broken="a gain keyed by the model's identity",
+            expect="and a run of its deep copy (isolate_state=true) differ: ",
+            report=() -> check_control_model(registered(ctl(:Identity))), passing=gnc_except(kind, :deepcopy_equivalent)),
+        (kind=kind, id=:global_rng_independent, broken="rand() in the tick", expect="seeded 1 and 2 differ: ",
+            report=() -> check_control_model(ctl(:Rand)), passing=(:hooks_present, :no_deprecated_hooks)),
+        (kind=kind, id=:concurrent_equals_sequential, broken="scratch shared by every instance", expect="and sequential run ",
+            report=() -> check_control_model(ctl(:Shared)), passing=gnc_except(kind, :concurrent_equals_sequential)),
+        (kind=kind, id=:output_hook_pure, broken="control_wrench counts its calls in the model",
+            expect="calls of control_wrench at t = ", report=() -> check_control_model(ctl(:Impure)),
+            passing=gnc_except(kind, :output_hook_pure)),
+        (kind=kind, id=:positive_consumption, broken="a negative propellant rate",
+            expect="control_propellant_rate returned -1.0e-5",
+            report=() -> check_control_model(ctl(:Negative)), passing=gnc_except(kind, :positive_consumption)),
+        (kind=kind, id=:bind_fresh_state, broken="bind_spacecraft copies share a buffer the tick changes",
+            expect="changed during the run", report=() -> check_control_model(ctl(:SharedBind)),
+            passing=gnc_except(kind, :bind_fresh_state)),
+        (kind=:force_torque_model, id=:no_deprecated_hooks, broken="a calcForceTorque method beside wrench",
+            expect="implements both wrench and calcForceTorque",
+            report=() -> check_force_torque_model(NcDeprecatedForce()), passing=(:hooks_present, :supported_sample_signature)))
+    return controls
+end
+
 # A facade with the shape the adapter standard requires; each control breaks one rule.
 function control_facade(; version=v"1.0.0", require=:exact, implemented=(:serve,), consumed=(:Value,),
         omit::Union{Nothing, Symbol}=nothing)
@@ -171,6 +416,37 @@ controls() = [
         report=() -> (entry = on_spice(planet -> NcUndeclaredThirdBody());
             check_force_torque_model(entry.model; fixture=entry.fixture)),
         passing=(:hooks_present, :supported_sample_signature))] : [])...,
+    (kind=:sensor, id=:run_state_fields, broken="an immutable record", expect="is not a mutable struct",
+        report=() -> check_sensor(NcImmutableSensor()), passing=()),
+    (kind=:sensor, id=:run_state_fields, broken="no latest_time_s field", expect="lacks the field(s) latest_time_s",
+        report=() -> check_sensor(NcNoTimeSensor()), passing=()),
+    (kind=:sensor, id=:requirements_supported, broken="asks for the atmosphere", expect="add_sensor! refuses the sensor",
+        report=() -> check_sensor(NcAtmosphereSensor()), passing=(:run_state_fields,)),
+    (kind=:sensor, id=:measurement_shape, broken="two components where it declares three",
+        expect="not 3 finite component(s)",
+        report=() -> check_sensor(NcShortSensor()), passing=sensor_except(:measurement_shape)),
+    (kind=:sensor, id=:measurement_shape, broken="a NaN component", expect="not 3 finite component(s)",
+        report=() -> check_sensor(NcNaNSensor()), passing=sensor_except(:measurement_shape)),
+    (kind=:sensor, id=:repeatable_run, broken="state outside the sensor advanced at every run start",
+        expect="two runs of the fixture with isolate_state=true differ: ",
+        report=() -> check_sensor(NcRunEpochSensor()), passing=(:run_state_fields, :requirements_supported, :measurement_shape)),
+    (kind=:sensor, id=:deepcopy_equivalent, broken="an offset keyed by the sensor's identity",
+        expect="and a run of its deep copy (isolate_state=true) differ: ",
+        report=() -> check_sensor(NcRegisteredSensor()), passing=sensor_except(:deepcopy_equivalent)),
+    (kind=:sensor, id=:global_rng_independent, broken="noise from the global generator", expect="seeded 1 and 2 differ: ",
+        report=() -> check_sensor(NcGlobalRandSensor()), passing=(:run_state_fields, :requirements_supported, :measurement_shape)),
+    (kind=:sensor, id=:concurrent_equals_sequential, broken="scratch shared by every instance", expect="and sequential run ",
+        report=() -> check_sensor(NcSharedSensor()), passing=sensor_except(:concurrent_equals_sequential)),
+    (kind=:sensor, id=:seed_repeatable, broken="its stream reset to a fixed seed",
+        expect="yet runs with those seeds give the same measurements",
+        report=() -> check_sensor(NcFixedSeedSensor()), passing=sensor_except(:seed_repeatable)),
+    (kind=:sensor, id=:seed_repeatable, broken="its stream reset to a fixed seed, and its first reading draws nothing",
+        expect="yet runs with those seeds give the same measurements",
+        report=() -> check_sensor(NcFixedSeedWalkSensor()), passing=sensor_except(:seed_repeatable)),
+    (kind=:sensor, id=:custom_state_reset, broken="a sample counter it never resets",
+        expect="two runs with isolate_state=false on one configuration differ: ",
+        report=() -> check_sensor(NcCountingSensor()), passing=sensor_except(:custom_state_reset)),
+    gnc_controls()...,
     (kind=:service_facade, id=:facade_shape, broken="CONTRACT_VERSION other than the reviewed one", expect="CONTRACT_VERSION is v\"1.0.1\", not the reviewed 1.0.0",
         report=() -> facade_report(control_facade(version=v"1.0.1"); version=v"1.0.0"), passing=()),
     (kind=:service_facade, id=:facade_shape, broken="require_version accepts any minor or patch", expect="accepted a version other than 1.0.0",
@@ -221,6 +497,30 @@ status_of(report, id) = only(check.status for check in report.checks if check.id
         @test passed(facade)
         nested = facade_report(control_facade(implemented=(:serve, (:Nested, :serve))); version=v"1.0.0")
         @test passed(nested)
+        for (report, kind) in ((check_guidance_model(NcGClean()), :guidance_model),
+                (check_navigation_model(NcNClean()), :navigation_model), (check_control_model(NcCtl{:Clean}()), :control_model))
+            @test [check.id for check in report.checks] == collect(CHECK_IDS[kind])
+            @test all(check -> check.status in (:pass, :skip), report.checks)
+            @test passed(report)
+        end
+        # A clean model is not answerable for another model of its fixture that uses a
+        # deprecated hook.
+        target = NcClean()
+        mixed = check_force_torque_model(target; fixture=conformance_fixture(effectors=(target, NcDeprecatedForce())))
+        @test status_of(mixed, :no_deprecated_hooks) === :pass
+        controller = NcCtl{:Clean}()
+        mixed = check_control_model(controller; fixture=conformance_fixture(control=(controller, NcCtl{:Deprecated}())))
+        @test status_of(mixed, :no_deprecated_hooks) === :pass
+        # The two-spacecraft bind check keeps the fixture's sensor, which the model reads.
+        reader = check_navigation_model(NcNSensorReader(0.0); sensors=(NcCleanSensor(),))
+        @test status_of(reader, :bind_fresh_state) === :pass
+        @test passed(reader)
+        # The second needs initialize_sensor! before it can measure, as the engine calls it.
+        for sensor in (check_sensor(NcCleanSensor()), check_sensor(NcNeedsInitSensor()))
+            @test [check.id for check in sensor.checks] == collect(CHECK_IDS.sensor)
+            @test all(check -> check.status === :pass, sensor.checks) || Threads.nthreads() < 2
+            @test passed(sensor)
+        end
     end
     for control in all_controls
         # A check reports a broken input as a failing check; it never throws.
@@ -242,12 +542,16 @@ status_of(report, id) = only(check.status for check in report.checks if check.id
                     @test status === expected
                     expected === :fail && @test occursin(control.expect, detail)
                     # A run-level control fails by its behaviour, not by a run that stopped.
-                    control.id in RUN_LEVEL && @test !occursin("run failed", detail)
+                    control.id in (control.kind === :sensor ? SENSOR_RUN_LEVEL :
+                        control.kind in (:guidance_model, :navigation_model, :control_model) ? GNC_RUN_LEVEL : RUN_LEVEL) &&
+                        @test !occursin("run failed", detail)
                 end
                 expected === :fail && @test !passed(report)
                 for id in control.passing
                     @testset let id = id, status = status_of(report, id)
-                        @test status === :pass || (id === :concurrent_equals_sequential && status === :skip)
+                        # Skipped is not failed: concurrency needs two threads, and a model
+                        # without bind_spacecraft has no bound copies to check.
+                        @test status === :pass || (id in (:concurrent_equals_sequential, :bind_fresh_state) && status === :skip)
                     end
                 end
             end

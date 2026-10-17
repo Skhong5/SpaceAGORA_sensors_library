@@ -43,6 +43,7 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :rpo_reference_is_current, rendered = "SpaceAGORA.rpo_reference_is_current"),
         (owner = :SpaceAGORA, symbol = :DirectRPOPlanner, rendered = "SpaceAGORA.DirectRPOPlanner"),
         (owner = :SpaceAGORA, symbol = :HYPRRPOPlanner, rendered = "SpaceAGORA.HYPRRPOPlanner"),
+        (owner = :SpaceAGORA, symbol = :RetainedPathRPOPlanner, rendered = "SpaceAGORA.RetainedPathRPOPlanner"),
         (owner = :SpaceAGORA, symbol = :RPOPSOConfig, rendered = "SpaceAGORA.RPOPSOConfig"),
         (owner = :SpaceAGORA, symbol = :rpo_pso_config, rendered = "SpaceAGORA.rpo_pso_config"),
         (owner = :SpaceAGORA, symbol = :RPOPlanningEvent, rendered = "SpaceAGORA.RPOPlanningEvent"),
@@ -53,6 +54,13 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :rpo_geometry_revision, rendered = "SpaceAGORA.rpo_geometry_revision"),
         (owner = :SpaceAGORA, symbol = :rpo_geometry_snapshot, rendered = "SpaceAGORA.rpo_geometry_snapshot"),
         (owner = :SpaceAGORA, symbol = :RPOReplanningSpheres, rendered = "SpaceAGORA.RPOReplanningSpheres"),
+        (owner = :SpaceAGORA, symbol = :HYPRComparisonPlanner, rendered = "SpaceAGORA.HYPRComparisonPlanner"),
+        (owner = :SpaceAGORA, symbol = :UnrefinedPSOPlanner, rendered = "SpaceAGORA.UnrefinedPSOPlanner"),
+        (owner = :SpaceAGORA, symbol = :RRTConnectPlanner, rendered = "SpaceAGORA.RRTConnectPlanner"),
+        (owner = :SpaceAGORA, symbol = :RRTConnectBezierPlanner, rendered = "SpaceAGORA.RRTConnectBezierPlanner"),
+        (owner = :SpaceAGORA, symbol = :RRTStarPlanner, rendered = "SpaceAGORA.RRTStarPlanner"),
+        (owner = :SpaceAGORA, symbol = :CHOMPPlanner, rendered = "SpaceAGORA.CHOMPPlanner"),
+        (owner = :SpaceAGORA, symbol = :STOMPPlanner, rendered = "SpaceAGORA.STOMPPlanner"),
     ]),
     (title = "GNC algorithm contract", items = [
         (owner = :SpaceAGORA, symbol = :AbstractGNCAlgorithm, rendered = "SpaceAGORA.AbstractGNCAlgorithm"),
@@ -79,6 +87,13 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :on_rejection, rendered = "SpaceAGORA.on_rejection"),
         (owner = :SpaceAGORA, symbol = :fallback_product, rendered = "SpaceAGORA.fallback_product"),
         (owner = :SpaceAGORA, symbol = :family_contract_version, rendered = "SpaceAGORA.family_contract_version"),
+        (owner = :SpaceAGORA, symbol = :family_request, rendered = "SpaceAGORA.family_request"),
+        (owner = :SpaceAGORA, symbol = :family_link, rendered = "SpaceAGORA.family_link"),
+        (owner = :SpaceAGORA, symbol = :preflight_family, rendered = "SpaceAGORA.preflight_family"),
+        (owner = :SpaceAGORA, symbol = :AlgorithmGuidance, rendered = "SpaceAGORA.AlgorithmGuidance"),
+        (owner = :SpaceAGORA, symbol = :AlgorithmEvent, rendered = "SpaceAGORA.AlgorithmEvent"),
+        (owner = :SpaceAGORA, symbol = :AlgorithmGuidanceError, rendered = "SpaceAGORA.AlgorithmGuidanceError"),
+        (owner = :SpaceAGORA, symbol = :algorithm_run_report, rendered = "SpaceAGORA.algorithm_run_report"),
         (owner = :SpaceAGORA, symbol = :gnc_stream_words, rendered = "SpaceAGORA.gnc_stream_words"),
         (owner = :SpaceAGORA, symbol = :AlgorithmRuntime, rendered = "SpaceAGORA.AlgorithmRuntime"),
         (owner = :SpaceAGORA, symbol = :run_algorithm_request!, rendered = "SpaceAGORA.run_algorithm_request!"),
@@ -100,6 +115,13 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :gnc_callbacks, rendered = "SpaceAGORA.gnc_callbacks"),
         (owner = :SpaceAGORA, symbol = :register_tstops!, rendered = "SpaceAGORA.register_tstops!"),
         (owner = :SpaceAGORA, symbol = :gnc_clock_started!, rendered = "SpaceAGORA.gnc_clock_started!"),
+        (owner = :SpaceAGORA, symbol = :gnc_period_s, rendered = "SpaceAGORA.gnc_period_s"),
+        (owner = :SpaceAGORA, symbol = :Produces, rendered = "SpaceAGORA.Produces"),
+        (owner = :SpaceAGORA, symbol = :Consumes, rendered = "SpaceAGORA.Consumes"),
+        (owner = :SpaceAGORA, symbol = :gnc_links, rendered = "SpaceAGORA.gnc_links"),
+        (owner = :SpaceAGORA, symbol = :link_cardinality, rendered = "SpaceAGORA.link_cardinality"),
+        (owner = :SpaceAGORA, symbol = :check_link, rendered = "SpaceAGORA.check_link"),
+        (owner = :SpaceAGORA, symbol = :link_initialize!, rendered = "SpaceAGORA.link_initialize!"),
     ]),
     (
         title = "Simulation Setup",
@@ -504,6 +526,19 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "Burn-plan family",
+        items = [
+            (owner = :SpaceAGORA, symbol = :BurnPlanFamily, rendered = "SpaceAGORA.BurnPlanFamily"),
+            (owner = :SpaceAGORA, symbol = :AbstractBurnPlanner, rendered = "SpaceAGORA.AbstractBurnPlanner"),
+            (owner = :SpaceAGORA, symbol = :BurnPlanRequest, rendered = "SpaceAGORA.BurnPlanRequest"),
+            (owner = :SpaceAGORA, symbol = :BurnPlanSlot, rendered = "SpaceAGORA.BurnPlanSlot"),
+            (owner = :SpaceAGORA, symbol = :ApoapsisBurnPlanner, rendered = "SpaceAGORA.ApoapsisBurnPlanner"),
+            (owner = :SpaceAGORA, symbol = :validate_burn_plan, rendered = "SpaceAGORA.validate_burn_plan"),
+            (owner = :SpaceAGORA, symbol = :burn_plan_is_current, rendered = "SpaceAGORA.burn_plan_is_current"),
+            (owner = :SpaceAGORA, symbol = :burn_plan_rejections, rendered = "SpaceAGORA.burn_plan_rejections")
+        ]
+    ),
+    (
         title = "Visualization Scene",
         items = [
             (owner = :SpaceAGORA, symbol = :VisualizationScene, rendered = "SpaceAGORA.VisualizationScene"),
@@ -582,9 +617,17 @@ const PUBLIC_API_SECTIONS = [
             (owner = :Conformance, symbol = :conformance_fixture, rendered = "SpaceAGORA.Conformance.conformance_fixture"),
             (owner = :Conformance, symbol = :check_force_torque_model, rendered = "SpaceAGORA.Conformance.check_force_torque_model"),
             (owner = :Conformance, symbol = :check_service_facade, rendered = "SpaceAGORA.Conformance.check_service_facade"),
+            (owner = :Conformance, symbol = :check_sensor, rendered = "SpaceAGORA.Conformance.check_sensor"),
+            (owner = :Conformance, symbol = :check_guidance_model, rendered = "SpaceAGORA.Conformance.check_guidance_model"),
+            (owner = :Conformance, symbol = :check_navigation_model, rendered = "SpaceAGORA.Conformance.check_navigation_model"),
+            (owner = :Conformance, symbol = :check_control_model, rendered = "SpaceAGORA.Conformance.check_control_model"),
             (owner = :Conformance, symbol = :test_report, rendered = "SpaceAGORA.Conformance.test_report"),
             (owner = :Conformance, symbol = :test_force_torque_model, rendered = "SpaceAGORA.Conformance.test_force_torque_model"),
-            (owner = :Conformance, symbol = :test_service_facade, rendered = "SpaceAGORA.Conformance.test_service_facade")
+            (owner = :Conformance, symbol = :test_service_facade, rendered = "SpaceAGORA.Conformance.test_service_facade"),
+            (owner = :Conformance, symbol = :test_sensor, rendered = "SpaceAGORA.Conformance.test_sensor"),
+            (owner = :Conformance, symbol = :test_guidance_model, rendered = "SpaceAGORA.Conformance.test_guidance_model"),
+            (owner = :Conformance, symbol = :test_navigation_model, rendered = "SpaceAGORA.Conformance.test_navigation_model"),
+            (owner = :Conformance, symbol = :test_control_model, rendered = "SpaceAGORA.Conformance.test_control_model")
         ]
     )
 ]

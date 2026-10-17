@@ -34,8 +34,11 @@ set `HYPR_PLANNERS=hypr,pso_unrefined,rrt_connect,rrt_connect_bezier,rrt_star,ch
 RRT-Connect must precede its Bezier variant: both use exactly the same search
 result. A failed search is saved as `planning_failed`, never executed as a valid
 fallback. If HYPR planning fails, dependent comparisons are recorded as
-`blocked_baseline` rather than run with an unlimited budget. A tracking failure
-after valid HYPR planning retains the measured planning allowance. CHOMP and STOMP use the same obstacle weight multiplier, 1.0.
+`blocked_baseline` rather than run with an unlimited budget. A plan the run's
+validation refuses, for example below the 0.5 m clearance, is saved as `refused`
+with the refusal: it is not flown, so it has no command log or trace. A tracking
+failure, or a refused HYPR plan, after valid HYPR planning retains the measured
+planning allowance. CHOMP and STOMP use the same obstacle weight multiplier, 1.0.
 Their wall-clock budgets depend on the machine. Large paper-sized comparisons
 are optional and are not needed to try or verify the implementation.
 
@@ -44,7 +47,8 @@ are optional and are not needed to try or verify the implementation.
 The example suite launches both paper entry points in the dedicated HYPR
 example environment. With `SPACEAGORA_EXAMPLE_SMOKE=1`, they load the actual
 packages and configuration, and the dynamic entry point checks the structure of its saved baseline,
-without running a numerical experiment or writing scientific results. Missing files, malformed JSON and structurally invalid saved baseline inputs fail. The optional HYPR integration job separately exercises
+without running a numerical experiment or writing scientific results. Neither
+configures the deprecated `RPOGuidanceModel` in this mode. Missing files, malformed JSON and structurally invalid saved baseline inputs fail. The optional HYPR integration job separately exercises
 the planner, replanning contracts and failed-run evidence handling. A smoke pass
 does not establish maneuver success or paper-table reproduction. Leave the smoke
 flag unset for the scientific runs above and below.
@@ -67,6 +71,15 @@ JULIA_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 \
   julia --startup-file=no --project="$HOME/AgentScratch/hypr-paper-env" \
   examples/Earth_RPO_HyPR_FinalISpaRo_Replanning.jl
 ```
+
+!!! note "Legacy reproduction"
+    This study runs on the deprecated `RPOGuidanceModel` and stays as the recorded
+    reproduction of the results below until that model is removed. After the
+    removal, reproduce them from SpaceAGORA commit
+    `b165c0528b782316db65142f19def374c181b47f`, where the study was delivered with
+    these results, with the HYPR revision pinned there. For disturbances on the
+    planner contract, see `examples/Earth_RPO_Planner_Disturbances.jl`
+    ([Run an RPO case with interchangeable planners](rpo_planner_pilot.md)).
 
 This retains the original reconstructed obstacle placement and appearance.
 The longer observation ceiling lets the replacement route continue; it changes

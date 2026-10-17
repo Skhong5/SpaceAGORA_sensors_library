@@ -1,7 +1,8 @@
 using ..FrameTransforms
 import ...SimulationLifecycle
 import ...GNCRuntime
-using ...GNCRuntime: tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!
+using ...GNCRuntime: tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!, gnc_period_s
+using ...GNCRuntime: Produces, Consumes, gnc_links, link_cardinality, check_link, link_initialize!
 
 using OrdinaryDiffEq
 using DiffEqBase
@@ -29,6 +30,7 @@ using ..SceneVisualization: link_pose_vector, link_pose_link_indices, arm_pose_v
 import ..ConfigTypes: GramTrackCache, VacuumPredictedGRAMCache, GramDensityPerturbationState
 import ..ConfigTypes: GramTrackCacheConfig, CallbackEnvConfig, PolicyDecisionEnvConfig
 using ..ControlHooks: calcControlEffect!, control_thruster_levels, _thruster_levels_at, touchdown_spec, refresh_burn!, mounted_burn_tick!, burn_edge
+using ..ControlHooks: _effective_burn_window, _burn_window_changed, _burn_window_pending
 using ..Actuators: actuation_mode, actuator_levels
 using ..ActuatorMounting: mounted_gimbal_count, apply_gimbal_levels!
 using ..ActuatorMounting: mounted_thruster_fractions, mounted_hinge_count, apply_hinge_levels!, mounted_actuator_count

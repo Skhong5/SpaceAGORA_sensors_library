@@ -296,15 +296,14 @@ function iss_hypr_build(inputs, outdir::AbstractString)
         rotation_deg=inputs.model_rotation_deg,
     )
     extents = [(minimum(points[k, :]), maximum(points[k, :])) for k in 1:3]
-    # The simulated time is the reference plus the hold at the goal; the
-    # :manuscript objective does not use the example's `tf_s = mission_time`.
-    demo = build_rpo_cubesat_mpc_demo(;
+    # The simulated time is the reference plus the hold at the goal (the stop
+    # callback); the :manuscript objective does not use the example's `tf_s = mission_time`.
+    settings = (
         mission_time=1.0,
         results_directory=outdir,
         seed=inputs.seed,
         start_rtn=SVector{3, Float64}(inputs.start_rtn),
         goal_rtn=SVector{3, Float64}(inputs.goal_rtn),
-        pso_configurator=iss_hypr_configurator(inputs),
         station_points=points,
         station_keepout_radius_m=inputs.station_keepout_radius_m,
         station_name=inputs.station_name,
@@ -322,6 +321,21 @@ function iss_hypr_build(inputs, outdir::AbstractString)
         data_rate_s=inputs.data_rate_s,
         verbose=false,
     )
+    scenario = build_rpo_cubesat_mpc_demo(; settings..., pso_configurator=iss_hypr_configurator(inputs))
+    # Plan once here, as the example builder used to, to keep HyPR's full planning
+    # record (warm start, exploration, refinement). The run then flies that plan on the
+    # planner contract: RetainedPathRPOPlanner times it for the run's request and the
+    # run validates it before the controller uses it.
+    plan_result = rpo_pso_plan_path(
+        settings.start_rtn,
+        settings.goal_rtn,
+        scenario.geometry,
+        scenario.pso_config;
+        safe_distance_m=Float64(inputs.safe_distance_m),
+        rng=MersenneTwister(inputs.seed),
+    )
+    demo = build_rpo_cubesat_mpc_demo(; settings..., pso_config=scenario.pso_config, precomputed_plan=plan_result)
+    demo = merge(demo, (plan_result=plan_result,))
     return demo, extents, station_model
 end
 
@@ -394,12 +408,18 @@ function iss_reference_limit_fractions(profile, cfg)
     return Dict(k => v / interior for (k, v) in counts)
 end
 
-"""The flown plan and the diagnostics of every planning stage (warm start, exploration score, PSO, refinement, retiming)."""
-function iss_hypr_plan_record(demo, inputs)
+"""
+The plan and the diagnostics of every planning stage (warm start, exploration score,
+PSO, refinement, retiming). `t_ref_s`, `r_ref_rtn` and `v_ref_rtn` are the flown
+reference when `flown` (from `rpo_installed_plan`) is given: the run timed the path
+for its request, keeping 1% speed headroom below `reference_max_speed_mps`, and
+validated it. Without a run (plan only) they are HyPR's own retimed reference, which
+`reference` describes in both cases.
+"""
+function iss_hypr_plan_record(demo, inputs, flown=nothing)
     plan = demo.plan_result
     cfg = plan.config
     ref = SM.GuidanceHooks.rpo_retimed_reference(plan.path, demo.geometry, cfg; safe_distance_m=inputs.safe_distance_m)
-    ref.r_rtn == demo.initial_plan.r_ref_rtn || error("the recorded reference differs from the flown one")
     demand = SM.GuidanceHooks.rpo_reference_accel_demand(ref, demo.orbit.mean_motion_radps)
     a_axis = demo.chaser.max_axis_accel_mps2
     per_axis = [maximum(abs, demand.u_rtn[:, k]) for k in axes(demand.u_rtn, 2)]
@@ -438,9 +458,10 @@ function iss_hypr_plan_record(demo, inputs)
         ),
         "coefficients" => Dict("w_inertia" => cfg.w_inertia, "c1" => cfg.c1, "c2" => cfg.c2,
             "direction" => "Sec. III.A: w and c2 increase with eta, c1 decreases"),
-        "t_ref_s" => demo.initial_plan.t_ref_s,
-        "r_ref_rtn" => demo.initial_plan.r_ref_rtn,
-        "v_ref_rtn" => demo.initial_plan.v_ref_rtn,
+        "flown_reference" => flown !== nothing,
+        "t_ref_s" => flown === nothing ? ref.t_s : flown.t_ref_s,
+        "r_ref_rtn" => flown === nothing ? ref.r_rtn : flown.r_ref_rtn,
+        "v_ref_rtn" => flown === nothing ? ref.v_rtn : flown.v_ref_rtn,
         "reference" => Dict(
             "speed_mps" => ref.speed_mps,
             "arc_length_m" => ref.s_m,
@@ -586,17 +607,21 @@ function main()
     else
         t_plan = @elapsed (demo, extents, _) = iss_hypr_build(inputs, outdir)
         path = Matrix{Float64}(demo.plan_result.path)
-        ref = Matrix{Float64}(demo.initial_plan.r_ref_rtn)   # dense retimed reference, 3 x N
         warm_path = Matrix{Float64}(demo.plan_result.warmstart.path)
-        record = iss_hypr_plan_record(demo, inputs)
+        println("simulating into ", outdir)
+        solution = run_simulation(demo.args; visualization=true, return_solution=true,
+            extra_callbacks=(demo.stop_callback,))
+        flown = rpo_installed_plan(solution)
+        ref = Matrix{Float64}(flown.r_ref_rtn)   # the flown, validated reference, 3 x N
+        record = iss_hypr_plan_record(demo, inputs, flown)
         open(io -> JSON.print(io, _json_safe(record)), planfile, "w")
         clearance = rpo_path_clearance_stats(ref, demo.geometry; safe_distance_m=inputs.safe_distance_m)
         plan = _json_roundtrip((
             control_points=size(path, 2),
             reference_samples=size(ref, 2),
             cost=demo.plan_result.cost,
-            t_ref_end_s=demo.initial_plan.t_ref_s[end],
-            simulation_time_s=demo.args.mission_configuration.mission_time,
+            t_ref_end_s=flown.t_ref_s[end],
+            simulation_time_s=last(solution.t),
             min_clearance_m=clearance.min_clearance,
             violation_count=clearance.violation_count,
             eta=demo.plan_result.adaptive.eta,
@@ -616,9 +641,7 @@ function main()
         println("station cloud extents (m): ", [(round(lo; digits=1), round(hi; digits=1)) for (lo, hi) in extents])
         println("plan: eta=", round(plan["eta"]; digits=3), ", ", plan["control_points"], " control points, cost=", plan["cost"],
             ", reference ends at ", round(plan["t_ref_end_s"]; digits=1), " s, minimum clearance ", round(plan["min_clearance_m"]; digits=2), " m")
-        println("simulating into ", outdir)
-        run_simulation(demo.args; visualization=true, isolate_state=false)
-        iss_write_control_log(logfile, demo.control.command_log)
+        iss_write_control_log(logfile, only(rpo_run_report(solution).commands).log)
     end
     cp(station_model, joinpath(outdir, "iss_station_model.glb"); force=true)
 
