@@ -2,6 +2,7 @@
 # The original engine functions retain their identities and numerical bodies.
 import ..CallbackServices
 
+@inline CallbackServices._effector_force_ii(args...; kwargs...) = _effector_force_ii(args...; kwargs...)
 @inline CallbackServices._initialize_save_cache_buffers!(args...; kwargs...) = _initialize_save_cache_buffers!(args...; kwargs...)
 @inline CallbackServices._inside_atmosphere_at_state(args...; kwargs...) = _inside_atmosphere_at_state(args...; kwargs...)
 @inline CallbackServices._is_gravity_backbone_state(args...; kwargs...) = _is_gravity_backbone_state(args...; kwargs...)

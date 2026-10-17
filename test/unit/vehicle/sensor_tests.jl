@@ -54,6 +54,12 @@ SpaceAGORA.actuation_mode(::HoldLevels) = :mounted
 SpaceAGORA.actuator_levels(c::HoldLevels, i::Int) = i == 1 ? c.levels : nothing
 SpaceAGORA.calcControlEffect!(::HoldLevels, u, p, t::Float64, i::Int64) = nothing
 
+# Gravity through the deprecated hook only: a uniform field along -z.
+struct LegacyUniformGravity <: SpaceAGORA.AbstractForceTorqueModel end
+SpaceAGORA.is_gravitational(::LegacyUniformGravity) = true
+SpaceAGORA.calcForceTorque(::LegacyUniformGravity, x::AbstractVector, p, i::Int) =
+    (Float64(x.mass) * SVector(0.0, 0.0, -0.5), SVector(0.0, 0.0, 0.0))
+
 const EPOCH = SM.InitialTime(year=2024, month=3, day=20, hour=0, minute=0, second=0.0)
 sun_hat() = (e = SM.SimpleEphemeridesModel(); SVector{3, Float64}(SM.ephemerides_sun_direction_ii(SM.Earth(), SM.ephemerides_time_seconds(EPOCH, e), e)))
 
@@ -274,6 +280,10 @@ row_at(table, t) = findfirst(==(t), table.time)
         add_actuator!(sc, sc.root, Thruster(max_thrust=2.0, direction=MVector(1.0, 0.0, 0.0)))
         sensor_run(sc; mission_time=5.0, effectors=(SM.InverseSquaredGravityModel(),), control=(HoldLevels([1.0]),))
         @test sensor_measurement(pushed) ≈ SVector(1.0 / 50.0, 0.0, 0.0) atol=1e-7           # 1 N on 50 kg, along body x
+        legacy = Accelerometer(period_s=1.0)                                             # gravity by the deprecated hook
+        @test_logs (:warn, r"LegacyUniformGravity implements calcForceTorque") match_mode=:any sensor_run(
+            sensor_spacecraft(sensors=(legacy,)); mission_time=5.0, effectors=(SM.InverseSquaredGravityModel(), LegacyUniformGravity()))
+        @test norm(sensor_measurement(legacy)) < 1e-7
     end
 
     @testset "sensors are opt-in and do not change the dynamics" begin

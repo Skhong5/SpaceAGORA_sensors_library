@@ -25,7 +25,9 @@ end
 
 # The specific force on spacecraft `i` in the body frame: its acceleration at
 # the accepted step (the solver's derivative, no new evaluation) less the
-# acceleration of the run's gravitational effectors.
+# acceleration of the run's gravitational effectors, each evaluated by the
+# route the dynamics take (a model with only the deprecated calcForceTorque
+# included).
 function _sensor_specific_force(integrator, i::Int, q::SVector{4, Float64})
     p = integrator.p
     t = Float64(integrator.t)
@@ -36,10 +38,7 @@ function _sensor_specific_force(integrator, i::Int, q::SVector{4, Float64})
     x = CallbackServices.build_state_sample(sc_view, spacecraft, hasproperty(sc_view, :q), i)
     gravity = SVector{3, Float64}(0.0, 0.0, 0.0)
     for e in p.args.dynamics_model.dynamic_effectors
-        is_gravitational(e) || continue
-        env = CallbackServices.sample_environment(environment_requirements(e), e, x, p, i, t; write_buffers=false)
-        force, _ = wrench(e, x, env, t)
-        gravity += SVector{3, Float64}(force)
+        is_gravitational(e) && (gravity += CallbackServices._effector_force_ii(e, sc_view, x, p, i, t))
     end
     return rot(q) * (a - gravity / Float64(sc_view.mass))
 end
