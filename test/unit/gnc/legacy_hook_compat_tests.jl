@@ -1,10 +1,13 @@
 # The deprecated control output hooks (calcControlForceTorque,
-# calcControlMassFlowRate, calcReactionWheelTorque) and ticks
-# (calcControlEffect!, calcGuidanceEffect!, calcNavigationEffect!), which
-# SpaceAGORA 0.5.0 removes. The package, its templates, its examples and the
-# other tests use control_wrench, control_propellant_rate, control_wheel_torque,
-# update_control!, update_guidance! and update_navigation!; the old-style
-# probes stay here, with their warnings, until the removal.
+# calcControlMassFlowRate, calcReactionWheelTorque), ticks
+# (calcControlEffect!, calcGuidanceEffect!, calcNavigationEffect!) and
+# model-last ephemerides hooks (planet_frame_lpi, ephemerides_sun_direction_ii,
+# ephemerides_time_seconds), which SpaceAGORA 0.5.0 removes. The package, its
+# templates, its examples and the other tests use control_wrench,
+# control_propellant_rate, control_wheel_torque, update_control!,
+# update_guidance!, update_navigation!, ephemerides_frame_lpi,
+# ephemerides_sun_ii and ephemerides_epoch_seconds; the old-style probes stay
+# here, with their warnings, until the removal.
 module LegacyHookCompatTests
 using Test, Logging, LinearAlgebra, StaticArrays, ComponentArrays, SpaceAGORA
 const SM = SpaceAGORA.SimulationModel
@@ -106,7 +109,36 @@ struct GuideBoth <: SpaceAGORA.AbstractGuidanceModel end
 SM.calcGuidanceEffect!(::GuideBoth, u, p, t::Float64, i::Int) = error("the old tick must not run")
 SM.update_guidance!(::GuideBoth, u, p, t::Float64, i::Int) = nothing
 
-function twin_args(control::Tuple; n_spacecraft::Int=1, mission_time=120.0, guidance::Tuple=(), navigation::Tuple=())
+# An ephemerides model written with the model-last names (`OLD = true`) and with
+# the model-first ones, both answering as the simple model and counting the
+# frames they give. The keys differ, so neither run reuses the other's caches.
+const EPH_INNER = SpaceAGORA.SimpleEphemeridesModel()
+struct TwinEphemerides{OLD} <: SpaceAGORA.AbstractEphemeridesModel
+    frames::Base.Threads.Atomic{Int}
+end
+TwinEphemerides{OLD}() where {OLD} = TwinEphemerides{OLD}(Base.Threads.Atomic{Int}(0))
+SM.ephemerides_requires_spice(::TwinEphemerides) = false
+SM.ephemerides_cache_key(::TwinEphemerides{OLD}) where {OLD} = (:twin, OLD ? 1 : 2, 0)
+_frame(m, planet, et) = (Base.Threads.atomic_add!(m.frames, 1); SM.ephemerides_frame_lpi(EPH_INNER, planet, et))
+SM.ephemerides_time_seconds(it, ::TwinEphemerides{true}) = SM.ephemerides_epoch_seconds(EPH_INNER, it)
+SM.planet_frame_lpi(planet, et::Float64, m::TwinEphemerides{true}) = _frame(m, planet, et)
+SM.ephemerides_sun_direction_ii(planet, et::Float64, ::TwinEphemerides{true}) = SM.ephemerides_sun_ii(EPH_INNER, planet, et)
+SM.ephemerides_epoch_seconds(::TwinEphemerides{false}, it) = SM.ephemerides_epoch_seconds(EPH_INNER, it)
+SM.ephemerides_frame_lpi(m::TwinEphemerides{false}, planet, et::Float64) = _frame(m, planet, et)
+SM.ephemerides_sun_ii(::TwinEphemerides{false}, planet, et::Float64) = SM.ephemerides_sun_ii(EPH_INNER, planet, et)
+# A model with both frame names, and one with neither hook.
+struct BothFrames <: SpaceAGORA.AbstractEphemeridesModel end
+SM.ephemerides_frame_lpi(::BothFrames, planet, et::Float64) = SM.ephemerides_frame_lpi(EPH_INNER, planet, et)
+SM.planet_frame_lpi(planet, et::Float64, ::BothFrames) = error("the old frame hook must not run")
+struct NoEphemerides <: SpaceAGORA.AbstractEphemeridesModel end
+# A small force along the planet-fixed x-axis, so the solution follows the frame.
+struct FrameProbeForce <: SM.AbstractForceTorqueModel end
+SpaceAGORA.environment_requirements(::FrameProbeForce) = SpaceAGORA.EffectorEnvironmentRequirements(planet_frame=true)
+SpaceAGORA.wrench(::FrameProbeForce, x::SpaceAGORA.StateSample, env::SpaceAGORA.EnvironmentSample, t::Float64) =
+    (1.0e-3 * (transpose(env.planet_frame.l_pi) * SVector(1.0, 0.0, 0.0)), ZERO3)
+
+function twin_args(control::Tuple; n_spacecraft::Int=1, mission_time=120.0, guidance::Tuple=(), navigation::Tuple=(),
+        effectors::Tuple=(SM.InverseSquaredJ2GravityModel(),), ephemerides=SpaceAGORA.SimpleEphemeridesModel())
     planet = SM.make_no_gram_planet(:earth)
     spacecraft = map(1:n_spacecraft) do k
         root = SM.Link(root=true, m=100.0, dims=MVector(1.0, 1.2, 0.8))
@@ -116,7 +148,7 @@ function twin_args(control::Tuple; n_spacecraft::Int=1, mission_time=120.0, guid
             inertia_tensor=root.inertia, initial_condition=ic, id=k)
     end
     env = SM.EnvironmentModel(planet=planet, EI=120.0, density_model=SpaceAGORA.NoAtmosphereModel(),
-        ephemerides_model=SpaceAGORA.SimpleEphemeridesModel(),
+        ephemerides_model=ephemerides,
         thermal_model=SM.MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
         topography=false, wind=false)
     return SM.SimulationConfiguration(
@@ -124,7 +156,7 @@ function twin_args(control::Tuple; n_spacecraft::Int=1, mission_time=120.0, guid
         mission_configuration=SM.MissionConfiguration(mission_type=SM.MissionTime, keplerian=true,
             number_of_orbits=1, mission_time=mission_time, orientation_sim=true, num_steps_to_save=50),
         environment_model=env,
-        dynamics_model=SM.DynamicsModel(SM.SpacecraftModel[spacecraft...], (SM.InverseSquaredJ2GravityModel(),)),
+        dynamics_model=SM.DynamicsModel(SM.SpacecraftModel[spacecraft...], effectors),
         guidance_model=SM.GuidanceModel(guidance, fill(10.0, length(guidance))),
         navigation_model=SM.NavigationModel(navigation, fill(5.0, length(navigation))),
         control_model=SM.ControlModel(control, fill(10.0, length(control))),
@@ -132,17 +164,20 @@ function twin_args(control::Tuple; n_spacecraft::Int=1, mission_time=120.0, guid
 end
 
 # The configuration parts the pre-run check reads.
-check_args(control::Tuple; guidance::Tuple=()) = (
+check_args(control::Tuple; guidance::Tuple=(), ephemerides=SpaceAGORA.SimpleEphemeridesModel()) = (
     guidance_model=SM.GuidanceModel(guidance, fill(1.0, length(guidance))),
     navigation_model=SM.NavigationModel((), Float64[]),
     control_model=SM.ControlModel(control, fill(1.0, length(control))),
     dynamics_model=(dynamic_effectors=(),),
-    environment_model=(density_model=SpaceAGORA.NoAtmosphereModel(),),
+    environment_model=(density_model=SpaceAGORA.NoAtmosphereModel(), ephemerides_model=ephemerides,
+        planet=SM.make_no_gram_planet(:earth)),
+    initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
 )
 
 solution_bits(sol) = (reinterpret(UInt64, collect(sol.t)), [reinterpret(UInt64, Vector{Float64}(u)) for u in sol.u])
 const OLD_HOOKS = (:calcControlForceTorque, :calcControlMassFlowRate, :calcReactionWheelTorque,
-    :calcControlEffect!, :calcGuidanceEffect!, :calcNavigationEffect!)
+    :calcControlEffect!, :calcGuidanceEffect!, :calcNavigationEffect!,
+    :planet_frame_lpi, :ephemerides_sun_direction_ii, :ephemerides_time_seconds)
 depwarns(logs) = filter(r -> r.group === :depwarn && r.id isa Tuple && length(r.id) == 2 && r.id[2] in OLD_HOOKS, logs)
 
 # Solve under a logger that records every log call, without the once-per-key
@@ -156,7 +191,7 @@ end
 const TWIN = (thrust_n=0.5, gain=0.2, propellant_kg_s=1.0e-3)
 twin(T) = T(TWIN.thrust_n, TWIN.gain, TWIN.propellant_kg_s)
 
-@testset "Deprecated control output hooks and ticks" begin
+@testset "Deprecated control output hooks, ticks and ephemerides hooks" begin
     @testset "a legacy effector and its new-style twin give identical solutions" begin
         sol_new, logs_new = logged_solve(twin_args((twin(NewStyleThruster),)))
         sol_old, logs_old = logged_solve(twin_args((twin(OldStyleThruster),)))
@@ -347,9 +382,91 @@ twin(T) = T(TWIN.thrust_n, TWIN.gain, TWIN.propellant_kg_s)
                     err isa ErrorException && occursin("is deprecated", err.msg)
                 end
             end
-            print(all(thrown) && all(ticks_thrown))
+            struct NewEphemerides <: SpaceAGORA.AbstractEphemeridesModel end
+            SpaceAGORA.ephemerides_frame_lpi(::NewEphemerides, planet, et) = error("evaluated")
+            SpaceAGORA.ephemerides_sun_ii(::NewEphemerides, planet, et) = error("evaluated")
+            SpaceAGORA.ephemerides_epoch_seconds(::NewEphemerides, initial_time) = error("evaluated")
+            ephemerides_thrown = map(((SpaceAGORA.planet_frame_lpi, (nothing, 0.0)),
+                    (SpaceAGORA.ephemerides_sun_direction_ii, (nothing, 0.0)), (SpaceAGORA.ephemerides_time_seconds, (nothing,)))) do (f, leading)
+                try
+                    f(leading..., NewEphemerides())
+                    false
+                catch err
+                    err isa ErrorException && occursin("is deprecated", err.msg)
+                end
+            end
+            print(all(thrown) && all(ticks_thrown) && all(ephemerides_thrown))
             """
         @test read(`$(Base.julia_cmd()) --startup-file=no --depwarn=error --project=$(pkgdir(SpaceAGORA)) -e $strict`, String) == "true"
+    end
+
+    @testset "old-style ephemerides models and their new-style twins give identical runs" begin
+        effectors = (SM.InverseSquaredJ2GravityModel(), FrameProbeForce())
+        sol_old, logs_old = logged_solve(twin_args((); effectors, ephemerides=TwinEphemerides{true}()))
+        sol_new, logs_new = logged_solve(twin_args((); effectors, ephemerides=TwinEphemerides{false}()))
+        @test solution_bits(sol_old) == solution_bits(sol_new)
+        # Each run took its frames from its own model, as often as the other.
+        frames(sol) = sol.prob.p.args.environment_model.ephemerides_model.frames[]
+        @test frames(sol_new) > 0 && frames(sol_old) == frames(sol_new)
+        # One warning per old name, from the check before integration.
+        @test isempty(depwarns(logs_new))
+        T = TwinEphemerides{true}
+        @test Set(r.id for r in depwarns(logs_old)) ==
+            Set([(T, :planet_frame_lpi), (T, :ephemerides_sun_direction_ii), (T, :ephemerides_time_seconds)])
+        @test length(depwarns(logs_old)) == 3
+        frame_warning = string(only(filter(r -> r.id == (T, :planet_frame_lpi), depwarns(logs_old))).message)
+        @test occursin("Rename the method ephemerides_frame_lpi and put the model first: ephemerides_frame_lpi(model, planet, et).", frame_warning)
+    end
+
+    @testset "the pre-run check for ephemerides: old only, new only, both, built-in" begin
+        args = twin_args((twin(NewStyleThruster),))
+        u0 = SE.build_initial_conditions(args)
+        call = SE._hook_call_types(u0, SM.ODEParams(n_sats=1, args=args))
+        found(model) = SE._deprecated_model_hooks(check_args((); ephemerides=model), call)
+        T = TwinEphemerides{true}
+        old = found(T())
+        @test first.(old) == [(T, :planet_frame_lpi), (T, :ephemerides_sun_direction_ii), (T, :ephemerides_time_seconds)]
+        @test occursin("TwinEphemerides implements planet_frame_lpi(planet, et, model), which is deprecated", last(old[1]))
+        @test occursin("ephemerides_epoch_seconds(model, initial_time).", last(old[3]))
+        @test isempty(found(TwinEphemerides{false}()))
+        both = only(found(BothFrames()))
+        @test first(both) == (BothFrames, :planet_frame_lpi)
+        @test occursin("BothFrames implements both ephemerides_frame_lpi(model, planet, et) and planet_frame_lpi(planet, et, model).", last(both))
+        @test occursin("never used", last(both))
+        for builtin in (SpaceAGORA.SimpleEphemeridesModel(), SM.SpiceEphemeridesModel())
+            @test isempty(found(builtin))
+        end
+    end
+
+    @testset "a direct old-name ephemerides call returns the new hook's value and warns" begin
+        planet = SM.make_no_gram_planet(:earth)
+        it = SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
+        simple = SpaceAGORA.SimpleEphemeridesModel()
+        et = SpaceAGORA.ephemerides_epoch_seconds(simple, it)
+        frame = (:warn, r"^planet_frame_lpi\(planet, et, model\) is deprecated .* called directly on a SimpleEphemeridesModel\.")
+        sun = (:warn, r"^ephemerides_sun_direction_ii\(planet, et, model\) is deprecated .* called directly on a SimpleEphemeridesModel\.")
+        epoch = (:warn, r"^ephemerides_time_seconds\(initial_time, model\) is deprecated .* called directly on a SimpleEphemeridesModel\.")
+        @test_logs frame sun epoch begin
+            for t in (0.0, 60.0)
+                @test SpaceAGORA.planet_frame_lpi(planet, et + t, simple) === SpaceAGORA.ephemerides_frame_lpi(simple, planet, et + t)
+                @test SpaceAGORA.ephemerides_sun_direction_ii(planet, et + t, simple) === SpaceAGORA.ephemerides_sun_ii(simple, planet, et + t)
+            end
+            @test SpaceAGORA.ephemerides_time_seconds(it, simple) === et
+        end
+        # A model's own old method answers a direct call without a warning, and
+        # the engine's epoch lookup takes it.
+        @test (@test_logs SpaceAGORA.ephemerides_time_seconds(it, TwinEphemerides{true}())) === et
+        @test SE._ephemerides_time_seconds_flexible(it, TwinEphemerides{true}()) === et
+        # A model with neither name raises a MethodError naming the new hook.
+        caught(f) = try
+            f()
+        catch e
+            e
+        end
+        err = caught(() -> SpaceAGORA.planet_frame_lpi(planet, et, NoEphemerides()))
+        @test err isa MethodError && err.f === SpaceAGORA.ephemerides_frame_lpi
+        err = caught(() -> SE._ephemerides_time_seconds_flexible(it, NoEphemerides()))
+        @test err isa MethodError && err.f === SpaceAGORA.ephemerides_epoch_seconds
     end
 end
 end # module LegacyHookCompatTests

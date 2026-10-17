@@ -171,7 +171,7 @@ end
     )
     et_simple = 250.0
     r_p_simple, v_p_simple = r_intor_p!(r_i, v_i, EARTH, et_simple, simple_model)
-    l_pi = SimulationModel.planet_frame_lpi(EARTH, et_simple, simple_model)
+    l_pi = SimulationModel.ephemerides_frame_lpi(simple_model, EARTH, et_simple)
     @test r_p_simple ≈ SVector{3, Float64}(l_pi * r_i) rtol = 1e-12
     @test v_p_simple ≈ SVector{3, Float64}(l_pi * (v_i - cross(EARTH.ω, r_i))) rtol = 1e-12
 
@@ -477,7 +477,7 @@ end
                 DateTime(2015, 2, 24), DateTime(2024, 12, 31, 23, 59))
         # The simple backend's timeline: leap-second-free UTC seconds past J2000.
         et_simple = Dates.value(utc - j2000_utc) / 1000.0
-        l_pi = SimulationModel.planet_frame_lpi(EARTH, et_simple, simple_default)
+        l_pi = SimulationModel.ephemerides_frame_lpi(simple_default, EARTH, et_simple)
 
         # Pure spin about +z: exact invariant z block, orthonormal to roundoff.
         @test l_pi[3, 3] == 1.0 && l_pi[1, 3] == 0.0 && l_pi[2, 3] == 0.0
@@ -491,7 +491,7 @@ end
         # precession/nutation/polar-motion transform stays sub-half-degree
         # across the vendored kernels' 2000-2025 span.
         et_spice = utc2et(Dates.format(utc, "yyyy-mm-ddTHH:MM:SS"))
-        l_pi_spice = SimulationModel.planet_frame_lpi(EARTH, et_spice, spice_backend)
+        l_pi_spice = SimulationModel.ephemerides_frame_lpi(spice_backend, EARTH, et_spice)
         @test rotangle_deg(l_pi * l_pi_spice') < 0.5
     end
 
@@ -500,12 +500,12 @@ end
         reference_epoch_seconds = 100.0,
         prime_meridian_at_reference_rad = 0.3
     )
-    l_pi_o = SimulationModel.planet_frame_lpi(EARTH, 350.0, override)
+    l_pi_o = SimulationModel.ephemerides_frame_lpi(override, EARTH, 350.0)
     @test zangle_deg(l_pi_o) ≈ rad2deg(0.3 + EARTH.ω[3] * 250.0) rtol = 1e-12
 
     # Non-Earth planets keep the zero-at-reference default convention.
     mars_like = (name = "Mars", ω = SVector{3, Float64}(0.0, 0.0, 7.08823596e-5))
-    l_pi_m = SimulationModel.planet_frame_lpi(mars_like, 1.0e4, simple_default)
+    l_pi_m = SimulationModel.ephemerides_frame_lpi(simple_default, mars_like, 1.0e4)
     @test zangle_deg(l_pi_m) ≈ rad2deg(7.08823596e-5 * 1.0e4) rtol = 1e-12
 
     # The NaN planet-true default must key the ephemerides cache without
@@ -564,8 +564,8 @@ end
                             @test Mars("", SPICE_PATH) === made[:mars]
                             for (et, expected) in zip(mars_epochs, mars_frames)
                                 @test pxform("J2000", "IAU_MARS", et) == expected
-                                @test SimulationModel.planet_frame_lpi(
-                                    made[:mars], et, SimulationModel.SpiceEphemeridesModel()
+                                @test SimulationModel.ephemerides_frame_lpi(
+                                    SimulationModel.SpiceEphemeridesModel(), made[:mars], et
                                 ) == expected
                             end
                         end
@@ -583,8 +583,8 @@ end
                                 end
                             end
                             for (et, expected) in zip(moon_epochs, moon_frames["MOON_PA_DE421"])
-                                @test SimulationModel.planet_frame_lpi(
-                                    made[:moon], et, SimulationModel.SpiceEphemeridesModel()
+                                @test SimulationModel.ephemerides_frame_lpi(
+                                    SimulationModel.SpiceEphemeridesModel(), made[:moon], et
                                 ) == expected
                             end
                         end

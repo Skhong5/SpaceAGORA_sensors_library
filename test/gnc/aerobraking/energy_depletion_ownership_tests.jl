@@ -201,7 +201,7 @@ struct QueryFrames <: S.AbstractEphemeridesModel
     events::Vector{Any}
 end
 S.EphemeridesModels.ephemerides_requires_spice(::QueryFrames) = false
-function S.EphemeridesModels.planet_frame_lpi(planet,t::Float64,m::QueryFrames)
+function S.EphemeridesModels.ephemerides_frame_lpi(m::QueryFrames, planet, t::Float64)
     push!(m.events,(:frame,t))
     return SMatrix{3,3,Float64}(I)
 end

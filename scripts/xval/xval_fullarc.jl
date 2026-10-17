@@ -133,7 +133,7 @@ function _axis_rows(errors::DataFrame, name::String, event::String)
     return sort(rows, :idx)
 end
 
-const _EPH = parentmodule(first(methods(SpaceAGORA.SimulationModel.planet_frame_lpi)))
+const _EPH = SpaceAGORA.SimulationModel.EphemeridesModels
 const _FRAME_DIRECTORY = get(ENV, "XVAL_FRAME_TABLE_DIR", "")
 const _FRAME_TABLE = Ref{Any}(nothing)   # (et::Vector, E::Vector{SMatrix}) for the current case
 

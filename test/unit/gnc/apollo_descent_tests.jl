@@ -260,8 +260,8 @@ end
         ephem = SM.SimpleEphemeridesModel()
         initial_time = SM.InitialTime(year=1969, month=7, day=20, hour=20, minute=10, second=0.0)
         lat, lon, h0 = 0.674, 23.473, 60.0
-        et = SM.ephemerides_time_seconds(initial_time, ephem)
-        l_pi = SM.planet_frame_lpi(planet, et, ephem)
+        et = SM.ephemerides_epoch_seconds(ephem, initial_time)
+        l_pi = SM.ephemerides_frame_lpi(ephem, planet, et)
         upv = SVector(cosd(lat) * cosd(lon), cosd(lat) * sind(lon), sind(lat))
         r_p = (planet.Rp_e + h0) * upv
         r_i = SVector{3, Float64}(l_pi' * r_p)
@@ -372,8 +372,8 @@ end
         initial_time = SM.InitialTime(year=1969, month=7, day=20, hour=20, minute=10, second=0.0)
         # start 60 m above the site, at rest relative to the ground, engine axis 8 deg off vertical
         lat, lon, h0 = 0.674, 23.473, 60.0
-        et = SM.ephemerides_time_seconds(initial_time, ephem)
-        l_pi = SM.planet_frame_lpi(planet, et, ephem)
+        et = SM.ephemerides_epoch_seconds(ephem, initial_time)
+        l_pi = SM.ephemerides_frame_lpi(ephem, planet, et)
         upv = SVector(cosd(lat) * cosd(lon), cosd(lat) * sind(lon), sind(lat))
         r_p = (planet.Rp_e + h0) * upv
         v_p = SVector(0.0, 0.0, 0.0)

@@ -15,15 +15,15 @@ const SM = SpaceAGORA.SimulationModel
 struct StudyProbeFrame <: SM.AbstractTypes.AbstractEphemeridesModel
     rotation::SMatrix{3, 3, Float64, 9}
 end
-SM.ephemerides_time_seconds(initial_time, ::StudyProbeFrame) = 0.0
-SM.planet_frame_lpi(planet, et::Float64, model::StudyProbeFrame) = model.rotation
+SM.ephemerides_epoch_seconds(::StudyProbeFrame, initial_time) = 0.0
+SM.ephemerides_frame_lpi(model::StudyProbeFrame, planet, et::Float64) = model.rotation
 
 struct StudyAnalyticalPlanet
     Rp_e::Float64
     ω::SVector{3, Float64}
     rotation::SMatrix{3, 3, Float64, 9}
 end
-SM.planet_frame_lpi(planet::StudyAnalyticalPlanet, et::Float64, ::SM.SpiceEphemeridesModel) = planet.rotation
+SM.ephemerides_frame_lpi(::SM.SpiceEphemeridesModel, planet::StudyAnalyticalPlanet, et::Float64) = planet.rotation
 
 struct StudyProbeAtmosphere <: SM.AbstractTypes.AbstractDensityModel
     wind::SVector{3, Float64}

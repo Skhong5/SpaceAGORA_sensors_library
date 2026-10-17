@@ -202,7 +202,8 @@ end
 # Whether the deprecated hook `f` has a method of the model's own for the
 # argument types `tt`, rather than only the untyped fallback for direct calls
 # (`effector_sampling.jl` for calcForceTorque, `control_hook_bridges.jl` for the
-# control hooks), which accepts any arguments.
+# control hooks, `tick_hook_bridges.jl` for the ticks, `ephemerides_hooks.jl` for
+# the ephemerides hooks), which accepts any arguments.
 function _own_method(f, tt::Type{<:Tuple})::Bool
     hasmethod(f, tt) || return false
     return which(f, tt) !== which(f, Tuple{ntuple(_ -> Any, fieldcount(tt))...})
@@ -240,6 +241,30 @@ function _deprecated_tick_message(::Type{T}, old, new, has_new::Bool)::String wh
         "$(nameof(old)) is deprecated and will be removed in SpaceAGORA 0.5.0."
     return "$(nameof(T)) implements $(nameof(old))(model, u, p, t, spacecraft_index), which is deprecated and will be " *
         "removed in SpaceAGORA 0.5.0. Rename the method $(nameof(new)): only the name changes."
+end
+
+# The deprecated model-last ephemerides hooks, each with its replacement, the
+# argument types of each for this run's model, and the two forms for messages.
+function _ephemerides_hooks(args)
+    M, P, I = typeof(args.environment_model.ephemerides_model), typeof(args.environment_model.planet),
+        typeof(args.initial_time)
+    return (
+        (SimulationModel.planet_frame_lpi, Tuple{P, Float64, M}, SimulationModel.ephemerides_frame_lpi,
+            Tuple{M, P, Float64}, "(planet, et, model)", "(model, planet, et)"),
+        (SimulationModel.ephemerides_sun_direction_ii, Tuple{P, Float64, M}, SimulationModel.ephemerides_sun_ii,
+            Tuple{M, P, Float64}, "(planet, et, model)", "(model, planet, et)"),
+        (SimulationModel.ephemerides_time_seconds, Tuple{I, M}, SimulationModel.ephemerides_epoch_seconds,
+            Tuple{M, I}, "(initial_time, model)", "(model, initial_time)"),
+    )
+end
+
+function _deprecated_ephemerides_message(::Type{T}, old, new, old_form, new_form, has_new::Bool)::String where {T}
+    has_new && return "$(nameof(T)) implements both $(nameof(new))$(new_form) and $(nameof(old))$(old_form). " *
+        "The engine calls $(nameof(new)), so the $(nameof(old)) method is never used; rename it " *
+        "$(nameof(new)) with the model first, or delete it. $(nameof(old)) is deprecated and will be " *
+        "removed in SpaceAGORA 0.5.0."
+    return "$(nameof(T)) implements $(nameof(old))$(old_form), which is deprecated and will be removed in " *
+        "SpaceAGORA 0.5.0. Rename the method $(nameof(new)) and put the model first: $(nameof(new))$(new_form)."
 end
 
 # The deprecated hooks this run's models implement, as (key, message) pairs for
@@ -280,6 +305,12 @@ function _deprecated_model_hooks(args, call)::Vector{Tuple{Tuple, String}}
         key = (T, nameof(old))
         any(entry -> first(entry) == key, found) && continue
         push!(found, (key, _deprecated_tick_message(T, old, new, hasmethod(new, tt))))
+    end
+    M = typeof(args.environment_model.ephemerides_model)
+    for (old, old_tt, new, new_tt, old_form, new_form) in _ephemerides_hooks(args)
+        _own_method(old, old_tt) || continue
+        push!(found, ((M, nameof(old)),
+            _deprecated_ephemerides_message(M, old, new, old_form, new_form, hasmethod(new, new_tt))))
     end
     return found
 end
@@ -2183,9 +2214,14 @@ function _collect_nbody_query_names(dynamic_effectors::Tuple)::Vector{String}
     return names
 end
 
+# The run's start in the ephemerides model's seconds past J2000: its epoch hook,
+# under the model-first name or the deprecated one, and otherwise the built-in
+# conversion for a model whose type has a built-in model's name.
 @inline function _ephemerides_time_seconds_flexible(initial_time, ephemerides_model)::Float64
-    if applicable(SimulationModel.ephemerides_time_seconds, initial_time, ephemerides_model)
-        return SimulationModel.ephemerides_time_seconds(initial_time, ephemerides_model)
+    M, I = typeof(ephemerides_model), typeof(initial_time)
+    if hasmethod(SimulationModel.ephemerides_epoch_seconds, Tuple{M, I}) ||
+            _own_method(SimulationModel.ephemerides_time_seconds, Tuple{I, M})
+        return SimulationModel.EphemeridesModels._ephemerides_epoch_seconds(ephemerides_model, initial_time)
     end
 
     model_name = nameof(typeof(ephemerides_model))
@@ -2200,7 +2236,7 @@ end
         return Float64(ephemerides_model.reference_epoch_seconds) + elapsed_ms / 1000.0
     end
 
-    throw(MethodError(SimulationModel.ephemerides_time_seconds, (initial_time, ephemerides_model)))
+    throw(MethodError(SimulationModel.ephemerides_epoch_seconds, (ephemerides_model, initial_time)))
 end
 
 @inline function _nbody_ephemeris_cache_sample_count(mission_end_s::Float64, dt_s::Float64)::Int
@@ -2576,7 +2612,7 @@ function _initialize_planet_frame_ephemeris_cache!(p, et_start::Float64, mission
     @inbounds for sample_idx in 1:n_samples
         et = et_start + min((sample_idx - 1) * dt_s, mission_end_s)
         ets[sample_idx] = et
-        l_pi = SimulationModel.planet_frame_lpi(planet, et, ephemerides_model)
+        l_pi = SimulationModel.EphemeridesModels._ephemerides_frame_lpi(ephemerides_model, planet, et)
         quaternions[sample_idx] = SimulationModel.dcm_to_quaternion(l_pi)
         if SimulationModel.ephemerides_requires_spice(ephemerides_model)
             Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.planet_pxform_cache_build_calls, 1)

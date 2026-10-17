@@ -62,8 +62,8 @@ args = make_example_config(
 # heating only, no aero effector), so the engine's density-without-aero
 # diagnostic is expected here; pin it instead of asserting silence.
 @test_logs (:warn, r"NO aerodynamic force will ever be applied") match_mode=:any run_simulation(args)
-et0 = ephemerides_time_seconds(args.initial_time, args.environment_model.ephemerides_model)
-l_pi0 = planet_frame_lpi(args.environment_model.planet, et0, args.environment_model.ephemerides_model)
+et0 = ephemerides_epoch_seconds(args.environment_model.ephemerides_model, args.initial_time)
+l_pi0 = ephemerides_frame_lpi(args.environment_model.ephemerides_model, args.environment_model.planet, et0)
 @test !all(iszero, l_pi0)
 
 println("No-GRAM smoke passed.")

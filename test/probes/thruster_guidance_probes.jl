@@ -325,7 +325,7 @@ end
         # (r_apo, r_peri_target) ellipse. Periapsis direction is +x (equatorial
         # orbit built with ω = Ω = i = 0).
         a_cur = 0.5 * (ra_m + rp_m)
-        l_pi = GH.planet_frame_lpi(EARTH, p.shared_buffers.et_start[], eph)
+        l_pi = SimulationModel.ephemerides_frame_lpi(eph, EARTH, p.shared_buffers.et_start[])
         u_pp = SVector{3, Float64}(l_pi * SVector(1.0, 0.0, 0.0))
         u_pp = u_pp / norm(u_pp)
         rp_target = GH._radius_for_oblate_altitude(200e3, u_pp, EARTH)

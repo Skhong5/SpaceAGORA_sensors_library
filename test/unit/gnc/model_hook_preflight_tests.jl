@@ -91,7 +91,9 @@ hp_args(; guidance=(), navigation=(), control=(), effectors=(), density=SpaceAGO
     navigation_model=HP_SM.NavigationModel(navigation, fill(1.0, length(navigation))),
     control_model=HP_SM.ControlModel(control, fill(1.0, length(control))),
     dynamics_model=(dynamic_effectors=effectors,),
-    environment_model=(density_model=density,),
+    environment_model=(density_model=density, ephemerides_model=SpaceAGORA.SimpleEphemeridesModel(),
+        planet=HP_SM.make_no_gram_planet(:earth)),
+    initial_time=HP_SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
 )
 
 # Every concrete type defined in SpaceAGORA's modules that subtypes `T`.
@@ -186,6 +188,21 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
         end
         @test startswith(root_doc(:getHeatRate), "    getHeatRate(model, S, T, ρ, v, α)")
         @test startswith(root_doc(:touchdown_spec), "    touchdown_spec(effector, spacecraft_index::Int)")
+        # The ephemerides hooks, model first, and the model-last names they replace.
+        em = HP_SM.EphemeridesModels
+        for (name, arity) in ((:ephemerides_frame_lpi, 3), (:ephemerides_sun_ii, 3), (:ephemerides_epoch_seconds, 2),
+                              (:ephemerides_requires_spice, 1), (:ephemerides_cache_key, 1))
+            @test name in names(SpaceAGORA) && getfield(SpaceAGORA, name) === getfield(em, name)
+            @test startswith(root_doc(name), "    $(name)(model")
+            @test !hasmethod(getfield(SpaceAGORA, name), Tuple{ntuple(_ -> Any, arity)...})
+        end
+        for (old, new, form) in ((:planet_frame_lpi, :ephemerides_frame_lpi, "(planet, et, model)"),
+                                 (:ephemerides_sun_direction_ii, :ephemerides_sun_ii, "(planet, et, model)"),
+                                 (:ephemerides_time_seconds, :ephemerides_epoch_seconds, "(initial_time, model)"))
+            @test old in names(SpaceAGORA) && getfield(SpaceAGORA, old) === getfield(em, old)
+            @test startswith(root_doc(old), "    $(old)$(form)")
+            @test occursin("\n\nDeprecated, use [`$(new)`]", root_doc(old))
+        end
         # The RPO text stays on the RPO method.
         gh = HP_SM.GuidanceHooks
         rpo_sig = Tuple{HP_SM.GuidanceModels.RPOGuidanceModel, Any, Any, Float64, Int}
@@ -202,7 +219,10 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
         # A script that loads these packages with SpaceAGORA must see the new
         # names unqualified: a name two of them export would be ambiguous.
         new_names = (:control_wrench, :control_propellant_rate, :control_wheel_torque,
-            :update_control!, :update_guidance!, :update_navigation!)
+            :update_control!, :update_guidance!, :update_navigation!,
+            :ephemerides_frame_lpi, :ephemerides_sun_ii, :ephemerides_epoch_seconds,
+            :ephemerides_requires_spice, :ephemerides_cache_key,
+            :planet_frame_lpi, :ephemerides_sun_direction_ii, :ephemerides_time_seconds)
         scope = Module(:HpNameCollisions)
         Core.eval(scope, :(using SpaceAGORA, Plots, OrdinaryDiffEq, ComponentArrays, StaticArrays, DataFrames))
         for pkg in (:Plots, :OrdinaryDiffEq, :ComponentArrays, :StaticArrays, :DataFrames)

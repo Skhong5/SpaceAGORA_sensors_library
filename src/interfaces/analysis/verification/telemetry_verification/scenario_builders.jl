@@ -540,7 +540,7 @@ end
 # referenced to the body mean equator, while the engine propagates in J2000
 # (dynamics_rhs build_initial_conditions). Elements flagged body_equator_inertial
 # are therefore converted to a J2000 Cartesian state here, using the same pole
-# model (planet_frame_lpi) the propagation itself uses.
+# model (ephemerides_frame_lpi) the propagation itself uses.
 function _initial_condition_in_j2000(
     ic::InitialCondition,
     planet,
@@ -552,8 +552,8 @@ function _initial_condition_in_j2000(
         "Unsupported element_frame=$element_frame for orbit-element initial conditions."
     ))
     model = SimulationModel.SpiceEphemeridesModel()
-    et = SimulationModel.ephemerides_time_seconds(initial_time, model)
-    l_pi = SimulationModel.planet_frame_lpi(planet, et, model)
+    et = SimulationModel.EphemeridesModels._ephemerides_epoch_seconds(model, initial_time)
+    l_pi = SimulationModel.EphemeridesModels._ephemerides_frame_lpi(model, planet, et)
     pole_j2000 = SVector{3, Float64}(l_pi[3, 1], l_pi[3, 2], l_pi[3, 3])
     rot = _body_equator_frame_rotation(pole_j2000)
     r_body, v_body = SimulationEngine.orbitalelemtorv(ic, planet)

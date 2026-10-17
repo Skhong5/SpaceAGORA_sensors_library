@@ -95,10 +95,10 @@ function probe_params_from_args(args)
     # satellite per pass and reports lock occupancy that belongs to the probe
     # rather than to the workload.
     ephemerides_model = args.environment_model.ephemerides_model
-    et_start = SM.ephemerides_time_seconds(args.initial_time, ephemerides_model)
+    et_start = SM.ephemerides_epoch_seconds(ephemerides_model, args.initial_time)
     p.shared_buffers.et_start[] = et_start
     args.environment_model.planet.L_PI .=
-        SM.planet_frame_lpi(args.environment_model.planet, et_start, ephemerides_model)
+        SM.ephemerides_frame_lpi(ephemerides_model, args.environment_model.planet, et_start)
     mission_end = Float64(args.mission_configuration.mission_time)
     SE._initialize_nbody_ephemeris_cache!(p, et_start, mission_end)
     SE._initialize_srp_sun_ephemeris_cache!(p, et_start, mission_end)

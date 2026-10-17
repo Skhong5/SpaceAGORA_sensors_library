@@ -131,7 +131,7 @@ if SPICE_READY
             @test norm(v_p) ≈ PDI_SPEED_MPS rtol=1e-12
             # the constant-spin inverse is not that transform: at this epoch it leaves a
             # residual near 1.7e-4 m/s, which the earlier 1e-6-relative tolerance could not see
-            l_pi = SM.planet_frame_lpi(planet, et0, SM.SpiceEphemeridesModel())
+            l_pi = SM.ephemerides_frame_lpi(SM.SpiceEphemeridesModel(), planet, et0)
             v_const = SVector{3, Float64}(l_pi * v_i) - cross(SVector{3, Float64}(planet.ω), SVector{3, Float64}(l_pi * r_i))
             @test norm(v_const - v_p) > 1e-5
             φ = deg2rad(site.lat_deg); λ = deg2rad(site.lon_deg)
