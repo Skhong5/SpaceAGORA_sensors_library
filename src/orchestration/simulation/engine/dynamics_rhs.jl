@@ -2535,6 +2535,7 @@ end
                     propagate_quaternion=false,
                     include_gyroscopic=false,
                     rw_assembly=spacecraft[i].root.rw_assembly,
+                    actuator_rates=false,
                 )
             end
             du_view.heat_loads .= 0.0
@@ -2561,6 +2562,7 @@ end
                     propagate_quaternion=true,
                     include_gyroscopic=true,
                     rw_assembly=spacecraft[i].root.rw_assembly,
+                    actuator_rates=false,
                 )
             end
             _assign_heat_rate_derivative!(du_view.heat_loads, heat_rates)
@@ -2759,7 +2761,11 @@ end
     include_gyroscopic::Bool,
     rw_assembly=nothing,
     rw_torque_body::SVector{3, Float64}=SVector{3, Float64}(0.0, 0.0, 0.0),
+    actuator_rates::Bool=true,
 )
+    # `actuator_rates`: whether this right-hand side carries the mounted wheels'
+    # and the CMGs' commanded rates. A split mode passes false in the component
+    # without control (implicit or slow), so that each rate is integrated once.
     omega_body = SimulationModel.DynamicsRotational.body_angular_velocity(sc_view.ω)
     tau_body = SimulationModel.DynamicsRotational.body_torque(torques)
 
@@ -2782,7 +2788,7 @@ end
         mul!(du_view.h_wheels, rw_assembly.J_rw_pinv, -rw_torque_body)
         # Mounted wheels: each one's own commanded rate (written by the control
         # accumulation of this evaluation); they are not part of `rw_torque_body`.
-        if !isempty(rw_assembly.mounted_rates)
+        if actuator_rates && !isempty(rw_assembly.mounted_rates)
             first_mounted = rw_assembly.n_wheels - length(rw_assembly.mounted_rates)
             @inbounds for j in eachindex(rw_assembly.mounted_rates)
                 du_view.h_wheels[first_mounted + j] += rw_assembly.mounted_rates[j]
@@ -2795,8 +2801,12 @@ end
     if rw_assembly !== nothing && !isempty(rw_assembly.cmgs)
         h_cmg, hdot_cmg = _cmg_momentum_and_rate(rw_assembly, sc_view.cmg_angles)
         h_wheel_body = h_wheel_body + h_cmg
-        tau_body = tau_body - hdot_cmg
-        du_view.cmg_angles .= rw_assembly.cmg_rates
+        if actuator_rates
+            tau_body = tau_body - hdot_cmg
+            du_view.cmg_angles .= rw_assembly.cmg_rates
+        else
+            du_view.cmg_angles .= 0.0
+        end
     end
 
     du_view.ω .= SimulationModel.DynamicsRotational.angular_acceleration(
@@ -3530,6 +3540,7 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
                         propagate_quaternion=true,
                         include_gyroscopic=true,
                         rw_assembly=spacecraft[i].root.rw_assembly,
+                        actuator_rates=false,
                     )
                 end
 
@@ -3573,6 +3584,7 @@ function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t
                         propagate_quaternion=true,
                         include_gyroscopic=true,
                         rw_assembly=spacecraft[i].root.rw_assembly,
+                        actuator_rates=false,
                     )
                 end
 
@@ -3681,6 +3693,7 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
                         propagate_quaternion=false,
                         include_gyroscopic=false,
                         rw_assembly=spacecraft[i].root.rw_assembly,
+                        actuator_rates=false,
                     )
                 end
 
@@ -3716,6 +3729,7 @@ function spacecraft_dynamics_implicit_atmosphere!(du::ComponentVector, u::Compon
                         propagate_quaternion=false,
                         include_gyroscopic=false,
                         rw_assembly=spacecraft[i].root.rw_assembly,
+                        actuator_rates=false,
                     )
                 end
 

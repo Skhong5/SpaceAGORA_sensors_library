@@ -10,17 +10,17 @@ SpaceAGORA.actuation_mode(::HoldLevels) = :mounted
 SpaceAGORA.actuator_levels(c::HoldLevels, i::Int) = i == 1 ? c.levels : nothing
 SpaceAGORA.calcControlEffect!(::HoldLevels, u, p, t::Float64, i::Int64) = nothing
 
-function far_spacecraft(; ω0=SVector(0.0, 0.0, 0.0))
+function far_spacecraft(; ω0=SVector(0.0, 0.0, 0.0), pos=SVector(4.0e9, 0.0, 0.0))
     root = SM.Link(root=true, m=500.0, dims=MVector(1.0, 1.0, 1.0))
-    ic = SM.CartesianInitialCondition(SVector(4.0e9, 0.0, 0.0), SVector(0.0, 0.0, 0.0); q=SVector(0.0, 0.0, 0.0, 1.0), ang_vel=ω0)
+    ic = SM.CartesianInitialCondition(pos, SVector(0.0, 0.0, 0.0); q=SVector(0.0, 0.0, 0.0, 1.0), ang_vel=ω0)
     return SM.SpacecraftModel(links=[root], root=root, prop_mass=0.0, inertia_tensor=root.inertia, initial_condition=ic, id=1), root
 end
 
-function cmg_run(sc, levels; mission_time=20.0, solver=nothing, orientation_sim=true)
+function cmg_run(sc, levels; mission_time=20.0, solver=nothing, orientation_sim=true, EI_km=1.0)
     base = make_example_config(planet=SM.Earth(), spacecraft=sc, mission_time=mission_time,
         initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
         dynamic_effectors=(), ephemerides_model=SM.SimpleEphemeridesModel(), orientation_sim=orientation_sim,
-        keplerian=false, EI_km=1.0, verbose=false, results=false,
+        keplerian=false, EI_km=EI_km, verbose=false, results=false,
         solver_config=solver === nothing ? nothing : SM.SolverConfig(solver_mode=solver))
     effectors = isempty(levels) ? () : (HoldLevels(collect(Float64, levels)),)
     args = SM.SimConfig._with_configuration(base;
@@ -28,10 +28,12 @@ function cmg_run(sc, levels; mission_time=20.0, solver=nothing, orientation_sim=
     return run_simulation(args; isolate_state=false, return_results=true, return_solution=true)
 end
 
-# The vehicle's angular momentum, body plus rotors, in the inertial frame.
+# The vehicle's angular momentum, body plus rotors (CMGs and wheels), in the inertial frame.
 function inertial_momentum(sc, x)
     q = SVector{4}(x.q)
     h = sum(SM.cmg_momentum(c, x.cmg_angles[j]) for (j, c) in enumerate(sc.root.rw_assembly.cmgs))
+    assembly = sc.root.rw_assembly
+    assembly.n_wheels > 0 && (h += SVector{3}(assembly.J_rw * x.h_wheels))
     return SM.rot(q)' * (sc.inertia_tensor * SVector{3}(x.ω) + h)
 end
 
@@ -127,16 +129,25 @@ gyro(; kw...) = ControlMomentGyro(; rotor_momentum_nms=2.0, gimbal_axis=SVector(
         @test res.solution.u[end].sc[1].cmg_angles[1] ≈ 0.3 + 0.05 * 5.0 rtol=1e-9
     end
 
-    @testset "split solver modes and runs without attitude refuse CMGs" begin
+    @testset "the split solver modes integrate each CMG and mounted-wheel rate once" begin
+        # Inside the entry interface, so the implicit component of split_imex
+        # runs too; multirate's slow component runs at every step.
+        for solver in (:split_imex, :multirate)
+            sc, root = far_spacecraft(ω0=SVector(0.001, 0.0, 0.0), pos=SVector(7.0e6, 0.0, 0.0))
+            add_actuator!(sc, root, ReactionWheel(spin_axis=SVector(0.0, 0.0, 1.0)))
+            add_actuator!(sc, root, gyro(gimbal_angle_rad=0.1))
+            res = cmg_run(sc, [0.01, 0.02]; mission_time=20.0, solver=solver, EI_km=2000.0)
+            x0, x = res.solution.u[1].sc[1], res.solution.u[end].sc[1]
+            @test x.cmg_angles[1] ≈ 0.1 + 0.02 * 20.0 rtol=1e-6
+            @test x.h_wheels[1] ≈ -0.01 * 20.0 rtol=1e-6                                # the wheel takes up minus the body torque
+            @test inertial_momentum(sc, x) ≈ inertial_momentum(sc, x0) rtol=1e-6
+        end
+    end
+
+    @testset "runs without attitude refuse CMGs" begin
         sc, root = far_spacecraft()
         add_actuator!(sc, root, gyro())
         @test_throws ArgumentError cmg_run(sc, Float64[]; mission_time=1.0, orientation_sim=false)
-        err = try
-            cmg_run(sc, Float64[]; mission_time=1.0, solver=:split_imex); nothing
-        catch e
-            e
-        end
-        @test err isa ArgumentError && occursin("moment gyros", err.msg)
     end
 end
 

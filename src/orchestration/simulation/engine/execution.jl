@@ -186,10 +186,13 @@ end
         throw(ArgumentError("A spacecraft with a battery needs a solver mode that integrates the full right-hand side; " *
             "solver_mode=$(repr(mode)) splits it. Use :tsit5, :dp8, :rodas5p or :auto_stiff."))
     end
-    if mode in (:gravity_backbone_split, :split_imex, :multirate) &&
+    # The split modes carry the CMG rates in their control component only
+    # (`actuator_rates` in `_assign_orientation_rhs!`); the gravity backbone has
+    # no attitude state.
+    if mode === :gravity_backbone_split &&
             any(sc -> !isempty(sc.root.rw_assembly.cmgs), p.args.dynamics_model.spacecraft)
-        throw(ArgumentError("Control moment gyros need a solver mode that integrates the full right-hand side; " *
-            "solver_mode=$(repr(mode)) splits it. Use :tsit5, :dp8, :rodas5p or :auto_stiff."))
+        throw(ArgumentError("Control moment gyros need the attitude equation, which " *
+            "solver_mode=:gravity_backbone_split does not integrate. Use another solver mode."))
     end
     # The gravity backbone runs no sensor sampling, and multirate subsolves
     # revisit overlapping intervals, which would sample twice or out of order.

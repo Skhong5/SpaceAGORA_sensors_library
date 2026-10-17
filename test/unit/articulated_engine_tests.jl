@@ -386,6 +386,13 @@ end
     panel = mklink(m = 2.0, dims = (0.05, 1.0, 0.5), r = (0.0, 1.1, 0.0))
     rw_sc = SM.SpacecraftModel(; joints = [mkjoint(rw_bus, panel, (0.0, 0.5, 0.0); joint_type = :hinge, axis = [0, 0, 1])], links = [rw_bus, panel], root = rw_bus, initial_condition = IC0)
     @test_throws ArgumentError SE._validate_articulated_spacecraft!(engine_args(rw_sc; mission_time = 1.0), :tsit5)
+    # control moment gyros
+    cmg_bus = mklink(root = true, m = 10.0, dims = (1.0, 1.0, 1.0))
+    cmg_panel = mklink(m = 2.0, dims = (0.05, 1.0, 0.5), r = (0.0, 1.1, 0.0))
+    cmg_sc = SM.SpacecraftModel(; joints = [mkjoint(cmg_bus, cmg_panel, (0.0, 0.5, 0.0); joint_type = :hinge, axis = [0, 0, 1])], links = [cmg_bus, cmg_panel], root = cmg_bus, initial_condition = IC0)
+    SpaceAGORA.add_actuator!(cmg_sc, cmg_bus, SpaceAGORA.ControlMomentGyro(rotor_momentum_nms = 1.0, gimbal_axis = SVector(0.0, 0.0, 1.0), spin_axis = SVector(1.0, 0.0, 0.0)))
+    cmg_err = try SE._validate_articulated_spacecraft!(engine_args(cmg_sc; mission_time = 1.0), :tsit5); nothing catch e; e end
+    @test cmg_err isa ArgumentError && occursin("control moment gyros", cmg_err.msg)
     # robot arm on the same spacecraft
     plan = _arm_plan(duration_s = 2.0)
     arm = SM.RobotArmControlEffector(plan = plan, spacecraft_idx = 1, controller = SM.init_robot_arm_joint_mpc(plan; dt_s = 0.1, horizon = 6), control_dt_s = 0.1)
