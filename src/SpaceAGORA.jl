@@ -16,7 +16,10 @@ include(joinpath(@__DIR__, "orchestration", "simulation", "callback_services.jl"
 include(joinpath(@__DIR__, "orchestration", "simulation", "composition", "simulation_model.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "direct_planner.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "adapters", "hypr", "rpo_planner_adapter.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "comparison", "planner_contract.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "lifecycle.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "planning", "algorithm_lifecycle.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "control", "burn_planning.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "adapters", "hypr", "services.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "engine", "simulation_engine.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "campaigns", "simulation_campaigns.jl"))
@@ -61,7 +64,9 @@ using .GNCAlgorithms: algorithm_family, default_capabilities, algorithm_capabili
 using .GNCAlgorithms: validate_capabilities, validate_proposal, install!, is_current, on_rejection, fallback_product, family_contract_version
 using .GNCAlgorithms: gnc_stream_words, AlgorithmRuntime, run_algorithm_request!, algorithm_runtime, bound_algorithm, bound_link, build_algorithm_request, trusted_queries, fail_algorithm_request!, algorithm_result_type, is_revision_request, proposed_product, installed_record, rejected_record
 using .GNCRuntime: tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!, gnc_period_s
+using .GNCRuntime: Produces, Consumes, gnc_links, link_cardinality, check_link, link_initialize!
 using .HYPRRPOPlanning: HYPRRPOPlanner
+using .HYPRRPOPlanning: RetainedPathRPOPlanner
 using .SimulationModel.HYPRSupport: HYPRUnavailableError, hypr_available
 export HYPRUnavailableError, hypr_available
 @doc (@doc SimulationModel.HYPRSupport.hypr_available) hypr_available
@@ -154,15 +159,32 @@ preserves the existing configuration owner and calculations; pass the result to
 `HYPRRPOPlanner`. Request-owned limits and interval still apply at planning time.
 """ rpo_pso_config
 
+# The generic algorithm binding and the burn-plan family.
+using .GNCAlgorithms: family_request, family_link, preflight_family
+using .AlgorithmLifecycle: AlgorithmEvent, AlgorithmGuidance, AlgorithmGuidanceError, algorithm_run_report
+using .BurnPlanning: AbstractBurnPlanner, BurnPlanFamily, BurnPlanRequest, BurnPlanSlot, ApoapsisBurnPlanner, validate_burn_plan, burn_plan_is_current
+using .SimulationModel.ControlHooks: burn_plan_rejections
+@doc (@doc SimulationModel.ControlHooks.burn_plan_rejections) burn_plan_rejections
+export family_request, family_link, preflight_family
+export AlgorithmEvent, AlgorithmGuidance, AlgorithmGuidanceError, algorithm_run_report
+export AbstractBurnPlanner, BurnPlanFamily, BurnPlanRequest, BurnPlanSlot, ApoapsisBurnPlanner, validate_burn_plan, burn_plan_is_current, burn_plan_rejections
+
 using .RPOPlannerLifecycle: RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
 using .RPOPlannerLifecycle: RPOReplanningSpheres
+using .SimulationModel: HYPRComparisonPlanner, UnrefinedPSOPlanner, RRTConnectPlanner, RRTConnectBezierPlanner, RRTStarPlanner, CHOMPPlanner, STOMPPlanner
+export HYPRComparisonPlanner, UnrefinedPSOPlanner, RRTConnectPlanner, RRTConnectBezierPlanner, RRTStarPlanner, CHOMPPlanner, STOMPPlanner
+for name in (:HYPRComparisonPlanner, :UnrefinedPSOPlanner, :RRTConnectPlanner, :RRTConnectBezierPlanner, :RRTStarPlanner, :CHOMPPlanner, :STOMPPlanner)
+    @eval @doc (@doc SimulationModel.GuidanceHooks.$name) $name
+end
 export AbstractGNCAlgorithm, AbstractAlgorithmFamily, AbstractAlgorithmRequest, AbstractAlgorithmResult, AbstractValidationResult, GNCAlgorithmError, AlgorithmResult, ValidationResult, RPOReferenceFamily
 export algorithm_family, default_capabilities, algorithm_capabilities, require_algorithm_support, initialize_algorithm, propose!, propose_revision!, consumes_rng
 export validate_capabilities, validate_proposal, install!, is_current, on_rejection, fallback_product, family_contract_version
 export gnc_stream_words, AlgorithmRuntime, run_algorithm_request!, algorithm_runtime, bound_algorithm, bound_link, build_algorithm_request, trusted_queries, fail_algorithm_request!, algorithm_result_type, is_revision_request, proposed_product, installed_record, rejected_record
 export tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!, gnc_period_s
+export Produces, Consumes, gnc_links, link_cardinality, check_link, link_initialize!
 export AbstractRPOPlanner, RPOPlanningConstraints, RPOValidationSettings, RPOPlanningRequest, RPOReference, RPOPlanningResult, RPOPlannerCapabilities, RPOValidationResult, RPOPlanningHeadroom, planner_capabilities, initialize_planner, plan_rpo!, retime_rpo!, validate_rpo_result, validate_rpo_capabilities, rpo_reference_is_current, DirectRPOPlanner, HYPRRPOPlanner, RPOPSOConfig, rpo_pso_config, RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
 export bound_family, AbstractRPOGeometryProvider, rpo_geometry_revision, rpo_geometry_snapshot, RPOReplanningSpheres
+export RetainedPathRPOPlanner
 
 ## 2. Bring needed names from package modules into the scope of SpaceAGORA.jl
 # 2.1. Parallel Profiles

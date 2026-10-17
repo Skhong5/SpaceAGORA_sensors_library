@@ -86,11 +86,12 @@ end
             entry.runs || @test !isempty(strip(entry.reason))
         end
     end
-    @testset "the exempt RPO planner binding has its guidance tick" begin
+    @testset "the exempt algorithm bindings have their guidance tick" begin
         fixture = C.conformance_fixture()
-        planner_guidance = SpaceAGORA.RPOPlannerLifecycle.PlannerGuidance
-        @test hasmethod(SpaceAGORA.calcGuidanceEffect!,
-            Tuple{planner_guidance, fixture.call.state, fixture.call.params, Float64, Int})
+        for binding in (SpaceAGORA.RPOPlannerLifecycle.PlannerGuidance, SpaceAGORA.AlgorithmGuidance)
+            @test hasmethod(SpaceAGORA.calcGuidanceEffect!,
+                Tuple{binding, fixture.call.state, fixture.call.params, Float64, Int})
+        end
     end
     @testset "the energy depletion panel actuator has outputs but no tick of its own" begin
         aoa = SpaceAGORA.SolarPanelAngleOfAttackControlModel
@@ -136,11 +137,13 @@ end
                 @test any(entry -> entry.family isa F, families)
             end
         end
-        # Both rejection policies the RPO family allows are exercised.
-        @test Set(SpaceAGORA.on_rejection(entry.family) for entry in families) == Set((:fail, :install_fallback))
+        # Every rejection policy is exercised: :fail and :install_fallback by the RPO
+        # family, :keep_previous by the burn-plan family.
+        @test Set(SpaceAGORA.on_rejection(entry.family) for entry in families) ==
+            Set((:fail, :install_fallback, :keep_previous))
     end
     for entry in instances
-        test_report(C.check_algorithm(entry.algorithm, entry.requests; trusted=C.rpo_trusted_queries(),
+        test_report(C.check_algorithm(entry.algorithm, entry.requests; trusted=entry.trusted,
             simulation=entry.simulation))
     end
     for entry in families

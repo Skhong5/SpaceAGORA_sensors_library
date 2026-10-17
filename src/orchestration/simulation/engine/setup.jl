@@ -466,12 +466,21 @@ end
     return join(body_query_names, '\0')
 end
 
+# The ephemerides model's part of the planet-frame reuse key. The built-in keys
+# keep their strings, so the built-in models reuse exactly as before. Any other
+# key is printed whole, its tag included, so a key of any length works and two
+# keys that differ only in the tag do not share a cache. A printed tuple starts
+# with "(", so it never equals a built-in string. `===` rather than `==`, so a key
+# holding `missing` cannot make the comparison fail.
 @inline function _ephemerides_model_reuse_key(ephemerides_model)::String
     cache_key = SimulationModel.ephemerides_cache_key(ephemerides_model)
-    if cache_key == (:spice,)
+    if cache_key === (:spice,)
         return "spice"
     end
-    return "simple:$(cache_key[2]):$(cache_key[3])"
+    if cache_key isa Tuple{Symbol, Int64, Int64} && cache_key[1] === :simple
+        return "simple:$(cache_key[2]):$(cache_key[3])"
+    end
+    return repr(cache_key)
 end
 
 @inline function _srp_ephemeris_reuse_key(primary_body_name::String, et_start::Float64, mission_end_s::Float64, dt_s::Float64)::SRPEphemerisReuseKey

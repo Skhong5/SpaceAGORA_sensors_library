@@ -231,11 +231,26 @@ unchanged.
 Both planners support truth observations in target RTN and use the common
 `initialize_planner`, `plan_rpo!` and capability interface. Neither advertises
 restart; `HYPRRPOPlanner` advertises retiming (`retime_rpo!`), `DirectRPOPlanner`
-does not. A separate test implementation loads through
+does not. `RetainedPathRPOPlanner`, in the same adapter module, replays a saved
+path with the same request mapping and HYPR retimer as `HYPRRPOPlanner`, through
+one shared timing function, and searches nothing. A separate test implementation loads through
 the same extension methods. Contract and baseline tests run using standard
 libraries with no HYPR source. The public pilot adds callback integration,
 lifecycle ownership/expiry, restart refusal at run preparation and external
 assembly. Optional-package installation remains a later acceptance gate.
+
+The seven comparison planners (`HYPRComparisonPlanner` to `STOMPPlanner`) live
+with the comparison harness in `GuidanceHooks`, so that `RPOPlannerComparisonConfig`
+can hold them and build its default list; their contract methods live in the
+top-level `RPOComparisonPlanning` module, after `SimulationModel`, as the HYPR
+adapter's do. One function per mode, `_rpo_comparison_planner_path`, runs the
+kernels for both the harness (with the fixed 0.5 m safety distance) and
+`plan_rpo!` (with the request's mapped settings), so the two routes share kernels,
+settings and draw order. The deprecated name selection resolves a name to the
+object built from the configuration's settings fields, at the batch entry and the
+direct entry, before the HYPR check; the warning goes through `_hook_deprecation`
+with the key `(planner type, :symbol_planner_selection)`. The identifier and label
+helpers stay pure. Report rows, keys and labels keep the canonical identifiers.
 
 ## Lifecycle source ownership
 
