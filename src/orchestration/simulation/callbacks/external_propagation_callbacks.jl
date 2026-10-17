@@ -40,7 +40,7 @@ function get_external_propagation_callback(num_sats::Int)
                 modified = true
             end
         end
-        modified && u_modified!(integrator, true)
+        modified && DiffEqBase.derivative_discontinuity!(integrator, true)
         return nothing
     end
     return DiscreteCallback(condition, affect!; save_positions=(false, false))
