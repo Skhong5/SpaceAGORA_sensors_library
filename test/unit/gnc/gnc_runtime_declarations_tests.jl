@@ -297,6 +297,26 @@ SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
         end
         @test err isa ArgumentError && occursin("2 models produce one SharedSlot", sprint(showerror, err))
         @test_throws ArgumentError SM.SimulationCallbacks.gnc_link_groups(runtime_args((ClockedControl(),); guidance=(BadLinks(),)))
+        # SolverConfig(parallel=true) makes run_simulation re-enter itself; each link
+        # is still checked once. The flag's persisted state goes to a scratch folder.
+        mktempdir() do dir
+            constants = joinpath(dir, "cost_constants.toml")
+            SM.ParallelCost.ensure_machine_constants!(path=constants,
+                calibrate=() -> SM.ParallelCost.calibrate_machine(k=1))
+            withenv("SPACEAGORA_COST_CONSTANTS_PATH" => constants,
+                    "SPACEAGORA_PARALLEL_POLICY_STATE_PATH" => joinpath(dir, "policy_state.toml"),
+                    "SPACEAGORA_RHS_CALIBRATION_PATH" => joinpath(dir, "rhs_calibration.toml"),
+                    "SPACEAGORA_OUTER_ROUTE_STATE_PATH" => joinpath(dir, "outer_route_state.toml"),
+                    "SPACEAGORA_CAMPAIGN_CORRECTIONS_PATH" => joinpath(dir, "campaign_corrections.toml"),
+                    "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => nothing) do
+                parallel_slot = SharedSlot()
+                parallel_args = SM.SimConfig._with_configuration(
+                    runtime_args((SlotReader(parallel_slot, 0),); guidance=(SlotWriter(parallel_slot, 0),));
+                    solver_config=SM.SolverConfig(parallel=true))
+                run_simulation(parallel_args; isolate_state=false)
+                @test length(parallel_slot.checked) == 1 && parallel_slot.initialized == 1
+            end
+        end
     end
 
     @testset "an unknown schedule is refused" begin
