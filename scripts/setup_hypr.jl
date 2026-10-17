@@ -1,7 +1,7 @@
 """Install the checkout and its pinned optional HYPR dependency in an isolated project."""
 module HYPRInstallation
 using Pkg, TOML, UUIDs
-const SUPPORTED_HYPR_VERSIONS = ("0.1.0", "0.1.1")
+const SUPPORTED_HYPR_VERSIONS = ("0.2.0",)
 const ROOT = normpath(joinpath(@__DIR__, ".."))
 const HYPR_UUID = UUID("342c8629-b435-4bda-9d24-004c735fb297")
 
