@@ -41,7 +41,7 @@ end
 
 """
     conformance_fixture(; configuration=nothing, spacecraft_count=1, mission_time_s=60.0,
-        guidance=(), navigation=(), control=(), effectors=(), guidance_rate_s=10.0,
+        guidance=(), navigation=(), control=(), effectors=(), sensors=(), guidance_rate_s=10.0,
         navigation_rate_s=10.0, control_rate_s=1.0, orientation=true) -> ConformanceFixture
 
 The run the checks use. Without `configuration` it is a short Earth orbit that needs
@@ -50,8 +50,9 @@ no native GRAM, SPICE kernels or private data: `make_no_gram_planet(:earth)`,
 spacecraft (100 kg, 2 m², on a 650 km by 700 km orbit at 45°, spaced 5° apart in true
 anomaly), a `MissionTime` of `mission_time_s` seconds, attitude propagation when
 `orientation` is `true`, `InverseSquaredJ2GravityModel()` followed by `effectors` as
-the force/torque models, and the given guidance, navigation and control models at
-their rates in seconds.
+the force/torque models, `sensors` mounted on the first spacecraft's root link with
+`add_sensor!`, and the given guidance, navigation and control models at their rates
+in seconds.
 
 A model that needs more (an atmosphere for drag, a second spacecraft with a
 particular orbit, articulated links) is checked on a `configuration` the author
@@ -60,22 +61,22 @@ are then refused.
 """
 function conformance_fixture(; configuration::Union{Nothing, SimulationModel.SimulationConfiguration}=nothing,
         spacecraft_count::Integer=1, mission_time_s::Real=60.0, guidance::Tuple=(), navigation::Tuple=(),
-        control::Tuple=(), effectors::Tuple=(), guidance_rate_s::Real=10.0, navigation_rate_s::Real=10.0,
-        control_rate_s::Real=1.0, orientation::Bool=true)
+        control::Tuple=(), effectors::Tuple=(), sensors::Tuple=(), guidance_rate_s::Real=10.0,
+        navigation_rate_s::Real=10.0, control_rate_s::Real=1.0, orientation::Bool=true)
     if configuration !== nothing
-        isempty(guidance) && isempty(navigation) && isempty(control) && isempty(effectors) || throw(ArgumentError(
+        isempty(guidance) && isempty(navigation) && isempty(control) && isempty(effectors) && isempty(sensors) || throw(ArgumentError(
             "conformance_fixture: pass the models under test either inside `configuration` or as keywords, not both."))
         return ConformanceFixture(configuration)
     end
     return ConformanceFixture(_fixture_configuration(; spacecraft_count, mission_time_s, guidance, navigation,
-        control, effectors, guidance_rate_s, navigation_rate_s, control_rate_s, orientation))
+        control, effectors, sensors, guidance_rate_s, navigation_rate_s, control_rate_s, orientation))
 end
 
 # The built-in fixture configuration. `density_model`, `planet` and
 # `ephemerides_model` are for core's own instances of the built-in models that need
 # an atmosphere or SPICE ephemerides.
 function _fixture_configuration(; spacecraft_count::Integer=1, mission_time_s::Real=60.0, guidance::Tuple=(),
-        navigation::Tuple=(), control::Tuple=(), effectors::Tuple=(), guidance_rate_s::Real=10.0,
+        navigation::Tuple=(), control::Tuple=(), effectors::Tuple=(), sensors::Tuple=(), guidance_rate_s::Real=10.0,
         navigation_rate_s::Real=10.0, control_rate_s::Real=1.0, orientation::Bool=true,
         density_model=SimulationModel.NoAtmosphereModel(), planet=SimulationModel.make_no_gram_planet(:earth),
         ephemerides_model=SimulationModel.SimpleEphemeridesModel())
@@ -87,6 +88,10 @@ function _fixture_configuration(; spacecraft_count::Integer=1, mission_time_s::R
             ω=0.0, Ω=0.0, ν=10.0 + 5.0 * (id - 1))
         SimulationModel.SpacecraftModel(joints=SimulationModel.Joint[], links=[root], root=root, prop_mass=0.0,
             inertia_tensor=root.inertia, initial_condition=orbit, id=id)
+    end
+    first_spacecraft = first(spacecraft)
+    for sensor in sensors
+        SimulationModel.add_sensor!(first_spacecraft, first_spacecraft.root, sensor)
     end
     environment = SimulationModel.EnvironmentModel(planet=planet, EI=120.0, density_model=density_model,
         ephemerides_model=ephemerides_model,
@@ -131,19 +136,20 @@ function _solve(configuration; isolate_state::Bool=true, kwargs...)
     end
 end
 
-# How two runs differ, or `nothing` when their saved times and states are equal
-# bit for bit (`isequal` on every element).
-function _run_difference(a::_RunOutcome, b::_RunOutcome)
+# How two runs differ, or `nothing` when their saved times and states (or, for a
+# sensor, its measurement times and measurements) are equal bit for bit (`isequal`
+# on every element).
+function _run_difference(a::_RunOutcome, b::_RunOutcome; noun::AbstractString="state")
     _failed(a) && return "the first run failed: " * _summary(a.error)
     _failed(b) && return "the second run failed: " * _summary(b.error)
     ta, tb = a.solution.t, b.solution.t
-    length(ta) == length(tb) || return "the runs saved $(length(ta)) and $(length(tb)) states"
+    length(ta) == length(tb) || return "the runs recorded $(length(ta)) and $(length(tb)) $(noun)s"
     for k in eachindex(ta, tb)
-        isequal(ta[k], tb[k]) || return "saved time $k differs: $(ta[k]) s and $(tb[k]) s"
+        isequal(ta[k], tb[k]) || return "the time of $(noun) $k differs: $(ta[k]) s and $(tb[k]) s"
         ua, ub = a.solution.u[k], b.solution.u[k]
         if !isequal(ua, ub)
             gap = length(ua) == length(ub) ? maximum(abs.(collect(ua) .- collect(ub))) : NaN
-            return "the state saved at t = $(ta[k]) s differs (largest element difference $(gap))"
+            return "the $(noun) at t = $(ta[k]) s differs (largest element difference $(gap))"
         end
     end
     return nothing

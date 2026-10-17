@@ -1,8 +1,9 @@
 module SpaceAGORATestExt
 
 using SpaceAGORA
-using SpaceAGORA.Conformance: ConformanceCheck, ConformanceReport, check_force_torque_model, check_service_facade
-import SpaceAGORA.Conformance: test_report, test_force_torque_model, test_service_facade
+using SpaceAGORA.Conformance: ConformanceCheck, ConformanceReport, check_force_torque_model, check_service_facade,
+    check_sensor
+import SpaceAGORA.Conformance: test_report, test_force_torque_model, test_service_facade, test_sensor
 using Test
 
 function test_report(report::ConformanceReport)
@@ -35,5 +36,6 @@ end
 
 test_force_torque_model(model; kwargs...) = test_report(check_force_torque_model(model; kwargs...))
 test_service_facade(facade::Module; kwargs...) = test_report(check_service_facade(facade; kwargs...))
+test_sensor(sensor; kwargs...) = test_report(check_sensor(sensor; kwargs...))
 
 end # module SpaceAGORATestExt

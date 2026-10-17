@@ -187,20 +187,27 @@ function _lockstep_factory(rendezvous::_Rendezvous, me::Int, timeout_s::Float64=
         initialize=(callback, u, t, integrator) -> wait_for_other!(integrator), save_positions=(false, false))
 end
 
-function _concurrency_check(configuration, base::_RunOutcome, again::_RunOutcome, since::VersionNumber;
-        timeout_s::Float64=_RENDEZVOUS_TIMEOUT_S)
+_concurrency_check(configuration::SimulationModel.SimulationConfiguration, base::_RunOutcome, again::_RunOutcome,
+    since::VersionNumber; timeout_s::Float64=_RENDEZVOUS_TIMEOUT_S) =
+    _concurrency_check(factories -> _solve(configuration; extra_callback_factories=factories), base, again, since;
+        timeout_s)
+
+# `run(factories)` runs the fixture with the extra callback factories given and
+# returns its outcome; `noun` names what the outcomes compare.
+function _concurrency_check(run::Function, base::_RunOutcome, again::_RunOutcome, since::VersionNumber;
+        timeout_s::Float64=_RENDEZVOUS_TIMEOUT_S, noun::AbstractString="state")
     Threads.nthreads() >= 2 || return _skip(:concurrent_equals_sequential, since,
         "needs Julia started with at least two threads; this session has $(Threads.nthreads())")
     rendezvous = _Rendezvous()
     tasks = map(1:2) do me
         Threads.@spawn try
-            _solve(configuration; extra_callback_factories=(_lockstep_factory(rendezvous, me, timeout_s),))
+            run((_lockstep_factory(rendezvous, me, timeout_s),))
         finally
             rendezvous.finished[me][] = true
         end
     end
     runs = fetch.(tasks)
-    gaps = (_run_difference(base, runs[1]), _run_difference(again, runs[2]))
+    gaps = (_run_difference(base, runs[1]; noun), _run_difference(again, runs[2]; noun))
     problems = String["concurrent run $k and sequential run $k differ: $(gap)" for (k, gap) in enumerate(gaps) if gap !== nothing]
     # Equal results from runs that did not overlap certify nothing about concurrency.
     timeouts = rendezvous.timeouts[]

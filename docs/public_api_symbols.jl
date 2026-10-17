@@ -577,9 +577,11 @@ const PUBLIC_API_SECTIONS = [
             (owner = :Conformance, symbol = :conformance_fixture, rendered = "SpaceAGORA.Conformance.conformance_fixture"),
             (owner = :Conformance, symbol = :check_force_torque_model, rendered = "SpaceAGORA.Conformance.check_force_torque_model"),
             (owner = :Conformance, symbol = :check_service_facade, rendered = "SpaceAGORA.Conformance.check_service_facade"),
+            (owner = :Conformance, symbol = :check_sensor, rendered = "SpaceAGORA.Conformance.check_sensor"),
             (owner = :Conformance, symbol = :test_report, rendered = "SpaceAGORA.Conformance.test_report"),
             (owner = :Conformance, symbol = :test_force_torque_model, rendered = "SpaceAGORA.Conformance.test_force_torque_model"),
-            (owner = :Conformance, symbol = :test_service_facade, rendered = "SpaceAGORA.Conformance.test_service_facade")
+            (owner = :Conformance, symbol = :test_service_facade, rendered = "SpaceAGORA.Conformance.test_service_facade"),
+            (owner = :Conformance, symbol = :test_sensor, rendered = "SpaceAGORA.Conformance.test_sensor")
         ]
     )
 ]

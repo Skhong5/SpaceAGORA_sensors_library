@@ -14,7 +14,7 @@ using SpaceAGORA.Conformance: ConformanceFixture, conformance_fixture
 const SM = SpaceAGORA.SimulationModel
 const C = SpaceAGORA.Conformance
 
-export force_torque_instances, force_torque_exemptions, spice_available
+export force_torque_instances, force_torque_exemptions, spice_available, sensor_instances, sensor_exemptions
 
 const SPICE_PATH = joinpath(pkgdir(SpaceAGORA), "data", "GRAMSuite.jl", "GRAM Suite 2.0", "SPICE")
 spice_available() = isdir(SPICE_PATH)
@@ -110,5 +110,20 @@ function force_torque_exemptions()
         SM.DynamicEffectors.PerturbationEffectors.SolarRadiationPressureModel,
         SM.DynamicEffectors.PerturbationEffectors.FacetSolarRadiationPressureModel))
 end
+
+"""
+Fresh instances of the built-in sensor kinds, with noise so that the seed check
+compares streams. They run on the built-in fixture.
+"""
+sensor_instances() = [
+    SpaceAGORA.RateGyro(period_s=0.5, angle_random_walk=1.0e-4, rate_random_walk=1.0e-5, seed=3),
+    SpaceAGORA.StarTracker(period_s=1.0, cross_boresight_noise_rad=1.0e-5, about_boresight_noise_rad=1.0e-4, seed=4),
+    SpaceAGORA.Magnetometer(period_s=0.5, noise_t=1.0e-8, bias_t=SVector(1.0e-7, 0.0, -1.0e-7), seed=5),
+]
+
+"""
+Concrete built-in sensor kinds without an instance, each with the reason.
+"""
+sensor_exemptions() = Dict{Any, String}()
 
 end # module ConformanceInstances

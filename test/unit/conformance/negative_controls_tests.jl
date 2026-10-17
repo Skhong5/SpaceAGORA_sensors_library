@@ -6,7 +6,9 @@ module ConformanceNegativeControlsTests
 
 using Test, SpaceAGORA, Logging
 using StaticArrays: SVector
-using SpaceAGORA.Conformance: CHECK_IDS, check_force_torque_model, check_service_facade, conformance_fixture, passed
+using SpaceAGORA.Conformance: CHECK_IDS, check_force_torque_model, check_service_facade, check_sensor, conformance_fixture,
+    passed
+using Random: Random
 
 const SM = SpaceAGORA.SimulationModel
 const C = SpaceAGORA.Conformance
@@ -107,6 +109,78 @@ SpaceAGORA.wrench(::NcUndeclaredThirdBody, x::Sample, env::Env, t::Float64) =
 include(joinpath(@__DIR__, "..", "..", "fixtures", "conformance_instances.jl"))
 using .ConformanceInstances: on_spice, spice_available
 
+# Sensors: one record shape, a 3-component measurement every second, and a counter
+# some controls keep. The clean one adds noise from its own stream to the body rate.
+for name in (:NcCleanSensor, :NcShortSensor, :NcNaNSensor, :NcRunEpochSensor, :NcIdentitySensor, :NcGlobalRandSensor,
+        :NcSharedSensor, :NcFixedSeedSensor, :NcCountingSensor, :NcAtmosphereSensor)
+    @eval begin
+        mutable struct $name <: SpaceAGORA.AbstractSensor
+            period_s::Float64
+            seed::Int
+            rng::Any
+            latest::Any
+            latest_time_s::Float64
+            count::Int
+        end
+        $name() = $name(1.0, 1, nothing, SVector(NaN, NaN, NaN), NaN, 0)
+        SpaceAGORA.sensor_dimension(::$name) = 3
+    end
+end
+noisy(truth, rng) = truth.ω_body + 1.0e-4 * SVector(randn(rng), randn(rng), randn(rng))
+SpaceAGORA.sensor_measure(::NcCleanSensor, truth, ctx, rng) = noisy(truth, rng)
+# measurement_shape: two components where it declares three; a NaN component.
+SpaceAGORA.sensor_measure(::NcShortSensor, truth, ctx, rng) = SVector(truth.ω_body[1], truth.ω_body[2])
+SpaceAGORA.sensor_measure(::NcNaNSensor, truth, ctx, rng) = SVector(NaN, truth.ω_body[2], truth.ω_body[3])
+# repeatable_run: state outside the sensor, advanced at every run start.
+const NC_SENSOR_EPOCH = Ref(0)
+SpaceAGORA.initialize_sensor!(::NcRunEpochSensor, truth, ctx, rng) = (NC_SENSOR_EPOCH[] += 1; nothing)
+SpaceAGORA.sensor_measure(::NcRunEpochSensor, truth, ctx, rng) = noisy(truth, rng) .+ 1.0e-3 * NC_SENSOR_EPOCH[]
+# deepcopy_equivalent: an offset registered under the identity of the sensor.
+const NC_SENSOR_OFFSETS = IdDict{Any, Float64}()
+NcRegisteredSensor() = (s = NcIdentitySensor(); NC_SENSOR_OFFSETS[s] = 1.0e-3; s)
+SpaceAGORA.sensor_measure(s::NcIdentitySensor, truth, ctx, rng) = noisy(truth, rng) .+ get(NC_SENSOR_OFFSETS, s, 0.0)
+# global_rng_independent: noise from the global generator.
+SpaceAGORA.sensor_measure(::NcGlobalRandSensor, truth, ctx, rng) = truth.ω_body .+ 1.0e-4 * rand()
+# concurrent_equals_sequential: scratch shared by every instance, reset at a run's start.
+const NC_SENSOR_SCRATCH = Ref(0.0)
+function SpaceAGORA.sensor_measure(::NcSharedSensor, truth, ctx, rng)
+    truth.t_s == 0.0 && (NC_SENSOR_SCRATCH[] = 0.0)
+    NC_SENSOR_SCRATCH[] += 1.0
+    return noisy(truth, rng) .+ 1.0e-6 * NC_SENSOR_SCRATCH[]
+end
+# seed_repeatable: noise from its stream, but the stream is reset to a fixed seed.
+SpaceAGORA.initialize_sensor!(::NcFixedSeedSensor, truth, ctx, rng) = (Random.seed!(rng, 1234); nothing)
+SpaceAGORA.sensor_measure(::NcFixedSeedSensor, truth, ctx, rng) = noisy(truth, rng)
+# custom_state_reset: a sample counter that initialize_sensor! does not reset.
+SpaceAGORA.sensor_measure(s::NcCountingSensor, truth, ctx, rng) = (s.count += 1; noisy(truth, rng) .+ 1.0e-6 * s.count)
+# requirements_supported: asks for the atmosphere.
+SpaceAGORA.sensor_requirements(::NcAtmosphereSensor) = SpaceAGORA.ActuatorRequirements(atmosphere=true)
+SpaceAGORA.sensor_measure(::NcAtmosphereSensor, truth, ctx, rng) = noisy(truth, rng)
+# run_state_fields: not mutable; without latest_time_s.
+struct NcImmutableSensor <: SpaceAGORA.AbstractSensor
+    period_s::Float64
+    seed::Int
+    rng::Any
+    latest::Any
+    latest_time_s::Float64
+end
+NcImmutableSensor() = NcImmutableSensor(1.0, 1, nothing, SVector(NaN, NaN, NaN), NaN)
+SpaceAGORA.sensor_dimension(::NcImmutableSensor) = 3
+SpaceAGORA.sensor_measure(::NcImmutableSensor, truth, ctx, rng) = noisy(truth, rng)
+mutable struct NcNoTimeSensor <: SpaceAGORA.AbstractSensor
+    period_s::Float64
+    seed::Int
+    rng::Any
+    latest::Any
+end
+NcNoTimeSensor() = NcNoTimeSensor(1.0, 1, nothing, SVector(NaN, NaN, NaN))
+SpaceAGORA.sensor_dimension(::NcNoTimeSensor) = 3
+SpaceAGORA.sensor_measure(::NcNoTimeSensor, truth, ctx, rng) = noisy(truth, rng)
+
+const SENSOR_RUN_LEVEL = (:repeatable_run, :deepcopy_equivalent, :global_rng_independent, :concurrent_equals_sequential,
+    :seed_repeatable, :custom_state_reset)
+sensor_except(ids...) = filter(id -> !(id in ids), CHECK_IDS.sensor)
+
 # A facade with the shape the adapter standard requires; each control breaks one rule.
 function control_facade(; version=v"1.0.0", require=:exact, implemented=(:serve,), consumed=(:Value,),
         omit::Union{Nothing, Symbol}=nothing)
@@ -171,6 +245,33 @@ controls() = [
         report=() -> (entry = on_spice(planet -> NcUndeclaredThirdBody());
             check_force_torque_model(entry.model; fixture=entry.fixture)),
         passing=(:hooks_present, :supported_sample_signature))] : [])...,
+    (kind=:sensor, id=:run_state_fields, broken="an immutable record", expect="is not a mutable struct",
+        report=() -> check_sensor(NcImmutableSensor()), passing=()),
+    (kind=:sensor, id=:run_state_fields, broken="no latest_time_s field", expect="lacks the field(s) latest_time_s",
+        report=() -> check_sensor(NcNoTimeSensor()), passing=()),
+    (kind=:sensor, id=:requirements_supported, broken="asks for the atmosphere", expect="add_sensor! refuses the sensor",
+        report=() -> check_sensor(NcAtmosphereSensor()), passing=(:run_state_fields,)),
+    (kind=:sensor, id=:measurement_shape, broken="two components where it declares three",
+        expect="not 3 finite component(s)",
+        report=() -> check_sensor(NcShortSensor()), passing=sensor_except(:measurement_shape)),
+    (kind=:sensor, id=:measurement_shape, broken="a NaN component", expect="not 3 finite component(s)",
+        report=() -> check_sensor(NcNaNSensor()), passing=sensor_except(:measurement_shape)),
+    (kind=:sensor, id=:repeatable_run, broken="state outside the sensor advanced at every run start",
+        expect="two runs of the fixture with isolate_state=true differ: ",
+        report=() -> check_sensor(NcRunEpochSensor()), passing=(:run_state_fields, :requirements_supported, :measurement_shape)),
+    (kind=:sensor, id=:deepcopy_equivalent, broken="an offset keyed by the sensor's identity",
+        expect="and a run of its deep copy (isolate_state=true) differ: ",
+        report=() -> check_sensor(NcRegisteredSensor()), passing=sensor_except(:deepcopy_equivalent)),
+    (kind=:sensor, id=:global_rng_independent, broken="noise from the global generator", expect="seeded 1 and 2 differ: ",
+        report=() -> check_sensor(NcGlobalRandSensor()), passing=(:run_state_fields, :requirements_supported, :measurement_shape)),
+    (kind=:sensor, id=:concurrent_equals_sequential, broken="scratch shared by every instance", expect="and sequential run ",
+        report=() -> check_sensor(NcSharedSensor()), passing=sensor_except(:concurrent_equals_sequential)),
+    (kind=:sensor, id=:seed_repeatable, broken="its stream reset to a fixed seed",
+        expect="yet runs with those seeds give the same measurements",
+        report=() -> check_sensor(NcFixedSeedSensor()), passing=sensor_except(:seed_repeatable)),
+    (kind=:sensor, id=:custom_state_reset, broken="a sample counter it never resets",
+        expect="two runs with isolate_state=false on one configuration differ: ",
+        report=() -> check_sensor(NcCountingSensor()), passing=sensor_except(:custom_state_reset)),
     (kind=:service_facade, id=:facade_shape, broken="CONTRACT_VERSION other than the reviewed one", expect="CONTRACT_VERSION is v\"1.0.1\", not the reviewed 1.0.0",
         report=() -> facade_report(control_facade(version=v"1.0.1"); version=v"1.0.0"), passing=()),
     (kind=:service_facade, id=:facade_shape, broken="require_version accepts any minor or patch", expect="accepted a version other than 1.0.0",
@@ -221,6 +322,10 @@ status_of(report, id) = only(check.status for check in report.checks if check.id
         @test passed(facade)
         nested = facade_report(control_facade(implemented=(:serve, (:Nested, :serve))); version=v"1.0.0")
         @test passed(nested)
+        sensor = check_sensor(NcCleanSensor())
+        @test [check.id for check in sensor.checks] == collect(CHECK_IDS.sensor)
+        @test all(check -> check.status === :pass, sensor.checks) || Threads.nthreads() < 2
+        @test passed(sensor)
     end
     for control in all_controls
         # A check reports a broken input as a failing check; it never throws.
@@ -242,7 +347,8 @@ status_of(report, id) = only(check.status for check in report.checks if check.id
                     @test status === expected
                     expected === :fail && @test occursin(control.expect, detail)
                     # A run-level control fails by its behaviour, not by a run that stopped.
-                    control.id in RUN_LEVEL && @test !occursin("run failed", detail)
+                    control.id in (control.kind === :sensor ? SENSOR_RUN_LEVEL : RUN_LEVEL) &&
+                        @test !occursin("run failed", detail)
                 end
                 expected === :fail && @test !passed(report)
                 for id in control.passing
