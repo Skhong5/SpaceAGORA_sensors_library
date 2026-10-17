@@ -1,6 +1,16 @@
 # Reconstruct the final paper's disturbance families from one saved baseline.
 # Original obstacle draws are unavailable; placements below are explicit choices.
 # The obstructed-goal case is an extra negative control, outside Table III.
+#
+# Legacy reproduction: this study runs on the deprecated RPOGuidanceModel and is
+# kept as the recorded reproduction of the reconstructed results in
+# docs/src/user/hypr_paper.md until that model is removed. The study as delivered
+# with those results is at SpaceAGORA commit
+# b165c0528b782316db65142f19def374c181b47f (the merge of #307); after the removal,
+# reproduce them from that commit with the HYPR revision pinned there. Under
+# SPACEAGORA_EXAMPLE_SMOKE it only checks its saved baseline and never configures
+# the deprecated model. Earth_RPO_Planner_Disturbances.jl shows disturbances on the
+# planner contract.
 include(joinpath(@__DIR__,"Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl"))
 using DiffEqCallbacks, SciMLBase
 function config_from_json(d)

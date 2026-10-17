@@ -18,18 +18,67 @@ using SpaceAGORA
 end
 const RPO_EXAMPLES_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "examples"))
 const RPO_EXAMPLES_SPICE = joinpath(RPO_EXAMPLES_DIR, "..", "data/GRAMSuite.jl/GRAM Suite 2.0", "SPICE")
+module RPODisturbancesExample
+using SpaceAGORA
+end
+
+# The disturbance example on the planner path: the obstacle's refused replans hold
+# the chaser until the obstacle clears, and the displacement replans at once.
+@testset "Disturbance example: obstacle, hold and displacement" begin
+    Base.include(RPODisturbancesExample, joinpath(RPO_EXAMPLES_DIR, "Earth_RPO_Planner_Disturbances.jl"))
+    out = Base.invokelatest(RPODisturbancesExample.run_rpo_disturbance_demo)
+    timeline = out.timeline
+    @test [x.event for x in timeline if x.event !== :request] == [:installed,
+        :trigger, :rejected, :fallback_installed,   # the sphere blocks the path: hold
+        :trigger, :rejected, :fallback_installed,   # settled on the hold, still blocked
+        :trigger, :installed,                       # the sphere is gone: replanned
+        :installed]                                 # displaced: tracking-error replan
+    requests = [x.request for x in timeline if x.event === :request]
+    @test [r.request_id for r in requests] == 1:5
+    @test [r.reason for r in requests] == [:initial, :replan, :replan, :replan, :replan]
+    @test [r.geometry_revision for r in requests] ==
+        ["rpo-pilot-v1", "rpo-pilot-v1+spheres:1", "rpo-pilot-v1+spheres:1", "rpo-pilot-v1", "rpo-pilot-v1"]
+    times = [x.time_s for x in timeline if x.event === :request]
+    # Appearance at 10 s; the sphere stays active through 30 s, so its removal is seen
+    # at the next tick; the displacement's priority callback precedes the 55 s tick.
+    @test isapprox(times[[1, 2, 4, 5]], [0.0, 10.0, 30.1, 55.0]; atol=1e-9)
+    # Settling depends on the braking flight; recorded at 24.2 s, pinned to one tick.
+    @test isapprox(times[3], 24.2; atol=0.1 + 1e-9)
+    marks = [x for x in timeline if x.event === :trigger]
+    @test [x.trigger for x in marks] == [:geometry_revision, :hold_settled, :geometry_revision]
+    @test marks[1].details.action === :replan && marks[1].details.min_clearance_m < 0.2
+    @test marks[3].details.action === :replan && isnan(marks[3].details.min_clearance_m)  # a hold is replaced unchecked
+    @test all(x -> x.termination === :direct_segment_blocked, filter(x -> x.event === :rejected, timeline))
+    holds = [x.product for x in timeline if x.event === :fallback_installed]
+    @test all(h -> h.r_ref_rtn_m[:, 1] == h.r_ref_rtn_m[:, end] && iszero(h.v_ref_rtn_mps), holds)
+    installed = filter(x -> x.event === :installed, timeline)
+    @test [x.request_id for x in installed] == [1, 4, 5]
+    @test all(x -> x.validation.accepted && x.validation.metrics.min_clearance_m >= 0.2, installed)
+    # The last reference starts at the displaced chaser, 0.3 m normal to the plane.
+    @test isapprox(last(installed).reference.r_ref_rtn_m[3, 1], 0.3; atol=1e-3)
+    @test last(installed).reference.r_ref_rtn_m[:, end] == [6.0, 0.0, 0.0]
+    s = out.summary
+    @test s.end_time_s == 110.0 && string(s.retcode) == "Success"
+    @test s.final_goal_error_m < 1e-3 && s.final_speed_mps < 1e-3
+    @test 0.004 < s.propellant_used_kg < 0.008   # recorded 5.84 g
+    @test s.min_saved_clearance_m >= 0.2
+end
 
 @testset "Examples build the planner contract, the held study the deprecated model" begin
     source(name) = read(joinpath(RPO_EXAMPLES_DIR, name), String)
-    for name in ("Earth_RPO_CubeSat_MPC.jl", "Earth_RPO_CubeSat_MPC_Batch.jl", "Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl")
+    for name in ("Earth_RPO_CubeSat_MPC.jl", "Earth_RPO_CubeSat_MPC_Batch.jl", "Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl",
+            "Earth_RPO_Planner_Disturbances.jl")
         @test !occursin("RPOGuidanceModel", source(name))
     end
     @test occursin("PlannerGuidance", source("Earth_RPO_CubeSat_MPC.jl"))
     @test occursin("RetainedPathRPOPlanner", source("Earth_RPO_CubeSat_MPC.jl"))
-    # The replanning study reproduces the published disturbance families on the
-    # deprecated model until its goal-change and brake-then-replan scenarios have a
-    # planner-contract counterpart; it assembles that legacy guidance itself.
-    @test occursin("legacy_guidance_demo", source("Earth_RPO_HyPR_FinalISpaRo_Replanning.jl"))
+    @test occursin("make_rpo_configuration", source("Earth_RPO_Planner_Disturbances.jl"))
+    # The replanning study stays the recorded legacy reproduction of the reconstructed
+    # results until the deprecated model is removed; it assembles that legacy guidance
+    # itself and names the commit to reproduce them from afterwards.
+    study = source("Earth_RPO_HyPR_FinalISpaRo_Replanning.jl")
+    @test occursin("legacy_guidance_demo", study)
+    @test occursin("b165c0528b782316db65142f19def374c181b47f", study)
 end
 
 if !isdir(RPO_EXAMPLES_SPICE)
