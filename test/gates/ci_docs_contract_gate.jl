@@ -67,6 +67,8 @@ for marker in (
     "\"EDG Service Contract\" => \"reference/edg_adapter_boundary.md\"",
     "\"Optional Adapter Contract\" => \"reference/adapter_contract.md\"",
     "\"Public API and Compatibility\" => \"public_api_policy.md\"",
+    "\"Extension Conventions\" => \"reference/extension_conventions.md\"",
+    "\"Migrating Extension Hooks\" => \"reference/migrating_extension_hooks.md\"",
 )
     occursin(marker, docs_make) || error("docs/make.jl missing documentation IA marker: $(marker)")
 end
