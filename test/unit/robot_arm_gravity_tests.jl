@@ -56,7 +56,7 @@ end
         mission_configuration=SM.MissionConfiguration(mission_type=base_cfg.mission_configuration.mission_type,
             keplerian=true, number_of_orbits=1, mission_time=120.0, orientation_sim=true, num_steps_to_save=1000),
         control_model=SM.ControlModel(
-            control_effectors=(SM.RobotArmControlEffector(plan=plan, spacecraft_idx=1, k_translation_n_m=K_TRANS),),
+            control_effectors=(SM.RobotArmControlEffector(plan=plan, spacecraft_index=1, k_translation_n_m=K_TRANS),),
             control_rates=[0.1]))
 
     sol = run_simulation(args; return_solution=true)

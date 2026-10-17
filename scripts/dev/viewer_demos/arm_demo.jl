@@ -13,7 +13,7 @@ base = SM.RobotArmBasePose(SVector{3, Float64}(0.0, 0.0, 0.0), SVector{4, Float6
 # The planner targets an end-effector position; the demo's goal joint angles give it through FK.
 target = SM.robot_arm_fk(arm, base, [-0.12, -0.08, 0.06]).end_effector_position
 plan = SM.plan_robot_arm_motion(arm, base, [0.08, 0.95, -0.85], target; config=SM.RobotArmPlannerConfig(dt_s=0.1, duration_s=40.0))
-eff = SM.RobotArmControlEffector(plan=plan, spacecraft_idx=1, controller=SM.init_robot_arm_joint_mpc(plan; dt_s=0.1, horizon=8), control_dt_s=0.1)
+eff = SM.RobotArmControlEffector(plan=plan, spacecraft_index=1, controller=SM.init_robot_arm_joint_mpc(plan; dt_s=0.1, horizon=8), control_dt_s=0.1)
 include(joinpath(@__DIR__, "demo_options.jl"))
 options = viewer_demo_options("arm_demo", 60.0)
 outdir = options.output_dir

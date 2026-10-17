@@ -2,6 +2,7 @@ module ControlHooks
     import ...SimulationLifecycle
     import ...GNCRuntime
     using ...GNCRuntime: BoundSpacecraft, CoupledSpacecraft
+    using ..HookDeprecation: _renamed_field_warning, _renamed_keyword, _NOT_PASSED
     using ..Structure
 
     using ..ConfigTypes: ODEParams
@@ -263,16 +264,16 @@ module ControlHooks
 
     # Per-spacecraft GNC binding (see SimulationLifecycle.bind_spacecraft).
     function SimulationLifecycle.bind_spacecraft(m::MagneticMomentumManagerModel, sat_idx::Int)
-        m.sat_idx == sat_idx && return m
+        m.spacecraft_index == sat_idx && return m
         b = SimulationLifecycle._shallow_copy(m)
-        b.sat_idx = sat_idx
+        b.spacecraft_index = sat_idx
         b.mounted_levels = Float64[]          # its own buffer, not the template's
         return b
     end
     function SimulationLifecycle.bind_spacecraft(m::RobotArmControlEffector, sat_idx::Int)
-        m.spacecraft_idx == sat_idx && return m
+        m.spacecraft_index == sat_idx && return m
         b = SimulationLifecycle._shallow_copy(m)
-        b.spacecraft_idx = sat_idx
+        b.spacecraft_index = sat_idx
         b.controller = deepcopy(m.controller)  # its own MPC warm start, not the template's
         b.held = deepcopy(m.held)              # its own held command, starting from the template's
         return b
@@ -287,23 +288,23 @@ module ControlHooks
     # output hooks read between ticks (GNCRuntime). Each held command is returned
     # as a value or a named tuple of values, not the model's own storage. The
     # descent controller records its tick times; the others do not.
-    GNCRuntime.spacecraft_scope(m::RPOMPCControlModel) = CoupledSpacecraft(m.chaser_idx, (m.target_idx,))
+    GNCRuntime.spacecraft_scope(m::RPOMPCControlModel) = CoupledSpacecraft(m.chaser_index, (m.target_index,))
     GNCRuntime.held_command(m::RPOMPCControlModel, spacecraft_index) =
-        spacecraft_index == m.chaser_idx ?
+        spacecraft_index == m.chaser_index ?
             (force_ii=m.held.force_ii, torque_body=m.held.torque_body, thruster_forces_n=m.held.thruster_forces_n,
              rw_torque_body=m.held.rw_torque_body) : nothing
 
-    GNCRuntime.spacecraft_scope(m::RobotArmControlEffector) = BoundSpacecraft((m.spacecraft_idx,))
+    GNCRuntime.spacecraft_scope(m::RobotArmControlEffector) = BoundSpacecraft((m.spacecraft_index,))
     GNCRuntime.held_command(m::RobotArmControlEffector, spacecraft_index) =
-        spacecraft_index == m.spacecraft_idx ?
+        spacecraft_index == m.spacecraft_index ?
             (joint_torque_nm=copy(m.held.joint_torque_nm), base_force_ii=m.held.base_force_ii,
              base_torque_body=m.held.base_torque_body) : nothing
 
-    GNCRuntime.spacecraft_scope(m::MagneticMomentumManagerModel) = BoundSpacecraft((m.sat_idx,))
+    GNCRuntime.spacecraft_scope(m::MagneticMomentumManagerModel) = BoundSpacecraft((m.spacecraft_index,))
     GNCRuntime.held_command(m::MagneticMomentumManagerModel, spacecraft_index) =
-        spacecraft_index == m.sat_idx ? (torque_body=m.held_torque_body, dipole_am2=m.held_dipole_am2) : nothing
+        spacecraft_index == m.spacecraft_index ? (torque_body=m.held_torque_body, dipole_am2=m.held_dipole_am2) : nothing
     GNCRuntime.held_command_time(m::MagneticMomentumManagerModel, spacecraft_index) =
-        spacecraft_index == m.sat_idx ? m.last_update_s : NaN
+        spacecraft_index == m.spacecraft_index ? m.last_update_s : NaN
 
     GNCRuntime.spacecraft_scope(m::ApolloDescentControlModel) = BoundSpacecraft(m.spacecraft_indices)
     GNCRuntime.skip_inactive(::ApolloDescentControlModel) = true

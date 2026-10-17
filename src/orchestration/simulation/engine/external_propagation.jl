@@ -7,7 +7,9 @@
 # at each sync it is overwritten from the owner's absolute state.
 
 const _EXTERNAL_ALLOWED_SOLVER_MODES = (:tsit5, :auto_stiff, :rodas5p, :dp8)
-const _EXTERNAL_INDEX_FIELDS = (:chaser_idx, :spacecraft_idx, :sat_idx)
+# The spacecraft-index fields of a control effector; the `*_idx` names are the older
+# ones, kept by some models.
+const _EXTERNAL_INDEX_FIELDS = (:chaser_index, :spacecraft_index, :chaser_idx, :spacecraft_idx, :sat_idx)
 
 @inline _external_propagators(args) = args.external_propagators
 

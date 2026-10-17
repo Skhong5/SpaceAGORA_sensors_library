@@ -5,23 +5,23 @@ end
 
 """Apply the RPO MPC controller at the current simulation time and cache the actuator command."""
 function update_control!(model::RPOMPCControlModel, u, p::ODEParams, t::Float64, sat_idx::Int)
-    sat_idx == model.chaser_idx || return nothing
+    sat_idx == model.chaser_index || return nothing
     # The engine has already called the planner that writes this model's plan
     # buffer (`before_reference_control!` for its linked producers).
     model.plan_buffer.valid || return nothing
     model.controller === nothing && return nothing
 
-    r_chaser, v_chaser = _rpo_control_state_pos_vel(u, model.chaser_idx)
-    r_target, v_target = _rpo_control_state_pos_vel(u, model.target_idx)
+    r_chaser, v_chaser = _rpo_control_state_pos_vel(u, model.chaser_index)
+    r_target, v_target = _rpo_control_state_pos_vel(u, model.target_index)
     x_rel = inertial_to_rtn_relative_state(r_chaser, v_chaser, r_target, v_target)
     t_plan = max(0.0, t - model.plan_buffer.updated_at_s)
     x_ref = rpo_ref_preview(model.plan_buffer.plan, t_plan, model.control_dt_s, model.controller.horizon)
     a_rtn = rpo_lqmpc_control(model.controller, x_rel, x_ref)
     a_ii = rtn_accel_to_inertial(a_rtn, r_target, v_target)
-    mass = Float64(u.sc[model.chaser_idx].mass)
+    mass = Float64(u.sc[model.chaser_index].mass)
     force_ii_des = mass * a_ii
 
-    q = SVector{4, Float64}(u.sc[model.chaser_idx].q)
+    q = SVector{4, Float64}(u.sc[model.chaser_index].q)
     R_i_to_b = rot(q)
     force_body_des = R_i_to_b * force_ii_des
     thruster_forces = rpo_allocate_six_axis_thrusters(force_body_des, model.thrusters; minimum_throttle_fraction=model.minimum_throttle_fraction)
@@ -35,7 +35,7 @@ function update_control!(model::RPOMPCControlModel, u, p::ODEParams, t::Float64,
         rw_torque_body=rw_torque_body,
     )
     model.actuation === :mounted &&
-        _rpo_fill_mounted_levels!(model, p.args.dynamics_model.spacecraft[model.chaser_idx], thruster_forces)
+        _rpo_fill_mounted_levels!(model, p.args.dynamics_model.spacecraft[model.chaser_index], thruster_forces)
     log = model.command_log
     if log !== nothing
         push!(log.t_s, t)
@@ -52,7 +52,7 @@ end
 
 """Return the held force and torque command for a control effector."""
 function control_wrench(model::RPOMPCControlModel, x::StateSample, p::ODEParams, t::Float64)
-    x.spacecraft_index == model.chaser_idx || return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
+    x.spacecraft_index == model.chaser_index || return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
     return model.held.force_ii, model.held.torque_body
 end
 
@@ -78,13 +78,13 @@ end
 
 """The chaser's mounted actuator levels held since the last control tick (`:mounted` actuation); none before the first tick."""
 function actuator_levels(model::RPOMPCControlModel, i::Int)
-    (i == model.chaser_idx && !isempty(model.mounted_levels)) || return nothing
+    (i == model.chaser_index && !isempty(model.mounted_levels)) || return nothing
     return model.mounted_levels
 end
 
 """Return the held reaction-wheel-attributable torque, held constant (ZOH) between control ticks like `control_wrench`."""
 function control_wheel_torque(model::RPOMPCControlModel, x::StateSample, p::ODEParams, t::Float64)
-    x.spacecraft_index == model.chaser_idx || return nothing
+    x.spacecraft_index == model.chaser_index || return nothing
     return model.held.rw_torque_body
 end
 
@@ -96,7 +96,7 @@ thrust over its rating. The chaser's remaining thrusters, if the vehicle
 carries more than the six the allocator drives, stay idle.
 """
 function control_thruster_levels(model::RPOMPCControlModel, i::Int)
-    i == model.chaser_idx || return nothing
+    i == model.chaser_index || return nothing
     levels = zeros(6)
     @inbounds for j in 1:6
         rating = model.thrusters.max_thrust_n[j]
@@ -107,7 +107,7 @@ end
 
 """Return the propellant the six jets use, in kg/s (positive while they fire)."""
 function control_propellant_rate(model::RPOMPCControlModel, x::StateSample, p::ODEParams, t::Float64)::Float64
-    x.spacecraft_index == model.chaser_idx || return 0.0
+    x.spacecraft_index == model.chaser_index || return 0.0
     rate = 0.0
     @inbounds for j in 1:6
         thrust = model.held.thruster_forces_n[j]

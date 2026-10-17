@@ -404,8 +404,8 @@ function build_rpo_cubesat_mpc_demo(;
         planner=RPOMissionCapPlanner(planner, max_mission_time_s),
         chaser_id=101,
         target_id=201,
-        chaser_idx=1,
-        target_idx=2,
+        chaser_index=1,
+        target_index=2,
         goal_rtn_m=Tuple(goal_rtn),
         geometry=geometry,
         geometry_revision=station_spec.name,
@@ -436,8 +436,8 @@ function build_rpo_cubesat_mpc_demo(;
         u_max=fill(max_axis_accel_mps2, 3),
     )
     control = RPOMPCControlModel(
-        chaser_idx=1,
-        target_idx=2,
+        chaser_index=1,
+        target_index=2,
         thrusters=thrusters,
         minimum_throttle_fraction=Float64(minimum_throttle_fraction),
         controller=controller,

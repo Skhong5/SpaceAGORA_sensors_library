@@ -188,21 +188,21 @@ deactivate(i, t_s) = PresetTimeCallback([t_s], integrator -> (integrator.p.is_ac
     end
 
     @testset "the built-in models declare their scope and held command" begin
-        mpc = SM.RPOMPCControlModel(chaser_idx=2, target_idx=1)
+        mpc = SM.RPOMPCControlModel(chaser_index=2, target_index=1)
         @test spacecraft_scope(mpc) == CoupledSpacecraft(2, (1,)) && !skip_inactive(mpc)
         mpc.held = SM.RPOHeldActuation(force_ii=SVector(1.0, 2.0, 3.0))
         @test held_command(mpc, 2) == (force_ii=SVector(1.0, 2.0, 3.0), torque_body=ZERO3,
             thruster_forces_n=zero(SVector{6, Float64}), rw_torque_body=ZERO3)
         @test held_command(mpc, 1) === nothing && isnan(held_command_time(mpc, 2))
 
-        arm = SM.RobotArmControlEffector(spacecraft_idx=2)
+        arm = SM.RobotArmControlEffector(spacecraft_index=2)
         @test spacecraft_scope(arm) == BoundSpacecraft((2,))
         arm.held.joint_torque_nm = [0.5, -0.5]
         held = held_command(arm, 2)
         @test held.joint_torque_nm == [0.5, -0.5] && held.joint_torque_nm !== arm.held.joint_torque_nm
         @test held_command(arm, 1) === nothing
 
-        mm = SM.MagneticMomentumManagerModel(sat_idx=1)
+        mm = SM.MagneticMomentumManagerModel(spacecraft_index=1)
         @test spacecraft_scope(mm) == BoundSpacecraft((1,))
         mm.held_torque_body = SVector(0.0, 0.0, 1e-3)
         mm.last_update_s = 4.0
