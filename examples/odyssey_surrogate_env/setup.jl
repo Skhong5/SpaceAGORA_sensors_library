@@ -8,8 +8,10 @@ Pkg.instantiate()
 # EDG is a separately installed provider even for the frozen-atmosphere example.
 # Keep its environment outside both source checkouts; persist only the selected
 # dependency in this example's already explicit environment. PRESERVE_TIERED keeps
-# every resolved version when it can and otherwise moves indirect packages first:
-# the provider's NLsolve 4 can need an older NonlinearSolve than a fresh resolve picks.
+# every resolved version when it can and otherwise moves indirect packages first.
+# The pinned provider accepts NLsolve 4 and 5, but a provider checkout older than
+# SpaceAGORAEDG PR 3, given through SPACEAGORA_EDG_PATH, accepts only NLsolve 4,
+# which needs an older NonlinearSolve than a fresh resolve picks.
 include(joinpath(@__DIR__, "..", "..", "scripts", "optional_packages.jl"))
 provider = get(ENV, "SPACEAGORA_EDG_PATH", "")
 if isempty(provider)
