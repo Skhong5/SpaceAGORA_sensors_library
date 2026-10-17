@@ -5,6 +5,7 @@ module CallbackServices
 # explicit operations, rather than discovering an engine module at runtime.
 # Solver policies, frame conventions and mutation rules remain engine-owned.
 
+function _effector_force_ii end
 function _initialize_save_cache_buffers! end
 function _inside_atmosphere_at_state end
 function _is_gravity_backbone_state end

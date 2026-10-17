@@ -6,7 +6,9 @@ Atmosphere, ephemeris and field sampling remain environmental responsibilities;
 applying those samples to spacecraft mass, attitude, geometry and hardware is a
 dynamic-effector responsibility.
 
-`force_torque_models.jl` composes the existing `DynamicEffectors` namespace.
+`force_torque_models.jl` composes the existing `DynamicEffectors` namespace;
+`force_torque_models/gravitational.jl` marks which of its effectors model
+gravity (`is_gravitational`, read by the accelerometer).
 `perturbations.jl` is an ordered include manifest for gravity, radiation,
 magnetics and continuous attitude-control effectors. The separate files are
 evaluated in the existing `PerturbationEffectors` module. In particular, the

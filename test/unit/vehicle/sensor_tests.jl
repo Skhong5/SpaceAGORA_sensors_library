@@ -46,10 +46,30 @@ SpaceAGORA.sensor_measure(::MassGauge, truth::SensorTruth, ctx, rng) = truth.mas
 
 const ω0 = SVector(0.01, -0.02, 0.005)
 
-function sensor_spacecraft(; sensors=(RateGyro(period_s=0.5), StarTracker(period_s=1.0), Magnetometer(period_s=0.5)), panel_q=nothing)
+# A controller that holds levels for the mounted actuators of spacecraft 1.
+mutable struct HoldLevels <: AbstractControlEffectorModel
+    levels::Vector{Float64}
+end
+SpaceAGORA.actuation_mode(::HoldLevels) = :mounted
+SpaceAGORA.actuator_levels(c::HoldLevels, i::Int) = i == 1 ? c.levels : nothing
+SpaceAGORA.calcControlEffect!(::HoldLevels, u, p, t::Float64, i::Int64) = nothing
+
+# Gravity through the deprecated hook only: a uniform field along -z.
+struct LegacyUniformGravity <: SpaceAGORA.AbstractForceTorqueModel end
+SpaceAGORA.is_gravitational(::LegacyUniformGravity) = true
+SpaceAGORA.calcForceTorque(::LegacyUniformGravity, x::AbstractVector, p, i::Int) =
+    (Float64(x.mass) * SVector(0.0, 0.0, -0.5), SVector(0.0, 0.0, 0.0))
+
+const EPOCH = SM.InitialTime(year=2024, month=3, day=20, hour=0, minute=0, second=0.0)
+sun_hat() = (e = SM.SimpleEphemeridesModel(); SVector{3, Float64}(SM.ephemerides_sun_ii(e, SM.Earth(), SM.ephemerides_epoch_seconds(e, EPOCH))))
+
+function sensor_spacecraft(; sensors=(RateGyro(period_s=0.5), StarTracker(period_s=1.0), Magnetometer(period_s=0.5)), panel_q=nothing,
+                            direction=SVector(1.0, 0.0, 0.0), spin=ω0)
     root = SM.Link(root=true, m=50.0, dims=MVector(1.0, 1.0, 1.0))
     r = SM.Earth().Rp_e + 500e3
-    ic = SM.CartesianInitialCondition(SVector(r, 0.0, 0.0), SVector(0.0, sqrt(SM.Earth().μ / r), 0.0); q=SVector(0.0, 0.0, 0.0, 1.0), ang_vel=ω0)
+    d = normalize(SVector{3, Float64}(direction))
+    along = normalize(cross(SVector(0.0, 0.0, 1.0), d))
+    ic = SM.CartesianInitialCondition(r * d, sqrt(SM.Earth().μ / r) * along; q=SVector(0.0, 0.0, 0.0, 1.0), ang_vel=spin)
     links = [root]
     mount = root
     if panel_q !== nothing
@@ -63,13 +83,14 @@ function sensor_spacecraft(; sensors=(RateGyro(period_s=0.5), StarTracker(period
     return sc
 end
 
-function sensor_args(sc; mission_time=10.0, navigation=(), settings=(;), solver=nothing, orientation_sim=true)
+function sensor_args(sc; mission_time=10.0, navigation=(), settings=(;), solver=nothing, orientation_sim=true, effectors=(), control=())
     base = make_example_config(planet=SM.Earth(), spacecraft=sc, mission_time=mission_time,
-        initial_time=SM.InitialTime(year=2024, month=3, day=20, hour=0, minute=0, second=0.0),
-        dynamic_effectors=(), ephemerides_model=SM.SimpleEphemeridesModel(), orientation_sim=orientation_sim,
+        initial_time=EPOCH,
+        dynamic_effectors=effectors, ephemerides_model=SM.SimpleEphemeridesModel(), orientation_sim=orientation_sim,
         keplerian=false, EI_km=100.0, verbose=false, results=false,
         solver_config=solver === nothing ? nothing : SM.SolverConfig(solver_mode=solver))
     extra = isempty(navigation) ? (;) : (; navigation_model=SM.NavigationModel(navigation_effectors=navigation, navigation_rates=fill(1.0, length(navigation))))
+    isempty(control) || (extra = merge(extra, (; control_model=SM.ControlModel(control_effectors=control, control_rates=fill(1.0, length(control))))))
     if !isempty(settings)
         st = base.simulation_settings
         fields = NamedTuple{fieldnames(typeof(st))}(map(n -> getfield(st, n), fieldnames(typeof(st))))
@@ -203,6 +224,66 @@ row_at(table, t) = findfirst(==(t), table.time)
         @test reason !== nothing && occursin("sensors", reason)
         @test !occursin("sensors", something(SpaceAGORA.SimulationEngine._gravity_backbone_reject_reason(
             sensor_args(sensor_spacecraft(sensors=()); orientation_sim=false)), ""))
+    end
+
+    @testset "GNSS, sun sensor and accelerometer records and noise" begin
+        @test_throws ArgumentError GNSSReceiver(position_noise_m=-1.0)
+        @test_throws ArgumentError SunSensor(field_of_view_rad=0.0)
+        @test_throws ArgumentError SunSensor(min_lit_fraction=1.5)
+        @test_throws ArgumentError Accelerometer(noise_mps2=Inf)
+        @test sensor_dimension(GNSSReceiver()) == 6 && sensor_requirements(SunSensor()).solar && sensor_needs_specific_force(Accelerometer())
+        @test !sensor_needs_specific_force(RateGyro()) && is_gravitational(SM.InverseSquaredJ2GravityModel()) && !is_gravitational(HoldLevels([0.0]))
+        ctx = actuator_context(SM.Link(root=true, m=1.0))
+        rng = Xoshiro(21)
+        truth = SensorTruth(SVector(7e6, 0.0, 0.0), SVector(0.0, 7.5e3, 0.0), SVector(0.0, 0.0, 0.0, 1.0), ω0, 50.0, 0.0,
+                            SVector(NaN, NaN, NaN), SVector(0.0, 0.0, 1.0), 1.0, SVector(0.01, 0.0, 0.0))
+        fixes = [sensor_measure(GNSSReceiver(position_noise_m=5.0, velocity_noise_mps=0.1), truth, ctx, rng) for _ in 1:4000]
+        @test std(getindex.(fixes, 2)) ≈ 5.0 rtol=0.1
+        @test std(getindex.(fixes, 6)) ≈ 0.1 rtol=0.1
+        @test sensor_measure(GNSSReceiver(), truth, ctx, rng) == SVector(7e6, 0.0, 0.0, 0.0, 7.5e3, 0.0)
+        sun = SunSensor(noise_rad=1e-3)
+        angles = [acos(clamp(dot(sensor_measure(sun, truth, ctx, rng), SVector(0.0, 0.0, 1.0)), -1.0, 1.0)) for _ in 1:4000]
+        @test sqrt(mean(angles .^ 2)) ≈ sqrt(2) * 1e-3 rtol=0.1                          # two axes turn the direction
+        side = SensorTruth(truth.pos_ii, truth.vel_ii, truth.q_ib, ω0, 50.0, 0.0, truth.magnetic_field_body, SVector(1.0, 0.0, 0.0), 1.0, truth.specific_force_body)
+        @test all(isnan, sensor_measure(SunSensor(field_of_view_rad=π / 4), side, ctx, rng))    # outside the field of view
+        shadow = SensorTruth(truth.pos_ii, truth.vel_ii, truth.q_ib, ω0, 50.0, 0.0, truth.magnetic_field_body, SVector(0.0, 0.0, 1.0), 0.2, truth.specific_force_body)
+        @test all(isnan, sensor_measure(SunSensor(), shadow, ctx, rng))                  # eclipsed
+        acc = Accelerometer(noise_mps2=1e-4, bias_mps2=SVector(0.0, 2e-4, 0.0))
+        reads = [sensor_measure(acc, truth, ctx, rng) for _ in 1:4000]
+        @test mean(getindex.(reads, 1)) ≈ 0.01 atol=2e-5
+        @test mean(getindex.(reads, 2)) ≈ 2e-4 atol=2e-5
+        @test std(getindex.(reads, 3)) ≈ 1e-4 rtol=0.1
+        @test SensorTruth(truth.pos_ii, truth.vel_ii, truth.q_ib, ω0, 50.0, 0.0, truth.magnetic_field_body).sun_lit_fraction === NaN
+    end
+
+    @testset "noise-free GNSS and sun sensor measure the truth; the sun sensor sees the eclipse" begin
+        gnss, sun = GNSSReceiver(period_s=1.0), SunSensor(period_s=1.0, field_of_view_rad=π)
+        sc = sensor_spacecraft(sensors=(gnss, sun), direction=sun_hat())
+        res = sensor_run(sc; mission_time=4.0)
+        x = res.solution.u[end].sc[1]
+        @test sensor_measurement(gnss) == SVector(x.pos..., x.vel...)
+        e = SM.SimpleEphemeridesModel()
+        s_ii = SVector{3, Float64}(SM.ephemerides_sun_ii(e, SM.Earth(), SM.ephemerides_epoch_seconds(e, EPOCH) + 4.0)) * SM.mean_solar_distance_m(SM.Earth())
+        expected = SM.rot(SVector{4}(x.q)) * normalize(s_ii - SVector{3}(x.pos))
+        @test sensor_measurement(sun) ≈ expected atol=1e-12
+        night = SunSensor(period_s=1.0, field_of_view_rad=π)
+        sensor_run(sensor_spacecraft(sensors=(night,), direction=-sun_hat()); mission_time=2.0)
+        @test all(isnan, sensor_measurement(night)) && sensor_measurement_time(night) == 2.0   # in Earth's shadow
+    end
+
+    @testset "an accelerometer reads zero in free fall and the thrust under thrust" begin
+        free = Accelerometer(period_s=1.0)
+        sensor_run(sensor_spacecraft(sensors=(free,)); mission_time=5.0, effectors=(SM.InverseSquaredJ2GravityModel(),))
+        @test norm(sensor_measurement(free)) < 1e-7                                      # gravity is not felt
+        pushed = Accelerometer(period_s=1.0)
+        sc = sensor_spacecraft(sensors=(pushed,))
+        add_actuator!(sc, sc.root, Thruster(max_thrust=2.0, direction=MVector(1.0, 0.0, 0.0)))
+        sensor_run(sc; mission_time=5.0, effectors=(SM.InverseSquaredGravityModel(),), control=(HoldLevels([1.0]),))
+        @test sensor_measurement(pushed) ≈ SVector(1.0 / 50.0, 0.0, 0.0) atol=1e-7           # 1 N on 50 kg, along body x
+        legacy = Accelerometer(period_s=1.0)                                             # gravity by the deprecated hook
+        @test_logs (:warn, r"LegacyUniformGravity implements calcForceTorque") match_mode=:any sensor_run(
+            sensor_spacecraft(sensors=(legacy,)); mission_time=5.0, effectors=(SM.InverseSquaredGravityModel(), LegacyUniformGravity()))
+        @test norm(sensor_measurement(legacy)) < 1e-7
     end
 
     @testset "sensors are opt-in and do not change the dynamics" begin

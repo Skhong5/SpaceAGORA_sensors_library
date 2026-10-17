@@ -10,8 +10,43 @@ function _sensor_field_source(effectors)
     return index === nothing ? MagneticTorqueRodModel() : effectors[index]
 end
 
-# The truth a sensor of spacecraft `i` measures at the accepted state.
-function _sensor_truth(integrator, i::Int, wants_field::Bool)
+# The direction to the Sun in the body frame and the lit fraction of its disk
+# at inertial position `pos` and attitude `q`, as the power budget computes
+# them; NaN when the run's ephemerides cannot place the Sun.
+function _sensor_sun(p, pos::SVector{3, Float64}, q::SVector{4, Float64}, t::Float64)
+    planet = p.args.environment_model.planet
+    sun_dir = _ephemerides_sun_ii(p.args.environment_model.ephemerides_model, planet, p.shared_buffers.et_start[] + t)
+    sun_dir === nothing && return (SVector{3, Float64}(NaN, NaN, NaN), NaN)
+    sun_ii = SVector{3, Float64}(sun_dir) * mean_solar_distance_m(planet)
+    lit = Float64(eclipse_area_calc(pos, sun_ii, Float64(planet.Rp_e)))
+    to_sun = sun_ii - pos
+    return (rot(q) * (to_sun / norm(to_sun)), lit)
+end
+
+# The specific force on spacecraft `i` in the body frame: its acceleration at
+# the accepted step (the solver's derivative, no new evaluation) less the
+# acceleration of the run's gravitational effectors, each evaluated by the
+# route the dynamics take (a model with only the deprecated calcForceTorque
+# included).
+function _sensor_specific_force(integrator, i::Int, q::SVector{4, Float64})
+    p = integrator.p
+    t = Float64(integrator.t)
+    du = DiffEqBase.get_du(integrator)
+    a = SVector{3, Float64}(du.sc[i].vel[1], du.sc[i].vel[2], du.sc[i].vel[3])
+    sc_view = integrator.u.sc[i]
+    spacecraft = p.args.dynamics_model.spacecraft[i]
+    x = CallbackServices.build_state_sample(sc_view, spacecraft, hasproperty(sc_view, :q), i)
+    gravity = SVector{3, Float64}(0.0, 0.0, 0.0)
+    for e in p.args.dynamics_model.dynamic_effectors
+        is_gravitational(e) && (gravity += CallbackServices._effector_force_ii(e, sc_view, x, p, i, t))
+    end
+    return rot(q) * (a - gravity / Float64(sc_view.mass))
+end
+
+# The truth sensor `s` of spacecraft `i` measures at the accepted state.
+function _sensor_truth(integrator, i::Int, s)
+    req = sensor_requirements(s)
+    wants_field = req.magnetic_field
     p = integrator.p
     sc_view = integrator.u.sc[i]
     pos = SVector{3, Float64}(sc_view.pos[1], sc_view.pos[2], sc_view.pos[3])
@@ -19,17 +54,22 @@ function _sensor_truth(integrator, i::Int, wants_field::Bool)
     q = hasproperty(sc_view, :q) ? SVector{4, Float64}(sc_view.q[1], sc_view.q[2], sc_view.q[3], sc_view.q[4]) :
         SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
     ω = hasproperty(sc_view, :ω) ? SVector{3, Float64}(sc_view.ω[1], sc_view.ω[2], sc_view.ω[3]) : SVector{3, Float64}(0.0, 0.0, 0.0)
-    field = SVector{3, Float64}(NaN, NaN, NaN)
-    if wants_field
-        # The field model reads the time from the shared buffer the right-hand
-        # side keeps: set it to the sample's time, then restore it.
+    nan3 = SVector{3, Float64}(NaN, NaN, NaN)
+    field, sun, lit, force = nan3, nan3, NaN, nan3
+    needs_force = sensor_needs_specific_force(s)
+    if wants_field || needs_force
+        # The field model and the environment sampling read the time from the
+        # shared buffer the right-hand side keeps: set it to the sample's
+        # time, then restore it.
         clock = p.shared_buffers.current_time
         previous = clock[]
         clock[] = Float64(integrator.t)
-        field = rod_field_body(_sensor_field_source(p.args.dynamics_model.dynamic_effectors), pos, q, p)
+        wants_field && (field = rod_field_body(_sensor_field_source(p.args.dynamics_model.dynamic_effectors), pos, q, p))
+        needs_force && (force = _sensor_specific_force(integrator, i, q))
         clock[] = previous
     end
-    return SensorTruth(pos, vel, q, ω, Float64(sc_view.mass), Float64(integrator.t), field)
+    req.solar && ((sun, lit) = _sensor_sun(p, pos, q, Float64(integrator.t)))
+    return SensorTruth(pos, vel, q, ω, Float64(sc_view.mass), Float64(integrator.t), field, sun, lit, force)
 end
 
 function _sample_sensors!(integrator, members::Vector{Tuple{Int, Int}}; first_sample::Bool=false)
@@ -37,7 +77,7 @@ function _sample_sensors!(integrator, members::Vector{Tuple{Int, Int}}; first_sa
     for (i, k) in members
         entry = mounted_sensors(spacecraft[i])[k]
         s = entry.sensor
-        truth = _sensor_truth(integrator, i, sensor_requirements(s).magnetic_field)
+        truth = _sensor_truth(integrator, i, s)
         ctx = actuator_context(entry.link)
         # The run's first sample: the sensor's own state resets first.
         first_sample && initialize_sensor!(s, truth, ctx, s.rng)

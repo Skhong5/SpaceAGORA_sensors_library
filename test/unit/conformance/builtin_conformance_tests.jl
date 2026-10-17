@@ -106,7 +106,7 @@ end
     for entry in instances
         if entry.runs
             check = entry.kind === :guidance_model ? check_guidance_model : check_control_model
-            test_report(check(entry.model))
+            test_report(entry.fixture === nothing ? check(entry.model) : check(entry.model; fixture=entry.fixture))
         else
             test_report(C._static_gnc_report(entry.model, entry.kind))
         end

@@ -2751,6 +2751,9 @@ function _validate_articulated_spacecraft!(args, solver_mode::Symbol)
         if sc.root.rw_assembly.n_wheels > 0
             throw(ArgumentError("Spacecraft $i is articulated and carries reaction wheels; reaction wheels on articulated spacecraft are not supported."))
         end
+        if !isempty(sc.root.rw_assembly.cmgs)
+            throw(ArgumentError("Spacecraft $i is articulated and carries control moment gyros; control moment gyros on articulated spacecraft are not supported."))
+        end
         if _robot_arm_coupling(args, i, 0.0) !== nothing
             throw(ArgumentError("Spacecraft $i is articulated and also has a robot-arm effector; the two multibody paths cannot be combined."))
         end
