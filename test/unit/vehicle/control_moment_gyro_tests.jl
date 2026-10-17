@@ -123,9 +123,21 @@ gyro(; kw...) = ControlMomentGyro(; rotor_momentum_nms=2.0, gimbal_axis=SVector(
         add_actuator!(sc, root, gyro(gimbal_angle_rad=0.1, max_gimbal_angle_rad=0.3))
         res = cmg_run(sc, [0.02]; mission_time=20.0)                                     # reaches the stop at 10 s
         x0, x = res.solution.u[1].sc[1], res.solution.u[end].sc[1]
-        @test abs(x.cmg_angles[1] - 0.3) < 1e-3 && x.cmg_angles[1] >= 0.3 - 1e-9
+        @test x.cmg_angles[1] == 0.3                                                    # on the stop, not past it
         @test inertial_momentum(sc, x) ≈ inertial_momentum(sc, x0) rtol=1e-8
         @test res.table.sc1_actuator_level_1[1] == 0.02 && res.table.sc1_actuator_level_1[end] == 0.0
+    end
+
+    @testset "the lower stop holds, and a command back into the range leaves a stop" begin
+        sc, root = far_spacecraft(ω0=SVector(0.001, 0.0, 0.0))
+        add_actuator!(sc, root, gyro(gimbal_angle_rad=0.1, min_gimbal_angle_rad=-0.05))
+        res = cmg_run(sc, [-0.02]; mission_time=20.0)                                    # reaches the stop at 7.5 s
+        x0, x = res.solution.u[1].sc[1], res.solution.u[end].sc[1]
+        @test x.cmg_angles[1] == -0.05 && all(a -> a >= -0.05, (u.sc[1].cmg_angles[1] for u in res.solution.u))
+        @test inertial_momentum(sc, x) ≈ inertial_momentum(sc, x0) rtol=1e-8
+        back, broot = far_spacecraft()
+        add_actuator!(back, broot, gyro(gimbal_angle_rad=0.3, max_gimbal_angle_rad=0.3))   # starts on its stop
+        @test cmg_run(back, [-0.02]; mission_time=5.0).solution.u[end].sc[1].cmg_angles[1] ≈ 0.3 - 0.02 * 5.0 rtol=1e-9
     end
 
     @testset "a held gimbal still couples through the gyroscopic term" begin

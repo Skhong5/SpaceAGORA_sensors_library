@@ -269,6 +269,7 @@ function get_callbacks(
         # sheds by the load the switched faults leave.
         callbacks = _append_callbacks(callbacks, get_fault_callbacks(num_sats, args))
         callbacks = _append_callbacks(callbacks, get_power_callbacks(num_sats, args))
+        callbacks = _append_callbacks(callbacks, get_cmg_callbacks(num_sats, args))
         for i in eachindex(guidance_callbacks)
             if !_guidance_precedes_control(guidance_models[i])
                 callbacks = _append_callback(callbacks, guidance_callbacks[i])

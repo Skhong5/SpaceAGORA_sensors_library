@@ -15,8 +15,10 @@ constant momentum `rotor_momentum_nms` (N m s) whose spin axis turns about
 `h = rotor_momentum_nms (cos δ s + sin δ (g × s))`, with `s = spin_axis`
 (perpendicular to `g = gimbal_axis`) at δ = 0. Its level is the gimbal rate
 δ̇ in rad/s, within `±max_gimbal_rate_rad_s`. The gimbal stops at
-`min_gimbal_angle_rad` and `max_gimbal_angle_rad`: there it does not move
-further, whatever the command (`cmg_angle_saturate`).
+`min_gimbal_angle_rad` and `max_gimbal_angle_rad`: an event puts the angle
+exactly on a stop when the integration reaches it, and there it does not move
+further, whatever the command (`cmg_angle_saturate`); a command back into the
+range moves it off.
 
 The gimbal angle is integrated with the vehicle's state (`cmg_angles`,
 present only when a CMG is mounted), starting from `gimbal_angle_rad`. The
