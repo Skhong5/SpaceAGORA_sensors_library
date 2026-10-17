@@ -92,6 +92,30 @@ engine(; location=(0.0, 0.0, -1.0)) = Thruster(max_thrust=2.0, direction=MVector
         @test res.table.sc1_actuator_level_2[end] ≈ θ                                                        # the gimbal's column is its angle
     end
 
+    @testset "the visualization saves a gimballed thruster's exhaust direction" begin
+        θ = 0.2
+        sc, root = far_spacecraft()
+        jet = add_actuator!(sc, root, engine(location=(0.0, 0.0, 0.0)))
+        add_actuator!(sc, root, ThrusterGimbal(jet; axis=SVector(0.0, 1.0, 0.0)))
+        base = make_example_config(planet=SM.Earth(), spacecraft=sc, mission_time=3.0,
+            initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+            dynamic_effectors=(), ephemerides_model=SM.SimpleEphemeridesModel(), orientation_sim=true,
+            keplerian=false, EI_km=1.0, verbose=false, results=false)
+        settings = SM.SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false,
+            save_visualization_scene=true)
+        args = SM.SimConfig._with_configuration(base; simulation_settings=settings,
+            control_model=SM.ControlModel(control_effectors=(HoldLevels([1.0, θ]),), control_rates=[1.0]))
+        @test :thruster_direction in [f.name for f in SM.SimulationCallbacks.visualization_save_fields(args)]
+        table = run_simulation(args; isolate_state=false, return_results=true).table
+        exhaust(t) = [table[t, "sc1_thruster_direction_$(c)"] for c in 1:3]
+        @test exhaust(1) ≈ [-1.0, 0.0, 0.0]                                                                  # nominal before the first tick
+        @test exhaust(size(table, 1)) ≈ -collect(thrust_direction(jet)) && abs(exhaust(size(table, 1))[3]) > 0.1
+        plain, proot = far_spacecraft()
+        add_actuator!(plain, proot, engine())
+        @test !SM.SimulationCallbacks._thruster_direction_field_enabled(SM.SimConfig._with_configuration(args;
+            dynamics_model=SM.DynamicsModel([plain], ())))                                                    # no gimbal, no field
+    end
+
     @testset "a failed gimbal holds its angle" begin
         sc, root = far_spacecraft()
         jet = add_actuator!(sc, root, engine())

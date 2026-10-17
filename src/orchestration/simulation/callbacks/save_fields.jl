@@ -233,6 +233,27 @@ end
     return poses
 end
 
+# The exhaust direction of every thruster, in its link's frame, at save time,
+# for the viewer's plumes and cones: a gimballed thruster's turned direction.
+# Thrusters in scene order (links in order, each link's thrusters in order),
+# three floats each: `sc{i}_thruster_direction_{1..3n}`. Gimbals move at control
+# ticks, between steps, so the snapshot is exact.
+@inline function _save_thruster_directions(num_sats::Int, u, t, integrator)
+    spacecraft = integrator.p.args.dynamics_model.spacecraft
+    out = Vector{Vector{Float64}}(undef, num_sats)
+    @inbounds for i in 1:num_sats
+        v = Float64[]
+        for link in spacecraft[i].links, thruster in link.thrusters
+            d = SVector{3, Float64}(thrust_direction(thruster))
+            n = norm(d)
+            e = n > 0.0 ? -d / n : d
+            push!(v, e[1], e[2], e[3])
+        end
+        out[i] = v
+    end
+    return out
+end
+
 # Atmospheric density the RHS last evaluated for each satellite (kg/m^3), for
 # the viewer's pass colouring; zero outside the atmosphere or without one.
 @inline function _save_density(num_sats::Int, u, t, integrator)
@@ -624,6 +645,11 @@ end
     return !(args.environment_model.density_model isa NoAtmosphereModel)
 end
 
+@inline function _thruster_direction_field_enabled(args::SimulationConfiguration)::Bool
+    args.simulation_settings.save_visualization_scene || return false
+    return any(model -> any(link -> !isempty(link.gimbals), model.links), args.dynamics_model.spacecraft)
+end
+
 @inline function _link_pose_field_enabled(args::SimulationConfiguration)::Bool
     args.simulation_settings.save_visualization_scene || return false
     return any(model -> !isempty(link_pose_link_indices(model)), args.dynamics_model.spacecraft)
@@ -696,8 +722,9 @@ end
     visualization_save_fields(args) -> Vector{SaveField}
 
 The extra fields the viewer wants when `save_visualization_scene` is on:
-`link_pose` for articulated spacecraft and `density` when the run has an
-atmosphere. Empty when the flag is off. The engine appends any of these that
+`link_pose` for articulated spacecraft, `thruster_direction` when a spacecraft
+carries a thruster gimbal, and `density` when the run has an atmosphere. Empty
+when the flag is off. The engine appends any of these that
 an explicit `save_fields` list lacks.
 """
 function visualization_save_fields(args::SimulationConfiguration)
@@ -705,6 +732,7 @@ function visualization_save_fields(args::SimulationConfiguration)
     _thruster_level_field_enabled(args) && push!(fields, thruster_level_save_field(args))
     _sun_direction_field_enabled(args) && push!(fields, sun_direction_save_field(args))
     _link_pose_field_enabled(args) && push!(fields, link_pose_save_field(args))
+    _thruster_direction_field_enabled(args) && push!(fields, thruster_direction_save_field(args))
     _arm_pose_field_enabled(args) && push!(fields, arm_pose_save_field(args))
     _density_field_enabled(args) && push!(fields, density_save_field(args))
     return fields
@@ -720,6 +748,20 @@ quaternion.
 function arm_pose_save_field(args::SimulationConfiguration)
     num_sats = length(args.dynamics_model.spacecraft)
     return SaveField(:arm_pose, (u, t, integrator) -> _save_arm_poses(num_sats, u, t, integrator); per_satellite=true, column_prefix="arm_pose")
+end
+
+"""
+    thruster_direction_save_field(args) -> SaveField
+
+The `thruster_direction` field: per spacecraft, every thruster's exhaust
+direction in its link's frame (three floats per thruster, in scene order),
+which a thruster gimbal turns during the run. The visualization adds it when a
+spacecraft carries a gimbal.
+"""
+function thruster_direction_save_field(args::SimulationConfiguration)
+    num_sats = length(args.dynamics_model.spacecraft)
+    return SaveField(:thruster_direction, (u, t, integrator) -> _save_thruster_directions(num_sats, u, t, integrator);
+        per_satellite=true, column_prefix="thruster_direction")
 end
 
 """
