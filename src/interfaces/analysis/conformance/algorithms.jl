@@ -52,8 +52,10 @@ proposal. The checks, in report order:
 
 A pass certifies interface behaviour, not the algorithm's method.
 """
-function check_algorithm(algorithm, requests; trusted::NamedTuple=NamedTuple(), run_context::NamedTuple=(seed=1,),
-        simulation=nothing)
+check_algorithm(algorithm, requests; trusted::NamedTuple=NamedTuple(), run_context::NamedTuple=(seed=1,),
+    simulation=nothing) = _preserving_global_rng(() -> _check_algorithm(algorithm, requests, trusted, run_context, simulation))
+
+function _check_algorithm(algorithm, requests, trusted, run_context, simulation)
     since = FIRST_RELEASE
     requests = collect(Any, requests)
     target = string(nameof(typeof(algorithm)))
@@ -114,8 +116,11 @@ checks, in report order:
 - `driver_round_trip`: as for [`check_algorithm`](@ref), with `family` as the bound
   family, so its rejection policy is the one exercised.
 """
-function check_algorithm_family(family::_GA.AbstractAlgorithmFamily, algorithm, requests; link,
-        trusted::NamedTuple=NamedTuple(), run_context::NamedTuple=(seed=1,))
+check_algorithm_family(family::_GA.AbstractAlgorithmFamily, algorithm, requests; link,
+    trusted::NamedTuple=NamedTuple(), run_context::NamedTuple=(seed=1,)) =
+    _preserving_global_rng(() -> _check_algorithm_family(family, algorithm, requests, link, trusted, run_context))
+
+function _check_algorithm_family(family, algorithm, requests, link, trusted, run_context)
     since = FIRST_RELEASE
     requests = collect(Any, requests)
     declared = try
@@ -185,10 +190,12 @@ end
 # proposal becomes the active product of later revision requests.
 function _walk(family, algorithm, requests, trusted, run_context)
     entries = NamedTuple[]
+    result_type = _result_type(family)
+    result_type isa Type || return (entries=entries, failure=result_type, rng=nothing, state=nothing)
     state = try
         _initialize(algorithm, run_context)
     catch err
-        return (entries=entries, error=err, rng=nothing, state=nothing)
+        return (entries=entries, failure="initialize_algorithm threw: " * _summary(err), rng=nothing, state=nothing)
     end
     rng = Random.MersenneTwister(_stream_words(run_context))
     active = nothing
@@ -215,7 +222,7 @@ function _walk(family, algorithm, requests, trusted, run_context)
         untouched = rand(copy(rng), UInt64) == rand(copy(witness), UInt64)
         proposal.skipped && continue
         validation = nothing
-        if proposal.error === nothing && proposal.result isa _GA.algorithm_result_type(family)
+        if proposal.error === nothing && proposal.result isa result_type
             validation = try
                 _GA.validate_proposal(family, deepcopy(request), proposal.result, trusted)
             catch err
@@ -227,10 +234,23 @@ function _walk(family, algorithm, requests, trusted, run_context)
             result=proposal.result, error=proposal.error, untouched=untouched, revision=proposal.revision,
             validation=validation))
     end
-    return (entries=entries, error=nothing, rng=rng, state=state)
+    return (entries=entries, failure=nothing, rng=rng, state=state)
 end
 
-_walk_failure(walk) = walk.error === nothing ? nothing : "initialize_algorithm threw: " * _summary(walk.error)
+_walk_failure(walk) = walk.failure
+
+# The family's result type, or why there is none: `algorithm_result_type` must return
+# a subtype of `AbstractAlgorithmResult`, and every check that compares proposals
+# with it stops when it does not.
+function _result_type(family)
+    T = try
+        _GA.algorithm_result_type(family)
+    catch err
+        return "algorithm_result_type threw: " * _summary(err)
+    end
+    T isa Type && T <: _GA.AbstractAlgorithmResult && return T
+    return "algorithm_result_type returns $(repr(T)), not a subtype of AbstractAlgorithmResult"
+end
 
 # ---- The algorithm checks ----------------------------------------------------
 
@@ -257,7 +277,7 @@ end
 function _result_contract_check(family, walk, since)
     problem = _walk_failure(walk)
     problem === nothing || return _check(:result_contract, since, false, problem)
-    expected = _GA.algorithm_result_type(family)
+    expected = _result_type(family)
     problems = String[]
     for entry in walk.entries
         entry.accepted || continue
@@ -368,9 +388,18 @@ function _refusal_check(family, algorithm, walk, run_context, since)
             continue
         end
         status = hasproperty(result, :status) ? result.status : nothing
-        status === :unsupported || push!(problems, "request $(entry.index): the capability check refuses this " *
-            "revision ($(entry.capabilities.reason)), yet propose_revision! returned $(repr(status)); return " *
-            ":unsupported rather than a product, never a full proposal in its place")
+        product = try
+            _GA.proposed_product(result)
+        catch err
+            push!(problems, "request $(entry.index): proposed_product threw on the refused revision's result: " *
+                _summary(err))
+            continue
+        end
+        status === :unsupported && product === nothing && continue
+        returned = repr(status) * (product === nothing ? "" : " with a product")
+        push!(problems, "request $(entry.index): the capability check refuses this revision " *
+            "($(entry.capabilities.reason)), yet propose_revision! returned $(returned); return :unsupported with " *
+            "no product, never a full proposal in its place")
     end
     return _check(:refuses_explicitly, since, isempty(problems), join(problems, "\n"))
 end
@@ -413,7 +442,8 @@ function _verdict(family, algorithm, request, state, rng, active, trusted)
         result = _GA.is_revision_request(family, request) ?
             _GA.propose_revision!(state, algorithm, deepcopy(request), deepcopy(active), rng) :
             _GA.propose!(state, algorithm, deepcopy(request), rng)
-        result isa _GA.algorithm_result_type(family) || return (:driver_failure, :invalid_result_type)
+        T = _result_type(family)
+        T isa Type && result isa T || return (:driver_failure, :invalid_result_type)
         product = deepcopy(_GA.proposed_product(result))
         validation = _GA.validate_proposal(family, deepcopy(request), result, trusted)
         validation.accepted || return (:refused, validation)
@@ -536,9 +566,8 @@ function _obligations_check(family, algorithm, requests, trusted, link, run_cont
     policy = _GA.on_rejection(family)
     policy in (:fail, :keep_previous, :install_fallback) ||
         push!(problems, "on_rejection returns $(repr(policy)), not :fail, :keep_previous or :install_fallback")
-    result_type = _GA.algorithm_result_type(family)
-    result_type isa Type && result_type <: _GA.AbstractAlgorithmResult ||
-        push!(problems, "algorithm_result_type returns $(repr(result_type)), not a subtype of AbstractAlgorithmResult")
+    result_type = _result_type(family)
+    result_type isa Type || push!(problems, result_type)
     version = _GA.family_contract_version(family)
     version === nothing || version isa VersionNumber ||
         push!(problems, "family_contract_version returns $(repr(version)), not a VersionNumber or nothing")
@@ -554,30 +583,54 @@ function _obligations_check(family, algorithm, requests, trusted, link, run_cont
             break
         end
     end
+    # Without a result type no proposal can be checked against the family.
+    result_type isa Type || return _check(:family_obligations, since, false, join(unique(problems), "\n"))
     walk = _walk(family, algorithm, requests, trusted, run_context)
-    walk.error === nothing || push!(problems, _walk_failure(walk))
+    walk.failure === nothing || push!(problems, walk.failure)
     candidates = [entry for entry in walk.entries if entry.accepted && entry.error === nothing &&
         entry.result isa result_type]
     isempty(candidates) && push!(problems, "no request gave a proposal of the family's result type to validate")
+    accepted = false
     for entry in candidates
         k, request, result = entry.index, entry.request, entry.result
+        # The hooks a validated product meets, whether or not this one is accepted.
+        offered = try
+            _GA.proposed_product(result)
+        catch err
+            push!(problems, "request $k: proposed_product threw: " * _summary(err))
+            continue
+        end
+        if offered !== nothing
+            P, R = typeof(offered), typeof(request)
+            hasmethod(_GA.install!, Tuple{typeof(link), typeof(family), P, R, Float64}) || push!(problems,
+                "install! has no method for a $(typeof(link)) link, this family, a $(P) product and a $(R)")
+            hasmethod(_GA.is_current, Tuple{typeof(family), R, P, Float64}) ||
+                push!(problems, "is_current has no method for this family, a $(R) and a $(P) product")
+        end
         request_copy, result_copy, trusted_copy = deepcopy(request), deepcopy(result), deepcopy(trusted)
+        # A validation that draws from the global generator is reported, and the
+        # generator is restored, whether or not the validation returns.
         before = _global_draw_state()
+        drew = Ref(false)
         validation = try
-            _GA.validate_proposal(family, request_copy, result_copy, trusted_copy)
+            _preserving_global_rng() do
+                checked = _GA.validate_proposal(family, request_copy, result_copy, trusted_copy)
+                drew[] = !_global_stream_unchanged(before)
+                checked
+            end
         catch err
             push!(problems, "request $k: validate_proposal threw: " * _summary(err))
             continue
         end
-        _global_stream_unchanged(before) ||
-            push!(problems, "request $k: validate_proposal drew from the global random number generator")
+        drew[] && push!(problems, "request $k: validate_proposal drew from the global random number generator")
         _same_state(request_copy, request) && _same_state(result_copy, result) && _same_state(trusted_copy, trusted) ||
             push!(problems, "request $k: validate_proposal changed the request, the result or the trusted queries")
         validation isa _GA.AbstractValidationResult ||
             (push!(problems, "request $k: validate_proposal returned a $(typeof(validation)), not an " *
                 "AbstractValidationResult"); continue)
         validation.accepted || continue
-        product = _GA.proposed_product(result)
+        accepted = true
+        product = offered
         target = deepcopy(link)
         diagnostics = hasproperty(result, :diagnostics) ? result.diagnostics : NamedTuple()
         arguments = (deepcopy(product), deepcopy(request), deepcopy(validation), deepcopy(diagnostics))
@@ -599,5 +652,7 @@ function _obligations_check(family, algorithm, requests, trusted, link, run_cont
         end
         current isa Bool || push!(problems, "request $k: is_current returned a $(typeof(current)), not a Bool")
     end
+    isempty(candidates) || accepted || push!(problems, "validate_proposal accepted none of the proposals, so " *
+        "install! and is_current never ran; include a request the family accepts")
     return _check(:family_obligations, since, isempty(problems), join(unique(problems), "\n"))
 end
