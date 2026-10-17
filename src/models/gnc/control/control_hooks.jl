@@ -33,7 +33,7 @@ module ControlHooks
 
     const config = Structure
 
-    export control_wrench, control_propellant_rate, control_wheel_torque
+    export update_control!, control_wrench, control_propellant_rate, control_wheel_torque
     export calcControlForceTorque, calcControlEffect!, calcControlMassFlowRate, calcReactionWheelTorque
     export control_thruster_levels, touchdown_spec, refresh_burn!, mounted_burn_tick!, burn_edge
     export AerobrakingEnergyDepletionControlModel, SolarPanelAngleOfAttackControlModel
@@ -58,7 +58,7 @@ module ControlHooks
     shorter vector, and the remaining thrusters are idle.
 
     The engine reads this at save time, so an effector must compute the levels
-    in `calcControlEffect!` and keep them in its own actuator state rather than
+    in `update_control!` and keep them in its own actuator state rather than
     recomputing them here.
     """
     control_thruster_levels(effector, spacecraft_index::Int) = nothing
@@ -89,7 +89,7 @@ module ControlHooks
     the default `actuation_mode`. Every control effector whose actuation is not
     `:mounted` needs a method for its own type. There is no fallback:
     `run_simulation` checks for the method before integration starts, as it does
-    for `calcControlEffect!`.
+    for `update_control!`.
 
     Return a tuple of two 3-vectors:
 
@@ -111,7 +111,7 @@ module ControlHooks
     - `p`: the run's parameters.
     - `t`: elapsed time since the run's start epoch, in seconds (`Float64`).
 
-    Return the command held since the last `calcControlEffect!` tick rather than
+    Return the command held since the last `update_control!` tick rather than
     recomputing the control law here. A method typed `x::StateSample`, or with
     `x` untyped, is the one the dynamics call. This hook replaces the deprecated
     `calcControlForceTorque`.
@@ -128,7 +128,7 @@ module ControlHooks
     nonfinite rate is ignored.
 
     The dynamics call it at every right-hand-side evaluation in `:ideal`
-    actuation, so return the rate held since the last `calcControlEffect!` tick.
+    actuation, so return the rate held since the last `update_control!` tick.
     An effector that uses no propellant needs no method: the dynamics then take
     the rate as zero. The arguments are those of [`control_wrench`](@ref); the
     spacecraft's index in the run is `x.spacecraft_index`. The
@@ -152,7 +152,7 @@ module ControlHooks
     it to the torque of the mounted actuators.
 
     The dynamics call it at every right-hand-side evaluation, so return the
-    torque held since the last `calcControlEffect!` tick. The arguments are
+    torque held since the last `update_control!` tick. The arguments are
     those of [`control_wrench`](@ref); the spacecraft's index in the run is
     `x.spacecraft_index`. This hook replaces the deprecated
     `calcReactionWheelTorque`.
@@ -182,7 +182,7 @@ module ControlHooks
     function calcControlForceTorque end
 
     """
-        calcControlEffect!(model, u, p, t, spacecraft_index) -> nothing
+        update_control!(model, u, p, t, spacecraft_index) -> nothing
 
     The control tick, which every effector in a `ControlModel` implements for its
     own type. The effector computes its command (a thrust, a torque, actuator
@@ -219,10 +219,26 @@ module ControlHooks
     schedule that spacecraft's burns.
 
     Before integration starts, `run_simulation` checks that every control
-    effector has a method of this function and, unless its actuation is
-    `:mounted`, of `control_wrench` (or of the deprecated
-    `calcControlForceTorque`), and stops with an `ArgumentError` naming the
-    effector otherwise.
+    effector has a method of this function (or of the deprecated
+    `calcControlEffect!`) and, unless its actuation is `:mounted`, of
+    `control_wrench` (or of the deprecated `calcControlForceTorque`), and stops
+    with an `ArgumentError` naming the effector otherwise. This hook replaces the
+    deprecated `calcControlEffect!`.
+    """
+    function update_control! end
+
+    """
+        calcControlEffect!(model, u, p, t, spacecraft_index) -> nothing
+
+    Deprecated, use [`update_control!`](@ref); this name will be removed in
+    SpaceAGORA 0.5.0. Only the name changes: the arguments, their order and when
+    the engine calls the hook are those of `update_control!`.
+
+    Until then the engine calls an effector's own method of this hook when its
+    type has no `update_control!`, and `run_simulation` warns once per type
+    before integration starts. A direct call on an effector that implements
+    `update_control!` runs it, and warns once per type that the name is
+    deprecated (under `julia --depwarn=error` it throws instead).
     """
     function calcControlEffect! end
 

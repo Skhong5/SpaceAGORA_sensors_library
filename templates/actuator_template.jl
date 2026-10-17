@@ -43,7 +43,7 @@ SpaceAGORA.actuation_mode(::ExampleNozzleController) = :mounted
 SpaceAGORA.actuator_levels(c::ExampleNozzleController, spacecraft_index::Int) =
     spacecraft_index == c.sat_idx ? c.levels : nothing
 
-function SpaceAGORA.calcControlEffect!(c::ExampleNozzleController, u, p, t::Float64, spacecraft_index::Int)
+function SpaceAGORA.update_control!(c::ExampleNozzleController, u, p, t::Float64, spacecraft_index::Int)
     # Compute and store the levels here (they are held until the next tick).
     return nothing
 end

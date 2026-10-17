@@ -226,7 +226,7 @@ const _edg_sat_state = EDGServices._edg_control_sat_state
 
 const _edg_pos_vel_mass = EDGServices._edg_control_pos_vel_mass
 
-function calcGuidanceEffect!(
+function update_guidance!(
     model::AerobrakingEnergyDepletionGuidanceModel,
     u,
     p::ODEParams,

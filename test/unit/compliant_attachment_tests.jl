@@ -735,7 +735,7 @@ struct PushControl <: SM.AbstractControlEffectorModel
     sat_idx::Int
     force::SVector{3, Float64}
 end
-SM.calcControlEffect!(::PushControl, u, p, t::Float64, i::Int64) = nothing
+SM.update_control!(::PushControl, u, p, t::Float64, i::Int64) = nothing
 SM.control_wrench(m::PushControl, x::SM.StateSample, p::SM.ODEParams, t::Float64) = x.spacecraft_index == m.sat_idx ? (m.force, SVector(0.0, 0.0, 0.0)) : (SVector(0.0, 0.0, 0.0), SVector(0.0, 0.0, 0.0))
 SpaceAGORA.bind_spacecraft(m::PushControl, sat_idx::Int) = PushControl(sat_idx, m.force)
 

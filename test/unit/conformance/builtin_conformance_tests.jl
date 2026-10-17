@@ -89,14 +89,14 @@ end
     @testset "the exempt algorithm bindings have their guidance tick" begin
         fixture = C.conformance_fixture()
         for binding in (SpaceAGORA.RPOPlannerLifecycle.PlannerGuidance, SpaceAGORA.AlgorithmGuidance)
-            @test hasmethod(SpaceAGORA.calcGuidanceEffect!,
+            @test hasmethod(SpaceAGORA.update_guidance!,
                 Tuple{binding, fixture.call.state, fixture.call.params, Float64, Int})
         end
     end
     @testset "the energy depletion panel actuator has outputs but no tick of its own" begin
         aoa = SpaceAGORA.SolarPanelAngleOfAttackControlModel
         fixture = C.conformance_fixture(control=(aoa(),))
-        @test !hasmethod(SpaceAGORA.calcControlEffect!, Tuple{aoa, fixture.call.state, fixture.call.params, Float64, Int})
+        @test !hasmethod(SpaceAGORA.update_control!, Tuple{aoa, fixture.call.state, fixture.call.params, Float64, Int})
         @test hasmethod(SpaceAGORA.control_wrench, Tuple{aoa, SpaceAGORA.StateSample, fixture.call.params, Float64})
         X = only(fixture.call.spacecraft)
         for old in (SpaceAGORA.calcControlForceTorque, SpaceAGORA.calcControlMassFlowRate, SpaceAGORA.calcReactionWheelTorque)

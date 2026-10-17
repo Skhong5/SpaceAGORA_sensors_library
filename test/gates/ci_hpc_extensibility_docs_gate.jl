@@ -39,7 +39,7 @@ end
 for marker in (
     "calcForceTorque",
     "getDensity",
-    "calcControlEffect!",
+    "update_control!",
     "control_wrench",
     "templates/force_torque_model_template.jl",
     "templates/control_hook_template.jl",

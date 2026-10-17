@@ -12,11 +12,11 @@ const ZERO3 = SVector(0.0, 0.0, 0.0)
 const LOG = Symbol[]
 
 struct LoggedNavigation <: AbstractNavigationModel end
-SpaceAGORA.calcNavigationEffect!(::LoggedNavigation, u, p, t::Float64, i::Int) = nothing
+SpaceAGORA.update_navigation!(::LoggedNavigation, u, p, t::Float64, i::Int) = nothing
 L.initialize_navigation!(::LoggedNavigation, u, p, t) = (push!(LOG, :navigation); nothing)
 
 struct LoggedGuidance <: AbstractGuidanceModel end
-SpaceAGORA.calcGuidanceEffect!(::LoggedGuidance, u, p, t::Float64, i::Int) = nothing
+SpaceAGORA.update_guidance!(::LoggedGuidance, u, p, t::Float64, i::Int) = nothing
 L.initialize_guidance!(::LoggedGuidance, u, p, t) = (push!(LOG, :guidance); nothing)
 
 # A periodic controller that records its clock starts, ticks and stop requests.
@@ -26,8 +26,8 @@ mutable struct ClockedControl <: SM.AbstractControlEffectorModel
     stops::Int
 end
 ClockedControl() = ClockedControl(Tuple{Float64, Float64}[], 0, 0)
-SpaceAGORA.calcControlEffect!(m::ClockedControl, u, p, t, i) = (m.ticks += 1; nothing)
-SpaceAGORA.calcControlForceTorque(::ClockedControl, u, p, i, t) = (ZERO3, ZERO3)
+SpaceAGORA.update_control!(m::ClockedControl, u, p, t, i) = (m.ticks += 1; nothing)
+SpaceAGORA.control_wrench(::ClockedControl, x, p, t) = (ZERO3, ZERO3)
 L.initialize_control!(::ClockedControl, u, p, t) = (push!(LOG, :control); nothing)
 SpaceAGORA.gnc_clock_started!(m::ClockedControl, period_s, origin_s) = (push!(m.clock, (period_s, origin_s)); nothing)
 SpaceAGORA.register_tstops!(integrator, m::ClockedControl, spacecraft_index) = (m.stops += 1; nothing)
@@ -39,8 +39,8 @@ mutable struct ScheduledControl <: SM.AbstractControlEffectorModel
     period_s::Float64
 end
 ScheduledControl() = ScheduledControl(Float64[], 0, NaN)
-SpaceAGORA.calcControlEffect!(m::ScheduledControl, u, p, t, i) = (m.ticks += 1; nothing)
-SpaceAGORA.calcControlForceTorque(::ScheduledControl, u, p, i, t) = (ZERO3, ZERO3)
+SpaceAGORA.update_control!(m::ScheduledControl, u, p, t, i) = (m.ticks += 1; nothing)
+SpaceAGORA.control_wrench(::ScheduledControl, x, p, t) = (ZERO3, ZERO3)
 SpaceAGORA.tick_schedule(::ScheduledControl) = :event_driven
 function SpaceAGORA.gnc_callbacks(m::ScheduledControl, num_sats, args, period_s)
     m.period_s = period_s
@@ -49,8 +49,8 @@ end
 
 # A schedule the engine does not know.
 struct OddControl <: SM.AbstractControlEffectorModel end
-SpaceAGORA.calcControlEffect!(::OddControl, u, p, t, i) = nothing
-SpaceAGORA.calcControlForceTorque(::OddControl, u, p, i, t) = (ZERO3, ZERO3)
+SpaceAGORA.update_control!(::OddControl, u, p, t, i) = nothing
+SpaceAGORA.control_wrench(::OddControl, x, p, t) = (ZERO3, ZERO3)
 SpaceAGORA.tick_schedule(::OddControl) = :sometimes
 
 # A thread-safe periodic law that records, per spacecraft, the thread of its
@@ -60,8 +60,8 @@ struct ThreadedLaw <: SM.AbstractControlEffectorModel
     stop_thread::Vector{Int}
 end
 ThreadedLaw(n) = ThreadedLaw(zeros(Int, n), zeros(Int, n))
-SpaceAGORA.calcControlEffect!(m::ThreadedLaw, u, p, t, i) = (m.tick_thread[i] = Threads.threadid(); nothing)
-SpaceAGORA.calcControlForceTorque(::ThreadedLaw, u, p, i, t) = (ZERO3, ZERO3)
+SpaceAGORA.update_control!(m::ThreadedLaw, u, p, t, i) = (m.tick_thread[i] = Threads.threadid(); nothing)
+SpaceAGORA.control_wrench(::ThreadedLaw, x, p, t) = (ZERO3, ZERO3)
 SM.SimulationCallbacks.control_model_threadsafe(::ThreadedLaw) = true
 SpaceAGORA.register_tstops!(integrator, m::ThreadedLaw, i) = (m.stop_thread[i] = Threads.threadid(); nothing)
 
@@ -91,8 +91,8 @@ end
 struct PeriodicLaw <: SM.AbstractControlEffectorModel
     period_s::Float64
 end
-SpaceAGORA.calcControlEffect!(::PeriodicLaw, u, p, t, i) = nothing
-SpaceAGORA.calcControlForceTorque(::PeriodicLaw, u, p, i, t) = (ZERO3, ZERO3)
+SpaceAGORA.update_control!(::PeriodicLaw, u, p, t, i) = nothing
+SpaceAGORA.control_wrench(::PeriodicLaw, x, p, t) = (ZERO3, ZERO3)
 SpaceAGORA.gnc_period_s(m::PeriodicLaw) = m.period_s
 
 # The period warnings `f()` gives. Under --depwarn=error the shared pre-run
@@ -164,24 +164,24 @@ mutable struct SlotWriter <: AbstractGuidanceModel
     slot::SharedSlot
     prepared::Int
 end
-SpaceAGORA.calcGuidanceEffect!(::SlotWriter, u, p, t::Float64, i::Int) = nothing
+SpaceAGORA.update_guidance!(::SlotWriter, u, p, t::Float64, i::Int) = nothing
 SpaceAGORA.gnc_links(g::SlotWriter) = (Produces(g.slot),)
 L.initialize_guidance!(::SlotWriter, u, p, t) = (push!(LOG, :guidance); nothing)
 mutable struct Bystander <: AbstractGuidanceModel
     prepared::Int
 end
-SpaceAGORA.calcGuidanceEffect!(::Bystander, u, p, t::Float64, i::Int) = nothing
+SpaceAGORA.update_guidance!(::Bystander, u, p, t::Float64, i::Int) = nothing
 mutable struct SlotReader <: SM.AbstractControlEffectorModel
     slot::SharedSlot
     ticks::Int
 end
-SpaceAGORA.calcControlEffect!(c::SlotReader, u, p, t, i) = (c.ticks += 1; nothing)
-SpaceAGORA.calcControlForceTorque(::SlotReader, u, p, i, t) = (ZERO3, ZERO3)
+SpaceAGORA.update_control!(c::SlotReader, u, p, t, i) = (c.ticks += 1; nothing)
+SpaceAGORA.control_wrench(::SlotReader, x, p, t) = (ZERO3, ZERO3)
 SpaceAGORA.gnc_links(c::SlotReader) = (Consumes(c.slot),)
 L.before_reference_control!(g::SlotWriter, c::SlotReader, u, p, t) = (g.prepared += 1; nothing)
 L.before_reference_control!(g::Bystander, c::SlotReader, u, p, t) = (g.prepared += 1; nothing)
 struct BadLinks <: AbstractGuidanceModel end
-SpaceAGORA.calcGuidanceEffect!(::BadLinks, u, p, t::Float64, i::Int) = nothing
+SpaceAGORA.update_guidance!(::BadLinks, u, p, t::Float64, i::Int) = nothing
 SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
 
 @testset "GNC runtime declarations" begin

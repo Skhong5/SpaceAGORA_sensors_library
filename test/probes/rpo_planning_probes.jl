@@ -717,32 +717,32 @@ end
         @test failer.replanning_events[end].action == :replan_failed
     end
 
-    @testset "RPO calcGuidanceEffect!" begin
+    @testset "RPO update_guidance!" begin
         geom = _probe_far_geometry()
         cfg = _probe_tiny_cfg()
         u = _probe_fake_state((-2.0, 0.0, 0.0))
         model = GM.RPOGuidanceModel(goal_rtn=SVector{3, Float64}(2.0, 0.0, 0.0), geometry=geom, pso_config=cfg, safe_distance_m=0.05)
 
         # Non-chaser satellites never touch the plan buffer.
-        @test GH.calcGuidanceEffect!(model, u, nothing, 0.0, 2) === nothing
+        @test GH.update_guidance!(model, u, nothing, 0.0, 2) === nothing
         @test !model.plan_buffer.valid
 
         # First chaser call builds the initial plan.
-        @test GH.calcGuidanceEffect!(model, u, nothing, 0.0, 1) === nothing
+        @test GH.update_guidance!(model, u, nothing, 0.0, 1) === nothing
         @test model.plan_buffer.valid
         @test model.plan_buffer.updated_at_s == 0.0
         @test model.plan_buffer.plan.diagnostics.planned_at_s == 0.0
 
         # force_replan rebuilds even with a valid buffer and then clears itself.
         model.force_replan = true
-        @test GH.calcGuidanceEffect!(model, u, nothing, 5.0, 1) === nothing
+        @test GH.update_guidance!(model, u, nothing, 5.0, 1) === nothing
         @test !model.force_replan
         @test model.plan_buffer.updated_at_s == 5.0
 
         # The next tick advances the hold into planning, without an instant replacement.
         @test model.replanning_phase == :braking
         before = model.plan_buffer.updated_at_s
-        @test GH.calcGuidanceEffect!(model, u, nothing, 6.0, 1) === nothing
+        @test GH.update_guidance!(model, u, nothing, 6.0, 1) === nothing
         @test model.plan_buffer.updated_at_s == before
     end
 end

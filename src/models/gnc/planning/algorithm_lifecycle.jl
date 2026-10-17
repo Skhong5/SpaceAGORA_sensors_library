@@ -210,8 +210,8 @@ function _request_due!(g::AlgorithmGuidance, u, p, t)
     return nothing
 end
 
-function S.GuidanceHooks.calcGuidanceEffect!(g::AlgorithmGuidance, u, p, t::Float64, sat_idx::Int)
-    sat_idx == g.spacecraft_index || return nothing
+function S.GuidanceHooks.update_guidance!(g::AlgorithmGuidance, u, p, t::Float64, spacecraft_index::Int)
+    spacecraft_index == g.spacecraft_index || return nothing
     r = g.runtime
     r === nothing && _fail!(g, :uninitialized)
     # One tick can arrive through the periodic callback and an event-driven

@@ -80,7 +80,7 @@ function _flight_apoapsis_ratio_scale(
     return _flight_ratio_scale(Float64(flight[maneuver_idx]), r_a_sim_m)
 end
 
-function calcGuidanceEffect!(guidanceAlg::AerobrakingCampaignPropulsiveManeuverGuidanceModel, u::ComponentVector, p::ODEParams, t::Float64, i::Int64)
+function update_guidance!(guidanceAlg::AerobrakingCampaignPropulsiveManeuverGuidanceModel, u::ComponentVector, p::ODEParams, t::Float64, i::Int64)
     if i < 1 || i > length(p.shared_buffers.maneuver_commands)
         return nothing
     end
@@ -107,7 +107,7 @@ function calcGuidanceEffect!(guidanceAlg::AerobrakingCampaignPropulsiveManeuverG
     return nothing
 end
 
-function calcGuidanceEffect!(guidanceAlg::ApoapsisTargetPeriapsisRaiseGuidanceModel, u::ComponentVector, p::ODEParams, t::Float64, i::Int64)
+function update_guidance!(guidanceAlg::ApoapsisTargetPeriapsisRaiseGuidanceModel, u::ComponentVector, p::ODEParams, t::Float64, i::Int64)
     if i < 1 || i > length(p.shared_buffers.maneuver_commands)
         return nothing
     end

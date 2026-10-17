@@ -6,7 +6,7 @@ struct SgPushEffector <: SpaceAGORA.AbstractControlEffectorModel
     sat_idx::Int
     force_n::SVector{3, Float64}
 end
-SpaceAGORA.calcControlEffect!(::SgPushEffector, u, p::SpaceAGORA.SimulationModel.ODEParams, t::Float64, i::Int) = nothing
+SpaceAGORA.update_control!(::SgPushEffector, u, p::SpaceAGORA.SimulationModel.ODEParams, t::Float64, i::Int) = nothing
 SpaceAGORA.control_wrench(m::SgPushEffector, x::SpaceAGORA.StateSample, p::SpaceAGORA.SimulationModel.ODEParams, t::Float64) =
     x.spacecraft_index == m.sat_idx ? (m.force_n, SVector{3, Float64}(0.0, 0.0, 0.0)) :
                      (SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
@@ -194,11 +194,11 @@ struct SgNavigationProbe
 end
 SpaceAGORA.bind_spacecraft(m::SgGuidanceProbe, i::Int) = SgGuidanceProbe(i, m.visits)
 SpaceAGORA.bind_spacecraft(m::SgNavigationProbe, i::Int) = SgNavigationProbe(i, m.visits)
-function SpaceAGORA.SimulationModel.GuidanceHooks.calcGuidanceEffect!(m::SgGuidanceProbe, u, p, t::Float64, i::Int)
+function SpaceAGORA.SimulationModel.GuidanceHooks.update_guidance!(m::SgGuidanceProbe, u, p, t::Float64, i::Int)
     i == m.sat_idx && push!(m.visits, i)
     return nothing
 end
-function SpaceAGORA.SimulationModel.NavigationHooks.calcNavigationEffect!(m::SgNavigationProbe, u, p, t::Float64, i::Int)
+function SpaceAGORA.SimulationModel.NavigationHooks.update_navigation!(m::SgNavigationProbe, u, p, t::Float64, i::Int)
     i == m.sat_idx && push!(m.visits, i)
     return nothing
 end

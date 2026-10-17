@@ -102,7 +102,7 @@ include(joinpath(@__DIR__, "..", "..", "..", "templates", "control_hook_template
     p = readout_params((model,); n_sats=1)
     u = ComponentVector(mass=500.0)
     x = SE._control_state_sample(readout_state(p), p, 1)
-    @test SpaceAGORA.calcControlEffect!(model, u, p, 0.0, 1) === nothing
+    @test SpaceAGORA.update_control!(model, u, p, 0.0, 1) === nothing
     @test SpaceAGORA.control_wrench(model, x, p, 0.0) == (model.force_n, model.torque_n_m)
     @test SpaceAGORA.control_propellant_rate(model, x, p, 0.0) === 0.125
     # The engine subtracts the propellant used from the mass derivative.

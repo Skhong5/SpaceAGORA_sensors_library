@@ -23,7 +23,7 @@ mutable struct CommandedThrust <: SM.AbstractControlEffectorModel
     throttle::Float64
     spacecraft_idx::Int
 end
-SM.calcControlEffect!(::CommandedThrust, u, p, t::Float64, i::Int) = nothing
+SM.update_control!(::CommandedThrust, u, p, t::Float64, i::Int) = nothing
 function SM.control_wrench(model::CommandedThrust, x::SM.StateSample,
         p::SM.ODEParams, t::Float64)
     level = x.spacecraft_index == model.spacecraft_idx ? model.throttle : 0.0

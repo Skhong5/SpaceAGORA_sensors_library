@@ -337,7 +337,7 @@ end
     return hasproperty(u, :sc) ? u.sc[i] : u
 end
 
-function calcControlEffect!(model::ApolloDescentControlModel, u, p::ODEParams, t::Float64, i::Int64)
+function update_control!(model::ApolloDescentControlModel, u, p::ODEParams, t::Float64, i::Int64)
     n = length(model.actuators.thrust_n)
     i in model.spacecraft_indices || return nothing
     if !p.is_active[i]

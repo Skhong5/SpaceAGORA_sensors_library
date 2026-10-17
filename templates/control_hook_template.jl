@@ -10,7 +10,7 @@ struct ExampleControlHook <: SpaceAGORA.AbstractControlEffectorModel
     propellant_kg_s::Float64
 end
 
-function SpaceAGORA.calcControlEffect!(
+function SpaceAGORA.update_control!(
     model::ExampleControlHook,
     u::ComponentVector,
     p,

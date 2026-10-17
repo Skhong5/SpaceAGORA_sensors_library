@@ -142,7 +142,7 @@ end
     params.shared_buffers.et_start[]=c.p.shared_buffers.et_start[]
 
     u=deepcopy(c.u);u.sc[1].pos .= r;u.sc[1].vel .= v
-    SM.calcGuidanceEffect!(guide,u,params,0.0,1)
+    SM.update_guidance!(guide,u,params,0.0,1)
     plan=c.state.targeting_diagnostics[1]
     @test plan.mode==:targeting
     @test plan.certificate.instantaneous_admissible
@@ -153,19 +153,19 @@ end
     @test abs(plan.coast_energy_change_jkg)>1.0 # Nonzero J2 work exercises correction.
     @test plan.target_energy_jkg ≈ known.energy_jkg atol=0.001 rtol=0.0
     @test plan.left_residual_jkg>=0>=plan.right_residual_jkg
-    SM.calcGuidanceEffect!(guide,u,params,1.0,1)
+    SM.update_guidance!(guide,u,params,1.0,1)
     @test c.state.energy_bracketing_count[1]==1
     # Advance to the state reached under the accepted high-angle command.
     idx=findfirst(==(2.0),known.track.time)
     @test idx!==nothing
     u.sc[1].pos .= known.track.positions[idx];u.sc[1].vel .= known.track.velocities[idx]
-    SM.calcGuidanceEffect!(guide,u,params,2.0,1)
+    SM.update_guidance!(guide,u,params,2.0,1)
     @test c.state.energy_bracketing_count[1]==2
     @test c.state.last_switch_solve_t[1]==2.0
     @test c.state.targeting_active[1]
     @test c.state.targeting_switch_s[1]==10.0
     # Passed-switch cache is independent of later target residuals.
-    SM.calcGuidanceEffect!(guide,u,params,11.0,1)
+    SM.update_guidance!(guide,u,params,11.0,1)
     @test c.state.energy_bracketing_count[1]==2
 end
 @testset "Closed-form remaining passage keeps its entry reference" begin

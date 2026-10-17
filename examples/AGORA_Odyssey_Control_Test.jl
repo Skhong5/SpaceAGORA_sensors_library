@@ -18,7 +18,7 @@ function SimulationModel.control_wrench(
     return SVector{3, Float64}(0.0, 0.0, 0.0), torque
 end
 
-function SimulationModel.calcControlEffect!(
+function SimulationModel.update_control!(
     model::BodyRateDamperModel,
     u,
     p::ODEParams,

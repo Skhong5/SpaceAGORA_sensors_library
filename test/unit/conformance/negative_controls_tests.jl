@@ -231,8 +231,8 @@ gnc_step(::Val{:Rand}, m, u, i) = rand()
 gnc_step(::Val{:Shared}, m, u, i) = (m.ticked || (m.ticked = true; NC_GNC_SCRATCH[] = 0.0); NC_GNC_SCRATCH[] += 1.0)
 gnc_step(::Val{:SharedBind}, m, u, i) = (m.buffer[1] += 1.0; m.buffer[1])
 gnc_step(::Val{:NoReset}, m, u, i) = 1.0
-for (prefix, Abstract, tick) in ((:NcG, SpaceAGORA.AbstractGuidanceModel, :calcGuidanceEffect!),
-        (:NcN, SpaceAGORA.AbstractNavigationModel, :calcNavigationEffect!))
+for (prefix, Abstract, tick) in ((:NcG, SpaceAGORA.AbstractGuidanceModel, :update_guidance!),
+        (:NcN, SpaceAGORA.AbstractNavigationModel, :update_navigation!))
     for variant in (:Clean, :NoTick, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoReset)
         name = Symbol(prefix, variant)
         @eval begin
@@ -256,7 +256,7 @@ registered(model) = (NC_GNC_GAINS[model] = 1.0e-3; model)
 mutable struct NcNSensorReader <: SpaceAGORA.AbstractNavigationModel
     acc::Float64
 end
-SpaceAGORA.calcNavigationEffect!(m::NcNSensorReader, u, p, t::Float64, i::Int) =
+SpaceAGORA.update_navigation!(m::NcNSensorReader, u, p, t::Float64, i::Int) =
     (m.acc += length(SpaceAGORA.sensor_measurement(p.args.dynamics_model.spacecraft[i], 1)); nothing)
 SpaceAGORA.SimulationLifecycle.initialize_navigation!(m::NcNSensorReader, u, p, t) = (m.acc = 0.0; nothing)
 SpaceAGORA.bind_spacecraft(m::NcNSensorReader, i::Int) = NcNSensorReader(m.acc)
@@ -272,7 +272,7 @@ NcCtl{V}() where {V} = NcCtl{V}(0.0, false, [0.0], 0)
 const NC_CTL_STEPS = (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind)
 for variant in (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoWrench, :Deprecated, :Narrow, :Impure, :Negative)
     step = variant in NC_CTL_STEPS ? variant : :Clean
-    @eval SpaceAGORA.calcControlEffect!(m::NcCtl{$(QuoteNode(variant))}, u, p, t::Float64, i::Int) =
+    @eval SpaceAGORA.update_control!(m::NcCtl{$(QuoteNode(variant))}, u, p, t::Float64, i::Int) =
         (m.acc += gnc_step(Val($(QuoteNode(step))), m, u, i); nothing)
     variant === :NoWrench && continue
     @eval SpaceAGORA.control_wrench(m::NcCtl{$(QuoteNode(variant))}, x::Sample, p, t::Float64) =

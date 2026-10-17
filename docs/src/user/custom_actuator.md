@@ -98,7 +98,7 @@ end
 SpaceAGORA.actuation_mode(::BurnFor) = :mounted
 SpaceAGORA.actuator_levels(c::BurnFor, i::Int) = c.levels
 
-function SpaceAGORA.calcControlEffect!(c::BurnFor, u, p, t::Float64, i::Int64)
+function SpaceAGORA.update_control!(c::BurnFor, u, p, t::Float64, i::Int64)
     c.levels[1] = t < c.burn_s ? c.thrust_n : 0.0
     return nothing
 end
@@ -165,7 +165,7 @@ derive those from the actuators mounted on the spacecraft, at the levels
 `actuator_levels` returns: one level per mounted actuator, in mounting order
 (thrusters, wheels, torque rods, laser terminals, hinges, thruster gimbals and
 control moment gyros come first, then kinds of your own). The engine calls `actuator_levels` at every evaluation of
-the equations of motion, so `calcControlEffect!` computes the levels at each
+the equations of motion, so `update_control!` computes the levels at each
 control tick and the method returns stored values. The initial levels are
 held until the first tick, one control period after the start.
 
