@@ -42,6 +42,7 @@ function prepare(args)
     owned=deepcopy(args)
     u=E.build_initial_conditions(owned)
     p=S.ODEParams(n_sats=length(owned.dynamics_model.spacecraft),args=owned)
+    SpaceAGORA.SimulationModel.SimulationCallbacks.initialize_gnc_links!(owned,u,p,0.)   # links first, as the engine does
     for g in owned.guidance_model.guidance_effectors
         Hooks.initialize_guidance!(g,u,p,0.)
     end

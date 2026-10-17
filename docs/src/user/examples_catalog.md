@@ -242,11 +242,18 @@ station starts at a fixed inertial point, so the date sets the lighting while
 the relative motion does not depend on it. Leaving every keyword at its
 default preserves the Gateway dimensions, mass and 8 m² reference area, and
 the returned `station` record states what was used.
+The example runs on the planner contract: a `PlannerGuidance` with
+`HYPRRPOPlanner` plans inside the run, at its first guidance tick, and the run
+validates the reference before the controller uses it. Run a built scenario with
+`run_rpo_case(demo)`, which also stops the run `post_reference_hold_s` after the
+installed reference ends, and read that reference with `rpo_installed_plan`.
+`precomputed_plan` replays a saved plan through `RetainedPathRPOPlanner`.
 `scripts/dev/viewer_demos/iss_hypr.jl` applies this to NASA's ISS display
 model in its +XVV flight attitude held in LVLH (forward along the velocity,
 truss along the orbit normal with starboard toward -N, zenith up) and relocates the chaser between V-bar hold points on
 opposite sides of the station, exporting a viewer page with the plan
-overlaid. It plans with the `:manuscript` HyPR mode (`hypr_mode`: an
+overlaid. It plans once itself, keeping HyPR's full planning record, and flies
+that plan through `RetainedPathRPOPlanner`. It plans with the `:manuscript` HyPR mode (`hypr_mode`: an
 RRT-Connect warm start sets the exploration score and with it the PSO
 coefficients and counts; the swarm searches the station's bounding box
 widened by `station_box_margin_m`; the objective is the obstacle sigmoid
@@ -277,6 +284,16 @@ The default simulation copy owns its own MPC solver workspace. Its stored primal
 warm start is copied, while the solver's internal caches are rebuilt. A copied
 controller is therefore safe to use after the original is released, but is not
 an exact checkpoint of an optimization already in progress.
+
+`Earth_RPO_Planner_Disturbances.jl` needs neither the HYPR companion nor SPICE.
+A `DirectRPOPlanner` flies to a goal while a sphere appears on its path and the
+chaser is later displaced: the run holds while the sphere blocks the path,
+replans when it disappears and replans after the displacement. The script prints
+the planner's timeline from `rpo_run_report`:
+
+```text
+julia --project=. examples/Earth_RPO_Planner_Disturbances.jl
+```
 
 For a planner-comparison smoke run:
 
@@ -325,6 +342,7 @@ names; they do not define a separate backend or a flight-validation claim.
 | Native atmosphere EDG | `AGORA_Odyssey_Energy_Depletion_Control_Test.jl` | Paired EDG environment, native Mars GRAM and SPICE |
 | Frozen-atmosphere EDG | `odyssey_surrogate.jl` | `odyssey_surrogate_env` setup; downloads public scenario assets on first run |
 | RPO planning | `Earth_RPO_CubeSat_MPC.jl`, `Earth_RPO_CubeSat_MPC_Batch.jl`, `Earth_RPO_CubeSat_MPC_PlannerComparison.jl`, `Earth_RPO_CubeSat_MPC_Replanning.jl` | `rpo_planner_env` setup, SPICE and Gateway geometry; no native GRAM |
+| RPO planner disturbances | `Earth_RPO_Planner_Disturbances.jl` | Root; no external data |
 | Robot-arm planning | `Robot_Arm_Planner_Cloth_Demo.jl` | `rpo_planner_env` setup; no external data |
 
 The setup files under `rpo_planner_env/` and `odyssey_surrogate_env/` prepare the

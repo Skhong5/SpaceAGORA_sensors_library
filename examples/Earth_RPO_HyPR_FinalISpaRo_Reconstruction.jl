@@ -37,7 +37,13 @@ function paper_config()
 end
 
 const USE_FULL_SIM=true
-"""Authoritative evaluation in the current full SpaceAGORA simulator, at fixed inertial attitude."""
+"""
+Authoritative evaluation in the current full SpaceAGORA simulator, at fixed inertial
+attitude. The plan is flown on the planner contract path
+(`RetainedPathRPOPlanner`): the run times it for its request and validates it against
+the 0.5 m clearance before the controller flies it. A reference the run refuses is not
+flown; its evaluation records the refusal (`refusal`) and fails.
+"""
 function full_evaluate(plan,case,geometry,tracking)
     demo=build_rpo_cubesat_mpc_demo(mission_time=1.,seed=case.seed,start_rtn=case.start_rtn,goal_rtn=case.goal_rtn,
         pso_config=plan.config,precomputed_plan=plan,chaser_dry_mass_kg=tracking.mass_kg-tracking.propellant_mass_kg,
@@ -47,8 +53,14 @@ function full_evaluate(plan,case,geometry,tracking)
     a=demo.args
     args=SimulationConfiguration(;(k=>getfield(a,k) for k in fieldnames(typeof(a)) if !(k in (:solver_config,:simulation_settings)))...,
         solver_config=SolverConfig(solver_mode=:tsit5),simulation_settings=SimulationSettings(results=false,verbose=false,generate_plots=false))
-    sol=run_simulation(args;return_solution=true,isolate_state=false)
-    log=demo.control.command_log
+    sol=try
+        run_simulation(args;return_solution=true,extra_callbacks=(demo.stop_callback,))
+    catch e
+        e isa RPOPlanningError || rethrow()
+        return refused_evaluation(e)
+    end
+    log=only(rpo_run_report(sol).commands).log
+    installed=rpo_installed_plan(sol)
     relative(u)=G.inertial_to_rtn_relative_state(SVector{3}(u.sc[1].pos),SVector{3}(u.sc[1].vel),SVector{3}(u.sc[2].pos),SVector{3}(u.sc[2].vel))
     terminal=relative(last(sol.u));dt=diff(vcat(log.t_s,last(sol.t)))
     fuel=sum(sum(f)*h for (f,h) in zip(log.thruster_forces_n,dt))/(60*9.80665)
@@ -61,14 +73,25 @@ function full_evaluate(plan,case,geometry,tracking)
     times=collect(0.:.1:last(sol.t));positions=reduce(hcat,[relative(sol(t)) for t in times])
     statuses=Dict(string(s)=>count(==(s),log.qp_status) for s in unique(log.qp_status))
     error=norm(terminal[1:3]-case.goal_rtn)
-    success=string(sol.retcode)=="Success"&&error<=.25&&violations==0&&all(==("Solved"),keys(statuses))&&fuel<=.2
-    return (success=success,fuel_used=fuel,fuel_used_pct=100fuel/.2,min_clearance=minimum_clearance,keepout_violations=violations,
-        final_pos_error=error,actual_travel_duration=last(sol.t),planned_travel_duration=last(demo.initial_plan.t_ref_s),
+    success=string(sol.retcode) in ("Success","Terminated")&&error<=.25&&violations==0&&all(==("Solved"),keys(statuses))&&fuel<=.2
+    return (success=success,refusal=nothing,fuel_used=fuel,fuel_used_pct=100fuel/.2,min_clearance=minimum_clearance,keepout_violations=violations,
+        final_pos_error=error,actual_travel_duration=last(sol.t),planned_travel_duration=last(installed.t_ref_s),
         qp_status_counts=statuses,thruster_forces_n=reduce(hcat,log.thruster_forces_n),mass_history_kg=[sol(t).sc[1].mass for t in times],
-        x_hist=positions,t_ref=demo.initial_plan.t_ref_s,r_ref_rtn=demo.initial_plan.r_ref_rtn,v_ref_rtn=demo.initial_plan.v_ref_rtn,
+        x_hist=positions,t_ref=installed.t_ref_s,r_ref_rtn=installed.r_ref_rtn,v_ref_rtn=installed.v_ref_rtn,
         plant=:full_spaceagora,retcode=string(sol.retcode),
         sample_time=times,command_time=copy(log.t_s),command_status=string.(log.qp_status),terminal_state=collect(terminal),
         initial_mass_kg=sol(0.;continuity=:right).sc[1].mass,terminal_mass_kg=last(sol.u).sc[1].mass)
+end
+
+"""The evaluation of a plan the run refused: not flown, so it fails with no flight metrics."""
+function refused_evaluation(e::RPOPlanningError)
+    details=isempty(e.report.records) ? NamedTuple() : get(last(e.report.records),:details,NamedTuple())
+    return (success=false,refusal=(reason=e.reason,termination=get(details,:termination,nothing)),fuel_used=NaN,fuel_used_pct=NaN,
+        min_clearance=NaN,keepout_violations=0,final_pos_error=NaN,actual_travel_duration=NaN,planned_travel_duration=NaN,
+        qp_status_counts=Dict{String,Int}(),thruster_forces_n=zeros(6,0),mass_history_kg=Float64[],x_hist=zeros(6,0),
+        t_ref=Float64[],r_ref_rtn=zeros(3,0),v_ref_rtn=zeros(3,0),plant=:full_spaceagora,retcode="Refused",
+        sample_time=Float64[],command_time=Float64[],command_status=String[],terminal_state=Float64[],
+        initial_mass_kg=NaN,terminal_mass_kg=NaN)
 end
 
 function tracking_config(cfg;deadband=.2,mass=5.)
@@ -77,11 +100,17 @@ function tracking_config(cfg;deadband=.2,mass=5.)
         settle_time_s=30.,final_position_tol_m=.25,plant=:two_body,minimum_throttle_fraction=deadband,max_thrust_n=.05)
 end
 function summarize(track)
-    return (success=track.success,fuel_g=1000track.fuel_used,fuel_percent=track.fuel_used_pct,
+    return (success=track.success,refusal=track.refusal,fuel_g=1000track.fuel_used,fuel_percent=track.fuel_used_pct,
         min_clearance_m=track.min_clearance,clearance_violations=track.keepout_violations,final_error_m=track.final_pos_error,
         duration_s=track.actual_travel_duration,reference_duration_s=track.planned_travel_duration,
         qp_status_counts=track.qp_status_counts,subthreshold_commands=count(x->0<x<=.01,track.thruster_forces_n),
         mass_balance_error_kg=abs(track.fuel_used-(track.initial_mass_kg-track.terminal_mass_kg)))
+end
+"""The result row of a plan the run refused: not executed, with the refusal and no flight metrics."""
+function refused_row(case,planner,plan,track,whole_wall_s)
+    return merge((case_id=case.case_id,seed=case.seed,planner=string(planner),status="refused",plant_executed=false,
+        plant="full_spaceagora",planning_s=plan.planner_plan_time,iterations=plan.planner_iteration_count,
+        whole_wall_s=whole_wall_s,cost=plan.cost),summarize(track))
 end
 function main()
     cfg=paper_config(); trackcfg=tracking_config(cfg)
@@ -161,6 +190,15 @@ function main()
                     baseline_ready=true
                 end
                 track=USE_FULL_SIM ? full_evaluate(plan,case,geometry,trackcfg) : G.rpo_track_retimed_path_lqmpc(plan.path,case.goal_rtn,geometry,plan.config,trackcfg;safe_distance_m=.5)
+                if get(track,:refusal,nothing) !== nothing
+                    # The run refused the plan, so nothing was flown: record the refusal
+                    # and the plan, but no command log, trace or deadband comparison.
+                    row=refused_row(case,planner,plan,track,(time_ns()-begun)/1e9)
+                    savejson(prefix*"_case_$(case.case_id)_$(planner)_plan.json",(case=case,path=plan.path,config=Dict(string(k)=>getfield(plan.config,k) for k in fieldnames(typeof(cfg))),refusal=track.refusal,adaptive=plan.adaptive,cost_history=plan.cost_history))
+                    push!(rows,row);savejson(prefix*"_results.json",rows)
+                    println("CASE_REFUSED ",JSON.json(row));flush(stdout)
+                    continue
+                end
                 row=merge((case_id=case.case_id,seed=case.seed,planner=string(planner),status="executed",plant_executed=true,plant=USE_FULL_SIM ? "full_spaceagora" : "reduced_two_body",planning_s=plan.planner_plan_time,
                     iterations=plan.planner_iteration_count,whole_wall_s=(time_ns()-begun)/1e9,cost=plan.cost),summarize(track))
                 savejson(prefix*"_case_$(case.case_id)_$(planner)_plan.json",(case=case,path=plan.path,config=Dict(string(k)=>getfield(plan.config,k) for k in fieldnames(typeof(cfg))),reference_time=track.t_ref,reference_position=track.r_ref_rtn,reference_velocity=track.v_ref_rtn,adaptive=plan.adaptive,cost_history=plan.cost_history))
