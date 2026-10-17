@@ -411,7 +411,7 @@ end
 
 function _periapsis_event_dataframe(sol, args::SimulationConfiguration, planet; sat_idx::Int=1, allow_empty::Bool=false)
     ephemerides_model = args.environment_model.ephemerides_model
-    et_start = SimulationModel.ephemerides_time_seconds(args.initial_time, ephemerides_model)
+    et_start = SimulationModel.ephemerides_epoch_seconds(ephemerides_model, args.initial_time)
     event_time_s = Float64[]
     altitude_km = Float64[]
     latitude_deg = Float64[]
@@ -1198,7 +1198,7 @@ end
 
 function _simulation_planet_fixed_state_samples(args::SimulationConfiguration, planet, initial_time::InitialTime)
     ephemerides_model = args.environment_model.ephemerides_model
-    initial_et = SimulationModel.ephemerides_time_seconds(initial_time, ephemerides_model)
+    initial_et = SimulationModel.ephemerides_epoch_seconds(ephemerides_model, initial_time)
     time_s, sim_x_km, sim_y_km, sim_z_km = _simulation_position_samples(args)
     _, sim_vx_kms, sim_vy_kms, sim_vz_kms = _simulation_velocity_samples(args)
     n = length(time_s)

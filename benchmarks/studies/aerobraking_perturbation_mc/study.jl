@@ -875,9 +875,9 @@ end
 function _planet_frame_sample(args, state::SM.StateSample, t::Float64)
     planet = args.environment_model.planet
     ephemerides_model = args.environment_model.ephemerides_model
-    et0 = SM.ephemerides_time_seconds(args.initial_time, ephemerides_model)
+    et0 = SM.ephemerides_epoch_seconds(ephemerides_model, args.initial_time)
     et = et0 + t
-    l_pi = SM.planet_frame_lpi(planet, et, ephemerides_model)
+    l_pi = SM.ephemerides_frame_lpi(ephemerides_model, planet, et)
     pos_pp, vel_pp = SM.SimulationCallbacks._planet_relative_state(
         state.pos_ii, state.vel_ii, planet, l_pi)
     alt, lat, lon = SM.SimulationCallbacks.rtolatlong(pos_pp, planet)
@@ -896,7 +896,7 @@ end
 function _solar_sample(args, t::Float64)
     planet = args.environment_model.planet
     ephemerides_model = args.environment_model.ephemerides_model
-    et0 = SM.ephemerides_time_seconds(args.initial_time, ephemerides_model)
+    et0 = SM.ephemerides_epoch_seconds(ephemerides_model, args.initial_time)
     et = et0 + t
     primary = SM.DynamicEffectors._spice_query_name(planet.name)
     sun_pos = SM.EphemeridesModels.spice_position_j2000_m("sun", et, primary)
@@ -905,7 +905,7 @@ end
 
 function _third_body_sample(args, model::SM.NBodyGravityModel, t::Float64)
     ephemerides_model = args.environment_model.ephemerides_model
-    et0 = SM.ephemerides_time_seconds(args.initial_time, ephemerides_model)
+    et0 = SM.ephemerides_epoch_seconds(ephemerides_model, args.initial_time)
     et = et0 + t
     primary = SM.DynamicEffectors._spice_query_name(model.primary_body_name)
     positions = ntuple(length(model.body_names)) do k

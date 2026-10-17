@@ -27,7 +27,9 @@ end
 
 """
 RPO control effector that tracks guidance references with LQ-MPC and allocates
-actuators.
+actuators. `chaser_index` and `target_index` are the run positions of the chaser
+and the target; `chaser_idx` and `target_idx`, their old names, still work with a
+deprecation warning until SpaceAGORA 0.5.0.
 
 `actuation = :ideal` (the default) applies the allocated force, rotated to the
 inertial frame at the control tick and held there, with the jets' and the
@@ -37,20 +39,39 @@ ticks: the forces go to the first six mounted thrusters, so mount
 `six_axis_thrusters(model.thrusters)` on the chaser first; any other mounted
 actuator stays idle. The wheel torque is applied as in `:ideal`.
 """
-Base.@kwdef mutable struct RPOMPCControlModel <: AbstractControlEffectorModel
-    chaser_idx::Int = 1
-    target_idx::Int = 2
-    thrusters::SixAxisThrusterModel = SixAxisThrusterModel()
-    minimum_throttle_fraction::Float64 = 0.0
-    controller::Any = nothing
-    plan_buffer::RPOPlanBuffer = RPOPlanBuffer()
-    held::RPOHeldActuation = RPOHeldActuation()
-    control_dt_s::Float64 = 1.0
-    attitude_kp::Float64 = 0.0
-    rate_kd::Float64 = 0.0
-    max_rw_torque_nm::Float64 = Inf
-    command_log::Union{Nothing, RPOControlCommandLog} = nothing
-    actuation::Symbol = :ideal
+mutable struct RPOMPCControlModel <: AbstractControlEffectorModel
+    chaser_index::Int
+    target_index::Int
+    thrusters::SixAxisThrusterModel
+    minimum_throttle_fraction::Float64
+    controller::Any
+    plan_buffer::RPOPlanBuffer
+    held::RPOHeldActuation
+    control_dt_s::Float64
+    attitude_kp::Float64
+    rate_kd::Float64
+    max_rw_torque_nm::Float64
+    command_log::Union{Nothing, RPOControlCommandLog}
+    actuation::Symbol
     # `:mounted` actuation: one level per actuator mounted on the chaser, refreshed each tick.
-    mounted_levels::Vector{Float64} = Float64[]
+    mounted_levels::Vector{Float64}
+end
+# The deprecated names forward, as keywords and as properties.
+function RPOMPCControlModel(; chaser_index=_NOT_PASSED, target_index=_NOT_PASSED, chaser_idx=_NOT_PASSED, target_idx=_NOT_PASSED,
+        thrusters=SixAxisThrusterModel(), minimum_throttle_fraction=0.0, controller=nothing,
+        plan_buffer=RPOPlanBuffer(), held=RPOHeldActuation(), control_dt_s=1.0, attitude_kp=0.0, rate_kd=0.0,
+        max_rw_torque_nm=Inf, command_log=nothing, actuation=:ideal, mounted_levels=Float64[])
+    T = RPOMPCControlModel
+    return T(_renamed_keyword(T, :chaser_idx, chaser_idx, :chaser_index, chaser_index, 1),
+        _renamed_keyword(T, :target_idx, target_idx, :target_index, target_index, 2),
+        thrusters, minimum_throttle_fraction, controller, plan_buffer, held, control_dt_s, attitude_kp, rate_kd,
+        max_rw_torque_nm, command_log, actuation, mounted_levels)
+end
+@inline _rpo_mpc_field(name::Symbol) =
+    name === :chaser_idx ? _renamed_field_warning(RPOMPCControlModel, :chaser_idx, :chaser_index) :
+    name === :target_idx ? _renamed_field_warning(RPOMPCControlModel, :target_idx, :target_index) : name
+@inline Base.getproperty(m::RPOMPCControlModel, name::Symbol) = getfield(m, _rpo_mpc_field(name))
+@inline function Base.setproperty!(m::RPOMPCControlModel, name::Symbol, x)
+    field = _rpo_mpc_field(name)
+    return setfield!(m, field, convert(fieldtype(RPOMPCControlModel, field), x))
 end

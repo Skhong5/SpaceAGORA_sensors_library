@@ -116,7 +116,7 @@ function _planet_cache(planet_id::String)::AnalyticalPlanetCache
         InverseSquaredJ2GravityModel(),
         SolarRadiationPressureModel(0.9, ref_area),
         nbody,
-        SM.ephemerides_time_seconds(_INITIAL_TIME, _EPHEMERIDES_MODEL),
+        SM.ephemerides_epoch_seconds(_EPHEMERIDES_MODEL, _INITIAL_TIME),
     )
     _PLANET_CACHE[planet_id] = cached
     return cached
@@ -303,7 +303,7 @@ end
 
 function _planet_frame(ctx::CaseContext, pos::SVector{3, Float64}, vel::SVector{3, Float64}, t::Float64)
     et = ctx.et0_s + t
-    l_pi = SM.planet_frame_lpi(ctx.planet, et, _EPHEMERIDES_MODEL)
+    l_pi = SM.ephemerides_frame_lpi(_EPHEMERIDES_MODEL, ctx.planet, et)
     pos_pp, vel_pp = SM.SimulationCallbacks._planet_relative_state(pos, vel, ctx.planet, l_pi)
     r = norm(pos_pp)
     alt = r - ctx.planet.Rp_e

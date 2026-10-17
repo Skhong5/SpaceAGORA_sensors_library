@@ -122,6 +122,15 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :link_cardinality, rendered = "SpaceAGORA.link_cardinality"),
         (owner = :SpaceAGORA, symbol = :check_link, rendered = "SpaceAGORA.check_link"),
         (owner = :SpaceAGORA, symbol = :link_initialize!, rendered = "SpaceAGORA.link_initialize!"),
+        (owner = :SpaceAGORA, symbol = :SpacecraftScope, rendered = "SpaceAGORA.SpacecraftScope"),
+        (owner = :SpaceAGORA, symbol = :AllSpacecraft, rendered = "SpaceAGORA.AllSpacecraft"),
+        (owner = :SpaceAGORA, symbol = :BoundSpacecraft, rendered = "SpaceAGORA.BoundSpacecraft"),
+        (owner = :SpaceAGORA, symbol = :CoupledSpacecraft, rendered = "SpaceAGORA.CoupledSpacecraft"),
+        (owner = :SpaceAGORA, symbol = :spacecraft_scope, rendered = "SpaceAGORA.spacecraft_scope"),
+        (owner = :SpaceAGORA, symbol = :skip_inactive, rendered = "SpaceAGORA.skip_inactive"),
+        (owner = :SpaceAGORA, symbol = :release_command!, rendered = "SpaceAGORA.release_command!"),
+        (owner = :SpaceAGORA, symbol = :held_command, rendered = "SpaceAGORA.held_command"),
+        (owner = :SpaceAGORA, symbol = :held_command_time, rendered = "SpaceAGORA.held_command_time"),
     ]),
     (
         title = "Simulation Setup",
@@ -317,6 +326,11 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :getDensity, rendered = "SpaceAGORA.getDensity"),
             (owner = :SpaceAGORA, symbol = :getDensityBatch!, rendered = "SpaceAGORA.getDensityBatch!"),
             (owner = :SpaceAGORA, symbol = :with_density_model_epoch, rendered = "SpaceAGORA.with_density_model_epoch"),
+            (owner = :SpaceAGORA, symbol = :ephemerides_frame_lpi, rendered = "SpaceAGORA.ephemerides_frame_lpi"),
+            (owner = :SpaceAGORA, symbol = :ephemerides_sun_ii, rendered = "SpaceAGORA.ephemerides_sun_ii"),
+            (owner = :SpaceAGORA, symbol = :ephemerides_epoch_seconds, rendered = "SpaceAGORA.ephemerides_epoch_seconds"),
+            (owner = :SpaceAGORA, symbol = :ephemerides_requires_spice, rendered = "SpaceAGORA.ephemerides_requires_spice"),
+            (owner = :SpaceAGORA, symbol = :ephemerides_cache_key, rendered = "SpaceAGORA.ephemerides_cache_key"),
             (owner = :SpaceAGORA, symbol = :update_control!, rendered = "SpaceAGORA.update_control!"),
             (owner = :SpaceAGORA, symbol = :control_wrench, rendered = "SpaceAGORA.control_wrench"),
             (owner = :SpaceAGORA, symbol = :control_propellant_rate, rendered = "SpaceAGORA.control_propellant_rate"),
@@ -338,7 +352,10 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :calcReactionWheelTorque, rendered = "SpaceAGORA.calcReactionWheelTorque"),
             (owner = :SpaceAGORA, symbol = :calcControlEffect!, rendered = "SpaceAGORA.calcControlEffect!"),
             (owner = :SpaceAGORA, symbol = :calcGuidanceEffect!, rendered = "SpaceAGORA.calcGuidanceEffect!"),
-            (owner = :SpaceAGORA, symbol = :calcNavigationEffect!, rendered = "SpaceAGORA.calcNavigationEffect!")
+            (owner = :SpaceAGORA, symbol = :calcNavigationEffect!, rendered = "SpaceAGORA.calcNavigationEffect!"),
+            (owner = :SpaceAGORA, symbol = :planet_frame_lpi, rendered = "SpaceAGORA.planet_frame_lpi"),
+            (owner = :SpaceAGORA, symbol = :ephemerides_sun_direction_ii, rendered = "SpaceAGORA.ephemerides_sun_direction_ii"),
+            (owner = :SpaceAGORA, symbol = :ephemerides_time_seconds, rendered = "SpaceAGORA.ephemerides_time_seconds")
         ]
     ),
     (

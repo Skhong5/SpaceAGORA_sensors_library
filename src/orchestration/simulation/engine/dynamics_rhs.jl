@@ -2825,11 +2825,17 @@ end
     return nothing
 end
 
+# The run position an effector is bound to: its `spacecraft_index`, or the older
+# `spacecraft_idx` (still the field of `RobotArmReactionEffector`); `nothing` when
+# it has neither.
+@inline _effector_spacecraft_index(effector) =
+    hasproperty(effector, :spacecraft_index) ? getproperty(effector, :spacecraft_index) :
+    hasproperty(effector, :spacecraft_idx) ? getproperty(effector, :spacecraft_idx) : nothing
+
 """Return whether an effector owns a robot-arm plan for the requested spacecraft."""
 @inline function _robot_arm_effector_matches(effector, sat_idx::Int)::Bool
     return hasproperty(effector, :plan) &&
-        hasproperty(effector, :spacecraft_idx) &&
-        getproperty(effector, :spacecraft_idx) == sat_idx &&
+        _effector_spacecraft_index(effector) == sat_idx &&
         getproperty(effector, :plan) isa SimulationModel.RobotArmPlan
 end
 

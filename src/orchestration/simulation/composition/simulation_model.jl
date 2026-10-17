@@ -11,11 +11,11 @@ using Reexport
 isdefined(parentmodule(@__MODULE__), :RuntimeServices) ||
     Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "runtime_services.jl"))
 
-isdefined(parentmodule(@__MODULE__), :SimulationLifecycle) ||
-    Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "interfaces", "simulation_lifecycle.jl"))
-
 isdefined(parentmodule(@__MODULE__), :GNCRuntime) ||
     Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "interfaces", "gnc_runtime.jl"))
+
+isdefined(parentmodule(@__MODULE__), :SimulationLifecycle) ||
+    Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "interfaces", "simulation_lifecycle.jl"))
 
 isdefined(parentmodule(@__MODULE__), :CallbackServices) ||
     Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "callback_services.jl"))
@@ -130,7 +130,7 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "dynamics", "external_pro
 module FrameTransforms
 using ..Geodesy
 using ..OrbitalGeometry
-using ..EphemeridesModels: ephemerides_requires_spice, planet_frame_lpi
+using ..EphemeridesModels: ephemerides_requires_spice, _ephemerides_frame_lpi
 include(joinpath(@__DIR__, "..", "..", "..", "foundation", "core", "interfaces", "reference_system.jl"))
 export _EARTH_HIGH_PREC_BODY_FIXED_FRAME, _EARTH_FALLBACK_BODY_FIXED_FRAME
 export _spice_lock, _spice_frame_lock, r_intor_p!, r_pintor_i

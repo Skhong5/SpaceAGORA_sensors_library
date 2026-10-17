@@ -37,10 +37,11 @@ for marker in (
 end
 
 for marker in (
-    "calcForceTorque",
+    "wrench",
     "getDensity",
     "update_control!",
     "control_wrench",
+    "reference/extension_conventions.md",
     "templates/force_torque_model_template.jl",
     "templates/control_hook_template.jl",
 )

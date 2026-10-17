@@ -866,6 +866,7 @@ module GuidanceSandbox
 using ..SimulationModel
 using ..SimulationModel.Geodesy: geodetic_altitude, ellipsoid_surface_radius, radius_for_geodetic_altitude
 using ..SimulationModel.AbstractTypes: AbstractGuidanceModel
+using ..SimulationModel.EphemeridesModels: _ephemerides_frame_lpi
 using ComponentArrays
 using LinearAlgebra
 using StaticArrays

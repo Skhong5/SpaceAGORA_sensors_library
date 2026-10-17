@@ -1,6 +1,6 @@
 using Test, SpaceAGORA, JSON
 const ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const EPHEMERIDES = parentmodule(first(methods(SpaceAGORA.SimulationModel.planet_frame_lpi)))
+const EPHEMERIDES = SpaceAGORA.SimulationModel.EphemeridesModels
 const ORIGINAL_FRAME_METHOD = first(methods(EPHEMERIDES._spice_planet_frame_lpi))
 # Loading definitions must not perform a campaign or replace the package method.
 withenv("XVAL_FRAME_TABLE_DIR" => nothing) do
@@ -59,7 +59,7 @@ end # isolated lifecycle environment
               "0,0,-1,0,1,0,0,0,0,1\n1,0,-1,0,1,0,0,0,0,1\n")
         code = """
             using Test, SpaceAGORA, SPICE
-            eph = parentmodule(first(methods(SpaceAGORA.SimulationModel.planet_frame_lpi)))
+            eph = SpaceAGORA.SimulationModel.EphemeridesModels
             original = first(methods(eph._spice_planet_frame_lpi))
             include($(repr(joinpath(ROOT, "scripts", "xval", "xval_fullarc.jl"))))
             @test first(methods(eph._spice_planet_frame_lpi)) !== original

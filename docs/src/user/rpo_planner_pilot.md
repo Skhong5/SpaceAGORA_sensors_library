@@ -192,8 +192,15 @@ Subtype `AbstractRPOPlanner`. Implement `planner_capabilities`, optionally
 `initialize_planner`, and `plan_rpo!(state, planner, request, rng)`. Return an
 `RPOPlanningResult` containing an `RPOReference` for candidate status. Reference
 times are uniform and relative to `origin_time_s`; vectors are SI target RTN,
-including the rotating-frame transport term in velocities. The contract guide
-lists validation rules. Add `retime_rpo!` only when you also declare retiming.
+including the rotating-frame transport term in velocities. The
+[RPO planner contract](../reference/rpo_planner_contract.md) lists the validation
+rules. Add `retime_rpo!` only when you also declare retiming.
+
+An RPO planner is also an algorithm of SpaceAGORA's general GNC algorithm
+contract, the first family of it.
+[The general algorithm contract](../reference/rpo_planner_contract.md#The-general-algorithm-contract)
+maps the RPO names to the general ones; the RPO names remain the supported way
+to write an RPO planner.
 
 A custom planner must support `deepcopy`, including when copied per spacecraft,
 per run and into failure reports. `initialize_planner` must return fresh state
@@ -204,7 +211,8 @@ for arbitrary planner code.
 
 The separate-project smoke defines a tiny test planner using only these public
 methods, including an explicit failed result. Its force example uses the existing
-`AbstractForceTorqueModel` and `wrench` interface, passed through
+`AbstractForceTorqueModel` and `wrench` interface
+([Adding a Force or Torque](custom_effector.md)), passed through
 `extra_effectors=(model,)`. No internal package module or source include is needed.
 
 ## Installing optional HYPR

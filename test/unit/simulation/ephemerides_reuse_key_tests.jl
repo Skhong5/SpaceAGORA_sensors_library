@@ -26,15 +26,15 @@ const ANALYTIC = SM.SimpleEphemeridesModel()
 
 EM.ephemerides_requires_spice(::KeyedEphemeridesModel) = false
 EM.ephemerides_cache_key(model::KeyedEphemeridesModel) = model.key
-EM.ephemerides_time_seconds(initial_time, ::KeyedEphemeridesModel) =
-    EM.ephemerides_time_seconds(initial_time, ANALYTIC)
-function EM.planet_frame_lpi(planet, et::Float64, model::KeyedEphemeridesModel)
+EM.ephemerides_epoch_seconds(::KeyedEphemeridesModel, initial_time) =
+    EM.ephemerides_epoch_seconds(ANALYTIC, initial_time)
+function EM.ephemerides_frame_lpi(model::KeyedEphemeridesModel, planet, et::Float64)
     c, s = cos(model.turn_rad), sin(model.turn_rad)
     turn = SMatrix{3, 3, Float64}(c, -s, 0.0, s, c, 0.0, 0.0, 0.0, 1.0)
-    return turn * EM.planet_frame_lpi(planet, et, ANALYTIC)
+    return turn * EM.ephemerides_frame_lpi(ANALYTIC, planet, et)
 end
-EM.ephemerides_sun_direction_ii(planet, et::Float64, ::KeyedEphemeridesModel) =
-    EM.ephemerides_sun_direction_ii(planet, et, ANALYTIC)
+EM.ephemerides_sun_ii(::KeyedEphemeridesModel, planet, et::Float64) =
+    EM.ephemerides_sun_ii(ANALYTIC, planet, et)
 
 @testset "Ephemerides reuse key: built-in keys keep their strings" begin
     @test SE._ephemerides_model_reuse_key(SM.SpiceEphemeridesModel()) == "spice"
@@ -111,7 +111,7 @@ function frame_cache_for(model)
 end
 
 frames_match(cache, model) = all(
-    cache.quaternions[i] == SM.dcm_to_quaternion(EM.planet_frame_lpi(FRAME_PLANET, cache.ets[i], model))
+    cache.quaternions[i] == SM.dcm_to_quaternion(EM.ephemerides_frame_lpi(model, FRAME_PLANET, cache.ets[i]))
     for i in eachindex(cache.ets))
 
 # Runs `body` with the planet-frame cache and its reuse on, then removes this

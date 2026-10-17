@@ -52,23 +52,44 @@ To read `h_wheels`/`held_dipole_am2` back after a run, call
 `run_simulation(args; isolate_state=false)`: the default `isolate_state=true`
 deep-copies the configuration — including this model — so the simulation
 advances a copy and the caller's handle is left untouched.
+
+`spacecraft_index` is the run position of the managed spacecraft; `sat_idx`, its
+old name, still works with a deprecation warning until SpaceAGORA 0.5.0.
 """
-Base.@kwdef mutable struct MagneticMomentumManagerModel <: AbstractControlEffectorModel
-    sat_idx::Int = 1
-    mu_gain::Float64 = 3.0e-4                 # unloading gain [1/s]
-    m_max_am2::Float64 = Inf                  # rod dipole capability cap [A m^2]
-    h_wheels_0::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 0.0)
-    commanded_torque::Any = nothing           # (t, r_ii, v_ii, q_ib, w_body) -> tau_body [N m]
-    b_field_ii::Any = nothing                 # (t, r_ii) -> B_ii [T]
+mutable struct MagneticMomentumManagerModel <: AbstractControlEffectorModel
+    spacecraft_index::Int
+    mu_gain::Float64                          # unloading gain [1/s]
+    m_max_am2::Float64                        # rod dipole capability cap [A m^2]
+    h_wheels_0::SVector{3, Float64}
+    commanded_torque::Any                     # (t, r_ii, v_ii, q_ib, w_body) -> tau_body [N m]
+    b_field_ii::Any                           # (t, r_ii) -> B_ii [T]
     # internal discrete state (updated only inside update_control!)
-    h_wheels::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 0.0)
-    held_torque_body::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 0.0)
-    held_dipole_am2::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 0.0)
-    last_update_s::Float64 = NaN
-    initialized::Bool = false
-    ticks::Int = 0                            # diagnostic: discrete updates applied
-    actuation::Symbol = :ideal                # :ideal holds the rod torque; :mounted drives mounted torque rods
-    mounted_levels::Vector{Float64} = Float64[]   # :mounted: one level per mounted actuator, refreshed each tick
+    h_wheels::SVector{3, Float64}
+    held_torque_body::SVector{3, Float64}
+    held_dipole_am2::SVector{3, Float64}
+    last_update_s::Float64
+    initialized::Bool
+    ticks::Int                                # diagnostic: discrete updates applied
+    actuation::Symbol                         # :ideal holds the rod torque; :mounted drives mounted torque rods
+    mounted_levels::Vector{Float64}           # :mounted: one level per mounted actuator, refreshed each tick
+end
+# The deprecated name forwards, as a keyword and as a property.
+function MagneticMomentumManagerModel(; spacecraft_index=_NOT_PASSED, sat_idx=_NOT_PASSED, mu_gain=3.0e-4, m_max_am2=Inf,
+        h_wheels_0=SVector{3, Float64}(0.0, 0.0, 0.0), commanded_torque=nothing, b_field_ii=nothing,
+        h_wheels=SVector{3, Float64}(0.0, 0.0, 0.0), held_torque_body=SVector{3, Float64}(0.0, 0.0, 0.0),
+        held_dipole_am2=SVector{3, Float64}(0.0, 0.0, 0.0), last_update_s=NaN, initialized=false, ticks=0,
+        actuation=:ideal, mounted_levels=Float64[])
+    T = MagneticMomentumManagerModel
+    return T(_renamed_keyword(T, :sat_idx, sat_idx, :spacecraft_index, spacecraft_index, 1),
+        mu_gain, m_max_am2, h_wheels_0, commanded_torque, b_field_ii, h_wheels, held_torque_body, held_dipole_am2,
+        last_update_s, initialized, ticks, actuation, mounted_levels)
+end
+@inline _momentum_manager_field(name::Symbol) = name === :sat_idx ?
+    _renamed_field_warning(MagneticMomentumManagerModel, :sat_idx, :spacecraft_index) : name
+@inline Base.getproperty(m::MagneticMomentumManagerModel, name::Symbol) = getfield(m, _momentum_manager_field(name))
+@inline function Base.setproperty!(m::MagneticMomentumManagerModel, name::Symbol, x)
+    field = _momentum_manager_field(name)
+    return setfield!(m, field, convert(fieldtype(MagneticMomentumManagerModel, field), x))
 end
 
 # The body-frame momentum of the wheels the engine integrates for spacecraft
@@ -82,7 +103,7 @@ end
 
 """Advance the wheel-momentum accumulator (or read the integrated wheels) and refresh the held rod command."""
 function update_control!(model::MagneticMomentumManagerModel, u, p, t::Float64, sat_idx::Int)
-    sat_idx == model.sat_idx || return nothing
+    sat_idx == model.spacecraft_index || return nothing
     (model.commanded_torque === nothing || model.b_field_ii === nothing) && return nothing
 
     r_ii = SVector{3, Float64}(u.sc[sat_idx].pos)
@@ -158,14 +179,14 @@ function actuation_mode(model::MagneticMomentumManagerModel)
 end
 
 function actuator_levels(model::MagneticMomentumManagerModel, i::Int)
-    (i == model.sat_idx && !isempty(model.mounted_levels)) || return nothing
+    (i == model.spacecraft_index && !isempty(model.mounted_levels)) || return nothing
     return model.mounted_levels
 end
 
 """Return the held rod torque (body frame); no force."""
 function control_wrench(model::MagneticMomentumManagerModel, x::StateSample, p, t::Float64)
     zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
-    x.spacecraft_index == model.sat_idx || return zero3, zero3
+    x.spacecraft_index == model.spacecraft_index || return zero3, zero3
     return zero3, model.held_torque_body
 end
 

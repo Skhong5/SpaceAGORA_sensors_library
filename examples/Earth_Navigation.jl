@@ -1518,7 +1518,7 @@ const _moon_fallback_warned = Ref(false)
 
 function body_pos_wrt_earth_pci(body_name::String, et::Float64, planet::AbstractPlanet)::SVector{3, Float64}
     name = uppercase(body_name)
-    l_pi = SimulationModel.planet_frame_lpi(planet, et, SimulationModel.SpiceEphemeridesModel())
+    l_pi = SimulationModel.ephemerides_frame_lpi(SimulationModel.SpiceEphemeridesModel(), planet, et)
     if name == "MOON"
         try
             r_moon_j2000 = lock(RuntimeServices.SPICE_LOCK) do
@@ -1750,7 +1750,7 @@ initial_time = InitialTime(
 )
 ephemerides = SpiceEphemeridesModel()
 # The run's start epoch, as the engine computes it from the same initial time.
-et_start = ephemerides_time_seconds(initial_time, ephemerides)
+et_start = ephemerides_epoch_seconds(ephemerides, initial_time)
 
 areas = [sc.root.ref_area for sc in spacecraft]
 dynamic_effectors = (
