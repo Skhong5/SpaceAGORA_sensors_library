@@ -277,8 +277,8 @@ The built-in kinds:
   the vehicle's state (`cmg_angles`, only when a CMG is mounted); the vehicle
   feels `-δ̇ (g × h)` and the rotor's momentum in its gyroscopic term.
   `cmg_steering(spacecraft, angles, torque)` turns a desired torque into
-  gimbal rates with a singularity-robust inverse. The split solver modes
-  refuse CMGs.
+  gimbal rates with a singularity-robust inverse. The gravity-backbone mode
+  and articulated spacecraft refuse CMGs.
 
 The actuators' power feeds the spacecraft's power budget when it carries one:
 solar arrays, a battery and constant loads mounted with `add_power!`. See
