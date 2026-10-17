@@ -228,9 +228,10 @@ function _measurement_shape_check(sensor, run::_SensorRun, seed::Integer, since:
     run.failure === nothing || push!(problems, "the fixture run could not be sampled: " * _summary(run.failure))
     for (truth, ctx) in run.samples
         m = try
-            SimulationModel.sensor_measure(deepcopy(sensor), truth, ctx, Random.Xoshiro(seed))
+            only(_fresh_measurements(sensor, truth, ctx, seed, 1))
         catch err
-            push!(problems, "sensor_measure threw at t = $(truth.t_s) s: " * _summary(err))
+            push!(problems, "a copy of the sensor, reset and initialized as the engine does, could not measure at " *
+                "t = $(truth.t_s) s: " * _summary(err))
             break
         end
         _has_shape(m, dimension) && all(isfinite, m) && continue
@@ -241,14 +242,35 @@ function _measurement_shape_check(sensor, run::_SensorRun, seed::Integer, since:
     return _check(:measurement_shape, since, isempty(problems), join(problems, "\n"))
 end
 
-# Whether the sensor's measurement depends on its random stream: two calls on the
-# same truth, from copies of the sensor, with streams of two seeds.
+# A copy of `sensor` made ready as the engine makes a sensor ready for a run: mounted
+# on a scratch spacecraft and reset by the engine's `reset_sensors!` (its stream from
+# `seed`, its latest measurement unset, a gyro's bias at its initial value), then
+# `initialize_sensor!` with the first sample's truth and context. `count` successive
+# measurements of `truth` follow, each drawing from `stream` (default: the engine's
+# stream for `seed`). Initialization gets the engine's stream, so a sensor that
+# reseeds the stream it is given there cannot hide its draws from `stream`.
+function _fresh_measurements(sensor, truth, ctx, seed::Integer, count::Integer; stream=nothing)
+    spacecraft = first(_fixture_configuration().dynamics_model.spacecraft)
+    s = deepcopy(sensor)
+    hasfield(typeof(s), :seed) && (s.seed = seed)
+    SimulationModel.add_sensor!(spacecraft, spacecraft.root, s)
+    SimulationModel.reset_sensors!(spacecraft)
+    SimulationModel.initialize_sensor!(s, truth, ctx, s.rng)
+    rng = stream === nothing ? s.rng : stream
+    return [SimulationModel.sensor_measure(s, truth, ctx, rng) for _ in 1:count]
+end
+
+# Whether the sensor's measurements depend on its random stream: a short sequence of
+# measurements of one truth, from engine-ready copies of the sensor, with streams of
+# two seeds. A sequence, not one measurement: a gyro whose bias walks returns the
+# current bias before drawing its next step.
+const _NOISE_PROBE_LENGTH = 4
 function _draws_noise(sensor, run::_SensorRun, seeds)
     isempty(run.samples) && return false
     truth, ctx = first(run.samples)
     try
-        a = SimulationModel.sensor_measure(deepcopy(sensor), truth, ctx, Random.Xoshiro(seeds[1]))
-        b = SimulationModel.sensor_measure(deepcopy(sensor), truth, ctx, Random.Xoshiro(seeds[2]))
+        a = _fresh_measurements(sensor, truth, ctx, seeds[1], _NOISE_PROBE_LENGTH; stream=Random.Xoshiro(seeds[1]))
+        b = _fresh_measurements(sensor, truth, ctx, seeds[1], _NOISE_PROBE_LENGTH; stream=Random.Xoshiro(seeds[2]))
         return !isequal(a, b)
     catch
         return false

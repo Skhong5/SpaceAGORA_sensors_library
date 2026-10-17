@@ -176,6 +176,38 @@ end
 NcNoTimeSensor() = NcNoTimeSensor(1.0, 1, nothing, SVector(NaN, NaN, NaN))
 SpaceAGORA.sensor_dimension(::NcNoTimeSensor) = 3
 SpaceAGORA.sensor_measure(::NcNoTimeSensor, truth, ctx, rng) = noisy(truth, rng)
+# Clean, and it needs initialize_sensor!: its offset is NaN until that sets it.
+mutable struct NcNeedsInitSensor <: SpaceAGORA.AbstractSensor
+    period_s::Float64
+    seed::Int
+    rng::Any
+    latest::Any
+    latest_time_s::Float64
+    offset::Float64
+end
+NcNeedsInitSensor() = NcNeedsInitSensor(1.0, 1, nothing, SVector(NaN, NaN, NaN), NaN, NaN)
+SpaceAGORA.sensor_dimension(::NcNeedsInitSensor) = 3
+SpaceAGORA.initialize_sensor!(s::NcNeedsInitSensor, truth, ctx, rng) = (s.offset = 0.0; nothing)
+SpaceAGORA.sensor_measure(s::NcNeedsInitSensor, truth, ctx, rng) = noisy(truth, rng) .+ s.offset
+# seed_repeatable: like a gyro whose bias walks, its first reading draws nothing (the
+# current bias) and later ones do; initialize_sensor! resets the stream to a fixed seed.
+mutable struct NcFixedSeedWalkSensor <: SpaceAGORA.AbstractSensor
+    period_s::Float64
+    seed::Int
+    rng::Any
+    latest::Any
+    latest_time_s::Float64
+    bias::SVector{3, Float64}
+end
+NcFixedSeedWalkSensor() = NcFixedSeedWalkSensor(1.0, 1, nothing, SVector(NaN, NaN, NaN), NaN, SVector(0.0, 0.0, 0.0))
+SpaceAGORA.sensor_dimension(::NcFixedSeedWalkSensor) = 3
+SpaceAGORA.initialize_sensor!(s::NcFixedSeedWalkSensor, truth, ctx, rng) =
+    (Random.seed!(rng, 1234); s.bias = SVector(0.0, 0.0, 0.0); nothing)
+function SpaceAGORA.sensor_measure(s::NcFixedSeedWalkSensor, truth, ctx, rng)
+    reading = truth.ω_body + s.bias
+    s.bias += 1.0e-4 * SVector(randn(rng), randn(rng), randn(rng))
+    return reading
+end
 
 const SENSOR_RUN_LEVEL = (:repeatable_run, :deepcopy_equivalent, :global_rng_independent, :concurrent_equals_sequential,
     :seed_repeatable, :custom_state_reset)
@@ -408,6 +440,9 @@ controls() = [
     (kind=:sensor, id=:seed_repeatable, broken="its stream reset to a fixed seed",
         expect="yet runs with those seeds give the same measurements",
         report=() -> check_sensor(NcFixedSeedSensor()), passing=sensor_except(:seed_repeatable)),
+    (kind=:sensor, id=:seed_repeatable, broken="its stream reset to a fixed seed, and its first reading draws nothing",
+        expect="yet runs with those seeds give the same measurements",
+        report=() -> check_sensor(NcFixedSeedWalkSensor()), passing=sensor_except(:seed_repeatable)),
     (kind=:sensor, id=:custom_state_reset, broken="a sample counter it never resets",
         expect="two runs with isolate_state=false on one configuration differ: ",
         report=() -> check_sensor(NcCountingSensor()), passing=sensor_except(:custom_state_reset)),
@@ -480,10 +515,12 @@ status_of(report, id) = only(check.status for check in report.checks if check.id
         reader = check_navigation_model(NcNSensorReader(0.0); sensors=(NcCleanSensor(),))
         @test status_of(reader, :bind_fresh_state) === :pass
         @test passed(reader)
-        sensor = check_sensor(NcCleanSensor())
-        @test [check.id for check in sensor.checks] == collect(CHECK_IDS.sensor)
-        @test all(check -> check.status === :pass, sensor.checks) || Threads.nthreads() < 2
-        @test passed(sensor)
+        # The second needs initialize_sensor! before it can measure, as the engine calls it.
+        for sensor in (check_sensor(NcCleanSensor()), check_sensor(NcNeedsInitSensor()))
+            @test [check.id for check in sensor.checks] == collect(CHECK_IDS.sensor)
+            @test all(check -> check.status === :pass, sensor.checks) || Threads.nthreads() < 2
+            @test passed(sensor)
+        end
     end
     for control in all_controls
         # A check reports a broken input as a failing check; it never throws.

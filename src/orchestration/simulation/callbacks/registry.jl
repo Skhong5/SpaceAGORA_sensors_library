@@ -1,7 +1,7 @@
 using ..FrameTransforms
 import ...SimulationLifecycle
 import ...GNCRuntime
-using ...GNCRuntime: tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!
+using ...GNCRuntime: tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!, gnc_period_s
 
 using OrdinaryDiffEq
 using DiffEqBase
