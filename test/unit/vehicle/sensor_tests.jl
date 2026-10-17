@@ -61,7 +61,7 @@ SpaceAGORA.calcForceTorque(::LegacyUniformGravity, x::AbstractVector, p, i::Int)
     (Float64(x.mass) * SVector(0.0, 0.0, -0.5), SVector(0.0, 0.0, 0.0))
 
 const EPOCH = SM.InitialTime(year=2024, month=3, day=20, hour=0, minute=0, second=0.0)
-sun_hat() = (e = SM.SimpleEphemeridesModel(); SVector{3, Float64}(SM.ephemerides_sun_direction_ii(SM.Earth(), SM.ephemerides_time_seconds(EPOCH, e), e)))
+sun_hat() = (e = SM.SimpleEphemeridesModel(); SVector{3, Float64}(SM.ephemerides_sun_ii(e, SM.Earth(), SM.ephemerides_epoch_seconds(e, EPOCH))))
 
 function sensor_spacecraft(; sensors=(RateGyro(period_s=0.5), StarTracker(period_s=1.0), Magnetometer(period_s=0.5)), panel_q=nothing,
                             direction=SVector(1.0, 0.0, 0.0), spin=ω0)
@@ -263,7 +263,7 @@ row_at(table, t) = findfirst(==(t), table.time)
         x = res.solution.u[end].sc[1]
         @test sensor_measurement(gnss) == SVector(x.pos..., x.vel...)
         e = SM.SimpleEphemeridesModel()
-        s_ii = SVector{3, Float64}(SM.ephemerides_sun_direction_ii(SM.Earth(), SM.ephemerides_time_seconds(EPOCH, e) + 4.0, e)) * SM.mean_solar_distance_m(SM.Earth())
+        s_ii = SVector{3, Float64}(SM.ephemerides_sun_ii(e, SM.Earth(), SM.ephemerides_epoch_seconds(e, EPOCH) + 4.0)) * SM.mean_solar_distance_m(SM.Earth())
         expected = SM.rot(SVector{4}(x.q)) * normalize(s_ii - SVector{3}(x.pos))
         @test sensor_measurement(sun) ≈ expected atol=1e-12
         night = SunSensor(period_s=1.0, field_of_view_rad=π)
