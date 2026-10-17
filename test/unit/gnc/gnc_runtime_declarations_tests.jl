@@ -1,7 +1,7 @@
 # The run-time declarations of control models (GNCRuntime), and the run-start
 # initialization of navigation effectors and of a sensor's own state.
 module GNCRuntimeDeclarationsTests
-using Test, StaticArrays, SpaceAGORA
+using Test, StaticArrays, LinearAlgebra, Logging, SpaceAGORA
 using DiffEqCallbacks: PresetTimeCallback
 import SpaceAGORA.TelemetryVerification: make_example_config
 const SM = SpaceAGORA.SimulationModel
@@ -86,6 +86,34 @@ function constellation_args(control; n=4, mission_time=5.0)
         control_model=SM.ControlModel(control_effectors=(control,), control_rates=[1.0]),
         initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0))
 end
+
+# A periodic law that declares the period it assumes.
+struct PeriodicLaw <: SM.AbstractControlEffectorModel
+    period_s::Float64
+end
+SpaceAGORA.calcControlEffect!(::PeriodicLaw, u, p, t, i) = nothing
+SpaceAGORA.calcControlForceTorque(::PeriodicLaw, u, p, i, t) = (ZERO3, ZERO3)
+SpaceAGORA.gnc_period_s(m::PeriodicLaw) = m.period_s
+
+# The period warnings `f()` gives. Under --depwarn=error the shared pre-run
+# warning throws instead, with the same message.
+function period_warnings(f)
+    is_period(msg) = occursin("will refuse this run", msg)
+    if Base.JLOptions().depwarn == 2
+        try
+            f()
+            return String[]
+        catch e
+            msg = sprint(showerror, e)
+            is_period(msg) || rethrow()
+            return [msg]
+        end
+    end
+    logger = Test.TestLogger(min_level=Logging.Warn)
+    with_logger(f, logger)
+    return filter(is_period, [string(l.message) for l in logger.logs])
+end
+period_messages(args) = period_warnings(() -> SM.SimulationCallbacks.check_control_periods(args))
 
 # A sensor with state of its own: the number of samples since the run started.
 mutable struct CountingSensor <: AbstractSensor
@@ -212,6 +240,34 @@ SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
         @test all(>(0), law.tick_thread) && all(>(0), law.stop_thread)
         @test length(unique(law.stop_thread)) == 1                 # one thread registers every stop
         Threads.nthreads() > 1 && @test length(unique(law.tick_thread)) > 1   # while the ticks spread
+    end
+
+    @testset "declared periods are checked before the run" begin
+        @test gnc_period_s(:any_model) === nothing
+        # The MPC controllers keep the step they were discretized with.
+        ctrl = SM.init_rpo_lqmpc(0.001, 0.2, Matrix(1.0I, 6, 6), Matrix(1.0I, 3, 3), Matrix(1.0I, 6, 6), 4)
+        @test ctrl.dt_s == 0.2 && deepcopy(ctrl).dt_s == 0.2
+        # A contributor's declared period against its callback's rate (0.5 s).
+        @test isempty(period_messages(runtime_args((PeriodicLaw(0.5),))))
+        warned = period_messages(runtime_args((PeriodicLaw(0.25),)))
+        @test length(warned) == 1 && occursin("0.25 s period", only(warned)) && occursin("every 0.5 s", only(warned))
+        # A configuration check, not a deprecation: the :preflight log group.
+        if Base.JLOptions().depwarn != 2
+            logger = Test.TestLogger(min_level=Logging.Warn)
+            with_logger(() -> SM.SimulationCallbacks.check_control_periods(runtime_args((PeriodicLaw(0.25),))), logger)
+            @test only(logger.logs).group === :preflight
+        end
+        # The RPO pilot builds its controller with the model's step; a different step warns.
+        rpo = make_rpo_configuration(planner=DirectRPOPlanner(), mission_time_s=0.2)
+        mpc = only(rpo.control_model.control_effectors)
+        @test gnc_period_s(mpc) == mpc.control_dt_s == mpc.controller.dt_s
+        @test isempty(period_messages(rpo))
+        mpc.controller.dt_s = 2mpc.control_dt_s
+        warned = period_messages(rpo)
+        @test length(warned) == 1 && occursin("discretized with a", only(warned))
+        # The engine runs the check before every run.
+        warned = period_warnings(() -> run_simulation(runtime_args((PeriodicLaw(0.25),))))
+        @test length(warned) == 1 && occursin("0.25 s period", only(warned))
     end
 
     @testset "links pair models, and the engine checks and initializes each once" begin

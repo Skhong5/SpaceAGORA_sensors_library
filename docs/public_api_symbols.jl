@@ -100,6 +100,7 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :gnc_callbacks, rendered = "SpaceAGORA.gnc_callbacks"),
         (owner = :SpaceAGORA, symbol = :register_tstops!, rendered = "SpaceAGORA.register_tstops!"),
         (owner = :SpaceAGORA, symbol = :gnc_clock_started!, rendered = "SpaceAGORA.gnc_clock_started!"),
+        (owner = :SpaceAGORA, symbol = :gnc_period_s, rendered = "SpaceAGORA.gnc_period_s"),
         (owner = :SpaceAGORA, symbol = :Produces, rendered = "SpaceAGORA.Produces"),
         (owner = :SpaceAGORA, symbol = :Consumes, rendered = "SpaceAGORA.Consumes"),
         (owner = :SpaceAGORA, symbol = :gnc_links, rendered = "SpaceAGORA.gnc_links"),
