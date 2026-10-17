@@ -286,6 +286,7 @@ const PUBLIC_API_SECTIONS = [
         items = [
             (owner = :SpaceAGORA, symbol = :wrench, rendered = "SpaceAGORA.wrench"),
             (owner = :SpaceAGORA, symbol = :environment_requirements, rendered = "SpaceAGORA.environment_requirements"),
+            (owner = :SpaceAGORA, symbol = :is_gravitational, rendered = "SpaceAGORA.is_gravitational"),
             (owner = :SpaceAGORA, symbol = :solver_partition, rendered = "SpaceAGORA.solver_partition"),
             (owner = :SpaceAGORA, symbol = :gravity_backbone_structure, rendered = "SpaceAGORA.gravity_backbone_structure"),
             (owner = :SpaceAGORA, symbol = :gravity_backbone_acceleration_ii, rendered = "SpaceAGORA.gravity_backbone_acceleration_ii"),
@@ -376,7 +377,6 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :sensor_period_s, rendered = "SpaceAGORA.sensor_period_s"),
             (owner = :SpaceAGORA, symbol = :initialize_sensor!, rendered = "SpaceAGORA.initialize_sensor!"),
             (owner = :SpaceAGORA, symbol = :sensor_needs_specific_force, rendered = "SpaceAGORA.sensor_needs_specific_force"),
-            (owner = :SpaceAGORA, symbol = :is_gravitational, rendered = "SpaceAGORA.is_gravitational"),
             (owner = :SpaceAGORA, symbol = :add_sensor!, rendered = "SpaceAGORA.add_sensor!"),
             (owner = :SpaceAGORA, symbol = :mounted_sensors, rendered = "SpaceAGORA.mounted_sensors"),
             (owner = :SpaceAGORA, symbol = :sensor_measurement, rendered = "SpaceAGORA.sensor_measurement"),
