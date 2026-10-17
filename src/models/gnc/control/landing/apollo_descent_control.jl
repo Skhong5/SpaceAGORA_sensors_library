@@ -337,15 +337,20 @@ end
     return hasproperty(u, :sc) ? u.sc[i] : u
 end
 
-function calcControlEffect!(model::ApolloDescentControlModel, u, p::ODEParams, t::Float64, i::Int64)
+# The engine does not tick an inactive spacecraft (skip_inactive): at each control
+# tick after touchdown or impact it releases the command instead, engine and jets
+# off; the other mounted actuators keep holding.
+function GNCRuntime.release_command!(model::ApolloDescentControlModel, t, i)
+    i in model.spacecraft_indices || return nothing
+    model.actuators.thrust_n[i] = 0.0
+    model.actuators.torque_nm[i] = SVector{3, Float64}(0.0, 0.0, 0.0)
+    _zero_descent_thrusters!(model.actuators, i)
+    return nothing
+end
+
+function update_control!(model::ApolloDescentControlModel, u, p::ODEParams, t::Float64, i::Int64)
     n = length(model.actuators.thrust_n)
     i in model.spacecraft_indices || return nothing
-    if !p.is_active[i]
-        model.actuators.thrust_n[i] = 0.0
-        model.actuators.torque_nm[i] = SVector{3, Float64}(0.0, 0.0, 0.0)
-        _zero_descent_thrusters!(model.actuators, i)
-        return nothing
-    end
     sc = _descent_state_view(u, i)
     hasproperty(sc, :q) && hasproperty(sc, :ω) || throw(ArgumentError("ApolloDescentControlModel needs orientation_sim=true (attitude state q and ω)."))
     cfg = model.config

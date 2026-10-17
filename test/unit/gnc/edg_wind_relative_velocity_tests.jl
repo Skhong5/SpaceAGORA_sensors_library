@@ -62,8 +62,8 @@ end
 function setup(model)
     args = config(model)
     p = SM.ODEParams(n_sats=1, args=args)
-    p.shared_buffers.et_start[] = SM.ephemerides_time_seconds(args.initial_time,
-        args.environment_model.ephemerides_model)
+    p.shared_buffers.et_start[] = SM.ephemerides_epoch_seconds(args.environment_model.ephemerides_model,
+        args.initial_time)
     p.shared_buffers.callback_env_config[] = CB._snapshot_callback_env_config(args)
     p.shared_buffers.current_time[] = 0.0
     u = SE.build_initial_conditions(args)

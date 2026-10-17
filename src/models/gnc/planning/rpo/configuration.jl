@@ -163,7 +163,7 @@ function make_rpo_configuration(; planner::P.AbstractRPOPlanner, seed::Integer=7
         push!(spacecraft,sc)
         buffer=S.RPOPlanBuffer()
         push!(guidance,PlannerGuidance(planner=deepcopy(selected),chaser_id=Int(spec.id),
-            target_id=Int(target_id),chaser_idx=i,target_idx=length(specs)+1,goal_rtn_m=goal,
+            target_id=Int(target_id),chaser_index=i,target_index=length(specs)+1,goal_rtn_m=goal,
             geometry=deepcopy(geometry),geometry_revision=revision,constraints=constraints,
             validation=validation,reference_dt_s=dt,preview_horizon_steps=12,validity_s=validity,
             seed=Int(seed),events=copy(events),replan_interval_s=Float64(replan_interval_s),
@@ -175,7 +175,7 @@ function make_rpo_configuration(; planner::P.AbstractRPOPlanner, seed::Integer=7
         controller=S.init_rpo_lqmpc(n,dt,Q,R,10Q,12;
             u_min=fill(-.05/5.2,3),u_max=fill(.05/5.2,3))
         thrusters=S.SixAxisThrusterModel(max_thrust_n=SVector{6}(fill(.05,6)),isp_s=SVector{6}(fill(60.,6)))
-        push!(controls,S.RPOMPCControlModel(chaser_idx=i,target_idx=length(specs)+1,
+        push!(controls,S.RPOMPCControlModel(chaser_index=i,target_index=length(specs)+1,
             thrusters=thrusters,controller=controller,plan_buffer=buffer,control_dt_s=dt,
             attitude_kp=.02,rate_kd=.08,max_rw_torque_nm=.002,command_log=S.RPOControlCommandLog()))
     end

@@ -2,6 +2,7 @@ using ..FrameTransforms
 import ...SimulationLifecycle
 import ...GNCRuntime
 using ...GNCRuntime: tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!, gnc_period_s
+using ...GNCRuntime: Produces, Consumes, gnc_links, link_cardinality, check_link, link_initialize!
 
 using OrdinaryDiffEq
 using DiffEqBase
@@ -14,7 +15,8 @@ using ...RuntimeServices: SPICE_LOCK, GRAM_LOCK, tracked_lock
 using ..SimulationModel: PlanetFrameEphemerisCache, rot
 using ..SimulationModel: ExternalPropagation
 using ..ArticulatedBody: articulated_forward_kinematics, articulated_link_poses, articulated_has_moving_joints
-using ..SimulationModel: ephemerides_time_seconds, planet_frame_lpi, ephemerides_requires_spice, ephemerides_sun_direction_ii
+using ..SimulationModel: ephemerides_requires_spice
+using ..SimulationModel.EphemeridesModels: _ephemerides_epoch_seconds, _ephemerides_frame_lpi, _ephemerides_sun_ii
 using ..ParallelPolicy
 using ..EnvironmentModels
 using ..EnvironmentModels: getDensity, getDensityBatch!, NoAtmosphereModel
@@ -29,6 +31,7 @@ using ..SceneVisualization: link_pose_vector, link_pose_link_indices, arm_pose_v
 import ..ConfigTypes: GramTrackCache, VacuumPredictedGRAMCache, GramDensityPerturbationState
 import ..ConfigTypes: GramTrackCacheConfig, CallbackEnvConfig, PolicyDecisionEnvConfig
 using ..ControlHooks: calcControlEffect!, control_thruster_levels, _thruster_levels_at, touchdown_spec, refresh_burn!, mounted_burn_tick!, burn_edge
+using ..ControlHooks: _effective_burn_window, _burn_window_changed, _burn_window_pending
 using ..Actuators: actuation_mode, actuator_levels
 using ..ActuatorMounting: mounted_gimbal_count, apply_gimbal_levels!
 using ..ActuatorMounting: mounted_thruster_fractions, mounted_hinge_count, apply_hinge_levels!, mounted_actuator_count
@@ -38,8 +41,9 @@ using ..ThrusterHooks: thrust_calculation_schmitt_trigger!
 using ..PowerSystems: has_battery, has_power_parts, battery, solar_generation_w, solar_flux_w_m2, mean_solar_distance_m
 using ..PowerSystems: bus_load_w, actuator_power_by_tier, battery_boundary!, update_power_state!, shed_levels
 using ..DynamicEffectors: eclipse_area_calc, MagneticTorqueRodModel, rod_field_body
+using ..DynamicEffectors: is_gravitational
 using ..ActuatorFaults: has_faults, faulted_levels, refresh_faults!, fault_edge, resolve_faults!
-using ..Sensors: SensorTruth, sensor_measure, sensor_requirements, sensor_period_s, initialize_sensor!
+using ..Sensors: SensorTruth, sensor_measure, sensor_requirements, sensor_period_s, initialize_sensor!, sensor_needs_specific_force
 using ..SensorMounting: SensorMounting, mounted_sensors, reset_sensors!
 using ..ActuatorMounting: actuator_context
 using ..TerrainModels: AbstractTerrainModel, DEMTerrainModel, terrain_radius

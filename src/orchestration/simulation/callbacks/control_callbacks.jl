@@ -17,8 +17,11 @@ end
     if sat_idx < 1 || sat_idx > length(control_model.start_burn_time)
         return nothing
     end
-    _maybe_add_control_tstop!(integrator, control_model.start_burn_time[sat_idx])
-    _maybe_add_control_tstop!(integrator, control_model.stop_burn_time[sat_idx])
+    # The effective window: the scheduler's own, or else the plan installed in
+    # its burn-plan buffer (by the burn-plan family).
+    start_s, stop_s = _effective_burn_window(control_model, integrator.p, sat_idx)
+    _maybe_add_control_tstop!(integrator, start_s)
+    _maybe_add_control_tstop!(integrator, stop_s)
     return nothing
 end
 
@@ -70,14 +73,14 @@ end
 
 @inline function _run_guidance_for_thruster_schedule!(integrator, sat_idx::Int)
     @inbounds for guidance_model in integrator.p.args.guidance_model.guidance_effectors
-        calcGuidanceEffect!(guidance_model, integrator.u, integrator.p, integrator.t, sat_idx)
+        _gnc_tick!(_update_guidance!, guidance_model, integrator.u, integrator.p, integrator.t, sat_idx)
     end
     return nothing
 end
 
 @inline function _schedule_thruster_control!(integrator, control_model::BaseThrusterModel, sat_idx::Int)
     _run_guidance_for_thruster_schedule!(integrator, sat_idx)
-    calcControlEffect!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
+    _gnc_tick!(_update_control!, control_model, integrator.u, integrator.p, integrator.t, sat_idx)
     _register_control_tstops!(integrator, control_model, sat_idx)
     refresh_burn!(control_model, integrator.p, sat_idx, integrator.t)
     return nothing
@@ -103,11 +106,15 @@ end
 # discontinuity unless it clears the flag, so the solver evaluates the
 # derivative again, with the new thrust, before the next step; the callback
 # must not call `derivative_discontinuity!(integrator, false)`, which would keep
-# the stale one.
+# the stale one. The callback also takes up a plan installed in the burn-plan
+# buffer since the scheduler's last pass: it adds the plan's window ends as stops
+# and records it, at the end of the step it was installed in.
 function _burn_edge_callback(control_model::BaseThrusterModel, num_sats::Int)
-    condition = (u, t, integrator) -> burn_edge(control_model, t)
+    condition = (u, t, integrator) -> burn_edge(control_model, t) || _burn_window_pending(control_model, integrator.p)
     affect! = integrator -> begin
         @inbounds for sat_idx in 1:num_sats
+            _burn_window_changed(control_model, integrator.p, sat_idx) &&
+                _register_control_tstops!(integrator, control_model, sat_idx)
             refresh_burn!(control_model, integrator.p, sat_idx, integrator.t)
         end
         return nothing
@@ -226,6 +233,86 @@ function check_control_periods(args)
     return nothing
 end
 
+# Links of the built-in models (GNCRuntime). The RPO plan buffer is written by the
+# planner (its method lives with the planner) or the deprecated RPOGuidanceModel,
+# and read by the RPO MPC controller. The energy-depletion state is shared by the
+# EDG guidance and control; the link initializes it once per run.
+GNCRuntime.gnc_links(g::_simulation_model_module.RPOGuidanceModel) = (Produces(g.plan_buffer),)
+GNCRuntime.gnc_links(c::_simulation_model_module.RPOMPCControlModel) = (Consumes(c.plan_buffer),)
+GNCRuntime.gnc_links(g::_simulation_model_module.AerobrakingEnergyDepletionGuidanceModel) = (Produces(g.state),)
+GNCRuntime.gnc_links(c::_simulation_model_module.AerobrakingEnergyDepletionControlModel) = (Consumes(c.state),)
+GNCRuntime.link_initialize!(s::_simulation_model_module.AerobrakingEnergyDepletionState, producers, consumers, u, p, t) =
+    _simulation_model_module.GuidanceHooks._edg_initialize_state!(s)
+
+"""
+    gnc_link_groups(args) -> Vector
+
+The run's links, in configuration order: for each shared object that a guidance,
+navigation or control model declares in `gnc_links`, the models that produce it
+and those that consume it, each in configuration order. Links are grouped by
+identity.
+"""
+function gnc_link_groups(args)
+    order = Any[]
+    members = IdDict()                       # link => (producers, consumers), by identity
+    models = (args.guidance_model.guidance_effectors..., args.navigation_model.navigation_effectors...,
+              args.control_model.control_effectors...)
+    for model in models, declared in gnc_links(model)
+        declared isa Union{Produces, Consumes} || throw(ArgumentError(
+            "gnc_links($(nameof(typeof(model)))) must return Produces and Consumes wrappers, not $(typeof(declared))."))
+        link = declared.link
+        haskey(members, link) || (members[link] = (Any[], Any[]); push!(order, link))
+        push!(declared isa Produces ? members[link][1] : members[link][2], model)
+    end
+    return [(link=link, producers=members[link][1], consumers=members[link][2]) for link in order]
+end
+
+"""
+    check_gnc_links(args) -> nothing
+
+Before a run: refuse a link whose numbers of producers and consumers fall outside
+its `link_cardinality`, then run each link's `check_link`.
+"""
+function check_gnc_links(args)
+    for group in gnc_link_groups(args)
+        limits = link_cardinality(group.link)
+        T = nameof(typeof(group.link))
+        for (role, models, allowed) in (("produce", group.producers, limits.producers),
+                                        ("consume", group.consumers, limits.consumers))
+            length(models) in allowed || throw(ArgumentError(
+                "$(length(models)) models $(role) one $(T); $(allowed) may: " *
+                join(unique(string.(nameof.(typeof.(models)))), ", ") * "."))
+        end
+        check_link(group.link, group.producers, group.consumers, args)
+    end
+    return nothing
+end
+
+"""
+    initialize_gnc_links!(args, u, p, t) -> nothing
+
+At a run's start, before the models' own initializers: each link's
+`link_initialize!`, once.
+"""
+function initialize_gnc_links!(args, u, p, t)
+    for group in gnc_link_groups(args)
+        link_initialize!(group.link, group.producers, group.consumers, u, p, t)
+    end
+    return nothing
+end
+
+# The models that produce a link `control_model` consumes, in configuration order.
+function _linked_producers(control_model, args)
+    consumed = [declared.link for declared in gnc_links(control_model) if declared isa Consumes]
+    isempty(consumed) && return ()
+    producers = Any[]
+    for group in gnc_link_groups(args), producer in group.producers
+        any(link -> link === group.link, consumed) || continue
+        any(model -> model === producer, producers) || push!(producers, producer)
+    end
+    return Tuple(producers)
+end
+
 function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
     # Perform the control effects' calculations at specific rates given by the control_rates field in the ControlModel
     control_models = args.control_model.control_effectors
@@ -244,11 +331,21 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
         # Each control effector callback runs at its own rate and updates
         # all spacecraft states. The spacecraft index is passed explicitly
         # to avoid conflating effector-index with spacecraft-index.
+        # A spacecraft outside the effector's scope gets neither the tick nor the
+        # mounted actuators' update (`_gnc_tick!`).
         apply_control! = (integrator, sat_idx) -> begin
-            calcControlEffect!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
+            _gnc_tick!(_update_control!, control_model, integrator.u, integrator.p, integrator.t, sat_idx) ||
+                return nothing
             _apply_mounted_tick!(control_model, integrator.p, sat_idx, integrator.t, Float64(control_rate))
         end
+        # The models that write what this one reads (its links) prepare it first,
+        # once per tick and on this thread: the RPO planner checks its reference.
+        producers = _linked_producers(control_model, args)
         control_func = (integrator) -> begin
+            for producer in producers
+                SimulationLifecycle.before_reference_control!(producer, control_model, integrator.u, integrator.p,
+                    integrator.t)
+            end
             decision = _control_callback_thread_decision(integrator.p, control_model, num_sats)
             use_threads = decision.use_threads
             started_ns = time_ns()

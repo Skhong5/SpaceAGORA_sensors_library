@@ -8,7 +8,7 @@ mutable struct HoldLevels <: AbstractControlEffectorModel
 end
 SpaceAGORA.actuation_mode(::HoldLevels) = :mounted
 SpaceAGORA.actuator_levels(c::HoldLevels, i::Int) = i == 1 ? c.levels : nothing
-SpaceAGORA.calcControlEffect!(::HoldLevels, u, p, t::Float64, i::Int64) = nothing
+SpaceAGORA.update_control!(::HoldLevels, u, p, t::Float64, i::Int64) = nothing
 
 function far_spacecraft(; ω0=SVector(0.0, 0.0, 0.0), pos=SVector(4.0e9, 0.0, 0.0))
     root = SM.Link(root=true, m=500.0, dims=MVector(1.0, 1.0, 1.0))

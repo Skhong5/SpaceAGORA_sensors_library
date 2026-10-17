@@ -215,7 +215,7 @@ on spacecraft `i` (its position in the run, not its ID), in mounting order
 spacecraft the effector does not drive.
 
 The engine calls this at every right-hand-side evaluation, so compute the
-levels in `calcControlEffect!` and return stored values here.
+levels in `update_control!` and return stored values here.
 
 The defaults of this and the other optional actuator methods take untyped
 arguments, so a method written for one kind or one controller, typed or not,

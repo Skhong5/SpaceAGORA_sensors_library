@@ -9,7 +9,7 @@ mutable struct HoldLevels <: AbstractControlEffectorModel
 end
 SpaceAGORA.actuation_mode(::HoldLevels) = :mounted
 SpaceAGORA.actuator_levels(c::HoldLevels, i::Int) = i == 1 ? c.levels : nothing
-SpaceAGORA.calcControlEffect!(::HoldLevels, u, p, t::Float64, i::Int64) = nothing
+SpaceAGORA.update_control!(::HoldLevels, u, p, t::Float64, i::Int64) = nothing
 
 const PLANET = SM.Earth()
 const EPHEM = SM.SimpleEphemeridesModel()
@@ -20,7 +20,7 @@ const ORBIT_R = PLANET.Rp_e + 500e3
 # an array facing the Sun at the start (24.5 W lit), a 5 Wh battery, a 5 W load
 # and a laser terminal drawing 10 W at its 2 W command.
 function power_spacecraft(; soc=0.5, battery=true, laser=true, wheel=false, facing=1.0, area=0.06, recovery_soc=0.05)
-    sun0 = SM.ephemerides_sun_direction_ii(PLANET, SM.ephemerides_time_seconds(EPOCH, EPHEM), EPHEM)
+    sun0 = SM.ephemerides_sun_ii(EPHEM, PLANET, SM.ephemerides_epoch_seconds(EPHEM, EPOCH))
     ic = SM.CartesianInitialCondition(SVector(ORBIT_R, 0.0, 0.0), SVector(0.0, sqrt(PLANET.μ / ORBIT_R), 0.0); q=SVector(0.0, 0.0, 0.0, 1.0))
     bus = SM.Link(root=true, m=10.0, dims=MVector(0.1, 0.2, 0.3))
     sc = SM.SpacecraftModel(links=[bus], root=bus, inertia_tensor=bus.inertia, initial_condition=ic, id=1)

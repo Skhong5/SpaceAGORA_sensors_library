@@ -18,13 +18,21 @@ What to read next:
 - [Public API](generated/public_api.md)
 - [Concepts](user/concepts.md)
 
-SpaceAGORA now exposes a minimal stable extension contract from the root package.
-
-The rule is simple:
+SpaceAGORA exposes a stable extension contract from the root package. The rule
+is simple:
 
 1. subtype a stable abstract interface exported by `SpaceAGORA`
 2. implement the matching root hook function
 3. wire the model into the typed runtime configuration
+
+Every hook follows the same [Extension Conventions](reference/extension_conventions.md):
+the argument order (time before the spacecraft index), which state a hook
+receives, frames, units, signs and names. The
+[Extension Hook Reference](generated/extension_hook_reference.md) lists each
+hook with its shape, signature and fallback, and
+[Migrating Extension Hooks](reference/migrating_extension_hooks.md) maps the
+deprecated names to their replacements. Each section below names its hooks'
+shape and links its rows in the reference.
 
 Do not build new extensions by importing internal modules directly unless you
 are intentionally working on SpaceAGORA internals.
@@ -38,6 +46,9 @@ external spacecraft integrators. HYPR uses its existing
 
 ## Add a force or torque model
 
+Shape: right-hand side (R), plus declarations (D). Rows:
+[Physical effectors](generated/extension_hook_reference.md#Physical-effectors).
+
 Stable interface:
 
 - `SpaceAGORA.AbstractForceTorqueModel`
@@ -48,7 +59,6 @@ Stable interface:
 - `SpaceAGORA.gravity_backbone_acceleration_ii`
 - `SpaceAGORA.gravity_backbone_kick_structure`
 - `SpaceAGORA.gravity_backbone_kick_acceleration_ii`
-- `SpaceAGORA.calcForceTorque` (deprecated, removed in 0.5.0)
 
 Preferred additive methods:
 
@@ -62,19 +72,13 @@ SpaceAGORA.gravity_backbone_kick_acceleration_ii(model, x::SpaceAGORA.StateSampl
 SpaceAGORA.wrench(model, x::SpaceAGORA.StateSample, env::SpaceAGORA.EnvironmentSample, t::Float64) -> (force_ii, torque_body)
 ```
 
-Deprecated method, removed in SpaceAGORA 0.5.0:
-
-```julia
-SpaceAGORA.calcForceTorque(model, x, p, i) -> (force_n, torque_n_m)
-```
-
 Implement `wrench`. The engine owns stage-consistent sampling and passes typed
 state/environment data into the effector; `x.spacecraft_index` is the
-spacecraft's position in the run. A model with only `calcForceTorque` still runs
-through it, and the run warns before integration (an error under
-`julia --depwarn=error`). Calling `calcForceTorque` on a model that implements
-`wrench`, as every built-in model does, returns that model's `wrench` for the
-state `x` it is given.
+spacecraft's position in the run. Type the sample `x::SpaceAGORA.StateSample`,
+or leave it untyped
+([the supported sample argument](reference/extension_conventions.md#The-supported-sample-argument)).
+The deprecated `calcForceTorque(model, x, p, i)` still runs, with a warning
+before the run; see [Migrating Extension Hooks](reference/migrating_extension_hooks.md#Force-and-torque-models).
 Override `solver_partition` only if the effector should move to the implicit
 side of `split_imex`; the default is `:explicit`.
 Override the gravity-backbone hooks only if the effector should participate in
@@ -100,6 +104,9 @@ Template:
 
 ## Add a density model
 
+Shape: query (Q). Rows:
+[Environment queries](generated/extension_hook_reference.md#Environment-queries).
+
 Stable interface:
 
 - `SpaceAGORA.AbstractDensityModel`
@@ -112,8 +119,8 @@ Required scalar method:
 SpaceAGORA.getDensity(model, h, lat, lon, el_time, wind[, p]) -> (rho, temperature, wind_vec)
 ```
 
-`h` is height in metres, `lat` and `lon` are in radians, and `el_time` is elapsed
-seconds from the scenario epoch. `wind` is a `Bool` saying whether the caller
+`h` is geodetic altitude in metres, `lat` (geodetic) and `lon` are in radians,
+and `el_time` is elapsed seconds from the scenario epoch. `wind` is a `Bool` saying whether the caller
 needs the wind vector: the force and heating paths pass `true`, and density-only
 callers such as the visualization pass `false`. A model may return a zero
 `wind_vec` when `wind` is `false`. `wind_vec` holds the east, north and up wind
@@ -135,44 +142,38 @@ Template:
 
 ## Add a control effector or hook
 
+Shape: tick (T) for `update_control!`, right-hand side (R) for the outputs.
+Rows: [GNC ticks](generated/extension_hook_reference.md#GNC-ticks) and
+[Control outputs](generated/extension_hook_reference.md#Control-outputs).
+
 Stable interface:
 
 - `SpaceAGORA.AbstractControlEffectorModel`
-- `SpaceAGORA.calcControlEffect!`
+- `SpaceAGORA.update_control!`
 - `SpaceAGORA.control_wrench`
 - `SpaceAGORA.control_propellant_rate`
 - `SpaceAGORA.control_wheel_torque`
-- `SpaceAGORA.calcControlForceTorque`, `SpaceAGORA.calcControlMassFlowRate` and
-  `SpaceAGORA.calcReactionWheelTorque` (deprecated, removed in 0.5.0)
 
 Typical methods:
 
 ```julia
-SpaceAGORA.calcControlEffect!(model, u, p, t, spacecraft_index)
+SpaceAGORA.update_control!(model, u, p, t, spacecraft_index)
 SpaceAGORA.control_wrench(model, x::SpaceAGORA.StateSample, p, t::Float64) -> (force_ii, torque_body)
 SpaceAGORA.control_propellant_rate(model, x::SpaceAGORA.StateSample, p, t::Float64) -> kg/s, positive
 SpaceAGORA.control_wheel_torque(model, x::SpaceAGORA.StateSample, p, t::Float64) -> nothing or torque_body
 ```
 
-`calcControlEffect!` is the control tick: it computes the command and holds it.
+`update_control!` is the control tick: it computes the command and holds it.
 The three output hooks return the held command at every right-hand-side
 evaluation, and `x.spacecraft_index` is the spacecraft's position in the run.
-An effector that uses no propellant, or drives no wheel, leaves out
+`control_propellant_rate` returns the propellant used, **positive**. An effector
+that uses no propellant, or drives no wheel, leaves out
 `control_propellant_rate` or `control_wheel_torque`.
 
-The deprecated output hooks, removed in SpaceAGORA 0.5.0:
-
-| Deprecated | Replacement | What changes |
-|---|---|---|
-| `calcControlForceTorque(model, u, p, i, t)` | `control_wrench(model, x, p, t)` | a state sample, the time before the index, the index in `x.spacecraft_index` |
-| `calcControlMassFlowRate(model, u, p, i, t)` | `control_propellant_rate(model, x, p, t)` | the same, and **the sign**: the new hook returns the propellant used, positive, and the old one the mass derivative, negative |
-| `calcReactionWheelTorque(model, u, p, i, t)` | `control_wheel_torque(model, x, p, t)` | the same as for the wrench |
-
-An effector with only the old hooks still runs through them, and the run warns
-before integration (an error under `julia --depwarn=error`). Calling an old
-name on an effector that implements its replacement, as every built-in
-effector does, returns the replacement's result, the mass rate negated, and
-warns once per effector type.
+The deprecated `calcControlEffect!`, `calcControlForceTorque`,
+`calcControlMassFlowRate` and `calcReactionWheelTorque` still run, with a
+warning before the run. The mass-rate hook's sign changes with its name; see
+[Migrating Extension Hooks](reference/migrating_extension_hooks.md#Control-outputs).
 
 Registration:
 
@@ -186,17 +187,17 @@ Template:
 
 A `SpacecraftModel` can carry its own GNC (`SpacecraftModel(...; control=ControlModel(...))`,
 likewise `guidance` and `navigation`). At the start of `run_simulation` each such effector is
-passed through `SpaceAGORA.bind_spacecraft(effector, sat_idx)` with the position of its
-spacecraft and appended to the configuration-level tuples. An effector that selects its
-vehicle by an index field implements it by returning a copy with that field set:
+passed through `SpaceAGORA.bind_spacecraft(effector, spacecraft_index)` with the position
+of its spacecraft and appended to the configuration-level tuples. An effector that selects
+its vehicle by an index field implements it by returning a copy with that field set:
 
 ```julia
 struct MyPush <: SpaceAGORA.AbstractControlEffectorModel
-    sat_idx::Int
+    spacecraft_index::Int
     force_n::SVector{3, Float64}
 end
 
-SpaceAGORA.bind_spacecraft(m::MyPush, sat_idx::Int) = MyPush(sat_idx, m.force_n)
+SpaceAGORA.bind_spacecraft(m::MyPush, spacecraft_index::Int) = MyPush(spacecraft_index, m.force_n)
 ```
 
 The fallback throws an `ArgumentError`: an effector without an index acts on every
@@ -205,7 +206,44 @@ types) cannot belong to one, so both stay at configuration level. Built in: the
 momentum manager, the robot-arm control effector and the Apollo descent guidance and control
 models bind.
 
+## Add a guidance or navigation effector
+
+Shape: tick (T). Rows:
+[GNC ticks](generated/extension_hook_reference.md#GNC-ticks).
+
+Stable interface:
+
+- `SpaceAGORA.AbstractGuidanceModel` and `SpaceAGORA.update_guidance!`
+- `SpaceAGORA.AbstractNavigationModel` and `SpaceAGORA.update_navigation!`
+
+Typical methods:
+
+```julia
+SpaceAGORA.update_guidance!(model, u, p, t, spacecraft_index)
+SpaceAGORA.update_navigation!(model, u, p, t, spacecraft_index)
+```
+
+The ticks take the arguments of `update_control!`. A navigation effector takes
+its measurements or updates its estimate; a guidance effector updates a plan,
+a target or a mode; each keeps the result in its own state for the control
+effectors to read. When ticks coincide, navigation runs first, then control,
+then guidance; energy depletion guidance with targeting runs before control
+instead. The deprecated `calcGuidanceEffect!` and
+`calcNavigationEffect!` still run, with a warning before the run; see
+[Migrating Extension Hooks](reference/migrating_extension_hooks.md#GNC-ticks).
+
+Registration:
+
+- add guidance effectors to `GuidanceModel(guidance_effectors=(...), guidance_rates=[...])`
+- add navigation effectors to `NavigationModel(navigation_effectors=(...), navigation_rates=[...])`
+
+Planners for rendezvous and proximity operations follow the
+[RPO planner contract](reference/rpo_planner_contract.md) instead.
+
 ## Add an actuator
+
+Shape: hardware (H), plus declarations (D) and accessors (A). Rows:
+[Actuators](generated/extension_hook_reference.md#Actuators).
 
 An actuator is hardware mounted on a spacecraft link that acts on the vehicle
 when commanded. You describe the hardware once; the engine derives the force,
@@ -303,8 +341,8 @@ Registration: `add_actuator!(spacecraft, link, actuator)`.
 
 A control effector drives the mounted actuators by declaring
 `SpaceAGORA.actuation_mode(c) = :mounted` and returning one level per mounted
-actuator, in mounting order, from `SpaceAGORA.actuator_levels(c, i)`; it
-computes the levels in `calcControlEffect!` and writes no force or mass-flow
+actuator, in mounting order, from `SpaceAGORA.actuator_levels(c, spacecraft_index)`; it
+computes the levels in `update_control!` and writes no force or mass-flow
 hook. Effectors in the default `:ideal` mode keep applying their own hooks.
 The built-in RPO and Apollo descent controllers and the magnetic momentum
 manager accept `actuation=:mounted`. So does the orbit-maneuver burn scheduler
@@ -325,6 +363,9 @@ mounted wheels detumble it while its torque rods unload them.
 
 ## Add a sensor
 
+Shape: hardware (H), plus declarations (D). Rows:
+[Sensors](generated/extension_hook_reference.md#Sensors).
+
 A sensor measures the state of the vehicle for navigation; it does not act on
 the dynamics. A sensor kind is a mutable struct subtyping `AbstractSensor`
 with its parameters and five fields the engine fills or reads: `period_s`
@@ -335,18 +376,29 @@ number for a one-component sensor) and `latest_time_s`. It implements:
 - `sensor_measure(sensor, truth::SensorTruth, ctx::ActuatorContext, rng)`:
   one measurement of `truth` (the inertial position and velocity, the
   attitude, the body rate, the mass, the time and, when the sensor asks for
-  it, the magnetic field in the body frame), with any noise drawn from `rng`.
+  them, the magnetic field, the Sun's direction and lit fraction, and the
+  specific force, all in the body frame), with any noise drawn from `rng`.
   `ctx.link_to_body` maps the sensor's frame, its link's, to the body frame.
 - `sensor_dimension(sensor)`: the number of components.
 - optionally `sensor_requirements(sensor)`: `ActuatorRequirements(magnetic_field=true)`
   to receive the field (from the run's `MagneticTorqueRodModel`, or the
-  tilted dipole); no other environment is available to sensors.
+  tilted dipole) and `ActuatorRequirements(solar=true)` to receive the Sun's
+  direction and the lit fraction of its disk (the run's ephemerides and the
+  eclipse model); no other environment is available to sensors.
+- optionally `sensor_needs_specific_force(sensor) = true` to receive the
+  specific force: the vehicle's acceleration at the sample, from the solver,
+  less the acceleration of the run's gravitational effectors (those for which
+  `is_gravitational` is true; a user-defined gravity model should add a
+  method returning true).
 
 Mount it with `add_sensor!(spacecraft, link, sensor)`; a sensor on a hinged
 panel turns with it. The built-in kinds are `RateGyro` (body rate with white
 noise, a bias and a bias random walk), `StarTracker` (attitude with cross- and
-about-boresight noise, boresight along its link's +z) and `Magnetometer`
-(field with white noise and a bias).
+about-boresight noise, boresight along its link's +z), `Magnetometer`
+(field with white noise and a bias), `GNSSReceiver` (inertial position and
+velocity with white noise), `SunSensor` (the Sun's direction with angular
+noise, boresight along its link's +z, no reading outside its field of view or
+in eclipse) and `Accelerometer` (specific force with white noise and a bias).
 
 The engine samples every sensor at the run's start and every period after
 it, from the accepted state; the samples are solver stops, and a checkpointed
@@ -356,33 +408,30 @@ so a run repeats with the same seeds. Seeds are not varied for you: the
 built-in kinds default to `seed=1`, so in a Monte Carlo campaign set each
 sensor's `seed` from the sample's seed where the sample's spacecraft is
 built, or the samples share one noise stream. A navigation effector reads the latest measurement in
-`calcNavigationEffect!` with `sensor_measurement(p.args.dynamics_model.spacecraft[i], k)`
+`update_navigation!` with `sensor_measurement(p.args.dynamics_model.spacecraft[i], k)`
 (and its time with `sensor_measurement_time`); sensors sample before
 navigation effectors at the same time. Runs with sensors write the
 `sc{i}_sensor_{k}` columns (see [Output Columns](user/output_columns.md#Sensors))
 and cannot resume from a checkpoint file; the gravity-backbone and multirate
 solver modes refuse mounted sensors.
 
-## Planet, ephemerides, thermal, thruster, and guidance extensions
+## Planet, ephemerides, thermal and thruster extensions
 
 Stable interfaces:
 
 - `SpaceAGORA.AbstractPlanet`
 - `SpaceAGORA.AbstractEphemeridesModel`
-- `SpaceAGORA.AbstractThermalModel`
+- `SpaceAGORA.AbstractThermalModel` (its hook is `getHeatRate`, in W/cm²)
 - `SpaceAGORA.AbstractThrusterModel`
-- `SpaceAGORA.AbstractGuidanceModel`
 
 These interfaces are public because no-GRAM onboarding and future user-defined
-body/back-end, thermal, thruster, and guidance work need a stable contract,
-but the practical extension recipes for these types are still thinner than
-the force/density/control paths above: there is no single dedicated root
-hook function to implement (thermal models are consumed inside the
-force/torque and heat-load machinery, thruster models inside control
-effectors, and guidance models inside the GNC control hooks). Treat them as
-advanced extension points — subtype the abstract type and follow an existing
-implementation in `src/models/vehicle/thermal/`, `src/models/vehicle/actuators/`,
-or `src/models/gnc/guidance/` as a model rather than a documented recipe.
+body/back-end, thermal and thruster work need a stable contract, but their
+extension recipes are still thinner than the families above. The ephemerides
+hooks are not public yet, thermal models are consumed inside the heat-load
+machinery, and thruster models inside control effectors. Treat them as
+advanced extension points: subtype the abstract type and follow an existing
+implementation in `src/models/environment/`, `src/models/vehicle/thermal/` or
+`src/models/vehicle/actuators/` rather than a documented recipe.
 
 ## Design guidance
 

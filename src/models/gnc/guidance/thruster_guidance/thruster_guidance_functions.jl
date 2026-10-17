@@ -80,7 +80,7 @@ function _flight_apoapsis_ratio_scale(
     return _flight_ratio_scale(Float64(flight[maneuver_idx]), r_a_sim_m)
 end
 
-function calcGuidanceEffect!(guidanceAlg::AerobrakingCampaignPropulsiveManeuverGuidanceModel, u::ComponentVector, p::ODEParams, t::Float64, i::Int64)
+function update_guidance!(guidanceAlg::AerobrakingCampaignPropulsiveManeuverGuidanceModel, u::ComponentVector, p::ODEParams, t::Float64, i::Int64)
     if i < 1 || i > length(p.shared_buffers.maneuver_commands)
         return nothing
     end
@@ -107,7 +107,7 @@ function calcGuidanceEffect!(guidanceAlg::AerobrakingCampaignPropulsiveManeuverG
     return nothing
 end
 
-function calcGuidanceEffect!(guidanceAlg::ApoapsisTargetPeriapsisRaiseGuidanceModel, u::ComponentVector, p::ODEParams, t::Float64, i::Int64)
+function update_guidance!(guidanceAlg::ApoapsisTargetPeriapsisRaiseGuidanceModel, u::ComponentVector, p::ODEParams, t::Float64, i::Int64)
     if i < 1 || i > length(p.shared_buffers.maneuver_commands)
         return nothing
     end
@@ -149,7 +149,7 @@ function calcGuidanceEffect!(guidanceAlg::ApoapsisTargetPeriapsisRaiseGuidanceMo
 
     ephemerides_model = p.args.environment_model.ephemerides_model
     et = p.shared_buffers.et_start[] + Float64(t)
-    l_pi = planet_frame_lpi(planet, et, ephemerides_model)
+    l_pi = _ephemerides_frame_lpi(ephemerides_model, planet, et)
     periapsis_direction_pp = SVector{3, Float64}(l_pi * elements.periapsis_direction)
     periapsis_direction_pp = periapsis_direction_pp / norm(periapsis_direction_pp)
     target_periapsis_radius_m = _radius_for_oblate_altitude(

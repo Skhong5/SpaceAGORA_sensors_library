@@ -151,6 +151,14 @@ holds.
 The run records mark each of these requests, and each kept geometry revision, with
 `event=:trigger`, and each hold with `event=:fallback_installed`.
 
+`examples/Earth_RPO_Planner_Disturbances.jl` combines them with
+`DirectRPOPlanner`, in the root project. A sphere appears on the remaining path,
+so the replan is refused and the chaser holds; once it settles, the planner is
+asked once more and refuses again. When the sphere disappears, the new revision
+replaces the hold with a reference to the goal. A displacement later raises the
+tracking error above `tracking_error_limit_m`, and the same guidance tick replans
+from the displaced state. The script prints this timeline from `rpo_run_report`.
+
 ## Ownership, reproducibility and inspection
 
 Each controlled spacecraft owns fresh planner state, an independent controller
@@ -184,8 +192,15 @@ Subtype `AbstractRPOPlanner`. Implement `planner_capabilities`, optionally
 `initialize_planner`, and `plan_rpo!(state, planner, request, rng)`. Return an
 `RPOPlanningResult` containing an `RPOReference` for candidate status. Reference
 times are uniform and relative to `origin_time_s`; vectors are SI target RTN,
-including the rotating-frame transport term in velocities. The contract guide
-lists validation rules. Add `retime_rpo!` only when you also declare retiming.
+including the rotating-frame transport term in velocities. The
+[RPO planner contract](../reference/rpo_planner_contract.md) lists the validation
+rules. Add `retime_rpo!` only when you also declare retiming.
+
+An RPO planner is also an algorithm of SpaceAGORA's general GNC algorithm
+contract, the first family of it.
+[The general algorithm contract](../reference/rpo_planner_contract.md#The-general-algorithm-contract)
+maps the RPO names to the general ones; the RPO names remain the supported way
+to write an RPO planner.
 
 A custom planner must support `deepcopy`, including when copied per spacecraft,
 per run and into failure reports. `initialize_planner` must return fresh state
@@ -196,7 +211,8 @@ for arbitrary planner code.
 
 The separate-project smoke defines a tiny test planner using only these public
 methods, including an explicit failed result. Its force example uses the existing
-`AbstractForceTorqueModel` and `wrench` interface, passed through
+`AbstractForceTorqueModel` and `wrench` interface
+([Adding a Force or Torque](custom_effector.md)), passed through
 `extra_effectors=(model,)`. No internal package module or source include is needed.
 
 ## Installing optional HYPR
@@ -254,7 +270,10 @@ Robot-arm `planner=:hypr` also requires explicit loading; `:cloth_quintic` does 
 
 Comparison planners that request HYPR-configured objectives, refinement, sampling
 or retiming need the companion even when their search algorithm is RRT, CHOMP or
-STOMP. Shared RRT with explicit policies and shared scalar APIs remain independent.
+STOMP. The seven comparison modes are also planner objects, such as
+`RRTStarPlanner(...)`, which can be the `planner` of `make_rpo_configuration`; see
+[Comparison planners](../reference/rpo_planner_contract.md#Comparison-planners).
+Selecting a comparison mode by name is deprecated. Shared RRT with explicit policies and shared scalar APIs remain independent.
 The baseline LQ-MPC controller still needs OSQP; optional HYPR does not remove that
 controller dependency. Package separation changes installation, not the validated
 physical limits, planning reserve or numerical policies.
@@ -274,6 +293,17 @@ is unchanged. Build new RPO runs with `make_rpo_configuration` and a planner. Fo
 HYPR planning, pass `planner=HYPRRPOPlanner(RPOPSOConfig(...))`; the configuration
 then uses a `PlannerGuidance`, which validates each reference before installing
 it.
+
+The RPO examples run on this path: the main example plans inside the run, and
+the reconstruction example flies each comparison planner's plan with
+`RetainedPathRPOPlanner`, which times a given path for the run's request so that
+the run can validate it. The replanning study
+(`examples/Earth_RPO_HyPR_FinalISpaRo_Replanning.jl`) stays on the model until
+the model is removed: it is the recorded reproduction of the reconstructed
+disturbance families, including a goal change and the model's brake-then-replan
+policy. [Run the HyPR paper algorithm](hypr_paper.md) names the commit to
+reproduce it from afterwards. `examples/Earth_RPO_Planner_Disturbances.jl` shows
+disturbances on the planner path.
 
 The planner path covers the model's replanning features:
 

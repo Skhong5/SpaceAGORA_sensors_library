@@ -832,7 +832,7 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
         gnc_b_field = (t, r_ii) -> PE.get_magnetic_field_dipole(r_ii, gnc_l_pi)
         gnc_mgr = MagneticMomentumManagerModel[
             MagneticMomentumManagerModel(
-                sat_idx=i, mu_gain=7.0e-4, m_max_am2=1.8,
+                spacecraft_index=i, mu_gain=7.0e-4, m_max_am2=1.8,
                 h_wheels_0=SVector{3, Float64}(0.0, 0.0, 0.0),
                 commanded_torque=gnc_torque, b_field_ii=gnc_b_field
             )
@@ -915,7 +915,7 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
         b_field_ii = (t, r_ii) -> PE.get_magnetic_field_dipole(r_ii, l_pi_fixed)
         mgr_models = MagneticMomentumManagerModel[
             MagneticMomentumManagerModel(
-                sat_idx=i, mu_gain=7.0e-4, m_max_am2=1.8,
+                spacecraft_index=i, mu_gain=7.0e-4, m_max_am2=1.8,
                 h_wheels_0=SVector{3, Float64}(0.0, 0.0, 0.0),
                 commanded_torque=commanded_torque, b_field_ii=b_field_ii
             )
@@ -1034,7 +1034,7 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
     # get_control_callbacks (src/orchestration/simulation/callbacks/control_callbacks.jl) builds
     # one PeriodicCallback per control effector and each one loops over *all*
     # num_sats, so N per-satellite MagneticMomentumManagerModels cost N^2
-    # calcControlEffect! calls per tick -- of which N are the intended ones and
+    # update_control! calls per tick -- of which N are the intended ones and
     # N(N-1) are calls with a sat_idx the model does not own. That is invisible at
     # the 8 satellites multi_8sat_magnetorquer_attitude uses (64 calls) and
     # dominant at 256 (65,536): measured post-warm-up, e6 at N=256 takes 33.4 s for
@@ -1107,7 +1107,7 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
             stack_b_field = (t, r_ii) -> PE.get_magnetic_field_dipole(r_ii, stack_l_pi)
             stack_mgr = MagneticMomentumManagerModel[
                 MagneticMomentumManagerModel(
-                    sat_idx=i, mu_gain=7.0e-4, m_max_am2=1.8,
+                    spacecraft_index=i, mu_gain=7.0e-4, m_max_am2=1.8,
                     h_wheels_0=SVector{3, Float64}(0.0, 0.0, 0.0),
                     commanded_torque=stack_torque, b_field_ii=stack_b_field
                 )

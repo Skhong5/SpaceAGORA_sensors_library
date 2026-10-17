@@ -6,7 +6,7 @@ using ..AbstractTypes: AbstractActuator, AbstractSensor
 using ..QuaternionMath: rot, dcm_to_quaternion
 using Random: randn
 using ..Sensors: SensorTruth
-import ..Sensors: sensor_measure, sensor_dimension, sensor_requirements
+import ..Sensors: sensor_measure, sensor_dimension, sensor_requirements, sensor_needs_specific_force
 using ..ThrusterModels: SixAxisThrusterModel
 using ..Actuators: ActuatorContext, ActuatorRequirements, STANDARD_GRAVITY_MPS2, actuator_saturate, propellant_mass_rate
 import ..Actuators: actuator_wrench, actuator_limits, actuator_consumption, actuator_requirements
@@ -16,7 +16,7 @@ export ThrusterGimbal, gimbal_step, thrust_direction
 export ControlMomentGyro, cmg_momentum, cmg_torque_axis, cmg_angle_saturate
 export SolarArray, Battery, PowerLoad
 export ActuatorFault, FaultSet
-export RateGyro, StarTracker, Magnetometer
+export RateGyro, StarTracker, Magnetometer, GNSSReceiver, SunSensor, Accelerometer
 
 const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 

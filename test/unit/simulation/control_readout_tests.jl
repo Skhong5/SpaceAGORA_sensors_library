@@ -89,7 +89,7 @@ end
 
 function held_managers(n)
     return ntuple(n) do i
-        SM.MagneticMomentumManagerModel(sat_idx=i,
+        SM.MagneticMomentumManagerModel(spacecraft_index=i,
             held_torque_body=SVector(i / 1024.0, i / 512.0, -i / 256.0))
     end
 end
@@ -102,7 +102,7 @@ include(joinpath(@__DIR__, "..", "..", "..", "templates", "control_hook_template
     p = readout_params((model,); n_sats=1)
     u = ComponentVector(mass=500.0)
     x = SE._control_state_sample(readout_state(p), p, 1)
-    @test SpaceAGORA.calcControlEffect!(model, u, p, 0.0, 1) === nothing
+    @test SpaceAGORA.update_control!(model, u, p, 0.0, 1) === nothing
     @test SpaceAGORA.control_wrench(model, x, p, 0.0) == (model.force_n, model.torque_n_m)
     @test SpaceAGORA.control_propellant_rate(model, x, p, 0.0) === 0.125
     # The engine subtracts the propellant used from the mass derivative.
@@ -122,7 +122,7 @@ SpaceAGORA.control_wheel_torque(::LooseHooks, x, p, t) = SVector(0.0, 0.0, 0.5)
     @test readout(p, 1) == (SVector(1.0, 0.0, 0.0), ZERO3, SVector(0.0, 0.0, 0.5), -0.25)
     # Any effector, a control effector or not, uses no propellant and drives no
     # wheels unless it implements those hooks.
-    for effector in (GlobalForceOnly(Tuple{Symbol,Symbol,Int}[]), SM.MagneticMomentumManagerModel(sat_idx=1), nothing)
+    for effector in (GlobalForceOnly(Tuple{Symbol,Symbol,Int}[]), SM.MagneticMomentumManagerModel(spacecraft_index=1), nothing)
         @test SE._control_propellant_rate(effector, state, p, 1, 0.0) == 0.0
         @test SE._control_wheel_torque(effector, state, p, 1, 0.0) === nothing
     end

@@ -463,9 +463,9 @@ function _build_time_aligned_reference(
 
     if planet_fixed_x_col === nothing || planet_fixed_y_col === nothing || planet_fixed_z_col === nothing
         ephemerides_model = SM.SpiceEphemeridesModel()
-        et0 = SM.ephemerides_time_seconds(_default_matrix_initial_time(), ephemerides_model)
+        et0 = SM.ephemerides_epoch_seconds(ephemerides_model, _default_matrix_initial_time())
         for i in eachindex(t_rel)
-            lpi = SM.planet_frame_lpi(planet, et0 + t_rel[i], ephemerides_model)
+            lpi = SM.ephemerides_frame_lpi(ephemerides_model, planet, et0 + t_rel[i])
             r_pf = lpi * SVector{3, Float64}(x[i], y[i], z[i])
             planet_fixed_x[i] = r_pf[1]
             planet_fixed_y[i] = r_pf[2]
@@ -1211,11 +1211,11 @@ function _scenario_planet_fixed_position_rmse(errors::DataFrame, scenario_name::
     end
 
     ephemerides_model = SM.SpiceEphemeridesModel()
-    et0 = SM.ephemerides_time_seconds(_default_matrix_initial_time(), ephemerides_model)
+    et0 = SM.ephemerides_epoch_seconds(ephemerides_model, _default_matrix_initial_time())
 
     pos_sq = Vector{Float64}(undef, n)
     for i in 1:n
-        lpi = SM.planet_frame_lpi(planet, et0 + t[i], ephemerides_model)
+        lpi = SM.ephemerides_frame_lpi(ephemerides_model, planet, et0 + t[i])
         r_sim_pf = lpi * SVector{3, Float64}(x_sim[i], y_sim[i], z_sim[i])
         r_tel_pf = SVector{3, Float64}(x_tel_pf[i], y_tel_pf[i], z_tel_pf[i])
         dr_pf = r_sim_pf - r_tel_pf

@@ -75,3 +75,37 @@ function _same_state(a, b, seen::IdDict{Any, Any}, back::IdDict{Any, Any})
 end
 
 _has_captures(f::Function) = fieldcount(typeof(f)) > 0
+
+# Every mutable object reachable from `x` (arrays, dictionaries, mutable structs),
+# by identity, skipping what `_same_state` does not compare.
+function _reachable_mutables(x, found::IdDict{Any, Nothing}=IdDict{Any, Nothing}())
+    T = typeof(x)
+    isbitstype(T) && return found
+    (x isa Module || x isa Type || x isa Symbol || x isa AbstractString || x isa Task ||
+        x isa Base.AbstractLock || x isa IO || x isa Threads.Condition) && return found
+    if ismutable(x)
+        haskey(found, x) && return found
+        found[x] = nothing
+    end
+    if x isa AbstractDict
+        for (k, v) in x
+            _reachable_mutables(k, found)
+            _reachable_mutables(v, found)
+        end
+    elseif x isa Array
+        for i in eachindex(x)
+            isassigned(x, i) && _reachable_mutables(x[i], found)
+        end
+    else
+        for i in 1:fieldcount(T)
+            isdefined(x, i) && _reachable_mutables(getfield(x, i), found)
+        end
+    end
+    return found
+end
+
+# Mutable objects reachable from both `a` and `b`.
+function _shared_mutables(a, b)
+    from_a = _reachable_mutables(a)
+    return [object for object in keys(_reachable_mutables(b)) if haskey(from_a, object)]
+end

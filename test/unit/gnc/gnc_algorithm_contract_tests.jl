@@ -10,6 +10,17 @@ const G = GNCAlgorithms
 const P = RPOPlannerInterfaces
 const D = DirectRPOPlanning
 
+# The conformance kit's algorithm checks load with the contract and standard
+# libraries alone, so they run here on the contract's own planners.
+module Kit
+import ..GNCAlgorithms
+import Random, TOML
+const KIT = joinpath(@__DIR__, "..", "..", "..", "src", "interfaces", "analysis", "conformance")
+include(joinpath(KIT, "reports.jl"))
+include(joinpath(KIT, "walker.jl"))
+include(joinpath(KIT, "algorithms.jl"))
+end
+
 # A minimal family and algorithm written the way a contributor would.
 struct ToyFamily <: G.AbstractAlgorithmFamily end
 struct ToyRequest <: G.AbstractAlgorithmRequest
@@ -36,7 +47,7 @@ end
 point_clearance(p, g) = norm(collect(p) - g.center) - g.radius
 direct() = D.DirectRPOPlanner(segment_clearance_at=segment_clearance)
 
-# A proposal from an algorithm that declares `consumes_rng = false` leaves the stream unchanged.
+# Whether a call leaves the stream unchanged (the defaults draw nothing).
 function stream_untouched(propose)
     rng = MersenneTwister(2026); witness = copy(rng)
     propose(rng)
@@ -139,7 +150,15 @@ end
     @test !G.consumes_rng(direct())
     @test G.consumes_rng(NullRPOPlanner())              # the default for planners that do not declare
     request = rpo_request()
-    @test stream_untouched(rng -> G.propose!(nothing, direct(), request, rng))
+    # The kit's checks: the direct planner declares consumes_rng = false and leaves the
+    # stream unchanged; it refuses retiming explicitly. The standalone kit has no RPO
+    # link and no simulation, so those two checks skip.
+    report = Kit.check_algorithm(direct(), [request, rpo_request(request_id=2, reason=:retime, time_s=1.)];
+        trusted=(clearance_at=point_clearance,))
+    status(id) = only(check.status for check in report.checks if check.id === id)
+    @test Kit.passed(report)
+    @test status(:stream_untouched_if_declared) === status(:refuses_explicitly) === :pass
+    @test status(:driver_round_trip) === status(:simulation_run) === :skip
     @test stream_untouched(rng -> G.propose!(nothing, NullRPOPlanner(), request, rng))
     @test stream_untouched(rng -> G.propose_revision!(nothing, NullRPOPlanner(),
         rpo_request(reason=:retime), P.plan_rpo!(nothing, direct(), request, rng).reference, rng))

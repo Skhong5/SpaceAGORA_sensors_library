@@ -107,22 +107,47 @@ window as long as the root exported API remains stable.
 For model authors, the stable extension contract is:
 
 - subtype the documented abstract interfaces exported by `SpaceAGORA`
-- implement the matching exported hook functions such as:
-  - `wrench`
-  - `environment_requirements`
-  - `solver_partition`
-  - `gravity_backbone_structure`
-  - `gravity_backbone_acceleration_ii`
-  - `getDensity`
-  - `getDensityBatch!`
-  - `calcControlEffect!`
-  - `control_wrench`
-  - `control_propellant_rate` and `control_wheel_torque`
-  - `actuator_wrench`, `actuator_limits` and the optional actuator methods
-  - `actuation_mode` and `actuator_levels`
+- implement the matching exported hook functions, which follow the
+  [Extension Conventions](reference/extension_conventions.md). By family:
+  - force and torque models: `wrench`, `environment_requirements`,
+    `solver_partition` and the gravity-backbone hooks;
+  - atmospheres: `getDensity` and `getDensityBatch!`;
+  - GNC ticks: `update_control!`, `update_guidance!` and `update_navigation!`;
+  - control outputs: `control_wrench`, `control_propellant_rate` and
+    `control_wheel_torque`;
+  - actuators: `actuator_wrench`, `actuator_limits` and the optional actuator
+    methods, `actuation_mode` and `actuator_levels`;
+  - sensors: `sensor_measure`, `sensor_dimension` and the optional sensor
+    methods;
+  - planners: `plan_rpo!`, `retime_rpo!` and the GNC algorithm contract.
 
-This lets extension code stay rooted in `SpaceAGORA.*` rather than reaching into
-internal modules.
+The [Extension Hook Reference](generated/extension_hook_reference.md) lists
+every hook with its shape, signature, fallback and status. This lets extension
+code stay rooted in `SpaceAGORA.*` rather than reaching into internal modules.
+
+## Deprecations
+
+A public name that is renamed or retired keeps working for a deprecation window
+of at least one tagged release:
+
+- The old name is still exported, and its docstring opens with "Deprecated,
+  use ...". The deprecated hooks are listed together on the
+  [Deprecated Hooks API](generated/deprecated_hooks_api.md) page.
+- A model that implements a deprecated hook still runs. The pre-run check warns
+  once per model type and old name before integration, never during the solve.
+- `julia --depwarn=error` turns these warnings into errors, so a test run can
+  refuse deprecated hooks.
+- Deprecated hook names are removed in SpaceAGORA 0.5.0, or 1.0 if that comes
+  first. They are not removed before a tagged release has carried the warnings
+  and the companion packages have moved.
+- Release numbers follow `version` in `Project.toml`.
+
+The [deprecation rules](reference/extension_conventions.md#Deprecations) give
+the details, and [Migrating Extension Hooks](reference/migrating_extension_hooks.md)
+maps every deprecated name to its replacement, with the schedule.
+
+Internal modules are not covered: they may change without a deprecation window,
+as long as the root exported API stays stable.
 
 Solver-side policy note:
 
@@ -137,9 +162,13 @@ Solver-side policy note:
 ## Opt-in RPO planner surface
 
 The root exports the neutral planner contracts and extension methods,
-`DirectRPOPlanner`, `HYPRRPOPlanner`, `RPOPSOConfig`, `rpo_pso_config`,
+`DirectRPOPlanner`, `HYPRRPOPlanner`, `RetainedPathRPOPlanner`, `RPOPSOConfig`, `rpo_pso_config`,
 `RPOPlanningEvent`, `RPOPlanningError`, `make_rpo_configuration` and
 `rpo_run_report`. `SimulationSettings` remains owned by the existing configuration
 module and has a root alias for output settings. The [RPO Planner API](generated/rpo_planner_api.md) lists these symbols. The [pilot guide](user/rpo_planner_pilot.md)
 defines supported truth/static-RTN scope, failure policy and restart refusal.
 Internal lifecycle modules and the full `SimulationModel` are not public interfaces.
+The root also exports the seven comparison planners, `HYPRComparisonPlanner`,
+`UnrefinedPSOPlanner`, `RRTConnectPlanner`, `RRTConnectBezierPlanner`,
+`RRTStarPlanner`, `CHOMPPlanner` and `STOMPPlanner`; the comparison harness itself
+stays internal.

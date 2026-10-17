@@ -42,6 +42,7 @@ function prepare(args)
     owned=deepcopy(args)
     u=E.build_initial_conditions(owned)
     p=S.ODEParams(n_sats=length(owned.dynamics_model.spacecraft),args=owned)
+    SpaceAGORA.SimulationModel.SimulationCallbacks.initialize_gnc_links!(owned,u,p,0.)   # links first, as the engine does
     for g in owned.guidance_model.guidance_effectors
         Hooks.initialize_guidance!(g,u,p,0.)
     end
@@ -55,7 +56,7 @@ function move_chaser!(u,rtn)
     u.sc[1].pos.=r;u.sc[1].vel.=v
     return u
 end
-tick!(g,u,p,t)=G.calcGuidanceEffect!(g,u,p,Float64(t),1)
+tick!(g,u,p,t)=G.update_guidance!(g,u,p,Float64(t),1)
 outcome(f)=try f(); nothing catch e; e end
 lifecycle(records)=[x.event for x in records if x.event in (:installed,:rejected,:fallback_installed,:trigger)]
 triggers(records)=[x for x in records if x.event===:trigger]

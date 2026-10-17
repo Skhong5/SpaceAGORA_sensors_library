@@ -323,7 +323,7 @@ struct ConstantThrust <: SM.AbstractControlEffectorModel
     force::SVector{3, Float64}
     mdot::Float64
 end
-SM.calcControlEffect!(::ConstantThrust, u, p, t::Float64, i::Int64) = nothing
+SM.update_control!(::ConstantThrust, u, p, t::Float64, i::Int64) = nothing
 SM.control_wrench(m::ConstantThrust, x::SM.StateSample, p::SM.ODEParams, t::Float64) = (m.force, SVector(0.0, 0.0, 0.0))
 SM.control_propellant_rate(m::ConstantThrust, x::SM.StateSample, p::SM.ODEParams, t::Float64)::Float64 = m.mdot
 
@@ -395,7 +395,7 @@ end
     @test cmg_err isa ArgumentError && occursin("control moment gyros", cmg_err.msg)
     # robot arm on the same spacecraft
     plan = _arm_plan(duration_s = 2.0)
-    arm = SM.RobotArmControlEffector(plan = plan, spacecraft_idx = 1, controller = SM.init_robot_arm_joint_mpc(plan; dt_s = 0.1, horizon = 6), control_dt_s = 0.1)
+    arm = SM.RobotArmControlEffector(plan = plan, spacecraft_index = 1, controller = SM.init_robot_arm_joint_mpc(plan; dt_s = 0.1, horizon = 6), control_dt_s = 0.1)
     @test_throws ArgumentError SE._validate_articulated_spacecraft!(engine_args(sc; mission_time = 1.0, control = (arm,), control_rates = [0.1]), :tsit5)
     # dry_mass must equal the sum of the link masses
     off = hinge_spacecraft(k = 4.0, c = 0.0, θ0 = 0.0)

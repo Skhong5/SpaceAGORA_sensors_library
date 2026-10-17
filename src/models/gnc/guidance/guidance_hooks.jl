@@ -1,5 +1,6 @@
 module GuidanceHooks
     import ...SimulationLifecycle
+    import ...GNCRuntime
     using ..Structure
     using ..Geodesy: geodetic_altitude, ellipsoid_surface_radius, radius_for_geodetic_altitude
 
@@ -14,13 +15,15 @@ module GuidanceHooks
     using ..NavigationHooks: RPOReferenceGeometry, RPOStationGeometry
     using ..NavigationHooks: rpo_clearance_distance_to_station, rpo_clearance_to_station, rpo_path_clearance_stats
     using ..CommandTypes: PropulsiveManeuverCommand, AerobrakingControlCommand
-    using ..EphemeridesModels: planet_frame_lpi
+    using ..EphemeridesModels: _ephemerides_frame_lpi
     using ..GravityEffectors: aerobraking_gravity_force_ii
     using ..ReferenceSystems
     using ..LinearAlgebra
     using ..StaticArrays
     using ..Kinematics
     using ..HYPRUtils
+    using ..HookDeprecation: _hook_deprecation
+    using ...RPOPlannerInterfaces: AbstractRPOPlanner, RPOPlanningHeadroom
     using Base.Threads: @threads, maxthreadid, threadid
     using Logging: Logging
     using Random
@@ -34,7 +37,7 @@ module GuidanceHooks
         return getfield(_PARENT, :ControlHooks)
     end
 
-    export calcGuidanceEffect!
+    export update_guidance!, calcGuidanceEffect!
     export RPOPSOAdaptiveSettings, RPOPSOConfig, RPOPSOConfigurator, RPOPSOCullSettings
     export RPOPSOEarlyStoppingSettings, RPOPSOObjectiveSettings
     export RPOPSOProbeSettings, RPOPSOReexploreSettings, RPOPSORefinementSettings
@@ -48,6 +51,7 @@ module GuidanceHooks
     export RPOCHOMPSettings, RPORRTConnectSettings, RPORRTStarSettings, RPOSTOMPSettings, RPOTrajectoryOptimizerSettings
     export RPOLQMPCTrackingSettings, RPOPlannerComparisonCase, RPOPlannerComparisonConfig
     export normalize_rpo_comparison_planner_type, rpo_comparison_planner_label
+    export HYPRComparisonPlanner, UnrefinedPSOPlanner, RRTConnectPlanner, RRTConnectBezierPlanner, RRTStarPlanner, CHOMPPlanner, STOMPPlanner
     export rpo_740_mpc_final_pso_config, rpo_chomp_plan_path, rpo_rrt_connect_plan_path, rpo_rrt_connect_bezier_plan_path, rpo_rrt_star_plan_path, rpo_stomp_plan_path
     export rpo_plan_comparison_path, rpo_run_planner_comparison_batch
     export rpo_track_retimed_path_lqmpc, rpo_flatten_planner_results
@@ -60,7 +64,7 @@ module GuidanceHooks
     export descent_attitude_command, descent_throttle, descent_environment, quaternion_from_passive_dcm
 
     """
-        calcGuidanceEffect!(model, u, p, t, spacecraft_index) -> nothing
+        update_guidance!(model, u, p, t, spacecraft_index) -> nothing
 
     The guidance tick, which every effector in a `GuidanceModel` implements for
     its own type. The effector updates its own state (a plan, a target, a mode)
@@ -81,13 +85,30 @@ module GuidanceHooks
     starts. When ticks coincide, navigation effectors run first, then control
     effectors, then guidance effectors; energy depletion guidance with targeting
     runs before the control effectors instead. The propulsive-maneuver thruster
-    control effector (see `calcControlEffect!`) also runs every guidance
+    control effector (see `update_control!`) also runs every guidance
     effector at the start of the solve and when a spacecraft leaves the
     atmosphere, just before it schedules that spacecraft's burns.
 
     Before integration starts, `run_simulation` checks that every guidance
-    effector has a method for these arguments and stops with an `ArgumentError`
-    naming the effector otherwise.
+    effector has a method for these arguments (of this function or of the
+    deprecated `calcGuidanceEffect!`) and stops with an `ArgumentError` naming
+    the effector otherwise. This hook replaces the deprecated
+    `calcGuidanceEffect!`.
+    """
+    function update_guidance! end
+
+    """
+        calcGuidanceEffect!(model, u, p, t, spacecraft_index) -> nothing
+
+    Deprecated, use [`update_guidance!`](@ref); this name will be removed in
+    SpaceAGORA 0.5.0. Only the name changes: the arguments, their order and when
+    the engine calls the hook are those of `update_guidance!`.
+
+    Until then the engine calls an effector's own method of this hook when its
+    type has no `update_guidance!`, and `run_simulation` warns once per type
+    before integration starts. A direct call on an effector that implements
+    `update_guidance!` runs it, and warns once per type that the name is
+    deprecated (under `julia --depwarn=error` it throws instead).
     """
     function calcGuidanceEffect! end
 
@@ -103,6 +124,7 @@ module GuidanceHooks
     include(joinpath(@__DIR__, "..", "planning", "rpo", "path_metrics.jl"))
     include(joinpath(@__DIR__, "..", "planning", "rpo", "rrt.jl"))
     include(joinpath(@__DIR__, "..", "planning", "rpo", "comparison", "trajectory_optimizers.jl"))
+    include(joinpath(@__DIR__, "..", "planning", "rpo", "comparison", "planner_objects.jl"))
     include(joinpath(@__DIR__, "..", "planning", "rpo", "comparison", "planner_comparison.jl"))
     include(joinpath(@__DIR__, "..", "planning", "adapters", "hypr", "replanning.jl"))
     include(joinpath(@__DIR__, "rpo", "rpo_guidance_hooks.jl"))
@@ -118,4 +140,11 @@ module GuidanceHooks
         m.spacecraft_indices == ids && return m
         return ApolloDescentGuidanceModel(m.config, m.state, m.terrain, ids)
     end
+
+    # The spacecraft each built-in guidance model acts on (GNCRuntime). The legacy
+    # RPO guidance plans for the chaser from the target's state; the descent
+    # guidance flies its selected spacecraft and stops at touchdown.
+    GNCRuntime.spacecraft_scope(m::RPOGuidanceModel) = GNCRuntime.CoupledSpacecraft(m.chaser_idx, (m.target_idx,))
+    GNCRuntime.spacecraft_scope(m::ApolloDescentGuidanceModel) = GNCRuntime.BoundSpacecraft(m.spacecraft_indices)
+    GNCRuntime.skip_inactive(::ApolloDescentGuidanceModel) = true
 end

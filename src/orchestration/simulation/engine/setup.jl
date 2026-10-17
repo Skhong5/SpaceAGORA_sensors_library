@@ -81,13 +81,19 @@ function _model_kind_container(model)::Union{Nothing, String}
 end
 
 # Whether `f` has some method for `T` in its first argument, whatever the others.
-_has_methods_for(f, ::Type{T}) where {T} =
-    any(m -> typeintersect(m.sig, Tuple{typeof(f), T, Vararg{Any}}) !== Union{}, methods(f))
+# A deprecated hook's untyped fallback for direct calls accepts every type, so it
+# does not count.
+_has_methods_for(f, ::Type{T}) where {T} = any(methods(f)) do m
+    m.sig === Tuple{typeof(f), ntuple(_ -> Any, m.nargs - 1)...} && return false
+    return typeintersect(m.sig, Tuple{typeof(f), T, Vararg{Any}}) !== Union{}
+end
 
-function _missing_hook_line(location::String, container::String, model, f, needed::String)::String
+# `also`: the deprecated hook the new one `f` replaces, whose methods count too.
+function _missing_hook_line(location::String, container::String, model, f, needed::String; also=nothing)::String
     T = typeof(model)
     line = "$location ($(nameof(T))) has no method $needed."
-    _has_methods_for(f, T) && (line *= " It has methods of that function, but none accepts the arguments this run passes.")
+    (_has_methods_for(f, T) || (also !== nothing && _has_methods_for(also, T))) &&
+        (line *= " It has methods of that function, but none accepts the arguments this run passes.")
     kind = _model_kind_container(model)
     if kind !== nothing && kind != container
         line *= " Its type belongs in $kind."
@@ -119,24 +125,28 @@ function _missing_model_hooks(args, call, solver_mode::Symbol=:tsit5)::Vector{St
     sampled(f, T) = hasmethod(f, Tuple{T, SimulationModel.StateSample, SimulationModel.EnvironmentSample, Float64})
     controlled(f, T) = hasmethod(f, Tuple{T, SimulationModel.StateSample, P, Float64})
     problems = String[]
+    # The callbacks tick a model through its new tick when its type has one for
+    # these arguments, and else through the type's own method of the deprecated
+    # name, which `_deprecated_model_hooks` warns about (`tick_hook_bridges.jl`).
+    ticked(new, old, T) = hasmethod(new, tick(T)) || _own_method(old, tick(T))
     for (k, model) in enumerate(args.guidance_model.guidance_effectors)
-        f = SimulationModel.calcGuidanceEffect!
-        hasmethod(f, tick(typeof(model))) ||
-            push!(problems, _missing_hook_line("guidance_model.guidance_effectors[$k]", "guidance_model", model, f,
-                "calcGuidanceEffect!(model, u, p, t::Float64, spacecraft_index::Int)"))
+        ticked(SimulationModel.update_guidance!, SimulationModel.calcGuidanceEffect!, typeof(model)) ||
+            push!(problems, _missing_hook_line("guidance_model.guidance_effectors[$k]", "guidance_model", model,
+                SimulationModel.update_guidance!, "update_guidance!(model, u, p, t::Float64, spacecraft_index::Int)";
+                also=SimulationModel.calcGuidanceEffect!))
     end
     for (k, model) in enumerate(args.navigation_model.navigation_effectors)
-        f = SimulationModel.calcNavigationEffect!
-        hasmethod(f, tick(typeof(model))) ||
-            push!(problems, _missing_hook_line("navigation_model.navigation_effectors[$k]", "navigation_model", model, f,
-                "calcNavigationEffect!(model, u, p, t::Float64, spacecraft_index::Int)"))
+        ticked(SimulationModel.update_navigation!, SimulationModel.calcNavigationEffect!, typeof(model)) ||
+            push!(problems, _missing_hook_line("navigation_model.navigation_effectors[$k]", "navigation_model", model,
+                SimulationModel.update_navigation!, "update_navigation!(model, u, p, t::Float64, spacecraft_index::Int)";
+                also=SimulationModel.calcNavigationEffect!))
     end
     for (k, model) in enumerate(args.control_model.control_effectors)
         location = "control_model.control_effectors[$k]"
         T = typeof(model)
-        hasmethod(SimulationModel.calcControlEffect!, tick(T)) ||
-            push!(problems, _missing_hook_line(location, "control_model", model, SimulationModel.calcControlEffect!,
-                "calcControlEffect!(model, u, p, t::Float64, spacecraft_index::Int)"))
+        ticked(SimulationModel.update_control!, SimulationModel.calcControlEffect!, T) ||
+            push!(problems, _missing_hook_line(location, "control_model", model, SimulationModel.update_control!,
+                "update_control!(model, u, p, t::Float64, spacecraft_index::Int)"; also=SimulationModel.calcControlEffect!))
         # The dynamics read a `:mounted` effector's wrench from its mounted
         # actuators and never call control_wrench on it. Otherwise they call
         # control_wrench when the type has it (the query `_control_wrench`
@@ -148,7 +158,8 @@ function _missing_model_hooks(args, call, solver_mode::Symbol=:tsit5)::Vector{St
         controlled(SimulationModel.control_wrench, T) && continue
         all(X -> _own_method(SimulationModel.calcControlForceTorque, Tuple{T, X, P, Int, Float64}), views) && continue
         push!(problems, _missing_hook_line(location, "control_model", model, SimulationModel.control_wrench,
-            "control_wrench(model, x::StateSample, p, t::Float64), which the dynamics call in actuation_mode $(repr(mode))"))
+            "control_wrench(model, x::StateSample, p, t::Float64), which the dynamics call in actuation_mode $(repr(mode))";
+            also=SimulationModel.calcControlForceTorque))
     end
     for (k, model) in enumerate(args.dynamics_model.dynamic_effectors)
         location = "dynamics_model.dynamic_effectors[$k]"
@@ -191,7 +202,8 @@ end
 # Whether the deprecated hook `f` has a method of the model's own for the
 # argument types `tt`, rather than only the untyped fallback for direct calls
 # (`effector_sampling.jl` for calcForceTorque, `control_hook_bridges.jl` for the
-# control hooks), which accepts any arguments.
+# control hooks, `tick_hook_bridges.jl` for the ticks, `ephemerides_hooks.jl` for
+# the ephemerides hooks), which accepts any arguments.
 function _own_method(f, tt::Type{<:Tuple})::Bool
     hasmethod(f, tt) || return false
     return which(f, tt) !== which(f, Tuple{ntuple(_ -> Any, fieldcount(tt))...})
@@ -214,6 +226,45 @@ function _deprecated_control_hook_message(::Type{T}, old, new, has_new::Bool)::S
     return "$(nameof(T)) implements $(nameof(old))(model, u, p, i, t), which is deprecated and will be " *
         "removed in SpaceAGORA 0.5.0. Implement $(nameof(new))(model, x::StateSample, p, t::Float64) " *
         "instead: the spacecraft's index in the run is x.spacecraft_index." * sign
+end
+
+# The deprecated ticks, each with its replacement and the effectors it ticks.
+_tick_hooks(args) = (
+    (args.guidance_model.guidance_effectors, SimulationModel.calcGuidanceEffect!, SimulationModel.update_guidance!),
+    (args.navigation_model.navigation_effectors, SimulationModel.calcNavigationEffect!, SimulationModel.update_navigation!),
+    (args.control_model.control_effectors, SimulationModel.calcControlEffect!, SimulationModel.update_control!),
+)
+
+function _deprecated_tick_message(::Type{T}, old, new, has_new::Bool)::String where {T}
+    has_new && return "$(nameof(T)) implements both $(nameof(new)) and $(nameof(old))(model, u, p, t, spacecraft_index). " *
+        "The engine calls $(nameof(new)), so the $(nameof(old)) method is never used; delete it. " *
+        "$(nameof(old)) is deprecated and will be removed in SpaceAGORA 0.5.0."
+    return "$(nameof(T)) implements $(nameof(old))(model, u, p, t, spacecraft_index), which is deprecated and will be " *
+        "removed in SpaceAGORA 0.5.0. Rename the method $(nameof(new)): only the name changes."
+end
+
+# The deprecated model-last ephemerides hooks, each with its replacement, the
+# argument types of each for this run's model, and the two forms for messages.
+function _ephemerides_hooks(args)
+    M, P, I = typeof(args.environment_model.ephemerides_model), typeof(args.environment_model.planet),
+        typeof(args.initial_time)
+    return (
+        (SimulationModel.planet_frame_lpi, Tuple{P, Float64, M}, SimulationModel.ephemerides_frame_lpi,
+            Tuple{M, P, Float64}, "(planet, et, model)", "(model, planet, et)"),
+        (SimulationModel.ephemerides_sun_direction_ii, Tuple{P, Float64, M}, SimulationModel.ephemerides_sun_ii,
+            Tuple{M, P, Float64}, "(planet, et, model)", "(model, planet, et)"),
+        (SimulationModel.ephemerides_time_seconds, Tuple{I, M}, SimulationModel.ephemerides_epoch_seconds,
+            Tuple{M, I}, "(initial_time, model)", "(model, initial_time)"),
+    )
+end
+
+function _deprecated_ephemerides_message(::Type{T}, old, new, old_form, new_form, has_new::Bool)::String where {T}
+    has_new && return "$(nameof(T)) implements both $(nameof(new))$(new_form) and $(nameof(old))$(old_form). " *
+        "The engine calls $(nameof(new)), so the $(nameof(old)) method is never used; rename it " *
+        "$(nameof(new)) with the model first, or delete it. $(nameof(old)) is deprecated and will be " *
+        "removed in SpaceAGORA 0.5.0."
+    return "$(nameof(T)) implements $(nameof(old))$(old_form), which is deprecated and will be removed in " *
+        "SpaceAGORA 0.5.0. Rename the method $(nameof(new)) and put the model first: $(nameof(new))$(new_form)."
 end
 
 # The deprecated hooks this run's models implement, as (key, message) pairs for
@@ -246,6 +297,20 @@ function _deprecated_model_hooks(args, call)::Vector{Tuple{Tuple, String}}
             has_new = hasmethod(new, Tuple{T, SimulationModel.StateSample, P, Float64})
             push!(found, (key, _deprecated_control_hook_message(T, old, new, has_new)))
         end
+    end
+    for (models, old, new) in _tick_hooks(args), model in models
+        T = typeof(model)
+        tt = Tuple{T, call.state, P, Float64, Int}
+        _own_method(old, tt) || continue
+        key = (T, nameof(old))
+        any(entry -> first(entry) == key, found) && continue
+        push!(found, (key, _deprecated_tick_message(T, old, new, hasmethod(new, tt))))
+    end
+    M = typeof(args.environment_model.ephemerides_model)
+    for (old, old_tt, new, new_tt, old_form, new_form) in _ephemerides_hooks(args)
+        _own_method(old, old_tt) || continue
+        push!(found, ((M, nameof(old)),
+            _deprecated_ephemerides_message(M, old, new, old_form, new_form, hasmethod(new, new_tt))))
     end
     return found
 end
@@ -466,12 +531,21 @@ end
     return join(body_query_names, '\0')
 end
 
+# The ephemerides model's part of the planet-frame reuse key. The built-in keys
+# keep their strings, so the built-in models reuse exactly as before. Any other
+# key is printed whole, its tag included, so a key of any length works and two
+# keys that differ only in the tag do not share a cache. A printed tuple starts
+# with "(", so it never equals a built-in string. `===` rather than `==`, so a key
+# holding `missing` cannot make the comparison fail.
 @inline function _ephemerides_model_reuse_key(ephemerides_model)::String
     cache_key = SimulationModel.ephemerides_cache_key(ephemerides_model)
-    if cache_key == (:spice,)
+    if cache_key === (:spice,)
         return "spice"
     end
-    return "simple:$(cache_key[2]):$(cache_key[3])"
+    if cache_key isa Tuple{Symbol, Int64, Int64} && cache_key[1] === :simple
+        return "simple:$(cache_key[2]):$(cache_key[3])"
+    end
+    return repr(cache_key)
 end
 
 @inline function _srp_ephemeris_reuse_key(primary_body_name::String, et_start::Float64, mission_end_s::Float64, dt_s::Float64)::SRPEphemerisReuseKey
@@ -2149,9 +2223,14 @@ function _collect_nbody_query_names(dynamic_effectors::Tuple)::Vector{String}
     return names
 end
 
+# The run's start in the ephemerides model's seconds past J2000: its epoch hook,
+# under the model-first name or the deprecated one, and otherwise the built-in
+# conversion for a model whose type has a built-in model's name.
 @inline function _ephemerides_time_seconds_flexible(initial_time, ephemerides_model)::Float64
-    if applicable(SimulationModel.ephemerides_time_seconds, initial_time, ephemerides_model)
-        return SimulationModel.ephemerides_time_seconds(initial_time, ephemerides_model)
+    M, I = typeof(ephemerides_model), typeof(initial_time)
+    if hasmethod(SimulationModel.ephemerides_epoch_seconds, Tuple{M, I}) ||
+            _own_method(SimulationModel.ephemerides_time_seconds, Tuple{I, M})
+        return SimulationModel.EphemeridesModels._ephemerides_epoch_seconds(ephemerides_model, initial_time)
     end
 
     model_name = nameof(typeof(ephemerides_model))
@@ -2166,7 +2245,7 @@ end
         return Float64(ephemerides_model.reference_epoch_seconds) + elapsed_ms / 1000.0
     end
 
-    throw(MethodError(SimulationModel.ephemerides_time_seconds, (initial_time, ephemerides_model)))
+    throw(MethodError(SimulationModel.ephemerides_epoch_seconds, (ephemerides_model, initial_time)))
 end
 
 @inline function _nbody_ephemeris_cache_sample_count(mission_end_s::Float64, dt_s::Float64)::Int
@@ -2542,7 +2621,7 @@ function _initialize_planet_frame_ephemeris_cache!(p, et_start::Float64, mission
     @inbounds for sample_idx in 1:n_samples
         et = et_start + min((sample_idx - 1) * dt_s, mission_end_s)
         ets[sample_idx] = et
-        l_pi = SimulationModel.planet_frame_lpi(planet, et, ephemerides_model)
+        l_pi = SimulationModel.EphemeridesModels._ephemerides_frame_lpi(ephemerides_model, planet, et)
         quaternions[sample_idx] = SimulationModel.dcm_to_quaternion(l_pi)
         if SimulationModel.ephemerides_requires_spice(ephemerides_model)
             Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.planet_pxform_cache_build_calls, 1)
@@ -2711,8 +2790,8 @@ function _validate_articulated_spacecraft!(args, solver_mode::Symbol)
         tree = SimulationModel.build_articulated_tree(sc; prop_mass=sc.prop_mass)
         offset = any(l -> l === sc.root, sc.links) ? 0 : 1
         for effector in _all_gnc_effectors(args)
-            if hasproperty(effector, :spacecraft_idx) && getproperty(effector, :spacecraft_idx) isa Integer &&
-               getproperty(effector, :spacecraft_idx) != i
+            bound = _effector_spacecraft_index(effector)
+            if bound isa Integer && bound != i
                 continue
             end
             for idx in _effector_controlled_panel_links(effector)

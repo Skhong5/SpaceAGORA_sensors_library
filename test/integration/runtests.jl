@@ -293,7 +293,7 @@ function SimulationModel.control_wrench(
     return force, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-function SimulationModel.calcControlEffect!(
+function SimulationModel.update_control!(
     model::TimedTangentialThrusterModel,
     u::ComponentVector,
     p::ODEParams,
@@ -303,7 +303,7 @@ function SimulationModel.calcControlEffect!(
     return nothing
 end
 
-function SimulationModel.calcGuidanceEffect!(
+function SimulationModel.update_guidance!(
     model::CountingGuidanceModel,
     u::ComponentVector,
     p::ODEParams,
@@ -314,7 +314,7 @@ function SimulationModel.calcGuidanceEffect!(
     return nothing
 end
 
-function SimulationModel.calcNavigationEffect!(
+function SimulationModel.update_navigation!(
     model::CountingNavigationModel,
     u::ComponentVector,
     p::ODEParams,
@@ -325,7 +325,7 @@ function SimulationModel.calcNavigationEffect!(
     return nothing
 end
 
-function SimulationModel.calcControlEffect!(
+function SimulationModel.update_control!(
     model::CountingControlModel,
     u::ComponentVector,
     p::ODEParams,
@@ -866,6 +866,7 @@ module GuidanceSandbox
 using ..SimulationModel
 using ..SimulationModel.Geodesy: geodetic_altitude, ellipsoid_surface_radius, radius_for_geodetic_altitude
 using ..SimulationModel.AbstractTypes: AbstractGuidanceModel
+using ..SimulationModel.EphemeridesModels: _ephemerides_frame_lpi
 using ComponentArrays
 using LinearAlgebra
 using StaticArrays

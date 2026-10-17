@@ -37,7 +37,7 @@ end
 function sampling_params(effectors, plan)
     controls = ntuple(2) do i
         SM.RobotArmControlEffector(
-            spacecraft_idx=i, plan=plan,
+            spacecraft_index=i, plan=plan,
             k_translation_n_m=0.0, c_translation_n_s_m=0.0,
             k_rotation_n_m_rad=0.0, c_rotation_n_m_s_rad=0.0,
         )

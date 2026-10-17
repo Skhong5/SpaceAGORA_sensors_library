@@ -15,6 +15,7 @@ const GENERATED_HOOK_REFERENCE_PAGE = joinpath(GENERATED_SRC, "extension_hook_re
 const API_REFERENCE_PAGES = (
     (section="Simulation Setup", title="Simulation Setup API", file="simulation_setup_api.md"),
     (section="RPO planner pilot", title="RPO Planner API", file="rpo_planner_api.md"),
+    (section="Burn-plan family", title="Burn-Plan Family API", file="burn_plan_family_api.md"),
     (section="GNC algorithm contract", title="GNC Algorithm Contract API", file="gnc_algorithm_contract_api.md"),
     (section="GNC runtime", title="GNC Runtime API", file="gnc_runtime_api.md"),
     (section="Robotics and Planning", title="Robotics API", file="robotics_api.md"),
@@ -294,7 +295,9 @@ makedocs(
         ],
         "Extend SpaceAGORA" => Any[
             "Extensibility" => "extensibility.md",
+            "Extension Conventions" => "reference/extension_conventions.md",
             "Extension Hook Reference" => "generated/extension_hook_reference.md",
+            "Migrating Extension Hooks" => "reference/migrating_extension_hooks.md",
             "Public API and Compatibility" => "public_api_policy.md",
             "Optional Adapter Contract" => "reference/adapter_contract.md",
             "EDG Service Contract" => "reference/edg_adapter_boundary.md",
@@ -308,6 +311,7 @@ makedocs(
             "Public API" => "generated/public_api.md",
             "Simulation Setup API" => "generated/simulation_setup_api.md",
             "RPO Planner API" => "generated/rpo_planner_api.md",
+            "Burn-Plan Family API" => "generated/burn_plan_family_api.md",
             "GNC Algorithm Contract API" => "generated/gnc_algorithm_contract_api.md",
             "GNC Runtime API" => "generated/gnc_runtime_api.md",
             "Robotics API" => "generated/robotics_api.md",

@@ -44,8 +44,8 @@ end
     @test S.AerobrakingEnergyDepletionState === G.AerobrakingEnergyDepletionState
     @test S.AerobrakingEnergyDepletionGuidanceModel === G.AerobrakingEnergyDepletionGuidanceModel
     @test S.AerobrakingEnergyDepletionControlModel === C.AerobrakingEnergyDepletionControlModel
-    @test S.calcGuidanceEffect! === G.calcGuidanceEffect!
-    @test S.calcControlEffect! === C.calcControlEffect!
+    @test S.update_guidance! === G.update_guidance!
+    @test S.update_control! === C.update_control!
     @test G._edg_sat_state === C._edg_control_sat_state === P._edg_control_sat_state
     @test G._edg_pos_vel_mass === C._edg_control_pos_vel_mass === P._edg_control_pos_vel_mass
     for (name, path) in EDGOwnershipChecks.EXPECTED
@@ -101,7 +101,7 @@ end
         @test isequal(result.diagnostics.targeting_switch_s, x.state.targeting_switch_s[1])
         C._apply_solar_panel_aoa!(x.control.aoa_effector, x.spacecraft, result.command.alpha_command)
         reference_control!(old.control, old.u, old.p, t, 1)
-        @test S.calcControlEffect!(hook.control, hook.u, hook.p, t, 1) === nothing
+        @test S.update_control!(hook.control, hook.u, hook.p, t, 1) === nothing
         @test isequal(state_values(x.state), state_values(old.state))
         @test isequal(state_values(hook.state), state_values(old.state))
         @test geometry(x.spacecraft) == geometry(old.spacecraft) == geometry(hook.spacecraft)
@@ -120,7 +120,7 @@ end
             aoa_effector=S.SolarPanelAngleOfAttackControlModel(links))
         before = geometry(x.spacecraft)
         @test x.config.controlled_panel_links == (2, 3)
-        @test S.calcControlEffect!(model, x.u, x.p, 1.0, 1) === nothing
+        @test S.update_control!(model, x.u, x.p, 1.0, 1) === nothing
         @test x.state.last_heat_load_j_cm2[1] == measured
         @test x.state.last_alpha_rad[1] == expected_alpha
         @test x.spacecraft.links[only(links)].α == expected_alpha
@@ -132,7 +132,7 @@ end
         x = _edg_test_context(guidance_modes=modes)
         x.u.sc[1].pos .= (x.args.environment_model.planet.Rp_e + 300e3, 0.0, 0.0)
         before = geometry(x.spacecraft)
-        @test S.calcGuidanceEffect!(x.guidance, x.u, x.p, 0.0, 1) === nothing
+        @test S.update_guidance!(x.guidance, x.u, x.p, 0.0, 1) === nothing
         @test x.state.selected_mode[1] == :inactive # No passage plan outside the EDG surface.
         @test !x.state.safe_low_drag[1]
         @test !x.state.targeting_active[1]
@@ -201,7 +201,7 @@ struct QueryFrames <: S.AbstractEphemeridesModel
     events::Vector{Any}
 end
 S.EphemeridesModels.ephemerides_requires_spice(::QueryFrames) = false
-function S.EphemeridesModels.planet_frame_lpi(planet,t::Float64,m::QueryFrames)
+function S.EphemeridesModels.ephemerides_frame_lpi(m::QueryFrames, planet, t::Float64)
     push!(m.events,(:frame,t))
     return SMatrix{3,3,Float64}(I)
 end
@@ -221,8 +221,8 @@ end
         prior=state_values(x.state)
         r=decision(x,0.,i)
         @test !r.apply && r.switch_action == :invalid_index && r.diagnostics === nothing
-        @test S.calcControlEffect!(x.control,x.u,x.p,0.,i) === nothing
-        @test S.calcGuidanceEffect!(x.guidance,x.u,x.p,0.,i) === nothing
+        @test S.update_control!(x.control,x.u,x.p,0.,i) === nothing
+        @test S.update_guidance!(x.guidance,x.u,x.p,0.,i) === nothing
         @test isequal(state_values(x.state),prior)
     end
     @test isempty(x.events)
@@ -302,6 +302,10 @@ end
     @test refused(EDGOwnershipChecks.OWNER*"targeting.jl","const reverse = ControlHooks")
     @test refused(EDGOwnershipChecks.OWNER*"targeting.jl","rotate_link(link, axis, angle)")
     @test refused(EDGOwnershipChecks.OWNER*"targeting.jl","link.α = 0.0")
+    # A tick call is refused under the new name and under the deprecated one.
+    for tick in ("update_control!", "update_guidance!", "calcControlEffect!", "calcGuidanceEffect!")
+        @test refused(EDGOwnershipChecks.OWNER*"targeting.jl", "$(tick)(model, u, p, t, i)")
+    end
     @test refused("src/models/gnc/guidance/aerobraking/typed_edg/guidance_models.jl","_control_module()._edg_prediction_time_grid(1.0)")
     bad=copy(sources)
     path="src/models/gnc/control/targeting_control.jl"
@@ -348,7 +352,7 @@ end
     model=S.AerobrakingEnergyDepletionControlModel(x.config,x.state;aoa_effector=effector)
     x.state.selected_mode[1]=:safe_low_drag
     old=deepcopy((x=x,model=model))
-    @test_throws ArgumentError S.calcControlEffect!(model,x.u,x.p,1.,1)
+    @test_throws ArgumentError S.update_control!(model,x.u,x.p,1.,1)
     @test_throws ArgumentError reference_control!(old.model,old.x.u,old.x.p,1.,1)
     @test isequal(state_values(x.state),state_values(old.x.state))
     @test geometry(x.spacecraft)==geometry(old.x.spacecraft)

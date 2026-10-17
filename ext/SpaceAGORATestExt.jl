@@ -1,8 +1,11 @@
 module SpaceAGORATestExt
 
 using SpaceAGORA
-using SpaceAGORA.Conformance: ConformanceCheck, ConformanceReport, check_force_torque_model, check_service_facade
-import SpaceAGORA.Conformance: test_report, test_force_torque_model, test_service_facade
+using SpaceAGORA.Conformance: ConformanceCheck, ConformanceReport, check_force_torque_model, check_service_facade,
+    check_sensor, check_guidance_model, check_navigation_model, check_control_model, check_algorithm,
+    check_algorithm_family
+import SpaceAGORA.Conformance: test_report, test_force_torque_model, test_service_facade, test_sensor,
+    test_guidance_model, test_navigation_model, test_control_model, test_algorithm, test_algorithm_family
 using Test
 
 function test_report(report::ConformanceReport)
@@ -35,5 +38,12 @@ end
 
 test_force_torque_model(model; kwargs...) = test_report(check_force_torque_model(model; kwargs...))
 test_service_facade(facade::Module; kwargs...) = test_report(check_service_facade(facade; kwargs...))
+test_sensor(sensor; kwargs...) = test_report(check_sensor(sensor; kwargs...))
+test_guidance_model(model; kwargs...) = test_report(check_guidance_model(model; kwargs...))
+test_navigation_model(model; kwargs...) = test_report(check_navigation_model(model; kwargs...))
+test_control_model(model; kwargs...) = test_report(check_control_model(model; kwargs...))
+test_algorithm(algorithm, requests; kwargs...) = test_report(check_algorithm(algorithm, requests; kwargs...))
+test_algorithm_family(family, algorithm, requests; kwargs...) =
+    test_report(check_algorithm_family(family, algorithm, requests; kwargs...))
 
 end # module SpaceAGORATestExt

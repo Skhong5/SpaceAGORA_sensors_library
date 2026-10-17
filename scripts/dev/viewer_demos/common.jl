@@ -72,7 +72,7 @@ function furnish!(m::MissionSpice)
 end
 
 "SPICE ET at the simulator's millisecond-resolved `SM.InitialTime`."
-et_of(t::SM.InitialTime)::Float64 = SM.ephemerides_time_seconds(t, SM.SpiceEphemeridesModel())
+et_of(t::SM.InitialTime)::Float64 = SM.ephemerides_epoch_seconds(SM.SpiceEphemeridesModel(), t)
 
 et_of(utc::AbstractString)::Float64 = lock(RuntimeServices.SPICE_LOCK) do
     str2et(String(utc))

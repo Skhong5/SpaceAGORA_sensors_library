@@ -294,8 +294,8 @@ end
             u.sc[1].q .= q
         end
         p = ODEParams(n_sats=1, args=args)
-        p.shared_buffers.et_start[] = SimulationModel.ephemerides_time_seconds(
-            args.initial_time, args.environment_model.ephemerides_model)
+        p.shared_buffers.et_start[] = SimulationModel.ephemerides_epoch_seconds(
+            args.environment_model.ephemerides_model, args.initial_time)
         p.shared_buffers.current_time[] = 0.0
         SimulationEngine._initialize_save_cache_buffers!(p)
         SimulationEngine._initialize_aero_workspace_buffers!(p)

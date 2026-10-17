@@ -9,13 +9,13 @@ const HP_ZERO3 = SVector{3, Float64}(0.0, 0.0, 0.0)
 # One model per accepted or refused case of the pre-run hook check.
 struct HpGuidanceNoHook <: SpaceAGORA.AbstractGuidanceModel end
 struct HpGuidanceWrongTime <: SpaceAGORA.AbstractGuidanceModel end
-SpaceAGORA.calcGuidanceEffect!(::HpGuidanceWrongTime, u, p, t::Int, spacecraft_index::Int) = nothing
+SpaceAGORA.update_guidance!(::HpGuidanceWrongTime, u, p, t::Int, spacecraft_index::Int) = nothing
 mutable struct HpGuidanceCounter <: SpaceAGORA.AbstractGuidanceModel
     calls::Int
     first_t::Float64
 end
 HpGuidanceCounter() = HpGuidanceCounter(0, NaN)
-function SpaceAGORA.calcGuidanceEffect!(m::HpGuidanceCounter, u, p, t::Float64, spacecraft_index::Int)
+function SpaceAGORA.update_guidance!(m::HpGuidanceCounter, u, p, t::Float64, spacecraft_index::Int)
     m.calls == 0 && (m.first_t = t)
     m.calls += 1
     return nothing
@@ -24,9 +24,9 @@ end
 # A state argument typed narrower than the ComponentVector the engine passes is
 # refused; one typed as that ComponentVector is accepted.
 struct HpGuidanceVectorState <: SpaceAGORA.AbstractGuidanceModel end
-SpaceAGORA.calcGuidanceEffect!(::HpGuidanceVectorState, u::Vector{Float64}, p, t::Float64, spacecraft_index::Int) = nothing
+SpaceAGORA.update_guidance!(::HpGuidanceVectorState, u::Vector{Float64}, p, t::Float64, spacecraft_index::Int) = nothing
 struct HpGuidanceComponentState <: SpaceAGORA.AbstractGuidanceModel end
-SpaceAGORA.calcGuidanceEffect!(::HpGuidanceComponentState, u::ComponentVector, p::HP_SM.ODEParams, t::Float64, spacecraft_index::Int) = nothing
+SpaceAGORA.update_guidance!(::HpGuidanceComponentState, u::ComponentVector, p::HP_SM.ODEParams, t::Float64, spacecraft_index::Int) = nothing
 
 struct HpNavigationNoHook <: SpaceAGORA.AbstractNavigationModel end
 mutable struct HpNavigationCounter <: SpaceAGORA.AbstractNavigationModel
@@ -34,7 +34,7 @@ mutable struct HpNavigationCounter <: SpaceAGORA.AbstractNavigationModel
     first_t::Float64
 end
 HpNavigationCounter() = HpNavigationCounter(0, NaN)
-function SpaceAGORA.calcNavigationEffect!(m::HpNavigationCounter, u, p, t::Float64, spacecraft_index::Int)
+function SpaceAGORA.update_navigation!(m::HpNavigationCounter, u, p, t::Float64, spacecraft_index::Int)
     m.calls == 0 && (m.first_t = t)
     m.calls += 1
     return nothing
@@ -42,9 +42,9 @@ end
 
 # A control tick but no wrench hook: refused in :ideal actuation, accepted in :mounted.
 struct HpControlTickOnly <: SpaceAGORA.AbstractControlEffectorModel end
-SpaceAGORA.calcControlEffect!(::HpControlTickOnly, u, p, t::Float64, i::Int) = nothing
+SpaceAGORA.update_control!(::HpControlTickOnly, u, p, t::Float64, i::Int) = nothing
 struct HpMountedControl <: SpaceAGORA.AbstractControlEffectorModel end
-SpaceAGORA.calcControlEffect!(::HpMountedControl, u, p, t::Float64, i::Int) = nothing
+SpaceAGORA.update_control!(::HpMountedControl, u, p, t::Float64, i::Int) = nothing
 SpaceAGORA.actuation_mode(::HpMountedControl) = :mounted
 
 struct HpForceNoHook <: SpaceAGORA.AbstractForceTorqueModel end
@@ -91,7 +91,9 @@ hp_args(; guidance=(), navigation=(), control=(), effectors=(), density=SpaceAGO
     navigation_model=HP_SM.NavigationModel(navigation, fill(1.0, length(navigation))),
     control_model=HP_SM.ControlModel(control, fill(1.0, length(control))),
     dynamics_model=(dynamic_effectors=effectors,),
-    environment_model=(density_model=density,),
+    environment_model=(density_model=density, ephemerides_model=SpaceAGORA.SimpleEphemeridesModel(),
+        planet=HP_SM.make_no_gram_planet(:earth)),
+    initial_time=HP_SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
 )
 
 # Every concrete type defined in SpaceAGORA's modules that subtypes `T`.
@@ -128,14 +130,14 @@ const HP_PARAMS = HP_SM.ODEParams(n_sats=1, args=HP_FIXTURE)
 const HP_CALL = HP_SE._hook_call_types(HP_U0, HP_PARAMS)
 const HP_P = HP_CALL.params
 const HP_X = only(HP_CALL.spacecraft)
-hp_tick_ok(f, T) = hasmethod(f, Tuple{T, HP_CALL.state, HP_P, Float64, Int})
 hp_sampled(f, T) = hasmethod(f, Tuple{T, SpaceAGORA.StateSample, SpaceAGORA.EnvironmentSample, Float64})
 # Whether `T` has its own method of a backbone declaration hook, not the default.
 hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
 
 @testset "Model hook declarations and pre-run check" begin
     @testset "hooks are public with generic docstrings" begin
-        for name in (:AbstractNavigationModel, :calcGuidanceEffect!, :calcNavigationEffect!,
+        for name in (:AbstractNavigationModel, :update_guidance!, :update_navigation!, :update_control!,
+                     :calcGuidanceEffect!, :calcNavigationEffect!, :calcControlEffect!,
                      :calcReactionWheelTorque, :getHeatRate, :touchdown_spec,
                      :control_wrench, :control_propellant_rate, :control_wheel_torque)
             @test name in names(SpaceAGORA)
@@ -145,19 +147,23 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
         @test SpaceAGORA.control_wheel_torque === HP_SM.ControlHooks.control_wheel_torque
         @test isabstracttype(SpaceAGORA.AbstractNavigationModel)
         @test SpaceAGORA.AbstractNavigationModel === HP_SM.AbstractTypes.AbstractNavigationModel
+        @test SpaceAGORA.update_guidance! === HP_SM.GuidanceHooks.update_guidance!
+        @test SpaceAGORA.update_navigation! === HP_SM.NavigationHooks.update_navigation!
+        @test SpaceAGORA.update_control! === HP_SM.ControlHooks.update_control!
         @test SpaceAGORA.calcGuidanceEffect! === HP_SM.GuidanceHooks.calcGuidanceEffect!
         @test SpaceAGORA.calcNavigationEffect! === HP_SM.NavigationHooks.calcNavigationEffect!
+        @test SpaceAGORA.calcControlEffect! === HP_SM.ControlHooks.calcControlEffect!
         @test SpaceAGORA.calcReactionWheelTorque === HP_SM.ControlHooks.calcReactionWheelTorque
         @test SpaceAGORA.touchdown_spec === HP_SM.ControlHooks.touchdown_spec
         @test SpaceAGORA.getHeatRate === HP_SM.VehicleThermalModels.getHeatRate
 
         # The docstring each public hook shows is the generic one, not a method's.
         root_doc(name) = string(Docs.meta(SpaceAGORA)[Docs.Binding(SpaceAGORA, name)].docs[Union{}].text...)
-        @test startswith(root_doc(:calcGuidanceEffect!), "    calcGuidanceEffect!(model, u, p, t, spacecraft_index)")
-        @test !occursin("RPOGuidanceModel", root_doc(:calcGuidanceEffect!))
-        @test startswith(root_doc(:calcNavigationEffect!), "    calcNavigationEffect!(model, u, p, t, spacecraft_index)")
-        @test startswith(root_doc(:calcControlEffect!), "    calcControlEffect!(model, u, p, t, spacecraft_index)")
-        @test !occursin("calcControlEffect!(model::BaseThrusterModel", root_doc(:calcControlEffect!))
+        @test startswith(root_doc(:update_guidance!), "    update_guidance!(model, u, p, t, spacecraft_index)")
+        @test !occursin("RPOGuidanceModel", root_doc(:update_guidance!))
+        @test startswith(root_doc(:update_navigation!), "    update_navigation!(model, u, p, t, spacecraft_index)")
+        @test startswith(root_doc(:update_control!), "    update_control!(model, u, p, t, spacecraft_index)")
+        @test !occursin("update_control!(model::BaseThrusterModel", root_doc(:update_control!))
         @test startswith(root_doc(:calcReactionWheelTorque), "    calcReactionWheelTorque(model, u, p, spacecraft_index, t)")
         for name in (:control_wrench, :control_propellant_rate, :control_wheel_torque)
             @test startswith(root_doc(name), "    $(name)(model, x::StateSample, p, t::Float64)")
@@ -166,27 +172,56 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
         for name in (:calcControlForceTorque, :calcControlMassFlowRate, :calcReactionWheelTorque)
             @test occursin("\n\nDeprecated, use [`control_", root_doc(name))
         end
-        # No catch-all control output method during the deprecation window, so
+        for (old, new) in ((:calcGuidanceEffect!, :update_guidance!), (:calcNavigationEffect!, :update_navigation!),
+                           (:calcControlEffect!, :update_control!))
+            @test startswith(root_doc(old), "    $(old)(model, u, p, t, spacecraft_index)")
+            @test occursin("\n\nDeprecated, use [`$(new)`]", root_doc(old))
+        end
+        # No catch-all method of a new hook during the deprecation window, so
         # `hasmethod` tells which types implement them.
         for f in (SpaceAGORA.control_wrench, SpaceAGORA.control_propellant_rate, SpaceAGORA.control_wheel_torque)
             @test !hasmethod(f, Tuple{Any, Any, Any, Any})
         end
+        for f in (SpaceAGORA.update_guidance!, SpaceAGORA.update_navigation!, SpaceAGORA.update_control!)
+            @test !hasmethod(f, Tuple{Any, Any, Any, Any, Any})
+        end
         @test startswith(root_doc(:getHeatRate), "    getHeatRate(model, S, T, ρ, v, α)")
         @test startswith(root_doc(:touchdown_spec), "    touchdown_spec(effector, spacecraft_index::Int)")
+        # The ephemerides hooks, model first, and the model-last names they replace.
+        em = HP_SM.EphemeridesModels
+        for (name, arity) in ((:ephemerides_frame_lpi, 3), (:ephemerides_sun_ii, 3), (:ephemerides_epoch_seconds, 2),
+                              (:ephemerides_requires_spice, 1), (:ephemerides_cache_key, 1))
+            @test name in names(SpaceAGORA) && getfield(SpaceAGORA, name) === getfield(em, name)
+            @test startswith(root_doc(name), "    $(name)(model")
+            @test !hasmethod(getfield(SpaceAGORA, name), Tuple{ntuple(_ -> Any, arity)...})
+        end
+        for (old, new, form) in ((:planet_frame_lpi, :ephemerides_frame_lpi, "(planet, et, model)"),
+                                 (:ephemerides_sun_direction_ii, :ephemerides_sun_ii, "(planet, et, model)"),
+                                 (:ephemerides_time_seconds, :ephemerides_epoch_seconds, "(initial_time, model)"))
+            @test old in names(SpaceAGORA) && getfield(SpaceAGORA, old) === getfield(em, old)
+            @test startswith(root_doc(old), "    $(old)$(form)")
+            @test occursin("\n\nDeprecated, use [`$(new)`]", root_doc(old))
+        end
         # The RPO text stays on the RPO method.
         gh = HP_SM.GuidanceHooks
         rpo_sig = Tuple{HP_SM.GuidanceModels.RPOGuidanceModel, Any, Any, Float64, Int}
-        rpo_doc = Docs.meta(gh)[Docs.Binding(gh, :calcGuidanceEffect!)].docs[rpo_sig]
+        rpo_doc = Docs.meta(gh)[Docs.Binding(gh, :update_guidance!)].docs[rpo_sig]
         @test occursin("model.chaser_idx", string(rpo_doc.text...))
 
-        # No catch-all navigation method: an effector without one is still a MethodError when called.
+        # No catch-all navigation method: an effector without one is still a
+        # MethodError when called, under either name.
+        @test_throws MethodError SpaceAGORA.update_navigation!(HpNavigationNoHook(), Float64[], nothing, 0.0, 1)
         @test_throws MethodError SpaceAGORA.calcNavigationEffect!(HpNavigationNoHook(), Float64[], nothing, 0.0, 1)
     end
 
     @testset "the new hook names collide with no package often loaded beside SpaceAGORA" begin
         # A script that loads these packages with SpaceAGORA must see the new
         # names unqualified: a name two of them export would be ambiguous.
-        new_names = (:control_wrench, :control_propellant_rate, :control_wheel_torque)
+        new_names = (:control_wrench, :control_propellant_rate, :control_wheel_torque,
+            :update_control!, :update_guidance!, :update_navigation!,
+            :ephemerides_frame_lpi, :ephemerides_sun_ii, :ephemerides_epoch_seconds,
+            :ephemerides_requires_spice, :ephemerides_cache_key,
+            :planet_frame_lpi, :ephemerides_sun_direction_ii, :ephemerides_time_seconds)
         scope = Module(:HpNameCollisions)
         Core.eval(scope, :(using SpaceAGORA, Plots, OrdinaryDiffEq, ComponentArrays, StaticArrays, DataFrames))
         for pkg in (:Plots, :OrdinaryDiffEq, :ComponentArrays, :StaticArrays, :DataFrames)
@@ -205,33 +240,16 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
     end
 
     @testset "built-in models pass the check" begin
-        guidance = hp_package_types(SpaceAGORA.AbstractGuidanceModel)
-        @test length(guidance) >= 5
-        for T in guidance
-            @test hp_tick_ok(SpaceAGORA.calcGuidanceEffect!, T)
-        end
-        # SolarPanelAngleOfAttackControlModel is the panel actuator inside the
-        # energy depletion control model and has no control tick of its own.
-        aoa = SpaceAGORA.SolarPanelAngleOfAttackControlModel
-        control = [hp_package_types(SpaceAGORA.AbstractControlEffectorModel); HP_SM.ThrusterModels.BaseThrusterModel]
-        @test aoa in control
-        @test length(control) >= 6
-        # Every built-in control effector has control_wrench, and none a method
-        # of its own of a deprecated control output hook.
-        for T in control
-            @test hp_tick_ok(SpaceAGORA.calcControlEffect!, T) == (T !== aoa)
-            @test hasmethod(SpaceAGORA.control_wrench, Tuple{T, SpaceAGORA.StateSample, HP_P, Float64})
-            for old in (SpaceAGORA.calcControlForceTorque, SpaceAGORA.calcControlMassFlowRate, SpaceAGORA.calcReactionWheelTorque)
-                @test !HP_SE._own_method(old, Tuple{T, HP_X, HP_P, Int, Float64})
-            end
+        # Guidance, control and force/torque models: the conformance tests
+        # (test/unit/conformance/builtin_conformance_tests.jl) run this check, the
+        # deprecated-hook list and the sample signatures on an instance of each.
+        # The conformance guidance report has no deprecated-hook check, so the
+        # deprecated guidance tick is checked here: no built-in guidance
+        # effector has a method of its own of it.
+        for T in hp_package_types(SpaceAGORA.AbstractGuidanceModel)
+            @test !HP_SE._own_method(SpaceAGORA.calcGuidanceEffect!, Tuple{T, HP_CALL.state, HP_P, Float64, Int})
         end
         forces = hp_package_types(SpaceAGORA.AbstractForceTorqueModel)
-        @test length(forces) >= 15
-        # Every built-in force model has wrench, and none a calcForceTorque method of its own.
-        for T in forces
-            @test hp_sampled(SpaceAGORA.wrench, T)
-            @test !HP_SE._own_method(SpaceAGORA.calcForceTorque, Tuple{T, HP_X, HP_P, Int})
-        end
         # Every built-in backbone declaration has its acceleration hook.
         cores = filter(T -> hp_declares(SpaceAGORA.gravity_backbone_structure, T), forces)
         kicks = filter(T -> hp_declares(SpaceAGORA.gravity_backbone_kick_structure, T), forces)
@@ -265,11 +283,11 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
         lines = HP_SE._missing_model_hooks(args, HP_CALL)
         has(parts...) = any(line -> all(part -> occursin(part, line), parts), lines)
         @test length(lines) == 7
-        @test has("guidance_model.guidance_effectors[1] (HpGuidanceNoHook)", "calcGuidanceEffect!(model, u, p, t::Float64, spacecraft_index::Int)")
-        @test has("guidance_model.guidance_effectors[2] (HpGuidanceWrongTime)", "calcGuidanceEffect!", "none accepts the arguments this run passes")
-        @test has("guidance_model.guidance_effectors[4] (HpGuidanceVectorState)", "calcGuidanceEffect!", "none accepts the arguments this run passes")
+        @test has("guidance_model.guidance_effectors[1] (HpGuidanceNoHook)", "update_guidance!(model, u, p, t::Float64, spacecraft_index::Int)")
+        @test has("guidance_model.guidance_effectors[2] (HpGuidanceWrongTime)", "update_guidance!", "none accepts the arguments this run passes")
+        @test has("guidance_model.guidance_effectors[4] (HpGuidanceVectorState)", "update_guidance!", "none accepts the arguments this run passes")
         @test !has("(HpGuidanceNoHook)", "none accepts")
-        @test has("navigation_model.navigation_effectors[1] (HpNavigationNoHook)", "calcNavigationEffect!")
+        @test has("navigation_model.navigation_effectors[1] (HpNavigationNoHook)", "update_navigation!")
         @test has("control_model.control_effectors[1] (HpControlTickOnly)",
             "has no method control_wrench(model, x::StateSample, p, t::Float64)", "actuation_mode :ideal")
         @test !has("(HpControlTickOnly)", "calcControlForceTorque")
@@ -312,7 +330,7 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
         @test occursin("Its type belongs in control_model.", only(HP_SE._missing_model_hooks(hp_args(guidance=(HpControlTickOnly(),)), HP_CALL)))
         # The energy depletion controller's panel actuator cannot run on its own.
         aoa_line = only(HP_SE._missing_model_hooks(hp_args(control=(SpaceAGORA.SolarPanelAngleOfAttackControlModel(),)), HP_CALL))
-        @test occursin("(SolarPanelAngleOfAttackControlModel) has no method calcControlEffect!", aoa_line)
+        @test occursin("(SolarPanelAngleOfAttackControlModel) has no method update_control!", aoa_line)
     end
 
     @testset "a run with a missing hook stops before integration" begin
@@ -326,7 +344,7 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
             e
         end
         @test err isa ArgumentError
-        @test occursin("guidance_model.guidance_effectors[1] (HpGuidanceNoHook) has no method calcGuidanceEffect!", err.msg)
+        @test occursin("guidance_model.guidance_effectors[1] (HpGuidanceNoHook) has no method update_guidance!", err.msg)
         # Nothing was integrated: no dynamics evaluation and no navigation tick.
         @test force.calls == 0
         @test navigation.calls == 0
@@ -340,7 +358,7 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
             e
         end
         @test err isa ArgumentError
-        @test occursin("(HpGuidanceVectorState) has no method calcGuidanceEffect!", err.msg)
+        @test occursin("(HpGuidanceVectorState) has no method update_guidance!", err.msg)
         @test force.calls == 0
 
         # A backbone gravity core without its acceleration hook, in gravity_backbone_split.

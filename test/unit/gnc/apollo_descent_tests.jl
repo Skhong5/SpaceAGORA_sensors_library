@@ -132,18 +132,18 @@ end
         # Exercise actual control cycles with the real parameter/configuration
         # object; no propagation or synthetic force callback is substituted.
         sample = (q=SVector(0.0, 0.0, 0.0, 1.0), ω=SVector(0.0, 0.0, 0.0))
-        CH.calcControlEffect!(control, sample, params, 0.0, 2)
+        CH.update_control!(control, sample, params, 0.0, 2)
         @test control.actuators.last_update_s[2] == 0.0
         @test control.actuators.thrust_n[2] == 0.0
         state.phase_start_s[1, 2] = 0.0
         state.thrust_cmd_n[2] = cfg.max_thrust_n
-        CH.calcControlEffect!(control, sample, params, 0.05, 2)
+        CH.update_control!(control, sample, params, 0.05, 2)
         @test control.actuators.thrust_n[2] ≈ control.config.thrust_slew_n_s * 0.05
         previous = control.actuators.thrust_n[2]
-        CH.calcControlEffect!(control, sample, params, 0.05, 2)
+        CH.update_control!(control, sample, params, 0.05, 2)
         @test control.actuators.thrust_n[2] == previous
         state.thrust_cmd_n[2] = 0.0
-        CH.calcControlEffect!(control, sample, params, 0.10, 2)
+        CH.update_control!(control, sample, params, 0.10, 2)
         @test control.actuators.thrust_n[2] ≈ 0.0 atol=1e-10
         @test control.actuators.thrust_n[1] == 0.0
 
@@ -212,7 +212,7 @@ end
             keplerian=false, verbose=false, results=false)
         params = SM.ODEParams(n_sats=1, args=args)
         sample = (q=SVector(0.0, 0.0, 0.0, 1.0), ω=zero(SVector{3,Float64}))
-        CH.calcControlEffect!(control, sample, params, 0.0, 1)
+        CH.update_control!(control, sample, params, 0.0, 1)
         cached_layout = control.actuators.thruster_layout[1]
         saved_levels = CH.control_thruster_levels(control, 1)
         @test cached_layout.engine == 2
@@ -221,7 +221,7 @@ end
         state.phase_start_s[1, 1] = 0.0
         state.thrust_cmd_n[1] = 50.0
         state.attitude_cmd[1] = SVector(1.0, 0.0, 0.0, 0.0)
-        CH.calcControlEffect!(control, sample, params, 1.0, 1)
+        CH.update_control!(control, sample, params, 1.0, 1)
         @test control.actuators.thruster_layout[1] === cached_layout
         @test CH.control_thruster_levels(control, 1) === saved_levels
         @test control.actuators.thrust_n[1] == 30.0
@@ -229,6 +229,10 @@ end
         # 10 kg m² * 2 /s * 0.1 rad/s = 2 N m, below the RCS torque cap.
         @test control.actuators.torque_nm[1] ≈ SVector(2.0, 0.0, 0.0)
         @test saved_levels ≈ [0.2, 0.3, 0.0, 0.0]
+        # The held command, read without the model's storage, and the tick that produced it.
+        @test held_command(control, 1) == (thrust_n=30.0, torque_nm=control.actuators.torque_nm[1])
+        @test held_command_time(control, 1) == 1.0
+        @test held_command(control, 2) === nothing && isnan(held_command_time(control, 2))
 
         # Contact can precede the first guidance update that creates a site
         # frame. Store the planet-fixed velocity and clear every actuator.
@@ -244,10 +248,18 @@ end
         @test control.actuators.thrust_n[1] == 0.0
         @test iszero(control.actuators.torque_nm[1])
         @test all(iszero, saved_levels)
+        # Once the spacecraft is inactive, the engine releases the command at each
+        # control tick instead of ticking: engine and jets off.
+        @test spacecraft_scope(control) == BoundSpacecraft((1,)) && skip_inactive(control)
         params.is_active[1] = false
-        CH.calcControlEffect!(control, sample, params, 3.0, 1)
+        control.actuators.thrust_n[1] = 10.0
+        control.actuators.torque_nm[1] = SVector(1.0, 0.0, 0.0)
+        saved_levels .= 0.5
+        @test SM.SimulationCallbacks._gnc_tick!(CH.update_control!, control, sample, params, 3.0, 1)
         @test CH.control_thruster_levels(control, 1) === saved_levels
         @test all(iszero, saved_levels)
+        @test held_command(control, 1) == (thrust_n=0.0, torque_nm=zero(SVector{3, Float64}))
+        @test held_command_time(control, 1) == 1.0       # a release is not a tick
     end
 
     @testset "closed-loop vertical descent on the mounted jets" begin
@@ -260,8 +272,8 @@ end
         ephem = SM.SimpleEphemeridesModel()
         initial_time = SM.InitialTime(year=1969, month=7, day=20, hour=20, minute=10, second=0.0)
         lat, lon, h0 = 0.674, 23.473, 60.0
-        et = SM.ephemerides_time_seconds(initial_time, ephem)
-        l_pi = SM.planet_frame_lpi(planet, et, ephem)
+        et = SM.ephemerides_epoch_seconds(ephem, initial_time)
+        l_pi = SM.ephemerides_frame_lpi(ephem, planet, et)
         upv = SVector(cosd(lat) * cosd(lon), cosd(lat) * sind(lon), sind(lat))
         r_p = (planet.Rp_e + h0) * upv
         r_i = SVector{3, Float64}(l_pi' * r_p)
@@ -372,8 +384,8 @@ end
         initial_time = SM.InitialTime(year=1969, month=7, day=20, hour=20, minute=10, second=0.0)
         # start 60 m above the site, at rest relative to the ground, engine axis 8 deg off vertical
         lat, lon, h0 = 0.674, 23.473, 60.0
-        et = SM.ephemerides_time_seconds(initial_time, ephem)
-        l_pi = SM.planet_frame_lpi(planet, et, ephem)
+        et = SM.ephemerides_epoch_seconds(ephem, initial_time)
+        l_pi = SM.ephemerides_frame_lpi(ephem, planet, et)
         upv = SVector(cosd(lat) * cosd(lon), cosd(lat) * sind(lon), sind(lat))
         r_p = (planet.Rp_e + h0) * upv
         v_p = SVector(0.0, 0.0, 0.0)

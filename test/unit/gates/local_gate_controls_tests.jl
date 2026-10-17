@@ -601,6 +601,53 @@ end
                     @test _reports(rejected, probe, fixture, "deprecated hook $(hook)")
                 end
             end
+            # The deprecated ticks too, each with its five-argument fallback.
+            for (hook, text) in (
+                    ("calcControlEffect!", "SpaceAGORA.calcControlEffect!(model::Probe, u, p, t, i) = nothing\n"),
+                    ("calcGuidanceEffect!", "function GuidanceHooks.calcGuidanceEffect!(model::Probe, u, p, t::Float64, i::Int)\n    return nothing\nend\n"),
+                    ("calcNavigationEffect!", "(::typeof(calcNavigationEffect!))(model::Probe, u, p, t, i) = nothing\n"))
+                _with_probe(probe, text) do
+                    rejected = run_gate()
+                    @test _failed_with(rejected, message)
+                    @test _reports(rejected, probe, fixture, "deprecated hook $(hook)")
+                end
+            end
+            tick_bridges = joinpath(fixture, "src", "orchestration", "simulation", "callbacks", "tick_hook_bridges.jl")
+            tick_original = read(tick_bridges, String)
+            for (hook, owner) in (("calcNavigationEffect!", "NavigationHooks"), ("calcGuidanceEffect!", "GuidanceHooks"),
+                                  ("calcControlEffect!", "ControlHooks"))
+                needle = "function $(owner).$(hook)(model, u, p, t, spacecraft_index)"
+                @test occursin(needle, tick_original)
+                _with_text(tick_bridges, replace(tick_original, needle => "function $(owner).$(hook)(model, u, p, t::Float64, spacecraft_index)"; count=1)) do
+                    rejected = run_gate()
+                    @test _failed_with(rejected, message)
+                    @test any(v -> occursin("the $(hook) forwarder for direct calls (five untyped positional arguments) is missing", v), rejected.violations)
+                end
+            end
+            # The model-last ephemerides hooks too, each with its untyped fallback.
+            for (hook, text) in (
+                    ("planet_frame_lpi", "SpaceAGORA.planet_frame_lpi(planet, et, model::Probe) = nothing\n"),
+                    ("ephemerides_sun_direction_ii", "function EphemeridesModels.ephemerides_sun_direction_ii(planet, et::Float64, ::Probe)\n    return nothing\nend\n"),
+                    ("ephemerides_time_seconds", "(::typeof(ephemerides_time_seconds))(initial_time, model::Probe) = 0.0\n"))
+                _with_probe(probe, text) do
+                    rejected = run_gate()
+                    @test _failed_with(rejected, message)
+                    @test _reports(rejected, probe, fixture, "deprecated hook $(hook)")
+                end
+            end
+            ephemerides_hooks = joinpath(fixture, "src", "models", "environment", "ephemerides", "ephemerides_hooks.jl")
+            ephemerides_original = read(ephemerides_hooks, String)
+            for (hook, needle, changed, count) in (
+                    ("planet_frame_lpi", "function planet_frame_lpi(planet, et, model)", "function planet_frame_lpi(planet, et::Float64, model)", "three"),
+                    ("ephemerides_sun_direction_ii", "function ephemerides_sun_direction_ii(planet, et, model)", "function ephemerides_sun_direction_ii(planet, et)", "three"),
+                    ("ephemerides_time_seconds", "function ephemerides_time_seconds(initial_time, model)", "function ephemerides_time_seconds(initial_time, model::AbstractEphemeridesModel)", "two"))
+                @test occursin(needle, ephemerides_original)
+                _with_text(ephemerides_hooks, replace(ephemerides_original, needle => changed; count=1)) do
+                    rejected = run_gate()
+                    @test _failed_with(rejected, message)
+                    @test any(v -> occursin("the $(hook) forwarder for direct calls ($(count) untyped positional arguments) is missing", v), rejected.violations)
+                end
+            end
             bridges = joinpath(fixture, "src", "orchestration", "simulation", "engine", "control_hook_bridges.jl")
             original = read(bridges, String)
             for hook in ("calcControlForceTorque", "calcControlMassFlowRate", "calcReactionWheelTorque")
@@ -615,6 +662,24 @@ end
                     end
                 end
             end
+            # The starters name no deprecated hook anywhere, in any file type; a longer
+            # name that only contains one is not a mention.
+            starter = joinpath(fixture, "templates", "starters", "package")
+            for (file, text) in (("README.md", "Implement `calcForceTorque` here.\n"),
+                                 (joinpath("test", "runtests.jl"), "x = SpaceAGORA.calcControlMassFlowRate\n"),
+                                 (joinpath(".github", "workflows", "ci.yml"), "# calcReactionWheelTorque\n"),
+                                 (joinpath("src", "tick_notes.jl"), "# The tick used to be calcGuidanceEffect!.\n"))
+                probe = joinpath(starter, file)
+                _with_probe(probe, text) do
+                    rejected = run_gate()
+                    @test _failed_with(rejected, message)
+                    @test _reports(rejected, probe, fixture, "names the deprecated hook")
+                end
+            end
+            _with_probe(joinpath(starter, "README.md"), "my_calcForceTorque_notes and calcForceTorques\n") do
+                @test isnothing(run_gate().failure)
+            end
+            rm(joinpath(fixture, "templates"); recursive=true)
             @test isnothing(run_gate().failure)
         end
     end

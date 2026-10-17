@@ -129,7 +129,7 @@ function _edg_test_context(;
         ),
     )
     p = _EDG_SM.ODEParams(n_sats=1, args=args)
-    p.shared_buffers.et_start[] = _EDG_SM.ephemerides_time_seconds(args.initial_time, args.environment_model.ephemerides_model)
+    p.shared_buffers.et_start[] = _EDG_SM.ephemerides_epoch_seconds(args.environment_model.ephemerides_model, args.initial_time)
     u = ComponentVector(sc=[(pos=collect(pos), vel=collect(vel), mass=461.0, heat_loads=zeros(3))])
     return (; config, state, guidance, control, args, p, u, spacecraft)
 end
@@ -201,7 +201,7 @@ end
     )
     p_without_nbody = _EDG_SM.ODEParams(n_sats=1, args=args_without_nbody)
     p_with_nbody = _EDG_SM.ODEParams(n_sats=1, args=args_with_nbody)
-    et = _EDG_SM.ephemerides_time_seconds(epoch, ephemerides_model)
+    et = _EDG_SM.ephemerides_epoch_seconds(ephemerides_model, epoch)
     p_without_nbody.shared_buffers.et_start[] = et
     p_with_nbody.shared_buffers.et_start[] = et
 
@@ -250,13 +250,13 @@ end
     @test_throws ArgumentError _EDG_SM.AerobrakingEnergyDepletionConfig(guidance_modes=(:not_a_mode,))
 
     ctx = _edg_test_context(guidance_modes=(:max_energy_depletion,))
-    _EDG_SM.calcGuidanceEffect!(ctx.guidance, ctx.u, ctx.p, 0.0, 1)
+    _EDG_SM.update_guidance!(ctx.guidance, ctx.u, ctx.p, 0.0, 1)
     @test ctx.state.selected_mode[1] == :max_energy_depletion
     @test ctx.state.energy_bracketing_count[1] == 0
     @test !ctx.state.energy_bracketing_evaluated[1]
 
     ctx_targeting = _edg_test_context(density_reference_kg_m3=1e-7, guidance_modes=(:targeting, :max_energy_depletion))
-    _EDG_SM.calcGuidanceEffect!(ctx_targeting.guidance, ctx_targeting.u, ctx_targeting.p, 0.0, 1)
+    _EDG_SM.update_guidance!(ctx_targeting.guidance, ctx_targeting.u, ctx_targeting.p, 0.0, 1)
     @test ctx_targeting.state.energy_bracketing_count[1] == 1
     @test ctx_targeting.state.energy_bracketing_evaluated[1]
     sc = ctx_targeting.u.sc[1]
@@ -283,7 +283,7 @@ end
     @test max_energy.heat_load_switches_s[1] < max_energy.heat_load_switches_s[2]
 
     ctx_fallback = _edg_test_context(density_reference_kg_m3=1e-7, guidance_modes=(:targeting, :max_energy_depletion), target_apoapsis_radius_m=1.0e12)
-    _EDG_SM.calcGuidanceEffect!(ctx_fallback.guidance, ctx_fallback.u, ctx_fallback.p, 0.0, 1)
+    _EDG_SM.update_guidance!(ctx_fallback.guidance, ctx_fallback.u, ctx_fallback.p, 0.0, 1)
     @test ctx_fallback.state.selected_mode[1] == :safe_low_drag
     @test !ctx_fallback.state.targeting_active[1]
 end
@@ -291,8 +291,8 @@ end
 @testset "Energy depletion control switches and constraints" begin
     for solver in (:closed_form, :tpbvp_integration)
         ctx = _edg_test_context(heat_load_switch_solver=solver)
-        _EDG_SM.calcGuidanceEffect!(ctx.guidance, ctx.u, ctx.p, 0.0, 1)
-        _EDG_SM.calcControlEffect!(ctx.control, ctx.u, ctx.p, 0.0, 1)
+        _EDG_SM.update_guidance!(ctx.guidance, ctx.u, ctx.p, 0.0, 1)
+        _EDG_SM.update_control!(ctx.control, ctx.u, ctx.p, 0.0, 1)
         switches = ctx.state.heat_load_switches_s[1]
         @test length(switches) == 2
         @test all(isfinite, switches)
@@ -302,17 +302,17 @@ end
     ctx_before_drag = _edg_test_context(heat_load_switch_solver=:closed_form)
     planet = ctx_before_drag.args.environment_model.planet
     ctx_before_drag.u.sc[1].pos .= (planet.Rp_e + 300e3, 0.0, 0.0)
-    _EDG_SM.calcGuidanceEffect!(ctx_before_drag.guidance, ctx_before_drag.u, ctx_before_drag.p, 0.0, 1)
-    _EDG_SM.calcControlEffect!(ctx_before_drag.control, ctx_before_drag.u, ctx_before_drag.p, 0.0, 1)
+    _EDG_SM.update_guidance!(ctx_before_drag.guidance, ctx_before_drag.u, ctx_before_drag.p, 0.0, 1)
+    _EDG_SM.update_control!(ctx_before_drag.control, ctx_before_drag.u, ctx_before_drag.p, 0.0, 1)
     @test ctx_before_drag.state.heat_load_switches_s[1] == (Inf, Inf)
     @test !ctx_before_drag.state.heat_load_switch_solved[1]
 
     ctx_once = _edg_test_context(heat_load_switch_solver=:closed_form)
-    _EDG_SM.calcGuidanceEffect!(ctx_once.guidance, ctx_once.u, ctx_once.p, 0.0, 1)
-    _EDG_SM.calcControlEffect!(ctx_once.control, ctx_once.u, ctx_once.p, 0.0, 1)
+    _EDG_SM.update_guidance!(ctx_once.guidance, ctx_once.u, ctx_once.p, 0.0, 1)
+    _EDG_SM.update_control!(ctx_once.control, ctx_once.u, ctx_once.p, 0.0, 1)
     first_switches = ctx_once.state.heat_load_switches_s[1]
     ctx_once.u.sc[1].heat_loads .= 100.0
-    _EDG_SM.calcControlEffect!(ctx_once.control, ctx_once.u, ctx_once.p, 10.0, 1)
+    _EDG_SM.update_control!(ctx_once.control, ctx_once.u, ctx_once.p, 10.0, 1)
     @test ctx_once.state.heat_load_switches_s[1] == first_switches
     @test ctx_once.state.heat_load_switch_solved[1]
     @test ctx_once.state.last_switch_solve_t[1] == 0.0
@@ -324,7 +324,7 @@ end
     ctx_targeting.state.bracket_max_energy_jkg[1] = -9.0e6
     ctx_targeting.state.target_energy_jkg[1] = -9.5e6
     ctx_targeting.state.targeting_switch_s[1] = 10.0 # Plan supplied by guidance.
-    _EDG_SM.calcControlEffect!(ctx_targeting.control, ctx_targeting.u, ctx_targeting.p, 0.0, 1)
+    _EDG_SM.update_control!(ctx_targeting.control, ctx_targeting.u, ctx_targeting.p, 0.0, 1)
     @test isfinite(ctx_targeting.state.targeting_switch_s[1])
     @test ctx_targeting.state.targeting_active[1]
     @test ctx_targeting.state.selected_mode[1] == :targeting
@@ -336,7 +336,7 @@ end
         structural_load_limit_pa=0.5,
     )
     ctx_constraints.state.selected_mode[1] = :max_energy_depletion
-    _EDG_SM.calcControlEffect!(ctx_constraints.control, ctx_constraints.u, ctx_constraints.p, 0.0, 1)
+    _EDG_SM.update_control!(ctx_constraints.control, ctx_constraints.u, ctx_constraints.p, 0.0, 1)
     @test ctx_constraints.state.last_alpha_rad[1] ==
         min(ctx_constraints.state.last_alpha_heat_rate_rad[1], ctx_constraints.state.last_alpha_structural_rad[1])
 
@@ -546,7 +546,7 @@ end
     )
     planet = ctx_before_targeting.args.environment_model.planet
     ctx_before_targeting.u.sc[1].pos .= (planet.Rp_e + 300e3, 0.0, 0.0)
-    _EDG_SM.calcGuidanceEffect!(ctx_before_targeting.guidance, ctx_before_targeting.u, ctx_before_targeting.p, 0.0, 1)
+    _EDG_SM.update_guidance!(ctx_before_targeting.guidance, ctx_before_targeting.u, ctx_before_targeting.p, 0.0, 1)
     @test !ctx_before_targeting.state.energy_bracketing_evaluated[1]
     @test ctx_before_targeting.state.energy_bracketing_count[1] == 0
     @test ctx_before_targeting.state.selected_mode[1] == :inactive
@@ -605,7 +605,7 @@ end
         # Even a supplied energy change cannot make control replace the
         # guidance-owned plan. The public control hook only applies it.
         state.target_energy_jkg[1] = -9.0e6
-        _EDG_SM.calcControlEffect!(ctx_targeting_once.control,ctx_targeting_once.u,ctx_targeting_once.p,t,1)
+        _EDG_SM.update_control!(ctx_targeting_once.control,ctx_targeting_once.u,ctx_targeting_once.p,t,1)
         @test state.targeting_switch_s[1] == 21.0
         @test state.last_switch_solve_t[1] == 0.0
     end
@@ -617,13 +617,13 @@ end
         heat_rate_limit_w_cm2=Inf,
         structural_load_limit_pa=Inf,
     )
-    _EDG_SM.calcGuidanceEffect!(ctx.guidance, ctx.u, ctx.p, 0.0, 1)
-    _EDG_SM.calcControlEffect!(ctx.control, ctx.u, ctx.p, 30.0, 1)
+    _EDG_SM.update_guidance!(ctx.guidance, ctx.u, ctx.p, 0.0, 1)
+    _EDG_SM.update_control!(ctx.control, ctx.u, ctx.p, 30.0, 1)
     @test ctx.state.heat_load_switches_s[1] == (30.0, 30.0)
     @test ctx.state.heat_load_switch_solved[1]
     @test ctx.state.last_alpha_rad[1] == ctx.config.max_alpha_rad
     for t in (30.0 + 1/3, 31.0, 35.0)
-        _EDG_SM.calcControlEffect!(ctx.control, ctx.u, ctx.p, t, 1)
+        _EDG_SM.update_control!(ctx.control, ctx.u, ctx.p, t, 1)
         @test ctx.state.last_alpha_rad[1] == ctx.config.max_alpha_rad
         @test ctx.state.heat_load_switches_s[1] == (30.0, 30.0)
         @test ctx.state.last_switch_solve_t[1] == 30.0
@@ -631,12 +631,12 @@ end
     # A cached no-switch decision belongs only to this atmospheric passage.
     original_position = copy(ctx.u.sc[1].pos)
     ctx.u.sc[1].pos .= (ctx.args.environment_model.planet.Rp_e + 300e3, 0.0, 0.0)
-    _EDG_SM.calcControlEffect!(ctx.control, ctx.u, ctx.p, 40.0, 1)
+    _EDG_SM.update_control!(ctx.control, ctx.u, ctx.p, 40.0, 1)
     @test !ctx.state.heat_load_switch_solved[1]
     @test !ctx.state.heat_load_drag_passage_active[1]
     @test ctx.state.heat_load_switches_s[1] == (Inf, Inf)
     ctx.u.sc[1].pos .= original_position
-    _EDG_SM.calcControlEffect!(ctx.control, ctx.u, ctx.p, 41.0, 1)
+    _EDG_SM.update_control!(ctx.control, ctx.u, ctx.p, 41.0, 1)
     @test ctx.state.heat_load_switch_solved[1]
     @test ctx.state.heat_load_switches_s[1] == (41.0, 41.0)
     @test ctx.state.last_switch_solve_t[1] == 41.0

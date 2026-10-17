@@ -122,10 +122,11 @@ function _build_block_diagonal_jac_prototype(
 end
 
 # Satellite-index fields an effector uses to name a satellite other than the one
-# it is being evaluated for. An effector carrying two of these with different
-# values reads across satellites, so its contribution to the Jacobian lands
-# off-block.
-const _CROSS_SATELLITE_INDEX_FIELDS = (:chaser_idx, :target_idx)
+# it is being evaluated for (`chaser_idx` and `target_idx` are the older names,
+# kept by `RPOGuidanceModel` and contributor models). An effector carrying two of
+# these with different values reads across satellites, so its contribution to the
+# Jacobian lands off-block.
+const _CROSS_SATELLITE_INDEX_FIELDS = (:chaser_index, :target_index, :chaser_idx, :target_idx)
 
 """Return whether `effector` reads state belonging to more than one satellite."""
 @inline function _effector_couples_satellites(effector)::Bool
@@ -570,6 +571,8 @@ function run_simulation(
         SimulationLifecycle.preflight_control(control, args; isolate_state=isolate_state)
     end
     SimulationModel.SimulationCallbacks.check_control_periods(args)
+    # After the models' own checks, so that their more specific errors come first.
+    SimulationModel.SimulationCallbacks.check_spacecraft_scopes(args)
     # SolverConfig(parallel=true): re-enter under the flag's scoped environment
     # (see `_with_parallel_flag`). Inside it the flag reads as resolved, so this
     # branch is taken once; with the flag off nothing here runs.
@@ -583,6 +586,8 @@ function run_simulation(
                            visualization=visualization)
         end
     end
+    # After the re-entry above, so that each link's `check_link` runs once per run.
+    SimulationModel.SimulationCallbacks.check_gnc_links(args)
     try
     return SimulationModel.ParallelPolicy.with_policy_context() do
     # `visualization=true` (or SPACEAGORA_VISUALIZATION=1, so an unmodified
@@ -688,9 +693,9 @@ function run_simulation(
             candidate_force=SimulationModel.force_on_endpoint))
     end
     ephemerides_model = args.environment_model.ephemerides_model
-    et_start = SimulationModel.ephemerides_time_seconds(args.initial_time, ephemerides_model)
+    et_start = SimulationModel.EphemeridesModels._ephemerides_epoch_seconds(ephemerides_model, args.initial_time)
     p.shared_buffers.et_start[] = et_start
-    args.environment_model.planet.L_PI .= SimulationModel.planet_frame_lpi(args.environment_model.planet, et_start, ephemerides_model)
+    args.environment_model.planet.L_PI .= SimulationModel.EphemeridesModels._ephemerides_frame_lpi(ephemerides_model, args.environment_model.planet, et_start)
     if SimulationModel.ephemerides_requires_spice(ephemerides_model)
         Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.planet_pxform_runtime_calls, 1)
     end
@@ -741,8 +746,9 @@ function run_simulation(
     # println("ODE parameters:")
     # println(p)
     # println("args.mission_configuration.mission_time: $(args.mission_configuration.mission_time)")
-    # Navigation first, then guidance, then control: each stage may read what the
-    # previous one set up.
+    # The links first (each initialized once), then navigation, guidance and
+    # control: each stage may read what the previous one set up.
+    SimulationModel.SimulationCallbacks.initialize_gnc_links!(args, u_start, p, t_start)
     for navigation in args.navigation_model.navigation_effectors
         SimulationLifecycle.initialize_navigation!(navigation, u_start, p, t_start)
     end

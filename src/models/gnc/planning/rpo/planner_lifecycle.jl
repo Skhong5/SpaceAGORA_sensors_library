@@ -48,12 +48,12 @@ end
 # Kept separate from RPOGuidanceModel and RPOPlanBuffer for legacy compatibility.
 # The fields after `runtime` configure the contract extensions; their defaults are
 # the static geometry, the `:fail` policy and no retiming trigger.
-Base.@kwdef mutable struct PlannerGuidance <: S.AbstractGuidanceModel
+mutable struct PlannerGuidance <: S.AbstractGuidanceModel
     planner::P.AbstractRPOPlanner
     chaser_id::Int
     target_id::Int
-    chaser_idx::Int
-    target_idx::Int
+    chaser_index::Int
+    target_index::Int
     goal_rtn_m::NTuple{3,Float64}
     geometry::S.RPOReferenceGeometry
     geometry_revision::String
@@ -67,14 +67,44 @@ Base.@kwdef mutable struct PlannerGuidance <: S.AbstractGuidanceModel
     replan_interval_s::Float64
     tracking_error_limit_m::Float64
     plan_buffer::S.RPOPlanBuffer
-    runtime::Union{Nothing,PlannerRuntime} = nothing
-    family::P.RPOReferenceFamily = P.RPOReferenceFamily()
-    geometry_provider::Union{Nothing,P.AbstractRPOGeometryProvider} = nothing
-    retime_tracking_error_m::Float64 = Inf
-    hold_position_tolerance_m::Float64 = .02
-    hold_speed_tolerance_mps::Float64 = .002
-    triggers::Union{Nothing,TriggerState} = nothing
+    runtime::Union{Nothing,PlannerRuntime}
+    family::P.RPOReferenceFamily
+    geometry_provider::Union{Nothing,P.AbstractRPOGeometryProvider}
+    retime_tracking_error_m::Float64
+    hold_position_tolerance_m::Float64
+    hold_speed_tolerance_mps::Float64
+    triggers::Union{Nothing,TriggerState}
 end
+# `chaser_idx` and `target_idx` are the deprecated names of `chaser_index` and
+# `target_index` (until 0.5.0); they forward as keywords and as properties.
+const _NOT_PASSED = S.HookDeprecation._NOT_PASSED
+function PlannerGuidance(; planner, chaser_id, target_id, chaser_index=_NOT_PASSED, target_index=_NOT_PASSED,
+        chaser_idx=_NOT_PASSED, target_idx=_NOT_PASSED, goal_rtn_m, geometry, geometry_revision, constraints, validation,
+        reference_dt_s, preview_horizon_steps, validity_s, seed, events, replan_interval_s, tracking_error_limit_m,
+        plan_buffer, runtime=nothing, family=P.RPOReferenceFamily(), geometry_provider=nothing,
+        retime_tracking_error_m=Inf, hold_position_tolerance_m=.02, hold_speed_tolerance_mps=.002, triggers=nothing)
+    T = PlannerGuidance
+    chaser = S.HookDeprecation._renamed_keyword(T, :chaser_idx, chaser_idx, :chaser_index, chaser_index, _NOT_PASSED)
+    target = S.HookDeprecation._renamed_keyword(T, :target_idx, target_idx, :target_index, target_index, _NOT_PASSED)
+    chaser === _NOT_PASSED && throw(UndefKeywordError(:chaser_index))
+    target === _NOT_PASSED && throw(UndefKeywordError(:target_index))
+    return T(planner, chaser_id, target_id, chaser, target, goal_rtn_m, geometry, geometry_revision, constraints,
+        validation, reference_dt_s, preview_horizon_steps, validity_s, seed, events, replan_interval_s,
+        tracking_error_limit_m, plan_buffer, runtime, family, geometry_provider, retime_tracking_error_m,
+        hold_position_tolerance_m, hold_speed_tolerance_mps, triggers)
+end
+@inline _planner_field(name::Symbol) =
+    name === :chaser_idx ? S.HookDeprecation._renamed_field_warning(PlannerGuidance, :chaser_idx, :chaser_index) :
+    name === :target_idx ? S.HookDeprecation._renamed_field_warning(PlannerGuidance, :target_idx, :target_index) : name
+@inline Base.getproperty(g::PlannerGuidance, name::Symbol) = getfield(g, _planner_field(name))
+@inline function Base.setproperty!(g::PlannerGuidance, name::Symbol, x)
+    field = _planner_field(name)
+    return setfield!(g, field, convert(fieldtype(PlannerGuidance, field), x))
+end
+
+# The planner ticks for its chaser and reads the target (GNCRuntime). The indices
+# are resolved from the spacecraft IDs at the run's start.
+GR.spacecraft_scope(g::PlannerGuidance) = GR.CoupledSpacecraft(g.chaser_index, (g.target_index,))
 
 # SHA-256 over "SpaceAGORA/RPO/v1/<seed>/<chaser_id>/<target_id>", decoded
 # little-endian, not hash(): the shared stream mapping with the RPO namespace.
@@ -111,25 +141,49 @@ function L.preflight_guidance(g::PlannerGuidance, args; isolate_state)
     g.chaser_id in ids && g.target_id in ids || throw(ArgumentError("Planner spacecraft ID is missing."))
     count(x -> x isa PlannerGuidance && x.chaser_id == g.chaser_id,
         args.guidance_model.guidance_effectors) == 1 || throw(ArgumentError("One planner owner per chaser is required."))
-    controls = [c for c in args.control_model.control_effectors if
-        c isa S.RPOMPCControlModel && c.plan_buffer === g.plan_buffer]
+    # Its pairing with the controller is a check of the plan-buffer link (below).
+    return nothing
+end
+
+# The planner writes the plan buffer that its controller reads (GNCRuntime link).
+GR.gnc_links(g::PlannerGuidance) = (GR.Produces(g.plan_buffer),)
+
+# A plan buffer written by a planner: exactly one RPO MPC controller reads it, with
+# the planner's preview settings. A buffer written only by the deprecated
+# RPOGuidanceModel gets no check.
+function GR.check_link(b::S.RPOPlanBuffer, producers, consumers, args)
+    planners = [x for x in producers if x isa PlannerGuidance]
+    isempty(planners) && return nothing
+    controls = [c for c in consumers if c isa S.RPOMPCControlModel]
     length(controls) == 1 || throw(ArgumentError("Planner and one controller must share their reference buffer."))
     c = only(controls)
-    c.control_dt_s == g.reference_dt_s && c.controller.horizon == g.preview_horizon_steps ||
-        throw(ArgumentError("Planner and controller preview settings disagree."))
+    for g in planners
+        c.control_dt_s == g.reference_dt_s && c.controller.horizon == g.preview_horizon_steps ||
+            throw(ArgumentError("Planner and controller preview settings disagree."))
+    end
+    return nothing
+end
+
+# At the run's start the planner's controller is bound to the planner's spacecraft
+# and its run state reset, before either model's own initializer.
+function GR.link_initialize!(b::S.RPOPlanBuffer, producers, consumers, u, p, t)
+    planners = [x for x in producers if x isa PlannerGuidance]
+    isempty(planners) && return nothing
+    g = only(planners)
+    c = only(c for c in consumers if c isa S.RPOMPCControlModel)
+    ids = [sc.id for sc in p.args.dynamics_model.spacecraft]
+    c.chaser_index = only(findall(==(g.chaser_id), ids))
+    c.target_index = only(findall(==(g.target_id), ids))
+    c.held = S.RPOHeldActuation()
+    c.command_log = S.RPOControlCommandLog()
+    fill!(c.controller.U_prev, 0)
     return nothing
 end
 
 function L.initialize_guidance!(g::PlannerGuidance, u, p, t)
     ids = [sc.id for sc in p.args.dynamics_model.spacecraft]
-    g.chaser_idx = only(findall(==(g.chaser_id), ids))
-    g.target_idx = only(findall(==(g.target_id), ids))
-    c = only(c for c in p.args.control_model.control_effectors if
-        c isa S.RPOMPCControlModel && c.plan_buffer === g.plan_buffer)
-    c.chaser_idx, c.target_idx = g.chaser_idx, g.target_idx
-    c.held = S.RPOHeldActuation()
-    c.command_log = S.RPOControlCommandLog()
-    fill!(c.controller.U_prev, 0)
+    g.chaser_index = only(findall(==(g.chaser_id), ids))
+    g.target_index = only(findall(==(g.target_id), ids))
     words = stream_words(g.seed,g.chaser_id,g.target_id)
     g.runtime = GA.AlgorithmRuntime(words)
     g.triggers = TriggerState(:none, g.geometry_revision)
@@ -157,7 +211,7 @@ GA.trusted_queries(::PlannerGuidance) =
     (clearance_at=(point,geom)->S.rpo_clearance_distance_to_station(point,geom),)
 GA.fail_algorithm_request!(g::PlannerGuidance, reason; kwargs...) = fail!(g, reason; kwargs...)
 function GA.build_algorithm_request(g::PlannerGuidance, u, p, t, reason, request_id)
-    a, b = u.sc[g.chaser_idx], u.sc[g.target_idx]
+    a, b = u.sc[g.chaser_index], u.sc[g.target_index]
     x = S.FrameTransforms.inertial_to_rtn_relative_state(a.pos,a.vel,b.pos,b.vel)
     # A provider supplies this request's owned geometry snapshot and its revision.
     provider = g.geometry_provider
@@ -279,8 +333,8 @@ function request_triggered!(g, u, p, t, x, preview)
     return nothing
 end
 
-function S.GuidanceHooks.calcGuidanceEffect!(g::PlannerGuidance, u, p, t::Float64, sat_idx::Int)
-    sat_idx == g.chaser_idx || return nothing
+function S.GuidanceHooks.update_guidance!(g::PlannerGuidance, u, p, t::Float64, sat_idx::Int)
+    sat_idx == g.chaser_index || return nothing
     r = g.runtime
     r === nothing && fail!(g, :uninitialized)
     # Same accepted tick may arrive through periodic and thruster callbacks.
@@ -299,7 +353,7 @@ function S.GuidanceHooks.calcGuidanceEffect!(g::PlannerGuidance, u, p, t::Float6
         requested = true
     end
     if !requested && !duplicate_tick
-        a,b = u.sc[g.chaser_idx],u.sc[g.target_idx]
+        a,b = u.sc[g.chaser_index],u.sc[g.target_index]
         x = S.FrameTransforms.inertial_to_rtn_relative_state(a.pos,a.vel,b.pos,b.vel)
         preview = S.ControlHooks.rpo_ref_preview(g.plan_buffer.plan,
             max(0.0,t-g.plan_buffer.updated_at_s),g.reference_dt_s,1)

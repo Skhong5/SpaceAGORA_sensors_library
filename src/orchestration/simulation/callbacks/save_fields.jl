@@ -250,7 +250,7 @@ end
 @inline function _save_sun_direction(u, t, integrator)
     environment = integrator.p.args.environment_model
     et = integrator.p.shared_buffers.et_start[] + Float64(t)
-    direction = ephemerides_sun_direction_ii(environment.planet, et, environment.ephemerides_model)
+    direction = _ephemerides_sun_ii(environment.ephemerides_model, environment.planet, et)
     return direction === nothing ? SVector{3, Float64}(NaN, NaN, NaN) : direction
 end
 
@@ -614,8 +614,8 @@ function _sun_direction_field_enabled(args::SimulationConfiguration)::Bool
     args.simulation_settings.save_visualization_scene || return false
     return try
         environment = args.environment_model
-        et = ephemerides_time_seconds(args.initial_time, environment.ephemerides_model)
-        direction = ephemerides_sun_direction_ii(environment.planet, et, environment.ephemerides_model)
+        et = _ephemerides_epoch_seconds(environment.ephemerides_model, args.initial_time)
+        direction = _ephemerides_sun_ii(environment.ephemerides_model, environment.planet, et)
         direction !== nothing && all(isfinite, direction)
     catch
         false

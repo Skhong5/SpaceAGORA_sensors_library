@@ -334,7 +334,7 @@ function descent_environment(model::ApolloDescentGuidanceModel, u, p::ODEParams,
     ephem = p.args.environment_model.ephemerides_model
     et = _descent_ephemeris_time(p, t)
     r_p, v_p = r_intor_p!(pos, vel, planet, et, ephem)
-    l_pi = planet_frame_lpi(planet, et, ephem)
+    l_pi = _ephemerides_frame_lpi(ephem, planet, et)
     i in model.spacecraft_indices || throw(ArgumentError("spacecraft index $i is not selected for descent"))
     frame = model.state.site_frame[i]
     if frame === nothing
@@ -351,10 +351,11 @@ function descent_environment(model::ApolloDescentGuidanceModel, u, p::ODEParams,
         lat_deg=lat_deg, lon_deg=lon_deg, planet=planet)
 end
 
-function calcGuidanceEffect!(model::ApolloDescentGuidanceModel, u, p::ODEParams, t::Float64, i::Int64)
+function update_guidance!(model::ApolloDescentGuidanceModel, u, p::ODEParams, t::Float64, i::Int64)
     state = model.state
     config = model.config
-    (i in model.spacecraft_indices && p.is_active[i]) || return nothing
+    # The engine does not tick an inactive spacecraft (skip_inactive).
+    i in model.spacecraft_indices || return nothing
     env = descent_environment(model, u, p, t, i)
     r_s, v_s, m = env.r_s, env.v_s, env.mass
     isfinite(m) && m > 0 || throw(ArgumentError("descent guidance requires finite positive spacecraft mass"))

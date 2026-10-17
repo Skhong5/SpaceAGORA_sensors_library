@@ -305,6 +305,33 @@ wind requests on the locked path (see [Parallel Execution](parallel_execution.md
 For the supported atmosphere models and their constructors, see
 [Atmosphere Models](atmosphere_models.md).
 
+### Ephemerides models
+
+`SM.SpiceEphemeridesModel()` takes the planet's frame and the Sun from the
+run's SPICE kernels. `SM.SimpleEphemeridesModel()` needs no kernels: it turns
+the planet about its spin axis, and has the Sun for Earth only. An ephemerides
+model of your own subtypes `SpaceAGORA.AbstractEphemeridesModel` and implements
+five hooks, each with the model first:
+
+| Hook | Returns |
+|---|---|
+| `ephemerides_epoch_seconds(model, initial_time)` | the run's start, in seconds past J2000 on the model's timeline |
+| `ephemerides_frame_lpi(model, planet, et)` | the rotation `L` from the inertial (J2000) frame to the planet-fixed frame, `r_pf = L * r_ii` |
+| `ephemerides_sun_ii(model, planet, et)` | the unit vector from the planet's center to the Sun, inertial, or `nothing` |
+| `ephemerides_requires_spice(model)` | whether the model reads SPICE kernels |
+| `ephemerides_cache_key(model)` | a tuple; models with equal keys must give the same frames and times |
+
+`et` is the run's start plus the elapsed time, in seconds. The two built-in
+models, in `src/models/environment/ephemerides/simple_ephemerides.jl`, show each
+hook. The [Extension Hook Reference](../generated/extension_hook_reference.md)
+lists when the engine calls them.
+
+Before SpaceAGORA 0.3.0 three of the hooks took the model last:
+`planet_frame_lpi(planet, et, model)`, `ephemerides_sun_direction_ii(planet, et, model)`
+and `ephemerides_time_seconds(initial_time, model)`. A model that implements
+those names keeps working until 0.5.0, with a warning before each run; move
+the model to the front when you rename them.
+
 ## DynamicsModel
 
 Holds the list of spacecraft and the tuple of force/torque effectors:

@@ -6,8 +6,8 @@ module SpaceAGORA
 # Internal contract only; runtime guidance still uses its existing path.
 include(joinpath(@__DIR__, "models", "gnc", "interfaces", "gnc_algorithms.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "interfaces", "rpo_planner.jl"))
-include(joinpath(@__DIR__, "models", "gnc", "interfaces", "simulation_lifecycle.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "interfaces", "gnc_runtime.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "interfaces", "simulation_lifecycle.jl"))
 include(joinpath(@__DIR__, "orchestration", "parallel", "routing", "parallel_profiles.jl"))
 include(joinpath(@__DIR__, "orchestration", "parallel", "process", "parallel_process.jl"))
 include(joinpath(@__DIR__, "interfaces", "analysis", "visualization", "visualizer_services.jl"))
@@ -16,7 +16,10 @@ include(joinpath(@__DIR__, "orchestration", "simulation", "callback_services.jl"
 include(joinpath(@__DIR__, "orchestration", "simulation", "composition", "simulation_model.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "direct_planner.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "adapters", "hypr", "rpo_planner_adapter.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "comparison", "planner_contract.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "lifecycle.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "planning", "algorithm_lifecycle.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "control", "burn_planning.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "adapters", "hypr", "services.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "engine", "simulation_engine.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "campaigns", "simulation_campaigns.jl"))
@@ -61,7 +64,10 @@ using .GNCAlgorithms: algorithm_family, default_capabilities, algorithm_capabili
 using .GNCAlgorithms: validate_capabilities, validate_proposal, install!, is_current, on_rejection, fallback_product, family_contract_version
 using .GNCAlgorithms: gnc_stream_words, AlgorithmRuntime, run_algorithm_request!, algorithm_runtime, bound_algorithm, bound_link, build_algorithm_request, trusted_queries, fail_algorithm_request!, algorithm_result_type, is_revision_request, proposed_product, installed_record, rejected_record
 using .GNCRuntime: tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!, gnc_period_s
+using .GNCRuntime: Produces, Consumes, gnc_links, link_cardinality, check_link, link_initialize!
+using .GNCRuntime: SpacecraftScope, AllSpacecraft, BoundSpacecraft, CoupledSpacecraft, spacecraft_scope, skip_inactive, held_command, held_command_time, release_command!
 using .HYPRRPOPlanning: HYPRRPOPlanner
+using .HYPRRPOPlanning: RetainedPathRPOPlanner
 using .SimulationModel.HYPRSupport: HYPRUnavailableError, hypr_available
 export HYPRUnavailableError, hypr_available
 @doc (@doc SimulationModel.HYPRSupport.hypr_available) hypr_available
@@ -154,15 +160,33 @@ preserves the existing configuration owner and calculations; pass the result to
 `HYPRRPOPlanner`. Request-owned limits and interval still apply at planning time.
 """ rpo_pso_config
 
+# The generic algorithm binding and the burn-plan family.
+using .GNCAlgorithms: family_request, family_link, preflight_family
+using .AlgorithmLifecycle: AlgorithmEvent, AlgorithmGuidance, AlgorithmGuidanceError, algorithm_run_report
+using .BurnPlanning: AbstractBurnPlanner, BurnPlanFamily, BurnPlanRequest, BurnPlanSlot, ApoapsisBurnPlanner, validate_burn_plan, burn_plan_is_current
+using .SimulationModel.ControlHooks: burn_plan_rejections
+@doc (@doc SimulationModel.ControlHooks.burn_plan_rejections) burn_plan_rejections
+export family_request, family_link, preflight_family
+export AlgorithmEvent, AlgorithmGuidance, AlgorithmGuidanceError, algorithm_run_report
+export AbstractBurnPlanner, BurnPlanFamily, BurnPlanRequest, BurnPlanSlot, ApoapsisBurnPlanner, validate_burn_plan, burn_plan_is_current, burn_plan_rejections
+
 using .RPOPlannerLifecycle: RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
 using .RPOPlannerLifecycle: RPOReplanningSpheres
+using .SimulationModel: HYPRComparisonPlanner, UnrefinedPSOPlanner, RRTConnectPlanner, RRTConnectBezierPlanner, RRTStarPlanner, CHOMPPlanner, STOMPPlanner
+export HYPRComparisonPlanner, UnrefinedPSOPlanner, RRTConnectPlanner, RRTConnectBezierPlanner, RRTStarPlanner, CHOMPPlanner, STOMPPlanner
+for name in (:HYPRComparisonPlanner, :UnrefinedPSOPlanner, :RRTConnectPlanner, :RRTConnectBezierPlanner, :RRTStarPlanner, :CHOMPPlanner, :STOMPPlanner)
+    @eval @doc (@doc SimulationModel.GuidanceHooks.$name) $name
+end
 export AbstractGNCAlgorithm, AbstractAlgorithmFamily, AbstractAlgorithmRequest, AbstractAlgorithmResult, AbstractValidationResult, GNCAlgorithmError, AlgorithmResult, ValidationResult, RPOReferenceFamily
 export algorithm_family, default_capabilities, algorithm_capabilities, require_algorithm_support, initialize_algorithm, propose!, propose_revision!, consumes_rng
 export validate_capabilities, validate_proposal, install!, is_current, on_rejection, fallback_product, family_contract_version
 export gnc_stream_words, AlgorithmRuntime, run_algorithm_request!, algorithm_runtime, bound_algorithm, bound_link, build_algorithm_request, trusted_queries, fail_algorithm_request!, algorithm_result_type, is_revision_request, proposed_product, installed_record, rejected_record
 export tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!, gnc_period_s
+export Produces, Consumes, gnc_links, link_cardinality, check_link, link_initialize!
+export SpacecraftScope, AllSpacecraft, BoundSpacecraft, CoupledSpacecraft, spacecraft_scope, skip_inactive, held_command, held_command_time, release_command!
 export AbstractRPOPlanner, RPOPlanningConstraints, RPOValidationSettings, RPOPlanningRequest, RPOReference, RPOPlanningResult, RPOPlannerCapabilities, RPOValidationResult, RPOPlanningHeadroom, planner_capabilities, initialize_planner, plan_rpo!, retime_rpo!, validate_rpo_result, validate_rpo_capabilities, rpo_reference_is_current, DirectRPOPlanner, HYPRRPOPlanner, RPOPSOConfig, rpo_pso_config, RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
 export bound_family, AbstractRPOGeometryProvider, rpo_geometry_revision, rpo_geometry_snapshot, RPOReplanningSpheres
+export RetainedPathRPOPlanner
 
 ## 2. Bring needed names from package modules into the scope of SpaceAGORA.jl
 # 2.1. Parallel Profiles
@@ -268,12 +292,16 @@ using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleratio
 using .SimulationModel: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 using .SimulationModel: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState, plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
 using .SimulationModel: getDensity, getDensityBatch!, with_density_model_epoch
+using .SimulationModel: ephemerides_frame_lpi, ephemerides_sun_ii, ephemerides_epoch_seconds
+using .SimulationModel: ephemerides_requires_spice, ephemerides_cache_key
+using .SimulationModel: planet_frame_lpi, ephemerides_sun_direction_ii, ephemerides_time_seconds
 using .SimulationModel: DescentPhaseTargets, apollo11_descent_targets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel
 using .SimulationModel: ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate, calcReactionWheelTorque
 using .SimulationModel: control_wrench, control_propellant_rate, control_wheel_torque
 using .SimulationModel: control_thruster_levels, touchdown_spec
 using .SimulationModel: calcGuidanceEffect!, calcNavigationEffect!, getHeatRate
+using .SimulationModel: update_control!, update_guidance!, update_navigation!
 # Actuators: the contract (Actuators), the thruster kind (Components) and mounting (ActuatorMounting).
 using .SimulationModel: Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
 using .SimulationModel: ThrusterGimbal, thrust_direction
@@ -284,6 +312,7 @@ using .SimulationModel: propellant_mass_rate, ActuatorRequirements, actuator_req
 using .SimulationModel: SolarArray, Battery, PowerLoad, add_power!
 using .SimulationModel: ActuatorFault, add_fault!
 using .SimulationModel: RateGyro, StarTracker, Magnetometer, SensorTruth, sensor_measure, sensor_dimension, sensor_requirements, sensor_period_s, initialize_sensor!
+using .SimulationModel: GNSSReceiver, SunSensor, Accelerometer, sensor_needs_specific_force, is_gravitational
 using .SimulationModel: add_sensor!, mounted_sensors, sensor_measurement, sensor_measurement_time
 using .SimulationLifecycle: bind_spacecraft
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
@@ -407,6 +436,11 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.ActuatorFault) ActuatorFault
 @doc (@doc SimulationModel.add_fault!) add_fault!
 @doc (@doc SimulationModel.RateGyro) RateGyro
+@doc (@doc SimulationModel.GNSSReceiver) GNSSReceiver
+@doc (@doc SimulationModel.SunSensor) SunSensor
+@doc (@doc SimulationModel.Accelerometer) Accelerometer
+@doc (@doc SimulationModel.sensor_needs_specific_force) sensor_needs_specific_force
+@doc (@doc SimulationModel.is_gravitational) is_gravitational
 @doc (@doc SimulationModel.StarTracker) StarTracker
 @doc (@doc SimulationModel.Magnetometer) Magnetometer
 @doc (@doc SimulationModel.SensorTruth) SensorTruth
@@ -542,6 +576,15 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EnvironmentModels.with_density_model_epoch(
     ::SimulationModel.AbstractDensityModel, ::Any,
 ))).text) with_density_model_epoch
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.ephemerides_frame_lpi)).text) ephemerides_frame_lpi
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.ephemerides_sun_ii)).text) ephemerides_sun_ii
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.ephemerides_epoch_seconds)).text) ephemerides_epoch_seconds
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.ephemerides_requires_spice)).text) ephemerides_requires_spice
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.ephemerides_cache_key)).text) ephemerides_cache_key
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.planet_frame_lpi)).text) planet_frame_lpi
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.ephemerides_sun_direction_ii)).text) ephemerides_sun_direction_ii
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.ephemerides_time_seconds)).text) ephemerides_time_seconds
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.update_control!)).text) update_control!
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlEffect!)).text) calcControlEffect!
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_wrench)).text) control_wrench
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_propellant_rate)).text) control_propellant_rate
@@ -551,7 +594,9 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_thruster_levels(::Any, ::Int))).text) control_thruster_levels
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcReactionWheelTorque)).text) calcReactionWheelTorque
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.touchdown_spec(::Any, ::Int))).text) touchdown_spec
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.GuidanceHooks.update_guidance!)).text) update_guidance!
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.GuidanceHooks.calcGuidanceEffect!)).text) calcGuidanceEffect!
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.NavigationHooks.update_navigation!)).text) update_navigation!
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.NavigationHooks.calcNavigationEffect!)).text) calcNavigationEffect!
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.VehicleThermalModels.getHeatRate)).text) getHeatRate
 
@@ -681,10 +726,14 @@ export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState, plum
 export DescentPhaseTargets, apollo11_descent_targets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel
 export ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
 export getDensity, getDensityBatch!, with_density_model_epoch
+export ephemerides_frame_lpi, ephemerides_sun_ii, ephemerides_epoch_seconds
+export ephemerides_requires_spice, ephemerides_cache_key
+export planet_frame_lpi, ephemerides_sun_direction_ii, ephemerides_time_seconds
 export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate, calcReactionWheelTorque
 export control_wrench, control_propellant_rate, control_wheel_torque
 export control_thruster_levels, touchdown_spec, bind_spacecraft
 export calcGuidanceEffect!, calcNavigationEffect!, getHeatRate
+export update_control!, update_guidance!, update_navigation!
 export AbstractActuator, Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
 export ThrusterGimbal, thrust_direction
 export ControlMomentGyro, cmg_momentum, cmg_torque_axis, cmg_angle_saturate, cmg_steering
@@ -694,6 +743,7 @@ export propellant_mass_rate, ActuatorRequirements, actuator_requirements, applie
 export SolarArray, Battery, PowerLoad, add_power!
 export ActuatorFault, add_fault!
 export AbstractSensor, RateGyro, StarTracker, Magnetometer, SensorTruth, sensor_measure, sensor_dimension, sensor_requirements, sensor_period_s, initialize_sensor!
+export GNSSReceiver, SunSensor, Accelerometer, sensor_needs_specific_force, is_gravitational
 export add_sensor!, mounted_sensors, sensor_measurement, sensor_measurement_time
 export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel

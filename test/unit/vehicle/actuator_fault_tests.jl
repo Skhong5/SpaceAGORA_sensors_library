@@ -9,7 +9,7 @@ mutable struct HoldLevels <: AbstractControlEffectorModel
 end
 SpaceAGORA.actuation_mode(::HoldLevels) = :mounted
 SpaceAGORA.actuator_levels(c::HoldLevels, i::Int) = i == 1 ? c.levels : nothing
-SpaceAGORA.calcControlEffect!(::HoldLevels, u, p, t::Float64, i::Int64) = nothing
+SpaceAGORA.update_control!(::HoldLevels, u, p, t::Float64, i::Int64) = nothing
 
 # A controller whose command grows with the time of its tick.
 mutable struct RampLevels <: AbstractControlEffectorModel
@@ -18,7 +18,7 @@ mutable struct RampLevels <: AbstractControlEffectorModel
 end
 SpaceAGORA.actuation_mode(::RampLevels) = :mounted
 SpaceAGORA.actuator_levels(c::RampLevels, i::Int) = i == 1 ? c.levels : nothing
-SpaceAGORA.calcControlEffect!(c::RampLevels, u, p, t::Float64, i::Int64) = (c.levels[1] = c.slope * t; nothing)
+SpaceAGORA.update_control!(c::RampLevels, u, p, t::Float64, i::Int64) = (c.levels[1] = c.slope * t; nothing)
 
 function far_spacecraft(; mass=100.0, prop_mass=10.0)
     root = SM.Link(root=true, m=mass, dims=MVector(1.0, 1.0, 1.0))
@@ -181,7 +181,7 @@ end
         sc, root = far_spacecraft()
         ephem = SM.SimpleEphemeridesModel()
         epoch = SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0)
-        sun = SM.ephemerides_sun_direction_ii(SM.Earth(), SM.ephemerides_time_seconds(epoch, ephem), ephem)
+        sun = SM.ephemerides_sun_ii(ephem, SM.Earth(), SM.ephemerides_epoch_seconds(ephem, epoch))
         add_power!(sc, root, SolarArray(normal=sun, area_m2=0.03, efficiency=0.3))
         add_power!(sc, root, Battery(capacity_wh=5.0, initial_soc=0.0, recovery_soc=0.5))
         add_power!(sc, root, PowerLoad(power_w=5.0))

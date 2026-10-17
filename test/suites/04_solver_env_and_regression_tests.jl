@@ -767,9 +767,9 @@
     _initialize_spice_rhs_memo_mode!(p_backbone_kicks)
     _reset_spice_rhs_memo!(p_backbone_kicks)
     _reset_spice_runtime_counters!(p_backbone_kicks)
-    p_backbone_kicks.shared_buffers.et_start[] = SimulationModel.ephemerides_time_seconds(
-        args_backbone_kicks.initial_time,
+    p_backbone_kicks.shared_buffers.et_start[] = SimulationModel.ephemerides_epoch_seconds(
         args_backbone_kicks.environment_model.ephemerides_model,
+        args_backbone_kicks.initial_time,
     )
     _initialize_nbody_ephemeris_cache!(p_backbone_kicks, p_backbone_kicks.shared_buffers.et_start[], args_backbone_kicks.mission_configuration.mission_time)
     _initialize_srp_sun_ephemeris_cache!(p_backbone_kicks, p_backbone_kicks.shared_buffers.et_start[], args_backbone_kicks.mission_configuration.mission_time)
@@ -1287,7 +1287,7 @@
         @test cache.positions_j2000_m[1, 1] == raw_moon_j2000_km * 1.0e3
     end
 
-    et_start_nbody = SimulationModel.ephemerides_time_seconds(args_nbody.initial_time, args_nbody.environment_model.ephemerides_model)
+    et_start_nbody = SimulationModel.ephemerides_epoch_seconds(args_nbody.environment_model.ephemerides_model, args_nbody.initial_time)
     _clear_ephemeris_reuse_cache!()
     withenv(
         "SPACEAGORA_NBODY_EPHEMERIS_CACHE_DT_S" => "10.0",
@@ -1496,8 +1496,8 @@
             # Earth frame is GMST-aligned, not identity, at the epoch).
             et_compare = p_harmonics_compare.shared_buffers.et_start[] +
                          p_harmonics_compare.shared_buffers.current_time[]
-            l_pi_compare = SimulationModel.planet_frame_lpi(
-                EARTH, et_compare, args_harmonics_compare.environment_model.ephemerides_model)
+            l_pi_compare = SimulationModel.ephemerides_frame_lpi(
+                args_harmonics_compare.environment_model.ephemerides_model, EARTH, et_compare)
             for pos_pp in sample_positions_pp
                 pos_ii = l_pi_compare' * pos_pp
                 state = ComponentVector(pos=collect(pos_ii), vel=[0.0, 0.0, 0.0], mass=200.0)

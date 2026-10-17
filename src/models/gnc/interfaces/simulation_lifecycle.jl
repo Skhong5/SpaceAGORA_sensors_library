@@ -1,5 +1,8 @@
 # Internal lifecycle extension points. Legacy guidance retains no-op defaults.
+# The bind_spacecraft fallback names the effector's scope, a GNCRuntime declaration.
+isdefined(@__MODULE__, :GNCRuntime) || Base.include(@__MODULE__, joinpath(@__DIR__, "gnc_runtime.jl"))
 module SimulationLifecycle
+using ..GNCRuntime: spacecraft_scope, BoundSpacecraft, CoupledSpacecraft
 preflight_guidance(model, args; isolate_state) = nothing
 # Run-start initialization: before the solve, the engine calls the navigation,
 # then the guidance, then the control methods for every configured effector.
@@ -28,16 +31,19 @@ shallow copy (sharing mutable members with the original) with that field set, or
 spacecraft's run state (a held command, a controller's warm start) needs its own
 copy, so spacecraft bound from one template do not share it; members indexed by
 spacecraft, such as an `ApolloDescentState`, stay shared. The fallback throws an
-`ArgumentError`, because an effector without such a field acts on every
-spacecraft and an effector that couples several vehicles (for example the RPO
-chaser and target types) cannot belong to one; declare both at configuration
-level instead.
+`ArgumentError` that names the effector's `spacecraft_scope`: an effector that acts
+on every spacecraft (`AllSpacecraft`) or couples several vehicles
+(`CoupledSpacecraft`, for example the RPO chaser and target types) cannot belong
+to one; declare it at configuration level instead.
 """
 function bind_spacecraft(effector, sat_idx::Int)
     T = typeof(effector)
-    why = hasfield(T, :chaser_idx) ?
-        "it couples a chaser and a target spacecraft" :
-        "it has no spacecraft index, so it acts on every spacecraft"
+    scope = spacecraft_scope(effector)
+    why = scope isa CoupledSpacecraft ?
+        "it couples several spacecraft (its spacecraft_scope is CoupledSpacecraft)" :
+        scope isa BoundSpacecraft ?
+        "it is bound to spacecraft $(join(scope.indices, ", ")) (its spacecraft_scope) and has no method to bind another" :
+        "it acts on every spacecraft (its spacecraft_scope is AllSpacecraft)"
     throw(ArgumentError(
         "Cannot declare $(nameof(T)) on a spacecraft: $why. Declare it at configuration level " *
         "(guidance_model/navigation_model/control_model), or implement SpaceAGORA.bind_spacecraft(::$(nameof(T)), ::Int)."))
