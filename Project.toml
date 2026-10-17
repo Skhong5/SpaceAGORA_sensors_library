@@ -59,12 +59,14 @@ PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 SpaceAGORAEDG = "a782e8ee-96d7-4dd6-8231-bb64649e6ad4"
 SpaceAGORAVisualizer = "a4677e92-0b7f-4d10-9ebd-8cde6a49f03a"
 GRAMSuite = "b50455af-6a46-4eae-bf92-8039261dd674"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [extensions]
 SpaceAGORAPythonCallExt = "PythonCall"
 SpaceAGORAEDGExt = "SpaceAGORAEDG"
 SpaceAGORAVisualizerExt = "SpaceAGORAVisualizer"
 SpaceAGORAGRAMSuiteExt = "GRAMSuite"
+SpaceAGORATestExt = "Test"
 
 [extras]
 GRAMSuite = "b50455af-6a46-4eae-bf92-8039261dd674"
@@ -117,4 +119,5 @@ SciMLBase = "3.56.1"
 SpaceIndices = "2.1"
 SpecialFunctions = "2"
 StaticArrays = "1"
+Test = "1.11"
 julia = "~1.12"
