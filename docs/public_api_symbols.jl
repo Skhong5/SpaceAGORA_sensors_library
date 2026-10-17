@@ -100,6 +100,7 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :gnc_callbacks, rendered = "SpaceAGORA.gnc_callbacks"),
         (owner = :SpaceAGORA, symbol = :register_tstops!, rendered = "SpaceAGORA.register_tstops!"),
         (owner = :SpaceAGORA, symbol = :gnc_clock_started!, rendered = "SpaceAGORA.gnc_clock_started!"),
+        (owner = :SpaceAGORA, symbol = :gnc_period_s, rendered = "SpaceAGORA.gnc_period_s"),
     ]),
     (
         title = "Simulation Setup",
