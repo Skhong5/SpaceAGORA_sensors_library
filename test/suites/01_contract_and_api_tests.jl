@@ -4,6 +4,9 @@
     @test Core.eval(sandbox, :(isdefined(@__MODULE__, :RuntimeServices)))
     @test isdefined(sandbox, :SimulationLifecycle)
     @test isdefined(sandbox, :VisualizerServices)
+    # The comparison planners subtype the RPO planner contract, which the aggregator supplies standalone.
+    @test isdefined(sandbox, :GNCAlgorithms) && isdefined(sandbox, :RPOPlannerInterfaces)
+    @test sandbox.SimulationModel.GuidanceHooks.AbstractRPOComparisonPlanner <: sandbox.RPOPlannerInterfaces.AbstractRPOPlanner
     @test sandbox.SimulationModel.SceneVisualization.VisualizerServices === sandbox.VisualizerServices
     @test !sandbox.VisualizerServices.available()
     @test_throws sandbox.VisualizerServices.VisualizerUnavailableError sandbox.VisualizerServices.require_available()

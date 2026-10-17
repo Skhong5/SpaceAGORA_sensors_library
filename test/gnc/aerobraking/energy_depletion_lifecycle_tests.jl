@@ -54,6 +54,7 @@ function seed!(s, i=1)
 end
 snapshot(s, i) = Tuple(deepcopy(getfield(s,f) isa AbstractVector ? getfield(s,f)[i] : getfield(s,f)) for f in fieldnames(typeof(s)))
 function initialize!(x)
+    SpaceAGORA.SimulationModel.SimulationCallbacks.initialize_gnc_links!(x.a,x.u,x.p,0.0)   # the shared state, as the engine does
     for g in x.a.guidance_model.guidance_effectors; L.initialize_guidance!(g,x.u,x.p,0.0); end
     for c in x.a.control_model.control_effectors; L.initialize_control!(c,x.u,x.p,0.0); end
 end

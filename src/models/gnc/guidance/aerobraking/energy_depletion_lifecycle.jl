@@ -82,8 +82,8 @@ end
 
 SimulationLifecycle.preflight_guidance(g::AerobrakingEnergyDepletionGuidanceModel, args; isolate_state) =
     _edg_preflight(g, args)
-SimulationLifecycle.initialize_guidance!(g::AerobrakingEnergyDepletionGuidanceModel, u, p, t) =
-    _edg_initialize_state!(g.state)
+# The shared state is initialized once per run as a link (GNCRuntime), before the
+# guidance's and control's own initializers, whichever of them the run has.
 SimulationLifecycle.atmosphere_transition!(g::AerobrakingEnergyDepletionGuidanceModel, u, p, t, i, inside) =
     nothing # EDG resets at its own geodetic passage surface.
 

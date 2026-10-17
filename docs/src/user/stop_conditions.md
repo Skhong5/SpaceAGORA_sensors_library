@@ -233,7 +233,8 @@ spherical altitude (here by 13 km at 51 degrees latitude).
   `mission_time` already does.
 - **Do something other than stopping.** `stop!` can do anything with the
   integrator: record the time in a global, print a state, or change the state
-  (then call `u_modified!(integrator, true)` so the solver knows). The engine's
+  (then call `derivative_discontinuity!(integrator, true)`, imported from
+  `OrdinaryDiffEq` like `terminate!`, so the solver knows). The engine's
   own scheduled state anchors, described on
   [Verification Study](verification_study.md), are built this way.
 - **Several spacecraft.** All spacecraft in a run share one integration. A
