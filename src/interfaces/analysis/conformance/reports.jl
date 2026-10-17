@@ -64,7 +64,9 @@ const FIRST_RELEASE = v"0.3.0"
 
 # K-4: a check added after the first release is advisory while the package is in
 # the minor release that added it (or an earlier one), and required afterwards.
-function _failure_status(since::VersionNumber, current::VersionNumber=pkgversion(parentmodule(@__MODULE__)))
+# Outside a package (the standalone contract tests) the version is the first release.
+function _failure_status(since::VersionNumber,
+        current::VersionNumber=something(pkgversion(parentmodule(@__MODULE__)), FIRST_RELEASE))
     since > FIRST_RELEASE && (since.major, since.minor) >= (current.major, current.minor) && return :advisory_fail
     return :fail
 end
@@ -72,6 +74,39 @@ end
 _check(id::Symbol, since::VersionNumber, ok::Bool, detail::AbstractString="") =
     ConformanceCheck(id, ok ? :pass : _failure_status(since), since, ok ? "" : detail)
 _skip(id::Symbol, since::VersionNumber, why::AbstractString) = ConformanceCheck(id, :skip, since, why)
+
+# An error's message for a check's detail: at most six lines.
+function _summary(err)
+    err isa TaskFailedException && (err = err.task.exception)
+    text = sprint(showerror, err)
+    lines = split(text, '\n')
+    return length(lines) > 6 ? join(lines[1:6], '\n') * "\n…" : text
+end
+
+# `f()`, with the global random number generator restored afterwards: a defect a
+# check provokes (an algorithm or family that calls `rand()`) does not leak into the
+# caller's later draws.
+function _preserving_global_rng(f)
+    rng = Random.default_rng()
+    saved = copy(rng)
+    try
+        return f()
+    finally
+        copy!(rng, saved)
+    end
+end
+
+# `f()` with the global random number generator seeded `seed`, restored afterwards.
+function _with_global_seed(f, seed)
+    rng = Random.default_rng()
+    saved = copy(rng)
+    try
+        Random.seed!(seed)
+        return f()
+    finally
+        copy!(rng, saved)
+    end
+end
 
 function Base.show(io::IO, ::MIME"text/plain", report::ConformanceReport)
     verdict = passed(report) ? "passed" : "FAILED"

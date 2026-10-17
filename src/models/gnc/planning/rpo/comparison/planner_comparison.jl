@@ -30,24 +30,104 @@ Base.@kwdef struct RPOPlannerComparisonCase
     label::String = "case"
 end
 
-"""Configuration for running and exporting RPO planner comparison batches."""
+"""Safety distance (m) of the published planner comparison; the harness pins every planner's cost to it."""
 const RPO_PLANNER_COMPARISON_SAFE_DISTANCE_M = 0.5
 
-Base.@kwdef struct RPOPlannerComparisonConfig
-    planners::Vector{Symbol} = [:hypr, :pso_unrefined, :rrt_connect, :rrt_connect_bezier, :rrt_star, :chomp, :stomp]
-    pso_config::RPOPSOConfig = rpo_740_mpc_final_pso_config(safe_distance_m=RPO_PLANNER_COMPARISON_SAFE_DISTANCE_M)
-    rrt_connect::RPORRTConnectSettings = RPORRTConnectSettings()
-    rrt_star::RPORRTStarSettings = RPORRTStarSettings()
-    chomp::RPOCHOMPSettings = RPOCHOMPSettings(n_iters=pso_config.n_iters)
-    stomp::RPOSTOMPSettings = RPOSTOMPSettings(n_iters=pso_config.n_iters)
-    optimizer::RPOTrajectoryOptimizerSettings = RPOTrajectoryOptimizerSettings()
-    tracking::RPOLQMPCTrackingSettings = RPOLQMPCTrackingSettings()
-    safe_distance_m::Float64 = pso_config.safe_distance_m > 0.0 ? pso_config.safe_distance_m : RPO_PLANNER_COMPARISON_SAFE_DISTANCE_M
-    output_dir::String = joinpath(pwd(), "rpo_planner_comparison")
-    write_plotly_outputs::Bool = true
-    write_failed_path_outputs::Bool = true
-    rng_seed::Int = 740
-    show_progress::Bool = true
+"""
+    RPOPlannerComparisonConfig(; planners, pso_config, rrt_connect, rrt_star, chomp, stomp, optimizer, tracking, ...)
+
+Configuration for running and exporting RPO planner comparison batches.
+
+`planners` lists the planner objects to compare, in order: `HYPRComparisonPlanner`,
+`UnrefinedPSOPlanner`, `RRTConnectPlanner`, `RRTConnectBezierPlanner`,
+`RRTStarPlanner`, `CHOMPPlanner` and `STOMPPlanner`. The default is all seven,
+built from this configuration's `pso_config`, `rrt_connect`, `rrt_star`, `chomp`,
+`stomp` and `optimizer`. An object carries its own settings, so a configuration
+rebuilt from these fields with other settings keeps the objects' settings. Symbol
+selections (`:hypr`, `:rrt_star`, ...) are deprecated: the harness resolves each to
+the object built from these fields and warns once per planner before it plans.
+"""
+struct RPOPlannerComparisonConfig
+    planners::Vector{Union{Symbol, AbstractRPOComparisonPlanner}}
+    pso_config::RPOPSOConfig
+    rrt_connect::RPORRTConnectSettings
+    rrt_star::RPORRTStarSettings
+    chomp::RPOCHOMPSettings
+    stomp::RPOSTOMPSettings
+    optimizer::RPOTrajectoryOptimizerSettings
+    tracking::RPOLQMPCTrackingSettings
+    safe_distance_m::Float64
+    output_dir::String
+    write_plotly_outputs::Bool
+    write_failed_path_outputs::Bool
+    rng_seed::Int
+    show_progress::Bool
+end
+
+function RPOPlannerComparisonConfig(;
+    pso_config::RPOPSOConfig=rpo_740_mpc_final_pso_config(safe_distance_m=RPO_PLANNER_COMPARISON_SAFE_DISTANCE_M),
+    rrt_connect::RPORRTConnectSettings=RPORRTConnectSettings(),
+    rrt_star::RPORRTStarSettings=RPORRTStarSettings(),
+    chomp::RPOCHOMPSettings=RPOCHOMPSettings(n_iters=pso_config.n_iters),
+    stomp::RPOSTOMPSettings=RPOSTOMPSettings(n_iters=pso_config.n_iters),
+    optimizer::RPOTrajectoryOptimizerSettings=RPOTrajectoryOptimizerSettings(),
+    tracking::RPOLQMPCTrackingSettings=RPOLQMPCTrackingSettings(),
+    safe_distance_m=pso_config.safe_distance_m > 0.0 ? pso_config.safe_distance_m : RPO_PLANNER_COMPARISON_SAFE_DISTANCE_M,
+    output_dir=joinpath(pwd(), "rpo_planner_comparison"),
+    write_plotly_outputs=true,
+    write_failed_path_outputs=true,
+    rng_seed=740,
+    show_progress=true,
+    planners=_rpo_comparison_planners(pso_config, rrt_connect, rrt_star, chomp, stomp, optimizer),
+)
+    return RPOPlannerComparisonConfig(planners, pso_config, rrt_connect, rrt_star, chomp, stomp, optimizer,
+        tracking, safe_distance_m, output_dir, write_plotly_outputs, write_failed_path_outputs, rng_seed,
+        show_progress)
+end
+
+const _RPO_COMPARISON_PLANNER_IDS = (:hypr, :pso_unrefined, :rrt_connect, :rrt_connect_bezier, :rrt_star, :chomp, :stomp)
+const _RPO_COMPARISON_PLANNER_TYPE_NAMES = (hypr="HYPRComparisonPlanner", pso_unrefined="UnrefinedPSOPlanner",
+    rrt_connect="RRTConnectPlanner", rrt_connect_bezier="RRTConnectBezierPlanner", rrt_star="RRTStarPlanner",
+    chomp="CHOMPPlanner", stomp="STOMPPlanner")
+
+# The object a canonical identifier selects, built from configuration settings fields.
+function _rpo_comparison_planner(id::Symbol, pso_config, rrt_connect, rrt_star, chomp, stomp, optimizer)
+    id === :hypr && return HYPRComparisonPlanner(pso_config)
+    id === :pso_unrefined && return UnrefinedPSOPlanner(pso_config)
+    id === :rrt_connect && return RRTConnectPlanner(rrt_connect; config=pso_config, optimizer=optimizer)
+    id === :rrt_connect_bezier && return RRTConnectBezierPlanner(rrt_connect; config=pso_config, optimizer=optimizer)
+    id === :rrt_star && return RRTStarPlanner(rrt_star; config=pso_config, optimizer=optimizer)
+    id === :chomp && return CHOMPPlanner(chomp; config=pso_config, optimizer=optimizer, seed=rrt_connect)
+    id === :stomp && return STOMPPlanner(stomp; config=pso_config, optimizer=optimizer, seed=rrt_connect)
+    throw(ArgumentError("Unsupported RPO comparison planner $(id)."))
+end
+_rpo_comparison_planners(pso_config, rrt_connect, rrt_star, chomp, stomp, optimizer) =
+    AbstractRPOComparisonPlanner[_rpo_comparison_planner(id, pso_config, rrt_connect, rrt_star, chomp, stomp, optimizer)
+        for id in _RPO_COMPARISON_PLANNER_IDS]
+
+"""
+    _rpo_comparison_planner(selection, cfg) -> AbstractRPOComparisonPlanner
+
+Resolve one planner selection of the comparison configuration `cfg`. An object is
+returned as it is. A Symbol or string is the deprecated selection: its canonical
+identifier selects the object built from `cfg`'s settings fields, after a pre-run
+deprecation warning, once per planner type, through `_hook_deprecation`; under
+`--depwarn=error` the selection throws instead. Unknown names are refused first.
+"""
+_rpo_comparison_planner(planner::AbstractRPOComparisonPlanner, cfg::RPOPlannerComparisonConfig) = planner
+function _rpo_comparison_planner(selection, cfg::RPOPlannerComparisonConfig)
+    id = normalize_rpo_comparison_planner_type(selection)
+    planner = _rpo_comparison_planner(id, cfg.pso_config, cfg.rrt_connect, cfg.rrt_star, cfg.chomp, cfg.stomp,
+        cfg.optimizer)
+    _rpo_comparison_selection_deprecation(typeof(planner), id)
+    return planner
+end
+@noinline function _rpo_comparison_selection_deprecation(::Type{T}, id::Symbol) where {T}
+    _hook_deprecation((T, :symbol_planner_selection),
+        "Selecting the RPO comparison planner $(repr(id)) by name is deprecated; pass " *
+        "$(_RPO_COMPARISON_PLANNER_TYPE_NAMES[id])(...) instead. RPOPlannerComparisonConfig() builds all " *
+        "seven planner objects from its settings fields. Name selection will be removed in a later release.")
+    return nothing
 end
 
 """Return the comparison config with planner cost safety pinned to the published 0.5 m value."""
@@ -197,72 +277,14 @@ function rpo_740_mpc_final_pso_config(; safe_distance_m::Real=0.0, goal_collisio
     return rpo_pso_config(cfg; kwargs...)
 end
 
-"""Build RRT-Connect settings for comparison planners with a caller-selected iteration cap."""
-function _rpo_comparison_rrt_connect_settings(cfg::RPOPlannerComparisonConfig, n_iters::Integer)
-    src = cfg.rrt_connect
-    return RPORRTConnectSettings(
-        n_iters=Int(n_iters),
-        step_size_m=src.step_size_m,
-        goal_sample_rate=src.goal_sample_rate,
-        collision_sample_ds_m=src.collision_sample_ds_m,
-        adaptive_collision_sampling_enable=src.adaptive_collision_sampling_enable,
-        collision_max_sample_ds_m=src.collision_max_sample_ds_m,
-        collision_far_clearance_m=src.collision_far_clearance_m,
-        collision_sampling_power=src.collision_sampling_power,
-        collision_safe_distance_fraction=src.collision_safe_distance_fraction,
-        collision_obstacle_guard_fraction=src.collision_obstacle_guard_fraction,
-        connect_max_steps=src.connect_max_steps,
-        shortcut_iters=src.shortcut_iters,
-    )
-end
-
-"""Build RRT* settings for comparison planners with a caller-selected iteration cap."""
-function _rpo_comparison_rrt_star_settings(cfg::RPOPlannerComparisonConfig, n_iters::Integer)
-    src = cfg.rrt_star
-    return RPORRTStarSettings(
-        n_iters=Int(n_iters),
-        step_size_m=src.step_size_m,
-        goal_sample_rate=src.goal_sample_rate,
-        collision_sample_ds_m=src.collision_sample_ds_m,
-        adaptive_collision_sampling_enable=src.adaptive_collision_sampling_enable,
-        collision_max_sample_ds_m=src.collision_max_sample_ds_m,
-        collision_far_clearance_m=src.collision_far_clearance_m,
-        collision_sampling_power=src.collision_sampling_power,
-        collision_safe_distance_fraction=src.collision_safe_distance_fraction,
-        collision_obstacle_guard_fraction=src.collision_obstacle_guard_fraction,
-        neighbor_radius_m=src.neighbor_radius_m,
-        shortcut_iters=src.shortcut_iters,
-    )
-end
-
-"""Generate the RRT-Connect seed used to warm-start trajectory optimizers."""
-function _rpo_comparison_rrt_connect_seed_path(
-    start_rtn,
-    goal_rtn,
-    geometry,
-    base_cfg::RPOPSOConfig,
-    cfg::RPOPlannerComparisonConfig,
-    n_iters::Integer;
-    runtime_limit_s::Real,
-    rng,
-)
-    settings = _rpo_comparison_rrt_connect_settings(cfg, n_iters)
-    plan = rpo_rrt_connect_plan_path(
-        start_rtn,
-        goal_rtn,
-        geometry,
-        base_cfg;
-        safe_distance_m=cfg.safe_distance_m,
-        settings=settings,
-        max_runtime_s=runtime_limit_s,
-        rng=rng,
-    )
-    return plan.path
-end
-
 """
 Run one planner on one RPO comparison case and collect comparable metrics. The
 required `rng` is the only random stream the planner draws from.
+
+`planner_type` is one of the seven comparison planner objects, which runs with its
+own settings and this comparison's fixed safety distance. A Symbol or string
+selects the object built from `cfg`'s settings fields; that selection is deprecated
+and warns once per planner, before HYPR is required or any planning starts.
 """
 function rpo_plan_comparison_path(
     planner_type,
@@ -274,186 +296,32 @@ function rpo_plan_comparison_path(
     runtime_limit_s::Real=Inf,
     warmstart_path=nothing,
 )
-    HYPRSupport.require_hypr()
     cfg = _rpo_comparison_config_with_fixed_safe_distance(cfg)
-    planner = normalize_rpo_comparison_planner_type(planner_type)
-    base_cfg = rpo_pso_config(cfg.pso_config; safe_distance_m=cfg.safe_distance_m)
-    # Choose optimizer iterations from the runtime-limited override, HYPR matching, or planner default.
-    runtime_limited_iters(default_iters) = isfinite(Float64(runtime_limit_s)) && cfg.optimizer.runtime_max_iters > 0 ?
-        cfg.optimizer.runtime_max_iters :
-        (cfg.optimizer.match_hypr_iters ? base_cfg.n_iters : default_iters)
+    planner = _rpo_comparison_planner(planner_type, cfg)
+    HYPRSupport.require_hypr()
+    id = normalize_rpo_comparison_planner_type(planner)
+    base_cfg = rpo_pso_config(planner.config; safe_distance_m=cfg.safe_distance_m)
     t0 = time_ns()
-    if planner == :hypr
-        plan = rpo_pso_plan_path(start_rtn, goal_rtn, geometry, base_cfg; safe_distance_m=cfg.safe_distance_m, rng=rng)
-        elapsed = (time_ns() - t0) / 1.0e9
-        iterations = length(plan.cost_history)
-        return merge(plan, (
-            planner_type=:hypr,
-            planner_label=rpo_comparison_planner_label(:hypr),
-            planner_compute_time=elapsed,
-            planner_plan_time=elapsed,
-            planner_refinement_time=0.0,
-            planner_iteration_count=iterations,
-        ))
-    elseif planner == :pso_unrefined
-        unrefined_cfg = rpo_pso_config(base_cfg; refinement_enable=false,
-            adaptive_enable=false, schedule_enable=false, stagnation_learning_enable=false,
-            rrt_warmstart_enable=false,
-            cull_enable=false, reexplore_enable=false)
-        plan = rpo_pso_plan_path(start_rtn, goal_rtn, geometry, unrefined_cfg; safe_distance_m=cfg.safe_distance_m, rng=rng)
-        elapsed = (time_ns() - t0) / 1.0e9
-        iterations = length(plan.cost_history)
-        return merge(plan, (
-            planner_type=:pso_unrefined,
-            planner_label=rpo_comparison_planner_label(:pso_unrefined),
-            planner_compute_time=elapsed,
-            planner_plan_time=elapsed,
-            planner_refinement_time=0.0,
-            planner_iteration_count=iterations,
-        ))
-    elseif planner == :rrt_connect
-        settings = _rpo_comparison_rrt_connect_settings(cfg, runtime_limited_iters(cfg.rrt_connect.n_iters))
-        plan = rpo_rrt_connect_plan_path(
-            start_rtn,
-            goal_rtn,
-            geometry,
-            base_cfg;
-            safe_distance_m=cfg.safe_distance_m,
-            settings=settings,
-            max_runtime_s=runtime_limit_s,
-            rng=rng,
-        )
-        elapsed = (time_ns() - t0) / 1.0e9
-        return merge(plan, (
-            planner_type=:rrt_connect,
-            planner_label=rpo_comparison_planner_label(:rrt_connect),
-            planner_compute_time=elapsed,
-            planner_plan_time=elapsed,
-            planner_refinement_time=0.0,
-            planner_iteration_count=plan.iterations,
-        ))
-    elseif planner == :rrt_connect_bezier
-        settings = _rpo_comparison_rrt_connect_settings(cfg, runtime_limited_iters(cfg.rrt_connect.n_iters))
-        plan = rpo_rrt_connect_bezier_plan_path(
-            start_rtn,
-            goal_rtn,
-            geometry,
-            base_cfg;
-            safe_distance_m=cfg.safe_distance_m,
-            settings=settings,
-            max_runtime_s=runtime_limit_s,
-            rng=rng,
-        )
-        elapsed = (time_ns() - t0) / 1.0e9
-        return merge(plan, (
-            planner_type=:rrt_connect_bezier,
-            planner_label=rpo_comparison_planner_label(:rrt_connect_bezier),
-            planner_compute_time=elapsed,
-            planner_plan_time=elapsed,
-            planner_refinement_time=0.0,
-            planner_iteration_count=plan.iterations,
-        ))
-    elseif planner == :rrt_star
-        settings = _rpo_comparison_rrt_star_settings(cfg, runtime_limited_iters(cfg.rrt_star.n_iters))
-        plan = rpo_rrt_star_plan_path(
-            start_rtn,
-            goal_rtn,
-            geometry,
-            base_cfg;
-            safe_distance_m=cfg.safe_distance_m,
-            settings=settings,
-            max_runtime_s=runtime_limit_s,
-            rng=rng,
-        )
-        elapsed = (time_ns() - t0) / 1.0e9
-        return merge(plan, (
-            planner_type=:rrt_star,
-            planner_label=rpo_comparison_planner_label(:rrt_star),
-            planner_compute_time=elapsed,
-            planner_plan_time=elapsed,
-            planner_refinement_time=0.0,
-            planner_iteration_count=plan.iterations,
-        ))
-    elseif planner == :chomp
-        settings = RPOCHOMPSettings(
-            n_iters=runtime_limited_iters(cfg.chomp.n_iters),
-            learning_rate=cfg.chomp.learning_rate,
-            gradient_eps=cfg.chomp.gradient_eps,
-            w_smooth=cfg.chomp.w_smooth,
-        )
-        initial_path = warmstart_path === nothing ? _rpo_comparison_rrt_connect_seed_path(
-            start_rtn,
-            goal_rtn,
-            geometry,
-            base_cfg,
-            cfg,
-            runtime_limited_iters(cfg.rrt_connect.n_iters);
-            runtime_limit_s=runtime_limit_s,
-            rng=rng,
-        ) : Matrix{Float64}(warmstart_path)
-        plan = rpo_chomp_plan_path(
-            start_rtn,
-            goal_rtn,
-            geometry,
-            base_cfg;
-            safe_distance_m=cfg.safe_distance_m,
-            settings=settings,
-            optimizer=cfg.optimizer,
-            max_runtime_s=runtime_limit_s,
-            initial_path=initial_path,
-        )
-        elapsed = (time_ns() - t0) / 1.0e9
-        return merge(plan, (
-            planner_type=:chomp,
-            planner_label=rpo_comparison_planner_label(:chomp),
-            planner_compute_time=elapsed,
-            planner_plan_time=elapsed,
-            planner_refinement_time=0.0,
-            planner_iteration_count=plan.iterations,
-        ))
-    elseif planner == :stomp
-        settings = RPOSTOMPSettings(
-            n_iters=runtime_limited_iters(cfg.stomp.n_iters),
-            n_rollouts=cfg.stomp.n_rollouts,
-            noise_std=cfg.stomp.noise_std,
-            lambda=cfg.stomp.lambda,
-            update_step=cfg.stomp.update_step,
-            w_smooth=cfg.stomp.w_smooth,
-        )
-        initial_path = warmstart_path === nothing ? _rpo_comparison_rrt_connect_seed_path(
-            start_rtn,
-            goal_rtn,
-            geometry,
-            base_cfg,
-            cfg,
-            runtime_limited_iters(cfg.rrt_connect.n_iters);
-            runtime_limit_s=runtime_limit_s,
-            rng=rng,
-        ) : Matrix{Float64}(warmstart_path)
-        plan = rpo_stomp_plan_path(
-            start_rtn,
-            goal_rtn,
-            geometry,
-            base_cfg;
-            safe_distance_m=cfg.safe_distance_m,
-            settings=settings,
-            optimizer=cfg.optimizer,
-            max_runtime_s=runtime_limit_s,
-            rng=rng,
-            initial_path=initial_path,
-        )
-        elapsed = (time_ns() - t0) / 1.0e9
-        return merge(plan, (
-            planner_type=:stomp,
-            planner_label=rpo_comparison_planner_label(:stomp),
-            planner_compute_time=elapsed,
-            planner_plan_time=elapsed,
-            planner_refinement_time=0.0,
-            planner_iteration_count=plan.iterations,
-        ))
-    else
-        throw(ArgumentError("Unsupported RPO comparison planner $(planner). Expected :hypr, :pso_unrefined, :rrt_connect, :rrt_connect_bezier, :rrt_star, :chomp, or :stomp."))
-    end
+    plan, iterations = _rpo_comparison_planner_path(
+        planner,
+        start_rtn,
+        goal_rtn,
+        geometry,
+        base_cfg;
+        safe_distance_m=cfg.safe_distance_m,
+        rng=rng,
+        runtime_limit_s=runtime_limit_s,
+        warmstart_path=warmstart_path,
+    )
+    elapsed = (time_ns() - t0) / 1.0e9
+    return merge(plan, (
+        planner_type=id,
+        planner_label=rpo_comparison_planner_label(id),
+        planner_compute_time=elapsed,
+        planner_plan_time=elapsed,
+        planner_refinement_time=0.0,
+        planner_iteration_count=iterations,
+    ))
 end
 
 """Build a finite-horizon RPO reference preview for LQ-MPC tracking."""
@@ -561,12 +429,15 @@ end
 
 """Run all configured RPO planners across all comparison cases."""
 function rpo_run_planner_comparison_batch(cases, geometry, cfg::RPOPlannerComparisonConfig=RPOPlannerComparisonConfig())
-    HYPRSupport.require_hypr()
     cfg = _rpo_comparison_config_with_fixed_safe_distance(cfg)
+    # Deprecated name selections resolve, and warn, here, before any case runs.
+    planners = AbstractRPOComparisonPlanner[_rpo_comparison_planner(p, cfg) for p in cfg.planners]
+    HYPRSupport.require_hypr()
     comparison_cases = collect(cases)
-    planner_types = [normalize_rpo_comparison_planner_type(p) for p in cfg.planners]
+    planner_types = [normalize_rpo_comparison_planner_type(p) for p in planners]
     if cfg.optimizer.match_hypr_runtime && (:hypr in planner_types)
-        planner_types = vcat([:hypr], [p for p in planner_types if p != :hypr])
+        order = vcat([findfirst(==(:hypr), planner_types)], [i for i in eachindex(planner_types) if planner_types[i] != :hypr])
+        planners, planner_types = planners[order], planner_types[order]
     end
 
     results_by_planner = Dict{Symbol, Vector{NamedTuple}}()
@@ -576,7 +447,7 @@ function rpo_run_planner_comparison_batch(cases, geometry, cfg::RPOPlannerCompar
     completed_runs = 0
     cfg.show_progress && _rpo_comparison_progress_line!(completed_runs, total_runs)
 
-    for planner in planner_types
+    for (planner, selection) in zip(planner_types, planners)
         planner_idx = findfirst(==(planner), planner_types)
         planner_results = NamedTuple[]
         planner_plans = NamedTuple[]
@@ -593,7 +464,7 @@ function rpo_run_planner_comparison_batch(cases, geometry, cfg::RPOPlannerCompar
             )
             rng = MersenneTwister(rand(master_rng, UInt) + UInt(1000 * planner_idx + case_idx))
             plan = rpo_plan_comparison_path(
-                planner,
+                selection,
                 case.start_rtn,
                 case.goal_rtn,
                 geometry,

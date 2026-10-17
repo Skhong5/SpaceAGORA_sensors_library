@@ -99,6 +99,20 @@ for (entry, count) in sort!(collect(SANCTIONED); by=string)
         "$(entry[1]): the $(entry[2]) forwarder for direct calls ($(_COUNT_WORDS[count]) untyped positional arguments) is missing.")
 end
 
+# The contributor starters are what new repositories copy, so they do not name a
+# deprecated hook at all: not in a call, a comment, a README or a workflow.
+const STARTERS = joinpath("templates", "starters")
+_named(text, hook) = occursin(Regex("(?<![A-Za-z0-9_])" * String(hook) * "(?![A-Za-z0-9_!])"), text)
+for (root, _, files) in (isdir(joinpath(REPO_ROOT, STARTERS)) ? walkdir(joinpath(REPO_ROOT, STARTERS)) : ()), file in sort(files)
+    path = joinpath(root, file)
+    rel = relpath(path, REPO_ROOT)
+    text = read(path, String)
+    for hook in DEPRECATED_HOOKS
+        _named(text, hook) && push!(violations,
+            "$(rel): names the deprecated hook $(hook); the starters use only current hook names.")
+    end
+end
+
 if !isempty(violations)
     println("deprecated_hook_methods_violations:")
     foreach(v -> println("  - ", v), violations)

@@ -38,9 +38,20 @@ end
     cfg=RPOPSOConfig(n_particles=4,n_iters=1)
     comparison=G.RPOPlannerComparisonConfig(pso_config=cfg)
     rng=MersenneTwister(20261003); untouched=copy(rng)
-    for planner in (:hypr,:pso_unrefined,:rrt_connect,:rrt_connect_bezier,:rrt_star,:chomp,:stomp)
+    request=P.RPOPlanningRequest(request_id=1,chaser_id=101,target_id=201,epoch="core",time_s=0.,
+        x_rtn=(-2.,0.,0.,0.,0.,0.),target_state_ii=(7e6,0.,0.,0.,7500.,0.),goal_rtn_m=(2.,0.,0.),geometry=nothing,
+        geometry_revision="core",constraints=P.RPOPlanningConstraints(clearance_m=.2),reference_dt_s=.1,
+        preview_horizon_steps=2,valid_until_s=100.)
+    for planner in comparison.planners
         @test_throws HYPRUnavailableError G.rpo_plan_comparison_path(planner,a,b,nothing,comparison;rng)
+        @test_throws HYPRUnavailableError P.require_planner_support(planner)
+        @test_throws HYPRUnavailableError P.initialize_planner(planner,nothing)
+        @test_throws HYPRUnavailableError P.plan_rpo!(nothing,planner,request,rng)
     end
+    # The deprecated name selection warns at the pre-run check, before the HYPR boundary.
+    @test_logs (:warn,r"by name is deprecated") @test_throws HYPRUnavailableError G.rpo_plan_comparison_path(
+        :rrt_star,a,b,nothing,comparison;rng)
+    @test_throws HYPRUnavailableError make_rpo_configuration(planner=RRTStarPlanner())
     @test rand(rng,4)==rand(untouched,4)
     # Guard before collecting cases, consuming an iterator, or creating a controller.
     @test_throws HYPRUnavailableError G.rpo_run_planner_comparison_batch(
