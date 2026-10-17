@@ -38,6 +38,9 @@ end
                 @test occursin("hypr_paper_startup_smoke_ok "*mode,output)
                 @test !occursin("CASE_START",output)
                 @test !occursin("FULL_DYNAMIC_START",output)
+                # The replanning study stays on the deprecated RPOGuidanceModel until
+                # its removal; its smoke mode never configures that model.
+                @test !occursin("RPOGuidanceModel is deprecated",output)
                 @test isempty(readdir(output_root))
             end
             # A readable but structurally incomplete baseline must also fail.
