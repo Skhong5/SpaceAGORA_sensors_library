@@ -142,7 +142,8 @@ sensor_exemptions() = Dict{Any, String}()
 """
 Instances of the built-in guidance and control models. `runs=false` marks a model that
 cannot run in the fixture; its checks that need no run are applied, and `reason` says
-why. `BaseThrusterModel` is not a control effector type but runs in the control model.
+why. `fixture`, when set, replaces the default one-spacecraft fixture. `BaseThrusterModel`
+is not a control effector type but runs in the control model.
 """
 function gnc_instances()
     planet = SpaceAGORA.make_no_gram_planet(:earth)
@@ -151,8 +152,12 @@ function gnc_instances()
         site_lon_deg=0.0, braking=braking, approach=approach)
     edg = SpaceAGORA.AerobrakingEnergyDepletionConfig()
     edg_state() = SpaceAGORA.AerobrakingEnergyDepletionState(num_sats=1)
-    full(kind, model) = (kind=kind, model=model, runs=true, reason="")
-    static(kind, model, reason) = (kind=kind, model=model, runs=false, reason=reason)
+    full(kind, model; fixture=nothing) = (kind=kind, model=model, runs=true, reason="", fixture=fixture)
+    static(kind, model, reason) = (kind=kind, model=model, runs=false, reason=reason, fixture=nothing)
+    # The RPO controller ticks for its chaser and reads its target, spacecraft 1 and 2,
+    # so it runs on two spacecraft; in a one-spacecraft run its scope names a spacecraft
+    # the run does not have, and the engine warns (and refuses under --depwarn=error).
+    mpc = SM.ControlHooks.RPOMPCControlModel()
     edg_reason = "energy-depletion guidance and control need the optional SpaceAGORAEDG package, an atmosphere " *
         "and each other; checked without a run"
     apollo_reason = "a lunar descent law that needs its landing-site configuration and terrain; checked without a run"
@@ -167,7 +172,7 @@ function gnc_instances()
         full(:control_model, SM.ControlHooks.MagneticMomentumManagerModel()),
         # Its declared control period matches the fixture's 1 s control rate.
         full(:control_model, SM.ControlHooks.RobotArmControlEffector(control_dt_s=1.0)),
-        full(:control_model, SM.ControlHooks.RPOMPCControlModel()),
+        full(:control_model, mpc; fixture=conformance_fixture(control=(mpc,), spacecraft_count=2)),
         full(:control_model, SM.ThrusterModels.BaseThrusterModel(thrust=[0.5], direction=[0.0], Δv=[0.1],
             start_burn_time=[5.0], stop_burn_time=[20.0], Isp=[300.0])),
         static(:control_model, SpaceAGORA.AerobrakingEnergyDepletionControlModel(edg, edg_state()), edg_reason),
