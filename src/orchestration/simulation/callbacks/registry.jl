@@ -2,6 +2,7 @@ using ..FrameTransforms
 import ...SimulationLifecycle
 import ...GNCRuntime
 using ...GNCRuntime: tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!, gnc_period_s
+using ...GNCRuntime: Produces, Consumes, gnc_links, link_cardinality, check_link, link_initialize!
 
 using OrdinaryDiffEq
 using DiffEqBase

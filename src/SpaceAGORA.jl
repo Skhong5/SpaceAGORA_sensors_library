@@ -64,6 +64,7 @@ using .GNCAlgorithms: algorithm_family, default_capabilities, algorithm_capabili
 using .GNCAlgorithms: validate_capabilities, validate_proposal, install!, is_current, on_rejection, fallback_product, family_contract_version
 using .GNCAlgorithms: gnc_stream_words, AlgorithmRuntime, run_algorithm_request!, algorithm_runtime, bound_algorithm, bound_link, build_algorithm_request, trusted_queries, fail_algorithm_request!, algorithm_result_type, is_revision_request, proposed_product, installed_record, rejected_record
 using .GNCRuntime: tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!, gnc_period_s
+using .GNCRuntime: Produces, Consumes, gnc_links, link_cardinality, check_link, link_initialize!
 using .HYPRRPOPlanning: HYPRRPOPlanner
 using .HYPRRPOPlanning: RetainedPathRPOPlanner
 using .SimulationModel.HYPRSupport: HYPRUnavailableError, hypr_available
@@ -180,6 +181,7 @@ export algorithm_family, default_capabilities, algorithm_capabilities, require_a
 export validate_capabilities, validate_proposal, install!, is_current, on_rejection, fallback_product, family_contract_version
 export gnc_stream_words, AlgorithmRuntime, run_algorithm_request!, algorithm_runtime, bound_algorithm, bound_link, build_algorithm_request, trusted_queries, fail_algorithm_request!, algorithm_result_type, is_revision_request, proposed_product, installed_record, rejected_record
 export tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!, gnc_period_s
+export Produces, Consumes, gnc_links, link_cardinality, check_link, link_initialize!
 export AbstractRPOPlanner, RPOPlanningConstraints, RPOValidationSettings, RPOPlanningRequest, RPOReference, RPOPlanningResult, RPOPlannerCapabilities, RPOValidationResult, RPOPlanningHeadroom, planner_capabilities, initialize_planner, plan_rpo!, retime_rpo!, validate_rpo_result, validate_rpo_capabilities, rpo_reference_is_current, DirectRPOPlanner, HYPRRPOPlanner, RPOPSOConfig, rpo_pso_config, RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
 export bound_family, AbstractRPOGeometryProvider, rpo_geometry_revision, rpo_geometry_snapshot, RPOReplanningSpheres
 export RetainedPathRPOPlanner
