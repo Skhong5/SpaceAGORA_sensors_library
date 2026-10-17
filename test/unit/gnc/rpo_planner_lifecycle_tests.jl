@@ -152,13 +152,16 @@ end
 end
 
 @testset "Independent runs and ID-based streams" begin
+    # Equal reruns, and concurrent runs equal to sequential ones: the conformance
+    # kit's simulation check runs the hold configuration both ways.
+    K=SpaceAGORA.Conformance
+    report=K.check_algorithm(Hold(),K.rpo_conformance_requests(goal_rtn_m=nothing);trusted=K.rpo_trusted_queries(),
+        simulation=K.rpo_conformance_simulation(goal_rtn_m=(3.,0.,0.),mission_time_s=.2))
+    @test K.passed(report)
+    @test only(c.status for c in report.checks if c.id===:simulation_run)===:pass
     args=holdargs(mission_time_s=.2)
-    s1=run_simulation(args;return_solution=true);s2=run_simulation(args;return_solution=true)
-    @test s1.t==s2.t && s1.u==s2.u
+    run_simulation(args;return_solution=true)
     @test args.guidance_model.guidance_effectors[1].runtime===nothing
-    tasks=[Threads.@spawn run_simulation(args;return_solution=true) for _ in 1:2]
-    concurrent=fetch.(tasks)
-    @test all(s->s.t==s1.t&&s.u==s1.u,concurrent)
     specs=((id=101,start_rtn_m=(3.,0.,0.),goal_rtn_m=(3.,0.,0.)),
            (id=102,start_rtn_m=(5.,0.,0.),goal_rtn_m=(5.,0.,0.)))
     reports=[rpo_run_report(run_simulation(make_rpo_configuration(planner=Hold(),chasers=x,

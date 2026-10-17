@@ -131,13 +131,6 @@ end
 
 _failed(run::_RunOutcome) = run.error !== nothing
 
-function _summary(err)
-    err isa TaskFailedException && (err = err.task.exception)
-    text = sprint(showerror, err)
-    lines = split(text, '\n')
-    return length(lines) > 6 ? join(lines[1:6], '\n') * "\n…" : text
-end
-
 function _solve(configuration; isolate_state::Bool=true, kwargs...)
     try
         return _RunOutcome(SimulationEngine.run_simulation(configuration; isolate_state, return_solution=true, kwargs...), nothing)

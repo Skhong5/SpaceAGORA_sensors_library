@@ -166,17 +166,6 @@ function _sample_signature_check(model, since::VersionNumber; hooks::Tuple=_SAMP
     return _check(:supported_sample_signature, since, isempty(problems), join(problems, "\n"))
 end
 
-function _with_global_seed(f, seed)
-    rng = Random.default_rng()
-    saved = copy(rng)
-    try
-        Random.seed!(seed)
-        return f()
-    finally
-        copy!(rng, saved)
-    end
-end
-
 # Two concurrent runs advance in step: after each solver step a run waits until the
 # other has taken as many steps or has finished, so that the runs overlap.
 struct _Rendezvous
