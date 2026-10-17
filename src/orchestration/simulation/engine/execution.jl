@@ -566,6 +566,7 @@ function run_simulation(
     for control in args.control_model.control_effectors
         SimulationLifecycle.preflight_control(control, args; isolate_state=isolate_state)
     end
+    SimulationModel.SimulationCallbacks.check_gnc_links(args)
     # SolverConfig(parallel=true): re-enter under the flag's scoped environment
     # (see `_with_parallel_flag`). Inside it the flag reads as resolved, so this
     # branch is taken once; with the flag off nothing here runs.
@@ -737,8 +738,9 @@ function run_simulation(
     # println("ODE parameters:")
     # println(p)
     # println("args.mission_configuration.mission_time: $(args.mission_configuration.mission_time)")
-    # Navigation first, then guidance, then control: each stage may read what the
-    # previous one set up.
+    # The links first (each initialized once), then navigation, guidance and
+    # control: each stage may read what the previous one set up.
+    SimulationModel.SimulationCallbacks.initialize_gnc_links!(args, u_start, p, t_start)
     for navigation in args.navigation_model.navigation_effectors
         SimulationLifecycle.initialize_navigation!(navigation, u_start, p, t_start)
     end

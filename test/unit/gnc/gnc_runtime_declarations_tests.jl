@@ -106,7 +106,7 @@ function SpaceAGORA.initialize_sensor!(s::CountingSensor, truth::SensorTruth, ct
     return nothing
 end
 
-function runtime_args(control; sensor=CountingSensor(), mission_time=4.0)
+function runtime_args(control; sensor=CountingSensor(), mission_time=4.0, guidance=(LoggedGuidance(),))
     root = SM.Link(root=true, m=50.0, dims=MVector(1.0, 1.0, 1.0))
     r = SM.Earth().Rp_e + 500e3
     ic = SM.CartesianInitialCondition(SVector(r, 0.0, 0.0), SVector(0.0, sqrt(SM.Earth().μ / r), 0.0);
@@ -119,9 +119,42 @@ function runtime_args(control; sensor=CountingSensor(), mission_time=4.0)
         keplerian=false, EI_km=100.0, verbose=false, results=false)
     return SM.SimConfig._with_configuration(base;
         navigation_model=SM.NavigationModel(navigation_effectors=(LoggedNavigation(),), navigation_rates=[1.0]),
-        guidance_model=SM.GuidanceModel(guidance_effectors=(LoggedGuidance(),), guidance_rates=[1.0]),
+        guidance_model=SM.GuidanceModel(guidance_effectors=guidance, guidance_rates=fill(1.0, length(guidance))),
         control_model=SM.ControlModel(control_effectors=control, control_rates=fill(0.5, length(control))))
 end
+
+# A contributor's link: a slot one guidance model writes and one control model reads.
+mutable struct SharedSlot
+    initialized::Int
+    checked::Vector{Tuple{Vector{Any}, Vector{Any}}}
+end
+SharedSlot() = SharedSlot(0, Tuple{Vector{Any}, Vector{Any}}[])
+SpaceAGORA.link_cardinality(::SharedSlot) = (producers = 1:1, consumers = 0:1)
+SpaceAGORA.check_link(s::SharedSlot, producers, consumers, args) = (push!(s.checked, (producers, consumers)); nothing)
+SpaceAGORA.link_initialize!(s::SharedSlot, producers, consumers, u, p, t) = (s.initialized += 1; push!(LOG, :link); nothing)
+mutable struct SlotWriter <: AbstractGuidanceModel
+    slot::SharedSlot
+    prepared::Int
+end
+SpaceAGORA.calcGuidanceEffect!(::SlotWriter, u, p, t::Float64, i::Int) = nothing
+SpaceAGORA.gnc_links(g::SlotWriter) = (Produces(g.slot),)
+L.initialize_guidance!(::SlotWriter, u, p, t) = (push!(LOG, :guidance); nothing)
+mutable struct Bystander <: AbstractGuidanceModel
+    prepared::Int
+end
+SpaceAGORA.calcGuidanceEffect!(::Bystander, u, p, t::Float64, i::Int) = nothing
+mutable struct SlotReader <: SM.AbstractControlEffectorModel
+    slot::SharedSlot
+    ticks::Int
+end
+SpaceAGORA.calcControlEffect!(c::SlotReader, u, p, t, i) = (c.ticks += 1; nothing)
+SpaceAGORA.calcControlForceTorque(::SlotReader, u, p, i, t) = (ZERO3, ZERO3)
+SpaceAGORA.gnc_links(c::SlotReader) = (Consumes(c.slot),)
+L.before_reference_control!(g::SlotWriter, c::SlotReader, u, p, t) = (g.prepared += 1; nothing)
+L.before_reference_control!(g::Bystander, c::SlotReader, u, p, t) = (g.prepared += 1; nothing)
+struct BadLinks <: AbstractGuidanceModel end
+SpaceAGORA.calcGuidanceEffect!(::BadLinks, u, p, t::Float64, i::Int) = nothing
+SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
 
 @testset "GNC runtime declarations" begin
     @testset "defaults keep the periodic tick" begin
@@ -179,6 +212,35 @@ end
         @test all(>(0), law.tick_thread) && all(>(0), law.stop_thread)
         @test length(unique(law.stop_thread)) == 1                 # one thread registers every stop
         Threads.nthreads() > 1 && @test length(unique(law.tick_thread)) > 1   # while the ticks spread
+    end
+
+    @testset "links pair models, and the engine checks and initializes each once" begin
+        @test gnc_links(:any_model) === ()
+        @test link_cardinality(:any_link) == (producers = 0:typemax(Int), consumers = 0:typemax(Int))
+        @test check_link(:any_link, [], [], nothing) === nothing
+        @test link_initialize!(:any_link, [], [], nothing, nothing, 0.0) === nothing
+        empty!(LOG)
+        slot = SharedSlot()
+        writer, bystander, reader = SlotWriter(slot, 0), Bystander(0), SlotReader(slot, 0)
+        args = runtime_args((reader,); guidance=(writer, bystander))
+        groups = SM.SimulationCallbacks.gnc_link_groups(args)
+        @test length(groups) == 1 && only(groups).link === slot
+        @test only(groups).producers == [writer] && only(groups).consumers == [reader]
+        run_simulation(args; isolate_state=false)
+        @test slot.initialized == 1 && length(slot.checked) == 1
+        @test slot.checked[1][1] == [writer] && slot.checked[1][2] == [reader]
+        @test LOG[1:3] == [:link, :navigation, :guidance]               # the link before the models
+        # The linked producer prepares the reader once per tick; the bystander never.
+        @test reader.ticks > 0 && writer.prepared == reader.ticks && bystander.prepared == 0
+        # A second writer breaks the link's cardinality; a malformed declaration is refused.
+        err = try
+            run_simulation(runtime_args((SlotReader(slot, 0),); guidance=(SlotWriter(slot, 0), SlotWriter(slot, 0))))
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError && occursin("2 models produce one SharedSlot", sprint(showerror, err))
+        @test_throws ArgumentError SM.SimulationCallbacks.gnc_link_groups(runtime_args((ClockedControl(),); guidance=(BadLinks(),)))
     end
 
     @testset "an unknown schedule is refused" begin
