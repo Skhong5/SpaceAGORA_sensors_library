@@ -2,6 +2,51 @@ using StaticArrays: SVector, MVector
 using LinearAlgebra: Diagonal, I
 
 """
+    RPOReplanningSpheres(spheres; sphere_surface_samples=96, observation_window_s=0.0)
+    RPOReplanningSpheres(config::GuidanceHooks.RPOReplanningConfig)
+
+A geometry provider (`AbstractRPOGeometryProvider`) for spherical obstacles that
+appear and disappear during a run: the planner-path form of `RPOGuidanceModel`'s
+replanning spheres, built with the same functions. Each sphere is a
+`GuidanceHooks.RPOReplanningSphere` or a named tuple with `center_rtn` (m) and
+`radius_m`, and optionally `appear_time_s`, `disappear_time_s` (s),
+`velocity_rtn_mps` and `label`. A sphere is active from its appearance until
+`observation_window_s` after its disappearance. The snapshot adds
+`sphere_surface_samples` surface points of each active sphere to the station point
+cloud. The revision is the base revision, then `+spheres:` and the active spheres'
+positions in `spheres`; while an active sphere moves, the snapshot time follows
+`@`, so each time has its own revision. With no active sphere it is the base
+revision and geometry. The second form uses the spheres, surface samples and
+observation window of an existing legacy replanning configuration.
+"""
+struct RPOReplanningSpheres <: P.AbstractRPOGeometryProvider
+    config::S.GuidanceHooks.RPOReplanningConfig
+    # The only inner constructor, so Julia defines no default `(::Any)` constructor
+    # for the keyword form below to overwrite (refused during precompilation).
+    RPOReplanningSpheres(config::S.GuidanceHooks.RPOReplanningConfig) = new(config)
+end
+RPOReplanningSpheres(spheres; sphere_surface_samples::Integer=96, observation_window_s::Real=0.0) =
+    RPOReplanningSpheres(S.GuidanceHooks.RPOReplanningConfig(spheres=spheres,
+        sphere_surface_samples=sphere_surface_samples, observation_window_s=observation_window_s))
+
+# Active exactly when GuidanceHooks.rpo_active_replanning_spheres keeps the sphere.
+_active_spheres(c, t) = [i for (i, s) in enumerate(c.spheres)
+    if t >= s.appear_time_s && t <= s.disappear_time_s + c.observation_window_s]
+
+function P.rpo_geometry_revision(provider::RPOReplanningSpheres, revision, time_s)
+    c, t = provider.config, Float64(time_s)
+    active = _active_spheres(c, t)
+    isempty(active) && return String(revision)
+    moving = any(i -> any(!iszero, c.spheres[i].velocity_rtn_mps), active)
+    return string(revision, "+spheres:", join(active, ","), moving ? string("@", repr(t)) : "")
+end
+function P.rpo_geometry_snapshot(provider::RPOReplanningSpheres, geometry, time_s)
+    c = provider.config
+    return S.GuidanceHooks.rpo_geometry_with_replanning_spheres(geometry,
+        S.GuidanceHooks.rpo_active_replanning_spheres(c, time_s); sphere_surface_samples=c.sphere_surface_samples)
+end
+
+"""
     make_rpo_configuration(; planner, seed=741, start_rtn_m=(3,0,0),
         goal_rtn_m=(5,0,0), station_points_m=zeros(3,1), control_dt_s=0.1,
         mission_time_s=2.0, plan_validity_s=120.0, extra_effectors=(), ...)
@@ -16,7 +61,25 @@ one passive target (`target_id=201`). Each gets a copied planner and private RNG
 This geometry checks the station only, not collisions between chasers.
 `planning_events` is a sequence of `RPOPlanningEvent`; optional positive
 `replan_interval_s` and `tracking_error_limit_m` enable background replanning.
-A failed request stops the run. Built-in planners do not implement retiming.
+A failed request stops the run unless `on_rejection=:install_fallback`.
+`HYPRRPOPlanner` implements retiming; `DirectRPOPlanner` does not.
+
+Three opt-in extensions, all off by default:
+- `geometry_provider`, an `AbstractRPOGeometryProvider` such as
+  `RPOReplanningSpheres`, supplies each request's geometry and revision from the
+  station geometry. When the revision changes, the chaser's remaining reference
+  path is checked against the new geometry with the trusted clearance query, and
+  replanned (`:replan`) only if it no longer clears it.
+- `on_rejection=:install_fallback` installs a hold at the chaser's position
+  instead of stopping the run when a request is rejected. A hold is retried once
+  the chaser settles on it (within `hold_position_tolerance_m` and
+  `hold_speed_tolerance_mps`), renewed by a new request before it expires and
+  replanned when the geometry revision changes; interval and tracking-error
+  replans are suspended while it holds.
+- `retime_tracking_error_m` requests `:retime` when the tracking error exceeds it
+  (and stays within `tracking_error_limit_m`). It needs a planner that declares
+  retiming.
+Run records mark these requests with `event=:trigger`.
 
 Defaults: station keepout 0.25 m plus largest chaser half-extent 0.15 m;
 clearance 0.2 m; speed 0.5 m/s; reference acceleration 0.5*0.05/5.2 m/s².
@@ -40,15 +103,25 @@ function make_rpo_configuration(; planner::P.AbstractRPOPlanner, seed::Integer=7
         validation=P.RPOValidationSettings(), planning_events=(),
         replan_interval_s=Inf, tracking_error_limit_m=Inf, extra_effectors=(),
         simulation_settings=S.SimulationSettings(results=false,verbose=false,generate_plots=false),
-        solver_config=S.SolverConfig(solver_mode=:tsit5))
+        solver_config=S.SolverConfig(solver_mode=:tsit5), geometry_provider=nothing,
+        on_rejection::Symbol=:fail, retime_tracking_error_m=Inf,
+        hold_position_tolerance_m=.02, hold_speed_tolerance_mps=.002)
     P.require_planner_support(planner)
     dt=P._positive(control_dt_s,"control_dt_s")
     mission=P._positive(mission_time_s,"mission_time_s")
     validity=P._positive(plan_validity_s,"plan_validity_s")
     validity >= 12dt || throw(ArgumentError("Plan lifetime must cover the controller preview."))
-    for (name,value) in (("replan_interval_s",replan_interval_s),("tracking_error_limit_m",tracking_error_limit_m))
+    for (name,value) in (("replan_interval_s",replan_interval_s),("tracking_error_limit_m",tracking_error_limit_m),
+            ("retime_tracking_error_m",retime_tracking_error_m))
         (isfinite(value) && value>0) || value==Inf || throw(ArgumentError("$name must be positive or Inf."))
     end
+    family=P.RPOReferenceFamily(on_rejection=on_rejection)
+    geometry_provider===nothing || geometry_provider isa P.AbstractRPOGeometryProvider ||
+        throw(ArgumentError("geometry_provider must be an AbstractRPOGeometryProvider or nothing."))
+    isfinite(retime_tracking_error_m) && !P.planner_capabilities(planner).retiming &&
+        throw(ArgumentError("retime_tracking_error_m needs a planner that declares retiming."))
+    hold_position=P._positive(hold_position_tolerance_m,"hold_position_tolerance_m")
+    hold_speed=P._positive(hold_speed_tolerance_mps,"hold_speed_tolerance_mps")
     specs=chasers===nothing ? ((id=Int(chaser_id),start_rtn_m=start_rtn_m,goal_rtn_m=goal_rtn_m),) : Tuple(chasers)
     isempty(specs) && throw(ArgumentError("At least one chaser is required."))
     ids=[Int(x.id) for x in specs]
@@ -94,7 +167,10 @@ function make_rpo_configuration(; planner::P.AbstractRPOPlanner, seed::Integer=7
             geometry=deepcopy(geometry),geometry_revision=revision,constraints=constraints,
             validation=validation,reference_dt_s=dt,preview_horizon_steps=12,validity_s=validity,
             seed=Int(seed),events=copy(events),replan_interval_s=Float64(replan_interval_s),
-            tracking_error_limit_m=Float64(tracking_error_limit_m),plan_buffer=buffer))
+            tracking_error_limit_m=Float64(tracking_error_limit_m),plan_buffer=buffer,
+            family=family,geometry_provider=deepcopy(geometry_provider),
+            retime_tracking_error_m=Float64(retime_tracking_error_m),
+            hold_position_tolerance_m=hold_position,hold_speed_tolerance_mps=hold_speed))
         Q=Matrix(Diagonal([20.,20.,20.,2.,2.,2.]));R=.1*Matrix{Float64}(I,3,3)
         controller=S.init_rpo_lqmpc(n,dt,Q,R,10Q,12;
             u_min=fill(-.05/5.2,3),u_max=fill(.05/5.2,3))

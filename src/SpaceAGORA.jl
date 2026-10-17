@@ -52,6 +52,8 @@ export export_viewer_payload
 using .RPOPlannerInterfaces: AbstractRPOPlanner, RPOPlanningConstraints, RPOValidationSettings, RPOPlanningRequest, RPOReference, RPOPlanningResult, RPOPlannerCapabilities, RPOValidationResult, RPOPlanningHeadroom, planner_capabilities, initialize_planner, plan_rpo!, retime_rpo!, validate_rpo_result, validate_rpo_capabilities, rpo_reference_is_current
 using .DirectRPOPlanning: DirectRPOPlanner
 using .RPOPlannerInterfaces: RPOReferenceFamily
+using .RPOPlannerInterfaces: AbstractRPOGeometryProvider, rpo_geometry_revision, rpo_geometry_snapshot
+using .GNCAlgorithms: bound_family
 using .GNCAlgorithms: AbstractGNCAlgorithm, AbstractAlgorithmFamily, AbstractAlgorithmRequest, AbstractAlgorithmResult, AbstractValidationResult, GNCAlgorithmError, AlgorithmResult, ValidationResult
 using .GNCAlgorithms: algorithm_family, default_capabilities, algorithm_capabilities, require_algorithm_support, initialize_algorithm, propose!, propose_revision!, consumes_rng
 using .GNCAlgorithms: validate_capabilities, validate_proposal, install!, is_current, on_rejection, fallback_product, family_contract_version
@@ -151,12 +153,14 @@ preserves the existing configuration owner and calculations; pass the result to
 """ rpo_pso_config
 
 using .RPOPlannerLifecycle: RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
+using .RPOPlannerLifecycle: RPOReplanningSpheres
 export AbstractGNCAlgorithm, AbstractAlgorithmFamily, AbstractAlgorithmRequest, AbstractAlgorithmResult, AbstractValidationResult, GNCAlgorithmError, AlgorithmResult, ValidationResult, RPOReferenceFamily
 export algorithm_family, default_capabilities, algorithm_capabilities, require_algorithm_support, initialize_algorithm, propose!, propose_revision!, consumes_rng
 export validate_capabilities, validate_proposal, install!, is_current, on_rejection, fallback_product, family_contract_version
 export gnc_stream_words, AlgorithmRuntime, run_algorithm_request!, algorithm_runtime, bound_algorithm, bound_link, build_algorithm_request, trusted_queries, fail_algorithm_request!, algorithm_result_type, is_revision_request, proposed_product, installed_record, rejected_record
 export tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!
 export AbstractRPOPlanner, RPOPlanningConstraints, RPOValidationSettings, RPOPlanningRequest, RPOReference, RPOPlanningResult, RPOPlannerCapabilities, RPOValidationResult, RPOPlanningHeadroom, planner_capabilities, initialize_planner, plan_rpo!, retime_rpo!, validate_rpo_result, validate_rpo_capabilities, rpo_reference_is_current, DirectRPOPlanner, HYPRRPOPlanner, RPOPSOConfig, rpo_pso_config, RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
+export bound_family, AbstractRPOGeometryProvider, rpo_geometry_revision, rpo_geometry_snapshot, RPOReplanningSpheres
 
 ## 2. Bring needed names from package modules into the scope of SpaceAGORA.jl
 # 2.1. Parallel Profiles
