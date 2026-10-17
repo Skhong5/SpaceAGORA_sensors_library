@@ -52,7 +52,10 @@ Inside a versioned facade, a major contract version stands in for the new name.
 
 - **`u`** is the whole integrated state. `u.sc[spacecraft_index]` selects one
   spacecraft, with `pos` (m), `vel` (m/s) and `mass` (kg), and with attitude
-  propagation `q` and `ω`. Only ticks receive `u`.
+  propagation `q` and `ω`. Among the model hooks, only the GNC ticks receive
+  `u`. A GNC algorithm binding also receives it, in
+  `build_algorithm_request(binding, u, p, t, reason, request_id)`: the binding's
+  tick passes it on, so that the request is built from the state at that tick.
 - **`x::StateSample`** is one spacecraft's state, for every right-hand-side
   hook:
 
