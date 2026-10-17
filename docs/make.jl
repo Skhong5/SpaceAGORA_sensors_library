@@ -4,11 +4,14 @@ using Dates
 
 include(joinpath(@__DIR__, "public_api_symbols.jl"))
 using .PublicAPISymbols
+include(joinpath(@__DIR__, "extension_hooks.jl"))
+using .ExtensionHooks
 
 const REPO_URL = "https://github.com/Space-FALCON-Lab/SpaceAGORA.jl"
 const DOCS_SRC = joinpath(@__DIR__, "src")
 const GENERATED_SRC = joinpath(DOCS_SRC, "generated")
 const GENERATED_API_PAGE = joinpath(GENERATED_SRC, "public_api.md")
+const GENERATED_HOOK_REFERENCE_PAGE = joinpath(GENERATED_SRC, "extension_hook_reference.md")
 const API_REFERENCE_PAGES = (
     (section="Simulation Setup", title="Simulation Setup API", file="simulation_setup_api.md"),
     (section="RPO planner pilot", title="RPO Planner API", file="rpo_planner_api.md"),
@@ -24,6 +27,7 @@ const API_REFERENCE_PAGES = (
     (section="Sensors", title="Sensors API", file="sensors_api.md"),
     (section="Model Extension Hooks", title="Extension Hooks API", file="extension_hooks_api.md"),
     (section="Deprecated hooks", title="Deprecated Hooks API", file="deprecated_hooks_api.md"),
+    (section="Contributor conformance", title="Contributor Conformance API", file="contributor_conformance_api.md"),
 )
 const BUILD_DIR = joinpath(@__DIR__, "build")
 const PUBLIC_API_REPORT = joinpath(BUILD_DIR, "undocumented_public_exports.txt")
@@ -48,6 +52,89 @@ function _write_generated_public_api_page()::String
         end
     end
     return GENERATED_API_PAGE
+end
+
+_table_cell(text::AbstractString) = replace(text, "|" => "\\|", "\n" => " ")
+
+function _page_title(page::AbstractString)::String
+    for line in eachline(joinpath(DOCS_SRC, page))
+        startswith(line, "# ") && return strip(line[3:end])
+    end
+    error("docs/src/$(page) has no title")
+end
+
+_page_link(page) = page === nothing ? "not yet" : "[$(_page_title(page))](../$(page))"
+
+# The Extension Hook Reference page, rendered from docs/extension_hooks.jl.
+function _write_extension_hook_reference_page()::String
+    mkpath(GENERATED_SRC)
+    open(GENERATED_HOOK_REFERENCE_PAGE, "w") do io
+        print(io, """
+            # Extension Hook Reference
+
+            Every extension hook SpaceAGORA exports, by family: the function a model,
+            effector, actuator, sensor or algorithm implements for its own type, when the
+            engine calls it, and what happens for a type with no method of its own. Each
+            hook links to its docstring in the API reference, and the last column to the
+            page that explains it. [Extensibility](../extensibility.md) shows how the
+            hooks fit together.
+
+            This page is generated from `docs/extension_hooks.jl`, which
+            `test/gates/ci_extension_hook_reference_gate.jl` checks against the package:
+            every exported hook has a row, each signature is the first line of the hook's
+            docstring, and each fallback agrees with the hook's methods.
+
+            The **shape** is the kind of hook; the Called column says when each one runs.
+
+            | Shape | Kind |
+            |---|---|
+            | T, tick | updates a GNC effector's held state, periodically, for one spacecraft |
+            | R, right-hand side | a term of the equations of motion, for one spacecraft |
+            | Q, query | answers an environment query |
+            | D, declaration | declares a property of a model |
+            | A, accessor | reads a held value for one spacecraft |
+            | H, hardware | one actuator's or sensor's physics |
+            | P, planner or algorithm | proposes, checks or installs a planning product |
+            | L, configuration | prepares a model or an algorithm for a run |
+
+            The **fallback** is what a type with no method of its own gets: `none` means
+            every type that uses the hook needs its own method; otherwise the fallback
+            returns the value given or throws. The **status** is `current`, or deprecated
+            with its replacement and the release that removes it.
+
+            """)
+        for group in EXTENSION_HOOK_GROUPS
+            println(io, "## ", group.title, group.core_owned ? " (core-owned)" : "")
+            println(io)
+            if group.note !== nothing
+                println(io, group.note)
+                println(io)
+            end
+            println(io, "| Hook | Shape | Signature | Called | Arguments and units | Fallback | Status | Explained on |")
+            println(io, "|---|---|---|---|---|---|---|---|")
+            for row in group.rows
+                status = row.status == "current" ? "current" :
+                    "deprecated → [`SpaceAGORA.$(row.replacement)`](@ref), removed in $(row.removed_in)"
+                cells = ("[`SpaceAGORA.$(row.symbol)`](@ref)", row.shape, "`$(row.signature)`", row.called,
+                         row.arguments, row.fallback, status, _page_link(row.page))
+                println(io, "| ", join(_table_cell.(cells), " | "), " |")
+            end
+            println(io)
+        end
+        println(io, "## Versioned facades")
+        println(io)
+        println(io, "An optional companion package reaches SpaceAGORA through one versioned facade. ",
+                    "Its page lists the functions the facade provides and consumes.")
+        println(io)
+        println(io, "| Facade | Contract | Explained on |")
+        println(io, "|---|---|---|")
+        for facade in VERSIONED_FACADES
+            version = getproperty(SpaceAGORA, facade.symbol).CONTRACT_VERSION
+            cells = ("[`SpaceAGORA.$(facade.symbol)`](@ref)", string(version), _page_link(facade.page))
+            println(io, "| ", join(_table_cell.(cells), " | "), " |")
+        end
+    end
+    return GENERATED_HOOK_REFERENCE_PAGE
 end
 
 function _remove_retired_contract_mirrors()
@@ -86,6 +173,7 @@ function _write_undocumented_public_api_report()::Vector
 end
 
 _write_generated_public_api_page()
+_write_extension_hook_reference_page()
 _remove_retired_contract_mirrors()
 missing_public_api = undocumented_public_api_specs(SpaceAGORA)
 
@@ -206,6 +294,7 @@ makedocs(
         ],
         "Extend SpaceAGORA" => Any[
             "Extensibility" => "extensibility.md",
+            "Extension Hook Reference" => "generated/extension_hook_reference.md",
             "Public API and Compatibility" => "public_api_policy.md",
             "Optional Adapter Contract" => "reference/adapter_contract.md",
             "EDG Service Contract" => "reference/edg_adapter_boundary.md",
@@ -231,6 +320,7 @@ makedocs(
             "Sensors API" => "generated/sensors_api.md",
             "Extension Hooks API" => "generated/extension_hooks_api.md",
             "Deprecated Hooks API" => "generated/deprecated_hooks_api.md",
+            "Contributor Conformance API" => "generated/contributor_conformance_api.md",
         ],
     ],
     doctest = true,
