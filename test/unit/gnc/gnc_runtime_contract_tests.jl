@@ -7,7 +7,7 @@
 # test/unit/conformance/builtin_conformance_tests.jl: `deepcopy_equivalent`,
 # `initialize_resets` and `bind_fresh_state` (the kit's walker). This file covers
 # the other built-in models with the same walker, and the engine's reset of
-# navigation models and of custom sensor state.
+# navigation models, of custom sensor state and of every built-in sensor kind.
 module GNCRuntimeContractTests
 
 using Test, Random, StaticArrays, LinearAlgebra, SpaceAGORA
@@ -17,7 +17,7 @@ const C = SpaceAGORA.Conformance
 const L = SpaceAGORA.SimulationLifecycle
 
 include(joinpath(@__DIR__, "..", "..", "fixtures", "conformance_instances.jl"))
-using .ConformanceInstances: gnc_instances, gnc_exemptions
+using .ConformanceInstances: gnc_instances, gnc_exemptions, sensor_instances
 
 const PLANET = SpaceAGORA.make_no_gram_planet(:earth)
 const Z3 = SVector(0.0, 0.0, 0.0)
@@ -376,31 +376,47 @@ end
 SpaceAGORA.initialize_navigation!(m::AveragingEstimator{true}, u, p, t) = (m.sum = Z3; m.count = 0; nothing)
 
 # Two runs with isolate_state=false on one configuration: the estimator and the
-# gyro as each run ended them, and whether the runs' saved states are equal.
-function reused_runs(estimator, gyro)
-    args = C.conformance_fixture(navigation=(estimator,), sensors=(gyro,), navigation_rate_s=2.0,
+# sensor as each run ended them, and the runs' saved times and states.
+function reused_runs(estimator, sensor)
+    args = C.conformance_fixture(navigation=(estimator,), sensors=(sensor,), navigation_rate_s=2.0,
         mission_time_s=20.0).configuration
     ends = map(1:2) do _
         solution = run_simulation(args; isolate_state=false, return_solution=true)
         (estimator=deepcopy(only(args.navigation_model.navigation_effectors)),
-            gyro=deepcopy(only(SpaceAGORA.mounted_sensors(only(args.dynamics_model.spacecraft))).sensor),
+            sensor=deepcopy(only(SpaceAGORA.mounted_sensors(only(args.dynamics_model.spacecraft))).sensor),
             t=solution.t, u=collect.(solution.u))
     end
     return ends
 end
 
+# An estimator that sums the finite readings of the first mounted sensor, of any
+# dimension, and resets its sums when a run starts.
+mutable struct ReadingSum <: SpaceAGORA.AbstractNavigationModel
+    total::Float64
+    count::Int
+end
+ReadingSum() = ReadingSum(0.0, 0)
+function SpaceAGORA.update_navigation!(m::ReadingSum, u, p, t::Float64, i::Int)
+    reading = SpaceAGORA.sensor_measurement(p.args.dynamics_model.spacecraft[i], 1)
+    all(isfinite, reading) || return nothing
+    m.total += sum(reading)
+    m.count += 1
+    return nothing
+end
+SpaceAGORA.initialize_navigation!(m::ReadingSum, u, p, t) = (m.total = 0.0; m.count = 0; nothing)
+
 @testset "Navigation models and custom sensor state reset when a run starts (G-8)" begin
     first_end, second_end = reused_runs(AveragingEstimator{true}(), WalkingGyro{true}())
-    @test first_end.estimator.count > 0 && first_end.gyro.samples > 0
+    @test first_end.estimator.count > 0 && first_end.sensor.samples > 0
     @test C._same_state(first_end.estimator, second_end.estimator)
-    @test C._same_state(first_end.gyro, second_end.gyro)
+    @test C._same_state(first_end.sensor, second_end.sensor)
     @test first_end.t == second_end.t && first_end.u == second_end.u
     # Negative controls: without the estimator's or the sensor's reset, the second run
     # starts from the first run's state.
     stale = reused_runs(AveragingEstimator{false}(), WalkingGyro{true}())
     @test stale[2].estimator.count == 2 * stale[1].estimator.count
     stale = reused_runs(AveragingEstimator{true}(), WalkingGyro{false}())
-    @test stale[2].gyro.samples == 2 * stale[1].gyro.samples
+    @test stale[2].sensor.samples == 2 * stale[1].sensor.samples
     @test stale[2].estimator.sum != stale[1].estimator.sum
     # The kit's checks report the same: the estimator and the gyro pass, and each
     # model without its reset fails its reset check.
@@ -410,6 +426,21 @@ end
     @test status(C.check_navigation_model(AveragingEstimator{false}(); sensors=(WalkingGyro{true}(),)),
         :initialize_resets) === :fail
     @test status(C.check_sensor(WalkingGyro{false}()), :custom_state_reset) === :fail
+end
+
+@testset "Every built-in sensor kind starts each run afresh (G-8)" begin
+    # The engine resets the fields it owns (stream, latest reading and its time)
+    # when a run starts; the built-in kinds keep no other run state.
+    for sensor in sensor_instances()
+        first_end, second_end = reused_runs(ReadingSum(), sensor)
+        @testset let kind = typeof(sensor)
+            @test first_end.estimator.count > 0 && isfinite(first_end.sensor.latest_time_s)
+            @test C._same_state(first_end.sensor, second_end.sensor)
+            @test C._same_state(first_end.estimator, second_end.estimator)
+            @test first_end.t == second_end.t && first_end.u == second_end.u
+        end
+    end
+    @test Set(typeof.(sensor_instances())) ⊇ Set((SpaceAGORA.GNSSReceiver, SpaceAGORA.SunSensor, SpaceAGORA.Accelerometer))
 end
 
 # One log shared by a link and a model of each kind, which record the order the
