@@ -621,6 +621,8 @@ const PUBLIC_API_SECTIONS = [
             (owner = :Conformance, symbol = :rpo_conformance_requests, rendered = "SpaceAGORA.Conformance.rpo_conformance_requests"),
             (owner = :Conformance, symbol = :rpo_trusted_queries, rendered = "SpaceAGORA.Conformance.rpo_trusted_queries"),
             (owner = :Conformance, symbol = :rpo_conformance_simulation, rendered = "SpaceAGORA.Conformance.rpo_conformance_simulation"),
+            (owner = :Conformance, symbol = :burn_plan_conformance_requests, rendered = "SpaceAGORA.Conformance.burn_plan_conformance_requests"),
+            (owner = :Conformance, symbol = :burn_plan_conformance_simulation, rendered = "SpaceAGORA.Conformance.burn_plan_conformance_simulation"),
             (owner = :Conformance, symbol = :test_report, rendered = "SpaceAGORA.Conformance.test_report"),
             (owner = :Conformance, symbol = :test_force_torque_model, rendered = "SpaceAGORA.Conformance.test_force_torque_model"),
             (owner = :Conformance, symbol = :test_service_facade, rendered = "SpaceAGORA.Conformance.test_service_facade"),

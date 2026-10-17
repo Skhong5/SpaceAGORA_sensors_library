@@ -137,11 +137,13 @@ end
                 @test any(entry -> entry.family isa F, families)
             end
         end
-        # Both rejection policies the RPO family allows are exercised.
-        @test Set(SpaceAGORA.on_rejection(entry.family) for entry in families) == Set((:fail, :install_fallback))
+        # Every rejection policy is exercised: :fail and :install_fallback by the RPO
+        # family, :keep_previous by the burn-plan family.
+        @test Set(SpaceAGORA.on_rejection(entry.family) for entry in families) ==
+            Set((:fail, :install_fallback, :keep_previous))
     end
     for entry in instances
-        test_report(C.check_algorithm(entry.algorithm, entry.requests; trusted=C.rpo_trusted_queries(),
+        test_report(C.check_algorithm(entry.algorithm, entry.requests; trusted=entry.trusted,
             simulation=entry.simulation))
     end
     for entry in families
