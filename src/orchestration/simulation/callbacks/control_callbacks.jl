@@ -199,12 +199,13 @@ _discretization_step(control_model::_simulation_model_module.RobotArmControlEffe
 Before a run: warn when a periodic control model's declared period
 (`gnc_period_s`) differs from the rate of its callback, or when its controller
 was discretized with a different step. Equality is exact, since builders set
-both from one value. The warning goes through the shared pre-run warning, once
-per model type, and throws under `--depwarn=error`; SpaceAGORA 0.4.0 will refuse
-such a run.
+both from one value. These are configuration checks, not deprecations: they use
+the shared pre-run warning for such checks (`_preflight_warning`, log group
+`:preflight`), once per model type, which throws under `--depwarn=error`.
+SpaceAGORA 0.4.0 will refuse such a run.
 """
 function check_control_periods(args)
-    warn = _simulation_model_module.HookDeprecation._hook_deprecation
+    warn = _simulation_model_module.HookDeprecation._preflight_warning
     models, rates = args.control_model.control_effectors, args.control_model.control_rates
     for (i, control_model) in enumerate(models)
         tick_schedule(control_model) === :periodic || continue

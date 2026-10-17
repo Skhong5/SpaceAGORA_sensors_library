@@ -218,6 +218,12 @@ end
         @test isempty(period_messages(runtime_args((PeriodicLaw(0.5),))))
         warned = period_messages(runtime_args((PeriodicLaw(0.25),)))
         @test length(warned) == 1 && occursin("0.25 s period", only(warned)) && occursin("every 0.5 s", only(warned))
+        # A configuration check, not a deprecation: the :preflight log group.
+        if Base.JLOptions().depwarn != 2
+            logger = Test.TestLogger(min_level=Logging.Warn)
+            with_logger(() -> SM.SimulationCallbacks.check_control_periods(runtime_args((PeriodicLaw(0.25),))), logger)
+            @test only(logger.logs).group === :preflight
+        end
         # The RPO pilot builds its controller with the model's step; a different step warns.
         rpo = make_rpo_configuration(planner=DirectRPOPlanner(), mission_time_s=0.2)
         mpc = only(rpo.control_model.control_effectors)
