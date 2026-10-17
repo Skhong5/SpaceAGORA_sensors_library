@@ -53,7 +53,7 @@ per mounted actuator:
 
 ```julia
 SpaceAGORA.actuation_mode(::BurnFor) = :mounted
-SpaceAGORA.actuator_levels(c::BurnFor, i::Int) = c.levels
+SpaceAGORA.actuator_levels(c::BurnFor, spacecraft_index::Int) = c.levels
 ```
 
 and the nozzle is mounted with `add_actuator!(spacecraft, root, nozzle)`.
@@ -96,9 +96,9 @@ mutable struct BurnFor <: SpaceAGORA.AbstractControlEffectorModel
 end
 
 SpaceAGORA.actuation_mode(::BurnFor) = :mounted
-SpaceAGORA.actuator_levels(c::BurnFor, i::Int) = c.levels
+SpaceAGORA.actuator_levels(c::BurnFor, spacecraft_index::Int) = c.levels
 
-function SpaceAGORA.update_control!(c::BurnFor, u, p, t::Float64, i::Int64)
+function SpaceAGORA.update_control!(c::BurnFor, u, p, t::Float64, spacecraft_index::Int)
     c.levels[1] = t < c.burn_s ? c.thrust_n : 0.0
     return nothing
 end
@@ -228,5 +228,11 @@ propellant). Both are read from the last row of the results table.
 | `SpaceAGORA.actuator_requirements(a)` | Optional: the environment the kind needs sampled, an `ActuatorRequirements`; default none. |
 | `SpaceAGORA.ActuatorContext` | The mounting link's pose, the vehicle's mass, attitude, rate and magnetic field, and the sampled environment the kind asked for. |
 | `SpaceAGORA.add_actuator!(spacecraft, link, actuator)` | Mounting. |
-| `SpaceAGORA.actuation_mode(c)`, `SpaceAGORA.actuator_levels(c, i)` | The controller side. |
+| `SpaceAGORA.actuation_mode(c)`, `SpaceAGORA.actuator_levels(c, spacecraft_index)` | The controller side. |
 | `SpaceAGORA.mounted_actuators`, `allocation_matrix`, `allocate_actuators`, `mounted_wrench` | The mounted set and allocation. |
+
+The controller's own hooks, such as `update_control!(c, u, p, t, spacecraft_index)`,
+follow the rules on [Extension Conventions](../reference/extension_conventions.md):
+the time before the spacecraft index, and the index named `spacecraft_index`.
+The [Extension Hook Reference](../generated/extension_hook_reference.md) lists
+when the engine calls each actuator and control hook.

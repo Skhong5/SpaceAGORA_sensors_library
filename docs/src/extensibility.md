@@ -340,7 +340,7 @@ Registration: `add_actuator!(spacecraft, link, actuator)`.
 
 A control effector drives the mounted actuators by declaring
 `SpaceAGORA.actuation_mode(c) = :mounted` and returning one level per mounted
-actuator, in mounting order, from `SpaceAGORA.actuator_levels(c, i)`; it
+actuator, in mounting order, from `SpaceAGORA.actuator_levels(c, spacecraft_index)`; it
 computes the levels in `update_control!` and writes no force or mass-flow
 hook. Effectors in the default `:ideal` mode keep applying their own hooks.
 The built-in RPO and Apollo descent controllers and the magnetic momentum

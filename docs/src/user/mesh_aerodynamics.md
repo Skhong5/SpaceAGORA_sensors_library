@@ -112,8 +112,7 @@ with `orientation_sim` the propagated root attitude and the stored child
 attitudes place the links; without it the root is held in the
 velocity-aligned frame (x along the airspeed, z toward nadir) and each
 link's configured quaternion selects its incidence. It uses the `wrench`
-interface described in [Adding a Force or Torque](custom_effector.md); the
-older `calcForceTorque` hook is not provided.
+interface described in [Adding a Force or Torque](custom_effector.md).
 
 ### Reference points and torque
 
