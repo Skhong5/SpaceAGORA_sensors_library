@@ -137,7 +137,7 @@ Solver-side policy note:
 ## Opt-in RPO planner surface
 
 The root exports the neutral planner contracts and extension methods,
-`DirectRPOPlanner`, `HYPRRPOPlanner`, `RPOPSOConfig`, `rpo_pso_config`,
+`DirectRPOPlanner`, `HYPRRPOPlanner`, `RetainedPathRPOPlanner`, `RPOPSOConfig`, `rpo_pso_config`,
 `RPOPlanningEvent`, `RPOPlanningError`, `make_rpo_configuration` and
 `rpo_run_report`. `SimulationSettings` remains owned by the existing configuration
 module and has a root alias for output settings. The [RPO Planner API](generated/rpo_planner_api.md) lists these symbols. The [pilot guide](user/rpo_planner_pilot.md)
