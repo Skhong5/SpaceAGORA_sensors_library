@@ -31,7 +31,7 @@ mutable struct HoldLevels <: AbstractControlEffectorModel
 end
 SpaceAGORA.actuation_mode(::HoldLevels) = :mounted
 SpaceAGORA.actuator_levels(c::HoldLevels, i::Int) = i == c.sat_idx ? c.levels : nothing
-SpaceAGORA.calcControlEffect!(::HoldLevels, u, p, t::Float64, i::Int64) = nothing
+SpaceAGORA.update_control!(::HoldLevels, u, p, t::Float64, i::Int64) = nothing
 
 function readout_params(spacecraft::Vector{SM.SpacecraftModel}, effectors::Tuple)
     planet = SM.Earth()
@@ -434,11 +434,11 @@ end
             commanded_torque=(t, r, v, q, w) -> SVector(0.0, 0.0, 0.0), b_field_ii=(t, r) -> SVector(0.0, 0.0, 3.0e-5))
         p = readout_params(SM.SpacecraftModel[sc], (manager,))
         u = (sc=[(pos=[7.0e6, 0.0, 0.0], vel=[0.0, 7.5e3, 0.0], q=[0.0, 0.0, 0.0, 1.0], ω=zeros(3), h_wheels=[0.02, -0.01, 0.0])],)
-        CH.calcControlEffect!(manager, u, p, 0.0, 1)
+        CH.update_control!(manager, u, p, 0.0, 1)
         @test manager.h_wheels == SVector(0.02, -0.01, 0.0)       # not the configured h_wheels_0
         bare = SM.MagneticMomentumManagerModel(sat_idx=1, h_wheels_0=SVector(9.0, 9.0, 9.0),
             commanded_torque=(t, r, v, q, w) -> SVector(0.0, 0.0, 0.0), b_field_ii=(t, r) -> SVector(0.0, 0.0, 3.0e-5))
-        CH.calcControlEffect!(bare, (sc=[(pos=[7.0e6, 0.0, 0.0], vel=[0.0, 7.5e3, 0.0], q=[0.0, 0.0, 0.0, 1.0], ω=zeros(3))],),
+        CH.update_control!(bare, (sc=[(pos=[7.0e6, 0.0, 0.0], vel=[0.0, 7.5e3, 0.0], q=[0.0, 0.0, 0.0, 1.0], ω=zeros(3))],),
             readout_params(SM.SpacecraftModel[spacecraft_with(SM.Link(root=true, m=50.0))], (bare,)), 0.0, 1)
         @test bare.h_wheels == SVector(9.0, 9.0, 9.0)               # no wheels: its own accumulator
     end
@@ -494,7 +494,7 @@ end
         p = readout_params(SM.SpacecraftModel[sc], (manager,))
         u = (sc=[(pos=[7.0e6, 0.0, 0.0], vel=[0.0, 7.5e3, 0.0], q=[0.0, 0.0, 0.0, 1.0], ω=zeros(3))],)
         @test SpaceAGORA.actuator_levels(manager, 1) === nothing                  # before the first tick
-        CH.calcControlEffect!(manager, u, p, 0.0, 1)
+        CH.update_control!(manager, u, p, 0.0, 1)
         @test SpaceAGORA.actuation_mode(manager) === :mounted
         @test SpaceAGORA.actuator_levels(manager, 1) ≈ collect(manager.held_dipole_am2) atol=1e-15   # orthogonal rods carry its components
         x = ComponentVector(pos=[7.0e6, 0.0, 0.0], vel=[0.0, 7.5e3, 0.0], mass=50.0, q=[0.0, 0.0, 0.0, 1.0], ω=zeros(3))
@@ -505,7 +505,7 @@ end
         @test bound.mounted_levels !== manager.mounted_levels && isempty(bound.mounted_levels)
         rodless = SM.MagneticMomentumManagerModel(sat_idx=1, h_wheels_0=SVector(0.02, 0.0, 0.0),
             commanded_torque=(t, r, v, q, w) -> ZERO3, b_field_ii=estimate, actuation=:mounted)
-        @test_throws ArgumentError CH.calcControlEffect!(rodless, u,
+        @test_throws ArgumentError CH.update_control!(rodless, u,
             readout_params(SM.SpacecraftModel[spacecraft_with(SM.Link(root=true, m=50.0))], (rodless,)), 0.0, 1)
         @test_throws ArgumentError SpaceAGORA.actuation_mode(SM.MagneticMomentumManagerModel(actuation=:bogus))
     end

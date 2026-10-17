@@ -1034,7 +1034,7 @@ function ppc_single_config(case_name::String, cfg::PPCConfig; seed::Int=cfg.seed
     # get_control_callbacks (src/orchestration/simulation/callbacks/control_callbacks.jl) builds
     # one PeriodicCallback per control effector and each one loops over *all*
     # num_sats, so N per-satellite MagneticMomentumManagerModels cost N^2
-    # calcControlEffect! calls per tick -- of which N are the intended ones and
+    # update_control! calls per tick -- of which N are the intended ones and
     # N(N-1) are calls with a sat_idx the model does not own. That is invisible at
     # the 8 satellites multi_8sat_magnetorquer_attitude uses (64 calls) and
     # dominant at 256 (65,536): measured post-warm-up, e6 at N=256 takes 33.4 s for

@@ -9,7 +9,7 @@ mutable struct ReadingLog <: AbstractNavigationModel
     readings::Vector{Vector{Float64}}
     times::Vector{Float64}
 end
-function SpaceAGORA.calcNavigationEffect!(n::ReadingLog, u, p, t::Float64, i::Int)
+function SpaceAGORA.update_navigation!(n::ReadingLog, u, p, t::Float64, i::Int)
     sc = p.args.dynamics_model.spacecraft[i]
     push!(n.readings, collect(sensor_measurement(sc, 1))); push!(n.times, sensor_measurement_time(sc, 1))
     return nothing

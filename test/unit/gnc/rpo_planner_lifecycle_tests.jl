@@ -35,20 +35,20 @@ end
     # The engine calls the planner that writes the controller's buffer before its tick.
     @test SpaceAGORA.SimulationModel.SimulationCallbacks._linked_producers(c,owned)==(g,)
     Hooks.before_reference_control!(g,c,u,p,.1)
-    S.calcControlEffect!(c,u,p,.1,1)
+    S.update_control!(c,u,p,.1,1)
     @test last(g.runtime.records).event===:control && last(g.runtime.records).request_id==1
-    S.GuidanceHooks.calcGuidanceEffect!(g,u,p,.1,1)
+    S.GuidanceHooks.update_guidance!(g,u,p,.1,1)
     @test g.runtime.request_id==3
     rng=copy(g.runtime.rng)
-    S.GuidanceHooks.calcGuidanceEffect!(g,u,p,.1,1)
+    S.GuidanceHooks.update_guidance!(g,u,p,.1,1)
     @test g.runtime.request_id==3 && rand(copy(rng))==rand(copy(g.runtime.rng))
-    S.GuidanceHooks.calcGuidanceEffect!(g,u,p,.2,1)
+    S.GuidanceHooks.update_guidance!(g,u,p,.2,1)
     @test g.runtime.request_id==4
     @test last(g.runtime.records).reason===:retime
     push!(g.events,RPOPlanningEvent(.2;token=4))
-    S.GuidanceHooks.calcGuidanceEffect!(g,u,p,.2,1)
+    S.GuidanceHooks.update_guidance!(g,u,p,.2,1)
     @test g.runtime.request_id==5 # A new token at the same accepted time is not a duplicate.
-    S.GuidanceHooks.calcGuidanceEffect!(g,u,p,.2,1)
+    S.GuidanceHooks.update_guidance!(g,u,p,.2,1)
     @test g.runtime.request_id==5
     sol=run_simulation(a;return_solution=true)
     report=rpo_run_report(sol)
@@ -101,7 +101,7 @@ end
     @test e isa RPOPlanningError && e.reason===:expired_reference
     a=holdargs(replan_interval_s=.1,mission_time_s=.2)
     owned,u,p,g=prepare(a)
-    S.GuidanceHooks.calcGuidanceEffect!(g,u,p,.1,1)
+    S.GuidanceHooks.update_guidance!(g,u,p,.1,1)
     @test last(g.runtime.records).reason===:replan
 end
 
@@ -140,29 +140,32 @@ end
     # The existing absolute time tolerance admits a near-boundary tick only.
     owned, u, p, g = prepare(holdargs(replan_interval_s=0.2))
     atol = g.validation.time_atol_s
-    S.GuidanceHooks.calcGuidanceEffect!(g, u, p, 0.2 - 2atol, 1)
+    S.GuidanceHooks.update_guidance!(g, u, p, 0.2 - 2atol, 1)
     @test g.runtime.request_id == 1
-    S.GuidanceHooks.calcGuidanceEffect!(g, u, p, 0.2 - atol/2, 1)
+    S.GuidanceHooks.update_guidance!(g, u, p, 0.2 - atol/2, 1)
     @test g.runtime.request_id == 2
     rng = copy(g.runtime.rng)
-    S.GuidanceHooks.calcGuidanceEffect!(g, u, p, 0.2 - atol/2, 1)
+    S.GuidanceHooks.update_guidance!(g, u, p, 0.2 - atol/2, 1)
     @test g.runtime.request_id == 2
     @test rand(copy(rng)) == rand(copy(g.runtime.rng))
     owned, u, p, g = prepare(holdargs())
     for tick in 1:19
-        S.GuidanceHooks.calcGuidanceEffect!(g, u, p, tick * dt, 1)
+        S.GuidanceHooks.update_guidance!(g, u, p, tick * dt, 1)
     end
     @test g.runtime.request_id == 1 # Infinite interval keeps background planning disabled.
 end
 
 @testset "Independent runs and ID-based streams" begin
+    # Equal reruns, and concurrent runs equal to sequential ones: the conformance
+    # kit's simulation check runs the hold configuration both ways.
+    K=SpaceAGORA.Conformance
+    report=K.check_algorithm(Hold(),K.rpo_conformance_requests(goal_rtn_m=nothing);trusted=K.rpo_trusted_queries(),
+        simulation=K.rpo_conformance_simulation(goal_rtn_m=(3.,0.,0.),mission_time_s=.2))
+    @test K.passed(report)
+    @test only(c.status for c in report.checks if c.id===:simulation_run)===:pass
     args=holdargs(mission_time_s=.2)
-    s1=run_simulation(args;return_solution=true);s2=run_simulation(args;return_solution=true)
-    @test s1.t==s2.t && s1.u==s2.u
+    run_simulation(args;return_solution=true)
     @test args.guidance_model.guidance_effectors[1].runtime===nothing
-    tasks=[Threads.@spawn run_simulation(args;return_solution=true) for _ in 1:2]
-    concurrent=fetch.(tasks)
-    @test all(s->s.t==s1.t&&s.u==s1.u,concurrent)
     specs=((id=101,start_rtn_m=(3.,0.,0.),goal_rtn_m=(3.,0.,0.)),
            (id=102,start_rtn_m=(5.,0.,0.),goal_rtn_m=(5.,0.,0.)))
     reports=[rpo_run_report(run_simulation(make_rpo_configuration(planner=Hold(),chasers=x,

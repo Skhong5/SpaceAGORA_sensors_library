@@ -4,7 +4,7 @@ function _rpo_control_state_pos_vel(u, idx::Int)
 end
 
 """Apply the RPO MPC controller at the current simulation time and cache the actuator command."""
-function calcControlEffect!(model::RPOMPCControlModel, u, p::ODEParams, t::Float64, sat_idx::Int)
+function update_control!(model::RPOMPCControlModel, u, p::ODEParams, t::Float64, sat_idx::Int)
     sat_idx == model.chaser_idx || return nothing
     # The engine has already called the planner that writes this model's plan
     # buffer (`before_reference_control!` for its linked producers).

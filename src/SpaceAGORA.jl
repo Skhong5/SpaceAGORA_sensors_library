@@ -296,6 +296,7 @@ using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlM
 using .SimulationModel: control_wrench, control_propellant_rate, control_wheel_torque
 using .SimulationModel: control_thruster_levels, touchdown_spec
 using .SimulationModel: calcGuidanceEffect!, calcNavigationEffect!, getHeatRate
+using .SimulationModel: update_control!, update_guidance!, update_navigation!
 # Actuators: the contract (Actuators), the thruster kind (Components) and mounting (ActuatorMounting).
 using .SimulationModel: Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
 using .SimulationModel: ThrusterGimbal, thrust_direction
@@ -569,6 +570,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EnvironmentModels.with_density_model_epoch(
     ::SimulationModel.AbstractDensityModel, ::Any,
 ))).text) with_density_model_epoch
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.update_control!)).text) update_control!
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlEffect!)).text) calcControlEffect!
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_wrench)).text) control_wrench
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_propellant_rate)).text) control_propellant_rate
@@ -578,7 +580,9 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_thruster_levels(::Any, ::Int))).text) control_thruster_levels
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcReactionWheelTorque)).text) calcReactionWheelTorque
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.touchdown_spec(::Any, ::Int))).text) touchdown_spec
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.GuidanceHooks.update_guidance!)).text) update_guidance!
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.GuidanceHooks.calcGuidanceEffect!)).text) calcGuidanceEffect!
+@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.NavigationHooks.update_navigation!)).text) update_navigation!
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.NavigationHooks.calcNavigationEffect!)).text) calcNavigationEffect!
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.VehicleThermalModels.getHeatRate)).text) getHeatRate
 
@@ -712,6 +716,7 @@ export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate, calc
 export control_wrench, control_propellant_rate, control_wheel_torque
 export control_thruster_levels, touchdown_spec, bind_spacecraft
 export calcGuidanceEffect!, calcNavigationEffect!, getHeatRate
+export update_control!, update_guidance!, update_navigation!
 export AbstractActuator, Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
 export ThrusterGimbal, thrust_direction
 export ControlMomentGyro, cmg_momentum, cmg_torque_axis, cmg_steering

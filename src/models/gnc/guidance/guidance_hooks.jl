@@ -36,7 +36,7 @@ module GuidanceHooks
         return getfield(_PARENT, :ControlHooks)
     end
 
-    export calcGuidanceEffect!
+    export update_guidance!, calcGuidanceEffect!
     export RPOPSOAdaptiveSettings, RPOPSOConfig, RPOPSOConfigurator, RPOPSOCullSettings
     export RPOPSOEarlyStoppingSettings, RPOPSOObjectiveSettings
     export RPOPSOProbeSettings, RPOPSOReexploreSettings, RPOPSORefinementSettings
@@ -63,7 +63,7 @@ module GuidanceHooks
     export descent_attitude_command, descent_throttle, descent_environment, quaternion_from_passive_dcm
 
     """
-        calcGuidanceEffect!(model, u, p, t, spacecraft_index) -> nothing
+        update_guidance!(model, u, p, t, spacecraft_index) -> nothing
 
     The guidance tick, which every effector in a `GuidanceModel` implements for
     its own type. The effector updates its own state (a plan, a target, a mode)
@@ -84,13 +84,30 @@ module GuidanceHooks
     starts. When ticks coincide, navigation effectors run first, then control
     effectors, then guidance effectors; energy depletion guidance with targeting
     runs before the control effectors instead. The propulsive-maneuver thruster
-    control effector (see `calcControlEffect!`) also runs every guidance
+    control effector (see `update_control!`) also runs every guidance
     effector at the start of the solve and when a spacecraft leaves the
     atmosphere, just before it schedules that spacecraft's burns.
 
     Before integration starts, `run_simulation` checks that every guidance
-    effector has a method for these arguments and stops with an `ArgumentError`
-    naming the effector otherwise.
+    effector has a method for these arguments (of this function or of the
+    deprecated `calcGuidanceEffect!`) and stops with an `ArgumentError` naming
+    the effector otherwise. This hook replaces the deprecated
+    `calcGuidanceEffect!`.
+    """
+    function update_guidance! end
+
+    """
+        calcGuidanceEffect!(model, u, p, t, spacecraft_index) -> nothing
+
+    Deprecated, use [`update_guidance!`](@ref); this name will be removed in
+    SpaceAGORA 0.5.0. Only the name changes: the arguments, their order and when
+    the engine calls the hook are those of `update_guidance!`.
+
+    Until then the engine calls an effector's own method of this hook when its
+    type has no `update_guidance!`, and `run_simulation` warns once per type
+    before integration starts. A direct call on an effector that implements
+    `update_guidance!` runs it, and warns once per type that the name is
+    deprecated (under `julia --depwarn=error` it throws instead).
     """
     function calcGuidanceEffect! end
 

@@ -7,7 +7,7 @@ function get_navigation_callbacks(num_sats::Int, args::SimulationConfiguration):
         navigation_rate = navigation_rates[i]
         navigation_func = (integrator) -> begin
             @inbounds for sat_idx in 1:num_sats
-                calcNavigationEffect!(navigation_model, integrator.u, integrator.p, integrator.t, sat_idx)
+                _update_navigation!(navigation_model, integrator.u, integrator.p, integrator.t, sat_idx)
             end
         end
         callbacks[i] = PeriodicCallback(navigation_func, navigation_rate)
@@ -24,7 +24,7 @@ function get_guidance_callbacks(num_sats::Int, args::SimulationConfiguration)::V
         guidance_rate = guidance_rates[i]
         guidance_func = (integrator) -> begin
             @inbounds for sat_idx in 1:num_sats
-                calcGuidanceEffect!(guidance_model, integrator.u, integrator.p, integrator.t, sat_idx)
+                _update_guidance!(guidance_model, integrator.u, integrator.p, integrator.t, sat_idx)
             end
         end
         callbacks[i] = PeriodicCallback(guidance_func, guidance_rate)

@@ -36,7 +36,7 @@ mutable struct TransmitContinuously <: AbstractControlEffectorModel
 end
 SpaceAGORA.actuation_mode(::TransmitContinuously) = :mounted
 SpaceAGORA.actuator_levels(c::TransmitContinuously, i::Int) = i == 1 ? c.levels : nothing
-SpaceAGORA.calcControlEffect!(::TransmitContinuously, u, p, t::Float64, i::Int64) = nothing
+SpaceAGORA.update_control!(::TransmitContinuously, u, p, t::Float64, i::Int64) = nothing
 
 base = make_example_config(
     planet=planet,

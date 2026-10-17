@@ -62,8 +62,8 @@ end
                 c.u.sc[1].heat_loads .= prior
                 CH._edg_capture_entry_heat!(c.args,c.u,1)
                 c.u.sc[1].heat_loads .+= [0.0,8.0,5.0]
-                SimulationModel.calcGuidanceEffect!(c.guidance,c.u,c.p,0.0,Int64(1))
-                SimulationModel.calcControlEffect!(c.control,c.u,c.p,0.0,Int64(1))
+                SimulationModel.update_guidance!(c.guidance,c.u,c.p,0.0,Int64(1))
+                SimulationModel.update_control!(c.control,c.u,c.p,0.0,Int64(1))
             end
             for field in (:selected_mode,:targeting_active,:target_energy_jkg,
                     :bracket_min_energy_jkg,:bracket_max_energy_jkg,:targeting_switch_s,

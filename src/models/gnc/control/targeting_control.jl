@@ -138,7 +138,7 @@ function _apply_solar_panel_aoa!(
     return nothing
 end
 
-function calcControlEffect!(
+function update_control!(
     model::AerobrakingEnergyDepletionControlModel,
     u,
     p::ODEParams,

@@ -7,6 +7,14 @@ required_paths = [
     joinpath(REPO_ROOT, "templates", "force_torque_model_template.jl"),
     joinpath(REPO_ROOT, "templates", "density_model_template.jl"),
     joinpath(REPO_ROOT, "templates", "control_hook_template.jl"),
+    joinpath(REPO_ROOT, "templates", "actuator_template.jl"),
+    joinpath(REPO_ROOT, "templates", "starters", "README.md"),
+    [joinpath(REPO_ROOT, "templates", "starters", kind, rel) for kind in ("project", "package", "companion")
+        for rel in ("README.md", "Project.toml", "SpaceAGORASource.toml", joinpath("src", "StarterName.jl"),
+            joinpath("test", "runtests.jl"), joinpath(".github", "workflows", "ci.yml"))]...,
+    joinpath(REPO_ROOT, "templates", "starters", "companion", "test", "incompatible_core.jl"),
+    joinpath(REPO_ROOT, "templates", "starters", "companion", "test", "load_order.jl"),
+    joinpath(REPO_ROOT, "scripts", "new_contributor_repository.jl"),
     joinpath(REPO_ROOT, "scripts", "hpc", "local_process_runtime_analysis.sh"),
     joinpath(REPO_ROOT, "scripts", "hpc", "slurm_process_runtime_analysis.sh"),
 ]
@@ -31,7 +39,7 @@ end
 for marker in (
     "calcForceTorque",
     "getDensity",
-    "calcControlEffect!",
+    "update_control!",
     "control_wrench",
     "templates/force_torque_model_template.jl",
     "templates/control_hook_template.jl",

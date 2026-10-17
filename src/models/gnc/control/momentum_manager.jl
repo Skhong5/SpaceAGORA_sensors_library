@@ -14,7 +14,7 @@ field direction to rotate along the orbit).
 
 [`MagneticMomentumManagerModel`](@ref) reproduces that loop as a stateful
 zero-order-hold control effector on the discrete `ControlModel` callback path:
-`calcControlEffect!` fires at the configured control rate (a
+`update_control!` fires at the configured control rate (a
 `PeriodicCallback`, i.e. only at accepted solver steps), advances the internal
 wheel-momentum accumulator from the re-evaluated attitude-control command,
 and refreshes the held rod torque; `control_wrench` returns that held
@@ -60,7 +60,7 @@ Base.@kwdef mutable struct MagneticMomentumManagerModel <: AbstractControlEffect
     h_wheels_0::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 0.0)
     commanded_torque::Any = nothing           # (t, r_ii, v_ii, q_ib, w_body) -> tau_body [N m]
     b_field_ii::Any = nothing                 # (t, r_ii) -> B_ii [T]
-    # internal discrete state (updated only inside calcControlEffect!)
+    # internal discrete state (updated only inside update_control!)
     h_wheels::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 0.0)
     held_torque_body::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 0.0)
     held_dipole_am2::SVector{3, Float64} = SVector{3, Float64}(0.0, 0.0, 0.0)
@@ -81,7 +81,7 @@ function _integrated_wheel_momentum(u, p, sat_idx::Int)
 end
 
 """Advance the wheel-momentum accumulator (or read the integrated wheels) and refresh the held rod command."""
-function calcControlEffect!(model::MagneticMomentumManagerModel, u, p, t::Float64, sat_idx::Int)
+function update_control!(model::MagneticMomentumManagerModel, u, p, t::Float64, sat_idx::Int)
     sat_idx == model.sat_idx || return nothing
     (model.commanded_torque === nothing || model.b_field_ii === nothing) && return nothing
 

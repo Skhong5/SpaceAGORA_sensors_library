@@ -351,7 +351,7 @@ function descent_environment(model::ApolloDescentGuidanceModel, u, p::ODEParams,
         lat_deg=lat_deg, lon_deg=lon_deg, planet=planet)
 end
 
-function calcGuidanceEffect!(model::ApolloDescentGuidanceModel, u, p::ODEParams, t::Float64, i::Int64)
+function update_guidance!(model::ApolloDescentGuidanceModel, u, p::ODEParams, t::Float64, i::Int64)
     state = model.state
     config = model.config
     (i in model.spacecraft_indices && p.is_active[i]) || return nothing

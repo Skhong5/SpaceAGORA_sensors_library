@@ -317,14 +317,14 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :getDensity, rendered = "SpaceAGORA.getDensity"),
             (owner = :SpaceAGORA, symbol = :getDensityBatch!, rendered = "SpaceAGORA.getDensityBatch!"),
             (owner = :SpaceAGORA, symbol = :with_density_model_epoch, rendered = "SpaceAGORA.with_density_model_epoch"),
-            (owner = :SpaceAGORA, symbol = :calcControlEffect!, rendered = "SpaceAGORA.calcControlEffect!"),
+            (owner = :SpaceAGORA, symbol = :update_control!, rendered = "SpaceAGORA.update_control!"),
             (owner = :SpaceAGORA, symbol = :control_wrench, rendered = "SpaceAGORA.control_wrench"),
             (owner = :SpaceAGORA, symbol = :control_propellant_rate, rendered = "SpaceAGORA.control_propellant_rate"),
             (owner = :SpaceAGORA, symbol = :control_wheel_torque, rendered = "SpaceAGORA.control_wheel_torque"),
             (owner = :SpaceAGORA, symbol = :control_thruster_levels, rendered = "SpaceAGORA.control_thruster_levels"),
             (owner = :SpaceAGORA, symbol = :touchdown_spec, rendered = "SpaceAGORA.touchdown_spec"),
-            (owner = :SpaceAGORA, symbol = :calcGuidanceEffect!, rendered = "SpaceAGORA.calcGuidanceEffect!"),
-            (owner = :SpaceAGORA, symbol = :calcNavigationEffect!, rendered = "SpaceAGORA.calcNavigationEffect!"),
+            (owner = :SpaceAGORA, symbol = :update_guidance!, rendered = "SpaceAGORA.update_guidance!"),
+            (owner = :SpaceAGORA, symbol = :update_navigation!, rendered = "SpaceAGORA.update_navigation!"),
             (owner = :SpaceAGORA, symbol = :getHeatRate, rendered = "SpaceAGORA.getHeatRate"),
             (owner = :SpaceAGORA, symbol = :bind_spacecraft, rendered = "SpaceAGORA.bind_spacecraft")
         ]
@@ -335,7 +335,10 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :calcForceTorque, rendered = "SpaceAGORA.calcForceTorque"),
             (owner = :SpaceAGORA, symbol = :calcControlForceTorque, rendered = "SpaceAGORA.calcControlForceTorque"),
             (owner = :SpaceAGORA, symbol = :calcControlMassFlowRate, rendered = "SpaceAGORA.calcControlMassFlowRate"),
-            (owner = :SpaceAGORA, symbol = :calcReactionWheelTorque, rendered = "SpaceAGORA.calcReactionWheelTorque")
+            (owner = :SpaceAGORA, symbol = :calcReactionWheelTorque, rendered = "SpaceAGORA.calcReactionWheelTorque"),
+            (owner = :SpaceAGORA, symbol = :calcControlEffect!, rendered = "SpaceAGORA.calcControlEffect!"),
+            (owner = :SpaceAGORA, symbol = :calcGuidanceEffect!, rendered = "SpaceAGORA.calcGuidanceEffect!"),
+            (owner = :SpaceAGORA, symbol = :calcNavigationEffect!, rendered = "SpaceAGORA.calcNavigationEffect!")
         ]
     ),
     (
@@ -621,13 +624,22 @@ const PUBLIC_API_SECTIONS = [
             (owner = :Conformance, symbol = :check_guidance_model, rendered = "SpaceAGORA.Conformance.check_guidance_model"),
             (owner = :Conformance, symbol = :check_navigation_model, rendered = "SpaceAGORA.Conformance.check_navigation_model"),
             (owner = :Conformance, symbol = :check_control_model, rendered = "SpaceAGORA.Conformance.check_control_model"),
+            (owner = :Conformance, symbol = :check_algorithm, rendered = "SpaceAGORA.Conformance.check_algorithm"),
+            (owner = :Conformance, symbol = :check_algorithm_family, rendered = "SpaceAGORA.Conformance.check_algorithm_family"),
+            (owner = :Conformance, symbol = :rpo_conformance_requests, rendered = "SpaceAGORA.Conformance.rpo_conformance_requests"),
+            (owner = :Conformance, symbol = :rpo_trusted_queries, rendered = "SpaceAGORA.Conformance.rpo_trusted_queries"),
+            (owner = :Conformance, symbol = :rpo_conformance_simulation, rendered = "SpaceAGORA.Conformance.rpo_conformance_simulation"),
+            (owner = :Conformance, symbol = :burn_plan_conformance_requests, rendered = "SpaceAGORA.Conformance.burn_plan_conformance_requests"),
+            (owner = :Conformance, symbol = :burn_plan_conformance_simulation, rendered = "SpaceAGORA.Conformance.burn_plan_conformance_simulation"),
             (owner = :Conformance, symbol = :test_report, rendered = "SpaceAGORA.Conformance.test_report"),
             (owner = :Conformance, symbol = :test_force_torque_model, rendered = "SpaceAGORA.Conformance.test_force_torque_model"),
             (owner = :Conformance, symbol = :test_service_facade, rendered = "SpaceAGORA.Conformance.test_service_facade"),
             (owner = :Conformance, symbol = :test_sensor, rendered = "SpaceAGORA.Conformance.test_sensor"),
             (owner = :Conformance, symbol = :test_guidance_model, rendered = "SpaceAGORA.Conformance.test_guidance_model"),
             (owner = :Conformance, symbol = :test_navigation_model, rendered = "SpaceAGORA.Conformance.test_navigation_model"),
-            (owner = :Conformance, symbol = :test_control_model, rendered = "SpaceAGORA.Conformance.test_control_model")
+            (owner = :Conformance, symbol = :test_control_model, rendered = "SpaceAGORA.Conformance.test_control_model"),
+            (owner = :Conformance, symbol = :test_algorithm, rendered = "SpaceAGORA.Conformance.test_algorithm"),
+            (owner = :Conformance, symbol = :test_algorithm_family, rendered = "SpaceAGORA.Conformance.test_algorithm_family")
         ]
     )
 ]

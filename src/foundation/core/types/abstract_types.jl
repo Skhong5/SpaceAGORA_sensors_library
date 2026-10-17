@@ -17,7 +17,7 @@ abstract type AbstractForceTorqueModel end
 
 Stable extension interface for control/execution effectors that produce runtime
 commands or actuation-side control behavior. A subtype implements
-`calcControlEffect!(model, u, p, t, spacecraft_index)` and, unless its `actuation_mode`
+`update_control!(model, u, p, t, spacecraft_index)` and, unless its `actuation_mode`
 is `:mounted`, `control_wrench(model, x::StateSample, p, t)`.
 """
 abstract type AbstractControlEffectorModel end
@@ -86,7 +86,7 @@ abstract type AbstractSensor end
 
 Stable extension interface for guidance strategy models that produce guidance-side
 commands or trajectory directives. A subtype implements
-`calcGuidanceEffect!(model, u, p, t, spacecraft_index)`.
+`update_guidance!(model, u, p, t, spacecraft_index)`.
 """
 abstract type AbstractGuidanceModel end
 
@@ -95,7 +95,7 @@ abstract type AbstractGuidanceModel end
 
 Stable extension interface for navigation models: sensor and state-estimator
 effectors listed in a `NavigationModel`. A subtype implements
-`calcNavigationEffect!(model, u, p, t, spacecraft_index)`.
+`update_navigation!(model, u, p, t, spacecraft_index)`.
 """
 abstract type AbstractNavigationModel end
 

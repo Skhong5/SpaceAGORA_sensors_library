@@ -73,14 +73,14 @@ end
 
 @inline function _run_guidance_for_thruster_schedule!(integrator, sat_idx::Int)
     @inbounds for guidance_model in integrator.p.args.guidance_model.guidance_effectors
-        calcGuidanceEffect!(guidance_model, integrator.u, integrator.p, integrator.t, sat_idx)
+        _update_guidance!(guidance_model, integrator.u, integrator.p, integrator.t, sat_idx)
     end
     return nothing
 end
 
 @inline function _schedule_thruster_control!(integrator, control_model::BaseThrusterModel, sat_idx::Int)
     _run_guidance_for_thruster_schedule!(integrator, sat_idx)
-    calcControlEffect!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
+    _update_control!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
     _register_control_tstops!(integrator, control_model, sat_idx)
     refresh_burn!(control_model, integrator.p, sat_idx, integrator.t)
     return nothing
@@ -332,7 +332,7 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
         # all spacecraft states. The spacecraft index is passed explicitly
         # to avoid conflating effector-index with spacecraft-index.
         apply_control! = (integrator, sat_idx) -> begin
-            calcControlEffect!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
+            _update_control!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
             _apply_mounted_tick!(control_model, integrator.p, sat_idx, integrator.t, Float64(control_rate))
         end
         # The models that write what this one reads (its links) prepare it first,

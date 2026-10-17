@@ -262,7 +262,7 @@ println("CHECKS_COMPLETE");flush(stdout)
     live=model();old=safeplanner(live,zeros(3),geo,0.);G.update_rpo_plan_buffer!(live.plan_buffer,old,0.)
     pl=G.rpo_init_two_body_plant([0.,2.,0.,0.,0.,0.],cfg.mean_motion_radps);y=pl.state
     u=(sc=[(pos=y[7:9],vel=y[10:12]),(pos=y[1:3],vel=y[4:6])],)
-    G.calcGuidanceEffect!(live,u,nothing,0.,1)
+    G.update_guidance!(live,u,nothing,0.,1)
     @test live.replanning_phase==:braking
     @test live.replan_count==0 && live.safe_hold_count==1
     @test live.plan_buffer.plan.r_ref_rtn[:,1]≈[0.,2.,0.] atol=1e-8
@@ -395,7 +395,7 @@ end
     pl=G.rpo_init_two_body_plant(x,cfg.mean_motion_radps);y=pl.state
     u=(sc=[(pos=y[7:9],vel=y[10:12]),(pos=y[1:3],vel=y[4:6])],)
     for t in 10.2:.1:13.
-        G.calcGuidanceEffect!(m,u,nothing,t,1)
+        G.update_guidance!(m,u,nothing,t,1)
         @test m.plan_buffer.plan===plan
         @test m.plan_buffer.updated_at_s==10.
         @test m.retime_count==m.replan_count==0

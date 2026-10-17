@@ -281,12 +281,6 @@ function _positive_consumption_check(model, samples::_Samples, since::VersionNum
     return _check(:positive_consumption, since, true)
 end
 
-# Mutable objects reachable from both of two bound copies.
-function _shared_mutables(a, b)
-    from_a = _reachable_mutables(a)
-    return [object for object in keys(_reachable_mutables(b)) if haskey(from_a, object)]
-end
-
 # The check's own configuration with the model, at `index` of its container, declared
 # on the first two spacecraft instead: every other model, sensor, environment and
 # setting is kept, so a model whose bound copies need them runs as in the main runs.

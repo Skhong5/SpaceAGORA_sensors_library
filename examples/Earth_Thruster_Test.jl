@@ -30,7 +30,7 @@ function SimulationModel.control_wrench(
     return force, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-function SimulationModel.calcControlEffect!(
+function SimulationModel.update_control!(
     model::TimedVelocityThrusterModel,
     u,
     p::ODEParams,

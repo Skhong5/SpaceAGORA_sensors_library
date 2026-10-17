@@ -7,15 +7,20 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 # callable form `(f::typeof(hook))(...)`, except each hook's sanctioned
 # forwarder for direct calls: one method with exactly the hook's number of
 # untyped positional arguments.
-const DEPRECATED_HOOKS = (:calcForceTorque, :calcControlForceTorque, :calcControlMassFlowRate, :calcReactionWheelTorque)
+const DEPRECATED_HOOKS = (:calcForceTorque, :calcControlForceTorque, :calcControlMassFlowRate, :calcReactionWheelTorque,
+    :calcControlEffect!, :calcGuidanceEffect!, :calcNavigationEffect!)
 const SCANNED_DIRS = ("src", "templates", "examples")
 const _BRIDGES = joinpath("src", "orchestration", "simulation", "engine", "control_hook_bridges.jl")
+const _TICK_BRIDGES = joinpath("src", "orchestration", "simulation", "callbacks", "tick_hook_bridges.jl")
 # (file, hook) => positional arguments: the one method each deprecated hook may keep in src/.
 const SANCTIONED = Dict(
     (joinpath("src", "orchestration", "simulation", "engine", "effector_sampling.jl"), :calcForceTorque) => 4,
     (_BRIDGES, :calcControlForceTorque) => 5,
     (_BRIDGES, :calcControlMassFlowRate) => 5,
     (_BRIDGES, :calcReactionWheelTorque) => 5,
+    (_TICK_BRIDGES, :calcControlEffect!) => 5,
+    (_TICK_BRIDGES, :calcGuidanceEffect!) => 5,
+    (_TICK_BRIDGES, :calcNavigationEffect!) => 5,
 )
 const _COUNT_WORDS = Dict(4 => "four", 5 => "five")
 
@@ -87,6 +92,20 @@ end
 for (entry, count) in sort!(collect(SANCTIONED); by=string)
     entry in sanctioned_seen || push!(violations,
         "$(entry[1]): the $(entry[2]) forwarder for direct calls ($(_COUNT_WORDS[count]) untyped positional arguments) is missing.")
+end
+
+# The contributor starters are what new repositories copy, so they do not name a
+# deprecated hook at all: not in a call, a comment, a README or a workflow.
+const STARTERS = joinpath("templates", "starters")
+_named(text, hook) = occursin(Regex("(?<![A-Za-z0-9_])" * String(hook) * "(?![A-Za-z0-9_!])"), text)
+for (root, _, files) in (isdir(joinpath(REPO_ROOT, STARTERS)) ? walkdir(joinpath(REPO_ROOT, STARTERS)) : ()), file in sort(files)
+    path = joinpath(root, file)
+    rel = relpath(path, REPO_ROOT)
+    text = read(path, String)
+    for hook in DEPRECATED_HOOKS
+        _named(text, hook) && push!(violations,
+            "$(rel): names the deprecated hook $(hook); the starters use only current hook names.")
+    end
 end
 
 if !isempty(violations)

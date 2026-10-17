@@ -81,13 +81,19 @@ function _model_kind_container(model)::Union{Nothing, String}
 end
 
 # Whether `f` has some method for `T` in its first argument, whatever the others.
-_has_methods_for(f, ::Type{T}) where {T} =
-    any(m -> typeintersect(m.sig, Tuple{typeof(f), T, Vararg{Any}}) !== Union{}, methods(f))
+# A deprecated hook's untyped fallback for direct calls accepts every type, so it
+# does not count.
+_has_methods_for(f, ::Type{T}) where {T} = any(methods(f)) do m
+    m.sig === Tuple{typeof(f), ntuple(_ -> Any, m.nargs - 1)...} && return false
+    return typeintersect(m.sig, Tuple{typeof(f), T, Vararg{Any}}) !== Union{}
+end
 
-function _missing_hook_line(location::String, container::String, model, f, needed::String)::String
+# `also`: the deprecated hook the new one `f` replaces, whose methods count too.
+function _missing_hook_line(location::String, container::String, model, f, needed::String; also=nothing)::String
     T = typeof(model)
     line = "$location ($(nameof(T))) has no method $needed."
-    _has_methods_for(f, T) && (line *= " It has methods of that function, but none accepts the arguments this run passes.")
+    (_has_methods_for(f, T) || (also !== nothing && _has_methods_for(also, T))) &&
+        (line *= " It has methods of that function, but none accepts the arguments this run passes.")
     kind = _model_kind_container(model)
     if kind !== nothing && kind != container
         line *= " Its type belongs in $kind."
@@ -119,24 +125,28 @@ function _missing_model_hooks(args, call, solver_mode::Symbol=:tsit5)::Vector{St
     sampled(f, T) = hasmethod(f, Tuple{T, SimulationModel.StateSample, SimulationModel.EnvironmentSample, Float64})
     controlled(f, T) = hasmethod(f, Tuple{T, SimulationModel.StateSample, P, Float64})
     problems = String[]
+    # The callbacks tick a model through its new tick when its type has one for
+    # these arguments, and else through the type's own method of the deprecated
+    # name, which `_deprecated_model_hooks` warns about (`tick_hook_bridges.jl`).
+    ticked(new, old, T) = hasmethod(new, tick(T)) || _own_method(old, tick(T))
     for (k, model) in enumerate(args.guidance_model.guidance_effectors)
-        f = SimulationModel.calcGuidanceEffect!
-        hasmethod(f, tick(typeof(model))) ||
-            push!(problems, _missing_hook_line("guidance_model.guidance_effectors[$k]", "guidance_model", model, f,
-                "calcGuidanceEffect!(model, u, p, t::Float64, spacecraft_index::Int)"))
+        ticked(SimulationModel.update_guidance!, SimulationModel.calcGuidanceEffect!, typeof(model)) ||
+            push!(problems, _missing_hook_line("guidance_model.guidance_effectors[$k]", "guidance_model", model,
+                SimulationModel.update_guidance!, "update_guidance!(model, u, p, t::Float64, spacecraft_index::Int)";
+                also=SimulationModel.calcGuidanceEffect!))
     end
     for (k, model) in enumerate(args.navigation_model.navigation_effectors)
-        f = SimulationModel.calcNavigationEffect!
-        hasmethod(f, tick(typeof(model))) ||
-            push!(problems, _missing_hook_line("navigation_model.navigation_effectors[$k]", "navigation_model", model, f,
-                "calcNavigationEffect!(model, u, p, t::Float64, spacecraft_index::Int)"))
+        ticked(SimulationModel.update_navigation!, SimulationModel.calcNavigationEffect!, typeof(model)) ||
+            push!(problems, _missing_hook_line("navigation_model.navigation_effectors[$k]", "navigation_model", model,
+                SimulationModel.update_navigation!, "update_navigation!(model, u, p, t::Float64, spacecraft_index::Int)";
+                also=SimulationModel.calcNavigationEffect!))
     end
     for (k, model) in enumerate(args.control_model.control_effectors)
         location = "control_model.control_effectors[$k]"
         T = typeof(model)
-        hasmethod(SimulationModel.calcControlEffect!, tick(T)) ||
-            push!(problems, _missing_hook_line(location, "control_model", model, SimulationModel.calcControlEffect!,
-                "calcControlEffect!(model, u, p, t::Float64, spacecraft_index::Int)"))
+        ticked(SimulationModel.update_control!, SimulationModel.calcControlEffect!, T) ||
+            push!(problems, _missing_hook_line(location, "control_model", model, SimulationModel.update_control!,
+                "update_control!(model, u, p, t::Float64, spacecraft_index::Int)"; also=SimulationModel.calcControlEffect!))
         # The dynamics read a `:mounted` effector's wrench from its mounted
         # actuators and never call control_wrench on it. Otherwise they call
         # control_wrench when the type has it (the query `_control_wrench`
@@ -148,7 +158,8 @@ function _missing_model_hooks(args, call, solver_mode::Symbol=:tsit5)::Vector{St
         controlled(SimulationModel.control_wrench, T) && continue
         all(X -> _own_method(SimulationModel.calcControlForceTorque, Tuple{T, X, P, Int, Float64}), views) && continue
         push!(problems, _missing_hook_line(location, "control_model", model, SimulationModel.control_wrench,
-            "control_wrench(model, x::StateSample, p, t::Float64), which the dynamics call in actuation_mode $(repr(mode))"))
+            "control_wrench(model, x::StateSample, p, t::Float64), which the dynamics call in actuation_mode $(repr(mode))";
+            also=SimulationModel.calcControlForceTorque))
     end
     for (k, model) in enumerate(args.dynamics_model.dynamic_effectors)
         location = "dynamics_model.dynamic_effectors[$k]"
@@ -216,6 +227,21 @@ function _deprecated_control_hook_message(::Type{T}, old, new, has_new::Bool)::S
         "instead: the spacecraft's index in the run is x.spacecraft_index." * sign
 end
 
+# The deprecated ticks, each with its replacement and the effectors it ticks.
+_tick_hooks(args) = (
+    (args.guidance_model.guidance_effectors, SimulationModel.calcGuidanceEffect!, SimulationModel.update_guidance!),
+    (args.navigation_model.navigation_effectors, SimulationModel.calcNavigationEffect!, SimulationModel.update_navigation!),
+    (args.control_model.control_effectors, SimulationModel.calcControlEffect!, SimulationModel.update_control!),
+)
+
+function _deprecated_tick_message(::Type{T}, old, new, has_new::Bool)::String where {T}
+    has_new && return "$(nameof(T)) implements both $(nameof(new)) and $(nameof(old))(model, u, p, t, spacecraft_index). " *
+        "The engine calls $(nameof(new)), so the $(nameof(old)) method is never used; delete it. " *
+        "$(nameof(old)) is deprecated and will be removed in SpaceAGORA 0.5.0."
+    return "$(nameof(T)) implements $(nameof(old))(model, u, p, t, spacecraft_index), which is deprecated and will be " *
+        "removed in SpaceAGORA 0.5.0. Rename the method $(nameof(new)): only the name changes."
+end
+
 # The deprecated hooks this run's models implement, as (key, message) pairs for
 # `_hook_deprecation`, one per model type and hook.
 function _deprecated_model_hooks(args, call)::Vector{Tuple{Tuple, String}}
@@ -246,6 +272,14 @@ function _deprecated_model_hooks(args, call)::Vector{Tuple{Tuple, String}}
             has_new = hasmethod(new, Tuple{T, SimulationModel.StateSample, P, Float64})
             push!(found, (key, _deprecated_control_hook_message(T, old, new, has_new)))
         end
+    end
+    for (models, old, new) in _tick_hooks(args), model in models
+        T = typeof(model)
+        tt = Tuple{T, call.state, P, Float64, Int}
+        _own_method(old, tt) || continue
+        key = (T, nameof(old))
+        any(entry -> first(entry) == key, found) && continue
+        push!(found, (key, _deprecated_tick_message(T, old, new, hasmethod(new, tt))))
     end
     return found
 end

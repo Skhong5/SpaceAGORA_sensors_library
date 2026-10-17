@@ -430,24 +430,24 @@ end
             controller=SM.init_robot_arm_joint_mpc(plan; dt_s=0.05, horizon=4),
             control_dt_s=0.05,
         )
-        @test SM.calcControlEffect!(eff, (sc=[sc_goal],), P1, 100.0, 1) === nothing
+        @test SM.update_control!(eff, (sc=[sc_goal],), P1, 100.0, 1) === nothing
         @test length(eff.held.joint_torque_nm) == 3
         @test norm(eff.held.joint_torque_nm) < 1.0e-8
         @test eff.held.base_force_ii == SVector{3, Float64}(0.0, 0.0, 0.0)
 
         # Wrong satellite index leaves held untouched.
         eff.held = CH.RobotArmHeldActuation(joint_torque_nm=[9.0, 9.0, 9.0])
-        SM.calcControlEffect!(eff, (sc=[sc_goal],), P1, 0.0, 2)
+        SM.update_control!(eff, (sc=[sc_goal],), P1, 0.0, 2)
         @test eff.held.joint_torque_nm == [9.0, 9.0, 9.0]
 
         # No plan: early return.
         eff_no_plan = SM.RobotArmControlEffector()
-        @test SM.calcControlEffect!(eff_no_plan, (sc=[sc_goal],), P1, 0.0, 1) === nothing
+        @test SM.update_control!(eff_no_plan, (sc=[sc_goal],), P1, 0.0, 1) === nothing
         @test eff_no_plan.held.joint_torque_nm == Float64[]
 
         # No controller: zero torque held command of plan dimension.
         eff_no_ctrl = SM.RobotArmControlEffector(plan=plan)
-        SM.calcControlEffect!(eff_no_ctrl, (sc=[sc_goal],), P1, 0.0, 1)
+        SM.update_control!(eff_no_ctrl, (sc=[sc_goal],), P1, 0.0, 1)
         @test eff_no_ctrl.held.joint_torque_nm == zeros(3)
 
         # Measured state unavailable: falls back to the reference state (still equilibrium).
@@ -456,7 +456,7 @@ end
             controller=SM.init_robot_arm_joint_mpc(plan; dt_s=0.05, horizon=4),
             control_dt_s=0.05,
         )
-        SM.calcControlEffect!(eff_ref, (sc=[(pos=zeros(3),)],), P1, 100.0, 1)
+        SM.update_control!(eff_ref, (sc=[(pos=zeros(3),)],), P1, 100.0, 1)
         @test norm(eff_ref.held.joint_torque_nm) < 1.0e-8
 
         # Held wrench accessors.
@@ -491,12 +491,12 @@ end
 
         # Early-return guards.
         model = SM.RPOMPCControlModel()
-        @test SM.calcControlEffect!(model, u_rpo, P2, 0.0, 2) === nothing  # wrong sat
-        @test SM.calcControlEffect!(model, u_rpo, P2, 0.0, 1) === nothing  # invalid plan
+        @test SM.update_control!(model, u_rpo, P2, 0.0, 2) === nothing  # wrong sat
+        @test SM.update_control!(model, u_rpo, P2, 0.0, 1) === nothing  # invalid plan
         model.plan_buffer.valid = true
         model.plan_buffer.plan.valid = true
         model.plan_buffer.updated_at_s = 0.0
-        @test SM.calcControlEffect!(model, u_rpo, P2, 0.0, 1) === nothing  # no controller
+        @test SM.update_control!(model, u_rpo, P2, 0.0, 1) === nothing  # no controller
         @test model.held.force_ii == SVector{3, Float64}(0.0, 0.0, 0.0)
 
         # Full control path: hold-at-origin plan with a radial offset.
@@ -516,7 +516,7 @@ end
         model.plan_buffer.valid = true
         model.plan_buffer.updated_at_s = 0.0
 
-        @test SM.calcControlEffect!(model, u_rpo, P2, 0.0, 1) === nothing
+        @test SM.update_control!(model, u_rpo, P2, 0.0, 1) === nothing
         @test all(isfinite, model.held.force_ii)
         @test norm(model.held.force_ii) > 0.0
         @test all(>=(0.0), model.held.thruster_forces_n)
