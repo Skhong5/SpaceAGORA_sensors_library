@@ -83,6 +83,19 @@ function _summary(err)
     return length(lines) > 6 ? join(lines[1:6], '\n') * "\n…" : text
 end
 
+# `f()`, with the global random number generator restored afterwards: a defect a
+# check provokes (an algorithm or family that calls `rand()`) does not leak into the
+# caller's later draws.
+function _preserving_global_rng(f)
+    rng = Random.default_rng()
+    saved = copy(rng)
+    try
+        return f()
+    finally
+        copy!(rng, saved)
+    end
+end
+
 # `f()` with the global random number generator seeded `seed`, restored afterwards.
 function _with_global_seed(f, seed)
     rng = Random.default_rng()

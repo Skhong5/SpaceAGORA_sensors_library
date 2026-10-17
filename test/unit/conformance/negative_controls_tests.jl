@@ -176,6 +176,38 @@ end
 NcNoTimeSensor() = NcNoTimeSensor(1.0, 1, nothing, SVector(NaN, NaN, NaN))
 SpaceAGORA.sensor_dimension(::NcNoTimeSensor) = 3
 SpaceAGORA.sensor_measure(::NcNoTimeSensor, truth, ctx, rng) = noisy(truth, rng)
+# Clean, and it needs initialize_sensor!: its offset is NaN until that sets it.
+mutable struct NcNeedsInitSensor <: SpaceAGORA.AbstractSensor
+    period_s::Float64
+    seed::Int
+    rng::Any
+    latest::Any
+    latest_time_s::Float64
+    offset::Float64
+end
+NcNeedsInitSensor() = NcNeedsInitSensor(1.0, 1, nothing, SVector(NaN, NaN, NaN), NaN, NaN)
+SpaceAGORA.sensor_dimension(::NcNeedsInitSensor) = 3
+SpaceAGORA.initialize_sensor!(s::NcNeedsInitSensor, truth, ctx, rng) = (s.offset = 0.0; nothing)
+SpaceAGORA.sensor_measure(s::NcNeedsInitSensor, truth, ctx, rng) = noisy(truth, rng) .+ s.offset
+# seed_repeatable: like a gyro whose bias walks, its first reading draws nothing (the
+# current bias) and later ones do; initialize_sensor! resets the stream to a fixed seed.
+mutable struct NcFixedSeedWalkSensor <: SpaceAGORA.AbstractSensor
+    period_s::Float64
+    seed::Int
+    rng::Any
+    latest::Any
+    latest_time_s::Float64
+    bias::SVector{3, Float64}
+end
+NcFixedSeedWalkSensor() = NcFixedSeedWalkSensor(1.0, 1, nothing, SVector(NaN, NaN, NaN), NaN, SVector(0.0, 0.0, 0.0))
+SpaceAGORA.sensor_dimension(::NcFixedSeedWalkSensor) = 3
+SpaceAGORA.initialize_sensor!(s::NcFixedSeedWalkSensor, truth, ctx, rng) =
+    (Random.seed!(rng, 1234); s.bias = SVector(0.0, 0.0, 0.0); nothing)
+function SpaceAGORA.sensor_measure(s::NcFixedSeedWalkSensor, truth, ctx, rng)
+    reading = truth.ω_body + s.bias
+    s.bias += 1.0e-4 * SVector(randn(rng), randn(rng), randn(rng))
+    return reading
+end
 
 const SENSOR_RUN_LEVEL = (:repeatable_run, :deepcopy_equivalent, :global_rng_independent, :concurrent_equals_sequential,
     :seed_repeatable, :custom_state_reset)
@@ -220,6 +252,14 @@ for (prefix, Abstract, tick) in ((:NcG, SpaceAGORA.AbstractGuidanceModel, :calcG
     end
 end
 registered(model) = (NC_GNC_GAINS[model] = 1.0e-3; model)
+# Clean, and its bound copies need the fixture's mounted sensor: each tick reads it.
+mutable struct NcNSensorReader <: SpaceAGORA.AbstractNavigationModel
+    acc::Float64
+end
+SpaceAGORA.calcNavigationEffect!(m::NcNSensorReader, u, p, t::Float64, i::Int) =
+    (m.acc += length(SpaceAGORA.sensor_measurement(p.args.dynamics_model.spacecraft[i], 1)); nothing)
+SpaceAGORA.SimulationLifecycle.initialize_navigation!(m::NcNSensorReader, u, p, t) = (m.acc = 0.0; nothing)
+SpaceAGORA.bind_spacecraft(m::NcNSensorReader, i::Int) = NcNSensorReader(m.acc)
 
 # Control models: the tick sets `cmd`, and the output hooks read it.
 mutable struct NcCtl{V} <: SpaceAGORA.AbstractControlEffectorModel
@@ -383,6 +423,33 @@ GA.consumes_rng(::NcDoubler) = false
 GA.propose!(state, ::NcDoubler, r::NcRequest, rng) =
     GA.AlgorithmResult(request_id=r.request_id, status=:candidate, termination=:completed, product=2r.value)
 nc_requests() = [NcRequest(1, 0.0, 2.0), NcRequest(2, 1.0, 9.0), NcRequest(3, 2.0, 1.0)]
+# Families with an obligation defect the walk itself cannot get past, or never reaches.
+GA.algorithm_result_type(::NcFam{:NotAType}) = :not_a_type
+GA.validate_proposal(::NcFam{:RejectAll}, r::NcRequest, result, trusted) = GA.ValidationResult(false, :never)
+struct NcBareFamily <: GA.AbstractAlgorithmFamily end
+GA.validate_proposal(::NcBareFamily, r::NcRequest, result, trusted) = GA.ValidationResult(false, :never)
+# A family whose revisions the capability check refuses, and an algorithm that answers
+# a refused revision `:unsupported` yet with a product.
+struct NcLooseResult <: GA.AbstractAlgorithmResult
+    request_id::Int
+    status::Symbol
+    termination::Symbol
+    product::Any
+    diagnostics::NamedTuple
+end
+GA.proposed_product(r::NcLooseResult) = r.product
+GA.algorithm_result_type(::NcFam{:Loose}) = NcLooseResult
+GA.is_revision_request(::NcFam{:Loose}, r::NcRequest) = r.reason === :revise
+GA.validate_capabilities(::NcFam{:Loose}, algorithm, r::NcRequest; checkpoint::Bool=false) =
+    r.reason === :revise ? GA.ValidationResult(false, :revision_unsupported) : GA.ValidationResult(true, :supported)
+struct NcLooseAlgorithm <: GA.AbstractGNCAlgorithm end
+GA.algorithm_family(::NcLooseAlgorithm) = NcFam{:Loose, :fail}()
+GA.consumes_rng(::NcLooseAlgorithm) = false
+GA.propose!(state, ::NcLooseAlgorithm, r::NcRequest, rng) =
+    NcLooseResult(r.request_id, :candidate, :completed, 2r.value, NamedTuple())
+GA.propose_revision!(state, ::NcLooseAlgorithm, r::NcRequest, active, rng) =
+    NcLooseResult(r.request_id, :unsupported, :revision_not_supported, active, NamedTuple())
+nc_loose_requests() = [NcRequest(1, 0.0, 2.0), NcRequest(2, :revise, 1.0, 1.0, [0.0])]
 nc_family_report(F; family=F()) =
     C.check_algorithm_family(family, NcDoubler{F}(), nc_requests(); link=Ref{Any}(nothing), trusted=(limit=10.0,))
 
@@ -414,6 +481,10 @@ function algorithm_controls()
         (kind=kind, id=:refuses_explicitly, broken="no retiming declared, yet retime_rpo! plans in full",
             expect="yet propose_revision! returned :candidate", report=() -> nc_algorithm_report(NcPlanner{:SilentReplan}()),
             passing=algorithm_except(:refuses_explicitly)),
+        (kind=kind, id=:refuses_explicitly, broken="a refused revision answered :unsupported, yet with a product",
+            expect="yet propose_revision! returned :unsupported with a product",
+            report=() -> C.check_algorithm(NcLooseAlgorithm(), nc_loose_requests(); trusted=(limit=10.0,)),
+            passing=algorithm_except(:family_trusted, :refuses_explicitly)),
         (kind=kind, id=:driver_round_trip, broken="it answers differently for a copy of its state",
             expect="yet the driver's run gave an installed product",
             report=() -> nc_algorithm_report(NcPlanner{:IdentityState}()), passing=algorithm_except(:driver_round_trip)),
@@ -432,6 +503,15 @@ function algorithm_controls()
         (kind=:algorithm_family, id=:family_obligations, broken="validation writes into the request",
             expect="validate_proposal changed the request", report=() -> nc_family_report(NcFam{:MutatingValidation, :fail}),
             passing=(:family_resolves, :driver_round_trip)),
+        (kind=:algorithm_family, id=:family_obligations, broken="algorithm_result_type returns a symbol, not a type",
+            expect="algorithm_result_type returns :not_a_type, not a subtype of AbstractAlgorithmResult",
+            report=() -> nc_family_report(NcFam{:NotAType, :fail}), passing=(:family_resolves,)),
+        (kind=:algorithm_family, id=:family_obligations, broken="validation rejects every proposal",
+            expect="validate_proposal accepted none of the proposals",
+            report=() -> nc_family_report(NcFam{:RejectAll, :fail}), passing=(:family_resolves, :driver_round_trip)),
+        (kind=:algorithm_family, id=:family_obligations, broken="no install! or is_current, and every proposal rejected",
+            expect="install! has no method for a Base.RefValue{Any} link",
+            report=() -> nc_family_report(NcBareFamily), passing=(:family_resolves, :driver_round_trip)),
         (kind=:algorithm_family, id=:driver_round_trip, broken="install! leaves the link unchanged",
             expect="install! left the link unchanged", report=() -> nc_family_report(NcFam{:SilentInstall, :fail}),
             passing=(:family_resolves, :family_obligations)),
@@ -526,6 +606,9 @@ controls() = [
     (kind=:sensor, id=:seed_repeatable, broken="its stream reset to a fixed seed",
         expect="yet runs with those seeds give the same measurements",
         report=() -> check_sensor(NcFixedSeedSensor()), passing=sensor_except(:seed_repeatable)),
+    (kind=:sensor, id=:seed_repeatable, broken="its stream reset to a fixed seed, and its first reading draws nothing",
+        expect="yet runs with those seeds give the same measurements",
+        report=() -> check_sensor(NcFixedSeedWalkSensor()), passing=sensor_except(:seed_repeatable)),
     (kind=:sensor, id=:custom_state_reset, broken="a sample counter it never resets",
         expect="two runs with isolate_state=false on one configuration differ: ",
         report=() -> check_sensor(NcCountingSensor()), passing=sensor_except(:custom_state_reset)),
@@ -593,10 +676,24 @@ const MAY_SKIP = (:concurrent_equals_sequential, :bind_fresh_state, :stream_unto
             @test all(check -> check.status in (:pass, :skip), report.checks)
             @test passed(report)
         end
-        sensor = check_sensor(NcCleanSensor())
-        @test [check.id for check in sensor.checks] == collect(CHECK_IDS.sensor)
-        @test all(check -> check.status === :pass, sensor.checks) || Threads.nthreads() < 2
-        @test passed(sensor)
+        # A clean model is not answerable for another model of its fixture that uses a
+        # deprecated hook.
+        target = NcClean()
+        mixed = check_force_torque_model(target; fixture=conformance_fixture(effectors=(target, NcDeprecatedForce())))
+        @test status_of(mixed, :no_deprecated_hooks) === :pass
+        controller = NcCtl{:Clean}()
+        mixed = check_control_model(controller; fixture=conformance_fixture(control=(controller, NcCtl{:Deprecated}())))
+        @test status_of(mixed, :no_deprecated_hooks) === :pass
+        # The two-spacecraft bind check keeps the fixture's sensor, which the model reads.
+        reader = check_navigation_model(NcNSensorReader(0.0); sensors=(NcCleanSensor(),))
+        @test status_of(reader, :bind_fresh_state) === :pass
+        @test passed(reader)
+        # The second needs initialize_sensor! before it can measure, as the engine calls it.
+        for sensor in (check_sensor(NcCleanSensor()), check_sensor(NcNeedsInitSensor()))
+            @test [check.id for check in sensor.checks] == collect(CHECK_IDS.sensor)
+            @test all(check -> check.status === :pass, sensor.checks) || Threads.nthreads() < 2
+            @test passed(sensor)
+        end
     end
     for control in all_controls
         # A check reports a broken input as a failing check; it never throws.
@@ -633,6 +730,27 @@ const MAY_SKIP = (:concurrent_equals_sequential, :bind_fresh_state, :stream_unto
                 end
             end
         end
+    end
+    @testset "algorithm checks leave the global random number generator as they found it" begin
+        # A validation that calls rand() is reported, and the generator is restored.
+        for report in (() -> nc_family_report(NcFam{:RandomValidation, :fail}),
+                       () -> C.check_algorithm(NcDoubler{NcFam{:RandomValidation, :fail}}(), nc_requests();
+                           trusted=(limit=10.0,)))
+            before = copy(Random.default_rng())
+            report()
+            @test rand(copy(before), UInt64) == rand(copy(Random.default_rng()), UInt64)
+        end
+    end
+    @testset "algorithm checks report a defective family instead of throwing" begin
+        # A family whose result type is not a type gets a failing report from either
+        # check, not an exception from the comparisons that need the type.
+        algorithm_report = C.check_algorithm(NcDoubler{NcFam{:NotAType, :fail}}(), nc_requests(); trusted=(limit=10.0,))
+        @test !passed(algorithm_report)
+        @test occursin("algorithm_result_type returns :not_a_type",
+            only(check.detail for check in algorithm_report.checks if check.id === :result_contract))
+        bare = nc_family_report(NcBareFamily)
+        @test occursin("is_current has no method for this family",
+            only(check.detail for check in bare.checks if check.id === :family_obligations))
     end
     @testset "concurrent_equals_sequential: a run stalls past the rendezvous limit" begin
         model = NcStallsOnce()

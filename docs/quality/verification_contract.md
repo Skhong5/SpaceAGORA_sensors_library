@@ -29,6 +29,7 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
    - `test/gates/ci_docs_contract_gate.jl`
    - `test/gates/ci_public_api_surface_gate.jl`
    - `test/gates/ci_hpc_extensibility_docs_gate.jl`
+   - `test/gates/ci_extension_hook_reference_gate.jl` (every exported function in the hook sections of `docs/public_api_symbols.jl` is a row of `docs/extension_hooks.jl` or a listed non-hook; each row's signature is its docstring's first line, its arity and fallback agree with the method table, its page names it, deprecated rows are consistent and current rows use `spacecraft_index`; listed known gaps fail once they no longer apply)
    - `test/gates/ci_ppb_workload_coverage_gate.jl` (the paper harness precompile workload names every case and mode the paper phases run; reads the harness definitions only)
    - `test/gates/ci_gnc_typed_command_boundary_gate.jl` (GNC reaches actuators through the typed command boundary; algorithm directories stay in scan scope)
    - `test/gates/ci_gnc_random_stream_gate.jl` (GNC and the in-repo HYPR adapter draw random numbers only from an explicit stream argument: no `default_rng()`, `seed!` or stream-less `rand`/`randn`)

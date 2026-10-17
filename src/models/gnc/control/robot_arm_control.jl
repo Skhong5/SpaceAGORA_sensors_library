@@ -15,6 +15,7 @@ mutable struct RobotArmJointMPCController
     F::Matrix{Float64}
     U_prev::Vector{Float64}
     joint_inertia_kg_m2::Vector{Float64}
+    dt_s::Float64                 # the step the joint model was discretized with
 end
 
 """Control effector that tracks a robot-arm plan and emits joint torque commands."""
@@ -95,7 +96,7 @@ function init_robot_arm_joint_mpc(
     H = 0.5 .* (H .+ H')
     E = Bbar' * Qbar * Abar
     F = Bbar' * Qbar
-    return RobotArmJointMPCController(Ad, Bd, horizon_i, H, E, F, zeros(nu * horizon_i), inertia)
+    return RobotArmJointMPCController(Ad, Bd, horizon_i, H, E, F, zeros(nu * horizon_i), inertia, dt)
 end
 
 """Build a finite-horizon robot-arm joint reference preview."""

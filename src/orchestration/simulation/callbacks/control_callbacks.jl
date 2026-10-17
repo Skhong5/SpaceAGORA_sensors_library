@@ -182,6 +182,49 @@ function GNCRuntime.gnc_clock_started!(control_model::_simulation_model_module.A
     control_model.state.control_clock_origin_s = Float64(origin_s)
     return nothing
 end
+# The two model-predictive controllers tick at their control step.
+GNCRuntime.gnc_period_s(control_model::_simulation_model_module.RPOMPCControlModel) = control_model.control_dt_s
+GNCRuntime.gnc_period_s(control_model::_simulation_model_module.RobotArmControlEffector) = control_model.control_dt_s
+
+# The step a control model's controller was discretized with, when it has one.
+_discretization_step(control_model) = nothing
+_discretization_step(control_model::_simulation_model_module.RPOMPCControlModel) =
+    control_model.controller isa _simulation_model_module.RpoLQMPCController ? control_model.controller.dt_s : nothing
+_discretization_step(control_model::_simulation_model_module.RobotArmControlEffector) =
+    control_model.controller isa _simulation_model_module.RobotArmJointMPCController ? control_model.controller.dt_s : nothing
+
+"""
+    check_control_periods(args) -> nothing
+
+Before a run: warn when a periodic control model's declared period
+(`gnc_period_s`) differs from the rate of its callback, or when its controller
+was discretized with a different step. Equality is exact, since builders set
+both from one value. These are configuration checks, not deprecations: they use
+the shared pre-run warning for such checks (`_preflight_warning`, log group
+`:preflight`), once per model type, which throws under `--depwarn=error`.
+SpaceAGORA 0.4.0 will refuse such a run.
+"""
+function check_control_periods(args)
+    warn = _simulation_model_module.HookDeprecation._preflight_warning
+    models, rates = args.control_model.control_effectors, args.control_model.control_rates
+    for (i, control_model) in enumerate(models)
+        tick_schedule(control_model) === :periodic || continue
+        T = typeof(control_model)
+        period = gnc_period_s(control_model)
+        if period !== nothing && Float64(period) != Float64(rates[i])
+            warn((T, :gnc_period_s),
+                "$(nameof(T)) declares a $(period) s period (gnc_period_s) but its callback runs every " *
+                "$(rates[i]) s (control_rates[$(i)]). Set both from one value; SpaceAGORA 0.4.0 will refuse this run.")
+        end
+        step = _discretization_step(control_model)
+        if period !== nothing && step !== nothing && step != Float64(period)
+            warn((T, :discretization_step),
+                "$(nameof(T)) ticks every $(period) s but its controller was discretized with a $(step) s step. " *
+                "Build the controller with the model's control step; SpaceAGORA 0.4.0 will refuse this run.")
+        end
+    end
+    return nothing
+end
 
 function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
     # Perform the control effects' calculations at specific rates given by the control_rates field in the ControlModel

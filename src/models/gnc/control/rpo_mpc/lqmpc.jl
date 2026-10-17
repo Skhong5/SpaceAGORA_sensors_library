@@ -83,6 +83,7 @@ mutable struct RpoLQMPCController
     U_prev::Vector{Float64}
     u_min::Vector{Float64}
     u_max::Vector{Float64}
+    dt_s::Float64                 # the step the prediction model was discretized with
 end
 
 """Build the native QP workspace owned by one RPO controller."""
@@ -124,7 +125,7 @@ function Base.deepcopy_internal(ctrl::RpoLQMPCController, dict::IdDict)
     u_min = Base.deepcopy_internal(ctrl.u_min, dict)
     u_max = Base.deepcopy_internal(ctrl.u_max, dict)
     copied = RpoLQMPCController(Ad, Bd, ctrl.horizon, H, E, F, G, W,
-        _rpo_lqmpc_workspace(H, G, W), OSQP.Results(), U_prev, u_min, u_max)
+        _rpo_lqmpc_workspace(H, G, W), OSQP.Results(), U_prev, u_min, u_max, ctrl.dt_s)
     dict[ctrl] = copied
     return copied
 end
@@ -149,7 +150,8 @@ function init_rpo_lqmpc(n, dt, Q, R, Qf, horizon; u_min=nothing, u_max=nothing)
     nU = nu * horizon
     sparse_H = sparse(H)
     model = _rpo_lqmpc_workspace(sparse_H, G, W)
-    return RpoLQMPCController(Ad, Bd, horizon, sparse_H, E, F, G, W, model, OSQP.Results(), zeros(nU), u_min, u_max)
+    return RpoLQMPCController(Ad, Bd, horizon, sparse_H, E, F, G, W, model, OSQP.Results(), zeros(nU), u_min, u_max,
+        Float64(dt))
 end
 
 """Build an RPO plan preview over an MPC horizon."""

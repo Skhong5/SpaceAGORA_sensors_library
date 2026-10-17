@@ -99,7 +99,7 @@ function full_replanning_pilot()
                     cr,cv=G.rtn_to_inertial_relative_state(x[1:3],x[4:6],SVector{3}(target.pos),SVector{3}(target.vel))
                     integrator.u.sc[1].pos .= cr
                     integrator.u.sc[1].vel .= cv
-                    SciMLBase.u_modified!(integrator,true)
+                    SciMLBase.derivative_discontinuity!(integrator,true)
                     eventrecord[]=(kind=:state_displacement,position=copy(x[1:3]),magnitude_m=dist)
                 elseif scenario==:goal_change
                     candidates=[model.goal_rtn+z for z in ([1.,0.,0.],[-1.,0.,0.],[0.,1.,0.],[0.,0.,1.])]
