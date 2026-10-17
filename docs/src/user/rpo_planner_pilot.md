@@ -275,6 +275,14 @@ HYPR planning, pass `planner=HYPRRPOPlanner(RPOPSOConfig(...))`; the configurati
 then uses a `PlannerGuidance`, which validates each reference before installing
 it.
 
+The RPO examples run on this path: the main example plans inside the run, and
+the reconstruction example flies each comparison planner's plan with
+`RetainedPathRPOPlanner`, which times a given path for the run's request so that
+the run can validate it. The replanning study
+(`examples/Earth_RPO_HyPR_FinalISpaRo_Replanning.jl`) stays on the model: it
+reproduces the published disturbance families, including a goal change and the
+model's brake-then-replan policy.
+
 The planner path covers the model's replanning features:
 
 | `RPOGuidanceModel` | `make_rpo_configuration` |

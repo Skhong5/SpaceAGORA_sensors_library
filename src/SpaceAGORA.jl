@@ -62,6 +62,7 @@ using .GNCAlgorithms: validate_capabilities, validate_proposal, install!, is_cur
 using .GNCAlgorithms: gnc_stream_words, AlgorithmRuntime, run_algorithm_request!, algorithm_runtime, bound_algorithm, bound_link, build_algorithm_request, trusted_queries, fail_algorithm_request!, algorithm_result_type, is_revision_request, proposed_product, installed_record, rejected_record
 using .GNCRuntime: tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!
 using .HYPRRPOPlanning: HYPRRPOPlanner
+using .HYPRRPOPlanning: RetainedPathRPOPlanner
 using .SimulationModel.HYPRSupport: HYPRUnavailableError, hypr_available
 export HYPRUnavailableError, hypr_available
 @doc (@doc SimulationModel.HYPRSupport.hypr_available) hypr_available
@@ -163,6 +164,7 @@ export gnc_stream_words, AlgorithmRuntime, run_algorithm_request!, algorithm_run
 export tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!
 export AbstractRPOPlanner, RPOPlanningConstraints, RPOValidationSettings, RPOPlanningRequest, RPOReference, RPOPlanningResult, RPOPlannerCapabilities, RPOValidationResult, RPOPlanningHeadroom, planner_capabilities, initialize_planner, plan_rpo!, retime_rpo!, validate_rpo_result, validate_rpo_capabilities, rpo_reference_is_current, DirectRPOPlanner, HYPRRPOPlanner, RPOPSOConfig, rpo_pso_config, RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
 export bound_family, AbstractRPOGeometryProvider, rpo_geometry_revision, rpo_geometry_snapshot, RPOReplanningSpheres
+export RetainedPathRPOPlanner
 
 ## 2. Bring needed names from package modules into the scope of SpaceAGORA.jl
 # 2.1. Parallel Profiles

@@ -15,6 +15,36 @@ function config_from_json(d)
     return RPOPSOConfig(;vals...)
 end
 
+# This study reproduces the published disturbance families on the deprecated
+# RPOGuidanceModel and reads its replanning phases and counters. It moves to the
+# planner contract only once its goal-change and brake-then-replan scenarios have a
+# counterpart there. The example builder now plans inside the run on the planner
+# contract, so the legacy guidance is assembled here as the builder used to: the
+# saved plan retimed into a plan buffer the controller shares, and a simulated time
+# of the reference plus the hold, but at least `min_mission_time_s`.
+function legacy_guidance_demo(demo,plan;safe_distance_m,post_reference_hold_s,min_mission_time_s)
+    t_ref,r_ref,v_ref=G.rpo_reference_from_path(plan.path,demo.geometry,plan.config;safe_distance_m=safe_distance_m)
+    initial=SM.RPOPlan(valid=true,t_ref_s=t_ref,r_ref_rtn=r_ref,v_ref_rtn=v_ref,path_rtn=plan.path,cost=plan.cost,
+        diagnostics=(components=plan.components,adaptive=plan.adaptive,refinement_improved=plan.refinement_improved,
+            iteration_timed_out=get(plan,:iteration_timed_out,false),iteration_timeout_iter=get(plan,:iteration_timeout_iter,0),
+            iteration_timeout_phase=get(plan,:iteration_timeout_phase,:none),
+            iteration_timeout_events=get(plan,:iteration_timeout_events,NamedTuple[]),cost_history=plan.cost_history,
+            retiming_geometry_rtn=G._rpo_canonical_retiming_geometry(plan.path,demo.geometry,plan.config,safe_distance_m),
+            planned_at_s=0.))
+    buffer=SM.RPOPlanBuffer();SM.update_rpo_plan_buffer!(buffer,initial,0.)
+    guidance=SM.RPOGuidanceModel(chaser_idx=1,target_idx=2,goal_rtn=demo.goal_rtn,geometry=demo.geometry,
+        plan_buffer=buffer,pso_config=demo.pso_config,safe_distance_m=safe_distance_m)
+    demo.control.plan_buffer=buffer
+    a=demo.args;mc=a.mission_configuration
+    mission=SM.MissionConfiguration(mission_type=mc.mission_type,keplerian=mc.keplerian,number_of_orbits=mc.number_of_orbits,
+        mission_time=max(min_mission_time_s,t_ref[end]+post_reference_hold_s),orientation_sim=mc.orientation_sim,
+        num_steps_to_save=mc.num_steps_to_save,data_rate=mc.data_rate)
+    args=SimulationConfiguration(;(k=>getfield(a,k) for k in fieldnames(typeof(a)) if !(k in (:guidance_model,:mission_configuration)))...,
+        guidance_model=GuidanceModel(guidance_effectors=(guidance,),guidance_rates=[demo.pso_config.retime_dt_s]),
+        mission_configuration=mission)
+    return merge(demo,(args=args,guidance=guidance,initial_plan=initial,plan_buffer=buffer))
+end
+
 function full_replanning_pilot()
     d=JSON.parsefile(get(ENV,"HYPR_BASELINE_RECORD",joinpath(@__DIR__,"support","hypr_final_isparo_case4.json")));cfg=config_from_json(d["config"]);c=d["case"]
     cloud=SpaceAGORA.load_rpo_station_cad_pointcloud(:gateway;n_points=10000,rng=MersenneTwister(740))
@@ -76,6 +106,7 @@ function full_replanning_pilot()
             pso_config=cfg,precomputed_plan=plan,chaser_dry_mass_kg=4.8,minimum_throttle_fraction=.2,
             station_points=cloud,station_keepout_radius_m=.25,safe_distance_m=.5,mpc_horizon=60,mpc_terminal_weight_scale=20.,
             post_reference_hold_s=30.,retime_accel_mps2=.00625,data_rate_s=.05,record_control_commands=true,verbose=false)
+        demo=legacy_guidance_demo(demo,plan;safe_distance_m=.5,post_reference_hold_s=30.,min_mission_time_s=budget)
         model=demo.guidance;model.replanning_config=pc
         a=demo.args
         args=SimulationConfiguration(;(k=>getfield(a,k) for k in fieldnames(typeof(a)) if !(k in (:solver_config,:simulation_settings)))...,

@@ -231,7 +231,9 @@ unchanged.
 Both planners support truth observations in target RTN and use the common
 `initialize_planner`, `plan_rpo!` and capability interface. Neither advertises
 restart; `HYPRRPOPlanner` advertises retiming (`retime_rpo!`), `DirectRPOPlanner`
-does not. A separate test implementation loads through
+does not. `RetainedPathRPOPlanner`, in the same adapter module, replays a saved
+path with the same request mapping and HYPR retimer as `HYPRRPOPlanner`, through
+one shared timing function, and searches nothing. A separate test implementation loads through
 the same extension methods. Contract and baseline tests run using standard
 libraries with no HYPR source. The public pilot adds callback integration,
 lifecycle ownership/expiry, restart refusal at run preparation and external

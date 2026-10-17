@@ -187,6 +187,19 @@ requested acceleration limit with `retime_accel_limit_enable=true`, as
 `rrt_on_replan=true` explicitly enables the existing RRT warm start for a
 `:replan` request.
 
+`RetainedPathRPOPlanner(path_rtn, config)` replays a saved geometric path, such
+as a published HYPR plan, instead of searching. For a request whose chaser
+position and goal are within `endpoint_tolerance_m` (default 1e-6 m) of the
+path's first and last points, it sets those points to the request's and times the
+path with the HYPR retimer, under the request mapped onto `config` exactly as
+`HYPRRPOPlanner` maps it for a new plan. Otherwise it refuses
+(`:infeasible`, with `:start_not_on_path` or `:goal_not_on_path`). It draws no
+random numbers, declares neither retiming nor restart, and needs the HYPR
+companion. In a run, the timed reference passes the lifecycle's validation like
+any other; a saved path is never installed unchecked. Replaying a HYPR plan's
+path and effective configuration for the same request gives the same reference
+as the plan.
+
 `HYPRRPOPlanner` also retimes. Its `retime_rpo!` keeps the active reference's
 validated polyline from the point nearest the chaser to its end, starts it at the
 chaser's position (the route rule of the legacy replanning model) and times it as a

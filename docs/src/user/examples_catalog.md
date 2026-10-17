@@ -242,11 +242,18 @@ station starts at a fixed inertial point, so the date sets the lighting while
 the relative motion does not depend on it. Leaving every keyword at its
 default preserves the Gateway dimensions, mass and 8 m² reference area, and
 the returned `station` record states what was used.
+The example runs on the planner contract: a `PlannerGuidance` with
+`HYPRRPOPlanner` plans inside the run, at its first guidance tick, and the run
+validates the reference before the controller uses it. Run a built scenario with
+`run_rpo_case(demo)`, which also stops the run `post_reference_hold_s` after the
+installed reference ends, and read that reference with `rpo_installed_plan`.
+`precomputed_plan` replays a saved plan through `RetainedPathRPOPlanner`.
 `scripts/dev/viewer_demos/iss_hypr.jl` applies this to NASA's ISS display
 model in its +XVV flight attitude held in LVLH (forward along the velocity,
 truss along the orbit normal with starboard toward -N, zenith up) and relocates the chaser between V-bar hold points on
 opposite sides of the station, exporting a viewer page with the plan
-overlaid. It plans with the `:manuscript` HyPR mode (`hypr_mode`: an
+overlaid. It plans once itself, keeping HyPR's full planning record, and flies
+that plan through `RetainedPathRPOPlanner`. It plans with the `:manuscript` HyPR mode (`hypr_mode`: an
 RRT-Connect warm start sets the exploration score and with it the PSO
 coefficients and counts; the swarm searches the station's bounding box
 widened by `station_box_margin_m`; the objective is the obstacle sigmoid

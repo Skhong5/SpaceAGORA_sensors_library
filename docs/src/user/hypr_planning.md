@@ -180,6 +180,14 @@ against HyPR must use the intersection of successful case IDs. Hardware and
 thread count are part of the experiment; this local run does not reproduce the
 paper's 16-thread AMD planning times.
 
+Each planner's plan is flown on the planner contract: `RetainedPathRPOPlanner`
+times it for the run's request, and the run validates it against the 0.5 m clearance
+before the controller uses it. A plan the run refuses is not flown. Its
+evaluation records the refusal (`refusal`) and fails, where the evaluation before
+this change flew the plan and counted clearance violations. Replaying a plan does
+not change its timing: the published case-4 plan replays to its recorded
+reference exactly.
+
 The full demo holds a fixed inertial attitude and samples clearance along
 0.05 s swept chords against the buffered point cloud. This does not certify
 watertight CAD collision geometry. The 20% activation option suppresses small
