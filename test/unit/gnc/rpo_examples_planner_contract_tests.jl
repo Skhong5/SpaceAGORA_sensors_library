@@ -136,7 +136,12 @@ else
             record_control_commands=true)
         demo = Base.invokelatest(X.build_rpo_cubesat_mpc_demo; small...)
         @test demo.guidance isa SpaceAGORA.RPOPlannerLifecycle.PlannerGuidance
-        @test demo.planner isa HYPRRPOPlanner && demo.guidance.planner === demo.planner
+        @test demo.planner isa HYPRRPOPlanner
+        # The guidance plans with it under the cap check (see below).
+        capped = demo.guidance.planner
+        @test capped isa X.RPOMissionCapPlanner && capped.planner === demo.planner && capped.end_by_s == 1800.0
+        @test planner_capabilities(capped) == planner_capabilities(demo.planner)
+        @test consumes_rng(capped) && !consumes_rng(X.RPOMissionCapPlanner(RetainedPathRPOPlanner(zeros(3, 2), RPOPSOConfig()), 1.0))
         @test demo.guidance.constraints.clearance_m == 0.1
         @test demo.guidance.constraints.max_speed_mps === nothing
         @test demo.guidance.constraints.max_acceleration_mps2 === nothing   # the default retimer is not acceleration-limited
@@ -166,6 +171,22 @@ else
         # Planning-time hooks of the old builder are refused, not ignored.
         @test_throws ArgumentError Base.invokelatest(X.build_rpo_cubesat_mpc_demo; small..., pso_iteration_callback=identity)
         @test_throws ArgumentError Base.invokelatest(X.build_rpo_cubesat_mpc_demo; small..., max_mission_time_s=5.0)
+        # The reference must end by max_mission_time_s. The plan's lifetime adds the
+        # controller's preview, so the cap is checked separately: replayed, the same
+        # reference is refused under a cap just before its end and accepted at its end.
+        ends_s = plan.t_ref_s[end]
+        replay_capped(cap) = Base.invokelatest(X.build_rpo_cubesat_mpc_demo; small..., pso_config=plan.config,
+            precomputed_plan=(path=plan.path_rtn, config=plan.config), max_mission_time_s=cap)
+        short = replay_capped(ends_s - 0.5)
+        @test ends_s - 0.5 >= 10.0 && ends_s - 0.5 + (short.mpc.horizon + 1) * short.mpc.dt_s > ends_s  # the lifetime alone admits it
+        refused = try run_simulation(short.args; return_solution=true); nothing catch e; e end
+        @test refused isa RPOPlanningError && refused.reason === :infeasible && refused.request_id == 1
+        failure = last(refused.report.records)
+        @test failure.event === :failure && failure.details.termination === :reference_ends_after_mission_cap
+        @test !any(x -> x.event === :installed, refused.report.records)
+        first_step = X.DiscreteCallback((u, t, integrator) -> t > 0, X.terminate!; save_positions=(false, false))
+        at_cap = run_simulation(replay_capped(ends_s).args; return_solution=true, extra_callbacks=(first_step,))
+        @test Base.invokelatest(X.rpo_installed_plan, at_cap).t_ref_s == plan.t_ref_s
     end
 end
 end # module RPOExamplesPlannerContractTests

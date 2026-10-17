@@ -80,6 +80,38 @@ function rpo_reference_stop_callback(min_time_s::Float64, hold_s::Float64)
 end
 
 """
+    RPOMissionCapPlanner(planner, end_by_s)
+
+Plan with `planner`, but refuse a candidate whose reference ends after `end_by_s`
+(`:infeasible`, `:reference_ends_after_mission_cap`). The request's lifetime also
+covers the controller's preview past the end of the run, so `planner` alone would
+accept a reference that ends up to one preview after it, and the run would end
+before the reference does.
+"""
+struct RPOMissionCapPlanner{T<:AbstractRPOPlanner} <: AbstractRPOPlanner
+    planner::T
+    end_by_s::Float64
+end
+SpaceAGORA.planner_capabilities(p::RPOMissionCapPlanner) = planner_capabilities(p.planner)
+SpaceAGORA.consumes_rng(p::RPOMissionCapPlanner) = consumes_rng(p.planner)
+SpaceAGORA.RPOPlannerInterfaces.require_planner_support(p::RPOMissionCapPlanner) =
+    SpaceAGORA.RPOPlannerInterfaces.require_planner_support(p.planner)
+SpaceAGORA.initialize_planner(p::RPOMissionCapPlanner, run_context) = initialize_planner(p.planner, run_context)
+SpaceAGORA.plan_rpo!(state, p::RPOMissionCapPlanner, request::RPOPlanningRequest, rng::AbstractRNG) =
+    _rpo_within_mission_cap(plan_rpo!(state, p.planner, request, rng), request, p.end_by_s)
+SpaceAGORA.retime_rpo!(state, p::RPOMissionCapPlanner, request::RPOPlanningRequest, active::RPOReference, rng::AbstractRNG) =
+    _rpo_within_mission_cap(retime_rpo!(state, p.planner, request, active, rng), request, p.end_by_s)
+
+function _rpo_within_mission_cap(result, request, end_by_s)
+    result.status === :candidate || return result
+    ends_s = request.time_s + last(result.reference.t_ref_s)
+    ends_s <= end_by_s && return result
+    return RPOPlanningResult(request_id=result.request_id, status=:infeasible,
+        termination=:reference_ends_after_mission_cap,
+        diagnostics=merge(result.diagnostics, (reference_end_s=ends_s, max_mission_time_s=end_by_s)))
+end
+
+"""
     rpo_installed_plan(solution)
 
 The reference the planner installed in a run, read from `rpo_run_report`, with the
@@ -149,8 +181,10 @@ thrust acceleration), `mpc_terminal_weight_scale` sets Qf = scale * Q
 (default 10), `mpc_horizon` is the LQ-MPC horizon in control steps (default
 12). The stop callback ends the run `post_reference_hold_s` after the installed
 reference ends (default 20 s), but not before `mission_time`; `max_mission_time_s`
-(default 1800 s) is the longest run and the plan's lifetime, so a plan that does not
-fit is refused and the run stops with an `RPOPlanningError`. `record_control_commands`
+(default 1800 s) is the longest run. The guidance planner is `planner` wrapped in
+`RPOMissionCapPlanner`: a reference that ends after the cap is refused
+(`:reference_ends_after_mission_cap`), and the run stops with an `RPOPlanningError`.
+The plan's lifetime is the cap plus the controller's preview. `record_control_commands`
 attaches an `RPOControlCommandLog` to the controller; read the run's copy from
 `rpo_run_report(solution).commands`. `initial_time` is the epoch
 (default 2026-01-01 00:00 UTC). The station starts at a fixed inertial point,
@@ -366,7 +400,8 @@ function build_rpo_cubesat_mpc_demo(;
         throw(ArgumentError("max_mission_time_s must be finite and at least mission_time."))
     plan_buffer = RPOPlanBuffer()
     guidance = SpaceAGORA.RPOPlannerLifecycle.PlannerGuidance(
-        planner=planner,
+        # The reference itself must end by the cap; the lifetime below adds the preview.
+        planner=RPOMissionCapPlanner(planner, max_mission_time_s),
         chaser_id=101,
         target_id=201,
         chaser_idx=1,
@@ -378,7 +413,7 @@ function build_rpo_cubesat_mpc_demo(;
         validation=validation,
         reference_dt_s=pso_cfg.retime_dt_s,
         preview_horizon_steps=Int(mpc_horizon),
-        # The reference must end, preview included, before the longest run allowed.
+        # The controller previews the reference up to the end of the longest run allowed.
         validity_s=max_mission_time_s + (Int(mpc_horizon) + 1) * pso_cfg.retime_dt_s,
         seed=Int(seed),
         events=RPOPlanningEvent[],
