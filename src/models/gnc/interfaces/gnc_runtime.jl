@@ -4,6 +4,8 @@
 module GNCRuntime
 
 export tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!
+export SpacecraftScope, AllSpacecraft, BoundSpacecraft, CoupledSpacecraft, spacecraft_scope, skip_inactive,
+    held_command, held_command_time, release_command!
 
 """
     tick_schedule(model) -> Symbol
@@ -16,6 +18,108 @@ How the engine runs control `model`.
   (`gnc_callbacks`). `BaseThrusterModel`, the burn scheduler, is event-driven.
 """
 tick_schedule(model) = :periodic
+
+# Scope: the spacecraft a guidance, navigation or control model acts on, and what
+# happens to its command when one of them becomes inactive. Indices are run
+# positions, from 1 in configuration order.
+
+"""
+    SpacecraftScope
+
+The spacecraft a guidance, navigation or control model acts on, as its
+`spacecraft_scope` declares: `AllSpacecraft()`, `BoundSpacecraft(indices)` or
+`CoupledSpacecraft(primary, partners)`.
+"""
+abstract type SpacecraftScope end
+
+"""
+    AllSpacecraft()
+
+Scope of a model ticked for every spacecraft of the run, the default. Such a
+model keeps one slot of run state per spacecraft.
+"""
+struct AllSpacecraft <: SpacecraftScope end
+
+"""
+    BoundSpacecraft(indices)
+
+Scope of a model that acts only on the spacecraft at the run positions in the
+tuple `indices`: the engine ticks it for those spacecraft only.
+"""
+struct BoundSpacecraft{N} <: SpacecraftScope
+    indices::NTuple{N, Int}
+end
+BoundSpacecraft(indices::Tuple{Vararg{Integer}}) = BoundSpacecraft(map(Int, indices))
+
+"""
+    CoupledSpacecraft(primary, partners)
+
+Scope of a model that couples several spacecraft: the engine ticks it for
+`primary` only, and the tick also reads the spacecraft at the run positions in the
+tuple `partners`, as the RPO controller ticks for the chaser and reads the target.
+"""
+struct CoupledSpacecraft{N} <: SpacecraftScope
+    primary::Int
+    partners::NTuple{N, Int}
+end
+CoupledSpacecraft(primary::Integer, partners::Tuple{Vararg{Integer}}) =
+    CoupledSpacecraft(Int(primary), map(Int, partners))
+
+"""
+    spacecraft_scope(model) -> SpacecraftScope
+
+The spacecraft guidance, navigation or control `model` acts on. The engine ticks
+the model only for the spacecraft its scope names (every one, the `BoundSpacecraft`
+indices, or the `CoupledSpacecraft` primary), reading the scope at each tick.
+Before the run it warns when the scope names a run position the run does not have;
+SpaceAGORA 0.4.0 will refuse such a run. The output hooks are still called for
+every spacecraft, so they keep their own index checks. Default: `AllSpacecraft()`.
+"""
+spacecraft_scope(model) = AllSpacecraft()
+
+"""
+    skip_inactive(model) -> Bool
+
+Whether the engine stops ticking `model` for a spacecraft that is no longer active
+(after an impact, a touchdown or another event that deactivates it). For a model
+that returns `true`, while spacecraft `spacecraft_index` is inactive, each tick
+time calls `release_command!(model, t, spacecraft_index)` instead of the tick. For
+a `CoupledSpacecraft` model the primary decides; a model that must react to an
+inactive partner checks `p.is_active` itself. Default: `false`, ticked as for an
+active spacecraft; SpaceAGORA 0.4.0 will make `true` the default.
+"""
+skip_inactive(model) = false
+
+"""
+    held_command(model, spacecraft_index) -> Any
+
+The command control `model` holds for spacecraft `spacecraft_index` between its
+ticks, which its output hooks read, as an immutable value or named tuple; the
+model's own state is not shared with it. In `:mounted` actuation the levels the
+mounted actuators apply, derived from it, are `actuator_levels(model,
+spacecraft_index)`. Default: `nothing`, no held command, as for a spacecraft the
+model does not act on.
+"""
+held_command(model, spacecraft_index) = nothing
+
+"""
+    held_command_time(model, spacecraft_index) -> Float64
+
+The time (s into the run) of the tick that produced `held_command(model,
+spacecraft_index)`. Default: `NaN`, before the first tick or for a model that does
+not record it.
+"""
+held_command_time(model, spacecraft_index) = NaN
+
+"""
+    release_command!(model, t, spacecraft_index) -> nothing
+
+Called at tick time `t` (s into the run) in place of the tick of a model whose
+`skip_inactive` is `true`, while spacecraft `spacecraft_index` is inactive: set
+the held command to the model's off command, such as zero thrust. Default:
+nothing.
+"""
+release_command!(model, t, spacecraft_index) = nothing
 
 """
     gnc_callbacks(model, num_sats, args, period_s) -> Tuple

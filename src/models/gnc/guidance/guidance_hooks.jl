@@ -1,5 +1,6 @@
 module GuidanceHooks
     import ...SimulationLifecycle
+    import ...GNCRuntime
     using ..Structure
     using ..Geodesy: geodetic_altitude, ellipsoid_surface_radius, radius_for_geodetic_altitude
 
@@ -135,4 +136,11 @@ module GuidanceHooks
         m.spacecraft_indices == ids && return m
         return ApolloDescentGuidanceModel(m.config, m.state, m.terrain, ids)
     end
+
+    # The spacecraft each built-in guidance model acts on (GNCRuntime). The legacy
+    # RPO guidance plans for the chaser from the target's state; the descent
+    # guidance flies its selected spacecraft and stops at touchdown.
+    GNCRuntime.spacecraft_scope(m::RPOGuidanceModel) = GNCRuntime.CoupledSpacecraft(m.chaser_idx, (m.target_idx,))
+    GNCRuntime.spacecraft_scope(m::ApolloDescentGuidanceModel) = GNCRuntime.BoundSpacecraft(m.spacecraft_indices)
+    GNCRuntime.skip_inactive(::ApolloDescentGuidanceModel) = true
 end

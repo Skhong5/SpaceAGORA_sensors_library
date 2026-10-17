@@ -6,8 +6,8 @@ module SpaceAGORA
 # Internal contract only; runtime guidance still uses its existing path.
 include(joinpath(@__DIR__, "models", "gnc", "interfaces", "gnc_algorithms.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "interfaces", "rpo_planner.jl"))
-include(joinpath(@__DIR__, "models", "gnc", "interfaces", "simulation_lifecycle.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "interfaces", "gnc_runtime.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "interfaces", "simulation_lifecycle.jl"))
 include(joinpath(@__DIR__, "orchestration", "parallel", "routing", "parallel_profiles.jl"))
 include(joinpath(@__DIR__, "orchestration", "parallel", "process", "parallel_process.jl"))
 include(joinpath(@__DIR__, "interfaces", "analysis", "visualization", "visualizer_services.jl"))
@@ -61,6 +61,7 @@ using .GNCAlgorithms: algorithm_family, default_capabilities, algorithm_capabili
 using .GNCAlgorithms: validate_capabilities, validate_proposal, install!, is_current, on_rejection, fallback_product, family_contract_version
 using .GNCAlgorithms: gnc_stream_words, AlgorithmRuntime, run_algorithm_request!, algorithm_runtime, bound_algorithm, bound_link, build_algorithm_request, trusted_queries, fail_algorithm_request!, algorithm_result_type, is_revision_request, proposed_product, installed_record, rejected_record
 using .GNCRuntime: tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!
+using .GNCRuntime: SpacecraftScope, AllSpacecraft, BoundSpacecraft, CoupledSpacecraft, spacecraft_scope, skip_inactive, held_command, held_command_time, release_command!
 using .HYPRRPOPlanning: HYPRRPOPlanner
 using .SimulationModel.HYPRSupport: HYPRUnavailableError, hypr_available
 export HYPRUnavailableError, hypr_available
@@ -161,6 +162,7 @@ export algorithm_family, default_capabilities, algorithm_capabilities, require_a
 export validate_capabilities, validate_proposal, install!, is_current, on_rejection, fallback_product, family_contract_version
 export gnc_stream_words, AlgorithmRuntime, run_algorithm_request!, algorithm_runtime, bound_algorithm, bound_link, build_algorithm_request, trusted_queries, fail_algorithm_request!, algorithm_result_type, is_revision_request, proposed_product, installed_record, rejected_record
 export tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!
+export SpacecraftScope, AllSpacecraft, BoundSpacecraft, CoupledSpacecraft, spacecraft_scope, skip_inactive, held_command, held_command_time, release_command!
 export AbstractRPOPlanner, RPOPlanningConstraints, RPOValidationSettings, RPOPlanningRequest, RPOReference, RPOPlanningResult, RPOPlannerCapabilities, RPOValidationResult, RPOPlanningHeadroom, planner_capabilities, initialize_planner, plan_rpo!, retime_rpo!, validate_rpo_result, validate_rpo_capabilities, rpo_reference_is_current, DirectRPOPlanner, HYPRRPOPlanner, RPOPSOConfig, rpo_pso_config, RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
 export bound_family, AbstractRPOGeometryProvider, rpo_geometry_revision, rpo_geometry_snapshot, RPOReplanningSpheres
 

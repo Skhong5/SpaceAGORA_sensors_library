@@ -99,7 +99,7 @@ final_state(args) = collect(run_simulation(args; return_solution=true).u[end])
         # Multi-vehicle and unindexed effectors cannot be declared on a spacecraft.
         @test_throws ArgumentError bind_spacecraft(RPOMPCControlModel(), 1)
         err = try bind_spacecraft(RPOMPCControlModel(), 1) catch e e end
-        @test occursin("chaser", sprint(showerror, err)) && occursin("configuration level", sprint(showerror, err))
+        @test occursin("couples several spacecraft", sprint(showerror, err)) && occursin("configuration level", sprint(showerror, err))
         thr = BaseThrusterModel(thrust=[0.0], direction=[0.0], Δv=[0.0], start_burn_time=[0.0], stop_burn_time=[0.0], Isp=[300.0])
         err = try bind_spacecraft(thr, 1) catch e e end
         @test err isa ArgumentError && occursin("every spacecraft", sprint(showerror, err))
