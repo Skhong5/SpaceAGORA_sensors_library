@@ -329,8 +329,8 @@ The built-in kinds:
   the vehicle's state (`cmg_angles`, only when a CMG is mounted); the vehicle
   feels `-δ̇ (g × h)` and the rotor's momentum in its gyroscopic term.
   `cmg_steering(spacecraft, angles, torque)` turns a desired torque into
-  gimbal rates with a singularity-robust inverse. The split solver modes
-  refuse CMGs.
+  gimbal rates with a singularity-robust inverse. The gravity-backbone mode
+  and articulated spacecraft refuse CMGs.
 
 The actuators' power feeds the spacecraft's power budget when it carries one:
 solar arrays, a battery and constant loads mounted with `add_power!`. See
@@ -389,18 +389,29 @@ number for a one-component sensor) and `latest_time_s`. It implements:
 - `sensor_measure(sensor, truth::SensorTruth, ctx::ActuatorContext, rng)`:
   one measurement of `truth` (the inertial position and velocity, the
   attitude, the body rate, the mass, the time and, when the sensor asks for
-  it, the magnetic field in the body frame), with any noise drawn from `rng`.
+  them, the magnetic field, the Sun's direction and lit fraction, and the
+  specific force, all in the body frame), with any noise drawn from `rng`.
   `ctx.link_to_body` maps the sensor's frame, its link's, to the body frame.
 - `sensor_dimension(sensor)`: the number of components.
 - optionally `sensor_requirements(sensor)`: `ActuatorRequirements(magnetic_field=true)`
   to receive the field (from the run's `MagneticTorqueRodModel`, or the
-  tilted dipole); no other environment is available to sensors.
+  tilted dipole) and `ActuatorRequirements(solar=true)` to receive the Sun's
+  direction and the lit fraction of its disk (the run's ephemerides and the
+  eclipse model); no other environment is available to sensors.
+- optionally `sensor_needs_specific_force(sensor) = true` to receive the
+  specific force: the vehicle's acceleration at the sample, from the solver,
+  less the acceleration of the run's gravitational effectors (those for which
+  `is_gravitational` is true; a user-defined gravity model should add a
+  method returning true).
 
 Mount it with `add_sensor!(spacecraft, link, sensor)`; a sensor on a hinged
 panel turns with it. The built-in kinds are `RateGyro` (body rate with white
 noise, a bias and a bias random walk), `StarTracker` (attitude with cross- and
-about-boresight noise, boresight along its link's +z) and `Magnetometer`
-(field with white noise and a bias).
+about-boresight noise, boresight along its link's +z), `Magnetometer`
+(field with white noise and a bias), `GNSSReceiver` (inertial position and
+velocity with white noise), `SunSensor` (the Sun's direction with angular
+noise, boresight along its link's +z, no reading outside its field of view or
+in eclipse) and `Accelerometer` (specific force with white noise and a bias).
 
 The engine samples every sensor at the run's start and every period after
 it, from the accepted state; the samples are solver stops, and a checkpointed

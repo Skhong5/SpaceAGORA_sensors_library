@@ -312,6 +312,7 @@ using .SimulationModel: propellant_mass_rate, ActuatorRequirements, actuator_req
 using .SimulationModel: SolarArray, Battery, PowerLoad, add_power!
 using .SimulationModel: ActuatorFault, add_fault!
 using .SimulationModel: RateGyro, StarTracker, Magnetometer, SensorTruth, sensor_measure, sensor_dimension, sensor_requirements, sensor_period_s, initialize_sensor!
+using .SimulationModel: GNSSReceiver, SunSensor, Accelerometer, sensor_needs_specific_force, is_gravitational
 using .SimulationModel: add_sensor!, mounted_sensors, sensor_measurement, sensor_measurement_time
 using .SimulationLifecycle: bind_spacecraft
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
@@ -434,6 +435,11 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.ActuatorFault) ActuatorFault
 @doc (@doc SimulationModel.add_fault!) add_fault!
 @doc (@doc SimulationModel.RateGyro) RateGyro
+@doc (@doc SimulationModel.GNSSReceiver) GNSSReceiver
+@doc (@doc SimulationModel.SunSensor) SunSensor
+@doc (@doc SimulationModel.Accelerometer) Accelerometer
+@doc (@doc SimulationModel.sensor_needs_specific_force) sensor_needs_specific_force
+@doc (@doc SimulationModel.is_gravitational) is_gravitational
 @doc (@doc SimulationModel.StarTracker) StarTracker
 @doc (@doc SimulationModel.Magnetometer) Magnetometer
 @doc (@doc SimulationModel.SensorTruth) SensorTruth
@@ -736,6 +742,7 @@ export propellant_mass_rate, ActuatorRequirements, actuator_requirements, applie
 export SolarArray, Battery, PowerLoad, add_power!
 export ActuatorFault, add_fault!
 export AbstractSensor, RateGyro, StarTracker, Magnetometer, SensorTruth, sensor_measure, sensor_dimension, sensor_requirements, sensor_period_s, initialize_sensor!
+export GNSSReceiver, SunSensor, Accelerometer, sensor_needs_specific_force, is_gravitational
 export add_sensor!, mounted_sensors, sensor_measurement, sensor_measurement_time
 export AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel

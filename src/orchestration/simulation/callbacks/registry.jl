@@ -41,8 +41,9 @@ using ..ThrusterHooks: thrust_calculation_schmitt_trigger!
 using ..PowerSystems: has_battery, has_power_parts, battery, solar_generation_w, solar_flux_w_m2, mean_solar_distance_m
 using ..PowerSystems: bus_load_w, actuator_power_by_tier, battery_boundary!, update_power_state!, shed_levels
 using ..DynamicEffectors: eclipse_area_calc, MagneticTorqueRodModel, rod_field_body
+using ..DynamicEffectors: is_gravitational
 using ..ActuatorFaults: has_faults, faulted_levels, refresh_faults!, fault_edge, resolve_faults!
-using ..Sensors: SensorTruth, sensor_measure, sensor_requirements, sensor_period_s, initialize_sensor!
+using ..Sensors: SensorTruth, sensor_measure, sensor_requirements, sensor_period_s, initialize_sensor!, sensor_needs_specific_force
 using ..SensorMounting: SensorMounting, mounted_sensors, reset_sensors!
 using ..ActuatorMounting: actuator_context
 using ..TerrainModels: AbstractTerrainModel, DEMTerrainModel, terrain_radius
