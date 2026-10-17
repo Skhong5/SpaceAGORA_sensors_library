@@ -41,9 +41,9 @@ select the suites; helpers supply reusable setup and scenarios.
   The companion suites: `hypr/`, `edg/` and `visualizer/`, each driven by its
   installation job in `julia-ci.yml`.
 - `test/fixtures/`
-  Tracked fixtures such as the Earth regression CSV read by suite 04, and
-  `contributor_project/`, which the `contributor-kit` job tests through the
-  reusable contributor workflow.
+  Tracked fixtures such as the Earth regression CSV read by suite 04. (The
+  `contributor-kit` job tests the starters of `templates/starters/`, generated
+  from the commit under test, through the reusable contributor workflow.)
 - `test/grid_atmosphere/`
   A standalone native-free grid-adapter suite with normal package imports.
   Synthetic fixtures cover scalar/batch queries, strict domain checks, buffered

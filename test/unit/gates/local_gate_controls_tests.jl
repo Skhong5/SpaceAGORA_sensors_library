@@ -615,6 +615,23 @@ end
                     end
                 end
             end
+            # The starters name no deprecated hook anywhere, in any file type; a longer
+            # name that only contains one is not a mention.
+            starter = joinpath(fixture, "templates", "starters", "package")
+            for (file, text) in (("README.md", "Implement `calcForceTorque` here.\n"),
+                                 (joinpath("test", "runtests.jl"), "x = SpaceAGORA.calcControlMassFlowRate\n"),
+                                 (joinpath(".github", "workflows", "ci.yml"), "# calcReactionWheelTorque\n"))
+                probe = joinpath(starter, file)
+                _with_probe(probe, text) do
+                    rejected = run_gate()
+                    @test _failed_with(rejected, message)
+                    @test _reports(rejected, probe, fixture, "names the deprecated hook")
+                end
+            end
+            _with_probe(joinpath(starter, "README.md"), "my_calcForceTorque_notes and calcForceTorques\n") do
+                @test isnothing(run_gate().failure)
+            end
+            rm(joinpath(fixture, "templates"); recursive=true)
             @test isnothing(run_gate().failure)
         end
     end

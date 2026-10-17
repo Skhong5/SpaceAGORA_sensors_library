@@ -810,18 +810,35 @@ jobs:
           JULIA_PKG_OFFLINE: "true"
         run: julia --startup-file=no --project=examples/rpo_planner_env examples/rpo_planner_env/smoke.jl
 
-  # The reusable contributor workflow on a fixture project, with this checkout as
-  # the core. It is not one of the required checks and no aggregate waits for it.
+  # The reusable contributor workflow on each starter, generated from this checkout
+  # as a contributor would generate it, with this checkout as the core. The three
+  # run side by side. It is not one of the required checks and no aggregate waits
+  # for it.
   contributor-kit:
     needs: depot
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kind: project
+            manifest: committed
+            examples: scripts/run_case.jl
+          - kind: package
+            manifest: core
+            examples: examples/run_in_simulation.jl
+          - kind: companion
+            manifest: core
+            examples: ""
     uses: ./.github/workflows/contributor-ci.yml
     with:
       spaceagora-rev: ${{ github.sha }}
-      kind: project
-      directory: test/fixtures/contributor_project
-      examples: scripts/run_case.jl
+      kind: ${{ matrix.kind }}
+      manifest: ${{ matrix.manifest }}
+      examples: ${{ matrix.examples }}
+      load-orders: ${{ matrix.kind == 'companion' }}
+      starter: true
       core-from-caller: true
 
   documentation-release-gate:

@@ -61,6 +61,12 @@ on:
         description: Core CI only; the caller's checkout is SpaceAGORA itself.
         type: boolean
         default: false
+      starter:
+        description: >-
+          Core CI only: test the kind's starter, generated from the caller's checkout
+          by scripts/new_contributor_repository.jl, instead of `directory`.
+        type: boolean
+        default: false
 
 defaults:
   run:
@@ -85,6 +91,7 @@ jobs:
       LOAD_ORDERS: ${{ inputs.load-orders }}
       DIRECTORY: ${{ inputs.directory }}
       CORE_FROM_CALLER: ${{ inputs.core-from-caller }}
+      STARTER: ${{ inputs.starter }}
       JULIA_NUM_THREADS: ${{ inputs.threads }}
       JULIA_LOAD_PATH: "@:@stdlib"
       JULIA_PKG_PRECOMPILE_AUTO: "0"
@@ -106,6 +113,7 @@ jobs:
           [[ "$JULIA_NUM_THREADS" =~ ^[0-9]+$ ]] && (( JULIA_NUM_THREADS >= 2 )) ||
             fail "threads must be 2 or more, so that the concurrency checks run on threads."
           [[ "$LOAD_ORDERS" != true || "$KIND" == companion ]] || fail "load-orders applies to kind companion only."
+          [[ "$STARTER" != true || "$CORE_FROM_CALLER" == true ]] || fail "starter applies to core CI only (core-from-caller: true)."
           case "/$DIRECTORY/" in */../*|//*) fail "directory must be a relative path inside the repository, not '$DIRECTORY'." ;; esac
           if [ -z "$WORKFLOW_SHA" ]; then
             echo "::warning::This runner does not report the workflow's own commit; only the pin file is checked against spaceagora-rev."
@@ -140,7 +148,8 @@ jobs:
             echo "::error::The SpaceAGORA checkout is at $head, not spaceagora-rev $SPACEAGORA_REV."
             exit 1
           fi
-          repository="$(cd "$GITHUB_WORKSPACE/$DIRECTORY" && pwd -P)"
+          # A starter is generated once Julia is set up, outside the workspace.
+          if [ "$STARTER" = true ]; then repository="$RUNNER_TEMP/starter-$KIND"; else repository="$(cd "$GITHUB_WORKSPACE/$DIRECTORY" && pwd -P)"; fi
           {
             echo "SPACEAGORA_CORE=$core"
             echo "CONTRIBUTOR_REPOSITORY=$repository"
@@ -177,7 +186,18 @@ jobs:
 
       - name: Contributor environment self-test (core CI)
         if: inputs.core-from-caller
-        run: julia --startup-file=no test/smoke/contributor_environment_tests.jl
+        run: |
+          set -euo pipefail
+          julia --startup-file=no test/smoke/contributor_environment_tests.jl
+          julia --startup-file=no test/smoke/new_contributor_repository_tests.jl
+
+      # The repository a contributor would start from this commit: the kind's starter,
+      # named after the kind (StarterProject, StarterPackage, StarterCompanion).
+      - name: Generate the starter (core CI)
+        if: inputs.starter
+        run: >-
+          julia --startup-file=no --project=@stdlib "$SPACEAGORA_CORE/scripts/new_contributor_repository.jl"
+          "$KIND" "$CONTRIBUTOR_REPOSITORY" --name "Starter${KIND^}"
 
       - name: Check the SpaceAGORA pin
         run: |
