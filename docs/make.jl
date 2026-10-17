@@ -264,6 +264,7 @@ makedocs(
             "Lunar Imagery Sources" => "user/lunar_imagery_sources.md",
         ],
         "Guidance and Planning" => Any[
+            "Writing a GNC Algorithm" => "user/gnc_algorithm.md",
             "Energy Depletion Guidance" => "user/edg_guidance.md",
             "Motion Planning with HYPR" => "user/hypr_planning.md",
             "RPO with Interchangeable Planners" => "user/rpo_planner_pilot.md",
@@ -298,6 +299,7 @@ makedocs(
             "Extension Conventions" => "reference/extension_conventions.md",
             "Extension Hook Reference" => "generated/extension_hook_reference.md",
             "Migrating Extension Hooks" => "reference/migrating_extension_hooks.md",
+            "Building Your Own Research Repository" => "user/research_repository.md",
             "Public API and Compatibility" => "public_api_policy.md",
             "Optional Adapter Contract" => "reference/adapter_contract.md",
             "EDG Service Contract" => "reference/edg_adapter_boundary.md",

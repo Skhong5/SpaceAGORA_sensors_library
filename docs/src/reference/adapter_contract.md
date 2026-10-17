@@ -62,6 +62,12 @@ version is listed here with what changed.
 | `HYPRServices` | 2.0.0 | The planners HYPR supplies require an explicit `rng::AbstractRNG` keyword instead of defaulting to the global stream. Only HYPR 0.2.0 is accepted. No binding changes. |
 | `HYPRServices`, `ExternalPropagationServices`, `EDGServices` | 1.0.0 | First reviewed contracts. |
 
+!!! note "TODO(0.3.0 PR 2): EDGServices 2.0.0"
+    When the EDGServices 2.0.0 pair merges, add its row above the HYPR row (the
+    two decision services take the mutated state first, what else changed, and
+    "SpaceAGORAEDG implements it from version 0.2.0"), and change the EDG row of
+    "Supported boundaries" from `v"1.0.0"` to `v"2.0.0"`.
+
 ## Package and installation rules
 
 An adapter may be a standalone package depending on SpaceAGORA, or a Julia

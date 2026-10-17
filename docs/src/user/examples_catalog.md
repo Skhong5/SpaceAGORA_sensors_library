@@ -344,10 +344,14 @@ names; they do not define a separate backend or a flight-validation claim.
 | RPO planning | `Earth_RPO_CubeSat_MPC.jl`, `Earth_RPO_CubeSat_MPC_Batch.jl`, `Earth_RPO_CubeSat_MPC_PlannerComparison.jl`, `Earth_RPO_CubeSat_MPC_Replanning.jl` | `rpo_planner_env` setup, SPICE and Gateway geometry; no native GRAM |
 | RPO planner disturbances | `Earth_RPO_Planner_Disturbances.jl` | Root; no external data |
 | Robot-arm planning | `Robot_Arm_Planner_Cloth_Demo.jl` | `rpo_planner_env` setup; no external data |
+| Writing a GNC algorithm | `gnc_algorithm_env/feedback_controller.jl`, `gnc_algorithm_env/estimator.jl`, `gnc_algorithm_env/rpo_planner.jl` | `gnc_algorithm_env` setup; no external data |
 
-The setup files under `rpo_planner_env/` and `odyssey_surrogate_env/` prepare the
-two documented environments. The planner environment also has an installed-API
-smoke test. These files are not additional mission entry points.
+The setup files under `rpo_planner_env/`, `odyssey_surrogate_env/` and
+`gnc_algorithm_env/` prepare the three documented environments. The planner
+environment also has an installed-API smoke test. The scripts of
+`gnc_algorithm_env/` are the worked examples of
+[Writing a GNC Algorithm](gnc_algorithm.md); its `smoke.jl` runs all three, as
+CI does. These files are not additional mission entry points.
 
 Support files are included by examples rather than run on their own:
 
