@@ -8,6 +8,7 @@ using ..SimulationModel
 import ..RPOPlannerInterfaces as P
 import ..GNCAlgorithms as GA
 import ..SimulationLifecycle as L
+import ..GNCRuntime as GR
 import ..DirectRPOPlanning: DirectRPOPlanner
 const S = SimulationModel
 

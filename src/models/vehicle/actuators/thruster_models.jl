@@ -1,3 +1,7 @@
+# One burn the scheduler refused to plan: when, why, and the command it was given.
+const BurnPlanRejection = NamedTuple{(:time_s, :rejection, :delta_v_mps, :direction_rad, :source_orbit),
+                                     Tuple{Float64, Symbol, Float64, Float64, Int64}}
+
 """
     BaseThrusterModel(; thrust, direction, Δv, start_burn_time, stop_burn_time, Isp,
                       actuation=:ideal, engine=1, pointing_frequency_rad_s=0.05, pointing_damping=0.7)
@@ -24,6 +28,14 @@ engine's thrust direction and the burn direction, with natural frequency
 spacecraft's inertia and tracking the turn of the velocity along the orbit. A
 spacecraft without mounted wheels is not pointed. Give the engine the
 scheduler's thrust and specific impulse so the planned burn delivers its Δv.
+
+A burn the scheduler cannot plan (it needs more propellant than the vehicle
+carries, its command is not finite, the thrust or specific impulse is not
+positive) is not scheduled, and the reason is kept: see
+`burn_plan_rejections`. The scheduler also executes a plan that an
+`AlgorithmGuidance` of the burn-plan family (`BurnPlanFamily`) installs for a
+spacecraft whose own `Δv` is zero and whose window is unset: it takes the
+plan's window, direction, thrust and specific impulse.
 """
 struct BaseThrusterModel <: AbstractThrusterModel
     thrust::Vector{Float64}
@@ -43,6 +55,8 @@ struct BaseThrusterModel <: AbstractThrusterModel
     mounted_levels::Vector{Vector{Float64}}
     burn_windows::Vector{NTuple{3, Float64}}
     burning::Vector{Bool}
+    # The burns refused in the run, per spacecraft (`burn_plan_rejections`).
+    plan_rejections::Vector{Vector{BurnPlanRejection}}
 
     function BaseThrusterModel(
         thrust::Vector{Float64},
@@ -70,7 +84,8 @@ struct BaseThrusterModel <: AbstractThrusterModel
 
         return new(thrust, direction, Δv, start_burn_time, stop_burn_time, Isp, actuation, Int(engine),
                    Float64(pointing_frequency_rad_s), Float64(pointing_damping),
-                   [Float64[] for _ in 1:n], fill((NaN, NaN, 0.0), n), fill(false, n))
+                   [Float64[] for _ in 1:n], fill((NaN, NaN, 0.0), n), fill(false, n),
+                   [BurnPlanRejection[] for _ in 1:n])
     end
 end
 
