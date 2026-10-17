@@ -8,6 +8,7 @@
 module ConformanceInstances
 
 using LinearAlgebra: I
+using Random: Random
 using StaticArrays: SVector
 using SpaceAGORA
 using SpaceAGORA.Conformance: ConformanceFixture, conformance_fixture
@@ -16,7 +17,7 @@ const SM = SpaceAGORA.SimulationModel
 const C = SpaceAGORA.Conformance
 
 export force_torque_instances, force_torque_exemptions, spice_available, sensor_instances, sensor_exemptions,
-    gnc_instances, gnc_exemptions
+    gnc_instances, gnc_exemptions, algorithm_instances, algorithm_exemptions, family_instances
 
 const SPICE_PATH = joinpath(pkgdir(SpaceAGORA), "data", "GRAMSuite.jl", "GRAM Suite 2.0", "SPICE")
 spice_available() = isdir(SPICE_PATH)
@@ -186,5 +187,114 @@ gnc_exemptions() = Dict{Any, String}(
         "that family's configuration (the burn-plan family: one burn scheduler sized for the run's spacecraft), " *
         "and it is checked with the algorithm contract",
 )
+
+"""
+The hold planner of `examples/rpo_planner_env/smoke.jl` without its HYPR imports: a
+user-owned planner, valid only for an unchanged goal, that draws from its stream,
+counts its proposals in its state and supports retiming.
+"""
+struct HoldPlanner <: SpaceAGORA.AbstractRPOPlanner end
+SpaceAGORA.planner_capabilities(::HoldPlanner) =
+    SpaceAGORA.RPOPlannerCapabilities(state_sources=(:truth,), frames=(:target_rtn,), retiming=true)
+SpaceAGORA.initialize_planner(::HoldPlanner, context) = Ref(0)
+function SpaceAGORA.plan_rpo!(state, ::HoldPlanner, r::SpaceAGORA.RPOPlanningRequest, rng::Random.AbstractRNG)
+    state[] += 1
+    reference = SpaceAGORA.RPOReference(t_ref_s=[0.0, r.reference_dt_s],
+        r_ref_rtn_m=hcat(collect(r.x_rtn[1:3]), collect(r.goal_rtn_m)), v_ref_rtn_mps=zeros(3, 2),
+        origin_time_s=r.time_s, valid_until_s=r.valid_until_s, chaser_id=r.chaser_id, target_id=r.target_id,
+        geometry_revision=r.geometry_revision)
+    return SpaceAGORA.RPOPlanningResult(request_id=r.request_id, status=:candidate, termination=:completed,
+        reference=reference, diagnostics=(calls=state[], draw=rand(rng)))
+end
+SpaceAGORA.retime_rpo!(state, planner::HoldPlanner, r::SpaceAGORA.RPOPlanningRequest, active::SpaceAGORA.RPOReference,
+    rng::Random.AbstractRNG) = SpaceAGORA.plan_rpo!(state, planner, r, rng)
+
+# The small HYPR configuration of examples/rpo_planner_env/smoke.jl.
+hypr_config() = SpaceAGORA.RPOPSOConfig(n_waypoints=2, n_particles=8, n_iters=3, adaptive_enable=false,
+    adaptive_n_waypoints_min=2, adaptive_n_waypoints_max=2, adaptive_n_particles_min=8, adaptive_n_particles_max=8,
+    adaptive_n_iters_min=3, adaptive_n_iters_max=3, sample_ds_m=0.2, retime_accel_limit_enable=true,
+    retime_max_speed_mps=0.5, retime_a_max_mps2=0.5 * 0.05 / 5.2, iteration_runtime_limit_s=Inf,
+    rrt_warmstart_enable=true)
+
+# The planners that need the optional HYPR package, each as the comparison tests
+# configure it (test/unit/gnc/rpo_comparison_planner_object_tests.jl), small enough
+# for a short run, with the retimer limits of the RPO pilot (as there for a run
+# through the RPO binding), so that they plan the pilot's requests instead of
+# refusing them.
+function hypr_planners()
+    G = SM.GuidanceHooks
+    base = G.rpo_740_mpc_final_pso_config(safe_distance_m=0.2; n_particles=8, n_iters=3, n_waypoints=2,
+        adaptive_enable=false, reexplore_enable=false, cull_enable=false, sample_ds_m=0.25, retime_dt_s=0.5,
+        retime_a_max_mps2=0.05, retime_max_steps=5_000, probe_candidates=4, refinement_rounds=2,
+        refinement_waypoint_passes=2)
+    pso = SpaceAGORA.rpo_pso_config(base; retime_accel_limit_enable=true, retime_max_speed_mps=0.5,
+        retime_a_max_mps2=0.5 * 0.05 / 5.2, retime_dt_s=0.1)
+    optimizer = G.RPOTrajectoryOptimizerSettings(match_hypr_runtime=false, runtime_limit_s=Inf, force_full_iters=true)
+    rrt_connect = G.RPORRTConnectSettings(n_iters=120, step_size_m=0.5, shortcut_iters=6)
+    return [
+        SpaceAGORA.HYPRRPOPlanner(hypr_config()),
+        SpaceAGORA.HYPRComparisonPlanner(pso),
+        SpaceAGORA.UnrefinedPSOPlanner(pso),
+        SpaceAGORA.RRTConnectPlanner(rrt_connect; config=pso, optimizer),
+        SpaceAGORA.RRTConnectBezierPlanner(rrt_connect; config=pso, optimizer),
+        SpaceAGORA.RRTStarPlanner(G.RPORRTStarSettings(n_iters=90, step_size_m=0.5, shortcut_iters=6); config=pso,
+            optimizer),
+        SpaceAGORA.CHOMPPlanner(G.RPOCHOMPSettings(n_iters=3); config=pso, optimizer, seed=rrt_connect),
+        SpaceAGORA.STOMPPlanner(G.RPOSTOMPSettings(n_iters=3, n_rollouts=4); config=pso, optimizer, seed=rrt_connect),
+        # A retained path from the conformance requests' start to their goal.
+        SpaceAGORA.RetainedPathRPOPlanner([3.0 4.0 5.0; 0.0 0.0 0.0; 0.0 0.0 0.0], hypr_config()),
+    ]
+end
+const HYPR_PLANNER_TYPES = (SpaceAGORA.HYPRRPOPlanner, SpaceAGORA.HYPRComparisonPlanner, SpaceAGORA.UnrefinedPSOPlanner,
+    SpaceAGORA.RRTConnectPlanner, SpaceAGORA.RRTConnectBezierPlanner, SpaceAGORA.RRTStarPlanner, SpaceAGORA.CHOMPPlanner,
+    SpaceAGORA.STOMPPlanner, SpaceAGORA.RetainedPathRPOPlanner)
+
+"""
+The planning algorithms checked with `check_algorithm`, each with its requests, the
+trusted queries its family's validation needs and a short simulation: the direct
+planner (with the station clearance `make_rpo_configuration` gives it), the hold
+planner above, the burn-plan family's apoapsis planner, and, when the optional
+SpaceAGORAHYPR package is loaded, the HYPR planner, the seven comparison planners and
+the retained-path planner.
+"""
+function algorithm_instances()
+    direct = SpaceAGORA.DirectRPOPlanner(segment_clearance_at=SpaceAGORA.RPOPlannerLifecycle.station_segment_clearance)
+    rpo(algorithm) = (algorithm=algorithm, requests=C.rpo_conformance_requests(), trusted=C.rpo_trusted_queries(),
+        simulation=C.rpo_conformance_simulation())
+    entries = [
+        rpo(direct),
+        (algorithm=HoldPlanner(), requests=C.rpo_conformance_requests(goal_rtn_m=nothing),
+            trusted=C.rpo_trusted_queries(), simulation=C.rpo_conformance_simulation(goal_rtn_m=(3.0, 0.0, 0.0))),
+        (algorithm=SpaceAGORA.ApoapsisBurnPlanner(delta_v_mps=10.0), requests=C.burn_plan_conformance_requests(),
+            trusted=NamedTuple(), simulation=C.burn_plan_conformance_simulation()),
+    ]
+    SpaceAGORA.hypr_available() && append!(entries, rpo.(hypr_planners()))
+    return entries
+end
+
+"""
+Concrete built-in planning algorithm types without an instance, each with the reason.
+"""
+algorithm_exemptions() = SpaceAGORA.hypr_available() ? Dict{Any, String}() : Dict{Any, String}(
+    T => "needs the optional SpaceAGORAHYPR package, which is not loaded here; the unit runner loads it, and there " *
+        "the planner is checked" for T in HYPR_PLANNER_TYPES)
+
+"""
+The algorithm families checked with `check_algorithm_family`, under each rejection
+policy they allow, with an algorithm of the family and its requests (which include
+one the family refuses: for RPO a retiming request the direct planner's capability
+check refuses, for the burn plan a request during an installed burn).
+"""
+function family_instances()
+    direct = SpaceAGORA.DirectRPOPlanner(segment_clearance_at=SpaceAGORA.RPOPlannerLifecycle.station_segment_clearance)
+    rpo = [(family=SpaceAGORA.RPOPlannerInterfaces.RPOReferenceFamily(on_rejection=policy), algorithm=direct,
+        requests=C.rpo_conformance_requests(), link=SM.RPOPlanBuffer(), trusted=C.rpo_trusted_queries())
+        for policy in (:fail, :install_fallback)]
+    # The burn-plan family has one policy, :keep_previous; its requests include one it refuses.
+    burn = (family=SpaceAGORA.BurnPlanFamily(), algorithm=SpaceAGORA.ApoapsisBurnPlanner(delta_v_mps=10.0),
+        requests=C.burn_plan_conformance_requests(),
+        link=SpaceAGORA.BurnPlanSlot(SM.PropulsiveBurnPlan[SM.PropulsiveBurnPlan()], 1), trusted=NamedTuple())
+    return [rpo..., burn]
+end
 
 end # module ConformanceInstances

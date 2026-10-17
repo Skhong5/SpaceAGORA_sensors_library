@@ -5,7 +5,7 @@ using SpaceAGORA.Conformance: check_force_torque_model, package_types, test_repo
 
 include(joinpath(@__DIR__, "..", "..", "fixtures", "conformance_instances.jl"))
 using .ConformanceInstances: force_torque_instances, force_torque_exemptions, sensor_instances, sensor_exemptions,
-    gnc_instances, gnc_exemptions
+    gnc_instances, gnc_exemptions, algorithm_instances, algorithm_exemptions, family_instances
 using SpaceAGORA.Conformance: check_sensor, check_guidance_model, check_control_model
 
 const SM = SpaceAGORA.SimulationModel
@@ -110,6 +110,45 @@ end
         else
             test_report(C._static_gnc_report(entry.model, entry.kind))
         end
+    end
+end
+
+@testset "Built-in planning algorithms and families pass the conformance checks" begin
+    types = C.package_types(SpaceAGORA.AbstractGNCAlgorithm)
+    instances = algorithm_instances()
+    exemptions = algorithm_exemptions()
+    families = family_instances()
+    @testset "every concrete built-in algorithm and family has an instance or a listed exemption" begin
+        @test SpaceAGORA.DirectRPOPlanner in types && SpaceAGORA.HYPRRPOPlanner in types
+        for T in types
+            covered = count(entry -> entry.algorithm isa T, instances)
+            @testset let type = T, instance_count = covered, exempt = haskey(exemptions, T)
+                @test (instance_count == 1) != exempt
+            end
+        end
+        for (T, reason) in exemptions
+            @test T in types
+            @test !isempty(strip(reason))
+        end
+        family_types = C.package_types(SpaceAGORA.AbstractAlgorithmFamily)
+        @test !isempty(family_types)
+        for F in family_types
+            @testset let family = F
+                @test any(entry -> entry.family isa F, families)
+            end
+        end
+        # Every rejection policy is exercised: :fail and :install_fallback by the RPO
+        # family, :keep_previous by the burn-plan family.
+        @test Set(SpaceAGORA.on_rejection(entry.family) for entry in families) ==
+            Set((:fail, :install_fallback, :keep_previous))
+    end
+    for entry in instances
+        test_report(C.check_algorithm(entry.algorithm, entry.requests; trusted=entry.trusted,
+            simulation=entry.simulation))
+    end
+    for entry in families
+        test_report(C.check_algorithm_family(entry.family, entry.algorithm, entry.requests; link=entry.link,
+            trusted=entry.trusted))
     end
 end
 

@@ -352,6 +352,172 @@ function gnc_controls()
     return controls
 end
 
+# Planning algorithms: RPO planners (a core family) with one defect each, valid for
+# an unchanged goal like the example hold planner; `state` counts proposals.
+const RP = SpaceAGORA.RPOPlannerInterfaces
+const GA = SpaceAGORA.GNCAlgorithms
+struct NcPlanner{D} <: RP.AbstractRPOPlanner end
+const NC_PLANNER_SHARED = Ref(0)
+const NC_PLANNER_STATES = IdDict{Any, Nothing}()
+SpaceAGORA.planner_capabilities(::NcPlanner{D}) where {D} =
+    RP.RPOPlannerCapabilities(state_sources=(:truth,), frames=(:target_rtn,), retiming=D !== :SilentReplan)
+SpaceAGORA.initialize_planner(::NcPlanner, context) = Ref(0)
+SpaceAGORA.initialize_planner(::NcPlanner{:SharedState}, context) = NC_PLANNER_SHARED
+SpaceAGORA.initialize_planner(::NcPlanner{:IdentityState}, context) = (state = Ref(0); NC_PLANNER_STATES[state] = nothing; state)
+GA.consumes_rng(::NcPlanner{:DrawsDespiteDeclaring}) = false
+RP.require_planner_support(::NcPlanner{:NeedsPackage}) = error("NcPlanner{:NeedsPackage} needs a package that is not installed")
+function nc_plan(state, ::NcPlanner{D}, r::RP.RPOPlanningRequest, rng) where {D}
+    state[] += 1
+    D === :Mutates && (r.geometry.station.points_body .= 100.0)
+    D === :IdentityState && !haskey(NC_PLANNER_STATES, state) &&
+        return RP.RPOPlanningResult(request_id=r.request_id, status=:infeasible, termination=:copied_state)
+    draw = D === :GlobalRand ? rand() : rand(rng)
+    position = collect(r.x_rtn[1:3])
+    reference = RP.RPOReference(t_ref_s=[0.0, r.reference_dt_s], r_ref_rtn_m=hcat(position, collect(r.goal_rtn_m)),
+        v_ref_rtn_mps=zeros(3, 2), origin_time_s=r.time_s, valid_until_s=r.valid_until_s, chaser_id=r.chaser_id,
+        target_id=r.target_id, geometry_revision=r.geometry_revision)
+    return RP.RPOPlanningResult(request_id=D === :WrongId ? r.request_id + 100 : r.request_id, status=:candidate,
+        termination=:completed, reference=reference, diagnostics=(draw=draw,))
+end
+SpaceAGORA.plan_rpo!(state, planner::NcPlanner, r::RP.RPOPlanningRequest, rng::Random.AbstractRNG) =
+    nc_plan(state, planner, r, rng)
+SpaceAGORA.retime_rpo!(state, planner::NcPlanner, r::RP.RPOPlanningRequest, active::RP.RPOReference,
+    rng::Random.AbstractRNG) = nc_plan(state, planner, r, rng)
+nc_hold_requests() = C.rpo_conformance_requests(goal_rtn_m=nothing)
+nc_algorithm_report(planner; simulation=nothing) =
+    C.check_algorithm(planner, nc_hold_requests(); trusted=C.rpo_trusted_queries(), simulation)
+nc_simulation() = C.rpo_conformance_simulation(goal_rtn_m=(3.0, 0.0, 0.0), mission_time_s=0.1)
+
+# An algorithm with no family.
+struct NcFamilyless <: GA.AbstractGNCAlgorithm end
+
+# Families of this file: the variant names the defect, the policy is `on_rejection`.
+# A request above the trusted limit is refused.
+struct NcRequest <: GA.AbstractAlgorithmRequest
+    request_id::Int
+    reason::Symbol
+    time_s::Float64
+    value::Float64
+    scratch::Vector{Float64}
+end
+NcRequest(id, time_s, value) = NcRequest(id, :forced, time_s, value, [0.0])
+struct NcFam{Variant, Policy} <: GA.AbstractAlgorithmFamily end
+struct NcOtherFamily <: GA.AbstractAlgorithmFamily end
+GA.on_rejection(::NcFam{V, Policy}) where {V, Policy} = Policy
+function GA.validate_proposal(::NcFam{V}, r::NcRequest, result, trusted) where {V}
+    V === :RandomValidation && rand()
+    V === :MutatingValidation && (r.scratch[1] += 1.0)
+    return result.product <= trusted.limit ? GA.ValidationResult(true, :within_limit) :
+        GA.ValidationResult(false, :above_limit)
+end
+function GA.install!(link::Base.RefValue{Any}, ::NcFam{V}, product, r::NcRequest, t; validation, diagnostics) where {V}
+    V === :SilentInstall || (link[] = (product=product, t=t))
+    return nothing
+end
+GA.is_current(::NcFam, r::NcRequest, product, t) = true
+GA.fallback_product(::NcFam{:Clean, :install_fallback}, r::NcRequest) = 0.0
+C.conformance_link(::NcFam) = Ref{Any}(nothing)
+struct NcDoubler{F} <: GA.AbstractGNCAlgorithm end
+GA.algorithm_family(::NcDoubler{F}) where {F} = F()
+GA.consumes_rng(::NcDoubler) = false
+GA.propose!(state, ::NcDoubler, r::NcRequest, rng) =
+    GA.AlgorithmResult(request_id=r.request_id, status=:candidate, termination=:completed, product=2r.value)
+nc_requests() = [NcRequest(1, 0.0, 2.0), NcRequest(2, 1.0, 9.0), NcRequest(3, 2.0, 1.0)]
+# Families with an obligation defect the walk itself cannot get past, or never reaches.
+GA.algorithm_result_type(::NcFam{:NotAType}) = :not_a_type
+GA.validate_proposal(::NcFam{:RejectAll}, r::NcRequest, result, trusted) = GA.ValidationResult(false, :never)
+struct NcBareFamily <: GA.AbstractAlgorithmFamily end
+GA.validate_proposal(::NcBareFamily, r::NcRequest, result, trusted) = GA.ValidationResult(false, :never)
+# A family whose revisions the capability check refuses, and an algorithm that answers
+# a refused revision `:unsupported` yet with a product.
+struct NcLooseResult <: GA.AbstractAlgorithmResult
+    request_id::Int
+    status::Symbol
+    termination::Symbol
+    product::Any
+    diagnostics::NamedTuple
+end
+GA.proposed_product(r::NcLooseResult) = r.product
+GA.algorithm_result_type(::NcFam{:Loose}) = NcLooseResult
+GA.is_revision_request(::NcFam{:Loose}, r::NcRequest) = r.reason === :revise
+GA.validate_capabilities(::NcFam{:Loose}, algorithm, r::NcRequest; checkpoint::Bool=false) =
+    r.reason === :revise ? GA.ValidationResult(false, :revision_unsupported) : GA.ValidationResult(true, :supported)
+struct NcLooseAlgorithm <: GA.AbstractGNCAlgorithm end
+GA.algorithm_family(::NcLooseAlgorithm) = NcFam{:Loose, :fail}()
+GA.consumes_rng(::NcLooseAlgorithm) = false
+GA.propose!(state, ::NcLooseAlgorithm, r::NcRequest, rng) =
+    NcLooseResult(r.request_id, :candidate, :completed, 2r.value, NamedTuple())
+GA.propose_revision!(state, ::NcLooseAlgorithm, r::NcRequest, active, rng) =
+    NcLooseResult(r.request_id, :unsupported, :revision_not_supported, active, NamedTuple())
+nc_loose_requests() = [NcRequest(1, 0.0, 2.0), NcRequest(2, :revise, 1.0, 1.0, [0.0])]
+nc_family_report(F; family=F()) =
+    C.check_algorithm_family(family, NcDoubler{F}(), nc_requests(); link=Ref{Any}(nothing), trusted=(limit=10.0,))
+
+algorithm_except(ids...) = filter(id -> !(id in ids), CHECK_IDS.algorithm)
+function algorithm_controls()
+    kind = :algorithm
+    return [
+        (kind=kind, id=:family_resolves, broken="no algorithm_family method", expect="declares no algorithm family",
+            report=() -> C.check_algorithm(NcFamilyless(), nc_requests()), passing=()),
+        (kind=kind, id=:family_trusted, broken="a family defined outside core",
+            expect="families are trusted and core-owned",
+            report=() -> C.check_algorithm(NcDoubler{NcFam{:Clean, :fail}}(), nc_requests(); trusted=(limit=10.0,)),
+            passing=algorithm_except(:family_trusted)),
+        (kind=kind, id=:result_contract, broken="a result for another request id",
+            expect="the result's request_id is 101, the request's 1",
+            report=() -> nc_algorithm_report(NcPlanner{:WrongId}()), passing=algorithm_except(:result_contract)),
+        (kind=kind, id=:stream_untouched_if_declared, broken="consumes_rng = false, yet it draws",
+            expect="advanced the stream", report=() -> nc_algorithm_report(NcPlanner{:DrawsDespiteDeclaring}()),
+            passing=algorithm_except(:stream_untouched_if_declared)),
+        (kind=kind, id=:deterministic_given_stream, broken="rand() in its diagnostics",
+            expect="with the global random number generator seeded 1 and 2",
+            report=() -> nc_algorithm_report(NcPlanner{:GlobalRand}()), passing=algorithm_except(:deterministic_given_stream)),
+        (kind=kind, id=:request_not_mutated, broken="it writes into the request's station points",
+            expect="changed its copy of request(s) 1, 2, 3", report=() -> nc_algorithm_report(NcPlanner{:Mutates}()),
+            passing=algorithm_except(:request_not_mutated)),
+        (kind=kind, id=:initialize_independent, broken="initialize_planner returns one shared counter",
+            expect="share 1 mutable object(s)", report=() -> nc_algorithm_report(NcPlanner{:SharedState}()),
+            passing=algorithm_except(:initialize_independent)),
+        (kind=kind, id=:refuses_explicitly, broken="no retiming declared, yet retime_rpo! plans in full",
+            expect="yet propose_revision! returned :candidate", report=() -> nc_algorithm_report(NcPlanner{:SilentReplan}()),
+            passing=algorithm_except(:refuses_explicitly)),
+        (kind=kind, id=:refuses_explicitly, broken="a refused revision answered :unsupported, yet with a product",
+            expect="yet propose_revision! returned :unsupported with a product",
+            report=() -> C.check_algorithm(NcLooseAlgorithm(), nc_loose_requests(); trusted=(limit=10.0,)),
+            passing=algorithm_except(:family_trusted, :refuses_explicitly)),
+        (kind=kind, id=:driver_round_trip, broken="it answers differently for a copy of its state",
+            expect="yet the driver's run gave an installed product",
+            report=() -> nc_algorithm_report(NcPlanner{:IdentityState}()), passing=algorithm_except(:driver_round_trip)),
+        (kind=kind, id=:simulation_run, broken="require_planner_support throws", expect="needs a package that is not installed",
+            report=() -> nc_algorithm_report(NcPlanner{:NeedsPackage}(); simulation=nc_simulation()),
+            passing=algorithm_except(:simulation_run)),
+        (kind=:algorithm_family, id=:family_resolves, broken="the algorithm declares another family",
+            expect="the request driver refuses the pair",
+            report=() -> nc_family_report(NcFam{:Clean, :fail}; family=NcOtherFamily()), passing=()),
+        (kind=:algorithm_family, id=:family_obligations, broken=":install_fallback without fallback_product",
+            expect="fallback_product has no method", report=() -> nc_family_report(NcFam{:NoFallback, :install_fallback}),
+            passing=(:family_resolves,)),
+        (kind=:algorithm_family, id=:family_obligations, broken="validation draws from the global stream",
+            expect="drew from the global random number generator",
+            report=() -> nc_family_report(NcFam{:RandomValidation, :fail}), passing=(:family_resolves, :driver_round_trip)),
+        (kind=:algorithm_family, id=:family_obligations, broken="validation writes into the request",
+            expect="validate_proposal changed the request", report=() -> nc_family_report(NcFam{:MutatingValidation, :fail}),
+            passing=(:family_resolves, :driver_round_trip)),
+        (kind=:algorithm_family, id=:family_obligations, broken="algorithm_result_type returns a symbol, not a type",
+            expect="algorithm_result_type returns :not_a_type, not a subtype of AbstractAlgorithmResult",
+            report=() -> nc_family_report(NcFam{:NotAType, :fail}), passing=(:family_resolves,)),
+        (kind=:algorithm_family, id=:family_obligations, broken="validation rejects every proposal",
+            expect="validate_proposal accepted none of the proposals",
+            report=() -> nc_family_report(NcFam{:RejectAll, :fail}), passing=(:family_resolves, :driver_round_trip)),
+        (kind=:algorithm_family, id=:family_obligations, broken="no install! or is_current, and every proposal rejected",
+            expect="install! has no method for a Base.RefValue{Any} link",
+            report=() -> nc_family_report(NcBareFamily), passing=(:family_resolves, :driver_round_trip)),
+        (kind=:algorithm_family, id=:driver_round_trip, broken="install! leaves the link unchanged",
+            expect="install! left the link unchanged", report=() -> nc_family_report(NcFam{:SilentInstall, :fail}),
+            passing=(:family_resolves, :family_obligations)),
+    ]
+end
+
 # A facade with the shape the adapter standard requires; each control breaks one rule.
 function control_facade(; version=v"1.0.0", require=:exact, implemented=(:serve,), consumed=(:Value,),
         omit::Union{Nothing, Symbol}=nothing)
@@ -447,6 +613,7 @@ controls() = [
         expect="two runs with isolate_state=false on one configuration differ: ",
         report=() -> check_sensor(NcCountingSensor()), passing=sensor_except(:custom_state_reset)),
     gnc_controls()...,
+    algorithm_controls()...,
     (kind=:service_facade, id=:facade_shape, broken="CONTRACT_VERSION other than the reviewed one", expect="CONTRACT_VERSION is v\"1.0.1\", not the reviewed 1.0.0",
         report=() -> facade_report(control_facade(version=v"1.0.1"); version=v"1.0.0"), passing=()),
     (kind=:service_facade, id=:facade_shape, broken="require_version accepts any minor or patch", expect="accepted a version other than 1.0.0",
@@ -477,6 +644,8 @@ controls() = [
 facade_report(facade; version) = Base.invokelatest(check_service_facade, facade; version)
 
 status_of(report, id) = only(check.status for check in report.checks if check.id === id)
+const MAY_SKIP = (:concurrent_equals_sequential, :bind_fresh_state, :stream_untouched_if_declared, :refuses_explicitly,
+    :simulation_run)
 
 @testset "Conformance negative controls" begin
     all_controls = controls()
@@ -498,7 +667,11 @@ status_of(report, id) = only(check.status for check in report.checks if check.id
         nested = facade_report(control_facade(implemented=(:serve, (:Nested, :serve))); version=v"1.0.0")
         @test passed(nested)
         for (report, kind) in ((check_guidance_model(NcGClean()), :guidance_model),
-                (check_navigation_model(NcNClean()), :navigation_model), (check_control_model(NcCtl{:Clean}()), :control_model))
+                (check_navigation_model(NcNClean()), :navigation_model), (check_control_model(NcCtl{:Clean}()), :control_model),
+                (nc_algorithm_report(NcPlanner{:Clean}(); simulation=nc_simulation()), :algorithm),
+                (nc_family_report(NcFam{:Clean, :fail}), :algorithm_family),
+                (nc_family_report(NcFam{:Clean, :keep_previous}), :algorithm_family),
+                (nc_family_report(NcFam{:Clean, :install_fallback}), :algorithm_family))
             @test [check.id for check in report.checks] == collect(CHECK_IDS[kind])
             @test all(check -> check.status in (:pass, :skip), report.checks)
             @test passed(report)
@@ -549,13 +722,35 @@ status_of(report, id) = only(check.status for check in report.checks if check.id
                 expected === :fail && @test !passed(report)
                 for id in control.passing
                     @testset let id = id, status = status_of(report, id)
-                        # Skipped is not failed: concurrency needs two threads, and a model
-                        # without bind_spacecraft has no bound copies to check.
-                        @test status === :pass || (id in (:concurrent_equals_sequential, :bind_fresh_state) && status === :skip)
+                        # Skipped is not failed: concurrency needs two threads, a model without
+                        # bind_spacecraft has no bound copies to check, and an algorithm check
+                        # skips what the algorithm does not declare or the control does not give.
+                        @test status === :pass || (id in MAY_SKIP && status === :skip)
                     end
                 end
             end
         end
+    end
+    @testset "algorithm checks leave the global random number generator as they found it" begin
+        # A validation that calls rand() is reported, and the generator is restored.
+        for report in (() -> nc_family_report(NcFam{:RandomValidation, :fail}),
+                       () -> C.check_algorithm(NcDoubler{NcFam{:RandomValidation, :fail}}(), nc_requests();
+                           trusted=(limit=10.0,)))
+            before = copy(Random.default_rng())
+            report()
+            @test rand(copy(before), UInt64) == rand(copy(Random.default_rng()), UInt64)
+        end
+    end
+    @testset "algorithm checks report a defective family instead of throwing" begin
+        # A family whose result type is not a type gets a failing report from either
+        # check, not an exception from the comparisons that need the type.
+        algorithm_report = C.check_algorithm(NcDoubler{NcFam{:NotAType, :fail}}(), nc_requests(); trusted=(limit=10.0,))
+        @test !passed(algorithm_report)
+        @test occursin("algorithm_result_type returns :not_a_type",
+            only(check.detail for check in algorithm_report.checks if check.id === :result_contract))
+        bare = nc_family_report(NcBareFamily)
+        @test occursin("is_current has no method for this family",
+            only(check.detail for check in bare.checks if check.id === :family_obligations))
     end
     @testset "concurrent_equals_sequential: a run stalls past the rendezvous limit" begin
         model = NcStallsOnce()

@@ -103,3 +103,9 @@ function _reachable_mutables(x, found::IdDict{Any, Nothing}=IdDict{Any, Nothing}
     end
     return found
 end
+
+# Mutable objects reachable from both `a` and `b`.
+function _shared_mutables(a, b)
+    from_a = _reachable_mutables(a)
+    return [object for object in keys(_reachable_mutables(b)) if haskey(from_a, object)]
+end
