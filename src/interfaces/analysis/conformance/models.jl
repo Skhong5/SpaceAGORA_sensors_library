@@ -14,6 +14,12 @@ function _container_effectors(configuration, kind::Symbol)
     throw(ArgumentError("unknown model kind $(repr(kind))"))
 end
 
+function _container_rates(configuration, kind::Symbol)
+    kind === :guidance_model && return configuration.guidance_model.guidance_rates
+    kind === :navigation_model && return configuration.navigation_model.navigation_rates
+    return configuration.control_model.control_rates
+end
+
 const _CONTAINER_NAMES = (guidance_model="guidance_model.guidance_effectors",
     navigation_model="navigation_model.navigation_effectors", control_model="control_model.control_effectors")
 
@@ -32,8 +38,10 @@ its configuration's guidance effectors. The checks, in report order:
   `concurrent_equals_sequential`: as for force/torque models, comparing the saved
   states and the model's own state at the end of each run, bit for bit.
 - `bind_fresh_state`: for a model with a `bind_spacecraft` method, no mutable object
-  reachable from the copies bound to spacecraft 1 and 2 changes during a run of a
-  two-spacecraft fixture that declares the model on both. Skipped without a method.
+  reachable from the copies bound to spacecraft 1 and 2 changes during a run of the
+  fixture with the model declared on its first two spacecraft instead of in the
+  shared container (a fixture with one spacecraft gets a copy of it as the second,
+  its mounted sensors included). Skipped without a method.
 
 A pass certifies interface behaviour, not the guidance law.
 """
@@ -126,7 +134,7 @@ function _check_gnc_model(model, kind::Symbol, fixture::ConformanceFixture, spac
             "two runs with isolate_state=false on one configuration differ: $(reset_gap); reset the model's run " *
             "state in initialize_navigation!")
     end
-    bound = _bind_fresh_state_check(model, kind, since)
+    bound = _bind_fresh_state_check(model, kind, since; configuration, index)
     # Last: this run uses the caller's objects.
     original = run(; isolate_state=false)
 
@@ -145,7 +153,7 @@ function _check_gnc_model(model, kind::Symbol, fixture::ConformanceFixture, spac
         concurrency,
     ]
     checks = if kind === :control_model
-        [hooks, _no_deprecated_hooks_check(fixture, since),
+        [hooks, _no_deprecated_hooks_check(fixture, model, since),
             _sample_signature_check(model, since; hooks=_CONTROL_OUTPUT_HOOKS), runs..., control_checks..., bound]
     elseif kind === :navigation_model
         [hooks, runs..., resets, bound]
@@ -162,7 +170,7 @@ function _static_gnc_report(model, kind::Symbol;
         fixture::ConformanceFixture=conformance_fixture(; NamedTuple{(_PER_SPACECRAFT_KEYS[kind],)}(((model,),))...))
     since = FIRST_RELEASE
     checks = [_hooks_present_check(fixture, since)]
-    kind === :control_model && push!(checks, _no_deprecated_hooks_check(fixture, since),
+    kind === :control_model && push!(checks, _no_deprecated_hooks_check(fixture, model, since),
         _sample_signature_check(model, since; hooks=_CONTROL_OUTPUT_HOOKS))
     return ConformanceReport(string(nameof(typeof(model))), kind, checks)
 end
@@ -273,7 +281,44 @@ function _positive_consumption_check(model, samples::_Samples, since::VersionNum
     return _check(:positive_consumption, since, true)
 end
 
-function _bind_fresh_state_check(model, kind::Symbol, since::VersionNumber)
+# The check's own configuration with the model, at `index` of its container, declared
+# on the first two spacecraft instead: every other model, sensor, environment and
+# setting is kept, so a model whose bound copies need them runs as in the main runs.
+# A configuration with one spacecraft gets a copy of it as the second, with the next
+# free id.
+function _bind_configuration(configuration, kind::Symbol, index::Int, subject)
+    variant = deepcopy(configuration)
+    effectors = collect(Any, _container_effectors(variant, kind))
+    rates = collect(Float64, _container_rates(variant, kind))
+    rate = rates[index]
+    deleteat!(effectors, index)
+    deleteat!(rates, index)
+    spacecraft = collect(SimulationModel.SpacecraftModel, variant.dynamics_model.spacecraft)
+    if length(spacecraft) == 1
+        second = deepcopy(only(spacecraft))
+        second.id = only(spacecraft).id + 1
+        push!(spacecraft, second)
+    end
+    for sc in spacecraft[1:2]
+        if kind === :guidance_model
+            sc.guidance = SimulationModel.GuidanceModel((sc.guidance.guidance_effectors..., subject),
+                [sc.guidance.guidance_rates; rate])
+        elseif kind === :navigation_model
+            sc.navigation = SimulationModel.NavigationModel((sc.navigation.navigation_effectors..., subject),
+                [sc.navigation.navigation_rates; rate])
+        else
+            sc.control = SimulationModel.ControlModel((sc.control.control_effectors..., subject),
+                [sc.control.control_rates; rate])
+        end
+    end
+    container = kind === :guidance_model ? (guidance_model=SimulationModel.GuidanceModel(Tuple(effectors), rates),) :
+        kind === :navigation_model ? (navigation_model=SimulationModel.NavigationModel(Tuple(effectors), rates),) :
+        (control_model=SimulationModel.ControlModel(Tuple(effectors), rates),)
+    return SimulationModel.SimConfig._with_configuration(variant; container...,
+        dynamics_model=SimulationModel.DynamicsModel(spacecraft, variant.dynamics_model.dynamic_effectors))
+end
+
+function _bind_fresh_state_check(model, kind::Symbol, since::VersionNumber; configuration, index::Int)
     bind = SimulationLifecycle.bind_spacecraft
     T = typeof(model)
     hasmethod(bind, Tuple{T, Int}) && which(bind, Tuple{T, Int}) !== which(bind, Tuple{Any, Int}) ||
@@ -286,15 +331,14 @@ function _bind_fresh_state_check(model, kind::Symbol, since::VersionNumber)
         return _check(:bind_fresh_state, since, false, "bind_spacecraft threw: " * _summary(err))
     end
     snapshots = IdDict{Any, Any}(object => deepcopy(object) for object in shared)
-    key = _PER_SPACECRAFT_KEYS[kind]
-    configuration = try
-        _fixture_configuration(spacecraft_count=2, per_spacecraft=NamedTuple{(key,)}(((subject,),)))
+    two = try
+        _bind_configuration(configuration, kind, index, subject)
     catch err
         return _check(:bind_fresh_state, since, false, "the two-spacecraft fixture could not be built: " * _summary(err))
     end
     # The engine binds the declared model to each spacecraft; with isolate_state=false
     # the bound copies are the ones the run uses.
-    run = _solve(configuration; isolate_state=false)
+    run = _solve(two; isolate_state=false)
     _failed(run) && return _check(:bind_fresh_state, since, false,
         "the two-spacecraft run failed: " * _summary(run.error))
     changed = [object for object in shared if !_same_state(object, snapshots[object])]

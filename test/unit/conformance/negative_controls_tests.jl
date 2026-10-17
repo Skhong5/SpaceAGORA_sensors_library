@@ -176,6 +176,38 @@ end
 NcNoTimeSensor() = NcNoTimeSensor(1.0, 1, nothing, SVector(NaN, NaN, NaN))
 SpaceAGORA.sensor_dimension(::NcNoTimeSensor) = 3
 SpaceAGORA.sensor_measure(::NcNoTimeSensor, truth, ctx, rng) = noisy(truth, rng)
+# Clean, and it needs initialize_sensor!: its offset is NaN until that sets it.
+mutable struct NcNeedsInitSensor <: SpaceAGORA.AbstractSensor
+    period_s::Float64
+    seed::Int
+    rng::Any
+    latest::Any
+    latest_time_s::Float64
+    offset::Float64
+end
+NcNeedsInitSensor() = NcNeedsInitSensor(1.0, 1, nothing, SVector(NaN, NaN, NaN), NaN, NaN)
+SpaceAGORA.sensor_dimension(::NcNeedsInitSensor) = 3
+SpaceAGORA.initialize_sensor!(s::NcNeedsInitSensor, truth, ctx, rng) = (s.offset = 0.0; nothing)
+SpaceAGORA.sensor_measure(s::NcNeedsInitSensor, truth, ctx, rng) = noisy(truth, rng) .+ s.offset
+# seed_repeatable: like a gyro whose bias walks, its first reading draws nothing (the
+# current bias) and later ones do; initialize_sensor! resets the stream to a fixed seed.
+mutable struct NcFixedSeedWalkSensor <: SpaceAGORA.AbstractSensor
+    period_s::Float64
+    seed::Int
+    rng::Any
+    latest::Any
+    latest_time_s::Float64
+    bias::SVector{3, Float64}
+end
+NcFixedSeedWalkSensor() = NcFixedSeedWalkSensor(1.0, 1, nothing, SVector(NaN, NaN, NaN), NaN, SVector(0.0, 0.0, 0.0))
+SpaceAGORA.sensor_dimension(::NcFixedSeedWalkSensor) = 3
+SpaceAGORA.initialize_sensor!(s::NcFixedSeedWalkSensor, truth, ctx, rng) =
+    (Random.seed!(rng, 1234); s.bias = SVector(0.0, 0.0, 0.0); nothing)
+function SpaceAGORA.sensor_measure(s::NcFixedSeedWalkSensor, truth, ctx, rng)
+    reading = truth.ω_body + s.bias
+    s.bias += 1.0e-4 * SVector(randn(rng), randn(rng), randn(rng))
+    return reading
+end
 
 const SENSOR_RUN_LEVEL = (:repeatable_run, :deepcopy_equivalent, :global_rng_independent, :concurrent_equals_sequential,
     :seed_repeatable, :custom_state_reset)
@@ -220,6 +252,14 @@ for (prefix, Abstract, tick) in ((:NcG, SpaceAGORA.AbstractGuidanceModel, :calcG
     end
 end
 registered(model) = (NC_GNC_GAINS[model] = 1.0e-3; model)
+# Clean, and its bound copies need the fixture's mounted sensor: each tick reads it.
+mutable struct NcNSensorReader <: SpaceAGORA.AbstractNavigationModel
+    acc::Float64
+end
+SpaceAGORA.calcNavigationEffect!(m::NcNSensorReader, u, p, t::Float64, i::Int) =
+    (m.acc += length(SpaceAGORA.sensor_measurement(p.args.dynamics_model.spacecraft[i], 1)); nothing)
+SpaceAGORA.SimulationLifecycle.initialize_navigation!(m::NcNSensorReader, u, p, t) = (m.acc = 0.0; nothing)
+SpaceAGORA.bind_spacecraft(m::NcNSensorReader, i::Int) = NcNSensorReader(m.acc)
 
 # Control models: the tick sets `cmd`, and the output hooks read it.
 mutable struct NcCtl{V} <: SpaceAGORA.AbstractControlEffectorModel
@@ -566,6 +606,9 @@ controls() = [
     (kind=:sensor, id=:seed_repeatable, broken="its stream reset to a fixed seed",
         expect="yet runs with those seeds give the same measurements",
         report=() -> check_sensor(NcFixedSeedSensor()), passing=sensor_except(:seed_repeatable)),
+    (kind=:sensor, id=:seed_repeatable, broken="its stream reset to a fixed seed, and its first reading draws nothing",
+        expect="yet runs with those seeds give the same measurements",
+        report=() -> check_sensor(NcFixedSeedWalkSensor()), passing=sensor_except(:seed_repeatable)),
     (kind=:sensor, id=:custom_state_reset, broken="a sample counter it never resets",
         expect="two runs with isolate_state=false on one configuration differ: ",
         report=() -> check_sensor(NcCountingSensor()), passing=sensor_except(:custom_state_reset)),
@@ -633,10 +676,24 @@ const MAY_SKIP = (:concurrent_equals_sequential, :bind_fresh_state, :stream_unto
             @test all(check -> check.status in (:pass, :skip), report.checks)
             @test passed(report)
         end
-        sensor = check_sensor(NcCleanSensor())
-        @test [check.id for check in sensor.checks] == collect(CHECK_IDS.sensor)
-        @test all(check -> check.status === :pass, sensor.checks) || Threads.nthreads() < 2
-        @test passed(sensor)
+        # A clean model is not answerable for another model of its fixture that uses a
+        # deprecated hook.
+        target = NcClean()
+        mixed = check_force_torque_model(target; fixture=conformance_fixture(effectors=(target, NcDeprecatedForce())))
+        @test status_of(mixed, :no_deprecated_hooks) === :pass
+        controller = NcCtl{:Clean}()
+        mixed = check_control_model(controller; fixture=conformance_fixture(control=(controller, NcCtl{:Deprecated}())))
+        @test status_of(mixed, :no_deprecated_hooks) === :pass
+        # The two-spacecraft bind check keeps the fixture's sensor, which the model reads.
+        reader = check_navigation_model(NcNSensorReader(0.0); sensors=(NcCleanSensor(),))
+        @test status_of(reader, :bind_fresh_state) === :pass
+        @test passed(reader)
+        # The second needs initialize_sensor! before it can measure, as the engine calls it.
+        for sensor in (check_sensor(NcCleanSensor()), check_sensor(NcNeedsInitSensor()))
+            @test [check.id for check in sensor.checks] == collect(CHECK_IDS.sensor)
+            @test all(check -> check.status === :pass, sensor.checks) || Threads.nthreads() < 2
+            @test passed(sensor)
+        end
     end
     for control in all_controls
         # A check reports a broken input as a failing check; it never throws.

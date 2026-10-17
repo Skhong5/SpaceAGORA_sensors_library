@@ -197,7 +197,7 @@ function _advance_segment!(runtime, integrator, reason)
     end
     # Actions may change the RHS through held commands without editing u. Drop
     # the cached derivative so the next step uses the newly commanded model.
-    SciMLBase.u_modified!(integrator, true)
+    SciMLBase.derivative_discontinuity!(integrator, true)
     return nothing
 end
 
@@ -222,7 +222,7 @@ function _segment_callbacks(segments, configuration, runtime_ref)
     runtime_ref[] = runtime
     function initialize(cb, u, t, integrator)
         _enter_segment!(runtime, 1, integrator)
-        SciMLBase.u_modified!(integrator, true)
+        SciMLBase.derivative_discontinuity!(integrator, true)
         return nothing
     end
     timed_condition(u, t, integrator) = runtime.active != 0 && isfinite(runtime.deadline) && t >= runtime.deadline
