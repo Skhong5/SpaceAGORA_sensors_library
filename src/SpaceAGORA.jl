@@ -31,6 +31,8 @@ include(joinpath(@__DIR__, "orchestration", "simulation", "external_propagation_
 public ExternalPropagationServices
 include(joinpath(@__DIR__, "models", "gnc", "guidance", "adapters", "edg", "services.jl"))
 public EDGServices
+include(joinpath(@__DIR__, "interfaces", "analysis", "conformance", "conformance.jl"))
+public Conformance
 
 
 
