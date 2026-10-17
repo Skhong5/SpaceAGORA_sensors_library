@@ -128,6 +128,10 @@ sensor_instances() = [
     SpaceAGORA.RateGyro(period_s=0.5, angle_random_walk=1.0e-4, rate_random_walk=1.0e-5, seed=3),
     SpaceAGORA.StarTracker(period_s=1.0, cross_boresight_noise_rad=1.0e-5, about_boresight_noise_rad=1.0e-4, seed=4),
     SpaceAGORA.Magnetometer(period_s=0.5, noise_t=1.0e-8, bias_t=SVector(1.0e-7, 0.0, -1.0e-7), seed=5),
+    SpaceAGORA.GNSSReceiver(period_s=1.0, position_noise_m=5.0, velocity_noise_mps=0.05, seed=6),
+    # The whole sky in view and no eclipse cut-off, so that every reading is finite.
+    SpaceAGORA.SunSensor(period_s=0.5, noise_rad=1.0e-4, field_of_view_rad=π, min_lit_fraction=0.0, seed=7),
+    SpaceAGORA.Accelerometer(period_s=0.5, noise_mps2=1.0e-5, bias_mps2=SVector(1.0e-5, 0.0, 0.0), seed=8),
 ]
 
 """

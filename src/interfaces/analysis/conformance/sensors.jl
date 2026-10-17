@@ -188,8 +188,7 @@ function _sensor_run(configuration, position::Tuple{Int, Int}; isolate_state::Bo
                 while next[] <= length(targets) && now >= targets[next[]]
                     next[] += 1
                 end
-                wants_field = SimulationModel.sensor_requirements(s).magnetic_field
-                truth = SimulationModel.SimulationCallbacks._sensor_truth(integrator, first(position), wants_field)
+                truth = SimulationModel.SimulationCallbacks._sensor_truth(integrator, first(position), s)
                 push!(samples, (truth, SimulationModel.SimulationCallbacks.actuator_context(entry.link)))
             end
         catch err

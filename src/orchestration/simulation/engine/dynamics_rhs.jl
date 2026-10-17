@@ -27,6 +27,22 @@ end
 @inline _force_torque_without_wrench(effector::SimulationModel.GravitationalHarmonicsModel, sc_view, p, sat_idx::Int) =
     SimulationModel.DynamicEffectors.PerturbationEffectors._harmonics_force_torque(effector, sc_view, p, sat_idx)
 
+# One effector's force on spacecraft `sat_idx` in the inertial frame, by the
+# route `_evaluate_dynamic_effector` takes (`wrench`, or the model's own
+# deprecated calcForceTorque, or the harmonics kernel), for callbacks that read
+# it, such as the accelerometer. Neither the right-hand side's environment
+# buffers nor the effector's caches are written.
+function _effector_force_ii(effector, sc_view, state_sample, p, sat_idx::Int, t::Float64)::SVector{3, Float64}
+    if _wrench_method_available(effector)
+        env = sample_environment(SimulationModel.environment_requirements(effector), effector, sc_view, p, sat_idx, t;
+            write_buffers=false)
+        force, _ = SimulationModel.wrench(effector, state_sample, env, t)
+        return SVector{3, Float64}(force)
+    end
+    force, _ = _force_torque_without_wrench(effector, sc_view, p, sat_idx)
+    return SVector{3, Float64}(force)
+end
+
 @inline function _solver_partition_validated(effector)::Symbol
     partition = SimulationModel.solver_partition(effector)
     if partition === :implicit || partition === :explicit

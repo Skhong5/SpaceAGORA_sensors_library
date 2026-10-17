@@ -31,8 +31,8 @@ function add_sensor!(model::SpacecraftModel, link::Link, sensor::AbstractSensor)
         "A sensor kind needs the fields $(join(_RUN_STATE_FIELDS, ", ")); $(typeof(sensor)) lacks $(join(absent, ", "))."))
     ismutabletype(typeof(sensor)) || throw(ArgumentError("A sensor kind must be a mutable struct: the engine fills its run state."))
     req = sensor_requirements(sensor)
-    (req.planet_frame | req.atmosphere | req.solar) && throw(ArgumentError(
-        "Sensors may ask for the magnetic field only; this sensor asks for other environment."))
+    (req.planet_frame | req.atmosphere) && throw(ArgumentError(
+        "Sensors may ask for the magnetic field and the Sun only; this sensor asks for other environment."))
     sensor_dimension(sensor) >= 1 || throw(ArgumentError("A sensor's sensor_dimension must be positive."))
     _check_period(sensor)
     any(s -> s === sensor, (s for l in model.links for s in l.sensors)) &&
