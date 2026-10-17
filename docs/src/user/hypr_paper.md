@@ -34,8 +34,11 @@ set `HYPR_PLANNERS=hypr,pso_unrefined,rrt_connect,rrt_connect_bezier,rrt_star,ch
 RRT-Connect must precede its Bezier variant: both use exactly the same search
 result. A failed search is saved as `planning_failed`, never executed as a valid
 fallback. If HYPR planning fails, dependent comparisons are recorded as
-`blocked_baseline` rather than run with an unlimited budget. A tracking failure
-after valid HYPR planning retains the measured planning allowance. CHOMP and STOMP use the same obstacle weight multiplier, 1.0.
+`blocked_baseline` rather than run with an unlimited budget. A plan the run's
+validation refuses, for example below the 0.5 m clearance, is saved as `refused`
+with the refusal: it is not flown, so it has no command log or trace. A tracking
+failure, or a refused HYPR plan, after valid HYPR planning retains the measured
+planning allowance. CHOMP and STOMP use the same obstacle weight multiplier, 1.0.
 Their wall-clock budgets depend on the machine. Large paper-sized comparisons
 are optional and are not needed to try or verify the implementation.
 

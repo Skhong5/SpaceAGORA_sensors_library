@@ -106,6 +106,12 @@ function summarize(track)
         qp_status_counts=track.qp_status_counts,subthreshold_commands=count(x->0<x<=.01,track.thruster_forces_n),
         mass_balance_error_kg=abs(track.fuel_used-(track.initial_mass_kg-track.terminal_mass_kg)))
 end
+"""The result row of a plan the run refused: not executed, with the refusal and no flight metrics."""
+function refused_row(case,planner,plan,track,whole_wall_s)
+    return merge((case_id=case.case_id,seed=case.seed,planner=string(planner),status="refused",plant_executed=false,
+        plant="full_spaceagora",planning_s=plan.planner_plan_time,iterations=plan.planner_iteration_count,
+        whole_wall_s=whole_wall_s,cost=plan.cost),summarize(track))
+end
 function main()
     cfg=paper_config(); trackcfg=tracking_config(cfg)
     case_ids=paper_case_ids();planners=paper_planners();prefix=get(ENV,"HYPR_RUN_NAME","pilot")
@@ -184,6 +190,15 @@ function main()
                     baseline_ready=true
                 end
                 track=USE_FULL_SIM ? full_evaluate(plan,case,geometry,trackcfg) : G.rpo_track_retimed_path_lqmpc(plan.path,case.goal_rtn,geometry,plan.config,trackcfg;safe_distance_m=.5)
+                if get(track,:refusal,nothing) !== nothing
+                    # The run refused the plan, so nothing was flown: record the refusal
+                    # and the plan, but no command log, trace or deadband comparison.
+                    row=refused_row(case,planner,plan,track,(time_ns()-begun)/1e9)
+                    savejson(prefix*"_case_$(case.case_id)_$(planner)_plan.json",(case=case,path=plan.path,config=Dict(string(k)=>getfield(plan.config,k) for k in fieldnames(typeof(cfg))),refusal=track.refusal,adaptive=plan.adaptive,cost_history=plan.cost_history))
+                    push!(rows,row);savejson(prefix*"_results.json",rows)
+                    println("CASE_REFUSED ",JSON.json(row));flush(stdout)
+                    continue
+                end
                 row=merge((case_id=case.case_id,seed=case.seed,planner=string(planner),status="executed",plant_executed=true,plant=USE_FULL_SIM ? "full_spaceagora" : "reduced_two_body",planning_s=plan.planner_plan_time,
                     iterations=plan.planner_iteration_count,whole_wall_s=(time_ns()-begun)/1e9,cost=plan.cost),summarize(track))
                 savejson(prefix*"_case_$(case.case_id)_$(planner)_plan.json",(case=case,path=plan.path,config=Dict(string(k)=>getfield(plan.config,k) for k in fieldnames(typeof(cfg))),reference_time=track.t_ref,reference_position=track.r_ref_rtn,reference_velocity=track.v_ref_rtn,adaptive=plan.adaptive,cost_history=plan.cost_history))

@@ -110,6 +110,26 @@ else
         @test checked.accepted && checked.metrics.min_clearance_m >= 0.5
     end
 
+    @testset "The reconstruction records a refused plan without flying it" begin
+        d = JSON.parsefile(joinpath(RPO_EXAMPLES_DIR, "support", "hypr_final_isparo_case4.json"))
+        cfg = Base.invokelatest(X.config_from_json, d["config"]); path = reduce(hcat, d["path"])
+        case = (case_id=4, seed=744, start_rtn=SVector{3}(Float64.(d["case"]["start_rtn"])),
+            goal_rtn=SVector{3}(Float64.(d["case"]["goal_rtn"])))
+        # A station point on the saved path: the run refuses the plan at its first tick.
+        middle = path[:, cld(size(path, 2), 2)]
+        blocked = SM.RPOReferenceGeometry(SM.RPOStationGeometry(reshape(middle, 3, 1); keepout_radius_m=0.25, name="blocked");
+            chaser=SM.RPOCubeSatGeometry(dims_m=(0.1, 0.1, 0.3)))
+        plan = (path=path, config=cfg, planner_plan_time=1.0, planner_iteration_count=3, cost=2.0)
+        track = Base.invokelatest(X.full_evaluate, plan, case, blocked, Base.invokelatest(X.tracking_config, cfg))
+        @test track.refusal !== nothing && track.refusal.reason isa Symbol && !track.success
+        @test isnan(track.actual_travel_duration) && isempty(track.x_hist) && isempty(track.mass_history_kg)
+        # The refused row is not an execution: no flight, and it serializes as is.
+        row = Base.invokelatest(X.refused_row, case, :hypr, plan, track, 0.5)
+        @test row.status == "refused" && !row.plant_executed && row.refusal == track.refusal && !row.success
+        @test row.planner == "hypr" && row.planning_s == 1.0 && isnan(row.fuel_g)
+        @test JSON.parse(JSON.json(row))["status"] == "refused"
+    end
+
     @testset "The main example plans, validates, flies and stops on the planner path" begin
         small = (pso_n_particles=8, pso_n_iters=2, n_station_points=256, verbose=false, results_directory=mktempdir(),
             mission_time=10.0, data_rate_s=1.0, start_rtn=SVector(-8.0, -4.0, 2.0), goal_rtn=SVector(-5.5, -2.5, 1.0),
