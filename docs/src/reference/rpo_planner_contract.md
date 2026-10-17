@@ -187,6 +187,19 @@ requested acceleration limit with `retime_accel_limit_enable=true`, as
 `rrt_on_replan=true` explicitly enables the existing RRT warm start for a
 `:replan` request.
 
+`RetainedPathRPOPlanner(path_rtn, config)` replays a saved geometric path, such
+as a published HYPR plan, instead of searching. For a request whose chaser
+position and goal are within `endpoint_tolerance_m` (default 1e-6 m) of the
+path's first and last points, it sets those points to the request's and times the
+path with the HYPR retimer, under the request mapped onto `config` exactly as
+`HYPRRPOPlanner` maps it for a new plan. Otherwise it refuses
+(`:infeasible`, with `:start_not_on_path` or `:goal_not_on_path`). It draws no
+random numbers, declares neither retiming nor restart, and needs the HYPR
+companion. In a run, the timed reference passes the lifecycle's validation like
+any other; a saved path is never installed unchecked. Replaying a HYPR plan's
+path and effective configuration for the same request gives the same reference
+as the plan.
+
 `HYPRRPOPlanner` also retimes. Its `retime_rpo!` keeps the active reference's
 validated polyline from the point nearest the chaser to its end, starts it at the
 chaser's position (the route rule of the legacy replanning model) and times it as a
@@ -216,6 +229,35 @@ Refused results, whether refused before or after the optimizer runs, may carry
 only the planning budget or no diagnostics. Because the adapter plans within the reduced limits described
 below, its reference timing can differ from a legacy HYPR call that uses the
 unreduced limits.
+
+### Comparison planners
+
+The seven modes of the RPO planner comparison are planners too:
+`HYPRComparisonPlanner` (`:hypr`), `UnrefinedPSOPlanner` (`:pso_unrefined`),
+`RRTConnectPlanner` (`:rrt_connect`), `RRTConnectBezierPlanner`
+(`:rrt_connect_bezier`), `RRTStarPlanner` (`:rrt_star`), `CHOMPPlanner`
+(`:chomp`) and `STOMPPlanner` (`:stomp`). Each holds a copy of its
+`RPOPSOConfig`, which sets the cost and the retiming, and of its search or
+optimizer settings. Its `plan_rpo!` runs the comparison's kernels under the
+request's clearance, reference step, lifetime and limits, mapped with headroom as
+for `HYPRRPOPlanner`; the comparison's fixed 0.5 m safety distance does not
+apply. It plans without a wall-clock limit and times the path with the
+configuration the kernel returned. A search that finds no path reports
+`:failed/:path_not_found` and never offers its direct-segment diagnostic as a
+candidate. Under an acceleration limit, the acceleration-limited retimer cannot
+hold the limit at the corners of the polyline paths of `RRTConnectPlanner` and
+`RRTStarPlanner`, so validation refuses them (`:failed/:reference_rejected`); the
+curve-based modes can meet it. The comparison planners declare truth-state,
+target-RTN planning without retiming or restart, draw from the planner's stream,
+and need the optional HYPR companion, as the comparison does.
+
+The comparison harness, `RPOPlannerComparisonConfig`, takes these objects in
+`planners`; by default it compares all seven, built from its own settings
+fields. Selecting a mode by name (`:rrt_star`, `"rrt-star"` and the other
+aliases) still works but is deprecated: the harness resolves the name to the same
+object and warns once per planner type before planning, and
+`julia --depwarn=error` refuses the name. A name and its object give
+bit-identical plans.
 
 ## Adapter planning headroom
 

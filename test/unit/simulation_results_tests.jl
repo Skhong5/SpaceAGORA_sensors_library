@@ -124,7 +124,8 @@ else
             start_rtn=SVector(-8.0, -4.0, 2.0), goal_rtn=SVector(-5.5, -2.5, 1.0),
             record_control_commands=true)
         end
-        r = run_simulation(dt.args; return_results=true)   # default isolate_state=true
+        # The planner plans in the run; the stop callback ends it 20 s after the reference.
+        r = run_simulation(dt.args; return_results=true, extra_callbacks=(dt.stop_callback,))   # default isolate_state=true
         ran = only(c for c in r.configuration.control_model.control_effectors
                    if c isa SpaceAGORA.SimulationModel.RPOMPCControlModel)
         @test ran !== dt.control
