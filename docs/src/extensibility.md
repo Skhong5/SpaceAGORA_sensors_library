@@ -403,6 +403,12 @@ number for a one-component sensor) and `latest_time_s`. It implements:
   less the acceleration of the run's gravitational effectors (those for which
   `is_gravitational` is true; a user-defined gravity model should add a
   method returning true).
+- optionally `sensor_period_s(sensor)`, the sampling period (by default its
+  `period_s` field), and `initialize_sensor!(sensor, truth, ctx, rng)`, which
+  resets at the start of each run any state the sensor keeps beyond the
+  engine's fields, such as a filter. It runs once per run, just before the
+  first measurement, with that measurement's `truth` and `ctx` and the fresh
+  `rng`.
 
 Mount it with `add_sensor!(spacecraft, link, sensor)`; a sensor on a hinged
 panel turns with it. The built-in kinds are `RateGyro` (body rate with white
@@ -421,7 +427,7 @@ so a run repeats with the same seeds. Seeds are not varied for you: the
 built-in kinds default to `seed=1`, so in a Monte Carlo campaign set each
 sensor's `seed` from the sample's seed where the sample's spacecraft is
 built, or the samples share one noise stream. A navigation effector reads the latest measurement in
-`update_navigation!` with `sensor_measurement(p.args.dynamics_model.spacecraft[i], k)`
+`update_navigation!` with `sensor_measurement(p.args.dynamics_model.spacecraft[spacecraft_index], k)`
 (and its time with `sensor_measurement_time`); sensors sample before
 navigation effectors at the same time. Runs with sensors write the
 `sc{i}_sensor_{k}` columns (see [Output Columns](user/output_columns.md#Sensors))

@@ -482,13 +482,13 @@ const EXTENSION_HOOK_GROUPS = [
             called = "when the sensor is mounted",
             arguments = "the sampling period (s)",
             fallback = "returns the sensor's `period_s` field",
-            page = nothing),
+            page = "extensibility.md"),
         hook(:initialize_sensor!; shape = "L",
             signature = "initialize_sensor!(sensor, truth::SensorTruth, ctx::ActuatorContext, rng) -> nothing",
             called = "once per run, just before the first measurement (not again for later checkpoint segments)",
             arguments = "the first measurement's `truth` and `ctx` and the fresh `rng`; resets run state beyond the fields the engine owns, such as a filter",
             fallback = "returns `nothing`",
-            page = nothing),
+            page = "extensibility.md"),
         hook(:sensor_needs_specific_force; shape = "D",
             signature = "sensor_needs_specific_force(sensor) -> Bool",
             called = "at each sample",
@@ -787,8 +787,6 @@ const KNOWN_GAPS = [
     (symbol = :bind_spacecraft, rule = :index_word, reason = "the docstring names the index `sat_idx`"),
     (symbol = :actuator_levels, rule = :index_word, reason = "the docstring names the index `i`"),
     (symbol = :getHeatRate, rule = :page, reason = "no page covers thermal models yet"),
-    (symbol = :sensor_period_s, rule = :page, reason = "the extension guide does not name it yet"),
-    (symbol = :initialize_sensor!, rule = :page, reason = "the extension guide does not name it yet"),
 ]
 
 # The versioned facades, one row each; their own pages list their functions.
