@@ -580,6 +580,8 @@ function run_simulation(
                            visualization=visualization)
         end
     end
+    # After the re-entry above, so that each link's `check_link` runs once per run.
+    SimulationModel.SimulationCallbacks.check_gnc_links(args)
     try
     return SimulationModel.ParallelPolicy.with_policy_context() do
     # `visualization=true` (or SPACEAGORA_VISUALIZATION=1, so an unmodified
@@ -738,8 +740,9 @@ function run_simulation(
     # println("ODE parameters:")
     # println(p)
     # println("args.mission_configuration.mission_time: $(args.mission_configuration.mission_time)")
-    # Navigation first, then guidance, then control: each stage may read what the
-    # previous one set up.
+    # The links first (each initialized once), then navigation, guidance and
+    # control: each stage may read what the previous one set up.
+    SimulationModel.SimulationCallbacks.initialize_gnc_links!(args, u_start, p, t_start)
     for navigation in args.navigation_model.navigation_effectors
         SimulationLifecycle.initialize_navigation!(navigation, u_start, p, t_start)
     end
