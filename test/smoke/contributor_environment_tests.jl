@@ -113,19 +113,17 @@ env(fixture, name="env") = joinpath(fixture.temporary, name)
                     plan("project", fixture.repo, env(fixture); root=fixture.core)
                 end
             end
-            # A package's test target and a test/Project.toml both reach the environment.
+            # A package's test target reaches the environment with its bounds.
             with_project(fixture, d -> begin
                 d["deps"] = Dict("SpaceAGORA" => CORE_UUID)
-                d["extras"] = Dict("Test" => TEST_UUID)
-                d["targets"] = Dict("test" => ["Test"])
+                d["extras"] = Dict("Test" => TEST_UUID, "Aqua" => "4c88cf16-eb10-579e-8560-4a9242c79595")
+                d["targets"] = Dict("test" => ["Test", "Aqua"])
+                d["compat"] = Dict("julia" => "~1.12", "SpaceAGORA" => "0.2", "Aqua" => "0.8", "Unused" => "1")
             end) do
                 p = plan("package", fixture.repo, env(fixture); root=fixture.core)
                 @test p.project["deps"]["Test"] == TEST_UUID
-                @test isempty(p.project["compat"])
+                @test p.project["compat"] == Dict("julia" => "~1.12", "SpaceAGORA" => "0.2", "Aqua" => "0.8")
             end
-            write_toml(joinpath(fixture.repo, "test", "Project.toml"), Dict("deps" => Dict("Random" => "9a3f8284-a2c9-5f02-9a11-845980a1fd5c", "MyStudy" => fixture.project["uuid"])))
-            @test haskey(plan("package", fixture.repo, env(fixture); root=fixture.core).project["deps"], "Random")
-            rm(joinpath(fixture.repo, "test"); recursive=true)
             # A project without a module is a plain environment.
             mv(joinpath(fixture.repo, "src"), joinpath(fixture.temporary, "src-aside"))
             p = plan("project", fixture.repo, env(fixture); root=fixture.core)
@@ -134,6 +132,74 @@ env(fixture, name="env") = joinpath(fixture.temporary, name)
                 plan("package", fixture.repo, env(fixture); root=fixture.core)
             end
             mv(joinpath(fixture.temporary, "src-aside"), joinpath(fixture.repo, "src"))
+        end
+
+        @testset "A test/Project.toml reaches the environment with its bounds and sources" begin
+            test_project = joinpath(fixture.repo, "test", "Project.toml")
+            random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+            helper = "6d3c0f1e-2222-4333-8444-555566667777"
+            write_toml(test_project, Dict(
+                "deps" => Dict("Random" => random, "TestHelper" => helper, "MyStudy" => fixture.project["uuid"]),
+                "compat" => Dict("Random" => "1.11", "TestHelper" => "0.3", "Unrelated" => "2"),
+                "sources" => Dict("TestHelper" => Dict("path" => "../vendor/TestHelper"), "MyStudy" => Dict("path" => ".."))))
+            p = plan("package", fixture.repo, env(fixture); root=fixture.core)
+            @test p.project["deps"]["TestHelper"] == helper && !haskey(p.project["compat"], "Unrelated")
+            @test p.project["compat"]["Random"] == "1.11" && p.project["compat"]["TestHelper"] == "0.3"
+            @test p.project["sources"]["TestHelper"] == Dict("path" => joinpath(fixture.repo, "vendor", "TestHelper"))
+            @test p.project["sources"]["MyStudy"] == Dict("path" => fixture.repo)
+            # A bound in both projects becomes their intersection; disjoint bounds are refused.
+            with_toml(test_project, TOML.parsefile(test_project), d -> d["compat"]["SpaceAGORA"] = "0.2.0 - 0.2.5, 0.3") do
+                @test plan("project", fixture.repo, env(fixture); root=fixture.core).project["compat"]["SpaceAGORA"] == "0.2.0 - 0.2.5"
+            end
+            with_toml(test_project, TOML.parsefile(test_project), d -> d["compat"]["SpaceAGORA"] = "0.3") do
+                refused_with("does not overlap") do
+                    plan("project", fixture.repo, env(fixture); root=fixture.core)
+                end
+            end
+            with_toml(test_project, TOML.parsefile(test_project), d -> d["sources"]["SpaceAGORA"] = Dict("path" => "../../core")) do
+                refused_with("test/Project.toml: remove the SpaceAGORA entry from [sources]") do
+                    plan("package", fixture.repo, env(fixture); root=fixture.core)
+                end
+            end
+            with_toml(test_project, TOML.parsefile(test_project), d -> d["deps"][MUJOCO.name] = MUJOCO.uuid) do
+                refused_with("list \"mujoco\" in SpaceAGORASource.toml companions") do
+                    plan("package", fixture.repo, env(fixture); root=fixture.core)
+                end
+            end
+            rm(joinpath(fixture.repo, "test"); recursive=true)
+        end
+
+        @testset "Every direct dependency keeps its source" begin
+            # The environment lists the repository's dependencies directly, so a source the
+            # package declares does not reach them through the developed package: carry it.
+            shared = "7e3c1a2b-3333-4444-8555-666677778888"
+            test_project = joinpath(fixture.repo, "test", "Project.toml")
+            own = d -> begin
+                d["deps"]["Shared"] = shared
+                d["sources"] = Dict("Shared" => Dict("path" => "deps/Shared"))
+            end
+            with_project(fixture, own) do
+                for kind in ("package", "project")
+                    @test plan(kind, fixture.repo, env(fixture); root=fixture.core).project["sources"]["Shared"] ==
+                          Dict("path" => joinpath(fixture.repo, "deps", "Shared"))
+                end
+            end
+            # A test-project source for a dependency of the package itself is carried too.
+            write_toml(test_project, Dict("deps" => Dict("Shared" => shared),
+                                          "sources" => Dict("Shared" => Dict("path" => "../vendor/Shared"))))
+            with_project(fixture, d -> d["deps"]["Shared"] = shared) do
+                @test plan("package", fixture.repo, env(fixture); root=fixture.core).project["sources"]["Shared"] ==
+                      Dict("path" => joinpath(fixture.repo, "vendor", "Shared"))
+            end
+            # Both declare one: the test project's wins for a package, as under Pkg.test;
+            # the project's own wins for a project, which is the environment its tests run in.
+            with_project(fixture, own) do
+                @test plan("package", fixture.repo, env(fixture); root=fixture.core).project["sources"]["Shared"] ==
+                      Dict("path" => joinpath(fixture.repo, "vendor", "Shared"))
+                @test plan("project", fixture.repo, env(fixture); root=fixture.core).project["sources"]["Shared"] ==
+                      Dict("path" => joinpath(fixture.repo, "deps", "Shared"))
+            end
+            rm(joinpath(fixture.repo, "test"); recursive=true)
         end
 
         @testset "The pin file must name the tested commit" begin
@@ -277,6 +343,42 @@ end
     ]
     for (source, line, name) in internal
         @test scan_source(source, "case.jl") == [(line, "$name is internal to SpaceAGORA")]
+    end
+    # Aliases follow lexical scope: a local or argument named like an alias is not SpaceAGORA.
+    scoped = [
+        ("f() = (S = SpaceAGORA; S.run_simulation)\ng(S) = S._cache", Tuple{Int,String}[]),
+        ("function h()\n    S = SpaceAGORA\n    S._x\nend", [(3, "S._x is internal to SpaceAGORA")]),
+        ("x -> (S = SpaceAGORA; S._t)", [(1, "S._t is internal to SpaceAGORA")]),
+        ("const S = SpaceAGORA\nk(S) = S._x\nm() = S._y", [(3, "S._y is internal to SpaceAGORA")]),
+        ("const S = SpaceAGORA\nfunction n(; S=Dict())\n    S._k\nend", Tuple{Int,String}[]),
+        ("const S = SpaceAGORA\nfunction q()\n    S = Dict()\n    S._l\nend", Tuple{Int,String}[]),
+        ("const S = SpaceAGORA\nfunction p()\n    t = (S = 1,)\n    S._n\nend", [(4, "S._n is internal to SpaceAGORA")]),
+        ("const S = SpaceAGORA\nfor S in (1, 2)\n    S._w\nend", Tuple{Int,String}[]),
+        ("const S = SpaceAGORA\nlet S = Dict()\n    S._z\nend", Tuple{Int,String}[]),
+        ("const S = SpaceAGORA\nmap(xs) do S\n    S._v\nend", Tuple{Int,String}[]),
+        ("const S = SpaceAGORA\ntry\n    f()\ncatch S\n    S._e\nend", Tuple{Int,String}[]),
+        ("const S = SpaceAGORA\n[S._g for S in xs]", Tuple{Int,String}[]),
+        ("module Inner\nf() = S._u\nend\nconst S = SpaceAGORA", Tuple{Int,String}[]),
+        ("SpaceAGORA._hook(x) = 1", [(1, "SpaceAGORA._hook is internal to SpaceAGORA")]),
+        # Return annotations and `where` bounds belong to the signature, scanned in the enclosing scope.
+        ("const S = SpaceAGORA\nf()::S._Private = 1", [(2, "S._Private is internal to SpaceAGORA")]),
+        ("function g(x)::SpaceAGORA._Ret\n    x\nend", [(1, "SpaceAGORA._Ret is internal to SpaceAGORA")]),
+        ("h(x::T) where {T<:SpaceAGORA._Abstract} = x", [(1, "SpaceAGORA._Abstract is internal to SpaceAGORA")]),
+        ("const S = SpaceAGORA\nk(x::T) where T<:S._B = x", [(2, "S._B is internal to SpaceAGORA")]),
+        ("m(x::T) where {SpaceAGORA._Lo<:T<:Real} = x", [(1, "SpaceAGORA._Lo is internal to SpaceAGORA")]),
+        ("const T = SpaceAGORA\nn(x::T) where {T} = T._z", Tuple{Int,String}[]),
+        # A later `for` clause sees the earlier loop variables; a comma comprehension's
+        # iterables are evaluated outside it, where S is still the alias.
+        ("const S = SpaceAGORA\nfor S in xs, x in S._items\n    x\nend", Tuple{Int,String}[]),
+        ("const S = SpaceAGORA\nfor (S, y) in zs, x in S._v\n    x\nend", Tuple{Int,String}[]),
+        ("const S = SpaceAGORA\nfor x in S._items, S in xs\n    S\nend", [(2, "S._items is internal to SpaceAGORA")]),
+        ("const S = SpaceAGORA\nfor S in S._items\n    S\nend", [(2, "S._items is internal to SpaceAGORA")]),
+        ("const S = SpaceAGORA\n[x for S in xs for x in S._items]", Tuple{Int,String}[]),
+        ("const S = SpaceAGORA\n[x for S in xs, x in S._items]", [(2, "S._items is internal to SpaceAGORA")]),
+        ("function r(x::SpaceAGORA._Internal)\n    x\nend", [(1, "SpaceAGORA._Internal is internal to SpaceAGORA")]),
+    ]
+    for (source, expected) in scoped
+        @test scan_source(source, "case.jl") == expected
     end
     for source in ("using SpaceAGORA\nrun_simulation(args)", "SpaceAGORA.wrench(m, x, env, t) = 0",
                    "SpaceAGORA.Conformance.check_sensor(s)", "# SpaceAGORA._x in a comment", "s = \"SpaceAGORA.SimulationModel\"",
