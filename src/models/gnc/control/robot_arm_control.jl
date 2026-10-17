@@ -37,7 +37,7 @@ mutable struct RobotArmControlEffector <: AbstractControlEffectorModel
     held::RobotArmHeldActuation
 end
 # The deprecated name forwards, as a keyword and as a property.
-function RobotArmControlEffector(; spacecraft_index=nothing, spacecraft_idx=nothing, plan=nothing, controller=nothing,
+function RobotArmControlEffector(; spacecraft_index=_NOT_PASSED, spacecraft_idx=_NOT_PASSED, plan=nothing, controller=nothing,
         updated_at_s=0.0, joint_kp=0.0, joint_kd=0.0, control_dt_s=0.1, k_translation_n_m=5.0e3,
         c_translation_n_s_m=30.0, k_rotation_n_m_rad=15.0, c_rotation_n_m_s_rad=0.5, held=RobotArmHeldActuation())
     T = RobotArmControlEffector

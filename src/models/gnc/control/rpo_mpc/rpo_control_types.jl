@@ -57,7 +57,7 @@ mutable struct RPOMPCControlModel <: AbstractControlEffectorModel
     mounted_levels::Vector{Float64}
 end
 # The deprecated names forward, as keywords and as properties.
-function RPOMPCControlModel(; chaser_index=nothing, target_index=nothing, chaser_idx=nothing, target_idx=nothing,
+function RPOMPCControlModel(; chaser_index=_NOT_PASSED, target_index=_NOT_PASSED, chaser_idx=_NOT_PASSED, target_idx=_NOT_PASSED,
         thrusters=SixAxisThrusterModel(), minimum_throttle_fraction=0.0, controller=nothing,
         plan_buffer=RPOPlanBuffer(), held=RPOHeldActuation(), control_dt_s=1.0, attitude_kp=0.0, rate_kd=0.0,
         max_rw_torque_nm=Inf, command_log=nothing, actuation=:ideal, mounted_levels=Float64[])

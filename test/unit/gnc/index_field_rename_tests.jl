@@ -61,6 +61,22 @@ const RENAMES = [
         @test_throws ArgumentError T(; (old => value, new => value)...)
     end
 
+    @testset "an explicit nothing is refused, as before the rename" begin
+        for (T, old, new, value) in RENAMES
+            @test_throws MethodError T(; (new => nothing,)...)        # the Int field refuses it
+            if Base.JLOptions().depwarn == 2
+                @test_throws ErrorException T(; (old => nothing,)...)  # the old name's warning refuses first
+            else
+                with_logger(Test.TestLogger()) do
+                    @test_throws MethodError T(; (old => nothing,)...)
+                end
+            end
+            # Both names are refused whichever of them is nothing.
+            @test_throws ArgumentError T(; (old => value, new => nothing)...)
+            @test_throws ArgumentError T(; (old => nothing, new => value)...)
+        end
+    end
+
     @testset "the defaults are unchanged" begin
         mm = SM.MagneticMomentumManagerModel()
         @test (mm.spacecraft_index, mm.mu_gain, mm.m_max_am2, mm.h_wheels_0, mm.commanded_torque, mm.b_field_ii) ==
@@ -95,6 +111,9 @@ const RENAMES = [
             @test (old.chaser_index, old.target_index) == (1, 2)
         end
         @test_throws UndefKeywordError T(; kwargs..., target_index=2)
+        @test_throws MethodError T(; kwargs..., chaser_index=nothing, target_index=2)
+        @test_throws ArgumentError T(; kwargs..., chaser_idx=1, chaser_index=nothing, target_index=2)
+        @test_throws ArgumentError T(; kwargs..., chaser_idx=nothing, chaser_index=1, target_index=2)
         if Base.JLOptions().depwarn != 2
             logger = Test.TestLogger(min_level=Logging.Warn)
             with_logger(() -> (@test planner.chaser_idx == 1), logger)

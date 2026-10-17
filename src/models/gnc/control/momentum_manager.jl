@@ -74,7 +74,7 @@ mutable struct MagneticMomentumManagerModel <: AbstractControlEffectorModel
     mounted_levels::Vector{Float64}           # :mounted: one level per mounted actuator, refreshed each tick
 end
 # The deprecated name forwards, as a keyword and as a property.
-function MagneticMomentumManagerModel(; spacecraft_index=nothing, sat_idx=nothing, mu_gain=3.0e-4, m_max_am2=Inf,
+function MagneticMomentumManagerModel(; spacecraft_index=_NOT_PASSED, sat_idx=_NOT_PASSED, mu_gain=3.0e-4, m_max_am2=Inf,
         h_wheels_0=SVector{3, Float64}(0.0, 0.0, 0.0), commanded_torque=nothing, b_field_ii=nothing,
         h_wheels=SVector{3, Float64}(0.0, 0.0, 0.0), held_torque_body=SVector{3, Float64}(0.0, 0.0, 0.0),
         held_dipole_am2=SVector{3, Float64}(0.0, 0.0, 0.0), last_update_s=NaN, initialized=false, ticks=0,

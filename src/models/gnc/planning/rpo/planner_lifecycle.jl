@@ -77,16 +77,17 @@ mutable struct PlannerGuidance <: S.AbstractGuidanceModel
 end
 # `chaser_idx` and `target_idx` are the deprecated names of `chaser_index` and
 # `target_index` (until 0.5.0); they forward as keywords and as properties.
-function PlannerGuidance(; planner, chaser_id, target_id, chaser_index=nothing, target_index=nothing,
-        chaser_idx=nothing, target_idx=nothing, goal_rtn_m, geometry, geometry_revision, constraints, validation,
+const _NOT_PASSED = S.HookDeprecation._NOT_PASSED
+function PlannerGuidance(; planner, chaser_id, target_id, chaser_index=_NOT_PASSED, target_index=_NOT_PASSED,
+        chaser_idx=_NOT_PASSED, target_idx=_NOT_PASSED, goal_rtn_m, geometry, geometry_revision, constraints, validation,
         reference_dt_s, preview_horizon_steps, validity_s, seed, events, replan_interval_s, tracking_error_limit_m,
         plan_buffer, runtime=nothing, family=P.RPOReferenceFamily(), geometry_provider=nothing,
         retime_tracking_error_m=Inf, hold_position_tolerance_m=.02, hold_speed_tolerance_mps=.002, triggers=nothing)
     T = PlannerGuidance
-    chaser = S.HookDeprecation._renamed_keyword(T, :chaser_idx, chaser_idx, :chaser_index, chaser_index, nothing)
-    target = S.HookDeprecation._renamed_keyword(T, :target_idx, target_idx, :target_index, target_index, nothing)
-    chaser === nothing && throw(UndefKeywordError(:chaser_index))
-    target === nothing && throw(UndefKeywordError(:target_index))
+    chaser = S.HookDeprecation._renamed_keyword(T, :chaser_idx, chaser_idx, :chaser_index, chaser_index, _NOT_PASSED)
+    target = S.HookDeprecation._renamed_keyword(T, :target_idx, target_idx, :target_index, target_index, _NOT_PASSED)
+    chaser === _NOT_PASSED && throw(UndefKeywordError(:chaser_index))
+    target === _NOT_PASSED && throw(UndefKeywordError(:target_index))
     return T(planner, chaser_id, target_id, chaser, target, goal_rtn_m, geometry, geometry_revision, constraints,
         validation, reference_dt_s, preview_horizon_steps, validity_s, seed, events, replan_interval_s,
         tracking_error_limit_m, plan_buffer, runtime, family, geometry_provider, retime_tracking_error_m,
