@@ -1,40 +1,19 @@
 module AdapterContractTests
 using Test, SpaceAGORA
+using SpaceAGORA.Conformance: test_service_facade
 
 binding_path(name::Symbol) = (name,)
 binding_path(path::Tuple{Vararg{Symbol}}) = path
 resolve_binding(facade, path) = foldl(getproperty, binding_path(path); init=facade)
 
 # Each facade's reviewed contract version; a bump changes its entry here.
-const CONTRACT_VERSIONS = (HYPRServices=v"1.0.0", ExternalPropagationServices=v"2.0.0", EDGServices=v"1.0.0")
+const CONTRACT_VERSIONS = (HYPRServices=v"2.0.0", ExternalPropagationServices=v"2.0.0", EDGServices=v"1.0.0")
 
 @testset "Optional adapter facade conformance" begin
+    # Version, exact require_version, unique and disjoint inventories that resolve:
+    # SpaceAGORA.Conformance.check_service_facade, which companions call on their facade.
     for facade in (SpaceAGORA.HYPRServices, SpaceAGORA.ExternalPropagationServices, SpaceAGORA.EDGServices)
-        @testset "$(nameof(facade))" begin
-            expected = CONTRACT_VERSIONS[nameof(facade)]
-            @test facade.CONTRACT_VERSION == expected
-            @test facade.CompatibilityError <: Exception
-            @test facade.require_version(facade.CONTRACT_VERSION) === nothing
-            for incompatible in (v"0.0.0", v"1.0.0", v"1.0.1", v"2.0.0", v"2.0.1", v"3.0.0")
-                incompatible == expected && continue
-                @test_throws facade.CompatibilityError facade.require_version(incompatible)
-            end
-            # Reject duplicate/overlapping declarations, missing bindings and a
-            # consumed value accidentally advertised as an extension function.
-            implemented = binding_path.(facade.IMPLEMENTED_FUNCTIONS)
-            consumed = binding_path.(facade.CONSUMED_SERVICES)
-            @test length(unique(implemented)) == length(implemented)
-            @test length(unique(consumed)) == length(consumed)
-            @test isempty(intersect(implemented, consumed))
-            for path in implemented
-                @test !isempty(path)
-                @test resolve_binding(facade, path) isa Function
-            end
-            for path in consumed
-                @test !isempty(path)
-                @test resolve_binding(facade, path) !== nothing
-            end
-        end
+        test_service_facade(facade; version=CONTRACT_VERSIONS[nameof(facade)])
     end
     for path in SpaceAGORA.HYPRServices.CLOTH_SERVICES
         @test resolve_binding(SpaceAGORA.HYPRServices.Cloth, path) isa Function

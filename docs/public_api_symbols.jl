@@ -570,6 +570,23 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :render_asset_report, rendered = "SpaceAGORA.render_asset_report"),
             (owner = :SpaceAGORA, symbol = :run_cli, rendered = "SpaceAGORA.run_cli")
         ]
+    ),
+    # The Conformance module's own exports; they are not exported from the root.
+    (
+        title = "Contributor conformance",
+        items = [
+            (owner = :SpaceAGORA, symbol = :Conformance, rendered = "SpaceAGORA.Conformance"),
+            (owner = :Conformance, symbol = :ConformanceCheck, rendered = "SpaceAGORA.Conformance.ConformanceCheck"),
+            (owner = :Conformance, symbol = :ConformanceReport, rendered = "SpaceAGORA.Conformance.ConformanceReport"),
+            (owner = :Conformance, symbol = :passed, rendered = "SpaceAGORA.Conformance.passed"),
+            (owner = :Conformance, symbol = :ConformanceFixture, rendered = "SpaceAGORA.Conformance.ConformanceFixture"),
+            (owner = :Conformance, symbol = :conformance_fixture, rendered = "SpaceAGORA.Conformance.conformance_fixture"),
+            (owner = :Conformance, symbol = :check_force_torque_model, rendered = "SpaceAGORA.Conformance.check_force_torque_model"),
+            (owner = :Conformance, symbol = :check_service_facade, rendered = "SpaceAGORA.Conformance.check_service_facade"),
+            (owner = :Conformance, symbol = :test_report, rendered = "SpaceAGORA.Conformance.test_report"),
+            (owner = :Conformance, symbol = :test_force_torque_model, rendered = "SpaceAGORA.Conformance.test_force_torque_model"),
+            (owner = :Conformance, symbol = :test_service_facade, rendered = "SpaceAGORA.Conformance.test_service_facade")
+        ]
     )
 ]
 
@@ -588,6 +605,8 @@ const PUBLIC_API_SECTIONS = [
         return getproperty(spaceagora, :TelemetryVerification)
     elseif owner === :SpaceAGORACLI
         return getproperty(spaceagora, :SpaceAGORACLI)
+    elseif owner === :Conformance
+        return getproperty(spaceagora, :Conformance)
     end
     error("Unsupported public API owner: $(owner)")
 end
