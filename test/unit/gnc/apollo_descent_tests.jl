@@ -229,6 +229,10 @@ end
         # 10 kg m² * 2 /s * 0.1 rad/s = 2 N m, below the RCS torque cap.
         @test control.actuators.torque_nm[1] ≈ SVector(2.0, 0.0, 0.0)
         @test saved_levels ≈ [0.2, 0.3, 0.0, 0.0]
+        # The held command, read without the model's storage, and the tick that produced it.
+        @test held_command(control, 1) == (thrust_n=30.0, torque_nm=control.actuators.torque_nm[1])
+        @test held_command_time(control, 1) == 1.0
+        @test held_command(control, 2) === nothing && isnan(held_command_time(control, 2))
 
         # Contact can precede the first guidance update that creates a site
         # frame. Store the planet-fixed velocity and clear every actuator.
@@ -244,10 +248,18 @@ end
         @test control.actuators.thrust_n[1] == 0.0
         @test iszero(control.actuators.torque_nm[1])
         @test all(iszero, saved_levels)
+        # Once the spacecraft is inactive, the engine releases the command at each
+        # control tick instead of ticking: engine and jets off.
+        @test spacecraft_scope(control) == BoundSpacecraft((1,)) && skip_inactive(control)
         params.is_active[1] = false
-        CH.update_control!(control, sample, params, 3.0, 1)
+        control.actuators.thrust_n[1] = 10.0
+        control.actuators.torque_nm[1] = SVector(1.0, 0.0, 0.0)
+        saved_levels .= 0.5
+        @test SM.SimulationCallbacks._gnc_tick!(CH.update_control!, control, sample, params, 3.0, 1)
         @test CH.control_thruster_levels(control, 1) === saved_levels
         @test all(iszero, saved_levels)
+        @test held_command(control, 1) == (thrust_n=0.0, torque_nm=zero(SVector{3, Float64}))
+        @test held_command_time(control, 1) == 1.0       # a release is not a tick
     end
 
     @testset "closed-loop vertical descent on the mounted jets" begin

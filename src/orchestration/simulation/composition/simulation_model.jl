@@ -11,11 +11,11 @@ using Reexport
 isdefined(parentmodule(@__MODULE__), :RuntimeServices) ||
     Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "runtime_services.jl"))
 
-isdefined(parentmodule(@__MODULE__), :SimulationLifecycle) ||
-    Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "interfaces", "simulation_lifecycle.jl"))
-
 isdefined(parentmodule(@__MODULE__), :GNCRuntime) ||
     Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "interfaces", "gnc_runtime.jl"))
+
+isdefined(parentmodule(@__MODULE__), :SimulationLifecycle) ||
+    Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "interfaces", "simulation_lifecycle.jl"))
 
 isdefined(parentmodule(@__MODULE__), :CallbackServices) ||
     Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "callback_services.jl"))

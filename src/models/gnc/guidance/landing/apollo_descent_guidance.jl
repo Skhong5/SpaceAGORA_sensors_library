@@ -354,7 +354,8 @@ end
 function update_guidance!(model::ApolloDescentGuidanceModel, u, p::ODEParams, t::Float64, i::Int64)
     state = model.state
     config = model.config
-    (i in model.spacecraft_indices && p.is_active[i]) || return nothing
+    # The engine does not tick an inactive spacecraft (skip_inactive).
+    i in model.spacecraft_indices || return nothing
     env = descent_environment(model, u, p, t, i)
     r_s, v_s, m = env.r_s, env.v_s, env.mass
     isfinite(m) && m > 0 || throw(ArgumentError("descent guidance requires finite positive spacecraft mass"))

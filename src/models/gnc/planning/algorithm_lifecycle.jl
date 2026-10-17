@@ -7,6 +7,7 @@ module AlgorithmLifecycle
 using ..SimulationModel
 import ..GNCAlgorithms as GA
 import ..SimulationLifecycle as L
+import ..GNCRuntime as GR
 const S = SimulationModel
 
 export AlgorithmEvent, AlgorithmGuidance, AlgorithmGuidanceError, algorithm_run_report
@@ -106,6 +107,9 @@ Base.@kwdef mutable struct AlgorithmGuidance{A<:GA.AbstractGNCAlgorithm, T} <: S
     last_request_s::Float64 = -Inf
     runtime::Union{Nothing, GA.AlgorithmRuntime} = nothing
 end
+
+# A binding acts on its one spacecraft (GNCRuntime scope).
+GR.spacecraft_scope(g::AlgorithmGuidance) = GR.BoundSpacecraft((g.spacecraft_index,))
 
 # Guidance ticks accumulate their period, so an event or interval due at a tick
 # may fall a few rounding units after it.

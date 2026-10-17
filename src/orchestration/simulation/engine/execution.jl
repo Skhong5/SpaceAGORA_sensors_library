@@ -567,6 +567,8 @@ function run_simulation(
         SimulationLifecycle.preflight_control(control, args; isolate_state=isolate_state)
     end
     SimulationModel.SimulationCallbacks.check_control_periods(args)
+    # After the models' own checks, so that their more specific errors come first.
+    SimulationModel.SimulationCallbacks.check_spacecraft_scopes(args)
     # SolverConfig(parallel=true): re-enter under the flag's scoped environment
     # (see `_with_parallel_flag`). Inside it the flag reads as resolved, so this
     # branch is taken once; with the flag off nothing here runs.

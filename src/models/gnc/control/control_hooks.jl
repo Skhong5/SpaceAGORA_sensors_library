@@ -1,5 +1,7 @@
 module ControlHooks
     import ...SimulationLifecycle
+    import ...GNCRuntime
+    using ...GNCRuntime: BoundSpacecraft, CoupledSpacecraft
     using ..Structure
 
     using ..ConfigTypes: ODEParams
@@ -279,5 +281,49 @@ module ControlHooks
         ids = _descent_indices(m.state, (sat_idx,))
         m.spacecraft_indices == ids && return m
         return ApolloDescentControlModel(m.config, m.guidance, m.state, m.terrain, m.actuators, ids, m.actuation)
+    end
+
+    # The spacecraft each built-in control model acts on, and the command its
+    # output hooks read between ticks (GNCRuntime). Each held command is returned
+    # as a value or a named tuple of values, not the model's own storage. The
+    # descent controller records its tick times; the others do not.
+    GNCRuntime.spacecraft_scope(m::RPOMPCControlModel) = CoupledSpacecraft(m.chaser_idx, (m.target_idx,))
+    GNCRuntime.held_command(m::RPOMPCControlModel, spacecraft_index) =
+        spacecraft_index == m.chaser_idx ?
+            (force_ii=m.held.force_ii, torque_body=m.held.torque_body, thruster_forces_n=m.held.thruster_forces_n,
+             rw_torque_body=m.held.rw_torque_body) : nothing
+
+    GNCRuntime.spacecraft_scope(m::RobotArmControlEffector) = BoundSpacecraft((m.spacecraft_idx,))
+    GNCRuntime.held_command(m::RobotArmControlEffector, spacecraft_index) =
+        spacecraft_index == m.spacecraft_idx ?
+            (joint_torque_nm=copy(m.held.joint_torque_nm), base_force_ii=m.held.base_force_ii,
+             base_torque_body=m.held.base_torque_body) : nothing
+
+    GNCRuntime.spacecraft_scope(m::MagneticMomentumManagerModel) = BoundSpacecraft((m.sat_idx,))
+    GNCRuntime.held_command(m::MagneticMomentumManagerModel, spacecraft_index) =
+        spacecraft_index == m.sat_idx ? (torque_body=m.held_torque_body, dipole_am2=m.held_dipole_am2) : nothing
+    GNCRuntime.held_command_time(m::MagneticMomentumManagerModel, spacecraft_index) =
+        spacecraft_index == m.sat_idx ? m.last_update_s : NaN
+
+    GNCRuntime.spacecraft_scope(m::ApolloDescentControlModel) = BoundSpacecraft(m.spacecraft_indices)
+    GNCRuntime.skip_inactive(::ApolloDescentControlModel) = true
+    GNCRuntime.held_command(m::ApolloDescentControlModel, spacecraft_index) =
+        spacecraft_index in m.spacecraft_indices ?
+            (thrust_n=m.actuators.thrust_n[spacecraft_index], torque_nm=m.actuators.torque_nm[spacecraft_index]) :
+            nothing
+    GNCRuntime.held_command_time(m::ApolloDescentControlModel, spacecraft_index) =
+        spacecraft_index in m.spacecraft_indices ? m.actuators.last_update_s[spacecraft_index] : NaN
+
+    # The energy-depletion controller holds the panels' commanded angle of attack
+    # (rad), NaN before its first command.
+    GNCRuntime.held_command(m::AerobrakingEnergyDepletionControlModel, spacecraft_index) =
+        1 <= spacecraft_index <= length(m.state.last_alpha_rad) ? m.state.last_alpha_rad[spacecraft_index] : nothing
+
+    # The burn scheduler holds a schedule: the effective window, its thrust and
+    # whether the burn is on (NaN window ends when none is planned).
+    function GNCRuntime.held_command(m::BaseThrusterModel, spacecraft_index)
+        1 <= spacecraft_index <= length(m.burning) || return nothing
+        start_s, stop_s, thrust_n = m.burn_windows[spacecraft_index]
+        return (window_start_s=start_s, window_stop_s=stop_s, thrust_n=thrust_n, burning=m.burning[spacecraft_index])
     end
 end

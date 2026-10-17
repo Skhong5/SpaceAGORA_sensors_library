@@ -76,6 +76,10 @@ Base.@kwdef mutable struct PlannerGuidance <: S.AbstractGuidanceModel
     triggers::Union{Nothing,TriggerState} = nothing
 end
 
+# The planner ticks for its chaser and reads the target (GNCRuntime). The indices
+# are resolved from the spacecraft IDs at the run's start.
+GR.spacecraft_scope(g::PlannerGuidance) = GR.CoupledSpacecraft(g.chaser_idx, (g.target_idx,))
+
 # SHA-256 over "SpaceAGORA/RPO/v1/<seed>/<chaser_id>/<target_id>", decoded
 # little-endian, not hash(): the shared stream mapping with the RPO namespace.
 stream_words(seed, chaser_id, target_id) = GA.gnc_stream_words("RPO/v1", seed, chaser_id, target_id)
