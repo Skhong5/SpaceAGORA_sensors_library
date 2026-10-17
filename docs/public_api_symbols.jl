@@ -624,9 +624,26 @@ const PUBLIC_API_SECTIONS = [
             (owner = :Conformance, symbol = :conformance_fixture, rendered = "SpaceAGORA.Conformance.conformance_fixture"),
             (owner = :Conformance, symbol = :check_force_torque_model, rendered = "SpaceAGORA.Conformance.check_force_torque_model"),
             (owner = :Conformance, symbol = :check_service_facade, rendered = "SpaceAGORA.Conformance.check_service_facade"),
+            (owner = :Conformance, symbol = :check_sensor, rendered = "SpaceAGORA.Conformance.check_sensor"),
+            (owner = :Conformance, symbol = :check_guidance_model, rendered = "SpaceAGORA.Conformance.check_guidance_model"),
+            (owner = :Conformance, symbol = :check_navigation_model, rendered = "SpaceAGORA.Conformance.check_navigation_model"),
+            (owner = :Conformance, symbol = :check_control_model, rendered = "SpaceAGORA.Conformance.check_control_model"),
+            (owner = :Conformance, symbol = :check_algorithm, rendered = "SpaceAGORA.Conformance.check_algorithm"),
+            (owner = :Conformance, symbol = :check_algorithm_family, rendered = "SpaceAGORA.Conformance.check_algorithm_family"),
+            (owner = :Conformance, symbol = :rpo_conformance_requests, rendered = "SpaceAGORA.Conformance.rpo_conformance_requests"),
+            (owner = :Conformance, symbol = :rpo_trusted_queries, rendered = "SpaceAGORA.Conformance.rpo_trusted_queries"),
+            (owner = :Conformance, symbol = :rpo_conformance_simulation, rendered = "SpaceAGORA.Conformance.rpo_conformance_simulation"),
+            (owner = :Conformance, symbol = :burn_plan_conformance_requests, rendered = "SpaceAGORA.Conformance.burn_plan_conformance_requests"),
+            (owner = :Conformance, symbol = :burn_plan_conformance_simulation, rendered = "SpaceAGORA.Conformance.burn_plan_conformance_simulation"),
             (owner = :Conformance, symbol = :test_report, rendered = "SpaceAGORA.Conformance.test_report"),
             (owner = :Conformance, symbol = :test_force_torque_model, rendered = "SpaceAGORA.Conformance.test_force_torque_model"),
-            (owner = :Conformance, symbol = :test_service_facade, rendered = "SpaceAGORA.Conformance.test_service_facade")
+            (owner = :Conformance, symbol = :test_service_facade, rendered = "SpaceAGORA.Conformance.test_service_facade"),
+            (owner = :Conformance, symbol = :test_sensor, rendered = "SpaceAGORA.Conformance.test_sensor"),
+            (owner = :Conformance, symbol = :test_guidance_model, rendered = "SpaceAGORA.Conformance.test_guidance_model"),
+            (owner = :Conformance, symbol = :test_navigation_model, rendered = "SpaceAGORA.Conformance.test_navigation_model"),
+            (owner = :Conformance, symbol = :test_control_model, rendered = "SpaceAGORA.Conformance.test_control_model"),
+            (owner = :Conformance, symbol = :test_algorithm, rendered = "SpaceAGORA.Conformance.test_algorithm"),
+            (owner = :Conformance, symbol = :test_algorithm_family, rendered = "SpaceAGORA.Conformance.test_algorithm_family")
         ]
     )
 ]
