@@ -365,10 +365,10 @@ function _accumulate_control_effectors_from_tuple!(
         if mounted
             control_force, control_torque, control_mass_rate, _ = _mounted_control_effect(control_effector, sc_view, p, sat_idx, t)
         else
-            control_force, control_torque = SimulationModel.calcControlForceTorque(control_effector, sc_view, p, sat_idx, t)
-            control_mass_rate = SimulationModel.calcControlMassFlowRate(control_effector, sc_view, p, sat_idx, t)
+            control_force, control_torque = _control_wrench(control_effector, sc_view, p, sat_idx, t)
+            control_mass_rate = _control_propellant_rate(control_effector, sc_view, p, sat_idx, t)
         end
-        rw_torque = SimulationModel.calcReactionWheelTorque(control_effector, sc_view, p, sat_idx, t)
+        rw_torque = _control_wheel_torque(control_effector, sc_view, p, sat_idx, t)
         # A mounted wrench holds only the mounted actuators; a wheel torque the
         # effector reports is still applied to the body, as in ideal actuation.
         (mounted && rw_torque !== nothing) && (control_torque = control_torque + SVector{3, Float64}(rw_torque))
@@ -379,7 +379,8 @@ function _accumulate_control_effectors_from_tuple!(
         forces .+= control_force
         torques .+= control_torque
         rw_torque === nothing || (rw_torque_body .+= rw_torque)
-        mass_rate += isfinite(control_mass_rate) ? control_mass_rate : 0.0
+        # The hooks return the propellant used; the mass derivative is its negative.
+        mass_rate -= isfinite(control_mass_rate) ? control_mass_rate : 0.0
     end
     return mass_rate
 end
@@ -392,8 +393,8 @@ end
 
 # `:mounted` actuation: the inertial force, body torque, propellant mass rate and
 # reaction-wheel torque of the actuators mounted on spacecraft `sat_idx` at the
-# levels the effector holds. The mass rate is negative while propellant is used,
-# as the control hooks return it.
+# levels the effector holds. The mass rate is the propellant used, positive, as
+# control_propellant_rate returns it.
 @inline function _mounted_control_effect(effector, sc_view, p, sat_idx::Int, t::Float64)::Tuple{SVector{3, Float64}, SVector{3, Float64}, Float64, SVector{3, Float64}}
     zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
     levels = SimulationModel.actuator_levels(effector, sat_idx)
@@ -427,7 +428,7 @@ end
     # same way (the assembly's `cmg_rates`), which applies the CMG's torque there.
     _add_mounted_cmg_rates!(spacecraft, levels)
     force_ii = SimulationModel.rot(q)' * force_body          # rot(q) maps inertial to body
-    return (force_ii, torque_body, -mass_rate, wheel_torque)
+    return (force_ii, torque_body, mass_rate, wheel_torque)
 end
 
 @inline function _clear_mounted_rates!(assembly)

@@ -1,19 +1,21 @@
 # Opt-in contract adapter for existing HYPR planning and configured retiming.
 module HYPRRPOPlanning
-using LinearAlgebra: norm
+using LinearAlgebra: norm, dot
+using StaticArrays: SVector
 using ..RPOPlannerInterfaces
 using ..SimulationModel
 const P = RPOPlannerInterfaces
 const S = SimulationModel
 const G = S.GuidanceHooks
-import ..RPOPlannerInterfaces: planner_capabilities, plan_rpo!
+import ..RPOPlannerInterfaces: planner_capabilities, plan_rpo!, retime_rpo!
 
 """
 Wrap a copied HYPR configuration. The physical request owns clearance and the
 reference interval. Enabled request limits cap the configured retiming limits
 using prospective headroom. Other settings and optimizer-returned adaptations
 are retained. `rrt_on_replan` explicitly enables the existing warm start for
-`:replan` requests. Retiming/restart are not advertised by this first adapter.
+`:replan` requests. The adapter retimes an active reference (`retime_rpo!`);
+restart is not advertised.
 """
 struct HYPRRPOPlanner <: P.AbstractRPOPlanner
     config::S.RPOPSOConfig
@@ -26,12 +28,124 @@ struct HYPRRPOPlanner <: P.AbstractRPOPlanner
         new(deepcopy(S.rpo_pso_config(config)), headroom, Int(max_reference_samples), rrt_on_replan)
     end
 end
-planner_capabilities(::HYPRRPOPlanner) = P.RPOPlannerCapabilities(state_sources=(:truth,), frames=(:target_rtn,))
+planner_capabilities(::HYPRRPOPlanner) = P.RPOPlannerCapabilities(state_sources=(:truth,),
+    frames=(:target_rtn,), retiming=true)
 
 function _plan_hypr_rpo! end
 function plan_rpo!(state::Nothing, planner::HYPRRPOPlanner, request::P.RPOPlanningRequest, rng::P.AbstractRNG)
     S.HYPRSupport.require_hypr()
     return _plan_hypr_rpo!(state, planner, request, rng)
+end
+
+# The route a retime follows: the vertices of `route` from the point nearest
+# `current` to the end, with that point replaced by `current`. This is the route
+# rule of the legacy model's `rpo_retime_existing_plan`; that function keeps its own
+# copy, so the legacy model's runs stay bitwise unchanged until it is removed.
+function retiming_route(route_rtn, current_rtn)
+    current = SVector{3, Float64}(current_rtn)
+    route = G._rpo_retime_route_vertices(route_rtn)
+    n = size(route, 2)
+    best, segment, projection = Inf, 1, route[:, 1]
+    for j in 1:n-1
+        a = SVector{3, Float64}(route[:, j]); d = SVector{3, Float64}(route[:, j+1]) - a
+        q = a + clamp(dot(current - a, d) / max(dot(d, d), eps(Float64)), 0.0, 1.0) * d
+        distance = norm(current - q)
+        distance < best && ((best, segment, projection) = (distance, j, collect(q)))
+    end
+    tail = n == 1 ? Matrix{Float64}(route) : hcat(projection, route[:, segment+1:end])
+    # The projection locates progress; it is not a waypoint to visit first.
+    norm(current - tail[:, 1]) <= 1.0e-10 && return tail
+    return size(tail, 2) == 1 ? hcat(current, tail) : hcat(current, tail[:, 2:end])
+end
+
+# Retime `active_reference` for `request` without searching for a new path. The
+# route is the active reference's validated polyline from the point nearest the
+# chaser to its end, started at the chaser's position (`retiming_route`, the rule
+# the legacy replanning model uses). The HYPR retimer then times it as a polyline
+# under the request's clearance, step and limits, mapped with headroom exactly as for
+# a new plan, starting at the configured initial speed and ending at rest.
+#
+# Draws no random numbers. Refuses an active reference for other spacecraft or
+# another frame (`:unsupported`), one that does not end at the request's goal
+# (`:infeasible`, `:goal_not_on_reference`: a changed goal needs a new plan), and,
+# like `plan_rpo!`, a lifetime or work budget the timed reference exceeds. The
+# adapter applies the unchanged validator before returning a candidate, which still
+# requires lifecycle-owned validation.
+function retime_rpo!(state::Nothing, planner::HYPRRPOPlanner, request::P.RPOPlanningRequest,
+        active_reference::P.RPOReference, rng::P.AbstractRNG)
+    S.HYPRSupport.require_hypr()
+    reject(status, reason; diagnostics=NamedTuple()) = P.RPOPlanningResult(
+        request_id=request.request_id, status=status, termination=reason, diagnostics=diagnostics)
+    request.geometry isa S.RPOReferenceGeometry || return reject(:unsupported, :unsupported_geometry)
+    active = active_reference
+    active.chaser_id == request.chaser_id && active.target_id == request.target_id &&
+        active.frame === request.frame || return reject(:unsupported, :reference_mismatch)
+    route = active.r_ref_rtn_m
+    size(route, 1) == 3 && size(route, 2) >= 1 && all(isfinite, route) ||
+        return reject(:failed, :invalid_active_reference)
+    norm(route[:, end] - collect(request.goal_rtn_m)) <= request.validation.endpoint_atol_m ||
+        return reject(:infeasible, :goal_not_on_reference)
+    cfg = planner.config
+    clearance = request.constraints.clearance_m
+    # The same request-to-configuration mapping as a new plan (HYPR's plan_rpo!).
+    vscale = something(request.constraints.max_speed_mps,
+        isfinite(cfg.retime_max_speed_mps) ? cfg.retime_max_speed_mps : norm(collect(request.x_rtn[4:6])))
+    budget = P.rpo_planning_budget(request, planner.headroom;
+        position_scale_m=max(norm(collect(request.x_rtn[1:3])), norm(collect(request.goal_rtn_m))),
+        velocity_scale_mps=max(vscale, cfg.retime_initial_speed_mps))
+    budget.supported || return reject(:unsupported, budget.reason; diagnostics=(planning_budget=budget,))
+    vmax = budget.max_speed_mps === nothing ? cfg.retime_max_speed_mps : min(cfg.retime_max_speed_mps, budget.max_speed_mps)
+    amax = budget.max_acceleration_mps2 === nothing ? cfg.retime_a_max_mps2 : min(cfg.retime_a_max_mps2, budget.max_acceleration_mps2)
+    cfg.retime_min_speed_mps <= vmax && cfg.retime_initial_speed_mps <= vmax ||
+        return reject(:unsupported, :configured_speed_exceeds_planning_budget)
+    request.constraints.max_acceleration_mps2 !== nothing && !cfg.retime_accel_limit_enable &&
+        return reject(:unsupported, :acceleration_limited_retimer_required)
+    input_cfg = S.rpo_pso_config(cfg; safe_distance_m=clearance, retime_dt_s=request.reference_dt_s,
+        retime_max_speed_mps=vmax, retime_a_max_mps2=amax, curve_type=:polyline,
+        retime_max_steps=min(cfg.retime_max_steps, planner.max_reference_samples - 1))
+    path = retiming_route(route, collect(request.x_rtn[1:3]))
+    if input_cfg.retime_accel_limit_enable
+        # Inspect the profile's duration before allocating its uniform arrays.
+        samples, params, clearances = G.rpo_sample_path_with_params(path, input_cfg, request.geometry;
+            safe_distance_m=clearance, base_ds_m=G.rpo_retime_sampling_ds_m(input_cfg, clearance),
+            curve_type=:polyline)
+        profile = G.rpo_retime_profile(G.RPORetimeCurve(path, :polyline), samples, params, clearances,
+            request.geometry, input_cfg; safe_distance_m=clearance)
+        intervals = profile.duration_s / request.reference_dt_s
+        isfinite(intervals) && intervals <= planner.max_reference_samples - 1 ||
+            return reject(:failed, :reference_work_limit)
+        request.time_s + ceil(intervals) * request.reference_dt_s <= request.valid_until_s ||
+            return reject(:infeasible, :insufficient_reference_lifetime)
+        timed = G.rpo_retimed_reference_from_profile(profile, input_cfg.retime_dt_s)
+        times, positions, velocities = timed.t_s, timed.r_rtn, timed.v_rtn
+    else
+        times, positions, velocities = G.rpo_reference_from_path(path, request.geometry, input_cfg;
+            safe_distance_m=clearance)
+    end
+    length(times) <= planner.max_reference_samples || return reject(:failed, :reference_work_limit)
+    all(isfinite, times) && all(isfinite, positions) && all(isfinite, velocities) && !isempty(times) ||
+        return reject(:failed, :nonfinite_reference)
+    request.time_s + last(times) <= request.valid_until_s ||
+        return reject(:infeasible, :insufficient_reference_lifetime)
+    actual_budget = P.rpo_planning_budget(request, planner.headroom;
+        position_scale_m=maximum(norm, eachcol(positions)), velocity_scale_mps=maximum(norm, eachcol(velocities)))
+    actual_budget.supported ||
+        return reject(:unsupported, actual_budget.reason; diagnostics=(planning_budget=actual_budget,))
+    ref = P.RPOReference(t_ref_s=times, r_ref_rtn_m=positions, v_ref_rtn_mps=velocities,
+        origin_time_s=request.time_s, valid_until_s=request.valid_until_s,
+        chaser_id=request.chaser_id, target_id=request.target_id, frame=request.frame,
+        geometry_revision=request.geometry_revision)
+    diagnostics = (planner=:hypr, revision=:retime, planning_budget=actual_budget,
+        requested_config=cfg, input_config=input_cfg, path_kind=:polyline, path=path,
+        active_origin_time_s=active.origin_time_s)
+    candidate = P.RPOPlanningResult(request_id=request.request_id, status=:candidate,
+        termination=:completed, reference=ref, diagnostics=diagnostics)
+    checked = P.validate_rpo_result(request, candidate;
+        clearance_at=(p, g) -> S.rpo_clearance_distance_to_station(p, g))
+    checked.accepted || return reject(:failed, :reference_rejected;
+        diagnostics=merge(diagnostics, (validation=checked,)))
+    # Candidate still requires lifecycle-owned validation before installation.
+    return candidate
 end
 P.require_planner_support(::HYPRRPOPlanner) = S.HYPRSupport.require_hypr()
 P.initialize_planner(::HYPRRPOPlanner, context) = (S.HYPRSupport.require_hypr(); nothing)
@@ -42,8 +156,9 @@ import ..SimulationLifecycle
 function SimulationLifecycle.preflight_guidance(g::S.RPOGuidanceModel, args; isolate_state)
     @warn "RPOGuidanceModel is deprecated. Build RPO runs with make_rpo_configuration and a planner, " *
         "for example planner=HYPRRPOPlanner(RPOPSOConfig(...)), which configures a PlannerGuidance. " *
-        "RPOGuidanceModel will be removed once that path supports its time-varying replanning " *
-        "spheres, safe hold and retiming." maxlog=1
+        "That path also covers the model's replanning spheres (geometry_provider=RPOReplanningSpheres(...)), " *
+        "its safe hold (on_rejection=:install_fallback) and retiming (retime_tracking_error_m). " *
+        "RPOGuidanceModel will be removed in a later release." maxlog=1
     replanning = G._rpo_replanning_config(g)
     if !g.plan_buffer.valid || g.force_replan || (replanning !== nothing && replanning.enabled)
         S.HYPRSupport.require_hypr()

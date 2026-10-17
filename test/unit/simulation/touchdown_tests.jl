@@ -24,7 +24,7 @@ function CH.touchdown_spec(model::ContactRecorder, i::Int)
             height_m=model.clearance, on_touchdown=on_touchdown)
 end
 CH.calcControlEffect!(::ContactRecorder, u, p, t, i) = nothing
-CH.calcControlForceTorque(::ContactRecorder, u, p, i, t) = (ZERO3, ZERO3)
+CH.control_wrench(::ContactRecorder, x, p, t) = (ZERO3, ZERO3)
 
 struct FixedSpec <: SpaceAGORA.AbstractControlEffectorModel
     value::Any

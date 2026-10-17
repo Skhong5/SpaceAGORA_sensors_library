@@ -4,14 +4,20 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 # but the package, its templates and its examples no longer implement them. This
 # gate parses every Julia file under src/, templates/ and examples/ and fails on
 # any method definition of a deprecated hook, qualified or not and including the
-# callable form `(f::typeof(hook))(...)`, except the sanctioned forwarder for
-# direct calls: one method with exactly four untyped positional arguments.
-const DEPRECATED_HOOKS = (:calcForceTorque,)
+# callable form `(f::typeof(hook))(...)`, except each hook's sanctioned
+# forwarder for direct calls: one method with exactly the hook's number of
+# untyped positional arguments.
+const DEPRECATED_HOOKS = (:calcForceTorque, :calcControlForceTorque, :calcControlMassFlowRate, :calcReactionWheelTorque)
 const SCANNED_DIRS = ("src", "templates", "examples")
-# (file, hook): the one method each deprecated hook may keep in src/.
-const SANCTIONED = Set([
-    (joinpath("src", "orchestration", "simulation", "engine", "effector_sampling.jl"), :calcForceTorque),
-])
+const _BRIDGES = joinpath("src", "orchestration", "simulation", "engine", "control_hook_bridges.jl")
+# (file, hook) => positional arguments: the one method each deprecated hook may keep in src/.
+const SANCTIONED = Dict(
+    (joinpath("src", "orchestration", "simulation", "engine", "effector_sampling.jl"), :calcForceTorque) => 4,
+    (_BRIDGES, :calcControlForceTorque) => 5,
+    (_BRIDGES, :calcControlMassFlowRate) => 5,
+    (_BRIDGES, :calcReactionWheelTorque) => 5,
+)
+const _COUNT_WORDS = Dict(4 => "four", 5 => "five")
 
 _last_name(name::Symbol) = name
 function _last_name(ex::Expr)
@@ -44,7 +50,7 @@ function _method_definitions!(found, ex, rel::String)
             name = _last_name(call.args[1])
             if name in DEPRECATED_HOOKS
                 arguments = call.args[2:end]
-                push!(found, (rel, name, length(arguments) == 4 && all(_untyped, arguments)))
+                push!(found, (rel, name, all(_untyped, arguments) ? length(arguments) : -1))
             end
         end
     end
@@ -69,8 +75,8 @@ for dir in SCANNED_DIRS
             push!(violations, "$(rel): does not parse ($(sprint(showerror, err)))")
             continue
         end
-        for (file_rel, name, forwarder_shape) in _method_definitions!(Tuple{String, Symbol, Bool}[], parsed, rel)
-            if (file_rel, name) in SANCTIONED && forwarder_shape && !((file_rel, name) in sanctioned_seen)
+        for (file_rel, name, untyped_count) in _method_definitions!(Tuple{String, Symbol, Int}[], parsed, rel)
+            if get(SANCTIONED, (file_rel, name), nothing) == untyped_count && !((file_rel, name) in sanctioned_seen)
                 push!(sanctioned_seen, (file_rel, name))
             else
                 push!(violations, "$(file_rel): defines a method of the deprecated hook $(name); implement its replacement instead (see the hook's docstring).")
@@ -78,9 +84,9 @@ for dir in SCANNED_DIRS
         end
     end
 end
-for entry in SANCTIONED
+for (entry, count) in sort!(collect(SANCTIONED); by=string)
     entry in sanctioned_seen || push!(violations,
-        "$(entry[1]): the $(entry[2]) forwarder for direct calls (four untyped positional arguments) is missing.")
+        "$(entry[1]): the $(entry[2]) forwarder for direct calls ($(_COUNT_WORDS[count]) untyped positional arguments) is missing.")
 end
 
 if !isempty(violations)

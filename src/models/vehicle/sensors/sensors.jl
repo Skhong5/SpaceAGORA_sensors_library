@@ -13,7 +13,8 @@ using StaticArrays
 using ..AbstractTypes: AbstractSensor
 using ..Actuators: ActuatorContext, ActuatorRequirements
 
-export SensorTruth, sensor_measure, sensor_dimension, sensor_requirements, sensor_period_s, sensor_needs_specific_force
+export SensorTruth, sensor_measure, sensor_dimension, sensor_requirements, sensor_period_s, initialize_sensor!
+export sensor_needs_specific_force
 
 """
     SensorTruth
@@ -57,6 +58,18 @@ random stream. Called once per sample, so a sensor may advance its own state
 (a bias random walk) here.
 """
 function sensor_measure end
+
+"""
+    initialize_sensor!(sensor, truth::SensorTruth, ctx::ActuatorContext, rng) -> nothing
+
+Optional: reset a sensor's own run state at the start of a run. It is called
+once per run, after the engine has reset the fields it owns (the random stream,
+the latest measurement and, for a gyro, the bias) and just before the first
+measurement. It receives that measurement's `truth` and `ctx` and the fresh
+`rng`. It is not called again for later checkpoint segments. A sensor that keeps
+more state than those fields, such as a filter, resets it here. Default: nothing.
+"""
+initialize_sensor!(sensor, truth, ctx, rng) = nothing  # untyped, so no sensor's method is ambiguous with it
 
 """
     sensor_dimension(sensor) -> Int

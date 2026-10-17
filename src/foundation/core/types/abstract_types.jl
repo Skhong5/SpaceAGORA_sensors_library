@@ -18,7 +18,7 @@ abstract type AbstractForceTorqueModel end
 Stable extension interface for control/execution effectors that produce runtime
 commands or actuation-side control behavior. A subtype implements
 `calcControlEffect!(model, u, p, t, spacecraft_index)` and, unless its `actuation_mode`
-is `:mounted`, `calcControlForceTorque(model, u, p, i, t)`.
+is `:mounted`, `control_wrench(model, x::StateSample, p, t)`.
 """
 abstract type AbstractControlEffectorModel end
 

@@ -736,8 +736,7 @@ struct PushControl <: SM.AbstractControlEffectorModel
     force::SVector{3, Float64}
 end
 SM.calcControlEffect!(::PushControl, u, p, t::Float64, i::Int64) = nothing
-SM.calcControlForceTorque(m::PushControl, u::AbstractVector, p::SM.ODEParams, i::Int64, t::Float64) = i == m.sat_idx ? (m.force, SVector(0.0, 0.0, 0.0)) : (SVector(0.0, 0.0, 0.0), SVector(0.0, 0.0, 0.0))
-SM.calcControlMassFlowRate(::PushControl, u::AbstractVector, p::SM.ODEParams, i::Int64, t::Float64)::Float64 = 0.0
+SM.control_wrench(m::PushControl, x::SM.StateSample, p::SM.ODEParams, t::Float64) = x.spacecraft_index == m.sat_idx ? (m.force, SVector(0.0, 0.0, 0.0)) : (SVector(0.0, 0.0, 0.0), SVector(0.0, 0.0, 0.0))
 SpaceAGORA.bind_spacecraft(m::PushControl, sat_idx::Int) = PushControl(sat_idx, m.force)
 
 @testset "constructors and GNC flattening keep attachments" begin

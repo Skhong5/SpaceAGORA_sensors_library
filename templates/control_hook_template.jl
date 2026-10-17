@@ -7,7 +7,7 @@ using SpaceAGORA
 struct ExampleControlHook <: SpaceAGORA.AbstractControlEffectorModel
     force_n::SVector{3, Float64}
     torque_n_m::SVector{3, Float64}
-    mass_flow_kg_s::Float64
+    propellant_kg_s::Float64
 end
 
 function SpaceAGORA.calcControlEffect!(
@@ -20,27 +20,26 @@ function SpaceAGORA.calcControlEffect!(
     return nothing
 end
 
-# The held command: inertial force (N) and bus-frame torque (N·m).
-function SpaceAGORA.calcControlForceTorque(
+# The held command: inertial force (N) and bus-frame torque (N·m). `x` is the
+# spacecraft's state sample; its position in the run is `x.spacecraft_index`.
+function SpaceAGORA.control_wrench(
     model::ExampleControlHook,
-    u::AbstractVector,
+    x::SpaceAGORA.StateSample,
     p,
-    spacecraft_index::Int,
     t::Float64,
 )
     return model.force_n, model.torque_n_m
 end
 
-# The mass derivative in kg/s, negative while propellant is used. An effector
-# that uses no propellant can leave this method out: the fallback returns 0.0.
-function SpaceAGORA.calcControlMassFlowRate(
+# The propellant used in kg/s, positive while propellant is used. An effector
+# that uses no propellant can leave this method out.
+function SpaceAGORA.control_propellant_rate(
     model::ExampleControlHook,
-    u::AbstractVector,
+    x::SpaceAGORA.StateSample,
     p,
-    spacecraft_index::Int,
     t::Float64,
 )
-    return model.mass_flow_kg_s
+    return model.propellant_kg_s
 end
 
 end # module ExampleControlHookTemplate

@@ -89,6 +89,7 @@ end
     mktempdir() do fixture
         _copy_into!(fixture, repo, "src")
         _copy_into!(fixture, repo, "Project.toml")
+        _copy_into!(fixture, repo, joinpath("build", "build_sysimage.jl"))
         _copy_into!(fixture, repo, joinpath("packages", "SpaceAGORAHYPR", "src"))
 
         @testset "Project compat gate" begin
@@ -118,6 +119,55 @@ end
             end
             _with_text(project_path, without("Base64")) do
                 @test isnothing(run_gate().failure)
+            end
+            @test isnothing(run_gate().failure)
+        end
+
+        @testset "Sysimage package lists gate" begin
+            run_gate = _gate_runner(repo, fixture, "ci_sysimage_package_lists_gate.jl")
+            @test isnothing(run_gate().failure)
+
+            builder = joinpath(fixture, "build", "build_sysimage.jl")
+            original = read(builder, String)
+            prefix = "Sysimage package lists in build/build_sysimage.jl name packages that are not " *
+                     ":SpaceAGORA or a Project.toml [deps] entry: "
+            full_head = "const FULL_PACKAGES = [\n"
+            ci_head = "const CI_PACKAGES = [\n"
+            @test occursin(full_head, original)
+            @test occursin(ci_head, original)
+
+            # The two names both lists carried after their dependencies were removed.
+            stale = "    :Quaternions,\n    :SatelliteToolbox,\n"
+            both = replace(replace(original, full_head => full_head * stale; count=1), ci_head => ci_head * stale; count=1)
+            _with_text(builder, both) do
+                @test _failed_with(run_gate(), prefix *
+                    "FULL_PACKAGES: Quaternions, SatelliteToolbox; CI_PACKAGES: Quaternions, SatelliteToolbox")
+            end
+            # Each list is checked on its own.
+            _with_text(builder, replace(original, ci_head => ci_head * "    :Quaternions,\n"; count=1)) do
+                @test _failed_with(run_gate(), prefix * "CI_PACKAGES: Quaternions")
+            end
+            _with_text(builder, replace(original, full_head => full_head * "    :SatelliteToolbox,\n"; count=1)) do
+                @test _failed_with(run_gate(), prefix * "FULL_PACKAGES: SatelliteToolbox")
+            end
+            # A list that is not a literal vector of symbols, or is missing, cannot be checked: fail.
+            _with_text(builder, replace(original, ci_head => "const CI_PACKAGES = Symbol[\n"; count=1)) do
+                @test _failed_with(run_gate(),
+                    "build/build_sysimage.jl: `const CI_PACKAGES` must be a literal vector of symbols")
+            end
+            _with_text(builder, replace(original, "const FULL_PACKAGES = [" => "const FULL_PACKAGES_RENAMED = ["; count=1)) do
+                @test _failed_with(run_gate(),
+                    "build/build_sysimage.jl must define `const FULL_PACKAGES` exactly once; found 0")
+            end
+
+            # Dropping a dependency from the project makes its builder entries stale.
+            project_path = joinpath(fixture, "Project.toml")
+            project = read(project_path, String)
+            without_roots = replace(project, r"^Roots = .*\n"m => ""; count=1)
+            @test without_roots != project
+            @test !haskey(TOML.parse(without_roots)["deps"], "Roots")
+            _with_text(project_path, without_roots) do
+                @test _failed_with(run_gate(), prefix * "FULL_PACKAGES: Roots; CI_PACKAGES: Roots")
             end
             @test isnothing(run_gate().failure)
         end
@@ -317,6 +367,32 @@ end
                     rejected = run_gate()
                     @test _failed_with(rejected, message)
                     @test any(v -> occursin("forwarder for direct calls (four untyped positional arguments) is missing", v), rejected.violations)
+                end
+            end
+            # The deprecated control output hooks are refused the same way, and
+            # each keeps its five-argument forwarder.
+            for (hook, text) in (
+                    ("calcControlForceTorque", "SpaceAGORA.calcControlForceTorque(model::Probe, u, p, i, t) = (0.0, 0.0)\n"),
+                    ("calcControlMassFlowRate", "function ControlHooks.calcControlMassFlowRate(model::Probe, u::AbstractVector, p, i::Int, t::Float64)\n    return -1.0\nend\n"),
+                    ("calcReactionWheelTorque", "(::typeof(calcReactionWheelTorque))(model::Probe, u, p, i, t) = nothing\n"))
+                _with_probe(probe, text) do
+                    rejected = run_gate()
+                    @test _failed_with(rejected, message)
+                    @test _reports(rejected, probe, fixture, "deprecated hook $(hook)")
+                end
+            end
+            bridges = joinpath(fixture, "src", "orchestration", "simulation", "engine", "control_hook_bridges.jl")
+            original = read(bridges, String)
+            for hook in ("calcControlForceTorque", "calcControlMassFlowRate", "calcReactionWheelTorque")
+                needle = "function SimulationModel.$(hook)(model, u, p, i, t)"
+                @test occursin(needle, original)
+                for changed in ("function SimulationModel.$(hook)(model, u, p, i::Int, t)",
+                                "function SimulationModel.$(hook)(model, u, p, i)")
+                    _with_text(bridges, replace(original, needle => changed; count=1)) do
+                        rejected = run_gate()
+                        @test _failed_with(rejected, message)
+                        @test any(v -> occursin("the $(hook) forwarder for direct calls (five untyped positional arguments) is missing", v), rejected.violations)
+                    end
                 end
             end
             @test isnothing(run_gate().failure)
