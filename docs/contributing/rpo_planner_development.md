@@ -29,7 +29,7 @@ The internal modules, described in their source header comments:
 time, truth state in target RTN coordinates, a position goal, copied geometry,
 explicit constraints and reference timing. RTN velocities mean derivatives in
 the rotating target frame, including its transport term. Geometry must be
-static and aligned with that frame. The epoch and geometry representation are
+static within a request and aligned with that frame. The epoch and geometry representation are
 opaque copied data; assembly is responsible for their meaning and provenance.
 
 A request owns its geometry and epoch copies and stores state vectors as
@@ -230,7 +230,8 @@ unchanged.
 
 Both planners support truth observations in target RTN and use the common
 `initialize_planner`, `plan_rpo!` and capability interface. Neither advertises
-retiming or restart in this packet. A separate test implementation loads through
+restart; `HYPRRPOPlanner` advertises retiming (`retime_rpo!`), `DirectRPOPlanner`
+does not. A separate test implementation loads through
 the same extension methods. Contract and baseline tests run using standard
 libraries with no HYPR source. The public pilot adds callback integration,
 lifecycle ownership/expiry, restart refusal at run preparation and external

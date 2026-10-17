@@ -12,7 +12,7 @@ uses the [versioned HYPR services](hypr_services.md).
 time, truth state in target RTN coordinates, a position goal, copied geometry,
 explicit constraints and reference timing. RTN velocities mean derivatives in
 the rotating target frame, including its transport term. Geometry must be
-static and aligned with that frame. The epoch and geometry representation are
+static within a request and aligned with that frame. The epoch and geometry representation are
 opaque copied data; assembly is responsible for their meaning and provenance.
 
 A request owns its geometry and epoch copies and stores state vectors as
@@ -101,6 +101,24 @@ The initial defaults report unsupported planning/retiming and consume no RNG.
 Capabilities default to empty support. A retiming refusal does not silently
 invoke full replanning.
 
+## Geometry that changes during a run
+
+A geometry provider, a subtype of `AbstractRPOGeometryProvider`, supplies the
+geometry of each request. `rpo_geometry_revision(provider, revision, time_s)`
+returns the revision at a time and `rpo_geometry_snapshot(provider, geometry,
+time_s)` the geometry; both receive the configured base. Equal revisions must mean
+equal snapshots, and providers draw no random numbers. The binding copies one
+snapshot into each request, so the geometry is still static within a request and
+validation checks the reference against the request's own copy and revision.
+
+When the revision changes, the binding checks the installed reference's remaining
+polyline, from its position at the current time to its end, against the new
+snapshot. It uses the trusted `clearance_at` query, the request clearance and the
+validation sample spacing and work cap; exceeding the cap counts as blocked. A
+reference that still clears is kept, and the check is recorded. A blocked
+reference, or a hold, is replaced by a `:replan` request. `RPOReplanningSpheres`
+provides the spheres of the legacy replanning model.
+
 Capability checks describe the algorithm only. Use the pilot's supported
 lifecycle to install validated references. The current pilot refuses checkpoint
 writing and resume because they do not restore its complete run-owned state;
@@ -121,8 +139,14 @@ and the general functions forward to the RPO names:
 | `validate_capabilities(family, ...)`, `validate_proposal(family, ...)` | `validate_rpo_capabilities`, `validate_rpo_result` |
 | `is_current(family, ...)` | `rpo_reference_is_current` |
 
-The family's rejection policy is `:fail`, and `RPOPlanningError` is a
-`GNCAlgorithmError`. A planner that draws no random numbers declares
+The family's rejection policy is `:fail` by default, and `RPOPlanningError` is a
+`GNCAlgorithmError`. `RPOReferenceFamily(on_rejection=:install_fallback)` installs
+the family's `fallback_product` instead: a hold of two samples at the chaser's
+position with zero velocity, valid for the request's lifetime and carrying its
+geometry revision. The hold is installed without validation, after the rejection
+is recorded. A planner declares the default family; the binding configures the
+policy through `bound_family`, which must return an instance of the planner's
+family type. A planner that draws no random numbers declares
 `consumes_rng(planner) = false`, as `DirectRPOPlanner` does; contract tests then
 check that a proposal leaves the stream unchanged. The RPO names remain the
 supported way to write an RPO planner.
@@ -162,6 +186,17 @@ requested acceleration limit with `retime_accel_limit_enable=true`, as
 `examples/rpo_planner_env/smoke.jl` does, or omit the limit.
 `rrt_on_replan=true` explicitly enables the existing RRT warm start for a
 `:replan` request.
+
+`HYPRRPOPlanner` also retimes. Its `retime_rpo!` keeps the active reference's
+validated polyline from the point nearest the chaser to its end, starts it at the
+chaser's position (the route rule of the legacy replanning model) and times it as a
+polyline with the HYPR retimer, under the request limits mapped as for a new plan.
+It searches no new path and draws no random numbers. It refuses an active
+reference that does not end at the request's goal (`:infeasible/:goal_not_on_reference`),
+and applies the same lifetime, work and validator checks as `plan_rpo!`. With
+`hypr_mode=:legacy` and the acceleration-limited retimer, a retime from off the
+reference can turn the corner where it joins the route faster than the common
+acceleration limit; validation then refuses it (`:failed/:reference_rejected`).
 
 Both planners report `:infeasible/:insufficient_reference_lifetime` when the
 absolute reference end exceeds the request lifetime, without adding a time

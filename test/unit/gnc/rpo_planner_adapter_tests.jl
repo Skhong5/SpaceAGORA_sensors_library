@@ -59,7 +59,7 @@ validate(req,out)=P.validate_rpo_result(req,out;clearance_at=clearance)
         @test d.effective_config==raw.config
         @test rand(rng)==rand(control)
         @test !P.planner_capabilities(planner).restart
-        @test !P.planner_capabilities(planner).retiming
+        @test P.planner_capabilities(planner).retiming # retime_rpo! (PR 19b)
     end
     # An output from the unchanged retimer at the unchanged physical limit
     # still fails for real turning excess. Planning headroom is not validator slack.
@@ -135,5 +135,56 @@ end
     timed=plan(req;cfg=config(iteration_runtime_limit_s=1e-20))
     @test timed.status===:failed && timed.diagnostics.validation.reason===:time_budget_not_allowed
     @test_throws ArgumentError H.HYPRRPOPlanner(config();max_reference_samples=1)
+end
+
+@testset "Retiming an active reference" begin
+    # One second in, the chaser is on the reference or a few centimetres off it.
+    for (mode,accel,offset) in ((:legacy,false,.03),(:legacy,true,0.),(:manuscript,true,.03))
+        constraints=P.RPOPlanningConstraints(clearance_m=.2,max_speed_mps=.5,
+            max_acceleration_mps2=accel ? .1 : nothing)
+        planner=H.HYPRRPOPlanner(config(mode;retime_accel_limit_enable=accel))
+        @test P.validate_rpo_capabilities(planner,request(reason=:retime)).accepted
+        active=P.plan_rpo!(nothing,planner,request(constraints=constraints),MersenneTwister(742)).reference
+        x=active.r_ref_rtn_m[:,min(11,end)].+[0.,offset,0.]
+        req=request(request_id=2,reason=:retime,time_s=1.,x_rtn=(x...,0.,0.,0.),
+            constraints=constraints,valid_until_s=101.)
+        rng=MersenneTwister(5);untouched=copy(rng)
+        out=P.retime_rpo!(nothing,planner,deepcopy(req),deepcopy(active),rng)
+        @test out.status===:candidate && out.termination===:completed
+        @test validate(req,out).accepted
+        @test rand(rng)==rand(untouched) # retiming draws no random numbers
+        ref=out.reference
+        @test ref.r_ref_rtn_m[:,1]==x && ref.r_ref_rtn_m[:,end]==[5.,1.,0.]
+        @test (ref.origin_time_s,ref.valid_until_s,ref.geometry_revision)==(1.,101.,"fixture-v1")
+        d=out.diagnostics
+        path=H.retiming_route(active.r_ref_rtn_m,x)
+        @test d.path==path && d.revision===:retime && d.path_kind===:polyline
+        @test d.input_config.curve_type===:polyline && d.input_config.retime_max_speed_mps==.495
+        # Matched input: the shared retiming kernels give the same reference.
+        t,r,v=G.rpo_reference_from_path(path,req.geometry,d.input_config;safe_distance_m=.2)
+        @test (ref.t_ref_s,ref.r_ref_rtn_m,ref.v_ref_rtn_mps)==(t,r,v)
+        # The general name reaches it through the family.
+        again=SpaceAGORA.propose_revision!(nothing,planner,deepcopy(req),deepcopy(active),MersenneTwister(5))
+        @test again.reference.r_ref_rtn_m==ref.r_ref_rtn_m
+    end
+    planner=H.HYPRRPOPlanner(config())
+    active=P.plan_rpo!(nothing,planner,request(),MersenneTwister(742)).reference
+    # The legacy tangential retimer can turn the corner at an off-reference start
+    # faster than the common acceleration limit; the unchanged validator refuses it.
+    x=active.r_ref_rtn_m[:,11].+[0.,.01,0.]
+    req=request(request_id=2,reason=:retime,time_s=1.,x_rtn=(x...,0.,0.,0.),valid_until_s=101.)
+    turned=P.retime_rpo!(nothing,planner,req,active,MersenneTwister(1))
+    @test (turned.status,turned.termination)==(:failed,:reference_rejected)
+    @test turned.diagnostics.validation.reason===:acceleration_limit
+    retime(;kwargs...)=P.retime_rpo!(nothing,planner,request(;reason=:retime,kwargs...),active,MersenneTwister(1))
+    @test retime().status===:candidate
+    changed=retime(goal_rtn_m=(5.,2.,0.))
+    @test (changed.status,changed.termination)==(:infeasible,:goal_not_on_reference)
+    @test retime(chaser_id=102).termination===:reference_mismatch
+    @test retime(geometry=nothing).termination===:unsupported_geometry
+    short=retime(valid_until_s=1.)
+    @test (short.status,short.termination)==(:infeasible,:insufficient_reference_lifetime)
+    @test retime(constraints=P.RPOPlanningConstraints(clearance_m=.2,max_speed_mps=.5,
+        max_acceleration_mps2=.1)).termination===:completed
 end
 end
