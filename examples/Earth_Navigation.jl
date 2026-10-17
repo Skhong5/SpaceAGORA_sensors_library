@@ -79,7 +79,7 @@ end
     return R * los_true / norm(R * los_true)
 end
 
-function SimulationModel.calcNavigationEffect!(
+function SimulationModel.update_navigation!(
     model::OpticalLOSSensorModel,
     u,
     p,
@@ -749,7 +749,7 @@ function _create_or_update_tentative_tracks_from_orphans!(
 end
 
 
-function SimulationModel.calcNavigationEffect!(
+function SimulationModel.update_navigation!(
     model::ObserverNavigationModel,
     u,
     p,
@@ -1170,7 +1170,7 @@ end
     return (u_local, uhat_local, U_local, true)
 end
 
-function SimulationModel.calcNavigationEffect!(
+function SimulationModel.update_navigation!(
     model::DistributedFusionModel,
     u,
     p,

@@ -115,7 +115,7 @@ For model authors, the stable extension contract is:
   - `gravity_backbone_acceleration_ii`
   - `getDensity`
   - `getDensityBatch!`
-  - `calcControlEffect!`
+  - `update_control!`, `update_guidance!` and `update_navigation!`
   - `control_wrench`
   - `control_propellant_rate` and `control_wheel_torque`
   - `actuator_wrench`, `actuator_limits` and the optional actuator methods

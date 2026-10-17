@@ -279,7 +279,7 @@ function request_triggered!(g, u, p, t, x, preview)
     return nothing
 end
 
-function S.GuidanceHooks.calcGuidanceEffect!(g::PlannerGuidance, u, p, t::Float64, sat_idx::Int)
+function S.GuidanceHooks.update_guidance!(g::PlannerGuidance, u, p, t::Float64, sat_idx::Int)
     sat_idx == g.chaser_idx || return nothing
     r = g.runtime
     r === nothing && fail!(g, :uninitialized)

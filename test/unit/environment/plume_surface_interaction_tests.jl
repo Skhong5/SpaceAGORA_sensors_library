@@ -204,7 +204,7 @@ mutable struct HeldControl <: SpaceAGORA.AbstractControlEffectorModel
     initial::Vector{Float64}
     jump::Bool
 end
-function SM.ControlHooks.calcControlEffect!(model::HeldControl, u::ComponentVector,
+function SM.ControlHooks.update_control!(model::HeldControl, u::ComponentVector,
         p::SM.ODEParams, t::Float64, i::Int64)
     model.actuators.thrust_n[i] = model.initial[i] * (model.jump && t >= 1.0 ? 2.0 : 1.0)
     return nothing

@@ -132,18 +132,18 @@ end
         # Exercise actual control cycles with the real parameter/configuration
         # object; no propagation or synthetic force callback is substituted.
         sample = (q=SVector(0.0, 0.0, 0.0, 1.0), ω=SVector(0.0, 0.0, 0.0))
-        CH.calcControlEffect!(control, sample, params, 0.0, 2)
+        CH.update_control!(control, sample, params, 0.0, 2)
         @test control.actuators.last_update_s[2] == 0.0
         @test control.actuators.thrust_n[2] == 0.0
         state.phase_start_s[1, 2] = 0.0
         state.thrust_cmd_n[2] = cfg.max_thrust_n
-        CH.calcControlEffect!(control, sample, params, 0.05, 2)
+        CH.update_control!(control, sample, params, 0.05, 2)
         @test control.actuators.thrust_n[2] ≈ control.config.thrust_slew_n_s * 0.05
         previous = control.actuators.thrust_n[2]
-        CH.calcControlEffect!(control, sample, params, 0.05, 2)
+        CH.update_control!(control, sample, params, 0.05, 2)
         @test control.actuators.thrust_n[2] == previous
         state.thrust_cmd_n[2] = 0.0
-        CH.calcControlEffect!(control, sample, params, 0.10, 2)
+        CH.update_control!(control, sample, params, 0.10, 2)
         @test control.actuators.thrust_n[2] ≈ 0.0 atol=1e-10
         @test control.actuators.thrust_n[1] == 0.0
 
@@ -212,7 +212,7 @@ end
             keplerian=false, verbose=false, results=false)
         params = SM.ODEParams(n_sats=1, args=args)
         sample = (q=SVector(0.0, 0.0, 0.0, 1.0), ω=zero(SVector{3,Float64}))
-        CH.calcControlEffect!(control, sample, params, 0.0, 1)
+        CH.update_control!(control, sample, params, 0.0, 1)
         cached_layout = control.actuators.thruster_layout[1]
         saved_levels = CH.control_thruster_levels(control, 1)
         @test cached_layout.engine == 2
@@ -221,7 +221,7 @@ end
         state.phase_start_s[1, 1] = 0.0
         state.thrust_cmd_n[1] = 50.0
         state.attitude_cmd[1] = SVector(1.0, 0.0, 0.0, 0.0)
-        CH.calcControlEffect!(control, sample, params, 1.0, 1)
+        CH.update_control!(control, sample, params, 1.0, 1)
         @test control.actuators.thruster_layout[1] === cached_layout
         @test CH.control_thruster_levels(control, 1) === saved_levels
         @test control.actuators.thrust_n[1] == 30.0
@@ -245,7 +245,7 @@ end
         @test iszero(control.actuators.torque_nm[1])
         @test all(iszero, saved_levels)
         params.is_active[1] = false
-        CH.calcControlEffect!(control, sample, params, 3.0, 1)
+        CH.update_control!(control, sample, params, 3.0, 1)
         @test CH.control_thruster_levels(control, 1) === saved_levels
         @test all(iszero, saved_levels)
     end

@@ -323,7 +323,7 @@ struct ConstantThrust <: SM.AbstractControlEffectorModel
     force::SVector{3, Float64}
     mdot::Float64
 end
-SM.calcControlEffect!(::ConstantThrust, u, p, t::Float64, i::Int64) = nothing
+SM.update_control!(::ConstantThrust, u, p, t::Float64, i::Int64) = nothing
 SM.control_wrench(m::ConstantThrust, x::SM.StateSample, p::SM.ODEParams, t::Float64) = (m.force, SVector(0.0, 0.0, 0.0))
 SM.control_propellant_rate(m::ConstantThrust, x::SM.StateSample, p::SM.ODEParams, t::Float64)::Float64 = m.mdot
 

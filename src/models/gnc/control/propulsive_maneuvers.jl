@@ -309,7 +309,7 @@ end
 
 @inline function _control_effector_exception_fallback(p, spacecraft_idx::Int, err, bt)
     if _control_effector_log_enabled(p)
-        @warn "calcControlEffect! orbital-element conversion failed for spacecraft index $(spacecraft_idx); burn scheduling skipped." exception=(err, bt)
+        @warn "update_control! orbital-element conversion failed for spacecraft index $(spacecraft_idx); burn scheduling skipped." exception=(err, bt)
     end
     if _control_effector_strict_exceptions()
         throw(err)
@@ -457,7 +457,7 @@ function control_propellant_rate(controlModel::BaseThrusterModel, x::StateSample
 end
 
 """
-    calcControlEffect!(model::BaseThrusterModel, u::ComponentVector, p, t, i)
+    update_control!(model::BaseThrusterModel, u::ComponentVector, p, t, i)
 
 For `BaseThrusterModel`, `u` is the full simulation state (`u.sc[i]` selects
 the spacecraft), `p` holds the simulation parameters, and `t` is elapsed time
@@ -467,7 +467,7 @@ schedule, and clears completed burns. It does not directly compute or store
 force and torque; [`control_wrench`](@ref) evaluates the scheduled
 thrust during dynamics evaluation.
 """
-function calcControlEffect!(controlModel::BaseThrusterModel, u::ComponentVector, p::ODEParams, t::Float64, i::Int64)
+function update_control!(controlModel::BaseThrusterModel, u::ComponentVector, p::ODEParams, t::Float64, i::Int64)
     # Calculate the control effect (force and torque) based on the control model and current state, and store it in the shared buffers for use in the dynamics calculations
     if i < 1 || i > length(controlModel.start_burn_time)
         return

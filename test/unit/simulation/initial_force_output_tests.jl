@@ -51,7 +51,7 @@ function CH.control_wrench(model::CountingControl, x, p, t::Float64)
     model.reads += 1
     return ZERO3, ZERO3
 end
-CH.calcControlEffect!(model::CountingControl, u, p, t::Float64, i::Int64) =
+CH.update_control!(model::CountingControl, u, p, t::Float64, i::Int64) =
     (model.updates += 1; nothing)
 
 Base.@noinline function configuration(; model=ExponentialAtmosphereModel(1e-11, 550e3, 50e3;

@@ -180,7 +180,7 @@ function _robot_arm_control_spacecraft_state(u, idx::Int)
 end
 
 """Apply the robot-arm controller at the current simulation time and cache the joint actuation command."""
-function calcControlEffect!(model::RobotArmControlEffector, u, p::ODEParams, t::Float64, sat_idx::Int)
+function update_control!(model::RobotArmControlEffector, u, p::ODEParams, t::Float64, sat_idx::Int)
     sat_idx == model.spacecraft_idx || return nothing
     model.plan === nothing && return nothing
     plan_t = max(0.0, t - model.updated_at_s)

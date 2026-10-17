@@ -138,32 +138,38 @@ Template:
 Stable interface:
 
 - `SpaceAGORA.AbstractControlEffectorModel`
-- `SpaceAGORA.calcControlEffect!`
+- `SpaceAGORA.update_control!`
 - `SpaceAGORA.control_wrench`
 - `SpaceAGORA.control_propellant_rate`
 - `SpaceAGORA.control_wheel_torque`
-- `SpaceAGORA.calcControlForceTorque`, `SpaceAGORA.calcControlMassFlowRate` and
-  `SpaceAGORA.calcReactionWheelTorque` (deprecated, removed in 0.5.0)
+- `SpaceAGORA.calcControlEffect!`, `SpaceAGORA.calcControlForceTorque`,
+  `SpaceAGORA.calcControlMassFlowRate` and `SpaceAGORA.calcReactionWheelTorque`
+  (deprecated, removed in 0.5.0)
 
 Typical methods:
 
 ```julia
-SpaceAGORA.calcControlEffect!(model, u, p, t, spacecraft_index)
+SpaceAGORA.update_control!(model, u, p, t, spacecraft_index)
 SpaceAGORA.control_wrench(model, x::SpaceAGORA.StateSample, p, t::Float64) -> (force_ii, torque_body)
 SpaceAGORA.control_propellant_rate(model, x::SpaceAGORA.StateSample, p, t::Float64) -> kg/s, positive
 SpaceAGORA.control_wheel_torque(model, x::SpaceAGORA.StateSample, p, t::Float64) -> nothing or torque_body
 ```
 
-`calcControlEffect!` is the control tick: it computes the command and holds it.
+`update_control!` is the control tick: it computes the command and holds it.
+Guidance and navigation effectors implement their own ticks, `update_guidance!`
+and `update_navigation!`, with the same arguments.
 The three output hooks return the held command at every right-hand-side
 evaluation, and `x.spacecraft_index` is the spacecraft's position in the run.
 An effector that uses no propellant, or drives no wheel, leaves out
 `control_propellant_rate` or `control_wheel_torque`.
 
-The deprecated output hooks, removed in SpaceAGORA 0.5.0:
+The deprecated hooks, removed in SpaceAGORA 0.5.0:
 
 | Deprecated | Replacement | What changes |
 |---|---|---|
+| `calcControlEffect!(model, u, p, t, i)` | `update_control!(model, u, p, t, spacecraft_index)` | the name only |
+| `calcGuidanceEffect!(model, u, p, t, i)` | `update_guidance!(model, u, p, t, spacecraft_index)` | the name only |
+| `calcNavigationEffect!(model, u, p, t, i)` | `update_navigation!(model, u, p, t, spacecraft_index)` | the name only |
 | `calcControlForceTorque(model, u, p, i, t)` | `control_wrench(model, x, p, t)` | a state sample, the time before the index, the index in `x.spacecraft_index` |
 | `calcControlMassFlowRate(model, u, p, i, t)` | `control_propellant_rate(model, x, p, t)` | the same, and **the sign**: the new hook returns the propellant used, positive, and the old one the mass derivative, negative |
 | `calcReactionWheelTorque(model, u, p, i, t)` | `control_wheel_torque(model, x, p, t)` | the same as for the wrench |
@@ -171,7 +177,7 @@ The deprecated output hooks, removed in SpaceAGORA 0.5.0:
 An effector with only the old hooks still runs through them, and the run warns
 before integration (an error under `julia --depwarn=error`). Calling an old
 name on an effector that implements its replacement, as every built-in
-effector does, returns the replacement's result, the mass rate negated, and
+effector does, runs the replacement (an output hook's mass rate negated), and
 warns once per effector type.
 
 Registration:
@@ -303,7 +309,7 @@ Registration: `add_actuator!(spacecraft, link, actuator)`.
 A control effector drives the mounted actuators by declaring
 `SpaceAGORA.actuation_mode(c) = :mounted` and returning one level per mounted
 actuator, in mounting order, from `SpaceAGORA.actuator_levels(c, i)`; it
-computes the levels in `calcControlEffect!` and writes no force or mass-flow
+computes the levels in `update_control!` and writes no force or mass-flow
 hook. Effectors in the default `:ideal` mode keep applying their own hooks.
 The built-in RPO and Apollo descent controllers and the magnetic momentum
 manager accept `actuation=:mounted`. So does the orbit-maneuver burn scheduler
@@ -355,7 +361,7 @@ so a run repeats with the same seeds. Seeds are not varied for you: the
 built-in kinds default to `seed=1`, so in a Monte Carlo campaign set each
 sensor's `seed` from the sample's seed where the sample's spacecraft is
 built, or the samples share one noise stream. A navigation effector reads the latest measurement in
-`calcNavigationEffect!` with `sensor_measurement(p.args.dynamics_model.spacecraft[i], k)`
+`update_navigation!` with `sensor_measurement(p.args.dynamics_model.spacecraft[i], k)`
 (and its time with `sensor_measurement_time`); sensors sample before
 navigation effectors at the same time. Runs with sensors write the
 `sc{i}_sensor_{k}` columns (see [Output Columns](user/output_columns.md#Sensors))

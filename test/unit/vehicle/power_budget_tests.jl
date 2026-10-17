@@ -9,7 +9,7 @@ mutable struct HoldLevels <: AbstractControlEffectorModel
 end
 SpaceAGORA.actuation_mode(::HoldLevels) = :mounted
 SpaceAGORA.actuator_levels(c::HoldLevels, i::Int) = i == 1 ? c.levels : nothing
-SpaceAGORA.calcControlEffect!(::HoldLevels, u, p, t::Float64, i::Int64) = nothing
+SpaceAGORA.update_control!(::HoldLevels, u, p, t::Float64, i::Int64) = nothing
 
 const PLANET = SM.Earth()
 const EPHEM = SM.SimpleEphemeridesModel()

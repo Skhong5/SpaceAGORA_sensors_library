@@ -4,7 +4,7 @@ function _rpo_control_state_pos_vel(u, idx::Int)
 end
 
 """Apply the RPO MPC controller at the current simulation time and cache the actuator command."""
-function calcControlEffect!(model::RPOMPCControlModel, u, p::ODEParams, t::Float64, sat_idx::Int)
+function update_control!(model::RPOMPCControlModel, u, p::ODEParams, t::Float64, sat_idx::Int)
     sat_idx == model.chaser_idx || return nothing
     for guidance in p.args.guidance_model.guidance_effectors
         SimulationLifecycle.before_reference_control!(guidance, model, u, p, t)

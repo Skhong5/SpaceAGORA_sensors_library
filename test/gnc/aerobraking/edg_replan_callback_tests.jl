@@ -4,7 +4,7 @@ struct EDGReplanCallbackProbe <: SimulationModel.AbstractTypes.AbstractControlEf
     state::SimulationModel.AerobrakingEnergyDepletionState
     records::Vector{NamedTuple}
 end
-function SimulationModel.calcControlEffect!(probe::EDGReplanCallbackProbe,u,p,t::Float64,i::Int64)
+function SimulationModel.update_control!(probe::EDGReplanCallbackProbe,u,p,t::Float64,i::Int64)
     st=probe.state
     push!(probe.records,(time=t,count=st.energy_bracketing_count[i],
         last=st.last_switch_solve_t[i],switch=st.targeting_switch_s[i],
@@ -46,7 +46,7 @@ end
     u.sc[1].heat_loads .= [100.0,8.0,9.0]
     c.state.heat_load_entry_j_cm2[1]=[100.0,6.0,6.0]
     @test CH._edg_pass_heat_load_for_links(u.sc[1],(2,3),c.state,1)==3.0
-    SM.calcGuidanceEffect!(guide,u,params,0.0,1)
+    SM.update_guidance!(guide,u,params,0.0,1)
     initial=c.state.targeting_diagnostics[1]
     @test initial.mode==:targeting
     @test initial.certificate.heat_feasible
@@ -81,10 +81,10 @@ end
     hotstate=hot.guide.state
     @test hotstate === hot.control.state
     @test CH._edg_pass_heat_load_for_links(hot.u.sc[1],(2,3),hotstate,1)==35.0
-    SM.calcControlEffect!(hot.control,hot.u,hot.params,6.0,1)
+    SM.update_control!(hot.control,hot.u,hot.params,6.0,1)
     @test hotstate.energy_bracketing_count[1]==3
     @test hotstate.last_switch_solve_t[1]==4.0
-    SM.calcGuidanceEffect!(hot.guide,hot.u,hot.params,6.0,1)
+    SM.update_guidance!(hot.guide,hot.u,hot.params,6.0,1)
     @test hotstate.energy_bracketing_count[1]==4
     @test hotstate.last_switch_solve_t[1]==6.0
     @test !hotstate.targeting_active[1]
@@ -95,12 +95,12 @@ end
     # Standalone control consumes a guidance-owned plan without solving or
     # advancing its clock, including an otherwise due replan tick.
     snapshot=(c.state.targeting_switch_s[1],c.state.last_switch_solve_t[1],c.state.targeting_diagnostics[1])
-    SM.calcControlEffect!(control,sol.u[end],params,6.0,1)
+    SM.update_control!(control,sol.u[end],params,6.0,1)
     @test (c.state.targeting_switch_s[1],c.state.last_switch_solve_t[1],c.state.targeting_diagnostics[1])==snapshot
     # After the accepted switch, the guidance cache remains fixed.
     switched=c.state.targeting_switch_s[1]+1/3
-    SM.calcGuidanceEffect!(guide,sol.u[end],params,switched,1)
-    SM.calcControlEffect!(control,sol.u[end],params,switched,1)
+    SM.update_guidance!(guide,sol.u[end],params,switched,1)
+    SM.update_control!(control,sol.u[end],params,switched,1)
     @test c.state.energy_bracketing_count[1]==3
     @test c.spacecraft.links[2].α==config.min_alpha_rad
 end

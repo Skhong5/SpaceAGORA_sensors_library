@@ -63,7 +63,7 @@ end
 SpaceAGORA.actuation_mode(::DetumbleAndUnload) = :mounted
 SpaceAGORA.actuator_levels(c::DetumbleAndUnload, i::Int) = i == 1 ? c.levels : nothing
 
-function SpaceAGORA.calcControlEffect!(c::DetumbleAndUnload, u, p, t::Float64, i::Int64)
+function SpaceAGORA.update_control!(c::DetumbleAndUnload, u, p, t::Float64, i::Int64)
     i == 1 || return nothing
     state = u.sc[1]
     ω = SVector{3, Float64}(state.ω)

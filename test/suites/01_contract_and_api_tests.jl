@@ -1057,19 +1057,19 @@ end
     u = ComponentVector(pos=[0.0, 0.0, 0.0], vel=[0.0, 0.0, 0.0], mass=1.0, heat_loads=[0.0])
 
     p.orbit_counter[1] = 3
-    sandbox.calcGuidanceEffect!(guidance_model, u, p, 0.0, 1)
+    sandbox.update_guidance!(guidance_model, u, p, 0.0, 1)
     @test p.shared_buffers.maneuver_commands[1].valid == true
     @test p.shared_buffers.maneuver_commands[1].delta_v_mps == 20.0
     @test isapprox(p.shared_buffers.maneuver_commands[1].direction_rad, 0.0; atol=1e-12, rtol=0.0)
 
     p.orbit_counter[1] = 2
-    sandbox.calcGuidanceEffect!(guidance_model, u, p, 0.0, 1)
+    sandbox.update_guidance!(guidance_model, u, p, 0.0, 1)
     @test p.shared_buffers.maneuver_commands[1].valid == true
     @test p.shared_buffers.maneuver_commands[1].delta_v_mps == 5.0
     @test isapprox(p.shared_buffers.maneuver_commands[1].direction_rad, π; atol=1e-12, rtol=0.0)
 
     p.orbit_counter[1] = 1
-    sandbox.calcGuidanceEffect!(guidance_model, u, p, 0.0, 1)
+    sandbox.update_guidance!(guidance_model, u, p, 0.0, 1)
     @test p.shared_buffers.maneuver_commands[1].valid == true
     @test p.shared_buffers.maneuver_commands[1].delta_v_mps == 0.0
 end
@@ -1110,7 +1110,7 @@ end
         target_apoapsis_radius_m=planet.Rp_e + 600e3,
         target_periapsis_altitude_m=200e3
     )
-    @test sandbox.calcGuidanceEffect!(model, u, p, 0.0, 1) === nothing
+    @test sandbox.update_guidance!(model, u, p, 0.0, 1) === nothing
     command = p.shared_buffers.maneuver_commands[1]
     apoapsis = planet.Rp_e + 500e3
     current_a = (apoapsis + planet.Rp_e + 100e3) / 2
@@ -1174,12 +1174,12 @@ end
     u = ComponentVector(pos=[0.0, 0.0, 0.0], vel=[0.0, 0.0, 0.0], mass=1.0, heat_loads=[0.0])
 
     p.orbit_counter[1] = 7
-    sandbox.calcGuidanceEffect!(sandbox_guidance, u, p, 0.0, 1)
+    sandbox.update_guidance!(sandbox_guidance, u, p, 0.0, 1)
     @test p.shared_buffers.maneuver_commands[1].delta_v_mps > 0.0
     @test isapprox(p.shared_buffers.maneuver_commands[1].direction_rad, 0.0; atol=1e-12, rtol=0.0)
 
     p.orbit_counter[1] = 14
-    sandbox.calcGuidanceEffect!(sandbox_guidance, u, p, 0.0, 1)
+    sandbox.update_guidance!(sandbox_guidance, u, p, 0.0, 1)
     @test p.shared_buffers.maneuver_commands[1].delta_v_mps > 0.0
     @test isapprox(p.shared_buffers.maneuver_commands[1].direction_rad, π; atol=1e-12, rtol=0.0)
 end

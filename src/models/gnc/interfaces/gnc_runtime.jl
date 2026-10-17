@@ -11,7 +11,7 @@ export tick_schedule, gnc_callbacks, register_tstops!, gnc_clock_started!
 How the engine runs control `model`.
 
 - `:periodic`, the default: a periodic callback at the model's control rate calls
-  its tick (`calcControlEffect!`) for every spacecraft.
+  its tick (`update_control!`) for every spacecraft.
 - `:event_driven`: no periodic tick. The model brings its own callbacks
   (`gnc_callbacks`). `BaseThrusterModel`, the burn scheduler, is event-driven.
 """

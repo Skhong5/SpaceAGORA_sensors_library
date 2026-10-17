@@ -60,7 +60,7 @@ end
 
 The latest measurement of `sensor`, or of the `k`-th sensor mounted on
 `model` (NaN before its first sample). A navigation effector reads it in
-`calcNavigationEffect!`, from the spacecraft of the run
+`update_navigation!`, from the spacecraft of the run
 (`p.args.dynamics_model.spacecraft[i]`).
 """
 sensor_measurement(sensor::AbstractSensor) = sensor.latest

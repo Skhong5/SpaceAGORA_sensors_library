@@ -12,11 +12,11 @@ const ZERO3 = SVector(0.0, 0.0, 0.0)
 const LOG = Symbol[]
 
 struct LoggedNavigation <: AbstractNavigationModel end
-SpaceAGORA.calcNavigationEffect!(::LoggedNavigation, u, p, t::Float64, i::Int) = nothing
+SpaceAGORA.update_navigation!(::LoggedNavigation, u, p, t::Float64, i::Int) = nothing
 L.initialize_navigation!(::LoggedNavigation, u, p, t) = (push!(LOG, :navigation); nothing)
 
 struct LoggedGuidance <: AbstractGuidanceModel end
-SpaceAGORA.calcGuidanceEffect!(::LoggedGuidance, u, p, t::Float64, i::Int) = nothing
+SpaceAGORA.update_guidance!(::LoggedGuidance, u, p, t::Float64, i::Int) = nothing
 L.initialize_guidance!(::LoggedGuidance, u, p, t) = (push!(LOG, :guidance); nothing)
 
 # A periodic controller that records its clock starts, ticks and stop requests.
@@ -26,7 +26,7 @@ mutable struct ClockedControl <: SM.AbstractControlEffectorModel
     stops::Int
 end
 ClockedControl() = ClockedControl(Tuple{Float64, Float64}[], 0, 0)
-SpaceAGORA.calcControlEffect!(m::ClockedControl, u, p, t, i) = (m.ticks += 1; nothing)
+SpaceAGORA.update_control!(m::ClockedControl, u, p, t, i) = (m.ticks += 1; nothing)
 SpaceAGORA.calcControlForceTorque(::ClockedControl, u, p, i, t) = (ZERO3, ZERO3)
 L.initialize_control!(::ClockedControl, u, p, t) = (push!(LOG, :control); nothing)
 SpaceAGORA.gnc_clock_started!(m::ClockedControl, period_s, origin_s) = (push!(m.clock, (period_s, origin_s)); nothing)
@@ -39,7 +39,7 @@ mutable struct ScheduledControl <: SM.AbstractControlEffectorModel
     period_s::Float64
 end
 ScheduledControl() = ScheduledControl(Float64[], 0, NaN)
-SpaceAGORA.calcControlEffect!(m::ScheduledControl, u, p, t, i) = (m.ticks += 1; nothing)
+SpaceAGORA.update_control!(m::ScheduledControl, u, p, t, i) = (m.ticks += 1; nothing)
 SpaceAGORA.calcControlForceTorque(::ScheduledControl, u, p, i, t) = (ZERO3, ZERO3)
 SpaceAGORA.tick_schedule(::ScheduledControl) = :event_driven
 function SpaceAGORA.gnc_callbacks(m::ScheduledControl, num_sats, args, period_s)
@@ -49,7 +49,7 @@ end
 
 # A schedule the engine does not know.
 struct OddControl <: SM.AbstractControlEffectorModel end
-SpaceAGORA.calcControlEffect!(::OddControl, u, p, t, i) = nothing
+SpaceAGORA.update_control!(::OddControl, u, p, t, i) = nothing
 SpaceAGORA.calcControlForceTorque(::OddControl, u, p, i, t) = (ZERO3, ZERO3)
 SpaceAGORA.tick_schedule(::OddControl) = :sometimes
 
@@ -60,7 +60,7 @@ struct ThreadedLaw <: SM.AbstractControlEffectorModel
     stop_thread::Vector{Int}
 end
 ThreadedLaw(n) = ThreadedLaw(zeros(Int, n), zeros(Int, n))
-SpaceAGORA.calcControlEffect!(m::ThreadedLaw, u, p, t, i) = (m.tick_thread[i] = Threads.threadid(); nothing)
+SpaceAGORA.update_control!(m::ThreadedLaw, u, p, t, i) = (m.tick_thread[i] = Threads.threadid(); nothing)
 SpaceAGORA.calcControlForceTorque(::ThreadedLaw, u, p, i, t) = (ZERO3, ZERO3)
 SM.SimulationCallbacks.control_model_threadsafe(::ThreadedLaw) = true
 SpaceAGORA.register_tstops!(integrator, m::ThreadedLaw, i) = (m.stop_thread[i] = Threads.threadid(); nothing)

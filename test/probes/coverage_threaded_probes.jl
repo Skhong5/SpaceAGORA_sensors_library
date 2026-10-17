@@ -81,7 +81,7 @@ struct ProbeImplicitForceModel <: SimulationModel.AbstractForceTorqueModel
     torque::SVector{3, Float64}
 end
 
-function SimulationModel.calcControlEffect!(
+function SimulationModel.update_control!(
     model::ProbeControlModel,
     u::ComponentVector,
     p::ODEParams,
@@ -92,7 +92,7 @@ function SimulationModel.calcControlEffect!(
     return nothing
 end
 
-function SimulationModel.calcGuidanceEffect!(
+function SimulationModel.update_guidance!(
     model::ProbeGuidanceModel,
     u::ComponentVector,
     p::ODEParams,
