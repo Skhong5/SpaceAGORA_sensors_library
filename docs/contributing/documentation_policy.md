@@ -77,11 +77,12 @@ Examples already in the repo:
 - the extension hook reference is generated from `docs/extension_hooks.jl` and
   checked by `test/gates/ci_extension_hook_reference_gate.jl`
 - Wave 5 docs are anchored by `test/gates/ci_hpc_extensibility_docs_gate.jl`
-- the code of the worked examples in `docs/src/user/gnc_algorithm.md` is the
-  code CI runs: each block is a snippet region of a script in
-  `examples/gnc_algorithm_env/`, compared byte for byte by
-  `test/gates/ci_hpc_extensibility_docs_gate.jl`; change the page and the
-  script together
+- the code of the worked examples in `docs/src/user/gnc_algorithm.md` and of
+  the two extension walkthroughs (`custom_effector.md`, `custom_actuator.md`) is
+  the code CI runs: each block is a snippet region of a script in
+  `examples/gnc_algorithm_env/` or `examples/walkthrough_env/`, compared byte for
+  byte by `test/gates/ci_hpc_extensibility_docs_gate.jl`; change the page and
+  the script together
 - terminal commands in user docs should use cross-platform entrypoints or
   provide shell-specific variants where syntax differs
 

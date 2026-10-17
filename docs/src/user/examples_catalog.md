@@ -345,13 +345,16 @@ names; they do not define a separate backend or a flight-validation claim.
 | RPO planner disturbances | `Earth_RPO_Planner_Disturbances.jl` | Root; no external data |
 | Robot-arm planning | `Robot_Arm_Planner_Cloth_Demo.jl` | `rpo_planner_env` setup; no external data |
 | Writing a GNC algorithm | `gnc_algorithm_env/feedback_controller.jl`, `gnc_algorithm_env/estimator.jl`, `gnc_algorithm_env/rpo_planner.jl` | `gnc_algorithm_env` setup; no external data |
+| Extension walkthroughs | `walkthrough_env/my_effector.jl`, `walkthrough_env/my_actuator.jl` | `walkthrough_env` setup; no external data |
 
-The setup files under `rpo_planner_env/`, `odyssey_surrogate_env/` and
-`gnc_algorithm_env/` prepare the three documented environments. The planner
-environment also has an installed-API smoke test. The scripts of
-`gnc_algorithm_env/` are the worked examples of
-[Writing a GNC Algorithm](gnc_algorithm.md); its `smoke.jl` runs all three, as
-CI does. These files are not additional mission entry points.
+The setup files under `rpo_planner_env/`, `odyssey_surrogate_env/`,
+`gnc_algorithm_env/` and `walkthrough_env/` prepare the four documented
+environments. The planner environment also has an installed-API smoke test. The
+scripts of `gnc_algorithm_env/` are the worked examples of
+[Writing a GNC Algorithm](gnc_algorithm.md), and those of `walkthrough_env/` the
+complete scripts of [Adding a Force or Torque](custom_effector.md) and
+[Adding an Actuator](custom_actuator.md); each environment's `smoke.jl` runs its
+scripts, as CI does. These files are not additional mission entry points.
 
 Support files are included by examples rather than run on their own:
 

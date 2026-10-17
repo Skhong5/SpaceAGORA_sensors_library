@@ -10,7 +10,7 @@ required_paths = [
     joinpath(REPO_ROOT, "templates", "actuator_template.jl"),
     joinpath(REPO_ROOT, "templates", "gnc_planner_template.jl"),
     joinpath(REPO_ROOT, "docs", "src", "user", "gnc_algorithm.md"),
-    [joinpath(REPO_ROOT, "examples", "gnc_algorithm_env", name) for name in
+    [joinpath(REPO_ROOT, "examples", env, name) for env in ("gnc_algorithm_env", "walkthrough_env") for name in
         ("README.md", "Project.template.toml", "setup.jl", "smoke.jl")]...,
     joinpath(REPO_ROOT, "templates", "starters", "README.md"),
     [joinpath(REPO_ROOT, "templates", "starters", kind, rel) for kind in ("project", "package", "companion")
@@ -63,28 +63,35 @@ for marker in (
     occursin(marker, api_doc) || error("public_api_policy.md missing marker: $(marker)")
 end
 
-# The worked examples of "Writing a GNC Algorithm" run in CI from a separate
-# project. Each region of its scripts, between a `# snippet: <name>` line and
-# `# end snippet`, must appear on the page as one Julia code block, character for
-# character, so the page shows the code CI runs; and the runner CI calls must run
-# every script.
+# Docs pages whose code CI runs. Each script below runs in CI from a separate
+# project, through that project's `smoke.jl`. Each region of a script, between a
+# `# snippet: <name>` line and its `# end snippet` (regions may nest; marker lines
+# belong to no region), must appear on the script's page as one Julia code block,
+# character for character, so the page shows the code CI runs.
+const SNIPPET_SCRIPTS = (
+    joinpath("examples", "gnc_algorithm_env", "feedback_controller.jl") => joinpath("docs", "src", "user", "gnc_algorithm.md"),
+    joinpath("examples", "gnc_algorithm_env", "estimator.jl") => joinpath("docs", "src", "user", "gnc_algorithm.md"),
+    joinpath("examples", "gnc_algorithm_env", "rpo_planner.jl") => joinpath("docs", "src", "user", "gnc_algorithm.md"),
+    joinpath("examples", "walkthrough_env", "my_effector.jl") => joinpath("docs", "src", "user", "custom_effector.md"),
+    joinpath("examples", "walkthrough_env", "my_actuator.jl") => joinpath("docs", "src", "user", "custom_actuator.md"),
+)
+
 function snippet_regions(path)
     regions = Pair{String, String}[]
-    name, lines = nothing, String[]
+    open_regions = Pair{String, Vector{String}}[]
     for (number, line) in enumerate(eachline(path))
         start = match(r"^# snippet: (\S+)$", line)
         if start !== nothing
-            name === nothing || error("$(path):$(number): snippet $(start[1]) starts inside snippet $(name)")
-            name, lines = String(start[1]), String[]
+            push!(open_regions, String(start[1]) => String[])
         elseif line == "# end snippet"
-            name === nothing && error("$(path):$(number): `# end snippet` without a start")
+            isempty(open_regions) && error("$(path):$(number): `# end snippet` without a start")
+            name, lines = pop!(open_regions)
             push!(regions, name => join(lines, "\n"))
-            name = nothing
-        elseif name !== nothing
-            push!(lines, line)
+        else
+            foreach(region -> push!(last(region), line), open_regions)
         end
     end
-    name === nothing || error("$(path): snippet $(name) has no `# end snippet`")
+    isempty(open_regions) || error("$(path): snippet $(first(last(open_regions))) has no `# end snippet`")
     return regions
 end
 
@@ -103,19 +110,23 @@ function julia_code_blocks(path)
     return blocks
 end
 
-gnc_examples = joinpath(REPO_ROOT, "examples", "gnc_algorithm_env")
-gnc_page_blocks = Set(julia_code_blocks(joinpath(REPO_ROOT, "docs", "src", "user", "gnc_algorithm.md")))
-gnc_runner = read(joinpath(gnc_examples, "smoke.jl"), String)
-gnc_scripts = sort!(filter(name -> endswith(name, ".jl") && !(name in ("setup.jl", "smoke.jl")), readdir(gnc_examples)))
-isempty(gnc_scripts) && error("examples/gnc_algorithm_env/ has no example script")
-for script in gnc_scripts
-    occursin("\"$(script)\"", gnc_runner) ||
-        error("examples/gnc_algorithm_env/smoke.jl does not run $(script)")
-    regions = snippet_regions(joinpath(gnc_examples, script))
-    isempty(regions) && error("examples/gnc_algorithm_env/$(script) has no snippet shown on the GNC page")
+snippet_dirs = unique(dirname(first(pair)) for pair in SNIPPET_SCRIPTS)
+for dir in snippet_dirs
+    listed = Set(basename(first(pair)) for pair in SNIPPET_SCRIPTS if dirname(first(pair)) == dir)
+    present = Set(filter(name -> endswith(name, ".jl") && !(name in ("setup.jl", "smoke.jl")),
+        readdir(joinpath(REPO_ROOT, dir))))
+    present == listed || error("$(dir) holds the scripts $(sort!(collect(present))), but the gate lists " *
+        "$(sort!(collect(listed))); list every script with the page that shows it.")
+end
+for (script, page) in SNIPPET_SCRIPTS
+    runner = read(joinpath(REPO_ROOT, dirname(script), "smoke.jl"), String)
+    occursin("\"$(basename(script))\"", runner) || error("$(dirname(script))/smoke.jl does not run $(basename(script))")
+    regions = snippet_regions(joinpath(REPO_ROOT, script))
+    isempty(regions) && error("$(script) has no snippet shown on $(page)")
+    blocks = Set(julia_code_blocks(joinpath(REPO_ROOT, page)))
     for (name, text) in regions
-        text in gnc_page_blocks || error("docs/src/user/gnc_algorithm.md has no Julia code block equal to " *
-            "snippet `$(name)` of examples/gnc_algorithm_env/$(script); change the page and the script together.")
+        text in blocks || error("$(page) has no Julia code block equal to snippet `$(name)` of $(script); " *
+            "change the page and the script together.")
     end
 end
 

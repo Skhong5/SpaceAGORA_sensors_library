@@ -46,7 +46,7 @@ function SpaceAGORA.wrench(model::AlongTrackThrust, x::SpaceAGORA.StateSample,
                            env::SpaceAGORA.EnvironmentSample, t::Float64)
     direction = x.vel_ii / norm(x.vel_ii)          # unit vector along the inertial velocity
     force_ii = model.force_n * direction            # newtons, inertial frame
-    torque_body = SVector{3, Float64}(0.0, 0.0, 0.0)  # newton-metres, bus-fixed frame
+    torque_body = SVector{3, Float64}(0.0, 0.0, 0.0)  # newton-metres, body frame
     return force_ii, torque_body
 end
 ```
@@ -69,7 +69,9 @@ with that project's environment. The script uses the documented root exports:
 configuration types come from `using SpaceAGORA`. No private module import or
 package-source include is needed. Everything between `build_config`'s parentheses
 is the standard configuration explained on the
-[Simulation Configuration](simulation_configuration.md) page.
+[Simulation Configuration](simulation_configuration.md) page. CI runs this script,
+`examples/walkthrough_env/my_effector.jl`, from a separate project on every pull
+request, and a gate keeps the code on this page identical to it.
 
 ```julia
 using SpaceAGORA
