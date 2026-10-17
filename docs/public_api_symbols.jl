@@ -53,6 +53,13 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :rpo_geometry_revision, rendered = "SpaceAGORA.rpo_geometry_revision"),
         (owner = :SpaceAGORA, symbol = :rpo_geometry_snapshot, rendered = "SpaceAGORA.rpo_geometry_snapshot"),
         (owner = :SpaceAGORA, symbol = :RPOReplanningSpheres, rendered = "SpaceAGORA.RPOReplanningSpheres"),
+        (owner = :SpaceAGORA, symbol = :HYPRComparisonPlanner, rendered = "SpaceAGORA.HYPRComparisonPlanner"),
+        (owner = :SpaceAGORA, symbol = :UnrefinedPSOPlanner, rendered = "SpaceAGORA.UnrefinedPSOPlanner"),
+        (owner = :SpaceAGORA, symbol = :RRTConnectPlanner, rendered = "SpaceAGORA.RRTConnectPlanner"),
+        (owner = :SpaceAGORA, symbol = :RRTConnectBezierPlanner, rendered = "SpaceAGORA.RRTConnectBezierPlanner"),
+        (owner = :SpaceAGORA, symbol = :RRTStarPlanner, rendered = "SpaceAGORA.RRTStarPlanner"),
+        (owner = :SpaceAGORA, symbol = :CHOMPPlanner, rendered = "SpaceAGORA.CHOMPPlanner"),
+        (owner = :SpaceAGORA, symbol = :STOMPPlanner, rendered = "SpaceAGORA.STOMPPlanner"),
     ]),
     (title = "GNC algorithm contract", items = [
         (owner = :SpaceAGORA, symbol = :AbstractGNCAlgorithm, rendered = "SpaceAGORA.AbstractGNCAlgorithm"),

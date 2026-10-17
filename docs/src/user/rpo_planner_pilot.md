@@ -254,7 +254,10 @@ Robot-arm `planner=:hypr` also requires explicit loading; `:cloth_quintic` does 
 
 Comparison planners that request HYPR-configured objectives, refinement, sampling
 or retiming need the companion even when their search algorithm is RRT, CHOMP or
-STOMP. Shared RRT with explicit policies and shared scalar APIs remain independent.
+STOMP. The seven comparison modes are also planner objects, such as
+`RRTStarPlanner(...)`, which can be the `planner` of `make_rpo_configuration`; see
+[Comparison planners](../reference/rpo_planner_contract.md#Comparison-planners).
+Selecting a comparison mode by name is deprecated. Shared RRT with explicit policies and shared scalar APIs remain independent.
 The baseline LQ-MPC controller still needs OSQP; optional HYPR does not remove that
 controller dependency. Package separation changes installation, not the validated
 physical limits, planning reserve or numerical policies.

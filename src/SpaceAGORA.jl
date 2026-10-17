@@ -16,6 +16,7 @@ include(joinpath(@__DIR__, "orchestration", "simulation", "callback_services.jl"
 include(joinpath(@__DIR__, "orchestration", "simulation", "composition", "simulation_model.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "direct_planner.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "adapters", "hypr", "rpo_planner_adapter.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "comparison", "planner_contract.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "lifecycle.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "algorithm_lifecycle.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "control", "burn_planning.jl"))
@@ -168,6 +169,11 @@ export AbstractBurnPlanner, BurnPlanFamily, BurnPlanRequest, BurnPlanSlot, Apoap
 
 using .RPOPlannerLifecycle: RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
 using .RPOPlannerLifecycle: RPOReplanningSpheres
+using .SimulationModel: HYPRComparisonPlanner, UnrefinedPSOPlanner, RRTConnectPlanner, RRTConnectBezierPlanner, RRTStarPlanner, CHOMPPlanner, STOMPPlanner
+export HYPRComparisonPlanner, UnrefinedPSOPlanner, RRTConnectPlanner, RRTConnectBezierPlanner, RRTStarPlanner, CHOMPPlanner, STOMPPlanner
+for name in (:HYPRComparisonPlanner, :UnrefinedPSOPlanner, :RRTConnectPlanner, :RRTConnectBezierPlanner, :RRTStarPlanner, :CHOMPPlanner, :STOMPPlanner)
+    @eval @doc (@doc SimulationModel.GuidanceHooks.$name) $name
+end
 export AbstractGNCAlgorithm, AbstractAlgorithmFamily, AbstractAlgorithmRequest, AbstractAlgorithmResult, AbstractValidationResult, GNCAlgorithmError, AlgorithmResult, ValidationResult, RPOReferenceFamily
 export algorithm_family, default_capabilities, algorithm_capabilities, require_algorithm_support, initialize_algorithm, propose!, propose_revision!, consumes_rng
 export validate_capabilities, validate_proposal, install!, is_current, on_rejection, fallback_product, family_contract_version

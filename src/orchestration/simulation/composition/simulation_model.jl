@@ -23,6 +23,13 @@ isdefined(parentmodule(@__MODULE__), :CallbackServices) ||
 isdefined(parentmodule(@__MODULE__), :VisualizerServices) ||
     Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "..", "..", "interfaces", "analysis", "visualization", "visualizer_services.jl"))
 
+# The RPO comparison planners in GuidanceHooks subtype the RPO planner contract.
+isdefined(parentmodule(@__MODULE__), :GNCAlgorithms) ||
+    Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "interfaces", "gnc_algorithms.jl"))
+
+isdefined(parentmodule(@__MODULE__), :RPOPlannerInterfaces) ||
+    Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "interfaces", "rpo_planner.jl"))
+
 # --- Utils ---
 include(joinpath(@__DIR__, "..", "..", "..", "foundation", "core", "numerics", "quaternion_utils.jl"))
 using .QuaternionMath

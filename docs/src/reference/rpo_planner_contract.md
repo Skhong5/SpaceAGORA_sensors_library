@@ -217,6 +217,35 @@ only the planning budget or no diagnostics. Because the adapter plans within the
 below, its reference timing can differ from a legacy HYPR call that uses the
 unreduced limits.
 
+### Comparison planners
+
+The seven modes of the RPO planner comparison are planners too:
+`HYPRComparisonPlanner` (`:hypr`), `UnrefinedPSOPlanner` (`:pso_unrefined`),
+`RRTConnectPlanner` (`:rrt_connect`), `RRTConnectBezierPlanner`
+(`:rrt_connect_bezier`), `RRTStarPlanner` (`:rrt_star`), `CHOMPPlanner`
+(`:chomp`) and `STOMPPlanner` (`:stomp`). Each holds a copy of its
+`RPOPSOConfig`, which sets the cost and the retiming, and of its search or
+optimizer settings. Its `plan_rpo!` runs the comparison's kernels under the
+request's clearance, reference step, lifetime and limits, mapped with headroom as
+for `HYPRRPOPlanner`; the comparison's fixed 0.5 m safety distance does not
+apply. It plans without a wall-clock limit and times the path with the
+configuration the kernel returned. A search that finds no path reports
+`:failed/:path_not_found` and never offers its direct-segment diagnostic as a
+candidate. Under an acceleration limit, the acceleration-limited retimer cannot
+hold the limit at the corners of the polyline paths of `RRTConnectPlanner` and
+`RRTStarPlanner`, so validation refuses them (`:failed/:reference_rejected`); the
+curve-based modes can meet it. The comparison planners declare truth-state,
+target-RTN planning without retiming or restart, draw from the planner's stream,
+and need the optional HYPR companion, as the comparison does.
+
+The comparison harness, `RPOPlannerComparisonConfig`, takes these objects in
+`planners`; by default it compares all seven, built from its own settings
+fields. Selecting a mode by name (`:rrt_star`, `"rrt-star"` and the other
+aliases) still works but is deprecated: the harness resolves the name to the same
+object and warns once per planner type before planning, and
+`julia --depwarn=error` refuses the name. A name and its object give
+bit-identical plans.
+
 ## Adapter planning headroom
 
 `RPOPlanningHeadroom(fraction=0.01)` prospectively reserves one percent of each

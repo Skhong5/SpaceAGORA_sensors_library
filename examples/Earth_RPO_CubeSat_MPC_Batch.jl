@@ -482,7 +482,7 @@ function _write_rpo_planner_comparison_reproducibility_csv(
     _rpo_repro_push!(rows, "run", "julia_version", VERSION)
     _rpo_repro_push!(rows, "run", "julia_num_threads", Threads.nthreads())
     _rpo_repro_push!(rows, "run", "smoke_mode", _rpo_batch_smoke_mode(); source="SPACEAGORA_EXAMPLE_SMOKE")
-    _rpo_repro_push!(rows, "run", "planners", join(string.(cfg.planners), ";"))
+    _rpo_repro_push!(rows, "run", "planners", join(string.(normalize_rpo_comparison_planner_type.(cfg.planners)), ";"))
     _rpo_repro_push!(rows, "run", "runtime_limit_s", runtime_limit_s; units="s")
     _rpo_repro_push!(rows, "run", "failed_path_plots", write_failed_path_outputs; source="SPACEAGORA_RPO_COMPARISON_FAILED_PATH_PLOTS")
 

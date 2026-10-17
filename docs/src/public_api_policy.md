@@ -143,3 +143,7 @@ The root exports the neutral planner contracts and extension methods,
 module and has a root alias for output settings. The [RPO Planner API](generated/rpo_planner_api.md) lists these symbols. The [pilot guide](user/rpo_planner_pilot.md)
 defines supported truth/static-RTN scope, failure policy and restart refusal.
 Internal lifecycle modules and the full `SimulationModel` are not public interfaces.
+The root also exports the seven comparison planners, `HYPRComparisonPlanner`,
+`UnrefinedPSOPlanner`, `RRTConnectPlanner`, `RRTConnectBezierPlanner`,
+`RRTStarPlanner`, `CHOMPPlanner` and `STOMPPlanner`; the comparison harness itself
+stays internal.
