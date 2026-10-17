@@ -68,7 +68,7 @@ function check_force_torque_model(model; fixture::ConformanceFixture=conformance
     since = FIRST_RELEASE
     configuration = fixture.configuration
     hooks = _hooks_present_check(fixture, since)
-    deprecated = _no_deprecated_hooks_check(fixture, since)
+    deprecated = _no_deprecated_hooks_check(fixture, model, since)
     signature = _sample_signature_check(model, since)
     base = _solve(configuration)
     again = _solve(configuration)
@@ -123,15 +123,17 @@ end
 # signature. Core's tests use them on built-in models that cannot run in the fixture.
 function _static_force_report(model; fixture::ConformanceFixture=conformance_fixture(effectors=(model,)))
     since = FIRST_RELEASE
-    checks = [_hooks_present_check(fixture, since), _no_deprecated_hooks_check(fixture, since),
+    checks = [_hooks_present_check(fixture, since), _no_deprecated_hooks_check(fixture, model, since),
         _sample_signature_check(model, since)]
     return ConformanceReport(string(nameof(typeof(model))), :force_torque_model, checks)
 end
 
-# The deprecated hooks the engine's pre-run check would warn about for the fixture's
-# models (`_deprecated_model_hooks`, the list behind its depwarn-group warnings).
-function _no_deprecated_hooks_check(fixture::ConformanceFixture, since::VersionNumber)
-    found = SimulationEngine._deprecated_model_hooks(fixture.arguments, fixture.call)
+# The deprecated hooks the engine's pre-run check would warn about for the model's own
+# type (`_deprecated_model_hooks`, the list behind its depwarn-group warnings, keyed by
+# type and hook). Other models of a caller's fixture are not the model's to answer for.
+function _no_deprecated_hooks_check(fixture::ConformanceFixture, model, since::VersionNumber)
+    found = [entry for entry in SimulationEngine._deprecated_model_hooks(fixture.arguments, fixture.call)
+        if first(first(entry)) === typeof(model)]
     return _check(:no_deprecated_hooks, since, isempty(found),
         "the engine's pre-run check warns:\n" * join(("- " * last(entry) for entry in found), "\n"))
 end

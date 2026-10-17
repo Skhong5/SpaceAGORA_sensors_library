@@ -220,6 +220,14 @@ for (prefix, Abstract, tick) in ((:NcG, SpaceAGORA.AbstractGuidanceModel, :calcG
     end
 end
 registered(model) = (NC_GNC_GAINS[model] = 1.0e-3; model)
+# Clean, and its bound copies need the fixture's mounted sensor: each tick reads it.
+mutable struct NcNSensorReader <: SpaceAGORA.AbstractNavigationModel
+    acc::Float64
+end
+SpaceAGORA.calcNavigationEffect!(m::NcNSensorReader, u, p, t::Float64, i::Int) =
+    (m.acc += length(SpaceAGORA.sensor_measurement(p.args.dynamics_model.spacecraft[i], 1)); nothing)
+SpaceAGORA.SimulationLifecycle.initialize_navigation!(m::NcNSensorReader, u, p, t) = (m.acc = 0.0; nothing)
+SpaceAGORA.bind_spacecraft(m::NcNSensorReader, i::Int) = NcNSensorReader(m.acc)
 
 # Control models: the tick sets `cmd`, and the output hooks read it.
 mutable struct NcCtl{V} <: SpaceAGORA.AbstractControlEffectorModel
@@ -460,6 +468,18 @@ status_of(report, id) = only(check.status for check in report.checks if check.id
             @test all(check -> check.status in (:pass, :skip), report.checks)
             @test passed(report)
         end
+        # A clean model is not answerable for another model of its fixture that uses a
+        # deprecated hook.
+        target = NcClean()
+        mixed = check_force_torque_model(target; fixture=conformance_fixture(effectors=(target, NcDeprecatedForce())))
+        @test status_of(mixed, :no_deprecated_hooks) === :pass
+        controller = NcCtl{:Clean}()
+        mixed = check_control_model(controller; fixture=conformance_fixture(control=(controller, NcCtl{:Deprecated}())))
+        @test status_of(mixed, :no_deprecated_hooks) === :pass
+        # The two-spacecraft bind check keeps the fixture's sensor, which the model reads.
+        reader = check_navigation_model(NcNSensorReader(0.0); sensors=(NcCleanSensor(),))
+        @test status_of(reader, :bind_fresh_state) === :pass
+        @test passed(reader)
         sensor = check_sensor(NcCleanSensor())
         @test [check.id for check in sensor.checks] == collect(CHECK_IDS.sensor)
         @test all(check -> check.status === :pass, sensor.checks) || Threads.nthreads() < 2
