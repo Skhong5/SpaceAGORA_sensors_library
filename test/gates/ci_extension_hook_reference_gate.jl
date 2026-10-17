@@ -31,8 +31,9 @@ const _HOOK_SHAPES = ("T", "R", "Q", "D", "A", "H", "P", "L")
 const _HOOK_GAP_RULES = (:signature_line, :index_word, :page)
 const _HOOK_OLD_INDEX_WORDS = (:i, :sat_idx, :idx)
 # The argument a hook dispatches on is the first one with one of these names.
+# `link` is the shared object of a GNC link (`check_link`, `link_initialize!`).
 const _HOOK_DISPATCH_NAMES = (:model, :effector, :controller, :actuator, :sensor,
-    :planner, :algorithm, :family, :binding, :result, :provider)
+    :planner, :algorithm, :family, :binding, :result, :provider, :link)
 
 violations = String[]
 

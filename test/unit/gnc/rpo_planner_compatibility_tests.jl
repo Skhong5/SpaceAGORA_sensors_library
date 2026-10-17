@@ -91,6 +91,7 @@ deprecation_logs(logger)=filter(l->occursin("RPOGuidanceModel is deprecated",str
     owned=deepcopy(args)
     u=SpaceAGORA.SimulationEngine.build_initial_conditions(owned)
     p=S.ODEParams(n_sats=length(owned.dynamics_model.spacecraft),args=owned)
+    SpaceAGORA.SimulationModel.SimulationCallbacks.initialize_gnc_links!(owned,u,p,0.)
     for g in owned.guidance_model.guidance_effectors
         SpaceAGORA.SimulationLifecycle.initialize_guidance!(g,u,p,0.)
     end

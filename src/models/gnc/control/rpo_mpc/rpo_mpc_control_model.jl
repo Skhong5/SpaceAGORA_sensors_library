@@ -6,9 +6,8 @@ end
 """Apply the RPO MPC controller at the current simulation time and cache the actuator command."""
 function update_control!(model::RPOMPCControlModel, u, p::ODEParams, t::Float64, sat_idx::Int)
     sat_idx == model.chaser_idx || return nothing
-    for guidance in p.args.guidance_model.guidance_effectors
-        SimulationLifecycle.before_reference_control!(guidance, model, u, p, t)
-    end
+    # The engine has already called the planner that writes this model's plan
+    # buffer (`before_reference_control!` for its linked producers).
     model.plan_buffer.valid || return nothing
     model.controller === nothing && return nothing
 

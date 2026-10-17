@@ -22,6 +22,8 @@ module GuidanceHooks
     using ..StaticArrays
     using ..Kinematics
     using ..HYPRUtils
+    using ..HookDeprecation: _hook_deprecation
+    using ...RPOPlannerInterfaces: AbstractRPOPlanner, RPOPlanningHeadroom
     using Base.Threads: @threads, maxthreadid, threadid
     using Logging: Logging
     using Random
@@ -49,6 +51,7 @@ module GuidanceHooks
     export RPOCHOMPSettings, RPORRTConnectSettings, RPORRTStarSettings, RPOSTOMPSettings, RPOTrajectoryOptimizerSettings
     export RPOLQMPCTrackingSettings, RPOPlannerComparisonCase, RPOPlannerComparisonConfig
     export normalize_rpo_comparison_planner_type, rpo_comparison_planner_label
+    export HYPRComparisonPlanner, UnrefinedPSOPlanner, RRTConnectPlanner, RRTConnectBezierPlanner, RRTStarPlanner, CHOMPPlanner, STOMPPlanner
     export rpo_740_mpc_final_pso_config, rpo_chomp_plan_path, rpo_rrt_connect_plan_path, rpo_rrt_connect_bezier_plan_path, rpo_rrt_star_plan_path, rpo_stomp_plan_path
     export rpo_plan_comparison_path, rpo_run_planner_comparison_batch
     export rpo_track_retimed_path_lqmpc, rpo_flatten_planner_results
@@ -121,6 +124,7 @@ module GuidanceHooks
     include(joinpath(@__DIR__, "..", "planning", "rpo", "path_metrics.jl"))
     include(joinpath(@__DIR__, "..", "planning", "rpo", "rrt.jl"))
     include(joinpath(@__DIR__, "..", "planning", "rpo", "comparison", "trajectory_optimizers.jl"))
+    include(joinpath(@__DIR__, "..", "planning", "rpo", "comparison", "planner_objects.jl"))
     include(joinpath(@__DIR__, "..", "planning", "rpo", "comparison", "planner_comparison.jl"))
     include(joinpath(@__DIR__, "..", "planning", "adapters", "hypr", "replanning.jl"))
     include(joinpath(@__DIR__, "rpo", "rpo_guidance_hooks.jl"))
