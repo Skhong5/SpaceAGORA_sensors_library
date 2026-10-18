@@ -63,6 +63,9 @@ and the nozzle is mounted with `add_actuator!(spacecraft, root, nozzle)`.
 Save it as `my_actuator.jl` in the repository root or in the
 [separate user project](installation_environment.md#Your-own-project), and run it
 with that project's environment. It uses only names exported by `SpaceAGORA`.
+CI runs this script, `examples/walkthrough_env/my_actuator.jl`, from a separate
+project on every pull request, and a gate keeps the code on this page identical
+to it.
 
 ```julia
 using SpaceAGORA

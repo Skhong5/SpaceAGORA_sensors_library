@@ -19,7 +19,7 @@ order of its arguments.
 |---|---|---|---|
 | T, tick | `update_<stage>!(model, u, p, t, spacecraft_index) -> nothing` | periodic and event callbacks, between integration steps | `update_control!`, `update_guidance!`, `update_navigation!` |
 | R, right-hand side | `<quantity>(model, x, context, t) -> value` | every right-hand-side evaluation, one spacecraft | `wrench`, `control_wrench`, `control_propellant_rate`, `control_wheel_torque`, `gravity_backbone_acceleration_ii` |
-| Q, query | `<quantity>(model, query...[, t][, flags...][, p])` | environment queries, no spacecraft | `getDensity`, `getDensityBatch!`, `getHeatRate`, `terrain_height` |
+| Q, query | `<quantity>(model, query...[, t][, flags...][, p])` | environment queries, no spacecraft | `getDensity`, `getDensityBatch!`, `getHeatRate`, `terrain_height`, `ephemerides_frame_lpi` |
 | D, declaration | `<property>(model) -> value` | before the run, at setup | `environment_requirements`, `solver_partition`, `actuation_mode`, `actuator_limits`, `tick_schedule`, `planner_capabilities` |
 | A, accessor | `<quantity>(model, spacecraft_index)` | at save time and in engine bookkeeping | `actuator_levels`, `control_thruster_levels`, `touchdown_spec`, `bind_spacecraft` |
 | H, hardware | `actuator_<quantity>(actuator, level, ctx)`; `sensor_measure(sensor, truth, ctx, rng)` | inside the mounted wrench; at sensor samples | `actuator_wrench`, `actuator_consumption`, `actuator_saturate`, `sensor_measure` |
@@ -242,9 +242,3 @@ See the [Optional Adapter Standard](adapter_contract.md) and each facade's page.
   spacecraft, with run state of its own.
 - Draw random numbers only from the `rng` you are given. Planning functions take
   an explicit stream; there is no default one.
-
-## Not converted yet
-
-- The ephemerides hooks still take the planet first, as in
-  `planet_frame_lpi(planet, et, model)`. They are internal until a later release
-  moves the model first and makes them public.

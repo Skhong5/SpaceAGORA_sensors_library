@@ -2,7 +2,7 @@
 
 SpaceAGORA's extension hooks follow one set of [conventions](extension_conventions.md):
 time before the spacecraft index, a state sample for right-hand-side hooks, and
-positive consumption. Seven hook names, and one form of the plume model's
+positive consumption. Ten hook names, and one form of the plume model's
 `wrench`, did not, and are deprecated. This page lists each with its
 replacement, shows how to move a method, and gives the schedule.
 
@@ -12,7 +12,7 @@ pre-run check warns once per model type and old name. Run with
 finds every method still to move. To find them in your code:
 
 ```bash
-grep -rnE "calcForceTorque|calcControl(ForceTorque|MassFlowRate|Effect!)|calcReactionWheelTorque|calc(Guidance|Navigation)Effect!" src test
+grep -rnE "calcForceTorque|calcControl(ForceTorque|MassFlowRate|Effect!)|calcReactionWheelTorque|calc(Guidance|Navigation)Effect!|planet_frame_lpi|ephemerides_(sun_direction_ii|time_seconds)" src test
 ```
 
 ## Force and torque models
@@ -91,6 +91,29 @@ end
 function SpaceAGORA.update_control!(m::Burn, u, p, t::Float64, spacecraft_index::Int)
     # ...
 end
+```
+
+## Ephemerides models
+
+| Deprecated | Replacement | What changes |
+|---|---|---|
+| `planet_frame_lpi(planet, et, model)` | `ephemerides_frame_lpi(model, planet, et)` | the model first |
+| `ephemerides_sun_direction_ii(planet, et, model)` | `ephemerides_sun_ii(model, planet, et)` | the model first, and the name |
+| `ephemerides_time_seconds(initial_time, model)` | `ephemerides_epoch_seconds(model, initial_time)` | the model first, and the name |
+
+The values the hooks return are unchanged. A model of your own subtypes
+`AbstractEphemeridesModel`; [Ephemerides models](../user/simulation_configuration.md#Ephemerides-models)
+lists all five hooks, with `ephemerides_requires_spice` and
+`ephemerides_cache_key`.
+
+```julia
+# Before
+SpaceAGORA.planet_frame_lpi(planet, et, m::FixedFrame) = m.L
+SpaceAGORA.ephemerides_time_seconds(initial_time, m::FixedFrame) = 0.0
+
+# After
+SpaceAGORA.ephemerides_frame_lpi(m::FixedFrame, planet, et) = m.L
+SpaceAGORA.ephemerides_epoch_seconds(m::FixedFrame, initial_time) = 0.0
 ```
 
 ## Other deprecations in the 0.3.0 cycle

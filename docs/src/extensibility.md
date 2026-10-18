@@ -15,6 +15,8 @@ What to read next:
 
 - [Adding a Force or Torque of Your Own](user/custom_effector.md) (a complete, tested walkthrough of the force/torque hook)
 - [Adding an Actuator of Your Own](user/custom_actuator.md) (a complete, tested walkthrough of the actuator contract)
+- [Writing a GNC Algorithm](user/gnc_algorithm.md) (controllers, estimators and planners, with worked examples run in CI)
+- [Building Your Own Research Repository](user/research_repository.md) (starters, conformance checks and CI for work kept in a repository of your own)
 - [Public API](generated/public_api.md)
 - [Concepts](user/concepts.md)
 
@@ -175,6 +177,13 @@ The deprecated `calcControlEffect!`, `calcControlForceTorque`,
 warning before the run. The mass-rate hook's sign changes with its name; see
 [Migrating Extension Hooks](reference/migrating_extension_hooks.md#Control-outputs).
 
+A controller also declares what it acts on and what it assumes
+(`spacecraft_scope`, `gnc_period_s`, `skip_inactive`, `held_command`), can
+share an object with an estimator or a planner through `gnc_links`, and resets
+its run state at each run's start in `initialize_control!`.
+[Writing a GNC Algorithm](user/gnc_algorithm.md#The-feedback-profile) explains
+these declarations with a worked controller run in CI.
+
 Registration:
 
 - add the model instance to `ControlModel(control_effectors=(...))`
@@ -237,8 +246,14 @@ Registration:
 - add guidance effectors to `GuidanceModel(guidance_effectors=(...), guidance_rates=[...])`
 - add navigation effectors to `NavigationModel(navigation_effectors=(...), navigation_rates=[...])`
 
-Planners for rendezvous and proximity operations follow the
-[RPO planner contract](reference/rpo_planner_contract.md) instead.
+[Writing a GNC Algorithm](user/gnc_algorithm.md#Worked-example-B:-an-estimator-and-a-link)
+has a worked estimator that a controller reads through a declared link.
+
+A planner, whose output is used later or can be checked before use, follows the
+planning profile instead: it proposes, and its family validates and installs.
+See [Writing a GNC Algorithm](user/gnc_algorithm.md#The-planning-profile), the
+`templates/gnc_planner_template.jl` template, and for rendezvous and proximity
+operations the [RPO planner contract](reference/rpo_planner_contract.md).
 
 ## Add an actuator
 
@@ -396,6 +411,12 @@ number for a one-component sensor) and `latest_time_s`. It implements:
   method returning true), and the body's angular acceleration, from the
   solver as well (an accelerometer away from the centre of mass adds the
   rotation's terms).
+- optionally `sensor_period_s(sensor)`, the sampling period (by default its
+  `period_s` field), and `initialize_sensor!(sensor, truth, ctx, rng)`, which
+  resets at the start of each run any state the sensor keeps beyond the
+  engine's fields, such as a filter. It runs once per run, just before the
+  first measurement, with that measurement's `truth` and `ctx` and the fresh
+  `rng`.
 
 Mount it with `add_sensor!(spacecraft, link, sensor)`; a sensor on a hinged
 panel turns with it. The built-in kinds are `RateGyro` (body rate with white
@@ -414,7 +435,7 @@ so a run repeats with the same seeds. Seeds are not varied for you: the
 built-in kinds default to `seed=1`, so in a Monte Carlo campaign set each
 sensor's `seed` from the sample's seed where the sample's spacecraft is
 built, or the samples share one noise stream. A navigation effector reads the latest measurement in
-`update_navigation!` with `sensor_measurement(p.args.dynamics_model.spacecraft[i], k)`
+`update_navigation!` with `sensor_measurement(p.args.dynamics_model.spacecraft[spacecraft_index], k)`
 (and its time with `sensor_measurement_time`); sensors sample before
 navigation effectors at the same time. Runs with sensors write the
 `sc{i}_sensor_{k}` columns (see [Output Columns](user/output_columns.md#Sensors)).
@@ -434,12 +455,15 @@ Stable interfaces:
 
 These interfaces are public because no-GRAM onboarding and future user-defined
 body/back-end, thermal and thruster work need a stable contract, but their
-extension recipes are still thinner than the families above. The ephemerides
-hooks are not public yet, thermal models are consumed inside the heat-load
-machinery, and thruster models inside control effectors. Treat them as
-advanced extension points: subtype the abstract type and follow an existing
-implementation in `src/models/environment/`, `src/models/vehicle/thermal/` or
-`src/models/vehicle/actuators/` rather than a documented recipe.
+extension recipes are still thinner than the families above. An ephemerides
+model implements the model-first hooks listed under
+[Ephemerides models](user/simulation_configuration.md#Ephemerides-models)
+(`ephemerides_frame_lpi(model, planet, et)` and the rest); thermal models are
+consumed inside the heat-load machinery, and thruster models inside control
+effectors. Treat them as advanced extension points: subtype the abstract type
+and follow an existing implementation in `src/models/environment/`,
+`src/models/vehicle/thermal/` or `src/models/vehicle/actuators/` rather than a
+documented recipe.
 
 ## Design guidance
 
@@ -454,13 +478,19 @@ When adding a new model:
 
 ## Templates and runnable examples
 
-The four files under `templates/` define different extension contracts: a force
-or torque, an atmosphere density model, a control hook and an actuator. They define model
-types and methods; they do not construct or run a mission. Copy the relevant
-file into your model's owning package and add tests for the behavior you implement.
-The force/torque template implements `wrench`;
+The five files under `templates/` define different extension contracts: a force
+or torque, an atmosphere density model, a controller in the feedback profile
+(`templates/control_hook_template.jl`), an actuator, and a planner in the planning
+profile (`templates/gnc_planner_template.jl`). They define model types and
+methods; they do not construct or run a mission. Copy the relevant file into
+your model's owning package and add tests for the behavior you implement, with
+the [conformance checks](user/gnc_algorithm.md#Test-your-algorithm). The
+force/torque template implements `wrench`;
 [Adding a Force or Torque of Your Own](user/custom_effector.md) walks through
-one in detail.
+one in detail, and [Writing a GNC Algorithm](user/gnc_algorithm.md) through a
+controller, an estimator and a planner. For a repository of your own, the
+starters under `templates/starters/` add tests and CI
+([Building Your Own Research Repository](user/research_repository.md)).
 
 Use the [Examples Catalog](user/examples_catalog.md) when you want a complete
 scenario to run or adapt. Helpers under `examples/support/` serve those scenarios
