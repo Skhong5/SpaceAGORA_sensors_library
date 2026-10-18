@@ -72,8 +72,8 @@ CoupledSpacecraft(primary::Integer, partners::Tuple{Vararg{Integer}}) =
 The spacecraft guidance, navigation or control `model` acts on. The engine ticks
 the model only for the spacecraft its scope names (every one, the `BoundSpacecraft`
 indices, or the `CoupledSpacecraft` primary), reading the scope at each tick.
-Before the run it warns when the scope names a run position the run does not have;
-SpaceAGORA 0.4.0 will refuse such a run. The output hooks are still called for
+Before the run it refuses a scope that names a run position the run does not have.
+The output hooks are still called for
 every spacecraft, so they keep their own index checks. Default: `AllSpacecraft()`.
 """
 spacecraft_scope(model) = AllSpacecraft()
@@ -222,8 +222,8 @@ gnc_clock_started!(model, period_s, origin_s) = nothing
 
 The tick period (s) that control `model`'s law assumes, such as the step its
 controller was discretized with. Before the run the engine compares it with the
-rate of the model's periodic callback and warns when they differ; SpaceAGORA
-0.4.0 will refuse such a run. Default: `nothing`, no declared period, as for a
+rate of the model's periodic callback and refuses the run when they differ.
+Default: `nothing`, no declared period, as for a
 law that measures the elapsed time itself.
 """
 gnc_period_s(model) = nothing

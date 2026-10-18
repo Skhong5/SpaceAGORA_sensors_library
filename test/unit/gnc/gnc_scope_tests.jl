@@ -78,24 +78,18 @@ function constellation_args(; n=3, control=(), guidance=(), navigation=(), missi
         initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0))
 end
 
-# The scope check's messages: logged, or thrown under --depwarn=error.
-function scope_warnings(f)
-    is_scope(msg) = occursin("in its spacecraft_scope", msg)
-    if Base.JLOptions().depwarn == 2
-        try
-            f()
-            return String[]
-        catch e
-            msg = sprint(showerror, e)
-            is_scope(msg) || rethrow()
-            return [msg]
-        end
+# The message of the `ArgumentError` that `f()` refuses with, or `nothing` when it
+# returns.
+function refusal(f)
+    try
+        f()
+        return nothing
+    catch e
+        e isa ArgumentError || rethrow()
+        return sprint(showerror, e)
     end
-    logger = Test.TestLogger(min_level=Logging.Warn)
-    with_logger(f, logger)
-    return filter(is_scope, [string(l.message) for l in logger.logs])
 end
-scope_messages(args) = scope_warnings(() -> SM.SimulationCallbacks.check_spacecraft_scopes(args))
+scope_refusal(args) = refusal(() -> SM.SimulationCallbacks.check_spacecraft_scopes(args))
 
 # Deactivate spacecraft `i` at time `t_s`, as an impact or touchdown event does.
 deactivate(i, t_s) = PresetTimeCallback([t_s], integrator -> (integrator.p.is_active[i] = false); save_positions=(false, false))
@@ -167,20 +161,17 @@ deactivate(i, t_s) = PresetTimeCallback([t_s], integrator -> (integrator.p.is_ac
     end
 
     @testset "scopes are checked before the run" begin
-        @test isempty(scope_messages(constellation_args(control=(ScopedControl(BoundSpacecraft((3,)), 3),))))
-        warned = scope_messages(constellation_args(control=(ScopedControl(BoundSpacecraft((2, 4, 5)), 3),)))
-        @test length(warned) == 1 && occursin("spacecraft 4, 5", only(warned)) && occursin("positions 1 to 3", only(warned))
-        warned = scope_messages(constellation_args(guidance=(ScopedGuidance(CoupledSpacecraft(1, (0,)), 3),)))
-        @test length(warned) == 1 && occursin("spacecraft 0", only(warned))
-        # A configuration check, not a deprecation: the :preflight log group.
-        if Base.JLOptions().depwarn != 2
-            logger = Test.TestLogger(min_level=Logging.Warn)
-            with_logger(logger) do
-                SM.SimulationCallbacks.check_spacecraft_scopes(
-                    constellation_args(navigation=(ScopedNavigation(BoundSpacecraft((9,)), 3),)))
-            end
-            @test only(logger.logs).group === :preflight
+        @test scope_refusal(constellation_args(control=(ScopedControl(BoundSpacecraft((3,)), 3),))) === nothing
+        refused = scope_refusal(constellation_args(control=(ScopedControl(BoundSpacecraft((2, 4, 5)), 3),)))
+        @test occursin("ScopedControl names spacecraft 4, 5", refused) && occursin("positions 1 to 3", refused)
+        refused = scope_refusal(constellation_args(guidance=(ScopedGuidance(CoupledSpacecraft(1, (0,)), 3),)))
+        @test occursin("ScopedGuidance names spacecraft 0", refused)
+        # A refusal, not a warning, whatever --depwarn says: nothing is logged.
+        logger = Test.TestLogger(min_level=Logging.Warn)
+        refused = with_logger(logger) do
+            scope_refusal(constellation_args(navigation=(ScopedNavigation(BoundSpacecraft((9,)), 3),)))
         end
+        @test occursin("ScopedNavigation names spacecraft 9", refused) && isempty(logger.logs)
         # Malformed declarations are refused.
         for bad in (ScopedControl(:chaser, 3), ScopedControl(AllSpacecraft(), 3; skip=:yes))
             err = try
@@ -192,9 +183,9 @@ deactivate(i, t_s) = PresetTimeCallback([t_s], integrator -> (integrator.p.is_ac
             @test err isa ArgumentError
         end
         # The engine runs the check before every run.
-        warned = scope_warnings(() -> run_simulation(constellation_args(n=2,
+        refused = refusal(() -> run_simulation(constellation_args(n=2,
             control=(ScopedControl(BoundSpacecraft((3,)), 2),))))
-        @test length(warned) == 1
+        @test occursin("names spacecraft 3", refused) && occursin("positions 1 to 2", refused)
     end
 
     @testset "the built-in models declare their scope and held command" begin
@@ -249,7 +240,7 @@ deactivate(i, t_s) = PresetTimeCallback([t_s], integrator -> (integrator.p.is_ac
         raise = SM.ApoapsisTargetPeriapsisRaiseGuidanceModel(target_apoapsis_radius_m=7.0e6)
         @test all(skip_inactive, (mpc, arm, mm, thruster, edg, SM.SolarPanelAngleOfAttackControlModel(), binding,
             legacy, planner, control, edg_guidance, maneuver, raise))
-        @test isempty(scope_messages(rpo))
+        @test scope_refusal(rpo) === nothing
     end
 
     @testset "the binding refusal names the scope" begin

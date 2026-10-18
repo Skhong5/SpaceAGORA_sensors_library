@@ -73,7 +73,7 @@ The engine reads them before the run and at each tick.
 | Declaration | Default | Declare it when |
 |---|---|---|
 | `spacecraft_scope(model)` | `AllSpacecraft()`: ticked for every spacecraft | the model acts on some spacecraft only: `BoundSpacecraft(indices)`, or `CoupledSpacecraft(primary, partners)` for a model ticked for `primary` that also reads `partners` |
-| `gnc_period_s(model)` | `nothing` | the law assumes a tick period, such as the step it was discretized with. Before the run the engine warns when the control rate differs; SpaceAGORA 0.4.0 will refuse the run |
+| `gnc_period_s(model)` | `nothing` | the law assumes a tick period, such as the step it was discretized with. Before the run the engine refuses the run when the control rate differs |
 | `skip_inactive(model)` | `true`: a spacecraft that is no longer active, after an impact or a touchdown, is not ticked; each tick calls `release_command!(model, t, spacecraft_index)` instead, which sets the off command | the model must keep ticking for an inactive spacecraft: return `false`. Before SpaceAGORA 0.4.0 the default was `false` |
 | `held_command(model, spacecraft_index)`, `held_command_time(model, spacecraft_index)` | `nothing`, `NaN` | the model holds a command: return it, as an immutable value, and the time of the tick that produced it |
 | `gnc_links(model)` | none | the model shares an object with a partner: see [Pairing through a link](#Pairing-through-a-link) |
@@ -206,8 +206,8 @@ The important choices:
 - **The command is held until the first tick.** The first tick is one control
   period after the start; until then the initial held command acts, here zero.
 - **The declarations state the assumptions.** `gnc_period_s` lets the engine
-  warn if the control rate in `ControlModel(control_rates=...)` is not the period
-  the gain was tuned for. `held_command` and `held_command_time` make the held
+  refuse a run whose control rate in `ControlModel(control_rates=...)` is not the
+  period the gain was tuned for. `held_command` and `held_command_time` make the held
   command readable outside the model.
 - **Fresh at every run.** `initialize_control!` sets the held torque back to
   zero when a run starts. `run_simulation` runs a copy of the configuration, but

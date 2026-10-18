@@ -205,32 +205,24 @@ _discretization_step(control_model::_simulation_model_module.RobotArmControlEffe
 """
     check_control_periods(args) -> nothing
 
-Before a run: warn when a periodic control model's declared period
-(`gnc_period_s`) differs from the rate of its callback, or when its controller
-was discretized with a different step. Equality is exact, since builders set
-both from one value. These are configuration checks, not deprecations: they use
-the shared pre-run warning for such checks (`_preflight_warning`, log group
-`:preflight`), once per model type, which throws under `--depwarn=error`.
-SpaceAGORA 0.4.0 will refuse such a run.
+Before a run: refuse it with an `ArgumentError` when a periodic control model's
+declared period (`gnc_period_s`) differs from the rate of its callback, or when
+its controller was discretized with a different step. Equality is exact, since
+builders set both from one value. (SpaceAGORA 0.3 warned instead.)
 """
 function check_control_periods(args)
-    warn = _simulation_model_module.HookDeprecation._preflight_warning
     models, rates = args.control_model.control_effectors, args.control_model.control_rates
     for (i, control_model) in enumerate(models)
         tick_schedule(control_model) === :periodic || continue
         T = typeof(control_model)
         period = gnc_period_s(control_model)
-        if period !== nothing && Float64(period) != Float64(rates[i])
-            warn((T, :gnc_period_s),
-                "$(nameof(T)) declares a $(period) s period (gnc_period_s) but its callback runs every " *
-                "$(rates[i]) s (control_rates[$(i)]). Set both from one value; SpaceAGORA 0.4.0 will refuse this run.")
-        end
+        period !== nothing && Float64(period) != Float64(rates[i]) && throw(ArgumentError(
+            "$(nameof(T)) declares a $(period) s period (gnc_period_s) but its callback runs every " *
+            "$(rates[i]) s (control_rates[$(i)]). Set both from one value."))
         step = _discretization_step(control_model)
-        if period !== nothing && step !== nothing && step != Float64(period)
-            warn((T, :discretization_step),
-                "$(nameof(T)) ticks every $(period) s but its controller was discretized with a $(step) s step. " *
-                "Build the controller with the model's control step; SpaceAGORA 0.4.0 will refuse this run.")
-        end
+        period !== nothing && step !== nothing && step != Float64(period) && throw(ArgumentError(
+            "$(nameof(T)) ticks every $(period) s but its controller was discretized with a $(step) s step. " *
+            "Build the controller with the model's control step."))
     end
     return nothing
 end
