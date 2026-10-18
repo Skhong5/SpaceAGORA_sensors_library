@@ -28,8 +28,11 @@ run), or, when `plan_buffer` is set, the plan of that `RobotArmPlanBuffer` from 
 own `updated_at_s`: the link a joint-reference planner (an `AlgorithmGuidance` of
 `JointReferenceFamily`) installs into. Configure one of the two; a buffer must
 hold the plan the arm starts from. The run couples the arm's state to the plan
-the controller tracks. Each run starts the held command from its value before the
-model's first run and the MPC warm start from zero (`initialize_control!`).
+the controller tracks. At each run's start (`initialize_control!`) the MPC warm
+start returns to zero, and a held command the controller wrote in the previous run
+returns to its value at that run's start, while one a user set since is kept as the
+new configuration: a held command configured with no plan is the command for the
+whole run.
 """
 mutable struct RobotArmControlEffector <: AbstractControlEffectorModel
     spacecraft_index::Int
@@ -45,7 +48,8 @@ mutable struct RobotArmControlEffector <: AbstractControlEffectorModel
     c_rotation_n_m_s_rad::Float64
     held::RobotArmHeldActuation
     plan_buffer::Union{Nothing, RobotArmPlanBuffer}
-    run_start::Union{Nothing, RobotArmHeldActuation}   # the held command before the first run
+    run_start::Union{Nothing, RobotArmHeldActuation}     # the held command the previous run started from
+    run_written::Union{Nothing, RobotArmHeldActuation}   # a copy of the controller's last write of it in that run
 end
 # The deprecated name forwards, as a keyword and as a property.
 function RobotArmControlEffector(; spacecraft_index=_NOT_PASSED, spacecraft_idx=_NOT_PASSED, plan=nothing, controller=nothing,
@@ -55,7 +59,7 @@ function RobotArmControlEffector(; spacecraft_index=_NOT_PASSED, spacecraft_idx=
     T = RobotArmControlEffector
     return T(_renamed_keyword(T, :spacecraft_idx, spacecraft_idx, :spacecraft_index, spacecraft_index, 1),
         plan, controller, updated_at_s, joint_kp, joint_kd, control_dt_s, k_translation_n_m, c_translation_n_s_m,
-        k_rotation_n_m_rad, c_rotation_n_m_s_rad, held, plan_buffer, nothing)
+        k_rotation_n_m_rad, c_rotation_n_m_s_rad, held, plan_buffer, nothing, nothing)
 end
 @inline _robot_arm_field(name::Symbol) = name === :spacecraft_idx ?
     _renamed_field_warning(RobotArmControlEffector, :spacecraft_idx, :spacecraft_index) : name
@@ -256,6 +260,7 @@ function update_control!(model::RobotArmControlEffector, u, p::ODEParams, t::Flo
         base_force_ii=SVector{3, Float64}(0.0, 0.0, 0.0),
         base_torque_body=SVector{3, Float64}(0.0, 0.0, 0.0),
     )
+    model.run_written = deepcopy(model.held)
     return nothing
 end
 
@@ -273,15 +278,15 @@ function SimulationLifecycle.preflight_control(model::RobotArmControlEffector, a
     return nothing
 end
 
-# Each run starts the held command from its value before the first run (a held
-# command configured with no plan is the command for the whole run) and the MPC
-# warm start from zero (G-8).
+# Each run starts the held command from the configuration (G-8): one the previous
+# run wrote returns to its value at that run's start, one a user set since is kept
+# (a held command configured with no plan is the command for the whole run). The
+# MPC warm start returns to zero.
 function SimulationLifecycle.initialize_control!(model::RobotArmControlEffector, u, p, t)
-    if model.run_start === nothing
-        model.run_start = deepcopy(model.held)
-    else
-        model.held = deepcopy(model.run_start)
-    end
+    written = model.run_written === nothing ? nothing : (held=model.run_written,)
+    start = model.run_start === nothing ? nothing : (held=model.run_start,)
+    model.held = SimulationLifecycle._run_start_entries(start, written, (held=model.held,)).held
+    model.run_start, model.run_written = deepcopy(model.held), nothing
     model.controller isa RobotArmJointMPCController && fill!(model.controller.U_prev, 0.0)
     return nothing
 end

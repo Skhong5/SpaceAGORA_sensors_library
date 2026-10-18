@@ -34,6 +34,7 @@ function update_control!(model::RPOMPCControlModel, u, p::ODEParams, t::Float64,
         thruster_forces_n=thruster_forces,
         rw_torque_body=rw_torque_body,
     )
+    model.run_written = deepcopy(model.held)
     model.actuation === :mounted &&
         _rpo_fill_mounted_levels!(model, p.args.dynamics_model.spacecraft[model.chaser_index], thruster_forces)
     log = model.command_log
@@ -50,15 +51,15 @@ function update_control!(model::RPOMPCControlModel, u, p::ODEParams, t::Float64,
     return nothing
 end
 
-# Each run starts from the held command the model had before its first run (a
-# planner's plan-buffer link resets it first), a zero warm start, a fresh solver
-# workspace, an empty command log and no mounted levels (G-8).
+# Each run starts the held command from the configuration (G-8): one the previous
+# run wrote returns to its value at that run's start, one a user set since is kept
+# (a planner's plan-buffer link resets it first). The run also starts from a zero
+# warm start, a fresh solver workspace, an empty command log and no mounted levels.
 function SimulationLifecycle.initialize_control!(model::RPOMPCControlModel, u, p, t)
-    if model.run_start === nothing
-        model.run_start = deepcopy(model.held)
-    else
-        model.held = deepcopy(model.run_start)
-    end
+    written = model.run_written === nothing ? nothing : (held=model.run_written,)
+    start = model.run_start === nothing ? nothing : (held=model.run_start,)
+    model.held = SimulationLifecycle._run_start_entries(start, written, (held=model.held,)).held
+    model.run_start, model.run_written = deepcopy(model.held), nothing
     ctrl = model.controller
     if ctrl isa RpoLQMPCController
         fill!(ctrl.U_prev, 0.0)

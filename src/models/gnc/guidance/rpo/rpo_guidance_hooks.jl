@@ -292,5 +292,6 @@ function update_guidance!(model::RPOGuidanceModel, u, p, t::Float64, sat_idx::In
     else
         maybe_update_rpo_replanning!(model, u, t)
     end
+    _note_rpo_guidance_writes!(model)
     return nothing
 end
