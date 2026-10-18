@@ -204,6 +204,7 @@ for the conditions:
 |---|---|---|
 | `sc1_link_pose_1` .. `sc1_link_pose_7n` | m, — | `[rx, ry, rz, qx, qy, qz, qw]` per non-root link, relative to the root bus, in the sidecar's link order |
 | `sc1_thruster_level_1` .. `sc1_thruster_level_k` | — | Firing level of each thruster, 0 to 1, in the sidecar's thruster order |
+| `sc1_thruster_direction_1` .. `sc1_thruster_direction_3k` | — | Exhaust direction of each thruster (a unit vector in its link's frame), in the sidecar's thruster order; written when a spacecraft carries a thruster gimbal, which turns it |
 | `sc1_arm_pose_1` .. `sc1_arm_pose_7m` | m, — | `[rx, ry, rz, qx, qy, qz, qw]` per robot-arm link: centre of mass relative to the spacecraft (inertial) and inertial attitude |
 | `sc1_density` | kg/m³ | Atmospheric density at the spacecraft |
 | `sun_dir_1` .. `sun_dir_3` | — | Unit vector from the planet's centre to the Sun, inertial frame, one per row (not per spacecraft) |
@@ -238,7 +239,7 @@ that carries mounted actuators. An explicit list must include the
 
 | Column | Unit | Description |
 |---|---|---|
-| `sc1_actuator_level_1` .. `sc1_actuator_level_k` | the kind's | The level each mounted actuator applies, in mounting order: its command within its limits. A thruster with firing dynamics reports the average thrust its last control tick scheduled, a wheel at its momentum limit reports zero when the command would store more, a hinge or thruster gimbal reports its current angle, and a control moment gyro its gimbal rate |
+| `sc1_actuator_level_1` .. `sc1_actuator_level_k` | the kind's | The level each mounted actuator applies, in mounting order: its command within its limits. A thruster with firing dynamics reports the average thrust its last control tick scheduled, a wheel at its momentum limit reports zero when the command would store more, a hinge or thruster gimbal reports its current angle, and a control moment gyro its gimbal rate (zero at a gimbal stop the command would pass) |
 | `sc1_actuator_power` | W | Electrical power the mounted actuators draw at those levels, the sum of what each kind reports through `actuator_consumption` |
 
 The levels come from the first control effector in `:mounted` actuation that

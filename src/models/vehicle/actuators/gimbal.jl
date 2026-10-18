@@ -14,7 +14,8 @@ gimbal's current angle about `axis` (right-handed), about the thruster's
 location, which stays fixed. The angle stays within
 [`min_angle_rad`, `max_angle_rad`] and moves at most `max_rate_rad_s` between
 control ticks; all three default to unlimited. `angle_rad` holds the current
-angle.
+angle, `previous_angle_rad` the angle before its latest tick (at
+`last_update_s`).
 
 A two-axis gimbal is two `ThrusterGimbal`s on the same thruster; their
 rotations compose in mounting order (the first mounted turns the direction
@@ -33,6 +34,7 @@ mutable struct ThrusterGimbal <: AbstractActuator
     max_rate_rad_s::Float64
     angle_rad::Float64
     last_update_s::Float64
+    previous_angle_rad::Float64
 
     function ThrusterGimbal(thruster::Thruster, axis, min_angle_rad::Real, max_angle_rad::Real, max_rate_rad_s::Real, angle_rad::Real)
         a = SVector{3, Float64}(axis)
@@ -44,7 +46,8 @@ mutable struct ThrusterGimbal <: AbstractActuator
             throw(ArgumentError("ThrusterGimbal max_rate_rad_s must be positive, got $(max_rate_rad_s)."))
         (isfinite(angle_rad) && min_angle_rad <= angle_rad <= max_angle_rad) ||
             throw(ArgumentError("ThrusterGimbal angle_rad must be finite and within its limits, got $(angle_rad)."))
-        return new(thruster, a / n, Float64(min_angle_rad), Float64(max_angle_rad), Float64(max_rate_rad_s), Float64(angle_rad), NaN)
+        return new(thruster, a / n, Float64(min_angle_rad), Float64(max_angle_rad), Float64(max_rate_rad_s), Float64(angle_rad), NaN,
+                   Float64(angle_rad))
     end
 end
 
@@ -78,6 +81,17 @@ gimbal_step(gimbal::ThrusterGimbal, level::Real, t::Real)::Float64 =
 @inline function _axis_rotation(axis::SVector{3, Float64}, angle::Float64)::SMatrix{3, 3, Float64, 9}
     K = SMatrix{3, 3, Float64, 9}(0.0, axis[3], -axis[2], -axis[3], 0.0, axis[1], axis[2], -axis[1], 0.0)
     return SMatrix{3, 3, Float64, 9}(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0) + sin(angle) * K + (1.0 - cos(angle)) * (K * K)
+end
+
+# The same rotation at the angles `angle_of(gimbal)` gives, for a time other
+# than the current one (the saved thrust directions).
+function _gimbal_rotation(thruster::Thruster, gimbals, angle_of)::SMatrix{3, 3, Float64, 9}
+    R = SMatrix{3, 3, Float64, 9}(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+    for g in gimbals
+        g.thruster === thruster || continue
+        R = _axis_rotation(g.axis, Float64(angle_of(g))) * R
+    end
+    return R
 end
 
 # The rotation of `thruster`'s thrust by the gimbals among `gimbals` that turn

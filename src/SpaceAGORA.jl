@@ -20,6 +20,7 @@ include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "comparison", "pl
 include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "lifecycle.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "algorithm_lifecycle.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "control", "burn_planning.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "planning", "robot_arm", "joint_reference_family.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "adapters", "hypr", "services.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "engine", "simulation_engine.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "campaigns", "simulation_campaigns.jl"))
@@ -163,12 +164,22 @@ preserves the existing configuration owner and calculations; pass the result to
 # The generic algorithm binding and the burn-plan family.
 using .GNCAlgorithms: family_request, family_link, preflight_family
 using .AlgorithmLifecycle: AlgorithmEvent, AlgorithmGuidance, AlgorithmGuidanceError, algorithm_run_report
-using .BurnPlanning: AbstractBurnPlanner, BurnPlanFamily, BurnPlanRequest, BurnPlanSlot, ApoapsisBurnPlanner, validate_burn_plan, burn_plan_is_current
+using .BurnPlanning: AbstractBurnPlanner, BurnPlanFamily, BurnPlanRequest, BurnPlanSlot, ApoapsisBurnPlanner, validate_burn_plan, burn_plan_is_current, burn_plan_sizing
 using .SimulationModel.ControlHooks: burn_plan_rejections
 @doc (@doc SimulationModel.ControlHooks.burn_plan_rejections) burn_plan_rejections
+# The burn scheduler and its burn plan, which a burn-plan run configures and a planner proposes.
+using .SimulationModel: BaseThrusterModel, PropulsiveBurnPlan
+@doc (@doc SimulationModel.BaseThrusterModel) BaseThrusterModel
+@doc (@doc SimulationModel.PropulsiveBurnPlan) PropulsiveBurnPlan
 export family_request, family_link, preflight_family
 export AlgorithmEvent, AlgorithmGuidance, AlgorithmGuidanceError, algorithm_run_report
-export AbstractBurnPlanner, BurnPlanFamily, BurnPlanRequest, BurnPlanSlot, ApoapsisBurnPlanner, validate_burn_plan, burn_plan_is_current, burn_plan_rejections
+export AbstractBurnPlanner, BurnPlanFamily, BurnPlanRequest, BurnPlanSlot, ApoapsisBurnPlanner, validate_burn_plan, burn_plan_is_current, burn_plan_rejections, burn_plan_sizing
+export BaseThrusterModel, PropulsiveBurnPlan
+
+# The joint-reference family and its link to the robot-arm controller.
+using .JointReferencePlanning: AbstractJointReferencePlanner, JointReferenceFamily, JointReferenceRequest, JointReferenceSettings, QuinticJointPlanner, validate_joint_reference, joint_reference_is_current
+using .SimulationModel: RobotArmPlanBuffer
+export AbstractJointReferencePlanner, JointReferenceFamily, JointReferenceRequest, JointReferenceSettings, QuinticJointPlanner, validate_joint_reference, joint_reference_is_current, RobotArmPlanBuffer
 
 using .RPOPlannerLifecycle: RPOPlanningEvent, RPOPlanningError, make_rpo_configuration, rpo_run_report
 using .RPOPlannerLifecycle: RPOReplanningSpheres
@@ -305,7 +316,7 @@ using .SimulationModel: update_control!, update_guidance!, update_navigation!
 # Actuators: the contract (Actuators), the thruster kind (Components) and mounting (ActuatorMounting).
 using .SimulationModel: Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
 using .SimulationModel: ThrusterGimbal, thrust_direction
-using .SimulationModel: ControlMomentGyro, cmg_momentum, cmg_torque_axis, cmg_steering
+using .SimulationModel: ControlMomentGyro, cmg_momentum, cmg_torque_axis, cmg_angle_saturate, cmg_steering
 using .SimulationModel: actuator_wrench, actuator_limits, actuator_saturate, actuator_consumption, actuator_fraction, actuator_unit_wrench, actuation_mode, actuator_levels, allocate_actuators
 using .SimulationModel: add_actuator!, mounted_actuators, actuator_context, allocation_matrix, mounted_wrench, six_axis_thrusters
 using .SimulationModel: propellant_mass_rate, ActuatorRequirements, actuator_requirements, applied_actuator_levels, mounted_power
@@ -315,6 +326,8 @@ using .SimulationModel: RateGyro, StarTracker, Magnetometer, SensorTruth, sensor
 using .SimulationModel: GNSSReceiver, SunSensor, Accelerometer, sensor_needs_specific_force, is_gravitational
 using .SimulationModel: add_sensor!, mounted_sensors, sensor_measurement, sensor_measurement_time
 using .SimulationLifecycle: bind_spacecraft
+using .SimulationLifecycle: preflight_guidance, preflight_control, initialize_navigation!, initialize_guidance!, initialize_control!, requires_atmosphere_events, atmosphere_transition!, before_reference_control!
+export preflight_guidance, preflight_control, initialize_navigation!, initialize_guidance!, initialize_control!, requires_atmosphere_events, atmosphere_transition!, before_reference_control!
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 using .SimulationModel: SolarPanelAngleOfAttackControlModel
@@ -406,6 +419,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.ControlMomentGyro) ControlMomentGyro
 @doc (@doc SimulationModel.cmg_momentum) cmg_momentum
 @doc (@doc SimulationModel.cmg_torque_axis) cmg_torque_axis
+@doc (@doc SimulationModel.cmg_angle_saturate) cmg_angle_saturate
 @doc (@doc SimulationModel.cmg_steering) cmg_steering
 @doc (@doc SimulationModel.ActuatorContext) ActuatorContext
 @doc (@doc SimulationModel.actuator_wrench) actuator_wrench
@@ -476,6 +490,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.closest_surface_target) closest_surface_target
 @doc (@doc SimulationModel.RobotArmPlannerConfig) RobotArmPlannerConfig
 @doc (@doc SimulationModel.RobotArmPlan) RobotArmPlan
+@doc (@doc SimulationModel.RobotArmPlanBuffer) RobotArmPlanBuffer
 @doc (@doc SimulationModel.robot_arm_plan_sample) robot_arm_plan_sample
 @doc (@doc SimulationModel.RobotArmSphereObstacle) RobotArmSphereObstacle
 @doc (@doc SimulationModel.RobotArmHYPRConfig) RobotArmHYPRConfig
@@ -735,7 +750,7 @@ export calcGuidanceEffect!, calcNavigationEffect!, getHeatRate
 export update_control!, update_guidance!, update_navigation!
 export AbstractActuator, Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
 export ThrusterGimbal, thrust_direction
-export ControlMomentGyro, cmg_momentum, cmg_torque_axis, cmg_steering
+export ControlMomentGyro, cmg_momentum, cmg_torque_axis, cmg_angle_saturate, cmg_steering
 export actuator_wrench, actuator_limits, actuator_saturate, actuator_consumption, actuator_fraction, actuator_unit_wrench, actuation_mode, actuator_levels, allocate_actuators
 export add_actuator!, mounted_actuators, actuator_context, allocation_matrix, mounted_wrench, six_axis_thrusters
 export propellant_mass_rate, ActuatorRequirements, actuator_requirements, applied_actuator_levels, mounted_power

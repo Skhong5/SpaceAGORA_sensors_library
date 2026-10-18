@@ -14,6 +14,12 @@ controller (`rate_gain` rad/s of body rate per rad of error, capped at
 `rate_limit_rad_s`, and `rate_bandwidth` 1/s for the rate loop), and the
 touchdown height: the radial clearance of the vehicle reference point at which
 the footpads meet the ground.
+
+`engine_trim = true` (with `actuation = :mounted`) trims the descent engine:
+at each control cycle the gimbals mounted on it (`ThrusterGimbal`) are
+commanded to the angles that put the thrust line through the centre of mass
+(the body origin), as the LM's gimbal drive did; their own angle and rate
+limits apply. Default false: the gimbals hold their angles.
 """
 Base.@kwdef struct ApolloDescentControlConfig
     dps_isp_s::Float64 = 311.0
@@ -25,6 +31,7 @@ Base.@kwdef struct ApolloDescentControlConfig
     rate_limit_rad_s::Float64 = 0.15
     rate_bandwidth::Float64 = 1.2
     touchdown_height_m::Float64 = 2.5
+    engine_trim::Bool = false
 end
 
 """
@@ -78,6 +85,22 @@ function ApolloDescentControlState(n::Integer)
     )
 end
 
+# Each run starts the selected spacecraft's actuator entries as a new state holds
+# them (G-8); the level vectors are emptied in place, so a handle to them stays the
+# spacecraft's, and the layout is rebuilt at the first control cycle.
+function _reset_descent_actuators!(act::ApolloDescentControlState, indices)
+    for i in indices
+        act.thrust_n[i] = 0.0
+        act.torque_nm[i] = SVector{3, Float64}(0.0, 0.0, 0.0)
+        act.attitude_error_rad[i] = NaN
+        act.last_update_s[i] = NaN
+        empty!(act.thruster_level[i])
+        act.thruster_layout[i] = nothing
+        empty!(act.thruster_force_n[i])
+    end
+    return act
+end
+
 """
     ApolloDescentControlModel(config, guidance_config, state, terrain=NoTerrainModel(); actuation=:ideal)
 
@@ -121,6 +144,8 @@ function ApolloDescentControlModel(config::ApolloDescentControlConfig, guidance:
     all(x -> isfinite(x) && x >= 0, config.rcs_torque_limit_nm) ||
         throw(ArgumentError("RCS torque limits must be finite and nonnegative"))
     actuation in (:ideal, :mounted) || throw(ArgumentError("actuation must be :ideal or :mounted, got $(repr(actuation))"))
+    config.engine_trim && actuation !== :mounted &&
+        throw(ArgumentError("engine_trim drives the descent engine's mounted gimbals; it needs actuation=:mounted"))
     return ApolloDescentControlModel(config, guidance, state, terrain,
         ApolloDescentControlState(length(state.phase)), _descent_indices(state, spacecraft_indices), actuation)
 end
@@ -158,6 +183,11 @@ function _apollo_unpaired_spacecraft(args)
     unpaired(from, to) = sort!(unique!([i for (state, ids) in from for i in setdiff(ids, get(to, state, Set{Int}()))]))
     return (unguided=other_guidance ? Int[] : unpaired(controlled, guided),
             uncontrolled=other_control ? Int[] : unpaired(guided, controlled))
+end
+
+function SimulationLifecycle.initialize_control!(c::ApolloDescentControlModel, u, p, t)
+    _reset_descent_actuators!(c.actuators, c.spacecraft_indices)
+    return nothing
 end
 
 function SimulationLifecycle.preflight_control(c::ApolloDescentControlModel, args; isolate_state)
@@ -291,7 +321,73 @@ end
         k <= length(forces) && (forces[k] = levels[k] * thruster.max_thrust)
     end
     _hold_other_mounted_levels!(forces, spacecraft, k)
+    model.config.engine_trim && _trim_engine_gimbals!(forces, spacecraft, layout.engine)
     return nothing
+end
+
+# Engine trim: the descent engine's gimbals at the angles that point its thrust
+# along the line from the nozzle through the body origin (the centre of mass),
+# so the engine puts no torque on the vehicle. The angles are solved one gimbal
+# at a time (each turns the thrust about its own axis, in mounting order), and
+# the engine's apply step limits them as it does any gimbal command.
+function _trim_engine_gimbals!(forces::Vector{Float64}, spacecraft, engine::Int)
+    k = 0
+    target = nothing
+    gimbals = Tuple{Int, ThrusterGimbal}[]
+    engine_thruster = nothing
+    for link in spacecraft.links, thruster in link.thrusters
+        k += 1
+        k == engine || continue
+        engine_thruster = thruster
+        ctx = actuator_context(link)
+        nozzle = ctx.link_to_body * SVector{3, Float64}(thruster.location) + ctx.link_r_body
+        d_body = ctx.link_to_body * SVector{3, Float64}(thruster.direction)
+        n = norm(nozzle)
+        n > 1e-9 || return forces                    # at the centre of mass: any direction is trimmed
+        line = dot(d_body, nozzle) < 0.0 ? -nozzle / n : nozzle / n
+        target = ctx.link_to_body' * line
+    end
+    (engine_thruster === nothing || target === nothing) && return forces
+    for (m, entry) in enumerate(mounted_actuators(spacecraft))
+        a = entry.actuator
+        a isa ThrusterGimbal && a.thruster === engine_thruster && m <= length(forces) && push!(gimbals, (m, a))
+    end
+    isempty(gimbals) && return forces
+    d = SVector{3, Float64}(engine_thruster.direction)
+    d = d / norm(d)
+    angles = Float64[g.angle_rad for (_, g) in gimbals]
+    for _ in 1:(length(gimbals) == 1 ? 1 : 12)
+        for j in eachindex(gimbals)
+            # The thrust as the earlier gimbals turn it, and the target as the
+            # later ones would see it (their turns undone, last first).
+            v = d
+            for m in 1:(j - 1)
+                v = _turn_about(gimbals[m][2].axis, angles[m], v)
+            end
+            w = target
+            for m in length(gimbals):-1:(j + 1)
+                w = _turn_about(gimbals[m][2].axis, -angles[m], w)
+            end
+            angles[j] = _best_axis_angle(gimbals[j][2].axis, v, w, angles[j])
+        end
+    end
+    for (j, (m, _)) in enumerate(gimbals)
+        forces[m] = angles[j]
+    end
+    return forces
+end
+
+# `v` turned by `angle` about the unit vector `axis` (Rodrigues), as a gimbal turns its thrust.
+@inline _turn_about(axis::SVector{3, Float64}, angle::Float64, v::SVector{3, Float64})::SVector{3, Float64} =
+    v * cos(angle) + cross(axis, v) * sin(angle) + axis * (dot(axis, v) * (1.0 - cos(angle)))
+
+# The angle about the unit vector `axis` that turns `v` closest to `w`; the
+# current angle when either lies along the axis.
+@inline function _best_axis_angle(axis::SVector{3, Float64}, v::SVector{3, Float64}, w::SVector{3, Float64}, current::Float64)::Float64
+    vp = v - dot(axis, v) * axis
+    wp = w - dot(axis, w) * axis
+    (norm(vp) > 1e-12 && norm(wp) > 1e-12) || return current
+    return atan(dot(axis, cross(vp, wp)), dot(vp, wp))
 end
 
 # The controller commands only the thrusters; every other mounted actuator
