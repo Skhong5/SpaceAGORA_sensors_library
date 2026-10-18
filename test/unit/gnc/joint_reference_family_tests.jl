@@ -131,6 +131,10 @@ end
     @test reason(r, candidate(r, with_plan(plan; q_start=zeros(2)))) === :invalid_shape
     nan_rates = copy(plan.dq_ref); nan_rates[2, 3] = NaN
     @test reason(r, candidate(r, with_plan(plan; dq_ref=nan_rates))) === :nonfinite_reference
+    for bad in (NaN, Inf)
+        bad_tip = copy(plan.ee_ref); bad_tip[1, 2] = bad
+        @test reason(r, candidate(r, with_plan(plan; ee_ref=bad_tip))) === :nonfinite_reference
+    end
     uneven = copy(plan.t_ref_s); uneven[3] += 0.1
     @test reason(r, candidate(r, with_plan(plan; t_ref_s=uneven))) === :invalid_timing
     @test reason(request(duration_s=5.0), candidate(request(duration_s=5.0), plan)) === :invalid_timing
@@ -204,6 +208,19 @@ end
     @test same_states(first_run, second_run)
     @test C._same_state((buffer, held_command(only(config.control_model.control_effectors), 1)), first_end)
     @test b.runtime.request_id == 1   # fresh run state, not a second request on top of the first
+end
+
+@testset "Two reused runs with a later install start from the same arm state" begin
+    # The first run installs, at 1 s, a plan that starts where the arm then is; the
+    # second run's state must still start from the buffer's configured plan.
+    config, b, buffer = linked_config(binding_kwargs=(events=[AlgorithmEvent(1.0)],), guidance_rate=DT)
+    u0 = SpaceAGORA.SimulationEngine.build_initial_conditions(config)
+    first_run = run_simulation(config; isolate_state=false, return_solution=true)
+    @test buffer.updated_at_s == 1.0 && buffer.plan.q_ref[:, 1] != zeros(3)
+    @test SpaceAGORA.SimulationEngine.build_initial_conditions(config) == u0
+    second_run = run_simulation(config; isolate_state=false, return_solution=true)
+    @test collect(second_run.u[1]) == collect(u0)
+    @test same_states(first_run, second_run)
 end
 
 @testset "A buffer no model writes keeps the plan it was configured with" begin
@@ -297,6 +314,11 @@ end
         joint_axes=((0.0, 0.0, 1.0), (0.0, 1.0, 0.0)))
     err = failure(() -> run_simulation(arm_config(controls=(arm_controller(plan_buffer=buffer,
         controller=SM.init_robot_arm_joint_mpc(two_joint; dt_s=DT, horizon=4)),), guidance=(binding(buffer),))))
+    @test err isa ArgumentError && occursin("built for 2 joints", sprint(showerror, err))
+    # The same, for a buffer no model writes: the controller's MPC is checked
+    # against the buffer's plan.
+    err = failure(() -> run_simulation(arm_config(controls=(arm_controller(plan_buffer=hold_buffer(),
+        controller=SM.init_robot_arm_joint_mpc(two_joint; dt_s=DT, horizon=4)),))))
     @test err isa ArgumentError && occursin("built for 2 joints", sprint(showerror, err))
     # Settings of another kind.
     err = failure(() -> run_simulation(arm_config(controls=(arm_controller(plan_buffer=buffer),),

@@ -183,8 +183,8 @@ lifecycle's own copy of `request`. A result for another request (a different
 1. is for the request's arm and base pose (`:model_mismatch`,
    `:base_pose_mismatch`);
 2. has one row per joint and one column per sample in its joint and end-effector
-   references, at least two samples, and finite values (`:invalid_shape`,
-   `:nonfinite_reference`);
+   references, at least two samples, and finite times and references
+   (`:invalid_shape`, `:nonfinite_reference`);
 3. is sampled on the request's grid: from 0 every `dt_s`, with a last step of at
    most `dt_s`, to `duration_s` (`:invalid_timing`);
 4. starts at the request's start joints, to 1e-9 rad (`:start_mismatch`);
@@ -212,7 +212,7 @@ function validate_joint_reference(request::JointReferenceRequest, result)
     n, m = length(model.joints), length(plan.t_ref_s)
     (m >= 2 && length(plan.q_start) == n && all(A -> size(A) == (n, m), (plan.q_ref, plan.dq_ref, plan.ddq_ref)) &&
         size(plan.ee_ref) == (3, m)) || return refuse(:invalid_shape, (joints=n, samples=m))
-    all(A -> all(isfinite, A), (plan.t_ref_s, plan.q_ref, plan.dq_ref, plan.ddq_ref)) ||
+    all(A -> all(isfinite, A), (plan.t_ref_s, plan.q_ref, plan.dq_ref, plan.ddq_ref, plan.ee_ref)) ||
         return refuse(:nonfinite_reference)
     _uniform_grid(plan.t_ref_s, request.dt_s, request.duration_s) ||
         return refuse(:invalid_timing, (dt_s=request.dt_s, duration_s=request.duration_s, last_time_s=plan.t_ref_s[end]))
@@ -296,34 +296,37 @@ GA.algorithm_result_type(::JointReferenceFamily) = GA.AlgorithmResult
 # One controller reads a plan buffer; at most one model writes it.
 GR.link_cardinality(::RobotArmPlanBuffer) = (producers=0:1, consumers=1:1)
 
-# The planner and the controller act on one spacecraft, for the arm whose plan
-# the buffer starts with.
+# The controller's MPC fits the arm whose plan the buffer starts with, whether or
+# not a model writes the buffer; a planner acts on the controller's spacecraft, for
+# that arm.
 function GR.check_link(buffer::RobotArmPlanBuffer, producers, consumers, args)
     controller = only(consumers)
     controller isa H.RobotArmControlEffector || throw(ArgumentError(
         "A RobotArmPlanBuffer is read by a RobotArmControlEffector, not a $(nameof(typeof(controller)))."))
+    start, mpc = buffer.plan, controller.controller
+    if start !== nothing && mpc isa H.RobotArmJointMPCController
+        joints = length(start.q_start)
+        length(mpc.joint_inertia_kg_m2) == joints || throw(ArgumentError(
+            "The RobotArmControlEffector's MPC controller is built for $(length(mpc.joint_inertia_kg_m2)) joints, " *
+            "the arm of its plan buffer's plan has $(joints)."))
+    end
     for producer in producers
         producer isa AL.AlgorithmGuidance || continue
         producer.spacecraft_index == controller.spacecraft_index || throw(ArgumentError(
             "The joint-reference planner plans for spacecraft $(producer.spacecraft_index), but the " *
             "RobotArmControlEffector reading its plan buffer acts on spacecraft $(controller.spacecraft_index)."))
-        settings, mpc = producer.settings, controller.controller
+        settings = producer.settings
         settings isa JointReferenceSettings || continue
-        start = buffer.plan
         start === nothing || (_same_arm(start.model, settings.model) && start.base_pose == settings.base_pose) ||
             throw(ArgumentError("The plan buffer starts with a plan for another arm or base pose than the " *
                 "joint-reference planner's settings; the arm's state is sized from that plan."))
-        if mpc isa H.RobotArmJointMPCController
-            joints = length(settings.model.joints)
-            length(mpc.joint_inertia_kg_m2) == joints || throw(ArgumentError(
-                "The RobotArmControlEffector's MPC controller is built for $(length(mpc.joint_inertia_kg_m2)) joints, " *
-                "the joint-reference planner's arm has $(joints)."))
-        end
     end
     return nothing
 end
 
-# Each run starts from the plan and time the buffer held before its first run.
+# Each run starts from the plan and time the buffer held before its first run. The
+# engine builds the arm's initial state before this runs, from the same recorded
+# plan (`run_start`), so state and buffer start alike.
 function GR.link_initialize!(buffer::RobotArmPlanBuffer, producers, consumers, u, p, t)
     if buffer.run_start === nothing
         buffer.run_start = (buffer.plan, buffer.updated_at_s)

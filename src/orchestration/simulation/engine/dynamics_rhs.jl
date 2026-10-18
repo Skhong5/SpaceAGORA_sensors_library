@@ -2844,20 +2844,27 @@ end
 
 # The plan an effector's arm tracks and the time (s into the run) its axis starts
 # from: the plan buffer's for an effector that reads one (`plan_buffer`, the
-# joint-reference link), otherwise its own `plan` and `updated_at_s`.
-@inline function _robot_arm_reference(effector)
+# joint-reference link), otherwise its own `plan` and `updated_at_s`. With
+# `run_start=true`, a buffer that has recorded the plan it starts each run from
+# (its `run_start`, from an earlier run) gives that plan: the initial state is
+# built before the run restores the buffer.
+@inline function _robot_arm_reference(effector; run_start::Bool=false)
     if hasproperty(effector, :plan_buffer)
         buffer = getproperty(effector, :plan_buffer)
-        buffer === nothing || return buffer.plan, Float64(buffer.updated_at_s)
+        if buffer !== nothing
+            recorded = buffer.run_start
+            run_start && recorded !== nothing && return recorded[1], Float64(recorded[2])
+            return buffer.plan, Float64(buffer.updated_at_s)
+        end
     end
     return getproperty(effector, :plan), _effector_float(effector, :updated_at_s, 0.0)
 end
 
 """Return whether an effector owns a robot-arm plan for the requested spacecraft."""
-@inline function _robot_arm_effector_matches(effector, sat_idx::Int)::Bool
+@inline function _robot_arm_effector_matches(effector, sat_idx::Int; run_start::Bool=false)::Bool
     return hasproperty(effector, :plan) &&
         _effector_spacecraft_index(effector) == sat_idx &&
-        first(_robot_arm_reference(effector)) isa SimulationModel.RobotArmPlan
+        first(_robot_arm_reference(effector; run_start)) isa SimulationModel.RobotArmPlan
 end
 
 """Read a numeric effector field as `Float64`, falling back to a default value."""
@@ -2869,8 +2876,8 @@ end
     hasproperty(effector, name) ? getproperty(effector, name) : default
 
 """Build the compliant robot-arm RHS configuration from an active effector."""
-@inline function _robot_arm_coupling_from_effector(effector, t::Float64)
-    plan, origin_s = _robot_arm_reference(effector)
+@inline function _robot_arm_coupling_from_effector(effector, t::Float64; run_start::Bool=false)
+    plan, origin_s = _robot_arm_reference(effector; run_start)
     return (
         plan=plan,
         t_s=max(0.0, t - origin_s),
@@ -2912,16 +2919,22 @@ end
     return present
 end
 
-"""Find the active robot-arm coupling configuration for one spacecraft."""
-function _robot_arm_coupling(args, sat_idx::Int, t::Float64)
+"""
+Find the active robot-arm coupling configuration for one spacecraft. With
+`run_start=true` (building the initial state), a plan buffer gives the plan it
+starts each run from.
+"""
+function _robot_arm_coupling(args, sat_idx::Int, t::Float64; run_start::Bool=false)
     if hasproperty(args, :control_model) && hasproperty(args.control_model, :control_effectors)
         @inbounds for effector in args.control_model.control_effectors
-            _robot_arm_effector_matches(effector, sat_idx) && return _robot_arm_coupling_from_effector(effector, t)
+            _robot_arm_effector_matches(effector, sat_idx; run_start) &&
+                return _robot_arm_coupling_from_effector(effector, t; run_start)
         end
     end
     if hasproperty(args, :dynamics_model) && hasproperty(args.dynamics_model, :dynamic_effectors)
         @inbounds for effector in args.dynamics_model.dynamic_effectors
-            _robot_arm_effector_matches(effector, sat_idx) && return _robot_arm_coupling_from_effector(effector, t)
+            _robot_arm_effector_matches(effector, sat_idx; run_start) &&
+                return _robot_arm_coupling_from_effector(effector, t; run_start)
         end
     end
     return nothing
@@ -4026,7 +4039,7 @@ function build_initial_conditions(args)::ComponentVector
         if !isempty(sc.attachments)
             base_shape = merge(base_shape, SimulationModel.attachment_state_shape(sc))
         end
-        coupling = _robot_arm_coupling(args, i, 0.0)
+        coupling = _robot_arm_coupling(args, i, 0.0; run_start=true)
         coupling === nothing && return base_shape
         return merge(base_shape, SimulationModel.coupled_cloth_robot_arm_state_shape(coupling.plan))
     end
@@ -4069,7 +4082,7 @@ function build_initial_conditions(args)::ComponentVector
         if !isempty(spacecraft.attachments)
             SimulationModel.initialize_attachment_state!(sc_view, spacecraft, init_tree)
         end
-        coupling = _robot_arm_coupling(args, i, 0.0)
+        coupling = _robot_arm_coupling(args, i, 0.0; run_start=true)
         if coupling !== nothing
             SimulationModel.initialize_coupled_cloth_robot_arm_state!(sc_view, coupling.plan; t_s=coupling.t_s)
         end
