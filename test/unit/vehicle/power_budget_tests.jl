@@ -177,8 +177,22 @@ end
         @test all(==(0.0), split.sc1_actuator_level_1)
         @test split.sc1_battery_wh[end] ≈ straight.sc1_battery_wh[end] rtol=1e-6
         @test 0.1 < straight.sc1_battery_soc[end] < 0.2                            # recharging, still below recovery
-        # A checkpoint file holds the energy, not the flags: resume is refused.
-        @test_throws ArgumentError power_run(sc(); mission_time=10.0, settings=(resume_from_checkpoint=true, checkpoint_directory=dir))
+        # A run resumed from the file keeps shedding: the file holds the flags.
+        resumed_dir = mktempdir()
+        first_leg = power_run(sc(); mission_time=150.0, settings=(checkpoint_enabled=true, checkpoint_interval_s=50.0, checkpoint_directory=resumed_dir)).table
+        resumed = power_run(sc(); mission_time=300.0, settings=(checkpoint_enabled=true, checkpoint_interval_s=50.0, checkpoint_directory=resumed_dir,
+            resume_from_checkpoint=true)).table
+        @test resumed.time[1] >= 150.0 - 1e-9                                     # it did not restart from t = 0
+        @test all(==(0.0), resumed.sc1_actuator_level_1)                           # still shedding after the resume
+        @test resumed.sc1_battery_wh[end] ≈ split.sc1_battery_wh[end] rtol=1e-6
+        # Another battery configuration, or a file without the callbacks' state, is refused.
+        @test_throws ArgumentError power_run(power_spacecraft(soc=0.0, area=0.03, recovery_soc=0.3); mission_time=300.0,
+            settings=(resume_from_checkpoint=true, checkpoint_directory=resumed_dir))
+        args = SM.SimConfig._with_configuration(make_example_config(planet=PLANET, spacecraft=sc(), mission_time=10.0, initial_time=EPOCH,
+            dynamic_effectors=(), ephemerides_model=EPHEM, orientation_sim=true, keplerian=false, EI_km=100.0, verbose=false, results=false))
+        flag = (shared_buffers=(callback_resume=Ref(false),),)
+        @test_throws ArgumentError SpaceAGORA.SimulationEngine._restore_callback_checkpoint_state!(args, (t=50.0, runtime_state=nothing), flag)
+        @test !flag.shared_buffers.callback_resume[]
     end
 
     @testset "power parts are opt-in; split solver modes refuse a battery" begin
