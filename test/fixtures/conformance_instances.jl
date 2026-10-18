@@ -193,8 +193,9 @@ gnc_exemptions() = Dict{Any, String}(
         "the panel actuator inside AerobrakingEnergyDepletionControlModel, with no control tick of its own",
     SpaceAGORA.AlgorithmGuidance =>
         "the generic binding that runs an algorithm of any family in a simulation; its family's preflight needs " *
-        "that family's configuration (the burn-plan family: one burn scheduler sized for the run's spacecraft), " *
-        "and it is checked with the algorithm contract",
+        "that family's configuration (the burn-plan family: one burn scheduler sized for the run's spacecraft; " *
+        "the joint-reference family: the arm controller that reads its plan buffer), and it is checked with the " *
+        "algorithm contract and in test/unit/gnc/gnc_runtime_contract_tests.jl",
 )
 
 """
@@ -264,10 +265,10 @@ include(joinpath(@__DIR__, "edg_guidance_conformance.jl"))
 The planning algorithms checked with `check_algorithm`, each with its requests, the
 trusted queries its family's validation needs and a short simulation: the direct
 planner (with the station clearance `make_rpo_configuration` gives it), the hold
-planner above, the burn-plan family's apoapsis planner, the EDG guidance decision
-when the optional SpaceAGORAEDG package is loaded, and, when the optional
-SpaceAGORAHYPR package is loaded, the HYPR planner, the seven comparison planners and
-the retained-path planner.
+planner above, the burn-plan family's apoapsis planner, the joint-reference
+family's quintic planner, the EDG guidance decision when the optional
+SpaceAGORAEDG package is loaded, and, when the optional SpaceAGORAHYPR package is
+loaded, the HYPR planner, the seven comparison planners and the retained-path planner.
 """
 function algorithm_instances()
     direct = SpaceAGORA.DirectRPOPlanner(segment_clearance_at=SpaceAGORA.RPOPlannerLifecycle.station_segment_clearance)
@@ -279,6 +280,8 @@ function algorithm_instances()
             trusted=C.rpo_trusted_queries(), simulation=C.rpo_conformance_simulation(goal_rtn_m=(3.0, 0.0, 0.0))),
         (algorithm=SpaceAGORA.ApoapsisBurnPlanner(delta_v_mps=10.0), requests=C.burn_plan_conformance_requests(),
             trusted=NamedTuple(), simulation=C.burn_plan_conformance_simulation()),
+        (algorithm=SpaceAGORA.QuinticJointPlanner(), requests=C.joint_reference_conformance_requests(),
+            trusted=NamedTuple(), simulation=C.joint_reference_conformance_simulation()),
     ]
     SpaceAGORA.EDGServices.available() && push!(entries, (algorithm=SpaceAGORA.EDGGuidanceAlgorithm(),
         requests=edg_guidance_conformance_requests(), trusted=NamedTuple(),
@@ -304,7 +307,8 @@ end
 The algorithm families checked with `check_algorithm_family`, under each rejection
 policy they allow, with an algorithm of the family and its requests (which include
 one the family refuses: for RPO a retiming request the direct planner's capability
-check refuses, for the burn plan a request during an installed burn).
+check refuses, for the burn plan a request during an installed burn, for the joint
+reference a request with an obstacle on the planned path).
 """
 function family_instances()
     direct = SpaceAGORA.DirectRPOPlanner(segment_clearance_at=SpaceAGORA.RPOPlannerLifecycle.station_segment_clearance)
@@ -315,11 +319,14 @@ function family_instances()
     burn = (family=SpaceAGORA.BurnPlanFamily(), algorithm=SpaceAGORA.ApoapsisBurnPlanner(delta_v_mps=10.0),
         requests=C.burn_plan_conformance_requests(),
         link=SpaceAGORA.BurnPlanSlot(SM.PropulsiveBurnPlan[SM.PropulsiveBurnPlan()], 1), trusted=NamedTuple())
+    # The joint-reference family has one policy, :fail; its requests include one it refuses.
+    joint = (family=SpaceAGORA.JointReferenceFamily(), algorithm=SpaceAGORA.QuinticJointPlanner(),
+        requests=C.joint_reference_conformance_requests(), link=SpaceAGORA.RobotArmPlanBuffer(), trusted=NamedTuple())
     # The EDG guidance family (:fail) needs the SpaceAGORAEDG provider, which the unit runner loads.
     edg = (family=SpaceAGORA.EDGGuidanceFamily(), algorithm=SpaceAGORA.EDGGuidanceAlgorithm(),
         requests=edg_guidance_conformance_requests(), link=SpaceAGORA.AerobrakingEnergyDepletionState(num_sats=1),
         trusted=NamedTuple())
-    return [rpo..., burn, edg]
+    return [rpo..., burn, joint, edg]
 end
 
 end # module ConformanceInstances
