@@ -39,7 +39,7 @@ end
 conformance_link(::_JOINT.JointReferenceFamily) = SimulationModel.RobotArmPlanBuffer()
 
 """
-    joint_reference_conformance_simulation(; mission_time_s=10.0) -> Function
+    joint_reference_conformance_simulation(; mission_time_s=1.0) -> Function
 
 A `simulation` for [`check_algorithm`](@ref): a function of a joint-reference planner
 that runs it through `AlgorithmGuidance`, with one request at the run's start, on
@@ -48,9 +48,11 @@ tracks the default arm's plans from its plan buffer at a 0.5 s control step, the
 buffer starting with a hold at zero joint angles. The
 run is made twice in sequence and, with two or more threads, twice concurrently,
 and the binding's run records of the first run are returned. It throws when a run
-fails or the runs differ.
+fails or the runs differ. The arm's coupled compliant state needs short solver
+steps, so the default run is short: it covers the request and install at the
+start and the controller's ticks at 0, 0.5 and 1 s.
 """
-joint_reference_conformance_simulation(; mission_time_s::Real=10.0) =
+joint_reference_conformance_simulation(; mission_time_s::Real=1.0) =
     planner -> _joint_reference_simulation_records(planner, Float64(mission_time_s))
 
 function _joint_reference_configuration(planner, mission_time_s::Float64)

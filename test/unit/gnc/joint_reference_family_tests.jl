@@ -39,8 +39,10 @@ arm_controller(; kwargs...) = SM.RobotArmControlEffector(; merge((spacecraft_ind
 binding(buffer; kwargs...) = AlgorithmGuidance(; merge((algorithm=QuinticJointPlanner(), spacecraft_index=1,
     settings=settings(), link=buffer, events=[AlgorithmEvent(0.0)]), (; kwargs...))...)
 
-# Ends at 3 s, before the 4 s reference ends, so the last tick is during the motion.
-function arm_config(; controls=(arm_controller(),), guidance=(), guidance_rate=1.0e6, mission_time=3.0,
+# Ends at 1.5 s, before the 4 s reference ends, so the last tick is during the
+# motion. The arm's coupled compliant state needs short solver steps, so the runs
+# are kept short.
+function arm_config(; controls=(arm_controller(),), guidance=(), guidance_rate=1.0e6, mission_time=1.5,
         spacecraft=SpacecraftModel[arm_sat()])
     env = EnvironmentModel(planet=PLANET, EI=120.0, density_model=NoAtmosphereModel(),
         ephemerides_model=SimpleEphemeridesModel(),
