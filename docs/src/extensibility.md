@@ -420,8 +420,53 @@ navigation effectors at the same time. Runs with sensors write the
 `sc{i}_sensor_{k}` columns (see [Output Columns](user/output_columns.md#Sensors)).
 A run resumed from a checkpoint file takes the sensors' streams, latest
 measurements and gyro biases from the file and samples on the same grid; a
-kind's own state beyond those fields is not in the file. The
+kind's own state beyond those fields is in the file when the kind implements
+`checkpoint_state` (see [Run state in checkpoint files](#Run-state-in-checkpoint-files)). The
 gravity-backbone and multirate solver modes refuse mounted sensors.
+
+## Run state in checkpoint files
+
+Shape: configuration (L). Rows:
+[GNC lifecycle](generated/extension_hook_reference.md#GNC-lifecycle).
+
+A checkpoint file holds the state vector and the run state the engine keeps
+(see [Checkpointing](user/outputs.md#Checkpointing)). A guidance, navigation or
+control model, or a sensor kind, that keeps run state of its own (a held
+command, a plan, a filter's estimate, a counter) adds it with two methods:
+
+```julia
+SpaceAGORA.checkpoint_state(model) -> data      # plain data, or nothing
+SpaceAGORA.restore_checkpoint_state!(model, data)
+```
+
+The engine calls `checkpoint_state` at every checkpoint and stores a copy of
+the data. A run resumed from the file first calls the model's run-start
+initializer (`initialize_navigation!`, `initialize_guidance!` or
+`initialize_control!`), then `restore_checkpoint_state!` with the saved data,
+which replaces the reset; a sensor's state is restored before its sampling
+resumes, and a resumed run does not call `initialize_sensor!`. Return plain
+data (numbers, arrays, named tuples, random streams) rather than references to
+other objects of the run, and return `nothing` for the whole run or data for
+the whole run.
+
+```julia
+mutable struct TickCounter <: SpaceAGORA.AbstractNavigationModel
+    ticks::Int
+end
+SpaceAGORA.update_navigation!(m::TickCounter, u, p, t, spacecraft_index) = (m.ticks += 1; nothing)
+SpaceAGORA.initialize_navigation!(m::TickCounter, u, p, t) = (m.ticks = 0; nothing)
+SpaceAGORA.checkpoint_state(m::TickCounter) = (ticks = m.ticks,)
+SpaceAGORA.restore_checkpoint_state!(m::TickCounter, data) = (m.ticks = data.ticks; nothing)
+```
+
+A checkpointed run refuses at setup a model whose `checkpoint_state` returns
+data and which has no `restore_checkpoint_state!` method for it. A resumed run
+refuses a checkpoint whose models differ in kind or position from its own, or
+that holds no run state for a model that keeps some. Without the two methods,
+a resumed run starts a guidance, navigation or control model's own state from
+its reset, and a sensor's from what the sensor object holds. The built-in
+models do not implement them yet; the energy-depletion guidance, the RPO
+planners and the GNC algorithm adapters refuse checkpointed runs.
 
 ## Planet, ephemerides, thermal and thruster extensions
 

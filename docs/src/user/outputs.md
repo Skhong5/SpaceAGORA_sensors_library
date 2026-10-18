@@ -295,7 +295,11 @@ spacecraft: the batteries' empty and full flags and shedding tier, the
 actuator faults' activity and held levels, the sensors' random streams,
 latest measurements and gyro biases, and the hinges' and gimbals' angles. A
 run with batteries, faults or sensors refuses a checkpoint written without
-them, or for a different configuration of them.
+them, or for a different configuration of them. A guidance, navigation or
+control model, or a sensor kind, that keeps run state of its own adds it to
+the file through `checkpoint_state` (see
+[Run state in checkpoint files](../extensibility.md#Run-state-in-checkpoint-files));
+without it, a resumed run starts that state from its reset.
 
 ## Campaign and multi-process runs
 

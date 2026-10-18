@@ -136,6 +136,8 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :initialize_navigation!, rendered = "SpaceAGORA.initialize_navigation!"),
         (owner = :SpaceAGORA, symbol = :initialize_guidance!, rendered = "SpaceAGORA.initialize_guidance!"),
         (owner = :SpaceAGORA, symbol = :initialize_control!, rendered = "SpaceAGORA.initialize_control!"),
+        (owner = :SpaceAGORA, symbol = :checkpoint_state, rendered = "SpaceAGORA.checkpoint_state"),
+        (owner = :SpaceAGORA, symbol = :restore_checkpoint_state!, rendered = "SpaceAGORA.restore_checkpoint_state!"),
         (owner = :SpaceAGORA, symbol = :requires_atmosphere_events, rendered = "SpaceAGORA.requires_atmosphere_events"),
         (owner = :SpaceAGORA, symbol = :atmosphere_transition!, rendered = "SpaceAGORA.atmosphere_transition!"),
         (owner = :SpaceAGORA, symbol = :before_reference_control!, rendered = "SpaceAGORA.before_reference_control!"),

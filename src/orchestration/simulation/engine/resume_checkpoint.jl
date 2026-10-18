@@ -165,10 +165,91 @@ function _restore_callback_checkpoint_state!(args, checkpoint, p)
     return nothing
 end
 
-@inline function _write_checkpoint!(args, t::Float64, u_state, solver_mode::String; is_active=nothing, callback_state=nothing)
+# The run state the models keep themselves (`checkpoint_state`): the guidance,
+# navigation and control models in the configuration's order, then each
+# spacecraft's sensors in mounting order. Written next to the callbacks' snapshot
+# when any of them keeps some, with each model's kind at its position; restored,
+# after checking those match the run's, once the run-start initializers ran.
+function _checkpoint_models(args)
+    return (
+        navigation=collect(Any, args.navigation_model.navigation_effectors),
+        guidance=collect(Any, args.guidance_model.guidance_effectors),
+        control=collect(Any, args.control_model.control_effectors),
+        sensors=[Any[e.sensor for e in SimulationModel.mounted_sensors(sc)] for sc in args.dynamics_model.spacecraft],
+    )
+end
+
+_each_model(groups) = Iterators.flatten((groups.navigation, groups.guidance, groups.control, Iterators.flatten(groups.sensors)))
+_model_kinds(group) = [nameof(typeof(m)) for m in group]
+_model_checkpoint_configuration(models) = (navigation=_model_kinds(models.navigation),
+    guidance=_model_kinds(models.guidance), control=_model_kinds(models.control),
+    sensors=[_model_kinds(group) for group in models.sensors])
+
+_missing_restore(model) = ArgumentError("$(nameof(typeof(model))) returns run state from checkpoint_state but has no " *
+    "restore_checkpoint_state! method for it; implement SpaceAGORA.restore_checkpoint_state!(::$(nameof(typeof(model))), data), " *
+    "or return nothing from checkpoint_state.")
+
+# A checkpointed run's models that keep state can put it back.
+function _check_model_checkpoint_hooks(args)
+    for model in _each_model(_checkpoint_models(args))
+        data = SimulationLifecycle.checkpoint_state(model)
+        data === nothing || applicable(SimulationLifecycle.restore_checkpoint_state!, model, data) ||
+            throw(_missing_restore(model))
+    end
+    return nothing
+end
+
+function _model_checkpoint_state(args)
+    models = _checkpoint_models(args)
+    saved = map(group -> Any[SimulationLifecycle.checkpoint_state(m) for m in group],
+        (navigation=models.navigation, guidance=models.guidance, control=models.control))
+    sensors = [Any[SimulationLifecycle.checkpoint_state(m) for m in group] for group in models.sensors]
+    all(data -> data === nothing, _each_model((saved..., sensors=sensors))) && return nothing
+    return (version=1, configuration=_model_checkpoint_configuration(models), saved..., sensors=sensors)
+end
+
+# Checked when the checkpoint is read, before anything is restored; `nothing`
+# when the checkpoint holds no model state.
+function _check_model_checkpoint_state(args, checkpoint)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    snapshot = runtime !== nothing && hasproperty(runtime, :models) ? runtime.models : nothing
+    snapshot === nothing && return nothing
+    hasproperty(snapshot, :version) && snapshot.version === 1 ||
+        throw(ArgumentError("Model checkpoint state version 1 is required to resume this run."))
+    models = _checkpoint_models(args)
+    hasproperty(snapshot, :configuration) && isequal(snapshot.configuration, _model_checkpoint_configuration(models)) ||
+        throw(ArgumentError("The guidance, navigation or control models or the sensors differ from the checkpoint's. " *
+            "Resume with the same configuration, or run from the start."))
+    for (model, data) in zip(_each_model(models), _each_model(snapshot))
+        data === nothing || applicable(SimulationLifecycle.restore_checkpoint_state!, model, data) ||
+            throw(_missing_restore(model))
+    end
+    return snapshot
+end
+
+# After the run-start initializers of a resumed run.
+function _restore_model_checkpoint_state!(args, snapshot)
+    models = _checkpoint_models(args)
+    if snapshot === nothing
+        kept = unique(nameof(typeof(m)) for m in _each_model(models) if SimulationLifecycle.checkpoint_state(m) !== nothing)
+        isempty(kept) || throw(ArgumentError("The run state of $(join(kept, ", ")) (checkpoint_state) is not in this checkpoint " *
+            "(it was written by an earlier SpaceAGORA or by another configuration). Run from the start."))
+        return nothing
+    end
+    for (model, data) in zip(_each_model(models), _each_model(snapshot))
+        data === nothing || SimulationLifecycle.restore_checkpoint_state!(model, data)
+    end
+    return nothing
+end
+
+@inline function _write_checkpoint!(args, t::Float64, u_state, solver_mode::String; is_active=nothing, callback_state=nothing,
+                                     model_state=nothing)
     runtime = _interlink_checkpoint_runtime_state(args, is_active)
     if callback_state !== nothing
         runtime = runtime === nothing ? (callbacks=callback_state,) : merge(runtime, (callbacks=callback_state,))
+    end
+    if model_state !== nothing
+        runtime = runtime === nothing ? (models=model_state,) : merge(runtime, (models=model_state,))
     end
     return SimulationModel.IOSerialization._write_checkpoint!(
         args,

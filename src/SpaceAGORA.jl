@@ -331,8 +331,8 @@ using .SimulationModel: RateGyro, StarTracker, Magnetometer, SensorTruth, sensor
 using .SimulationModel: GNSSReceiver, SunSensor, Accelerometer, sensor_needs_specific_force, is_gravitational
 using .SimulationModel: add_sensor!, mounted_sensors, sensor_measurement, sensor_measurement_time
 using .SimulationLifecycle: bind_spacecraft
-using .SimulationLifecycle: preflight_guidance, preflight_control, initialize_navigation!, initialize_guidance!, initialize_control!, requires_atmosphere_events, atmosphere_transition!, before_reference_control!
-export preflight_guidance, preflight_control, initialize_navigation!, initialize_guidance!, initialize_control!, requires_atmosphere_events, atmosphere_transition!, before_reference_control!
+using .SimulationLifecycle: preflight_guidance, preflight_control, initialize_navigation!, initialize_guidance!, initialize_control!, checkpoint_state, restore_checkpoint_state!, requires_atmosphere_events, atmosphere_transition!, before_reference_control!
+export preflight_guidance, preflight_control, initialize_navigation!, initialize_guidance!, initialize_control!, checkpoint_state, restore_checkpoint_state!, requires_atmosphere_events, atmosphere_transition!, before_reference_control!
 using .SimulationModel: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 using .SimulationModel: AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionControlModel
 using .SimulationModel: SolarPanelAngleOfAttackControlModel

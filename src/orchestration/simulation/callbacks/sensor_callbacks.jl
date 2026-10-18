@@ -115,8 +115,8 @@ start, not the solve's, so a checkpointed run samples at the same times as a
 run in one piece. A run resumed from a checkpoint file takes the sensors'
 random streams, latest measurements, sampling times and gyro biases from the
 file and keeps sampling on the same grid; a sensor kind's own state beyond
-those fields (what `initialize_sensor!` resets) is not in the file. Empty
-without sensors.
+those fields (what `initialize_sensor!` resets) is in the file when the kind
+implements `checkpoint_state`. Empty without sensors.
 """
 function get_sensor_callbacks(num_sats::Int, args::SimulationConfiguration)
     spacecraft = args.dynamics_model.spacecraft
