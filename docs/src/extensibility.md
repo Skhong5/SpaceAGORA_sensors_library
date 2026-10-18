@@ -375,20 +375,26 @@ number for a one-component sensor) and `latest_time_s`. It implements:
 - `sensor_measure(sensor, truth::SensorTruth, ctx::ActuatorContext, rng)`:
   one measurement of `truth` (the inertial position and velocity, the
   attitude, the body rate, the mass, the time and, when the sensor asks for
-  them, the magnetic field, the Sun's direction and lit fraction, and the
-  specific force, all in the body frame), with any noise drawn from `rng`.
+  them, the magnetic field, the Sun's direction and lit fraction with the
+  planet's radius, the specific force with the body's angular acceleration,
+  all in the body frame, and the planet-fixed position, velocity and
+  altitude), with any noise drawn from `rng`.
   `ctx.link_to_body` maps the sensor's frame, its link's, to the body frame.
 - `sensor_dimension(sensor)`: the number of components.
 - optionally `sensor_requirements(sensor)`: `ActuatorRequirements(magnetic_field=true)`
   to receive the field (from the run's `MagneticTorqueRodModel`, or the
   tilted dipole) and `ActuatorRequirements(solar=true)` to receive the Sun's
   direction and the lit fraction of its disk (the run's ephemerides and the
-  eclipse model); no other environment is available to sensors.
+  eclipse model), and `ActuatorRequirements(planet_frame=true)` to receive
+  the planet-fixed position, velocity and altitude; the atmosphere is not
+  available to sensors.
 - optionally `sensor_needs_specific_force(sensor) = true` to receive the
   specific force: the vehicle's acceleration at the sample, from the solver,
   less the acceleration of the run's gravitational effectors (those for which
   `is_gravitational` is true; a user-defined gravity model should add a
-  method returning true).
+  method returning true), and the body's angular acceleration, from the
+  solver as well (an accelerometer away from the centre of mass adds the
+  rotation's terms).
 
 Mount it with `add_sensor!(spacecraft, link, sensor)`; a sensor on a hinged
 panel turns with it. The built-in kinds are `RateGyro` (body rate with white

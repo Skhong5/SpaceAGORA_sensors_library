@@ -43,6 +43,14 @@ function _sensor_specific_force(integrator, i::Int, q::SVector{4, Float64})
     return rot(q) * (a - gravity / Float64(sc_view.mass))
 end
 
+# The body's angular acceleration at the accepted step (the solver's
+# derivative); zero without attitude propagation.
+function _sensor_angular_acceleration(integrator, i::Int)::SVector{3, Float64}
+    du = DiffEqBase.get_du(integrator)
+    hasproperty(du.sc[i], :ω) || return SVector{3, Float64}(0.0, 0.0, 0.0)
+    return SVector{3, Float64}(du.sc[i].ω[1], du.sc[i].ω[2], du.sc[i].ω[3])
+end
+
 # The truth sensor `s` of spacecraft `i` measures at the accepted state.
 function _sensor_truth(integrator, i::Int, s)
     req = sensor_requirements(s)
@@ -56,6 +64,7 @@ function _sensor_truth(integrator, i::Int, s)
     ω = hasproperty(sc_view, :ω) ? SVector{3, Float64}(sc_view.ω[1], sc_view.ω[2], sc_view.ω[3]) : SVector{3, Float64}(0.0, 0.0, 0.0)
     nan3 = SVector{3, Float64}(NaN, NaN, NaN)
     field, sun, lit, force = nan3, nan3, NaN, nan3
+    α, pos_pp, vel_pp, altitude, radius = nan3, nan3, nan3, NaN, NaN
     needs_force = sensor_needs_specific_force(s)
     if wants_field || needs_force
         # The field model and the environment sampling read the time from the
@@ -68,8 +77,17 @@ function _sensor_truth(integrator, i::Int, s)
         needs_force && (force = _sensor_specific_force(integrator, i, q))
         clock[] = previous
     end
-    req.solar && ((sun, lit) = _sensor_sun(p, pos, q, Float64(integrator.t)))
-    return SensorTruth(pos, vel, q, ω, Float64(sc_view.mass), Float64(integrator.t), field, sun, lit, force)
+    needs_force && (α = _sensor_angular_acceleration(integrator, i))
+    if req.solar
+        sun, lit = _sensor_sun(p, pos, q, Float64(integrator.t))
+        radius = Float64(p.args.environment_model.planet.Rp_e)
+    end
+    if req.planet_frame
+        frame = CallbackServices.sample_planet_frame(sc_view, p, i, Float64(integrator.t))
+        pos_pp, vel_pp, altitude = SVector{3, Float64}(frame.pos_pp), SVector{3, Float64}(frame.vel_pp), Float64(frame.alt_m)
+    end
+    return SensorTruth(pos, vel, q, ω, Float64(sc_view.mass), Float64(integrator.t), field, sun, lit, force,
+                       α, pos_pp, vel_pp, altitude, radius)
 end
 
 function _sample_sensors!(integrator, members::Vector{Tuple{Int, Int}}; first_sample::Bool=false)

@@ -24,12 +24,16 @@ What a sensor measures from, at a sample: the inertial position and velocity
 rate (rad/s), the mass (kg), the time (s into the run), and, each NaN unless
 the sensor asks for it, the local magnetic field in the body frame (T), the
 direction to the Sun in the body frame (a unit vector) with the lit fraction
-of the Sun's disk (0 in umbra, 1 in full sunlight), and the specific force
-(the non-gravitational acceleration, m/s², in the body frame). Without
-attitude propagation the attitude is the identity and the rate zero.
+of the Sun's disk (0 in umbra, 1 in full sunlight) and the planet's
+equatorial radius (m), the specific force (the non-gravitational
+acceleration, m/s², in the body frame) with the body's angular acceleration
+(rad/s², body frame), and the position, velocity (planet-fixed frame) and
+altitude (m) over the planet. Without attitude propagation the attitude is
+the identity and the rate and angular acceleration zero.
 
 `SensorTruth(pos_ii, vel_ii, q_ib, ω_body, mass_kg, t_s, magnetic_field_body)`
-leaves the Sun and the specific force NaN.
+leaves everything after the field NaN; the ten-argument form (through
+`specific_force_body`) leaves the rest NaN.
 """
 struct SensorTruth
     pos_ii::SVector{3, Float64}
@@ -42,11 +46,19 @@ struct SensorTruth
     sun_direction_body::SVector{3, Float64}
     sun_lit_fraction::Float64
     specific_force_body::SVector{3, Float64}
+    angular_acceleration_body::SVector{3, Float64}
+    pos_pp::SVector{3, Float64}
+    vel_pp::SVector{3, Float64}
+    altitude_m::Float64
+    planet_radius_m::Float64
 end
 
 const _NAN3_TRUTH = SVector{3, Float64}(NaN, NaN, NaN)
 SensorTruth(pos_ii, vel_ii, q_ib, ω_body, mass_kg, t_s, magnetic_field_body) =
     SensorTruth(pos_ii, vel_ii, q_ib, ω_body, mass_kg, t_s, magnetic_field_body, _NAN3_TRUTH, NaN, _NAN3_TRUTH)
+SensorTruth(pos_ii, vel_ii, q_ib, ω_body, mass_kg, t_s, magnetic_field_body, sun_direction_body, sun_lit_fraction, specific_force_body) =
+    SensorTruth(pos_ii, vel_ii, q_ib, ω_body, mass_kg, t_s, magnetic_field_body, sun_direction_body, sun_lit_fraction,
+                specific_force_body, _NAN3_TRUTH, _NAN3_TRUTH, _NAN3_TRUTH, NaN, NaN)
 
 """
     sensor_measure(sensor, truth::SensorTruth, ctx::ActuatorContext, rng) -> measurement
@@ -83,8 +95,10 @@ function sensor_dimension end
     sensor_requirements(sensor) -> ActuatorRequirements
 
 Optional: what the sensor needs sampled. Sensors may ask for the magnetic
-field (`magnetic_field=true`) and the Sun (`solar=true`: its direction and the
-lit fraction); other environment requests are refused when it is mounted.
+field (`magnetic_field=true`), the Sun (`solar=true`: its direction, the lit
+fraction and the planet's radius) and the planet frame (`planet_frame=true`:
+the planet-fixed position, velocity and altitude); the atmosphere is refused
+when it is mounted.
 Default: nothing.
 """
 @inline sensor_requirements(::Any) = ActuatorRequirements()
