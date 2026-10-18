@@ -38,8 +38,14 @@ in report order:
   ways are equal (it is restored afterwards); a model draws only from the streams the
   engine supplies.
 - `concurrent_equals_sequential`: two runs on separate threads, kept in step after
-  every solver step so that they overlap, equal the two sequential runs. It fails when
-  a run waits more than 60 s for the other at a step, since the runs then did not
+  every solver step so that they overlap, equal the two sequential runs. When Julia
+  counts line executions (`--code-coverage` or `--track-allocation`), the runs take
+  turns instead, one solver step each, and never step at the same time: two threads
+  running the same counted lines share each line's counter, which makes them several
+  times slower than two sequential runs. Taking turns still interleaves the runs step
+  by step, so a state they share is caught either way; a race that needs both runs
+  inside a step at the same moment can only show without counting. It fails when a
+  run waits more than 60 s for the other at a step, since the runs then did not
   overlap. Skipped when Julia runs with one thread.
 - `output_hook_pure`: two calls of `wrench` with the same arguments return equal values,
   leave a deep copy of the model unchanged, and log nothing at `Info` level or above.
@@ -168,29 +174,47 @@ function _sample_signature_check(model, since::VersionNumber; hooks::Tuple=_SAMP
     return _check(:supported_sample_signature, since, isempty(problems), join(problems, "\n"))
 end
 
-# Two concurrent runs advance in step: after each solver step a run waits until the
-# other has taken as many steps or has finished, so that the runs overlap.
+# Two concurrent runs advance in step. Each counts its checkpoints: the start of its
+# solve, then the end of each solver step. At a checkpoint a run waits until the other
+# has reached as many, so that the runs' next steps overlap; or, with `turns`, until
+# the other has taken the step that comes before this run's next one, so that the
+# runs' steps alternate (run 1 first). A run that has finished releases the other.
 struct _Rendezvous
     steps::Vector{Threads.Atomic{Int}}
     finished::Vector{Threads.Atomic{Bool}}
     timeouts::Threads.Atomic{Int}
+    turns::Bool
 end
 
-_Rendezvous() = _Rendezvous([Threads.Atomic{Int}(0) for _ in 1:2], [Threads.Atomic{Bool}(false) for _ in 1:2],
-    Threads.Atomic{Int}(0))
+_Rendezvous(turns::Bool=_counts_lines()) = _Rendezvous([Threads.Atomic{Int}(0) for _ in 1:2],
+    [Threads.Atomic{Bool}(false) for _ in 1:2], Threads.Atomic{Int}(0), turns)
+
+# Whether Julia counts line executions (code coverage or allocation tracking). Two
+# threads running the same counted lines share each line's counter, so concurrent runs
+# then take turns rather than step at the same time.
+_counts_lines() = Base.JLOptions().code_coverage != 0 || Base.JLOptions().malloc_log != 0
+
+# Waits until run `other` has reached `target` checkpoints or has finished. A wait that
+# passes its deadline is counted and ends.
+function _await_checkpoint(rendezvous::_Rendezvous, other::Int, target::Int, timeout_s::Float64)
+    deadline = time() + timeout_s
+    while rendezvous.steps[other][] < target && !rendezvous.finished[other][]
+        if time() > deadline
+            Threads.atomic_add!(rendezvous.timeouts, 1)
+            return nothing
+        end
+        yield()
+    end
+    return nothing
+end
 
 function _lockstep_factory(rendezvous::_Rendezvous, me::Int, timeout_s::Float64=_RENDEZVOUS_TIMEOUT_S)
     other = 3 - me
+    # Taking turns, run 2 waits for one checkpoint more of run 1, which steps first.
+    lag = rendezvous.turns ? me - 1 : 0
     function wait_for_other!(integrator)
         n = Threads.atomic_add!(rendezvous.steps[me], 1) + 1
-        deadline = time() + timeout_s
-        while rendezvous.steps[other][] < n && !rendezvous.finished[other][]
-            if time() > deadline
-                Threads.atomic_add!(rendezvous.timeouts, 1)
-                break
-            end
-            yield()
-        end
+        _await_checkpoint(rendezvous, other, n + lag, timeout_s)
         # Waiting changes neither the state nor any force input.
         SciMLBase.derivative_discontinuity!(integrator, false)
         return nothing
@@ -200,21 +224,26 @@ function _lockstep_factory(rendezvous::_Rendezvous, me::Int, timeout_s::Float64=
 end
 
 _concurrency_check(configuration::SimulationModel.SimulationConfiguration, base::_RunOutcome, again::_RunOutcome,
-    since::VersionNumber; timeout_s::Float64=_RENDEZVOUS_TIMEOUT_S) =
+    since::VersionNumber; timeout_s::Float64=_RENDEZVOUS_TIMEOUT_S, turns::Bool=_counts_lines()) =
     _concurrency_check(factories -> _solve(configuration; extra_callback_factories=factories), base, again, since;
-        timeout_s)
+        timeout_s, turns)
 
 # `run(factories)` runs the fixture with the extra callback factories given and
 # returns its outcome; `difference(a, b)` compares two outcomes (`noun` names what
-# the default comparison compares).
+# the default comparison compares). `turns` makes the runs take turns (`_Rendezvous`).
 function _concurrency_check(run::Function, base::_RunOutcome, again::_RunOutcome, since::VersionNumber;
         timeout_s::Float64=_RENDEZVOUS_TIMEOUT_S, noun::AbstractString="state",
-        difference::Function=(a, b) -> _run_difference(a, b; noun))
+        difference::Function=(a, b) -> _run_difference(a, b; noun), turns::Bool=_counts_lines())
     Threads.nthreads() >= 2 || return _skip(:concurrent_equals_sequential, since,
         "needs Julia started with at least two threads; this session has $(Threads.nthreads())")
-    rendezvous = _Rendezvous()
+    rendezvous = _Rendezvous(turns)
     tasks = map(1:2) do me
         Threads.@spawn try
+            # Taking turns, run 2 sets its run up once run 1 waits at its first checkpoint
+            # or has finished. No deadline: run 2 holds nothing yet that run 1 could wait
+            # for, run 1's setup may compile its solver, and run 1 always finishes (a run
+            # that never did would stall `fetch` anyway).
+            turns && me == 2 && _await_checkpoint(rendezvous, 1, 1, Inf)
             run((_lockstep_factory(rendezvous, me, timeout_s),))
         finally
             rendezvous.finished[me][] = true
