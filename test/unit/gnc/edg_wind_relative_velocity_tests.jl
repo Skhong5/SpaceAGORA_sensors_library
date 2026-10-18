@@ -93,7 +93,7 @@ end
         @test env.vel_pp_rw ≈ expected rtol = 1e-12
         @test env.speed ≈ norm(expected) rtol = 1e-12
 
-        control_env = CH._edg_environment_state(s.u, s.p, 0.0, 1)
+        control_env = CH._edg_environment_state(s.p, s.u, 0.0, 1)
         @test control_env.speed ≈ norm(expected) rtol = 1e-12
         @test control_env.dynamic_pressure ≈ 0.5 * 1.0e-9 * norm(expected)^2 rtol = 1e-12
 
@@ -118,7 +118,7 @@ end
     s = setup(ConstantWindModel(SVector(dot(w, e), dot(w, n), dot(w, u))))
     env = CH._edg_targeting_prediction_environment(s.p, s.pos, s.vel, 0.0)
     @test env.speed ≈ 0.6 * norm(s.vel_pp) rtol = 1e-9
-    @test CH._edg_environment_state(s.u, s.p, 0.0, 1).speed ≈ 0.6 * norm(s.vel_pp) rtol = 1e-9
+    @test CH._edg_environment_state(s.p, s.u, 0.0, 1).speed ≈ 0.6 * norm(s.vel_pp) rtol = 1e-9
 end
 
 end # module

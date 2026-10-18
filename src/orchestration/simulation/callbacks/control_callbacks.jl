@@ -182,10 +182,12 @@ function GNCRuntime.gnc_callbacks(control_model::BaseThrusterModel, num_sats, ar
 end
 GNCRuntime.register_tstops!(integrator, control_model::BaseThrusterModel, spacecraft_index) =
     _register_control_tstops!(integrator, control_model, spacecraft_index)
-# The EDG controller keeps the clock of its own ticks; recording the actual start
-# matches the periodic callback's phase on resumes.
+# The EDG controller keeps the clock of its own ticks in the EDG state, where its
+# predictions read it; recording the actual start matches the periodic callback's
+# phase on resumes.
 function GNCRuntime.gnc_clock_started!(control_model::_simulation_model_module.AerobrakingEnergyDepletionControlModel,
                                        period_s, origin_s)
+    control_model.state.control_clock_period_s = Float64(period_s)
     control_model.state.control_clock_origin_s = Float64(origin_s)
     return nothing
 end
@@ -284,6 +286,20 @@ function check_gnc_links(args)
                 join(unique(string.(nameof.(typeof.(models)))), ", ") * "."))
         end
         check_link(group.link, group.producers, group.consumers, args)
+    end
+    return nothing
+end
+
+# At the run's start, before the models' own initializers: each periodic control
+# effector learns the clock its callback reports at the solve's start (its configured
+# rate, from `t`), so an initializer that predicts before the solve has it (the EDG
+# guidance family's first request).
+function _report_gnc_clocks!(args, t)
+    model = args.control_model
+    for i in eachindex(model.control_effectors)
+        control = model.control_effectors[i]
+        tick_schedule(control) === :periodic || continue
+        gnc_clock_started!(control, Float64(model.control_rates[i]), Float64(t))
     end
     return nothing
 end

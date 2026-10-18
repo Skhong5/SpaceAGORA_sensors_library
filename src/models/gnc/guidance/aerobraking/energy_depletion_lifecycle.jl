@@ -25,6 +25,7 @@ end
 
 function _edg_initialize_state!(s::AerobrakingEnergyDepletionState)
     s.control_clock_origin_s = 0.0
+    s.control_clock_period_s = NaN
     for i in eachindex(s.selected_mode)
         _edg_reset_pass!(s, i)
         s.energy_bracketing_count[i] = 0
@@ -51,19 +52,24 @@ function _edg_initialize_state!(s::AerobrakingEnergyDepletionState)
     return nothing
 end
 
+# The EDG state and configuration a guidance model runs energy-depletion guidance
+# with, or `nothing` for any other guidance model. The EDG guidance family adds a
+# method for its `AlgorithmGuidance` binding.
+_edg_guidance_pairing(::Any) = nothing
+_edg_guidance_pairing(g::AerobrakingEnergyDepletionGuidanceModel) = (state=g.state, config=g.config)
+
 function _edg_preflight(model, args)
     EDGServices.require_provider()
     n = length(args.dynamics_model.spacecraft)
     for field in fieldnames(AerobrakingEnergyDepletionState)
-        field == :control_clock_origin_s && continue
+        field in (:control_clock_origin_s, :control_clock_period_s) && continue
         length(getfield(model.state, field)) == n || throw(ArgumentError(
             "EDG state.$field length must match the number of spacecraft ($n)."))
     end
     ss = args.simulation_settings
     (ss.checkpoint_enabled || ss.resume_from_checkpoint) && throw(ArgumentError(
         "EDG does not support checkpoint writing or resume: checkpoints do not contain its pass state."))
-    guidance = filter(g -> g isa AerobrakingEnergyDepletionGuidanceModel,
-        args.guidance_model.guidance_effectors)
+    guidance = [x for x in map(_edg_guidance_pairing, args.guidance_model.guidance_effectors) if x !== nothing]
     controls = filter(c -> c isa _control_module().AerobrakingEnergyDepletionControlModel,
         args.control_model.control_effectors)
     length(guidance) <= 1 && length(controls) <= 1 || throw(ArgumentError(
