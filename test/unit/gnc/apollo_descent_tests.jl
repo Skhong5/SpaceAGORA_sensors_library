@@ -346,10 +346,10 @@ end
         # The controller commands the thrusters only; every other mounted actuator
         # holds. A gimbal at zero on the descent engine leaves the run bit for bit,
         # and a reaction wheel, whose level vector was once too short, holds still.
-        function mounted_seconds(craft)
+        function mounted_seconds(craft; trim=false)
             st = ApolloDescentState(1)
             g = ApolloDescentGuidanceModel(gcfg, st, NoTerrainModel())
-            c = ApolloDescentControlModel(ApolloDescentControlConfig(touchdown_height_m=0.5), gcfg, st, NoTerrainModel(); actuation=:mounted)
+            c = ApolloDescentControlModel(ApolloDescentControlConfig(touchdown_height_m=0.5, engine_trim=trim), gcfg, st, NoTerrainModel(); actuation=:mounted)
             short = SM.SimConfig._with_configuration(args;
                 dynamics_model=SM.DynamicsModel([craft], (SM.InverseSquaredGravityModel(),)),
                 guidance_model=SM.GuidanceModel(guidance_effectors=(g,), guidance_rates=[1.0]),
@@ -371,6 +371,40 @@ end
         held = add_actuator!(tilted, tilted.root, ThrusterGimbal(tilted.root.thrusters[1]; axis=SVector(1.0, 0.0, 0.0), angle_rad=0.02))
         mounted_seconds(tilted)
         @test held.angle_rad == 0.02                                       # held at its own angle, not driven to zero
+
+        # Engine trim: the descent engine off its axis, its gimbals turn the
+        # thrust line through the centre of mass (the body origin), within the
+        # gimbal's rate limit; with trim off they hold.
+        @test_throws ArgumentError ApolloDescentControlModel(ApolloDescentControlConfig(engine_trim=true), gcfg,
+            ApolloDescentState(1), NoTerrainModel(); actuation=:ideal)
+        torque_of(engine) = norm(cross(SVector{3}(engine.location), SpaceAGORA.thrust_direction(engine)))
+        offset = deepcopy(sc)
+        offset.root.thrusters[1].location .+= SVector(0.05, 0.0, 0.0)
+        pitch = add_actuator!(offset, offset.root, ThrusterGimbal(offset.root.thrusters[1]; axis=SVector(0.0, 1.0, 0.0),
+            min_angle_rad=-0.1, max_angle_rad=0.1, max_rate_rad_s=0.01))
+        nozzle = SVector{3}(offset.root.thrusters[1].location)
+        mounted_seconds(offset; trim=true)
+        @test pitch.angle_rad ≈ atan(nozzle[1], nozzle[3]) rtol=1e-12              # reached at the rate limit, then held
+        @test torque_of(offset.root.thrusters[1]) < 1e-12
+        untrimmed = deepcopy(offset)
+        untrimmed.root.gimbals[1].angle_rad = 0.0
+        mounted_seconds(untrimmed)
+        @test untrimmed.root.gimbals[1].angle_rad == 0.0                         # trim off: the gimbal holds
+        two = deepcopy(sc)
+        two.root.thrusters[1].location .+= SVector(0.05, -0.03, 0.0)
+        add_actuator!(two, two.root, ThrusterGimbal(two.root.thrusters[1]; axis=SVector(1.0, 0.0, 0.0)))
+        add_actuator!(two, two.root, ThrusterGimbal(two.root.thrusters[1]; axis=SVector(0.0, 1.0, 0.0)))
+        mounted_seconds(two; trim=true)
+        @test torque_of(two.root.thrusters[1]) < 1e-9                             # two axes, solved in turn
+        # One control cycle's solve from zero angles: the alternating solves converge within the cycle.
+        once = deepcopy(sc)
+        once.root.thrusters[1].location .+= SVector(0.05, -0.03, 0.0)
+        add_actuator!(once, once.root, ThrusterGimbal(once.root.thrusters[1]; axis=SVector(1.0, 0.0, 0.0)))
+        add_actuator!(once, once.root, ThrusterGimbal(once.root.thrusters[1]; axis=SVector(0.0, 1.0, 0.0)))
+        levels = zeros(SM.mounted_actuator_count(once))
+        SM.ControlHooks._trim_engine_gimbals!(levels, once, 1)
+        SM.apply_gimbal_levels!(once, levels, 0.0)                                # as the engine applies a tick's levels
+        @test torque_of(once.root.thrusters[1]) < 1e-12
         wheeled = deepcopy(sc)
         add_actuator!(wheeled, wheeled.root, ReactionWheel(spin_axis=SVector(0.0, 0.0, 1.0)))
         x_wheel, c_wheel = mounted_seconds(wheeled)
