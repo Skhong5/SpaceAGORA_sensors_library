@@ -29,7 +29,7 @@ keep it until it is replaced. It runs that loop in one of two profiles.
 |---|---|---|
 | computes a command from the current state at each tick, applied at once | feedback | the RPO MPC controller, the momentum manager, the Apollo descent controller |
 | estimates the state from measurements | feedback: a tick that holds an estimate, with no limiting step and no validation | (none built in yet) |
-| produces something used later, or that can be checked before use: a reference trajectory, a burn plan, a joint path, a passage decision | planning | `DirectRPOPlanner`, `HYPRRPOPlanner`, `ApoapsisBurnPlanner`, `QuinticJointPlanner` |
+| produces something used later, or that can be checked before use: a reference trajectory, a burn plan, a joint path, a passage decision | planning | `DirectRPOPlanner`, `HYPRRPOPlanner`, `ApoapsisBurnPlanner`, `QuinticJointPlanner`, `EDGGuidanceAlgorithm` |
 | plans for a controller | both, paired through a link | the RPO pilot: a planner and the MPC controller share the plan buffer |
 
 The two profiles share one vocabulary:
@@ -424,11 +424,7 @@ The families:
 | RPO reference, `RPOReferenceFamily` | `RPOPlanningRequest`, `RPOReference` | `validate_rpo_result`: identity, timing, endpoints, speed and acceleration limits, sampled clearance | the RPO plan buffer, read by the MPC controller | `:fail`, or `:install_fallback` (a hold) when configured | `DirectRPOPlanner`, `HYPRRPOPlanner` (with `using SpaceAGORAHYPR`), the seven comparison planners | `make_rpo_configuration(planner=...)` |
 | Burn plan, `BurnPlanFamily` | `BurnPlanRequest`, a `PropulsiveBurnPlan` | `validate_burn_plan`: the burn scheduler's own size check (`burn_plan_sizing`), thrust, specific impulse and window | the spacecraft's slot in the burn scheduler's plan buffer, `BurnPlanSlot` | `:keep_previous` | `ApoapsisBurnPlanner` | `AlgorithmGuidance` |
 | Joint reference, `JointReferenceFamily` | `JointReferenceRequest`, a `RobotArmPlan` | `validate_joint_reference`: the arm and its base, the sample grid, the start joints, joint limits, the goal and obstacle clearance | the `RobotArmPlanBuffer` the arm's `RobotArmControlEffector` reads | `:fail` | `QuinticJointPlanner` | `AlgorithmGuidance` |
-
-!!! note "TODO(0.3.0 PR 2): families table"
-    Add the EDG passage-decision family (GNC PR 18, served through
-    `EDGServices` 2.0.0, `consumes_rng = false`), with its algorithms and how it
-    runs.
+| EDG guidance, `EDGGuidanceFamily` | `EDGGuidanceRequest`, an `EDGGuidanceDecision` | `validate_edg_guidance_decision`: the request's spacecraft, a mode the configuration allows, a consistent targeting plan and switch time, a bracketing count that has not decreased | the run's `AerobrakingEnergyDepletionState`, read by the EDG control model | `:fail` | `EDGGuidanceAlgorithm`, with `using SpaceAGORAEDG` | `AlgorithmGuidance`, in place of the EDG guidance model |
 
 ### Worked example C: an RPO planner
 
@@ -714,9 +710,23 @@ The family's rejection policy is `:fail`: a refused proposal stops the run with
 an `AlgorithmGuidanceError` that names the validation's reason, such as
 `:insufficient_clearance` for a path through an obstacle.
 
-!!! note "TODO(0.3.0 PR 2): other families"
-    Add how the EDG family's decisions reach the energy-depletion guidance
-    through `EDGServices` 2.0.0.
+#### The EDG guidance family
+
+The energy-depletion guidance decision is an algorithm of the EDG guidance
+family, `EDGGuidanceAlgorithm()`. It is the `guidance_decision!` of the optional
+`SpaceAGORAEDG` companion, served through the versioned `EDGServices` facade, so
+the family's contract version (`family_contract_version`) is the facade's
+contract, 2.0.0. The algorithm decides on a copy of the run's EDG state, the
+family validates the decision and installs it in that state, and the EDG control
+model reads it there. It draws no random numbers.
+
+`AlgorithmGuidance` runs it in place of `AerobrakingEnergyDepletionGuidanceModel`,
+with `EDGGuidanceSettings(config=..., state=...)` holding the same configuration
+and state as the `AerobrakingEnergyDepletionControlModel`, and no `link`. The
+binding runs one spacecraft; a run with several uses the EDG guidance model. The
+[EDG Service Contract](../reference/edg_adapter_boundary.md#The-EDG-guidance-family)
+shows the configuration, and [Energy Depletion Guidance](edg_guidance.md) covers
+installing the companion and the guidance itself.
 
 ### The family side
 
@@ -728,7 +738,7 @@ pull request (the repository's contributor guide,
 
 - **The family:** `validate_capabilities`, `validate_proposal`, `install!`,
   `is_current`, `on_rejection`, `fallback_product`, `family_contract_version`
-  (for a family a companion package serves), `algorithm_result_type`,
+  (for a family a companion package serves, such as the EDG family), `algorithm_result_type`,
   `is_revision_request`, `proposed_product`, and the run records
   `installed_record` and `rejected_record`.
 - **What `AlgorithmGuidance` asks of a family:** `family_request` (the owned
