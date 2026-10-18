@@ -21,8 +21,10 @@ julia --project=examples/gnc_algorithm_env examples/gnc_algorithm_env/setup.jl
 Setup creates a local `Project.toml` from the tracked `Project.template.toml`,
 seeds `Manifest.toml` from the repository manifest and adds this checkout by
 path, keeping the recorded dependency versions. Both generated files are
-ignored. The examples need no optional package, native GRAM, SPICE kernels or
-network access. Then run one example, or all of them as CI does:
+ignored. Setup downloads any of those versions your Julia depot does not hold
+yet, so on a fresh depot it needs network access. After setup the examples run
+offline, as CI runs them, and need no optional package, native GRAM or SPICE
+kernels. Then run one example, or all of them as CI does:
 
 ```sh
 julia --project=examples/gnc_algorithm_env --depwarn=error examples/gnc_algorithm_env/feedback_controller.jl
