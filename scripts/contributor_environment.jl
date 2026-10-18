@@ -13,7 +13,7 @@ environment as usual.
     url = "https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git"
     rev = "<40-character commit SHA>"
     uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
-    version = "0.2.0"          # optional: the core version at rev
+    version = "0.3.1"          # optional: the core version at rev
     companions = ["mujoco"]    # optional: hypr, mujoco, edg, at this commit's pins
 """
 module ContributorEnvironment
