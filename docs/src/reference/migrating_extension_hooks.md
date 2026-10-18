@@ -121,7 +121,7 @@ SpaceAGORA.ephemerides_epoch_seconds(m::FixedFrame, initial_time) = 0.0
 | Item | Replacement | Status | Removed in |
 |---|---|---|---|
 | `RPOGuidanceModel` | `make_rpo_configuration` with a planner, for example `planner=HYPRRPOPlanner(RPOPSOConfig(...))`, which configures a `PlannerGuidance` | warns before the run, once per session; the warning does not stop a run under `--depwarn=error` | a later release |
-| index fields and keywords `sat_idx`, `spacecraft_idx`, `chaser_idx`, `target_idx`, and `RobotArmReactionEffector.spacecraft_idx` | `spacecraft_index`, `chaser_index`, `target_index` | warn from 0.3.0; `RobotArmReactionEffector`'s from 0.4.0 | 0.5.0 |
+| index fields and keywords `sat_idx`, `spacecraft_idx`, `chaser_idx`, `target_idx`, and `RobotArmReactionEffector.spacecraft_idx` | `spacecraft_index`, `chaser_index`, `target_index` | warn from 0.3.0; `RobotArmReactionEffector`'s from 0.3.1 | 0.5.0 |
 | selecting an RPO planner by a Symbol, such as `:rrt_star` | a planner object | warns from 0.3.0 | 0.5.0 |
 | a default random stream in the GNC planning functions | an explicit `rng` keyword | required now, without a window | |
 
@@ -130,9 +130,9 @@ SpaceAGORA.ephemerides_epoch_seconds(m::FixedFrame, initial_time) = 0.0
 - **0.3.0.** The new names, with warnings for the old ones.
   `ExternalPropagationServices`, `HYPRServices` and `EDGServices` are at
   contract 2.0.0, with SpaceAGORAMuJoCo 0.2.0, HYPR 0.2.0 and SpaceAGORAEDG 0.2.0.
+- **0.3.1.** `RobotArmReactionEffector.spacecraft_idx` becomes `spacecraft_index`,
+  with a warning for the old name.
 - **0.4.0.** The companion packages use the new names.
-  `RobotArmReactionEffector.spacecraft_idx` becomes `spacecraft_index`, with a
-  warning for the old name.
 - **0.5.0, or 1.0 if that comes first.** The deprecated names are removed, and
   `control_propellant_rate` and `control_wheel_torque` gain defaults, `0.0` and
   `nothing`. The removal waits until a tagged release has carried the warnings
