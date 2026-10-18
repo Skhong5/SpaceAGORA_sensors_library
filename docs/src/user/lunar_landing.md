@@ -146,6 +146,14 @@ thruster: the engine burns throughout the descent and the jets puff at the
 phase handovers. The layout is what the allocation sees; the thrusters on the
 link are display geometry and the control effector applies the forces.
 
+With `actuation=:mounted` the mounted thrusters apply the forces instead, and
+the descent engine can carry gimbals (`ThrusterGimbal`). They hold their
+angles unless `ApolloDescentControlConfig(engine_trim=true)`: then every
+control cycle commands them to the angles that put the engine's thrust line
+through the centre of mass (the body origin), within the gimbals' own angle
+and rate limits, as the LM's gimbal drive trimmed the descent engine. Trim
+matters when the engine is mounted off the axis through the centre of mass.
+
 ## Plume-surface interaction
 
 [`PlumeSurfaceInteractionModel`](@ref) is a dynamic effector for what the

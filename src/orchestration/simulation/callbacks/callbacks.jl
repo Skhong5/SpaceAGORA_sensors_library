@@ -3,6 +3,7 @@ module SimulationCallbacks
 include(joinpath(@__DIR__, "registry.jl"))
 include(joinpath(@__DIR__, "save_fields.jl"))
 include(joinpath(@__DIR__, "power_callbacks.jl"))
+include(joinpath(@__DIR__, "cmg_callbacks.jl"))
 include(joinpath(@__DIR__, "fault_callbacks.jl"))
 include(joinpath(@__DIR__, "sensor_callbacks.jl"))
 include(joinpath(@__DIR__, "density_callbacks.jl"))
