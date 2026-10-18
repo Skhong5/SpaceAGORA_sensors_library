@@ -2,7 +2,7 @@
 
 julia_version = "1.12.3"
 manifest_format = "2.0"
-project_hash = "ce6a226d035d37493f4e35284a5994ba5009bc1c"
+project_hash = "6ca7862152513d7d07c4a5866783043e39ff0c43"
 
 [[deps.ADTypes]]
 deps = ["PrecompileTools"]
@@ -2534,7 +2534,7 @@ version = "1.2.2"
 deps = ["ADTypes", "Aqua", "Arrow", "Artifacts", "AstroTime", "Base64", "CSV", "ComponentArrays", "DataFrames", "Dates", "DiffEqBase", "DiffEqCallbacks", "Distributed", "Documenter", "Interpolations", "JSON", "LinearAlgebra", "LinearSolve", "Logging", "LoopVectorization", "OSQP", "OrdinaryDiffEq", "OrdinaryDiffEqHighOrderRK", "OrdinaryDiffEqSDIRK", "OrdinaryDiffEqSymplecticRK", "Pkg", "PlotlyJS", "Plots", "Polyester", "PrecompileTools", "Printf", "Random", "RecursiveArrayTools", "Reexport", "Roots", "SHA", "SPICE", "SatelliteToolboxAtmosphericModels", "SatelliteToolboxGeomagneticField", "SatelliteToolboxGravityModels", "SatelliteToolboxTransformations", "SciMLBase", "Serialization", "SpaceIndices", "SparseArrays", "SpecialFunctions", "StaticArrays", "Statistics", "TOML"]
 path = "../../.."
 uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
-version = "0.1.0"
+version = "0.3.0"
 weakdeps = ["GRAMSuite"]
 
     [deps.SpaceAGORA.extensions]
