@@ -289,7 +289,13 @@ SM.SimulationSettings(
 
 A crashed or interrupted run can be resumed by setting
 `resume_from_checkpoint = true` in `SimulationSettings`. The checkpoint
-directory defaults to `results_directory/checkpoints` when left empty.
+directory defaults to `results_directory/checkpoints` when left empty. Besides
+the state, the checkpoint holds the run state the callbacks keep on the
+spacecraft: the batteries' empty and full flags and shedding tier, the
+actuator faults' activity and held levels, the sensors' random streams,
+latest measurements and gyro biases, and the hinges' and gimbals' angles. A
+run with batteries, faults or sensors refuses a checkpoint written without
+them, or for a different configuration of them.
 
 ## Campaign and multi-process runs
 

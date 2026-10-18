@@ -22,18 +22,13 @@ its initialization resolves each fault's mounting position, registers the
 window ends as stops and sets the faults active at the start. Empty without
 faults.
 
-The faults' state carries over from one checkpoint segment to the next. A run
-with a `:stuck` fault that holds its level at onset (no `value`) cannot resume
-from a checkpoint file, which does not hold that level.
+The faults' state carries over from one checkpoint segment to the next, and a
+run resumed from a checkpoint file takes it from the file: whether each fault
+is active and the level a stuck actuator holds.
 """
 function get_fault_callbacks(num_sats::Int, args::SimulationConfiguration)
     sats = _fault_spacecraft(args)
     isempty(sats) && return ()
-    args.simulation_settings.resume_from_checkpoint &&
-        any(i -> any(f -> f.kind === :stuck && isnan(f.value), args.dynamics_model.spacecraft[i].root.faults.faults), sats) &&
-        throw(ArgumentError(
-            "A :stuck actuator fault without a value does not support resume_from_checkpoint: it holds the level " *
-            "its actuator had at onset, which the checkpoint does not hold. Give the fault a value, or run from the start."))
     function switch!(integrator)
         changed = false
         for i in sats
@@ -47,14 +42,16 @@ function get_fault_callbacks(num_sats::Int, args::SimulationConfiguration)
     # A fresh callback is built for every run. Its initialization also runs at
     # checkpoint-segment boundaries, which keep the faults' state (a stuck
     # actuator keeps the level it had at onset) and register the window ends as
-    # stops of the next segment's solve.
+    # stops of the next segment's solve. A resumed run's faults come from its
+    # checkpoint, active and held as they were.
     initialized = Ref(false)
     function initialize!(cb, u, t, integrator)
+        resumed = integrator.p.shared_buffers.callback_resume[]
         for i in sats
             sc = integrator.p.args.dynamics_model.spacecraft[i]
             initialized[] || resolve_faults!(sc)
             for f in sc.root.faults.faults
-                initialized[] || (f.active = false)
+                initialized[] || resumed || (f.active = false)
                 _maybe_add_control_tstop!(integrator, f.start_s)
                 _maybe_add_control_tstop!(integrator, f.stop_s)
             end

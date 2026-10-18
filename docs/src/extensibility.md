@@ -333,9 +333,9 @@ propellant, the power and the `actuator_level` columns; the controller keeps
 seeing its own commands. On a thruster with firing dynamics the fault acts on
 the thrust it delivers, so it takes effect at its start, between control
 ticks. Runs with faults write `sc{i}_fault_active_{j}`. A
-checkpointed run keeps the faults' state from one segment to the next, but a
-`:stuck` fault without a `value` refuses `resume_from_checkpoint`: the
-checkpoint file does not hold the level it captured at onset.
+checkpointed run keeps the faults' state from one segment to the next, and a
+run resumed from its checkpoint file takes it from the file, a stuck
+actuator's level at onset included.
 
 Registration: `add_actuator!(spacecraft, link, actuator)`.
 
@@ -411,9 +411,11 @@ built, or the samples share one noise stream. A navigation effector reads the la
 `update_navigation!` with `sensor_measurement(p.args.dynamics_model.spacecraft[i], k)`
 (and its time with `sensor_measurement_time`); sensors sample before
 navigation effectors at the same time. Runs with sensors write the
-`sc{i}_sensor_{k}` columns (see [Output Columns](user/output_columns.md#Sensors))
-and cannot resume from a checkpoint file; the gravity-backbone and multirate
-solver modes refuse mounted sensors.
+`sc{i}_sensor_{k}` columns (see [Output Columns](user/output_columns.md#Sensors)).
+A run resumed from a checkpoint file takes the sensors' streams, latest
+measurements and gyro biases from the file and samples on the same grid; a
+kind's own state beyond those fields is not in the file. The
+gravity-backbone and multirate solver modes refuse mounted sensors.
 
 ## Planet, ephemerides, thermal and thruster extensions
 

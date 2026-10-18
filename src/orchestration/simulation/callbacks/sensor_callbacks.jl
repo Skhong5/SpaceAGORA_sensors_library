@@ -94,9 +94,11 @@ For runs with sensors: one callback per distinct sampling period, which
 samples its sensors at the run's start and then at every multiple of the
 period after it, each a solver stop. The sampling times follow the run's
 start, not the solve's, so a checkpointed run samples at the same times as a
-run in one piece. Runs with sensors cannot resume from a checkpoint file,
-which holds neither the sensors' random streams nor their sampling times.
-Empty without sensors.
+run in one piece. A run resumed from a checkpoint file takes the sensors'
+random streams, latest measurements, sampling times and gyro biases from the
+file and keeps sampling on the same grid; a sensor kind's own state beyond
+those fields (what `initialize_sensor!` resets) is not in the file. Empty
+without sensors.
 """
 function get_sensor_callbacks(num_sats::Int, args::SimulationConfiguration)
     spacecraft = args.dynamics_model.spacecraft
@@ -105,9 +107,6 @@ function get_sensor_callbacks(num_sats::Int, args::SimulationConfiguration)
         push!(get!(groups, SensorMounting._check_period(entry.sensor), Tuple{Int, Int}[]), (i, k))
     end
     isempty(groups) && return ()
-    args.simulation_settings.resume_from_checkpoint && throw(ArgumentError(
-        "Sensors do not support resume_from_checkpoint: the checkpoint holds neither their random streams, " *
-        "a gyro's bias nor their sampling times. Run from the start."))
     sensor_sats = [i for i in eachindex(spacecraft) if !isempty(mounted_sensors(spacecraft[i]))]
     reset_done = Ref(false)
     callbacks = Any[]
@@ -129,7 +128,18 @@ function get_sensor_callbacks(num_sats::Int, args::SimulationConfiguration)
         end
         function initialize!(cb, u, t, integrator)
             first_sample = isnan(start[])                # the run's first solve
-            if first_sample
+            if first_sample && integrator.p.shared_buffers.callback_resume[]
+                # A resumed run: the sensors' streams, measurements and times
+                # come from the checkpoint; the samples keep the run's grid from
+                # its start at 0, after the last one taken.
+                reset_done[] = true
+                start[] = 0.0
+                taken = [integrator.p.args.dynamics_model.spacecraft[i] for (i, _) in members]
+                times = [mounted_sensors(sc)[k].sensor.latest_time_s for (sc, (_, k)) in zip(taken, members)]
+                finite = filter(isfinite, times)
+                next[] = isempty(finite) ? 0 : round(Int, maximum(finite) / period) + 1
+                first_sample = false
+            elseif first_sample
                 if !reset_done[]
                     for i in sensor_sats
                         reset_sensors!(integrator.p.args.dynamics_model.spacecraft[i])
