@@ -29,6 +29,17 @@ _scope_indices(scope::CoupledSpacecraft) = (scope.primary, scope.partners...)
     return true
 end
 
+# Whether a tick of `model` at this time runs its tick for some spacecraft, rather
+# than skipping or releasing every one: the condition for preparing it first
+# (`before_reference_control!` for its linked producers).
+function _ticks_any(model, p, num_sats::Int)
+    scope, skip = spacecraft_scope(model), skip_inactive(model)
+    for sat_idx in 1:num_sats
+        _ticks_for(scope, sat_idx) && !(skip && !p.is_active[sat_idx]) && return true
+    end
+    return false
+end
+
 """
     check_spacecraft_scopes(args) -> nothing
 

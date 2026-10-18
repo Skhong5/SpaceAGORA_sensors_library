@@ -356,11 +356,14 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
         end
         # The models that write what this one reads (its links) prepare it first,
         # once per tick and on this thread: the RPO planner checks its reference.
+        # Not when the tick releases or skips every spacecraft (`_ticks_any`).
         producers = _linked_producers(control_model, args)
         control_func = (integrator) -> begin
-            for producer in producers
-                SimulationLifecycle.before_reference_control!(producer, control_model, integrator.u, integrator.p,
-                    integrator.t)
+            if !isempty(producers) && _ticks_any(control_model, integrator.p, num_sats)
+                for producer in producers
+                    SimulationLifecycle.before_reference_control!(producer, control_model, integrator.u, integrator.p,
+                        integrator.t)
+                end
             end
             decision = _control_callback_thread_decision(integrator.p, control_model, num_sats)
             use_threads = decision.use_threads

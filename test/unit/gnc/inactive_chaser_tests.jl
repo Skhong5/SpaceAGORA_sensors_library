@@ -1,7 +1,8 @@
 # A chaser on the RPO planner path that touches down mid-run: what its controller
 # and planner do once the spacecraft is inactive. The right-hand side freezes an
-# inactive spacecraft, so these runs pin the command log, the planner's records and
-# a replan from the frozen state, and check that none of them moves the trajectory.
+# inactive spacecraft, and both models stop ticking for it (`skip_inactive`), so
+# these runs pin where the command log and the planner's records end, that a
+# replan event after the touchdown is not delivered, and the trajectory.
 module InactiveChaserTests
 using Test, LinearAlgebra, StaticArrays, SpaceAGORA
 const SM = SpaceAGORA.SimulationModel
@@ -56,45 +57,29 @@ record_times(records, event) = [r.time_s for r in records if r.event === event]
 
     report = rpo_run_report(sol)
     log, records = report.commands[1].log, report.planners[1].records
-    # The controller ticks for the inactive chaser to the end of the run, from its
-    # frozen state, and its held command is the last one it logged.
-    @test length(log.t_s) == 19 && count(>(t_down), log.t_s) == 6
+    # The controller and the planner stop at the touchdown (`skip_inactive`): the
+    # command log ends with the last tick before it, and the held command is the
+    # last one logged.
+    @test length(log.t_s) == 13 && all(<(t_down), log.t_s)
     @test record_times(records, :control) == record_times(records, :guidance) == log.t_s
     @test held_command(run_model(sol, SM.RPOMPCControlModel), 1).thruster_forces_n == log.thruster_forces_n[end]
-    # The planner ticks too, and delivers the event after the touchdown: it replans
-    # from the frozen state, kilometres behind the target, and the request is
-    # refused, so the hold of `on_rejection=:install_fallback` replaces the reference.
-    late = [r for r in records if hasproperty(r, :time_s) && r.time_s > t_down]
-    @test [r.event for r in late] == [:control, :guidance, :control, :guidance, :control, :guidance,
-        :request, :rejected, :fallback_installed, :control, :guidance, :control, :guidance, :control, :guidance]
-    request = only(r.request for r in late if r.event === :request)
-    @test request.reason === :replan && request.time_s == 1.6
-    target = request.target_state_ii
-    @test collect(request.x_rtn) ≈ collect(SM.FrameTransforms.inertial_to_rtn_relative_state(
-        SVector{3}(frozen.pos), SVector{3}(frozen.vel), SVector{3}(target[1:3]), SVector{3}(target[4:6]))) rtol=1e-12
-    @test request.x_rtn[2] < -1000
-    @test only(r for r in late if r.event === :rejected).termination === :insufficient_reference_lifetime
-    hold = only(r for r in late if r.event === :fallback_installed).product
-    @test hold.r_ref_rtn_m[:, 1] == collect(request.x_rtn[1:3])
-    @test report.planners[1].request_id == 2
+    # Nothing is recorded after the touchdown: the event is never delivered, and no
+    # request is built from the frozen state.
+    @test !any(r -> hasproperty(r, :time_s) && r.time_s > t_down, records)
+    @test report.planners[1].request_id == 1
+    @test !(1 in run_model(sol, SpaceAGORA.RPOPlannerLifecycle.PlannerGuidance).runtime.processed_tokens)
 
-    # None of this moves the trajectory: the same flight without the replan.
+    # The trajectory is the one without the replan.
     plain = fly()
     @test touchdown_time(plain) == t_down && plain.t == sol.t && plain.u == sol.u
-    # With the default `on_rejection=:fail`, the replan from the frozen state stops the run.
-    err = try
-        fly(; REPLAN...)
-        nothing
-    catch e
-        e
-    end
-    @test err isa RPOPlanningError && err.request_id == 2 && err.reason === :infeasible
-    # A second flight repeats the first exactly.
-    again = fly(; REPLAN..., on_rejection=:install_fallback)
-    again_log = rpo_run_report(again).commands[1].log
-    @test again.t == sol.t && again.u == sol.u
-    @test all(name -> getfield(again_log, name) == getfield(log, name), fieldnames(typeof(log)))
-    @test [(r.event, get(r, :time_s, NaN)) for r in rpo_run_report(again).planners[1].records] ==
-          [(r.event, get(r, :time_s, NaN)) for r in records]
+    # With the default `on_rejection=:fail` the run no longer stops: the same flight,
+    # entry for entry and record for record.
+    failing = fly(; REPLAN...)
+    failing_report = rpo_run_report(failing)
+    failing_log = failing_report.commands[1].log
+    @test failing.t == sol.t && failing.u == sol.u
+    @test all(name -> getfield(failing_log, name) == getfield(log, name), fieldnames(typeof(log)))
+    @test isequal([(r.event, get(r, :time_s, NaN)) for r in failing_report.planners[1].records],
+                  [(r.event, get(r, :time_s, NaN)) for r in records])
 end
 end

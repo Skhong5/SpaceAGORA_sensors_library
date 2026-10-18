@@ -74,7 +74,7 @@ The engine reads them before the run and at each tick.
 |---|---|---|
 | `spacecraft_scope(model)` | `AllSpacecraft()`: ticked for every spacecraft | the model acts on some spacecraft only: `BoundSpacecraft(indices)`, or `CoupledSpacecraft(primary, partners)` for a model ticked for `primary` that also reads `partners` |
 | `gnc_period_s(model)` | `nothing` | the law assumes a tick period, such as the step it was discretized with. Before the run the engine warns when the control rate differs; SpaceAGORA 0.4.0 will refuse the run |
-| `skip_inactive(model)` | `false` | the model should stop ticking for a spacecraft that is no longer active. Each tick then calls `release_command!(model, t, spacecraft_index)` instead, which sets the off command. SpaceAGORA 0.4.0 will make `true` the default |
+| `skip_inactive(model)` | `true`: a spacecraft that is no longer active, after an impact or a touchdown, is not ticked; each tick calls `release_command!(model, t, spacecraft_index)` instead, which sets the off command | the model must keep ticking for an inactive spacecraft: return `false`. Before SpaceAGORA 0.4.0 the default was `false` |
 | `held_command(model, spacecraft_index)`, `held_command_time(model, spacecraft_index)` | `nothing`, `NaN` | the model holds a command: return it, as an immutable value, and the time of the tick that produced it |
 | `gnc_links(model)` | none | the model shares an object with a partner: see [Pairing through a link](#Pairing-through-a-link) |
 
@@ -109,9 +109,10 @@ end
 # Declarations: what the controller acts on and what it assumes.
 SpaceAGORA.spacecraft_scope(c::RateDamper) = BoundSpacecraft((c.spacecraft_index,))
 SpaceAGORA.gnc_period_s(c::RateDamper) = c.period_s
-SpaceAGORA.skip_inactive(::RateDamper) = true
 SpaceAGORA.held_command(c::RateDamper, spacecraft_index) = c.torque_body
 SpaceAGORA.held_command_time(c::RateDamper, spacecraft_index) = c.tick_s
+# While its spacecraft is inactive (after an impact or a touchdown), the engine calls
+# this at each tick in place of the tick (`skip_inactive`): the off command.
 function SpaceAGORA.release_command!(c::RateDamper, t, spacecraft_index)
     c.torque_body, c.tick_s = zero(SVector{3, Float64}), t
     return nothing

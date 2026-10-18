@@ -48,6 +48,13 @@ SpaceAGORA.release_command!(m::Scoped, t, i) = (m.counts.released[i] += 1; nothi
 # A model with no declaration of its own.
 struct PlainControl <: SM.AbstractControlEffectorModel end
 
+# A model with the default declarations that counts its ticks per spacecraft.
+struct CountingControl <: SM.AbstractControlEffectorModel
+    ticks::Vector{Int}
+end
+SpaceAGORA.update_control!(m::CountingControl, u, p, t, i) = (m.ticks[i] += 1; nothing)
+SpaceAGORA.control_wrench(::CountingControl, x::StateSample, p, t) = (ZERO3, ZERO3)
+
 function constellation_args(; n=3, control=(), guidance=(), navigation=(), mission_time=5.0)
     planet = SM.make_no_gram_planet(:earth)
     sats = map(1:n) do id
@@ -94,9 +101,9 @@ scope_messages(args) = scope_warnings(() -> SM.SimulationCallbacks.check_spacecr
 deactivate(i, t_s) = PresetTimeCallback([t_s], integrator -> (integrator.p.is_active[i] = false); save_positions=(false, false))
 
 @testset "GNC spacecraft scope" begin
-    @testset "defaults keep today's ticks" begin
+    @testset "the defaults" begin
         @test spacecraft_scope(:any_model) === AllSpacecraft()
-        @test skip_inactive(:any_model) === false
+        @test skip_inactive(:any_model) === true
         @test held_command(:any_model, 1) === nothing
         @test isnan(held_command_time(:any_model, 1))
         @test release_command!(:any_model, 0.0, 1) === nothing
@@ -127,7 +134,8 @@ deactivate(i, t_s) = PresetTimeCallback([t_s], integrator -> (integrator.p.is_ac
         skipping = (ScopedControl(AllSpacecraft(), 2; skip=true), ScopedGuidance(AllSpacecraft(), 2; skip=true),
                     ScopedNavigation(AllSpacecraft(), 2; skip=true))
         ticking = ScopedControl(AllSpacecraft(), 2)
-        args = constellation_args(n=2, control=(skipping[1], ticking), guidance=(skipping[2],),
+        default = CountingControl(zeros(Int, 2))
+        args = constellation_args(n=2, control=(skipping[1], ticking, default), guidance=(skipping[2],),
             navigation=(skipping[3],))
         run_simulation(args; isolate_state=false, extra_callbacks=(deactivate(2, 2.5),))
         for m in skipping
@@ -135,7 +143,9 @@ deactivate(i, t_s) = PresetTimeCallback([t_s], integrator -> (integrator.p.is_ac
             @test m.counts.released[1] == 0
             @test 0 < m.counts.released[2] < k && m.counts.ticks[2] + m.counts.released[2] == k
         end
-        # The default, skip_inactive = false: ticked as before.
+        # The default, skip_inactive = true: no tick for the inactive spacecraft.
+        @test default.ticks == skipping[1].counts.ticks
+        # A model that declares skip_inactive = false keeps ticking.
         @test ticking.counts.ticks[2] == ticking.counts.ticks[1] && iszero(ticking.counts.released)
         # A coupled model follows its primary only.
         coupled = ScopedControl(CoupledSpacecraft(1, (2,)), 2; skip=true)
@@ -189,7 +199,7 @@ deactivate(i, t_s) = PresetTimeCallback([t_s], integrator -> (integrator.p.is_ac
 
     @testset "the built-in models declare their scope and held command" begin
         mpc = SM.RPOMPCControlModel(chaser_index=2, target_index=1)
-        @test spacecraft_scope(mpc) == CoupledSpacecraft(2, (1,)) && !skip_inactive(mpc)
+        @test spacecraft_scope(mpc) == CoupledSpacecraft(2, (1,))
         mpc.held = SM.RPOHeldActuation(force_ii=SVector(1.0, 2.0, 3.0))
         @test held_command(mpc, 2) == (force_ii=SVector(1.0, 2.0, 3.0), torque_body=ZERO3,
             thruster_forces_n=zero(SVector{6, Float64}), rw_torque_body=ZERO3)
@@ -226,13 +236,19 @@ deactivate(i, t_s) = PresetTimeCallback([t_s], integrator -> (integrator.p.is_ac
         @test held_command(edg, 2) == 0.25 && held_command(edg, 3) === nothing
 
         binding = AlgorithmGuidance(algorithm=ApoapsisBurnPlanner(delta_v_mps=1.0), spacecraft_index=2)
-        @test spacecraft_scope(binding) == BoundSpacecraft((2,)) && !skip_inactive(binding)
+        @test spacecraft_scope(binding) == BoundSpacecraft((2,))
 
         legacy = SM.RPOGuidanceModel(chaser_idx=1, target_idx=2)
         @test spacecraft_scope(legacy) == CoupledSpacecraft(1, (2,))
         rpo = make_rpo_configuration(planner=DirectRPOPlanner(), mission_time_s=0.2)
         planner, control = only(rpo.guidance_model.guidance_effectors), only(rpo.control_model.control_effectors)
         @test spacecraft_scope(planner) == spacecraft_scope(control) == CoupledSpacecraft(1, (2,))
+        # No built-in model ticks for an inactive spacecraft.
+        edg_guidance = SM.AerobrakingEnergyDepletionGuidanceModel(SM.AerobrakingEnergyDepletionConfig(), edg_state)
+        maneuver = SM.AerobrakingCampaignPropulsiveManeuverGuidanceModel(maneuver_orbit_number=[1], maneuver_Δv=[1.0])
+        raise = SM.ApoapsisTargetPeriapsisRaiseGuidanceModel(target_apoapsis_radius_m=7.0e6)
+        @test all(skip_inactive, (mpc, arm, mm, thruster, edg, SM.SolarPanelAngleOfAttackControlModel(), binding,
+            legacy, planner, control, edg_guidance, maneuver, raise))
         @test isempty(scope_messages(rpo))
     end
 

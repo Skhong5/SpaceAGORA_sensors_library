@@ -86,10 +86,11 @@ Whether the engine stops ticking `model` for a spacecraft that is no longer acti
 that returns `true`, while spacecraft `spacecraft_index` is inactive, each tick
 time calls `release_command!(model, t, spacecraft_index)` instead of the tick. For
 a `CoupledSpacecraft` model the primary decides; a model that must react to an
-inactive partner checks `p.is_active` itself. Default: `false`, ticked as for an
-active spacecraft; SpaceAGORA 0.4.0 will make `true` the default.
+inactive partner checks `p.is_active` itself. Default: `true` (since SpaceAGORA
+0.4.0; `false` before). Return `false` for a model that must keep ticking, as for
+an active spacecraft.
 """
-skip_inactive(model) = false
+skip_inactive(model) = true
 
 """
     held_command(model, spacecraft_index) -> Any
@@ -164,7 +165,7 @@ end
 
 Wraps a shared object that a model reads, in `gnc_links`. Before a periodic control
 model's tick, the engine calls `before_reference_control!` for each model that
-produces a link it consumes.
+produces a link it consumes, unless the tick releases or skips every spacecraft.
 """
 struct Consumes{L}
     link::L
