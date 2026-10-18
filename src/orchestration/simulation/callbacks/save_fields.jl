@@ -233,18 +233,24 @@ end
     return poses
 end
 
-# The exhaust direction of every thruster, in its link's frame, at save time,
-# for the viewer's plumes and cones: a gimballed thruster's turned direction.
-# Thrusters in scene order (links in order, each link's thrusters in order),
-# three floats each: `sc{i}_thruster_direction_{1..3n}`. Gimbals move at control
-# ticks, between steps, so the snapshot is exact.
+# The exhaust direction of every thruster, in its link's frame, at the sample's
+# time, for the viewer's plumes and cones: a gimballed thruster's turned
+# direction. Thrusters in scene order (links in order, each link's thrusters in
+# order), three floats each: `sc{i}_thruster_direction_{1..3n}`. A sample inside
+# a step is saved after the callbacks at the step's end, so a gimbal that
+# ticked there still held its previous angle at the sample (control ticks are
+# solver stops: a step never contains one).
 @inline function _save_thruster_directions(num_sats::Int, u, t, integrator)
     spacecraft = integrator.p.args.dynamics_model.spacecraft
+    step_end = Float64(integrator.t)
+    inside = Float64(t) < step_end
+    angle_at(g) = (inside && g.last_update_s == step_end) ? g.previous_angle_rad : g.angle_rad
     out = Vector{Vector{Float64}}(undef, num_sats)
     @inbounds for i in 1:num_sats
         v = Float64[]
         for link in spacecraft[i].links, thruster in link.thrusters
-            d = SVector{3, Float64}(thrust_direction(thruster))
+            nominal = SVector{3, Float64}(thruster.direction)
+            d = thruster.gimballed ? _gimbal_rotation(thruster, link.gimbals, angle_at) * nominal : nominal
             n = norm(d)
             e = n > 0.0 ? -d / n : d
             push!(v, e[1], e[2], e[3])

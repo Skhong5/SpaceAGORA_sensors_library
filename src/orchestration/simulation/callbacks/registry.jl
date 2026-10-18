@@ -34,7 +34,7 @@ using ..ControlHooks: calcControlEffect!, control_thruster_levels, _thruster_lev
 using ..ControlHooks: _effective_burn_window, _burn_window_changed, _burn_window_pending
 using ..Actuators: actuation_mode, actuator_levels
 using ..ActuatorMounting: mounted_gimbal_count, apply_gimbal_levels!
-using ..Components: thrust_direction
+using ..Components: _gimbal_rotation
 using ..ActuatorMounting: mounted_thruster_fractions, mounted_hinge_count, apply_hinge_levels!, mounted_actuator_count
 using ..ActuatorMounting: applied_actuator_levels, mounted_power
 using ..Actuators: actuator_saturate

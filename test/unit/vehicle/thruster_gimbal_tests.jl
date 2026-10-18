@@ -26,6 +26,17 @@ function held_run(sc, levels; mission_time=5.0, rate=1.0)
     return run_simulation(args; isolate_state=false, return_results=true, return_solution=true)
 end
 
+# Holds the thrust on and turns the gimbal to `angle` at the first tick at or after `at_s`.
+mutable struct StepLevels <: AbstractControlEffectorModel
+    angle::Float64
+    at_s::Float64
+    levels::Vector{Float64}
+end
+StepLevels(angle, at_s) = StepLevels(angle, at_s, [1.0, 0.0])
+SpaceAGORA.actuation_mode(::StepLevels) = :mounted
+SpaceAGORA.actuator_levels(c::StepLevels, i::Int) = i == 1 ? c.levels : nothing
+SpaceAGORA.update_control!(c::StepLevels, u, p, t::Float64, i::Int64) = (c.levels[2] = t >= c.at_s ? c.angle : 0.0; nothing)
+
 engine(; location=(0.0, 0.0, -1.0)) = Thruster(max_thrust=2.0, direction=MVector(1.0, 0.0, 0.0), location=MVector(location...))
 
 @testset "Thruster gimbals" begin
@@ -110,6 +121,26 @@ engine(; location=(0.0, 0.0, -1.0)) = Thruster(max_thrust=2.0, direction=MVector
         exhaust(t) = [table[t, "sc1_thruster_direction_$(c)"] for c in 1:3]
         @test exhaust(1) ≈ [-1.0, 0.0, 0.0]                                                                  # nominal before the first tick
         @test exhaust(size(table, 1)) ≈ -collect(thrust_direction(jet)) && abs(exhaust(size(table, 1))[3]) > 0.1
+        # Ticks every 5 s and a sample every 0.5 s, so a step spans many samples:
+        # the samples of the step that ends at the turning tick (10 s) are saved
+        # after it, and keep the nominal direction the step flew with.
+        turned, troot = far_spacecraft()
+        tjet = add_actuator!(turned, troot, engine(location=(0.0, 0.0, 0.0)))
+        add_actuator!(turned, troot, ThrusterGimbal(tjet; axis=SVector(0.0, 1.0, 0.0)))
+        base20 = make_example_config(planet=SM.Earth(), spacecraft=turned, mission_time=20.0,
+            initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+            dynamic_effectors=(), ephemerides_model=SM.SimpleEphemeridesModel(), orientation_sim=true,
+            keplerian=false, EI_km=1.0, verbose=false, results=false)
+        stepped = SM.SimConfig._with_configuration(base20; simulation_settings=settings,
+            mission_configuration=SM.MissionConfiguration(mission_type=SM.MissionTime, mission_time=20.0, number_of_orbits=1,
+                keplerian=false, orientation_sim=true, num_steps_to_save=1000, data_rate=0.5),
+            control_model=SM.ControlModel(control_effectors=(StepLevels(θ, 10.0),), control_rates=[5.0]))
+        steps = run_simulation(stepped; isolate_state=false, return_results=true).table
+        rows(f) = [r for r in 1:size(steps, 1) if f(steps.time[r])]
+        sexhaust(r) = [steps[r, "sc1_thruster_direction_$(c)"] for c in 1:3]
+        @test length(rows(t -> 5.0 < t < 10.0)) >= 9
+        @test all(r -> sexhaust(r) ≈ [-1.0, 0.0, 0.0], rows(t -> t < 10.0))                  # before the tick
+        @test all(r -> sexhaust(r) ≈ [-cos(θ), 0.0, sin(θ)], rows(t -> t >= 10.0))            # from the tick on
         plain, proot = far_spacecraft()
         add_actuator!(plain, proot, engine())
         @test !SM.SimulationCallbacks._thruster_direction_field_enabled(SM.SimConfig._with_configuration(args;
