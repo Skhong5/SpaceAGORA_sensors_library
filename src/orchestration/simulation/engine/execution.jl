@@ -731,6 +731,7 @@ function run_simulation(
                     throw(ArgumentError("Checkpoint interlink state does not match the configured interlink_model; resume with the same interlink setting."))
             end
             _restore_interlink_checkpoint_state!(args, ckpt, p.is_active)
+            _restore_callback_checkpoint_state!(args, ckpt, p)
             t_start = ckpt.t
             u_start = ckpt.u
             _initialize_in_atmosphere_flags!(p, u_start)
@@ -1044,7 +1045,8 @@ function run_simulation(
             end
             t_cursor = Float64(seg_sol.t[end])
             u_cursor = deepcopy(seg_sol.u[end])
-            _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode); is_active=p.is_active)
+            _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode); is_active=p.is_active,
+                callback_state=_callback_checkpoint_state(args))
             checkpoint_written = true
             if string(seg_sol.retcode) != "Success" || !_gravity_backbone_time_reached(t_cursor, t_next)
                 break

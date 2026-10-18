@@ -97,17 +97,13 @@ shedding tier (see `PowerSystems.update_power_state!`). Both mark the
 derivative discontinuous when they change anything, so no integration step
 sees the battery's state change. Empty for runs without a battery.
 
-The flags carry over from one checkpoint segment to the next. A run with a
-battery cannot resume from a checkpoint file, which holds the stored energy but
-not the flags.
+The flags carry over from one checkpoint segment to the next, and a run
+resumed from a checkpoint file takes them from the file (which holds the
+stored energy in the state and the flags with the callbacks' run state).
 """
 function get_power_callbacks(num_sats::Int, args::SimulationConfiguration)
     sats = _battery_spacecraft(args)
     isempty(sats) && return ()
-    args.simulation_settings.resume_from_checkpoint && throw(ArgumentError(
-        "A spacecraft with a battery does not support resume_from_checkpoint: the checkpoint holds the battery's " *
-        "stored energy but not whether it is empty and recharging or full, so a resumed run could end its shedding " *
-        "early. Run it from the start."))
     spacecraft = args.dynamics_model.spacecraft
     function condition!(out, u, t, integrator)
         @inbounds for (k, i) in enumerate(sats)
@@ -134,10 +130,11 @@ function get_power_callbacks(num_sats::Int, args::SimulationConfiguration)
     # A fresh callback is built for every run. Its initialization also runs at
     # checkpoint-segment boundaries, which keep the flags: they depend on the
     # run so far (an empty battery recharging below `recovery_soc` is still
-    # empty), not only on the stored energy.
+    # empty), not only on the stored energy; a resumed run's come from its
+    # checkpoint.
     initialized = Ref(false)
     function initialize!(cb, u, t, integrator)
-        if !initialized[]
+        if !initialized[] && !integrator.p.shared_buffers.callback_resume[]
             for i in sats
                 sc = integrator.p.args.dynamics_model.spacecraft[i]
                 b = battery(sc)

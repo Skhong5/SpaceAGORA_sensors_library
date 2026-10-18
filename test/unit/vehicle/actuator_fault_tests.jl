@@ -128,11 +128,12 @@ end
         # The command ramps by 0.001 N m per second at 10 Hz ticks; the wheel sticks
         # at 0.55 s with the command of the 0.5 s tick. The 1 s segments must not
         # take a later command.
-        function ramp_run(; settings=(;))
+        function ramp_run(; settings=(;), mission_time=5.0)
             sc, root = far_spacecraft()
             wheel = add_actuator!(sc, root, ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0)))
             add_fault!(sc, ActuatorFault(wheel; kind=:stuck, start_s=0.55))
-            return held_run(sc, [0.0]; rate=0.1, effector=RampLevels([0.0], 0.001), settings=settings)   # a tick every 0.1 s
+            return held_run(sc, [0.0]; rate=0.1, effector=RampLevels([0.0], 0.001), settings=settings,
+                mission_time=mission_time)   # a tick every 0.1 s
         end
         after(r) = [r.table.sc1_actuator_level_1[i] for i in eachindex(r.table.time) if r.table.time[i] >= 0.55]
         dir = mktempdir()
@@ -141,8 +142,26 @@ end
         @test !isempty(after(straight)) && all(l -> isapprox(l, 0.0005; rtol=1e-9), after(straight))
         @test !isempty(after(split)) && all(l -> isapprox(l, 0.0005; rtol=1e-9), after(split))
         @test split.solution.u[end].sc[1].h_wheels[1] ≈ straight.solution.u[end].sc[1].h_wheels[1] rtol=1e-9
-        # A checkpoint file does not hold the onset level: resume is refused.
-        @test_throws ArgumentError ramp_run(settings=(resume_from_checkpoint=true, checkpoint_directory=dir))
+        # A run resumed from the file keeps the onset level, which the file holds.
+        resumed_dir = mktempdir()
+        ramp_run(settings=(checkpoint_enabled=true, checkpoint_interval_s=1.0, checkpoint_directory=resumed_dir), mission_time=2.0)
+        resumed = ramp_run(settings=(checkpoint_enabled=true, checkpoint_interval_s=1.0, checkpoint_directory=resumed_dir,
+            resume_from_checkpoint=true))
+        @test resumed.table.time[1] >= 2.0 - 1e-9
+        @test !isempty(after(resumed)) && all(l -> isapprox(l, 0.0005; rtol=1e-9), after(resumed))
+        @test resumed.solution.u[end].sc[1].h_wheels[1] ≈ straight.solution.u[end].sc[1].h_wheels[1] rtol=1e-9
+        # The fault moved to the other wheel of the same kind refuses the file.
+        function two_wheel_run(faulted; settings, mission_time=5.0)
+            sc, root = far_spacecraft()
+            wheels = [add_actuator!(sc, root, ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0))),
+                      add_actuator!(sc, root, ReactionWheel(spin_axis=SVector(0.0, 1.0, 0.0)))]
+            add_fault!(sc, ActuatorFault(wheels[faulted]; kind=:stuck, start_s=0.55))
+            return held_run(sc, [0.001, 0.001]; rate=0.1, settings=settings, mission_time=mission_time)
+        end
+        two_dir = mktempdir()
+        two_wheel_run(1; settings=(checkpoint_enabled=true, checkpoint_interval_s=1.0, checkpoint_directory=two_dir), mission_time=2.0)
+        @test_throws ArgumentError two_wheel_run(2; settings=(resume_from_checkpoint=true, checkpoint_directory=two_dir))
+        @test two_wheel_run(1; settings=(resume_from_checkpoint=true, checkpoint_directory=two_dir)).table.time[1] >= 2.0 - 1e-9
     end
 
     @testset "a thruster with firing dynamics stops at its fault time, not at the next tick" begin

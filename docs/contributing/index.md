@@ -20,6 +20,8 @@ What to read next:
 - [API Policy](../src/public_api_policy.md)
 - [Contracts](contracts.md)
 - [Parallel runtime internals](parallel_internals.md)
+- [Adding a GNC algorithm family](gnc_algorithm_families.md)
+- [Contributor kit integrations](contributor_kit_integrations.md)
 
 ## How this section is organized
 
@@ -89,6 +91,16 @@ site. The user site keeps supported API and extension contracts in Reference.
 
 See [adapter maintenance](adapter_maintenance.md) for conformance and release
 evidence, and [Contracts](contracts.md) for the canonical repository rules.
+
+## GNC algorithm families and contributor integrations
+
+A GNC algorithm family and a companion's service facade are trusted, core-owned
+code. [Adding a GNC algorithm family](gnc_algorithm_families.md) lists a family's
+obligations and the steps of its pull request;
+[Contributor kit integrations](contributor_kit_integrations.md) is the checklist
+for the core half of work a contributor repository cannot do on its own. The
+user-facing side is [Writing a GNC Algorithm](../src/user/gnc_algorithm.md) and
+[Building Your Own Research Repository](../src/user/research_repository.md).
 
 ## Planner interface development
 

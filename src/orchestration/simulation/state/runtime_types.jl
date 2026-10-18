@@ -1027,6 +1027,10 @@ export RhsEffectorDecision, RhsExecutionPlan
         density_callback_width::Base.RefValue{Int} = Ref{Int}(0)
         rhs_env_config::Base.RefValue{Union{Nothing, RhsPlanEnvConfig}} = Ref{Union{Nothing, RhsPlanEnvConfig}}(nothing)
         callback_env_config::Base.RefValue{Union{Nothing, CallbackEnvConfig}} = Ref{Union{Nothing, CallbackEnvConfig}}(nothing)
+        # Set when a resumed run restored the callbacks' run state from its
+        # checkpoint (`_restore_callback_checkpoint_state!`): the callbacks then
+        # skip their run-start resets.
+        callback_resume::Base.RefValue{Bool} = Ref(false)
     end
 
     # SaveData is an output/persistence boundary and intentionally remains heterogeneous.

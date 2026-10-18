@@ -69,6 +69,8 @@ for marker in (
     "\"Public API and Compatibility\" => \"public_api_policy.md\"",
     "\"Extension Conventions\" => \"reference/extension_conventions.md\"",
     "\"Migrating Extension Hooks\" => \"reference/migrating_extension_hooks.md\"",
+    "\"Writing a GNC Algorithm\" => \"user/gnc_algorithm.md\"",
+    "\"Building Your Own Research Repository\" => \"user/research_repository.md\"",
 )
     occursin(marker, docs_make) || error("docs/make.jl missing documentation IA marker: $(marker)")
 end
@@ -92,6 +94,8 @@ for relative in (
     "docs/contributing/contracts.md",
     "docs/contributing/adapter_maintenance.md",
     "docs/contributing/gnc_ownership.md",
+    "docs/contributing/gnc_algorithm_families.md",
+    "docs/contributing/contributor_kit_integrations.md",
     "docs/architecture/canonical_topology_contract.md",
     "docs/architecture/gnc_aerobraking_boundary_contract.md",
     "docs/architecture/src_canonical_owner_audit.md",
