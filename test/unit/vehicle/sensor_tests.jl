@@ -286,6 +286,57 @@ row_at(table, t) = findfirst(==(t), table.time)
         @test norm(sensor_measurement(legacy)) < 1e-7
     end
 
+    @testset "an accelerometer away from the centre of mass reads the rotation" begin
+        # Torque-free spin about z: ω × (ω × r) at 1 m along x.
+        spun = Accelerometer(period_s=1.0, position_m=SVector(1.0, 0.0, 0.0))
+        sensor_run(sensor_spacecraft(sensors=(spun,), spin=SVector(0.0, 0.0, 0.1)); mission_time=5.0,
+            effectors=(SM.InverseSquaredGravityModel(),))
+        @test sensor_measurement(spun) ≈ SVector(-0.01, 0.0, 0.0) atol=1e-7
+        # A wheel spins the body up about z at a constant rate: ω̇ × r joins the centripetal term.
+        pushed = Accelerometer(period_s=1.0, position_m=SVector(1.0, 0.0, 0.0))
+        sc = sensor_spacecraft(sensors=(pushed,), spin=SVector(0.0, 0.0, 0.0))
+        add_actuator!(sc, sc.root, ReactionWheel(spin_axis=SVector(0.0, 0.0, 1.0)))
+        x = sensor_run(sc; mission_time=5.0, effectors=(SM.InverseSquaredGravityModel(),),
+            control=(HoldLevels([0.01]),)).solution.u[end].sc[1]
+        α = x.ω[3] / 5.0
+        @test sensor_measurement(pushed) ≈ SVector(-x.ω[3]^2, α, 0.0) rtol=1e-6 atol=1e-12
+    end
+
+    @testset "GNSS in the planet-fixed frame and above its coverage" begin
+        fixed = GNSSReceiver(period_s=1.0, frame=:planet_fixed)
+        above = GNSSReceiver(period_s=1.0, max_altitude_m=400e3)                       # the orbit is at 500 km
+        below = GNSSReceiver(period_s=1.0, max_altitude_m=600e3)
+        @test_throws ArgumentError GNSSReceiver(frame=:ecef)
+        @test sensor_requirements(fixed).planet_frame && !sensor_requirements(GNSSReceiver()).planet_frame
+        x = sensor_run(sensor_spacecraft(sensors=(fixed, above, below)); mission_time=3.0).solution.u[end].sc[1]
+        m = sensor_measurement(fixed)
+        @test norm(m[1:3]) ≈ norm(x.pos) rtol=1e-12
+        @test norm(m[1:3] - collect(x.pos)) > 1.0e3                                     # the planet's rotation
+        @test all(isnan, sensor_measurement(above))
+        @test sensor_measurement(below) == SVector(x.pos..., x.vel...)
+    end
+
+    @testset "a sun sensor with albedo leans toward the lit planet" begin
+        ctx = actuator_context(SM.Link(root=true, m=1.0))
+        rng = Xoshiro(3)
+        R = SM.Earth().Rp_e
+        r = R + 500e3
+        nan3 = SVector(NaN, NaN, NaN)
+        truth(sun) = SensorTruth(SVector(r, 0.0, 0.0), SVector(0.0, 7.6e3, 0.0), SVector(0.0, 0.0, 0.0, 1.0), ω0, 50.0, 0.0,
+                                 nan3, sun, 1.0, nan3, nan3, nan3, nan3, NaN, R)
+        bright = SunSensor(field_of_view_rad=π, albedo=0.3)
+        @test_throws ArgumentError SunSensor(albedo=1.5)
+        η = 0.3 * (2 / 3) * (R / r)^2 / π                                              # α = 90°: Φ = 1/π
+        @test sensor_measure(bright, truth(SVector(0.0, 1.0, 0.0)), ctx, rng) ≈ normalize(SVector(-η, 1.0, 0.0))
+        @test sensor_measure(SunSensor(field_of_view_rad=π), truth(SVector(0.0, 1.0, 0.0)), ctx, rng) == SVector(0.0, 1.0, 0.0)
+        @test sensor_measure(bright, truth(SVector(-1.0, 0.0, 0.0)), ctx, rng) == SVector(-1.0, 0.0, 0.0)   # over the night side
+        narrow = SunSensor(field_of_view_rad=0.2, albedo=0.3)                          # the planet's disk out of view
+        @test sensor_measure(narrow, truth(SVector(0.0, 0.0, 1.0)), ctx, rng) == SVector(0.0, 0.0, 1.0)
+        @test truth(SVector(0.0, 0.0, 1.0)).planet_radius_m == R
+        @test isnan(SensorTruth(SVector(r, 0.0, 0.0), SVector(0.0, 7.6e3, 0.0), SVector(0.0, 0.0, 0.0, 1.0), ω0, 50.0, 0.0,
+            nan3, SVector(0.0, 0.0, 1.0), 1.0, nan3).planet_radius_m)                   # the ten-argument form
+    end
+
     @testset "sensors are opt-in and do not change the dynamics" begin
         # Sampling adds solver stops, so the comparison is to tolerance, not bit for bit.
         with = sensor_run(sensor_spacecraft(); mission_time=5.0).solution.u[end].sc[1]
