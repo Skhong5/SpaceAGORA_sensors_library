@@ -396,6 +396,15 @@ end
         add_actuator!(two, two.root, ThrusterGimbal(two.root.thrusters[1]; axis=SVector(0.0, 1.0, 0.0)))
         mounted_seconds(two; trim=true)
         @test torque_of(two.root.thrusters[1]) < 1e-9                             # two axes, solved in turn
+        # One control cycle's solve from zero angles: the alternating solves converge within the cycle.
+        once = deepcopy(sc)
+        once.root.thrusters[1].location .+= SVector(0.05, -0.03, 0.0)
+        add_actuator!(once, once.root, ThrusterGimbal(once.root.thrusters[1]; axis=SVector(1.0, 0.0, 0.0)))
+        add_actuator!(once, once.root, ThrusterGimbal(once.root.thrusters[1]; axis=SVector(0.0, 1.0, 0.0)))
+        levels = zeros(SM.mounted_actuator_count(once))
+        SM.ControlHooks._trim_engine_gimbals!(levels, once, 1)
+        SM.apply_gimbal_levels!(once, levels, 0.0)                                # as the engine applies a tick's levels
+        @test torque_of(once.root.thrusters[1]) < 1e-12
         wheeled = deepcopy(sc)
         add_actuator!(wheeled, wheeled.root, ReactionWheel(spin_axis=SVector(0.0, 0.0, 1.0)))
         x_wheel, c_wheel = mounted_seconds(wheeled)
