@@ -72,9 +72,17 @@ companions = ["mujoco"]    # optional: hypr, mujoco or edg, at that commit's own
 
 The pin lives in its own file, not in `[sources]` of `Project.toml`: Pkg cannot
 install SpaceAGORA from a URL and revision, and `Pkg.test` would read such an
-entry instead of the tested environment. To move to a newer core, change `rev`
-and the workflow call together, rebuild the environment, and for a project
-commit the new Manifest. Record the commit with every result you keep.
+entry instead of the tested environment. To move to a newer core, check that
+core out beside your repository and run its `repin`, which changes `rev`, the
+`version` and the workflow call together, and the `SpaceAGORA` entry in
+`[compat]` when the release series changes:
+
+```bash
+julia --startup-file=no --project=@stdlib ../SpaceAGORA.jl/scripts/contributor_environment.jl repin package .
+```
+
+Then rebuild the environment, and for a project commit the new Manifest.
+Record the commit with every result you keep.
 
 ## Set up and test locally
 
@@ -148,7 +156,12 @@ summary line per check. Other inputs: `manifest` (`core`, `committed`, or
 package inside a larger repository) and `julia-version`.
 
 SpaceAGORA's own CI generates each starter from the commit under test and runs
-it through this workflow, so the starters stay in step with the core.
+it through this workflow, so the starters stay in step with the core. It also
+runs the kit's demonstration repository,
+[SpaceAGORAKitDemo.jl](https://github.com/Space-FALCON-Lab/SpaceAGORAKitDemo.jl),
+a package built from the package starter, every night against `main` and in each
+release pull request against the release candidate, with its pin moved to the
+commit under test.
 
 ## Where next
 
