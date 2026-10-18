@@ -13,17 +13,23 @@ include(joinpath(@__DIR__, "..", "..", "scripts", "setup_hypr.jl"))
             @test_throws ErrorException HYPRInstallation.source_spec(root;local_path="")
             write(pin,text)
         end
-        # HYPRServices 2.0.0 accepts HYPR 0.2.0 only; the 0.1 providers are refused
+        # HYPRServices 2.0.0 refuses the 0.1 providers and any version it does not list
         for unsupported in ("0.1.0", "0.1.1", "0.9.0")
             old=read(pin,String);write(pin,replace(old,"0.2.0"=>unsupported))
             @test_throws ErrorException HYPRInstallation.source_spec(root;local_path="")
             write(pin,old)
         end
+        # HYPR 0.3.0 changes only its SpaceAGORA compatibility and is accepted too
+        old=read(pin,String);write(pin,replace(old,"0.2.0"=>"0.3.0"))
+        @test HYPRInstallation.source_spec(root;local_path="").rev == repeat("a",40)
+        write(pin,old)
         dev=joinpath(root,"dev");mkpath(dev)
         write(joinpath(dev,"Project.toml"),"uuid = \"$(HYPRInstallation.HYPR_UUID)\"\nversion = \"0.2.0\"\n")
         @test HYPRInstallation.source_spec(root;local_path=dev).path == dev
         dev_project=joinpath(dev,"Project.toml")
-        write(dev_project,replace(read(dev_project,String),"0.2.0"=>"0.1.1"))
+        write(dev_project,replace(read(dev_project,String),"0.2.0"=>"0.3.0"))
+        @test HYPRInstallation.source_spec(root;local_path=dev).path == dev
+        write(dev_project,replace(read(dev_project,String),"0.3.0"=>"0.1.1"))
         @test_throws ErrorException HYPRInstallation.source_spec(root;local_path=dev)
         write(joinpath(dev,"Project.toml"),"uuid = \"$(HYPRInstallation.HYPR_UUID)\"\nversion = \"0.9.0\"\n")
         @test_throws ErrorException HYPRInstallation.source_spec(root;local_path=dev)

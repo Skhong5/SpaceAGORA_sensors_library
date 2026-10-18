@@ -3,7 +3,7 @@ using Test, SpaceAGORA
 const C=SpaceAGORA.HYPRServices
 @testset "HYPR versioned service identity" begin
     @test C.CONTRACT_VERSION == v"2.0.0"
-    @test C.SUPPORTED_HYPR_VERSIONS == (v"0.2.0",)
+    @test C.SUPPORTED_HYPR_VERSIONS == (v"0.2.0", v"0.3.0")
     @test C.require_version(v"2.0.0") === nothing
     @test_throws SpaceAGORA.SimulationModel.HYPRSupport.HYPRCompatibilityError C.require_version(v"1.0.0")
     # contract 2.0.0 requires the provider's rng keyword, so 0.1 providers are refused
