@@ -344,7 +344,7 @@ names; they do not define a separate backend or a flight-validation claim.
 | RPO planning | `Earth_RPO_CubeSat_MPC.jl`, `Earth_RPO_CubeSat_MPC_Batch.jl`, `Earth_RPO_CubeSat_MPC_PlannerComparison.jl`, `Earth_RPO_CubeSat_MPC_Replanning.jl` | `rpo_planner_env` setup, SPICE and Gateway geometry; no native GRAM |
 | RPO planner disturbances | `Earth_RPO_Planner_Disturbances.jl` | Root; no external data |
 | Robot-arm planning | `Robot_Arm_Planner_Cloth_Demo.jl` | `rpo_planner_env` setup; no external data |
-| Writing a GNC algorithm | `gnc_algorithm_env/feedback_controller.jl`, `gnc_algorithm_env/estimator.jl`, `gnc_algorithm_env/rpo_planner.jl` | `gnc_algorithm_env` setup; no external data |
+| Writing a GNC algorithm | `gnc_algorithm_env/feedback_controller.jl`, `gnc_algorithm_env/estimator.jl`, `gnc_algorithm_env/rpo_planner.jl`, `gnc_algorithm_env/burn_planner.jl`, `gnc_algorithm_env/joint_planner.jl` | `gnc_algorithm_env` setup; no external data |
 | Extension walkthroughs | `walkthrough_env/my_effector.jl`, `walkthrough_env/my_actuator.jl` | `walkthrough_env` setup; no external data |
 
 The setup files under `rpo_planner_env/`, `odyssey_surrogate_env/`,

@@ -2,10 +2,11 @@
 # profile): it proposes a product for a request, and its family, trusted code in
 # SpaceAGORA, validates the proposal and installs only a validated copy. This one
 # is an RPO reference planner; replace the body of `plan_rpo!` with your method.
-# examples/gnc_algorithm_env/rpo_planner.jl is a complete planner, run in CI.
+# examples/gnc_algorithm_env/ holds a complete planner of each family, run in CI.
 #
-# For another family, subtype that family's algorithm type, implement
-# `propose!(state, algorithm, request, rng)` returning an `AlgorithmResult`, and
+# For another family, subtype that family's algorithm type (`AbstractBurnPlanner`,
+# `AbstractJointReferencePlanner`), implement `propose!(state, algorithm, request,
+# rng)` returning an `AlgorithmResult` with the family's product, and
 # run it in a simulation with `AlgorithmGuidance(algorithm=..., spacecraft_index=...)`
 # among the guidance effectors.
 module ExampleGNCPlannerTemplate

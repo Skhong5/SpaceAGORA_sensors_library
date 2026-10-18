@@ -105,8 +105,8 @@ checks as tests.
 |---|---|---|
 | a force or torque model | `test_force_torque_model(model)` | the pre-run hook check, repeated and concurrent runs, a deep copy, a reseeded global stream, pure output hooks, declared environment |
 | a sensor kind | `test_sensor(sensor)` | its run-state fields and requirements, measurement shape, seeds that repeat, reset of its own state |
-| a guidance, navigation or control model | `test_guidance_model`, `test_navigation_model(model; sensors)`, `test_control_model` | the pre-run hook check, the run-level checks, pure output hooks and positive consumption (control), reset at the run's start (navigation), fresh state from `bind_spacecraft` |
-| an algorithm of a family | `test_algorithm(algorithm, requests; trusted, simulation)` | the family's representative requests (`rpo_conformance_requests()`, `burn_plan_conformance_requests()`), a deterministic walk, an untouched stream when declared, the request driver, a short simulation |
+| a guidance, navigation or control model | `test_guidance_model`, `test_navigation_model(model; sensors)`, `test_control_model` | the pre-run hook check, the run-level checks, the reset at the run's start (`initialize_*!`), pure output hooks and positive consumption (control), fresh state from `bind_spacecraft` |
+| an algorithm of a family | `test_algorithm(algorithm, requests; trusted, simulation)` | the family's representative requests (`rpo_conformance_requests()`, `burn_plan_conformance_requests()`, `joint_reference_conformance_requests()`), a deterministic walk, an untouched stream when declared, the request driver, a short simulation |
 | a family or a facade (a core pull request) | `test_algorithm_family`, `test_service_facade(facade; version)` | the family's obligations and rejection policy; the facade's shape at its contract version |
 
 The run-level checks use a short Earth orbit that needs no native GRAM, SPICE

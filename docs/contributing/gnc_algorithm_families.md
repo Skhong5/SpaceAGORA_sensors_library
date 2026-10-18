@@ -25,14 +25,14 @@ The families today:
 |---|---|---|---|---|
 | `RPOReferenceFamily` | `RPOPlannerInterfaces`, `src/models/gnc/interfaces/rpo_planner.jl` | `RPOPlanningRequest`, `RPOReference` | `:fail`, or `:install_fallback` when the binding configures it | `PlannerGuidance`, the RPO pilot |
 | `BurnPlanFamily` | `BurnPlanning`, `src/models/gnc/control/burn_planning.jl` | `BurnPlanRequest`, `PropulsiveBurnPlan` | `:keep_previous` | `AlgorithmGuidance` |
+| `JointReferenceFamily` | `JointReferencePlanning`, `src/models/gnc/planning/robot_arm/joint_reference_family.jl` | `JointReferenceRequest`, `RobotArmPlan` | `:fail` | `AlgorithmGuidance`, with the arm controller's `RobotArmPlanBuffer` as its link |
 
 The burn-plan family sits under `control/` because it writes the burn
 scheduler's command buffer, which the typed-command boundary gate
 (`test/gates/ci_gnc_typed_command_boundary_gate.jl`) allows only there.
 
-> TODO(0.3.0 PR 1 and PR 2): add the joint-reference family (GNC PR 17) and the
-> EDG passage-decision family (GNC PR 18, served through `EDGServices` 2.0.0) to
-> this table, with their modules and bindings.
+> TODO(0.3.0 PR 2): add the EDG passage-decision family (GNC PR 18, served
+> through `EDGServices` 2.0.0) to this table, with its module and binding.
 
 ## The family's obligations
 

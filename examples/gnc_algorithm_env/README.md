@@ -9,6 +9,8 @@ from this separate project with the public `SpaceAGORA` surface only:
 | `feedback_controller.jl` | a feedback controller: a tick that computes and holds a torque, an output hook that applies it, its declarations, a run checked against a closed form, and its conformance checks |
 | `estimator.jl` | an estimator that holds a gyro's rate as its estimate, a controller that reads it through a declared link, and the pair's conformance checks |
 | `rpo_planner.jl` | a planner of the RPO reference family, run in the RPO pilot and checked with the family's conformance requests |
+| `burn_planner.jl` | a planner of the burn-plan family, run through `AlgorithmGuidance` with the burn scheduler, its propellant checked against the rocket equation |
+| `joint_planner.jl` | a planner of the joint-reference family, run through `AlgorithmGuidance` with a robot arm's controller |
 
 From the repository root, prepare the environment once:
 
@@ -20,7 +22,7 @@ Setup creates a local `Project.toml` from the tracked `Project.template.toml`,
 seeds `Manifest.toml` from the repository manifest and adds this checkout by
 path, keeping the recorded dependency versions. Both generated files are
 ignored. The examples need no optional package, native GRAM, SPICE kernels or
-network access. Then run one example, or all three as CI does:
+network access. Then run one example, or all of them as CI does:
 
 ```sh
 julia --project=examples/gnc_algorithm_env --depwarn=error examples/gnc_algorithm_env/feedback_controller.jl

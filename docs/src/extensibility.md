@@ -178,8 +178,9 @@ warning before the run. The mass-rate hook's sign changes with its name; see
 [Migrating Extension Hooks](reference/migrating_extension_hooks.md#Control-outputs).
 
 A controller also declares what it acts on and what it assumes
-(`spacecraft_scope`, `gnc_period_s`, `skip_inactive`, `held_command`), and can
-share an object with an estimator or a planner through `gnc_links`.
+(`spacecraft_scope`, `gnc_period_s`, `skip_inactive`, `held_command`), can
+share an object with an estimator or a planner through `gnc_links`, and resets
+its run state at each run's start in `initialize_control!`.
 [Writing a GNC Algorithm](user/gnc_algorithm.md#The-feedback-profile) explains
 these declarations with a worked controller run in CI.
 

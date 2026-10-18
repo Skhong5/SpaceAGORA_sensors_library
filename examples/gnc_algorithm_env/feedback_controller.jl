@@ -29,6 +29,12 @@ function SpaceAGORA.release_command!(c::RateDamper, t, spacecraft_index)
     return nothing
 end
 
+# At each run's start: fresh run state, so two runs of one configuration start equal.
+function SpaceAGORA.initialize_control!(c::RateDamper, u, p, t)
+    c.torque_body, c.tick_s = zero(SVector{3, Float64}), NaN
+    return nothing
+end
+
 # The tick (shape T), once per control period: run the law, limit it, hold the command.
 function SpaceAGORA.update_control!(c::RateDamper, u, p, t, spacecraft_index)
     ω_body = SVector{3, Float64}(u.sc[spacecraft_index].ω)
@@ -95,8 +101,8 @@ println("body rate after $(mission_s) s: $(final) rad/s, by hand $(expected) rad
 # end snippet
 
 # snippet: conformance
-# The engine's own checks on the controller: hooks, reproducibility, copies,
-# output-hook purity and the copies `bind_spacecraft` makes.
+# The engine's own checks on the controller: hooks, reproducibility, copies, the
+# reset at each run's start, output-hook purity and the copies `bind_spacecraft` makes.
 @testset "RateDamper conformance" begin
     test_control_model(RateDamper())
 end

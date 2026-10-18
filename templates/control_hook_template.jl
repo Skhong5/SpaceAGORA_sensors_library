@@ -66,8 +66,14 @@ function SpaceAGORA.control_propellant_rate(model::ExampleControlHook, x::SpaceA
     return propellant_mass_rate(norm(model.force_ii), model.isp_s)
 end
 
-# TODO(0.3.0 PR 1): reset the run state at each run's start with the public
-# `initialize_control!(model, u, p, t)`, once GNC PR 12 makes the lifecycle hooks public.
+# At each run's start: fresh run state, so that two runs of one configuration
+# with `isolate_state=false` start equal.
+function SpaceAGORA.initialize_control!(model::ExampleControlHook, u, p, t)
+    model.force_ii = zero(SVector{3, Float64})
+    model.torque_body = zero(SVector{3, Float64})
+    model.tick_s = NaN
+    return nothing
+end
 
 # Declared on a spacecraft (`SpacecraftModel(...; control=ControlModel(...))`):
 # a copy for that spacecraft that shares the configuration, with fresh run state.

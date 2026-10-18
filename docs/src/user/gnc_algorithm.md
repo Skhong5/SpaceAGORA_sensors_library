@@ -29,7 +29,7 @@ keep it until it is replaced. It runs that loop in one of two profiles.
 |---|---|---|
 | computes a command from the current state at each tick, applied at once | feedback | the RPO MPC controller, the momentum manager, the Apollo descent controller |
 | estimates the state from measurements | feedback: a tick that holds an estimate, with no limiting step and no validation | (none built in yet) |
-| produces something used later, or that can be checked before use: a reference trajectory, a burn plan, a joint path, a passage decision | planning | `DirectRPOPlanner`, `HYPRRPOPlanner`, `ApoapsisBurnPlanner` |
+| produces something used later, or that can be checked before use: a reference trajectory, a burn plan, a joint path, a passage decision | planning | `DirectRPOPlanner`, `HYPRRPOPlanner`, `ApoapsisBurnPlanner`, `QuinticJointPlanner` |
 | plans for a controller | both, paired through a link | the RPO pilot: a planner and the MPC controller share the plan buffer |
 
 The two profiles share one vocabulary:
@@ -114,6 +114,12 @@ SpaceAGORA.held_command(c::RateDamper, spacecraft_index) = c.torque_body
 SpaceAGORA.held_command_time(c::RateDamper, spacecraft_index) = c.tick_s
 function SpaceAGORA.release_command!(c::RateDamper, t, spacecraft_index)
     c.torque_body, c.tick_s = zero(SVector{3, Float64}), t
+    return nothing
+end
+
+# At each run's start: fresh run state, so two runs of one configuration start equal.
+function SpaceAGORA.initialize_control!(c::RateDamper, u, p, t)
+    c.torque_body, c.tick_s = zero(SVector{3, Float64}), NaN
     return nothing
 end
 
@@ -202,19 +208,31 @@ The important choices:
   warn if the control rate in `ControlModel(control_rates=...)` is not the period
   the gain was tuned for. `held_command` and `held_command_time` make the held
   command readable outside the model.
+- **Fresh at every run.** `initialize_control!` sets the held torque back to
+  zero when a run starts. `run_simulation` runs a copy of the configuration, but
+  with `isolate_state=false` the same model runs again, and it must start as it
+  did the first time.
 - **Registration.** Add the model to `ControlModel(control_effectors=(...),
   control_rates=[...])`, or declare it on a spacecraft with
   `SpacecraftModel(...; control=ControlModel(...))`: the engine then calls
   `bind_spacecraft(model, spacecraft_index)`, which returns a copy for that
   spacecraft with fresh run state.
 
-!!! note "TODO(0.3.0 PR 1): lifecycle hooks"
-    When GNC PR 12 makes the lifecycle hooks public, document here
-    `initialize_navigation!`, `initialize_guidance!` and `initialize_control!`
-    (their order at the run's start, and that they reset run state so that two
-    runs with `isolate_state=false` start equal), add an `initialize_control!`
-    method to `RateDamper` and the control template, and link the conformance
-    check `initialize_resets`.
+### The lifecycle hooks
+
+Besides its tick, a guidance, navigation or control model can implement hooks
+the engine calls around the ticks. Each default does nothing.
+
+| Hook | When the engine calls it | Implement it to |
+|---|---|---|
+| `preflight_guidance(model, args; isolate_state)`, `preflight_control(model, args; isolate_state)` | before the run, on the caller's configuration | refuse a configuration the model cannot run, with an `ArgumentError`; it must change nothing |
+| `initialize_navigation!(model, u, p, t)`, `initialize_guidance!(model, u, p, t)`, `initialize_control!(model, u, p, t)` | at the start of each run: after the links' `link_initialize!`, the navigation models, then guidance, then control | reset the model's run state, so that two runs of one configuration with `isolate_state=false` start equal |
+| `requires_atmosphere_events(model)`, `atmosphere_transition!(model, u, p, t, spacecraft_index, inside)` | when a spacecraft enters or leaves the atmosphere, in runs where a model declares `true` | react to the entry or exit |
+| `before_reference_control!(producer, consumer, u, p, t)` | before each periodic tick of a control model, for each model that produces a link it consumes | bring what the producer writes up to date, as the RPO planner checks its reference |
+
+What a run leaves in a model stays readable after the run; the reset happens
+when the next run starts. A custom sensor resets its own state in
+`initialize_sensor!` ([Extensibility](../extensibility.md#Add-a-sensor)).
 
 ### Worked example B: an estimator and a link
 
@@ -292,6 +310,10 @@ SpaceAGORA.gnc_period_s(c::EstimatedRateDamper) = c.period_s
 SpaceAGORA.gnc_links(c::EstimatedRateDamper) = (Consumes(c.estimate),)
 SpaceAGORA.held_command(c::EstimatedRateDamper, spacecraft_index) = c.torque_body
 SpaceAGORA.held_command_time(c::EstimatedRateDamper, spacecraft_index) = c.tick_s
+function SpaceAGORA.initialize_control!(c::EstimatedRateDamper, u, p, t)
+    c.torque_body, c.tick_s = zero(SVector{3, Float64}), NaN
+    return nothing
+end
 
 function SpaceAGORA.update_control!(c::EstimatedRateDamper, u, p, t, spacecraft_index)
     c.torque_body = clamp.(-c.gain_n_m_s .* c.estimate.ω_body, -c.max_torque_n_m, c.max_torque_n_m)
@@ -400,14 +422,13 @@ The families:
 | Family | Request and product | Validation | Installed into | On rejection | Algorithms | Runs in a simulation through |
 |---|---|---|---|---|---|---|
 | RPO reference, `RPOReferenceFamily` | `RPOPlanningRequest`, `RPOReference` | `validate_rpo_result`: identity, timing, endpoints, speed and acceleration limits, sampled clearance | the RPO plan buffer, read by the MPC controller | `:fail`, or `:install_fallback` (a hold) when configured | `DirectRPOPlanner`, `HYPRRPOPlanner` (with `using SpaceAGORAHYPR`), the seven comparison planners | `make_rpo_configuration(planner=...)` |
-| Burn plan, `BurnPlanFamily` | `BurnPlanRequest`, a timed constant-thrust burn | `validate_burn_plan`: the burn scheduler's own size check, thrust, specific impulse and window | the spacecraft's slot in the burn scheduler's plan buffer, `BurnPlanSlot` | `:keep_previous` | `ApoapsisBurnPlanner` | `AlgorithmGuidance` |
+| Burn plan, `BurnPlanFamily` | `BurnPlanRequest`, a `PropulsiveBurnPlan` | `validate_burn_plan`: the burn scheduler's own size check (`burn_plan_sizing`), thrust, specific impulse and window | the spacecraft's slot in the burn scheduler's plan buffer, `BurnPlanSlot` | `:keep_previous` | `ApoapsisBurnPlanner` | `AlgorithmGuidance` |
+| Joint reference, `JointReferenceFamily` | `JointReferenceRequest`, a `RobotArmPlan` | `validate_joint_reference`: the arm and its base, the sample grid, the start joints, joint limits, the goal and obstacle clearance | the `RobotArmPlanBuffer` the arm's `RobotArmControlEffector` reads | `:fail` | `QuinticJointPlanner` | `AlgorithmGuidance` |
 
-!!! note "TODO(0.3.0 PR 1 and PR 2): families table"
-    Add the joint-reference family (GNC PR 17, PR 1 of 0.3.0: request, product,
-    validation, install target on the robot-arm controller, `:fail`) and the EDG
-    passage-decision family (GNC PR 18, PR 2 of 0.3.0, served through
-    `EDGServices` 2.0.0, `consumes_rng = false`), with their algorithms and how
-    each runs.
+!!! note "TODO(0.3.0 PR 2): families table"
+    Add the EDG passage-decision family (GNC PR 18, served through
+    `EDGServices` 2.0.0, `consumes_rng = false`), with its algorithms and how it
+    runs.
 
 ### Worked example C: an RPO planner
 
@@ -499,14 +520,7 @@ pilot's replanning, holds, retiming and inspection.
 ### Other families
 
 A planner of another family runs through `AlgorithmGuidance`, the generic
-binding, among the guidance effectors:
-
-```julia
-binding = AlgorithmGuidance(algorithm=ApoapsisBurnPlanner(delta_v_mps=5.0), spacecraft_index=1,
-                            events=[AlgorithmEvent(0.0)])
-guidance = GuidanceModel(guidance_effectors=(binding,), guidance_rates=[60.0])
-```
-
+binding, among the guidance effectors.
 `AlgorithmGuidance(; algorithm, spacecraft_index, settings, link, seed, events,
 replan_interval_s)` makes a request at each `AlgorithmEvent` and, with a finite
 `replan_interval_s`, at that interval, at its guidance ticks. `settings` are the
@@ -516,16 +530,193 @@ family and the spacecraft's ID. `algorithm_run_report(solution)`, on a run made
 with `return_solution=true`, returns every binding's records: each request,
 installation, rejection and failure, in order.
 
-The burn-plan family installs into the burn scheduler, `BaseThrusterModel`: the
-configuration needs exactly one, planning no burn of its own for that spacecraft,
-and no thruster guidance model beside the binding. The scheduler takes up an
-installed plan at the end of the step it was installed in and fires the engine
-inside the plan's window.
+#### Worked example D: a burn planner
 
-!!! note "TODO(0.3.0 PR 1 and PR 2): other families"
-    Add how the joint-reference family runs (its binding and the arm controller
-    it installs into) and how the EDG family's decisions reach the
-    energy-depletion guidance through `EDGServices` 2.0.0.
+A planner of the burn-plan family subtypes `AbstractBurnPlanner` and proposes a
+`PropulsiveBurnPlan`: a constant-thrust burn on a window `[start, stop)`. The
+family checks it with the burn scheduler's own size rule, `burn_plan_sizing`, so
+the planner states the propellant, the impulse and a window of the duration that
+rule gives. The script is `examples/gnc_algorithm_env/burn_planner.jl`.
+
+```julia
+# A prograde burn of a set Δv that starts a set time after the request.
+Base.@kwdef struct BurnSoonPlanner <: AbstractBurnPlanner
+    delta_v_mps::Float64 = 5.0      # the burn's Δv, m/s
+    lead_s::Float64 = 10.0          # time from the request to the burn's start, s
+end
+SpaceAGORA.consumes_rng(::BurnSoonPlanner) = false
+
+function SpaceAGORA.propose!(state, planner::BurnSoonPlanner, request::BurnPlanRequest, rng)
+    # The scheduler's own size check, which the family's validation repeats.
+    sizing = burn_plan_sizing(request.mass_kg, planner.delta_v_mps, 0.0, request.thrust_n, request.isp_s;
+                              available_propellant_kg=request.available_propellant_kg)
+    sizing.reason === :accepted || return AlgorithmResult(request_id=request.request_id,
+        status=:infeasible, termination=sizing.reason)
+    start_s = request.time_s + planner.lead_s
+    plan = PropulsiveBurnPlan(valid=true, delta_v_mps=planner.delta_v_mps, direction_rad=0.0,
+        source_orbit=-1, start_burn_s=start_s, stop_burn_s=start_s + sizing.burn_duration_s,
+        thrust_n=request.thrust_n, isp_s=request.isp_s,
+        commanded_impulse_n_s=sizing.commanded_impulse_n_s,
+        propellant_required_kg=sizing.propellant_required_kg)
+    return AlgorithmResult(request_id=request.request_id, status=:candidate,
+        termination=:completed, product=plan)
+end
+```
+
+The family installs into the burn scheduler, `BaseThrusterModel`: the
+configuration needs exactly one, planning no burn of its own for that
+spacecraft, and no thruster guidance model beside the binding. The scheduler
+takes up an installed plan at the end of the step it was installed in and fires
+the engine inside the plan's window. The family takes no `settings` and finds
+its own install target, so the binding needs neither.
+
+```julia
+# The family installs into the burn scheduler, which plans no burn of its own here
+# (zero Δv, no window) and fires a 50 N engine of 300 s specific impulse.
+planet = make_no_gram_planet(:earth)
+root = Link(root=true, m=100.0, ref_area=2.0)
+orbit = InitialCondition(ra=planet.Rp_e + 2000e3, rp=planet.Rp_e + 400e3, i=30.0, ω=0.0, Ω=0.0, ν=10.0)
+spacecraft = SpacecraftModel(joints=Joint[], links=[root], root=root, prop_mass=50.0,
+                             inertia_tensor=root.inertia, initial_condition=orbit, id=1)
+scheduler = BaseThrusterModel(thrust=[50.0], direction=[0.0], Δv=[0.0], start_burn_time=[-1.0],
+                              stop_burn_time=[-1.0], Isp=[300.0])
+binding = AlgorithmGuidance(algorithm=BurnSoonPlanner(), spacecraft_index=1,
+                            events=[AlgorithmEvent(0.0)])      # one request, at the start
+config = SimulationConfiguration(
+    simulation_settings=SimulationSettings(
+        results=false, verbose=false, generate_plots=false, normalize=false),
+    mission_configuration=MissionConfiguration(
+        mission_type=MissionTime, mission_time=60.0, number_of_orbits=1,
+        keplerian=true, orientation_sim=false, num_steps_to_save=100),
+    environment_model=EnvironmentModel(
+        planet=planet, EI=120.0, density_model=NoAtmosphereModel(),
+        ephemerides_model=SimpleEphemeridesModel(),
+        thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
+        topography=false, wind=false),
+    dynamics_model=DynamicsModel([spacecraft], (InverseSquaredGravityModel(),)),
+    guidance_model=GuidanceModel(guidance_effectors=(binding,), guidance_rates=[60.0]),
+    navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
+    control_model=ControlModel(control_effectors=(scheduler,), control_rates=[1.0]),
+    initial_time=InitialTime(year=2024, month=1, day=1, hour=0, minute=0, second=0.0),
+    integration_tolerances=IntegrationTolerances())
+
+solution = run_simulation(config; return_solution=true)
+records = only(algorithm_run_report(solution).bindings).records
+plan = only(filter(record -> record.event === :installed, records)).product
+
+# By hand: the engine takes the propellant the family validated, and that is the
+# rocket equation's mass for the burn's Δv.
+used_kg = (100.0 + 50.0) - solution.u[end].sc[1].mass
+rocket_kg = (100.0 + 50.0) * (1 - exp(-plan.delta_v_mps / (plan.isp_s * 9.80665)))
+println("burn from $(plan.start_burn_s) s to $(round(plan.stop_burn_s, digits=3)) s; propellant used ",
+        "$(round(used_kg, digits=6)) kg, planned $(round(plan.propellant_required_kg, digits=6)) kg, ",
+        "rocket equation $(round(rocket_kg, digits=6)) kg")
+@test used_kg ≈ plan.propellant_required_kg rtol=1e-6
+@test plan.propellant_required_kg ≈ rocket_kg rtol=1e-9
+```
+
+A refused proposal leaves the installed plan in place (`:keep_previous`), and the
+run report records the refusal with the validation's reason, such as
+`:burn_in_progress` for a request made during a burn.
+
+#### Worked example E: a joint-reference planner
+
+A planner of the joint-reference family subtypes `AbstractJointReferencePlanner`
+and proposes a `RobotArmPlan`: joint angles, rates and accelerations, and the
+end-effector position, on the request's time grid. The script is
+`examples/gnc_algorithm_env/joint_planner.jl`.
+
+```julia
+# A joint-space path to the inverse-kinematics solution for the target, each joint
+# following the smooth step 3s² - 2s³ of normalized time s. It ignores obstacles;
+# the family's validation refuses a path that does not clear them.
+struct SmoothStepJointPlanner <: AbstractJointReferencePlanner end
+SpaceAGORA.consumes_rng(::SmoothStepJointPlanner) = false
+
+function SpaceAGORA.propose!(state, planner::SmoothStepJointPlanner, request::JointReferenceRequest, rng)
+    arm, base = request.model, request.base_pose
+    q_goal = try
+        robot_arm_ik(arm, base, request.target; q_seed=request.q_start)
+    catch err
+        err isa ErrorException || rethrow()
+        return AlgorithmResult(request_id=request.request_id, status=:infeasible,
+            termination=:target_unreachable)
+    end
+    T, Δq = request.duration_s, q_goal - request.q_start
+    # The request's grid: every dt_s from 0, the last step at most dt_s, to T.
+    times = [min(k * request.dt_s, T) for k in 0:ceil(Int, T / request.dt_s)]
+    s = times ./ T
+    q_ref = request.q_start .+ Δq * (3s .^ 2 .- 2s .^ 3)'
+    dq_ref = Δq * ((6s .- 6s .^ 2) ./ T)'
+    ddq_ref = Δq * ((6 .- 12s) ./ T^2)'
+    ee_ref = reduce(hcat, [robot_arm_fk(arm, base, q).end_effector_position for q in eachcol(q_ref)])
+    final_error_m = norm(ee_ref[:, end] - request.target)
+    plan = RobotArmPlan(arm, base, times, q_ref, dq_ref, ddq_ref, ee_ref, copy(request.q_start),
+                        q_goal, request.target, final_error_m, :smooth_step)
+    return AlgorithmResult(request_id=request.request_id, status=:candidate,
+        termination=:completed, product=plan)
+end
+```
+
+The plan buffer, `RobotArmPlanBuffer`, is a link: the binding produces it and the
+arm's `RobotArmControlEffector` consumes it, and before the run the engine checks
+that one controller reads it, for the binding's spacecraft and arm. The binding
+gets the buffer as its `link` and `JointReferenceSettings` as its `settings`:
+the arm, its base pose, the target, the obstacles and the reference's grid. Each
+request starts from the arm's measured joints.
+
+```julia
+# The default arm on a spacecraft's bus. The plan buffer is the link between the
+# binding, which installs accepted plans, and the arm's controller, which tracks
+# them; it starts with the arm held at zero joint angles.
+arm = default_robot_arm_model()
+base = RobotArmBasePose([0.0, 0.0, 0.0])
+target = robot_arm_fk(arm, base, [0.25, -0.35, 0.20]).end_effector_position
+buffer = RobotArmPlanBuffer(arm, base, zeros(3))
+controller = RobotArmControlEffector(spacecraft_index=1, plan_buffer=buffer, control_dt_s=0.5,
+                                     controller=init_robot_arm_joint_mpc(arm; dt_s=0.5, horizon=4))
+settings = JointReferenceSettings(model=arm, base_pose=base, target=target, dt_s=0.5, duration_s=4.0)
+binding = AlgorithmGuidance(algorithm=SmoothStepJointPlanner(), spacecraft_index=1, settings=settings,
+                            link=buffer, events=[AlgorithmEvent(0.0)])
+
+planet = make_no_gram_planet(:earth)
+root = Link(root=true, m=100.0, ref_area=2.0)
+orbit = InitialCondition(ra=planet.Rp_e + 2000e3, rp=planet.Rp_e + 400e3, i=30.0, ω=0.0, Ω=0.0, ν=10.0)
+spacecraft = SpacecraftModel(joints=Joint[], links=[root], root=root, prop_mass=0.0,
+                             inertia_tensor=root.inertia, initial_condition=orbit, id=1)
+config = SimulationConfiguration(
+    simulation_settings=SimulationSettings(
+        results=false, verbose=false, generate_plots=false, normalize=false),
+    mission_configuration=MissionConfiguration(
+        mission_type=MissionTime, mission_time=1.0, number_of_orbits=1,
+        keplerian=true, orientation_sim=false, num_steps_to_save=10),
+    environment_model=EnvironmentModel(
+        planet=planet, EI=120.0, density_model=NoAtmosphereModel(),
+        ephemerides_model=SimpleEphemeridesModel(),
+        thermal_model=MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet),
+        topography=false, wind=false),
+    dynamics_model=DynamicsModel([spacecraft], (InverseSquaredGravityModel(),)),
+    guidance_model=GuidanceModel(guidance_effectors=(binding,), guidance_rates=[60.0]),
+    navigation_model=NavigationModel(navigation_effectors=(), navigation_rates=Float64[]),
+    control_model=ControlModel(control_effectors=(controller,), control_rates=[0.5]),
+    initial_time=InitialTime(year=2024, month=1, day=1, hour=0, minute=0, second=0.0),
+    integration_tolerances=IntegrationTolerances())
+
+solution = run_simulation(config; return_solution=true)
+installed = only(filter(record -> record.event === :installed,
+                        only(algorithm_run_report(solution).bindings).records))
+println("installed request ", installed.request_id, ": ", installed.validation.reason,
+        ", final end-effector error ", installed.validation.metrics.final_error_m, " m")
+@test installed.validation.accepted
+```
+
+The family's rejection policy is `:fail`: a refused proposal stops the run with
+an `AlgorithmGuidanceError` that names the validation's reason, such as
+`:insufficient_clearance` for a path through an obstacle.
+
+!!! note "TODO(0.3.0 PR 2): other families"
+    Add how the EDG family's decisions reach the energy-depletion guidance
+    through `EDGServices` 2.0.0.
 
 ### The family side
 
@@ -556,7 +747,8 @@ pull request (the repository's contributor guide,
   one, and the conformance checks rerun your model with the global stream
   reseeded.
 - **Keep run state in the model** (feedback) or in the state
-  `initialize_algorithm` returns (planning), never in globals.
+  `initialize_algorithm` returns (planning), never in globals, and reset a
+  model's run state in its `initialize_*!` hook.
 - **Survive `deepcopy`.** `run_simulation` runs a copy of the configuration unless
   `isolate_state=false`, and a link shared by two models stays shared in the copy.
 - **`bind_spacecraft` gives fresh run state** to each spacecraft's copy.
@@ -567,14 +759,15 @@ pull request (the repository's contributor guide,
 
 `SpaceAGORA.Conformance` runs the engine's own machinery on your model or
 algorithm: the pre-run hook check, short runs repeated sequentially, after a
-`deepcopy`, with the global random stream reseeded and on two threads, and, for
-planners, the family's request driver. Each `check_*` function returns a report;
+`deepcopy`, with the global random stream reseeded, on two threads and twice on
+one configuration with `isolate_state=false` (the reset at the run's start),
+and, for planners, the family's request driver. Each `check_*` function returns a report;
 with `using Test`, each `test_*` function records the same checks as tests. Each
 example script ends with them:
 
 ```julia
-# The engine's own checks on the controller: hooks, reproducibility, copies,
-# output-hook purity and the copies `bind_spacecraft` makes.
+# The engine's own checks on the controller: hooks, reproducibility, copies, the
+# reset at each run's start, output-hook purity and the copies `bind_spacecraft` makes.
 @testset "RateDamper conformance" begin
     test_control_model(RateDamper())
 end
@@ -596,7 +789,9 @@ that needs its partner is checked on a fixture that holds both:
 end
 ```
 
-A planner is checked against its family's representative requests:
+A planner is checked against its family's representative requests, which
+include one the family refuses, and a short simulation through the family's
+binding:
 
 ```julia
 # The family's representative requests, its trusted validation queries and a short
@@ -607,8 +802,21 @@ A planner is checked against its family's representative requests:
 end
 ```
 
-For the burn-plan family, use `burn_plan_conformance_requests()` and
-`burn_plan_conformance_simulation()`. Run the checks with two or more threads,
+```julia
+@testset "BurnSoonPlanner conformance" begin
+    test_algorithm(BurnSoonPlanner(), burn_plan_conformance_requests();
+                   simulation=burn_plan_conformance_simulation())
+end
+```
+
+```julia
+@testset "SmoothStepJointPlanner conformance" begin
+    test_algorithm(SmoothStepJointPlanner(), joint_reference_conformance_requests();
+                   simulation=joint_reference_conformance_simulation())
+end
+```
+
+Run the checks with two or more threads,
 so that concurrent runs are compared with sequential ones. A pass certifies
 interface behaviour only: the method, its parameters and the claims made from it
 stay with you.

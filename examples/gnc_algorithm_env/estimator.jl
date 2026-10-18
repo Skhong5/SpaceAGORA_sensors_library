@@ -59,6 +59,10 @@ SpaceAGORA.gnc_period_s(c::EstimatedRateDamper) = c.period_s
 SpaceAGORA.gnc_links(c::EstimatedRateDamper) = (Consumes(c.estimate),)
 SpaceAGORA.held_command(c::EstimatedRateDamper, spacecraft_index) = c.torque_body
 SpaceAGORA.held_command_time(c::EstimatedRateDamper, spacecraft_index) = c.tick_s
+function SpaceAGORA.initialize_control!(c::EstimatedRateDamper, u, p, t)
+    c.torque_body, c.tick_s = zero(SVector{3, Float64}), NaN
+    return nothing
+end
 
 function SpaceAGORA.update_control!(c::EstimatedRateDamper, u, p, t, spacecraft_index)
     c.torque_body = clamp.(-c.gain_n_m_s .* c.estimate.ω_body, -c.max_torque_n_m, c.max_torque_n_m)
