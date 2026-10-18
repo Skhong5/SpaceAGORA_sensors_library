@@ -190,8 +190,10 @@ row_at(table, t) = findfirst(==(t), table.time)
             settings=(checkpoint_enabled=true, checkpoint_interval_s=1.0, checkpoint_directory=resume_dir, resume_from_checkpoint=true))
         @test resumed.times ≈ collect(2.25:0.25:5.0) atol=1e-12
         @test sensor_measurement(resumed) == straight_last
-        # Another sensor configuration is refused.
+        # Another sensor configuration, or none, is refused.
         @test_throws ArgumentError sensor_run(sensor_spacecraft(sensors=(SampleClock(0.25; seed=5),)); mission_time=5.0,
+            settings=(resume_from_checkpoint=true, checkpoint_directory=resume_dir))
+        @test_throws ArgumentError sensor_run(sensor_spacecraft(sensors=()); mission_time=5.0,
             settings=(resume_from_checkpoint=true, checkpoint_directory=resume_dir))
     end
 

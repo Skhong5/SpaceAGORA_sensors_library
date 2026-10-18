@@ -77,13 +77,22 @@ _needs_callback_state(sc) = SimulationModel.battery(sc) !== nothing || !isempty(
     !isempty(SimulationModel.mounted_sensors(sc))
 _has_callback_state(sc) = _needs_callback_state(sc) || !isempty(_record_hinges(sc)) || !isempty(_record_gimbals(sc))
 
+# Each record with where it sits: a fault with its actuator's position in the
+# mounting order (as `resolve_faults!` finds it), a sensor, hinge or gimbal with
+# its link's position, a gimbal also with its thruster's on that link, so a
+# record moved to another device of the same kind refuses the snapshot.
+_link_position(sc, link) = findfirst(l -> l === link, sc.links)
+_mounting_position(sc, actuator) = findfirst(e -> e.actuator === actuator, SimulationModel.mounted_actuators(sc))
+
 function _callback_checkpoint_configuration(args)
     return [(
         battery=(b = SimulationModel.battery(sc); b === nothing ? nothing : (b.capacity_wh, b.recovery_soc)),
-        faults=[(nameof(typeof(f.actuator)), f.kind, f.start_s, f.stop_s, f.value) for f in _record_faults(sc)],
-        sensors=[(nameof(typeof(e.sensor)), e.sensor.period_s, e.sensor.seed) for e in SimulationModel.mounted_sensors(sc)],
-        hinges=length(_record_hinges(sc)),
-        gimbals=length(_record_gimbals(sc)),
+        faults=[(nameof(typeof(f.actuator)), _mounting_position(sc, f.actuator), f.kind, f.start_s, f.stop_s, f.value)
+                for f in _record_faults(sc)],
+        sensors=[(nameof(typeof(e.sensor)), _link_position(sc, e.link), e.sensor.period_s, e.sensor.seed)
+                 for e in SimulationModel.mounted_sensors(sc)],
+        hinges=[_link_position(sc, link) for (link, _) in _record_hinges(sc)],
+        gimbals=[(_link_position(sc, link), findfirst(t -> t === g.thruster, link.thrusters)) for (link, g) in _record_gimbals(sc)],
     ) for sc in args.dynamics_model.spacecraft]
 end
 
@@ -108,10 +117,12 @@ end
 
 function _restore_callback_checkpoint_state!(args, checkpoint, p)
     spacecraft = args.dynamics_model.spacecraft
-    any(_has_callback_state, spacecraft) || return nothing
     runtime = get(checkpoint, :runtime_state, nothing)
     snapshot = runtime !== nothing && hasproperty(runtime, :callbacks) ? runtime.callbacks : nothing
+    # A snapshot is always checked, so a run without the devices it holds
+    # refuses it rather than dropping them.
     if snapshot === nothing
+        any(_has_callback_state, spacecraft) || return nothing
         any(_needs_callback_state, spacecraft) && throw(ArgumentError(
             "This run has batteries, actuator faults or sensors, whose run state this checkpoint does not hold " *
             "(it was written by an earlier SpaceAGORA or by another configuration). Run from the start."))

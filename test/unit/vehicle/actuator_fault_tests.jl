@@ -150,6 +150,18 @@ end
         @test resumed.table.time[1] >= 2.0 - 1e-9
         @test !isempty(after(resumed)) && all(l -> isapprox(l, 0.0005; rtol=1e-9), after(resumed))
         @test resumed.solution.u[end].sc[1].h_wheels[1] ≈ straight.solution.u[end].sc[1].h_wheels[1] rtol=1e-9
+        # The fault moved to the other wheel of the same kind refuses the file.
+        function two_wheel_run(faulted; settings, mission_time=5.0)
+            sc, root = far_spacecraft()
+            wheels = [add_actuator!(sc, root, ReactionWheel(spin_axis=SVector(1.0, 0.0, 0.0))),
+                      add_actuator!(sc, root, ReactionWheel(spin_axis=SVector(0.0, 1.0, 0.0)))]
+            add_fault!(sc, ActuatorFault(wheels[faulted]; kind=:stuck, start_s=0.55))
+            return held_run(sc, [0.001, 0.001]; rate=0.1, settings=settings, mission_time=mission_time)
+        end
+        two_dir = mktempdir()
+        two_wheel_run(1; settings=(checkpoint_enabled=true, checkpoint_interval_s=1.0, checkpoint_directory=two_dir), mission_time=2.0)
+        @test_throws ArgumentError two_wheel_run(2; settings=(resume_from_checkpoint=true, checkpoint_directory=two_dir))
+        @test two_wheel_run(1; settings=(resume_from_checkpoint=true, checkpoint_directory=two_dir)).table.time[1] >= 2.0 - 1e-9
     end
 
     @testset "a thruster with firing dynamics stops at its fault time, not at the next tick" begin
