@@ -4,6 +4,13 @@
 # then holds the gimbal there against a command that would drive it further
 # (`cmg_angle_saturate`); a command back into the range moves it off again.
 
+# The gimbal at position `j` of the `cmg_angles` state: a CMG's (outer) gimbal,
+# then the double-gimbal CMGs' inner gimbals.
+@inline function _cmg_gimbal(assembly, j::Int)
+    n = length(assembly.cmgs)
+    return j <= n ? assembly.cmgs[j] : assembly.cmg_inner[j - n]
+end
+
 """
     get_cmg_callbacks(num_sats, args) -> Tuple
 
@@ -13,13 +20,6 @@ each stop (positive inside the range), which at a crossing onto a stop sets
 the angle to the stop and marks the derivative discontinuous. Empty for runs
 without such CMGs.
 """
-# The gimbal at position `j` of the `cmg_angles` state: a CMG's (outer) gimbal,
-# then the double-gimbal CMGs' inner gimbals.
-@inline function _cmg_gimbal(assembly, j::Int)
-    n = length(assembly.cmgs)
-    return j <= n ? assembly.cmgs[j] : assembly.cmg_inner[j - n]
-end
-
 function get_cmg_callbacks(num_sats::Int, args::SimulationConfiguration)
     stopped = Tuple{Int, Int}[]
     for (i, sc) in enumerate(args.dynamics_model.spacecraft)
