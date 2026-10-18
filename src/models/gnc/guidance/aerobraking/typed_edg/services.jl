@@ -7,8 +7,8 @@ using ..EphemeridesModels: _ephemerides_frame_lpi
 using ..FrameTransforms: r_intor_p!, rtolatlong, latlongtoNED, rvtoorbitalelement
 using LinearAlgebra, StaticArrays
 
-@inline function _edg_control_sat_state(u, i::Int)
-    return hasproperty(u, :sc) ? u.sc[i] : u
+@inline function _edg_control_sat_state(u, spacecraft_index::Int)
+    return hasproperty(u, :sc) ? u.sc[spacecraft_index] : u
 end
 
 @inline function _edg_control_pos_vel_mass(sc)
@@ -18,8 +18,8 @@ end
     return pos, vel, mass
 end
 
-function _edg_environment_state(u, p::ODEParams, t::Float64, i::Int)
-    sc = _edg_control_sat_state(u, i)
+function _edg_environment_state(p::ODEParams, u, t::Float64, spacecraft_index::Int)
+    sc = _edg_control_sat_state(u, spacecraft_index)
     pos, vel, _ = _edg_control_pos_vel_mass(sc)
     args = p.args
     planet = args.environment_model.planet
@@ -122,25 +122,21 @@ function _edg_sample_prediction_atmosphere(p::ODEParams, altitude::Float64, t_ab
     return max(0.0, rho), max(temperature, eps(Float64))
 end
 
-_edg_control_clock_entry(::Any) = nothing
+# The clock of the EDG control ticks, as the engine reports it to the EDG state at
+# `gnc_clock_started!` (period and origin, s). A provider call that is passed an
+# EDG state carries that state's clock in its prediction context; the engine's
+# configuration is not searched.
+_edg_state_clock(::Any) = nothing
 
-function _edg_targeting_control_clock(config, p::ODEParams)
-    model = p.args.control_model
-    periods = Float64[]
-    origins = Float64[]
-    for i in eachindex(model.control_effectors)
-        entry = _edg_control_clock_entry(model.control_effectors[i])
-        entry === nothing && continue
-        entry.config === config || continue
-        push!(periods, Float64(model.control_rates[i]))
-        push!(origins, Float64(entry.origin))
-    end
-    isempty(periods) && throw(ArgumentError("EDG prediction requires its configured control effector."))
-    all(x -> isfinite(x) && x > 0.0 && x == first(periods), periods) ||
-        throw(ArgumentError("EDG prediction requires one unambiguous positive control period."))
-    all(x -> isfinite(x) && x == first(origins), origins) ||
-        throw(ArgumentError("EDG prediction requires one finite control-clock origin."))
-    return (period=first(periods), origin=first(origins))
+function _edg_checked_clock(clock)
+    clock === nothing && throw(ArgumentError(
+        "EDG prediction requires the control clock of the EDG state passed to the provider call."))
+    isnan(clock.period) && throw(ArgumentError(
+        "EDG prediction requires its configured control effector, whose clock the run reports when it starts."))
+    isfinite(clock.period) && clock.period > 0.0 ||
+        throw(ArgumentError("EDG prediction requires a positive control period."))
+    isfinite(clock.origin) || throw(ArgumentError("EDG prediction requires a finite control-clock origin."))
+    return (period=Float64(clock.period), origin=Float64(clock.origin))
 end
 
 include(joinpath(@__DIR__, "adapter_queries.jl"))

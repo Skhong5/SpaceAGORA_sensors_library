@@ -746,9 +746,11 @@ function run_simulation(
     # println("ODE parameters:")
     # println(p)
     # println("args.mission_configuration.mission_time: $(args.mission_configuration.mission_time)")
-    # The links first (each initialized once), then navigation, guidance and
-    # control: each stage may read what the previous one set up.
+    # The links first (each initialized once), then the control clocks, then
+    # navigation, guidance and control: each stage may read what the previous one
+    # set up.
     SimulationModel.SimulationCallbacks.initialize_gnc_links!(args, u_start, p, t_start)
+    SimulationModel.SimulationCallbacks._report_gnc_clocks!(args, t_start)
     for navigation in args.navigation_model.navigation_effectors
         SimulationLifecycle.initialize_navigation!(navigation, u_start, p, t_start)
     end

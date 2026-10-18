@@ -259,13 +259,16 @@ const HYPR_PLANNER_TYPES = (SpaceAGORA.HYPRRPOPlanner, SpaceAGORA.HYPRComparison
     SpaceAGORA.RRTConnectPlanner, SpaceAGORA.RRTConnectBezierPlanner, SpaceAGORA.RRTStarPlanner, SpaceAGORA.CHOMPPlanner,
     SpaceAGORA.STOMPPlanner, SpaceAGORA.RetainedPathRPOPlanner)
 
+include(joinpath(@__DIR__, "edg_guidance_conformance.jl"))
+
 """
 The planning algorithms checked with `check_algorithm`, each with its requests, the
 trusted queries its family's validation needs and a short simulation: the direct
 planner (with the station clearance `make_rpo_configuration` gives it), the hold
 planner above, the burn-plan family's apoapsis planner, the joint-reference
-family's quintic planner, and, when the optional SpaceAGORAHYPR package is loaded,
-the HYPR planner, the seven comparison planners and the retained-path planner.
+family's quintic planner, the EDG guidance decision when the optional
+SpaceAGORAEDG package is loaded, and, when the optional SpaceAGORAHYPR package is
+loaded, the HYPR planner, the seven comparison planners and the retained-path planner.
 """
 function algorithm_instances()
     direct = SpaceAGORA.DirectRPOPlanner(segment_clearance_at=SpaceAGORA.RPOPlannerLifecycle.station_segment_clearance)
@@ -280,6 +283,9 @@ function algorithm_instances()
         (algorithm=SpaceAGORA.QuinticJointPlanner(), requests=C.joint_reference_conformance_requests(),
             trusted=NamedTuple(), simulation=C.joint_reference_conformance_simulation()),
     ]
+    SpaceAGORA.EDGServices.available() && push!(entries, (algorithm=SpaceAGORA.EDGGuidanceAlgorithm(),
+        requests=edg_guidance_conformance_requests(), trusted=NamedTuple(),
+        simulation=edg_guidance_conformance_simulation()))
     SpaceAGORA.hypr_available() && append!(entries, rpo.(hypr_planners()))
     return entries
 end
@@ -287,9 +293,15 @@ end
 """
 Concrete built-in planning algorithm types without an instance, each with the reason.
 """
-algorithm_exemptions() = SpaceAGORA.hypr_available() ? Dict{Any, String}() : Dict{Any, String}(
-    T => "needs the optional SpaceAGORAHYPR package, which is not loaded here; the unit runner loads it, and there " *
-        "the planner is checked" for T in HYPR_PLANNER_TYPES)
+function algorithm_exemptions()
+    exemptions = SpaceAGORA.hypr_available() ? Dict{Any, String}() : Dict{Any, String}(
+        T => "needs the optional SpaceAGORAHYPR package, which is not loaded here; the unit runner loads it, and " *
+            "there the planner is checked" for T in HYPR_PLANNER_TYPES)
+    SpaceAGORA.EDGServices.available() || (exemptions[SpaceAGORA.EDGGuidanceAlgorithm] =
+        "needs the optional SpaceAGORAEDG package, which is not loaded here; the unit runner loads it, and there " *
+        "the algorithm is checked")
+    return exemptions
+end
 
 """
 The algorithm families checked with `check_algorithm_family`, under each rejection
@@ -310,7 +322,11 @@ function family_instances()
     # The joint-reference family has one policy, :fail; its requests include one it refuses.
     joint = (family=SpaceAGORA.JointReferenceFamily(), algorithm=SpaceAGORA.QuinticJointPlanner(),
         requests=C.joint_reference_conformance_requests(), link=SpaceAGORA.RobotArmPlanBuffer(), trusted=NamedTuple())
-    return [rpo..., burn, joint]
+    # The EDG guidance family (:fail) needs the SpaceAGORAEDG provider, which the unit runner loads.
+    edg = (family=SpaceAGORA.EDGGuidanceFamily(), algorithm=SpaceAGORA.EDGGuidanceAlgorithm(),
+        requests=edg_guidance_conformance_requests(), link=SpaceAGORA.AerobrakingEnergyDepletionState(num_sats=1),
+        trusted=NamedTuple())
+    return [rpo..., burn, joint, edg]
 end
 
 end # module ConformanceInstances

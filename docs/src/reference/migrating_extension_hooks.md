@@ -128,13 +128,8 @@ SpaceAGORA.ephemerides_epoch_seconds(m::FixedFrame, initial_time) = 0.0
 ## Schedule
 
 - **0.3.0.** The new names, with warnings for the old ones.
-  `ExternalPropagationServices` and `HYPRServices` are at contract 2.0.0, with
-  SpaceAGORAMuJoCo 0.2.0 and HYPR 0.2.0; `EDGServices` 2.0.0 follows with
-  SpaceAGORAEDG 0.2.0.
-
-  !!! note "TODO(0.3.0 PR 2): EDGServices 2.0.0"
-      When the EDGServices 2.0.0 pair merges, say that all three facades are at
-      contract 2.0.0, with SpaceAGORAEDG 0.2.0.
+  `ExternalPropagationServices`, `HYPRServices` and `EDGServices` are at
+  contract 2.0.0, with SpaceAGORAMuJoCo 0.2.0, HYPR 0.2.0 and SpaceAGORAEDG 0.2.0.
 - **0.4.0.** The companion packages use the new names.
 - **0.5.0, or 1.0 if that comes first.** The deprecated names are removed, and
   `control_propellant_rate` and `control_wheel_torque` gain defaults, `0.0` and

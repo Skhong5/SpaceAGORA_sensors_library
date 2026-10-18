@@ -7,7 +7,7 @@ using ..CommandTypes: AerobrakingControlCommand
 using ..GravityEffectors: _inverse_squared_gravity_accel, _inverse_squared_j2_gravity_accel,
     NBodyGravityModel, nbody_acceleration_ii_at_epoch
 
-const CONTRACT_VERSION = v"1.0.0"
+const CONTRACT_VERSION = v"2.0.0"
 struct CompatibilityError <: Exception
     message::String
 end
@@ -56,14 +56,28 @@ Base.getproperty(::_PredictionContext, ::Symbol) = throw(ArgumentError(
 function _context_query(context::_PredictionContext, kind, args...)
     return getfield(context, :query)(kind, args...)
 end
-function _borrow_context(p)
+# `clock` is the control clock of the EDG state passed to the call, or `nothing`.
+function _borrow_context(p, clock=nothing)
     active = Ref(true)
     query = function (kind, args...)
         active[] || throw(ArgumentError("An EDG prediction context cannot be used after its callback returns."))
+        kind isa Val{:clock} && return _edg_checked_clock(clock)
         return _prediction_query(p, kind, args...)
     end
     return _PredictionContext(query, active)
 end
+
+# An opaque handle to one run's prediction services, held by EDG guidance requests.
+# Copies share the run, so a copied request still reaches it; each provider call
+# borrows its own call-scoped context from it, as from the run's parameters.
+struct _RunServices
+    params::ODEParams
+end
+Base.deepcopy_internal(x::_RunServices, ::IdDict) = x
+Base.propertynames(::_RunServices, private::Bool=false) = ()
+Base.getproperty(::_RunServices, ::Symbol) = throw(ArgumentError(
+    "EDG prediction services are opaque; pass them to the provider call."))
+Base.show(io::IO, ::_RunServices) = print(io, "EDG prediction services")
 
 # Named tuples and StaticArrays copy only the values consumed by the kernels.
 function _planet_values(planet)
@@ -89,13 +103,12 @@ _prediction_query(p, ::Val{:thermal}) = let thermal = p.args.environment_model.t
         (thermal_accomodation_factor=Float64(thermal.thermal_accomodation_factor),) : NamedTuple()
 end
 _prediction_query(p, ::Val{:entry_altitude}) = 1e3 * Float64(p.args.environment_model.EI)
-_prediction_query(p, ::Val{:geometry}, i) = _geometry_values(p.args.dynamics_model.spacecraft[i])
-_prediction_query(p, ::Val{:environment}, u, t, i) = _edg_environment_state(u, p, t, i)
+_prediction_query(p, ::Val{:geometry}, spacecraft_index) = _geometry_values(p.args.dynamics_model.spacecraft[spacecraft_index])
+_prediction_query(p, ::Val{:environment}, u, t, spacecraft_index) = _edg_environment_state(p, u, t, spacecraft_index)
 _prediction_query(p, ::Val{:trajectory_environment}, r, v, t) = _edg_targeting_prediction_environment(p, r, v, t)
 _prediction_query(p, ::Val{:atmosphere}, altitude, t) = _edg_sample_prediction_atmosphere(p, altitude, t)
 _prediction_query(p, ::Val{:ephemeris_time}, t) = _edg_ephemeris_time(p, t)
 _prediction_query(p, ::Val{:frame}, t) = SMatrix{3,3,Float64}(_edg_planet_frame_lpi(p, t))
-_prediction_query(p, ::Val{:clock}, config) = _edg_targeting_control_clock(config, p)
 _prediction_query(p, ::Val{:gravity}, r, v, mass, t) = _edg_prediction_gravity_query(p, r, v, mass, t)
 function _prediction_query(p, ::Val{:frame_state}, r, v, t)
     env = p.args.environment_model
@@ -113,22 +126,23 @@ end
 planet_constants(p::AbstractPredictionContext) = _context_query(p, Val(:planet))
 thermal_parameters(p::AbstractPredictionContext) = _context_query(p, Val(:thermal))
 entry_altitude_m(p::AbstractPredictionContext) = _context_query(p, Val(:entry_altitude))
-spacecraft_geometry(p::AbstractPredictionContext, i::Int) = _context_query(p, Val(:geometry), i)
+spacecraft_geometry(p::AbstractPredictionContext, spacecraft_index::Int) = _context_query(p, Val(:geometry), spacecraft_index)
 density_scale_height(p::AbstractPredictionContext) = _context_query(p, Val(:scale_height))
 frame_state(p::AbstractPredictionContext, r, v, t) = _context_query(p, Val(:frame_state), r, v, t)
 gravity_acceleration(p::AbstractPredictionContext, r, v, mass, t) = _context_query(p, Val(:gravity), r, v, mass, t)
-_edg_environment_state(u, p::AbstractPredictionContext, t::Float64, i::Int) = _context_query(p, Val(:environment), u, t, i)
+_edg_environment_state(p::AbstractPredictionContext, u, t::Float64, spacecraft_index::Int) =
+    _context_query(p, Val(:environment), u, t, spacecraft_index)
 _edg_targeting_prediction_environment(p::AbstractPredictionContext, r, v, t::Float64) = _context_query(p, Val(:trajectory_environment), r, v, t)
 _edg_sample_prediction_atmosphere(p::AbstractPredictionContext, altitude::Float64, t::Float64) = _context_query(p, Val(:atmosphere), altitude, t)
 _edg_ephemeris_time(p::AbstractPredictionContext, t::Float64) = _context_query(p, Val(:ephemeris_time), t)
 _edg_planet_frame_lpi(p::AbstractPredictionContext, t::Float64) = _context_query(p, Val(:frame), t)
-_edg_targeting_control_clock(config, p::AbstractPredictionContext) = _context_query(p, Val(:clock), config)
+_edg_targeting_control_clock(p::AbstractPredictionContext) = _context_query(p, Val(:clock))
 _edg_in_drag_passage(p::AbstractPredictionContext, env)::Bool =
     isfinite(env.altitude_m) && isfinite(entry_altitude_m(p)) && env.altitude_m <= entry_altitude_m(p)
 
-function _project_argument(x, contexts)
-    if x isa ODEParams
-        context = _borrow_context(x)
+function _project_argument(x, contexts, clock=nothing)
+    if x isa ODEParams || x isa _RunServices
+        context = _borrow_context(x isa ODEParams ? x : getfield(x, :params), clock)
         push!(contexts, context)
         return context
     elseif x isa SpacecraftModel
@@ -143,11 +157,20 @@ function _project_argument(x, contexts)
     end
     return x
 end
+# The control clock of the first EDG state among a call's arguments.
+function _call_clock(args)
+    for x in args
+        clock = _edg_state_clock(x)
+        clock === nothing || return clock
+    end
+    return nothing
+end
 function _invoke_kernel(name::Symbol, args...; kwargs...)
     extension = require_provider()
     contexts = AbstractPredictionContext[]
+    clock = _call_clock(args)
     try
-        projected = map(x -> _project_argument(x, contexts), args)
+        projected = map(x -> _project_argument(x, contexts, clock), args)
         return extension.call_kernel(name, projected...; kwargs...)
     finally
         for context in contexts
