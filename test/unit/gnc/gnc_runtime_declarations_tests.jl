@@ -1,5 +1,6 @@
-# The run-time declarations of control models (GNCRuntime), and the run-start
-# initialization of navigation effectors and of a sensor's own state.
+# The run-time declarations of control models (GNCRuntime), the run-start
+# initialization of navigation effectors and of a sensor's own state, and the
+# models' own run state in checkpoint files.
 module GNCRuntimeDeclarationsTests
 using Test, StaticArrays, LinearAlgebra, Logging, SpaceAGORA
 using DiffEqCallbacks: PresetTimeCallback
@@ -134,7 +135,8 @@ function SpaceAGORA.initialize_sensor!(s::CountingSensor, truth::SensorTruth, ct
     return nothing
 end
 
-function runtime_args(control; sensor=CountingSensor(), mission_time=4.0, guidance=(LoggedGuidance(),))
+function runtime_args(control; sensor=CountingSensor(), mission_time=4.0, guidance=(LoggedGuidance(),),
+                      navigation=(LoggedNavigation(),), navigation_period=1.0, settings=(;))
     root = SM.Link(root=true, m=50.0, dims=MVector(1.0, 1.0, 1.0))
     r = SM.Earth().Rp_e + 500e3
     ic = SM.CartesianInitialCondition(SVector(r, 0.0, 0.0), SVector(0.0, sqrt(SM.Earth().μ / r), 0.0);
@@ -145,10 +147,64 @@ function runtime_args(control; sensor=CountingSensor(), mission_time=4.0, guidan
         initial_time=SM.InitialTime(year=2024, month=3, day=20, hour=0, minute=0, second=0.0),
         dynamic_effectors=(), ephemerides_model=SM.SimpleEphemeridesModel(), orientation_sim=true,
         keplerian=false, EI_km=100.0, verbose=false, results=false)
-    return SM.SimConfig._with_configuration(base;
-        navigation_model=SM.NavigationModel(navigation_effectors=(LoggedNavigation(),), navigation_rates=[1.0]),
+    extra = (;)
+    if !isempty(settings)
+        st = base.simulation_settings
+        fields = NamedTuple{fieldnames(typeof(st))}(map(n -> getfield(st, n), fieldnames(typeof(st))))
+        extra = (; simulation_settings=SM.SimulationSettings(; merge(fields, settings)...))
+    end
+    return SM.SimConfig._with_configuration(base; extra...,
+        navigation_model=SM.NavigationModel(navigation_effectors=navigation, navigation_rates=fill(navigation_period, length(navigation))),
         guidance_model=SM.GuidanceModel(guidance_effectors=guidance, guidance_rates=fill(1.0, length(guidance))),
         control_model=SM.ControlModel(control_effectors=control, control_rates=fill(0.5, length(control))))
+end
+
+# Run state kept through checkpoint files: a navigation model counting its ticks
+# (and, apart, this run's, which the file does not hold), a sensor counting its
+# samples, and a model that saves state it cannot restore.
+mutable struct TickCounter <: AbstractNavigationModel
+    ticks::Int
+    this_run::Int
+    calls::Vector{Symbol}
+end
+TickCounter() = TickCounter(0, 0, Symbol[])
+SpaceAGORA.update_navigation!(m::TickCounter, u, p, t::Float64, i::Int) = (m.ticks += 1; m.this_run += 1; nothing)
+L.initialize_navigation!(m::TickCounter, u, p, t) = (m.ticks = 0; m.this_run = 0; push!(m.calls, :initialize); nothing)
+L.checkpoint_state(m::TickCounter) = (ticks=m.ticks,)
+L.restore_checkpoint_state!(m::TickCounter, data) = (m.ticks = data.ticks; push!(m.calls, :restore); nothing)
+mutable struct KeptCountSensor <: AbstractSensor
+    period_s::Float64
+    seed::Int
+    rng::Any
+    latest::SVector{1, Float64}
+    latest_time_s::Float64
+    count::Int
+    initialized_at::Vector{Float64}
+end
+KeptCountSensor() = KeptCountSensor(1.0, 1, nothing, SVector(NaN), NaN, 0, Float64[])
+SpaceAGORA.sensor_dimension(::KeptCountSensor) = 1
+SpaceAGORA.sensor_measure(s::KeptCountSensor, truth::SensorTruth, ctx, rng) = SVector(Float64(s.count += 1))
+SpaceAGORA.initialize_sensor!(s::KeptCountSensor, truth::SensorTruth, ctx, rng) = (s.count = 0; push!(s.initialized_at, truth.t_s); nothing)
+L.checkpoint_state(s::KeptCountSensor) = (count=s.count,)
+L.restore_checkpoint_state!(s::KeptCountSensor, data) = (s.count = data.count; nothing)
+# A kind that keeps state only when its parameter says so.
+mutable struct MaybeKept <: AbstractNavigationModel
+    keeps::Bool
+    ticks::Int
+end
+SpaceAGORA.update_navigation!(m::MaybeKept, u, p, t::Float64, i::Int) = (m.ticks += 1; nothing)
+L.checkpoint_state(m::MaybeKept) = m.keeps ? (ticks=m.ticks,) : nothing
+L.restore_checkpoint_state!(m::MaybeKept, data) = (m.ticks = data.ticks; nothing)
+struct HalfKept <: AbstractNavigationModel end
+SpaceAGORA.update_navigation!(::HalfKept, u, p, t::Float64, i::Int) = nothing
+L.checkpoint_state(::HalfKept) = (ticks=0,)
+
+refusal(f) = try
+    f()
+    nothing
+catch e
+    e isa ArgumentError || rethrow()
+    sprint(showerror, e)
 end
 
 # A contributor's link: a slot one guidance model writes and one control model reads.
@@ -191,6 +247,8 @@ SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
         @test register_tstops!(nothing, :any_model, 1) === nothing
         @test gnc_clock_started!(:any_model, 0.1, 0.0) === nothing
         @test L.initialize_navigation!(:any_model, nothing, nothing, 0.0) === nothing
+        @test checkpoint_state(:any_model) === nothing && checkpoint_state === L.checkpoint_state
+        @test !applicable(restore_checkpoint_state!, :any_model, (ticks=0,))   # no default: a model that saves state restores it
         @test tick_schedule === SpaceAGORA.GNCRuntime.tick_schedule
         @test initialize_sensor! === SM.Sensors.initialize_sensor!
         # The sensor fallback types nothing, so a sensor's method that types only
@@ -319,6 +377,56 @@ SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
                 @test length(parallel_slot.checked) == 1 && parallel_slot.initialized == 1
             end
         end
+    end
+
+    @testset "a resumed run restores the run state models keep in checkpoint files" begin
+        # Navigation ticks every 0.3 s, off the 1 s checkpoint boundaries: a
+        # periodic tick at a segment boundary is skipped.
+        checkpointed(dir; kw...) = (checkpoint_enabled=true, checkpoint_interval_s=1.0, checkpoint_directory=dir, kw...)
+        counted(mission_time, settings; navigation=TickCounter(), sensor=KeptCountSensor()) =
+            runtime_args((); sensor=sensor, navigation=(navigation,), navigation_period=0.3, mission_time=mission_time,
+                         settings=settings)
+        run!(args) = (run_simulation(args; isolate_state=false); args)
+        straight = run!(counted(6.0, (;)))
+        dir = mktempdir()
+        early = run!(counted(3.0, checkpointed(dir)))
+        early_nav, early_sensor = only(early.navigation_model.navigation_effectors), only(SM.mounted_sensors(only(early.dynamics_model.spacecraft))).sensor
+        saved = SM.IOSerialization._load_checkpoint(early).runtime_state.models
+        @test saved.navigation == Any[(ticks=early_nav.ticks,)] && saved.sensors == [Any[(count=early_sensor.count,)]]
+        @test saved.guidance == Any[nothing]                                  # LoggedGuidance keeps none
+        resumed = run!(counted(6.0, checkpointed(dir; resume_from_checkpoint=true)))
+        nav = only(resumed.navigation_model.navigation_effectors)
+        sensor = only(SM.mounted_sensors(only(resumed.dynamics_model.spacecraft))).sensor
+        straight_sensor = only(SM.mounted_sensors(only(straight.dynamics_model.spacecraft))).sensor
+        @test nav.calls == [:initialize, :restore]                            # the reset first, then the saved state
+        @test early_nav.ticks > 0 && nav.this_run > 0
+        @test nav.ticks == early_nav.ticks + nav.this_run                     # counting on from the checkpoint
+        @test early_sensor.count == 4 && straight_sensor.count == 7           # samples at 0..3 s and at 0..6 s
+        @test sensor.count == straight_sensor.count                           # each sample of the run counted once
+        @test sensor_measurement(sensor) == sensor_measurement(straight_sensor)
+        @test isempty(sensor.initialized_at)                                  # no initialize_sensor! on a resume
+        # Another model at the position is refused, and so is a checkpoint
+        # holding no state for a model that keeps some.
+        msg = refusal(() -> run!(counted(6.0, checkpointed(dir; resume_from_checkpoint=true); navigation=LoggedNavigation())))
+        @test msg !== nothing && occursin("differ from the checkpoint", msg)
+        plain = mktempdir()
+        plain_args = run!(counted(3.0, checkpointed(plain); navigation=LoggedNavigation(), sensor=CountingSensor()))
+        @test !hasproperty(SM.IOSerialization._load_checkpoint(plain_args).runtime_state, :models)   # nothing kept: no entry
+        msg = refusal(() -> run!(counted(6.0, checkpointed(plain; resume_from_checkpoint=true); sensor=CountingSensor())))
+        @test msg !== nothing && occursin("The run state of TickCounter", msg)
+        # A snapshot written by another model (the sensor) holds nothing for a
+        # model of the same kind that keeps state only on the resume.
+        mixed = mktempdir()
+        run!(counted(3.0, checkpointed(mixed); navigation=MaybeKept(false, 0)))
+        @test SM.IOSerialization._load_checkpoint(counted(3.0, checkpointed(mixed))).runtime_state.models.navigation == Any[nothing]
+        msg = refusal(() -> run!(counted(6.0, checkpointed(mixed; resume_from_checkpoint=true); navigation=MaybeKept(true, 0))))
+        @test msg !== nothing && occursin("The run state of MaybeKept", msg)
+        @test refusal(() -> run!(counted(6.0, checkpointed(mixed; resume_from_checkpoint=true); navigation=MaybeKept(false, 0)))) === nothing
+        # A model that saves state it cannot restore is refused when the run
+        # checkpoints, and runs otherwise.
+        msg = refusal(() -> run!(counted(3.0, checkpointed(mktempdir()); navigation=HalfKept())))
+        @test msg !== nothing && occursin("has no restore_checkpoint_state!", msg)
+        @test refusal(() -> run!(counted(3.0, (;); navigation=HalfKept()))) === nothing
     end
 
     @testset "an unknown schedule is refused" begin

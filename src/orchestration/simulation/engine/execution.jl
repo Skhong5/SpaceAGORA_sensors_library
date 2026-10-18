@@ -710,6 +710,7 @@ function run_simulation(
 
     t_start = 0.0
     u_start = initial_conditions
+    resumed, model_snapshot = false, nothing
     if args.simulation_settings.resume_from_checkpoint
         ckpt = _load_checkpoint(args)
         if ckpt === nothing
@@ -732,6 +733,8 @@ function run_simulation(
             end
             _restore_interlink_checkpoint_state!(args, ckpt, p.is_active)
             _restore_callback_checkpoint_state!(args, ckpt, p)
+            model_snapshot = _check_model_checkpoint_state(args, ckpt)
+            resumed = true
             t_start = ckpt.t
             u_start = ckpt.u
             _initialize_in_atmosphere_flags!(p, u_start)
@@ -761,6 +764,9 @@ function run_simulation(
     for control in args.control_model.control_effectors
         SimulationLifecycle.initialize_control!(control, u_start, p, t_start)
     end
+    # The models' own run state replaces their reset on a resumed run.
+    resumed && _restore_model_checkpoint_state!(args, model_snapshot)
+    checkpoint_active && _check_model_checkpoint_hooks(args)
     SimulationModel.ControlHooks._edg_initialize_heat_accounting!(args, u_start, Float64(t_start))
     p.shared_buffers.solve_segment_end_time[] = mission_end
     # prob_debug exists only to feed the NaN-probe below, which itself only
@@ -1046,7 +1052,7 @@ function run_simulation(
             t_cursor = Float64(seg_sol.t[end])
             u_cursor = deepcopy(seg_sol.u[end])
             _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode); is_active=p.is_active,
-                callback_state=_callback_checkpoint_state(args))
+                callback_state=_callback_checkpoint_state(args), model_state=_model_checkpoint_state(args))
             checkpoint_written = true
             if string(seg_sol.retcode) != "Success" || !_gravity_backbone_time_reached(t_cursor, t_next)
                 break

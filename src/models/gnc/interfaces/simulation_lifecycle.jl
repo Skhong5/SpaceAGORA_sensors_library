@@ -1,12 +1,14 @@
 # Lifecycle hooks of guidance, navigation and control models: the pre-run checks,
-# the run-start initializers, the atmosphere events and the call before a linked
-# consumer's tick. Each default does nothing.
+# the run-start initializers, the run state in checkpoint files, the atmosphere
+# events and the call before a linked consumer's tick. Each default does nothing;
+# restore_checkpoint_state! has none.
 # The bind_spacecraft fallback names the effector's scope, a GNCRuntime declaration.
 isdefined(@__MODULE__, :GNCRuntime) || Base.include(@__MODULE__, joinpath(@__DIR__, "gnc_runtime.jl"))
 module SimulationLifecycle
 using ..GNCRuntime: spacecraft_scope, BoundSpacecraft, CoupledSpacecraft
 
 export preflight_guidance, preflight_control, initialize_navigation!, initialize_guidance!, initialize_control!,
+    checkpoint_state, restore_checkpoint_state!,
     requires_atmosphere_events, atmosphere_transition!, before_reference_control!
 
 """
@@ -63,6 +65,35 @@ configure and the run then changes, such as a held command, returns to its value
 before the model's first run. Default: nothing.
 """
 initialize_control!(model, u, p, t) = nothing
+
+"""
+    checkpoint_state(model) -> data
+
+The run state `model` keeps itself, for a checkpoint file: plain data (numbers,
+arrays, named tuples, random streams), or `nothing` when it keeps none. The
+engine calls it at every checkpoint for each guidance, navigation and control
+model and each mounted sensor, and stores a copy of the data with the engine's
+own run state; a resumed run hands it to `restore_checkpoint_state!`. Return
+`nothing` for the whole run or data for the whole run. A model that returns data
+implements `restore_checkpoint_state!`: a checkpointed run refuses at setup a
+model that has the first and not the second. Default: `nothing`.
+"""
+checkpoint_state(model) = nothing
+
+"""
+    restore_checkpoint_state!(model, data) -> nothing
+
+On a run resumed from a checkpoint file, put back the run state `data` that
+`checkpoint_state(model)` returned when the file was written (read from the
+file, so the model may keep it). For a guidance, navigation or control model
+the engine calls it after the run-start initializers, so the restored state
+replaces their reset; for a sensor before its sampling resumes (a resumed run
+does not call `initialize_sensor!`). The resumed run refuses a checkpoint whose
+models differ in kind or position from its own, or that holds no run state for a
+model that keeps some. No default: a model whose `checkpoint_state` returns data
+implements it.
+"""
+function restore_checkpoint_state! end
 
 """
     requires_atmosphere_events(model) -> Bool
