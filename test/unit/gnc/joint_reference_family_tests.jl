@@ -225,6 +225,25 @@ end
     @test same_states(first_run, second_run)
 end
 
+@testset "A plan a user sets in a reused buffer is where the next runs start" begin
+    # The first run installs a plan at 1 s; the user then sets a hold at other joint
+    # angles. The next run's state and buffer start from the user's plan, as a fresh
+    # configuration with that plan does, and so does the run after it.
+    events = (events=[AlgorithmEvent(1.0)],)
+    config, _, buffer = linked_config(binding_kwargs=events, guidance_rate=DT)
+    first_run = run_simulation(config; isolate_state=false, return_solution=true)
+    @test buffer.updated_at_s == 1.0
+    q_edit = [0.1, -0.05, 0.0]
+    buffer.plan, buffer.updated_at_s = RobotArmPlanBuffer(ARM, BASE, q_edit).plan, 0.0
+    fresh, _, _ = linked_config(buffer=RobotArmPlanBuffer(ARM, BASE, q_edit), binding_kwargs=events, guidance_rate=DT)
+    u0 = SpaceAGORA.SimulationEngine.build_initial_conditions(fresh)
+    @test SpaceAGORA.SimulationEngine.build_initial_conditions(config) == u0
+    edited_run = run_simulation(config; isolate_state=false, return_solution=true)
+    @test collect(edited_run.u[1]) == collect(u0) && !same_states(first_run, edited_run)
+    @test same_states(edited_run, run_simulation(fresh; return_solution=true))
+    @test same_states(run_simulation(config; isolate_state=false, return_solution=true), edited_run)
+end
+
 @testset "A buffer no model writes keeps the plan it was configured with" begin
     plan = direct_plan()
     own = run_simulation(arm_config(controls=(arm_controller(plan=plan),)); return_solution=true)

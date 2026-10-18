@@ -6,6 +6,7 @@ using Random
 using StaticArrays
 using ..Robotics
 using ..HYPRUtils
+import ...SimulationLifecycle
 
 export RobotArmPlannerConfig, RobotArmPlan, RobotArmPlanBuffer, plan_robot_arm_motion, robot_arm_plan_sample
 export RobotArmSphereObstacle, RobotArmHYPRConfig, RobotArmHYPRResult
@@ -51,15 +52,24 @@ starts, so it must hold one. The second form holds the arm of `model` at its
 
 An `AlgorithmGuidance` of the joint-reference family (`JointReferenceFamily`)
 configured with `link=` the same buffer installs each accepted plan into it, at
-the time of its request. Each run starts from the plan and time the buffer held
-before its first run.
+the time of its request. At each run's start, a plan and time a planner installed
+in the previous run return to the buffer's plan and time at that run's start,
+while a plan or time a user set since is kept as the new configuration.
 """
 Base.@kwdef mutable struct RobotArmPlanBuffer
     plan::Union{Nothing, RobotArmPlan} = nothing
     updated_at_s::Float64 = 0.0
-    # The plan and time before the first run, restored at each run's start.
-    run_start::Union{Nothing, Tuple{Union{Nothing, RobotArmPlan}, Float64}} = nothing
+    # The plan and time the previous run started from, and a copy of the last
+    # install in that run (`_buffer_run_start`).
+    run_start::Union{Nothing, NamedTuple{(:plan, :updated_at_s), Tuple{Union{Nothing, RobotArmPlan}, Float64}}} = nothing
+    run_written::Union{Nothing, NamedTuple{(:plan, :updated_at_s), Tuple{RobotArmPlan, Float64}}} = nothing
 end
+
+# The plan and time the next run starts from, without changing the buffer: an entry
+# still equal to the previous run's last install returns to its value at that
+# run's start, an entry a user changed since is kept (`_run_start_entries`).
+_buffer_run_start(buffer::RobotArmPlanBuffer) = SimulationLifecycle._run_start_entries(
+    buffer.run_start, buffer.run_written, (plan=buffer.plan, updated_at_s=buffer.updated_at_s))
 
 """Evaluate the smooth quintic blend position at a normalized time."""
 function _quintic_scalar(s::Float64)

@@ -282,6 +282,7 @@ GA.validate_proposal(::JointReferenceFamily, request::JointReferenceRequest, res
 function GA.install!(buffer::RobotArmPlanBuffer, ::JointReferenceFamily, plan::RobotArmPlan,
         request::JointReferenceRequest, t; validation, diagnostics)
     buffer.plan, buffer.updated_at_s = plan, Float64(t)
+    buffer.run_written = (plan=deepcopy(plan), updated_at_s=Float64(t))
     return nothing
 end
 
@@ -324,15 +325,14 @@ function GR.check_link(buffer::RobotArmPlanBuffer, producers, consumers, args)
     return nothing
 end
 
-# Each run starts from the plan and time the buffer held before its first run. The
-# engine builds the arm's initial state before this runs, from the same recorded
-# plan (`run_start`), so state and buffer start alike.
+# Each run starts from the buffer's configured plan and time: a plan the previous
+# run installed returns to the one that run started from, a plan a user set since
+# is kept (`_buffer_run_start`). The engine builds the arm's initial state before
+# this runs, by the same rule, so state and buffer start alike.
 function GR.link_initialize!(buffer::RobotArmPlanBuffer, producers, consumers, u, p, t)
-    if buffer.run_start === nothing
-        buffer.run_start = (buffer.plan, buffer.updated_at_s)
-    else
-        buffer.plan, buffer.updated_at_s = buffer.run_start
-    end
+    start = SimulationModel.RobotArmPlanning._buffer_run_start(buffer)
+    buffer.plan, buffer.updated_at_s = start.plan, start.updated_at_s
+    buffer.run_start, buffer.run_written = deepcopy(start), nothing
     return nothing
 end
 

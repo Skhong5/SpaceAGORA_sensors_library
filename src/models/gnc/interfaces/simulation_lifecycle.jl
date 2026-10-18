@@ -47,8 +47,9 @@ initialize_navigation!(model, u, p, t) = nothing
 As `initialize_navigation!`, for each guidance `model`, after the navigation
 models: reset its run state, so that two runs of one configuration with
 `isolate_state=false` start equal. Every built-in guidance model's run state is
-reset when a run starts, here or by the link it shares (`link_initialize!`).
-Default: nothing.
+reset when a run starts, here or by the link it shares (`link_initialize!`), and a
+value a user may configure is kept when the user changed it, as for
+`initialize_control!`. Default: nothing.
 """
 initialize_guidance!(model, u, p, t) = nothing
 
@@ -58,9 +59,11 @@ initialize_guidance!(model, u, p, t) = nothing
 As `initialize_navigation!`, for each control `model`, after the guidance
 models: reset its run state, so that two runs of one configuration with
 `isolate_state=false` start equal. Every built-in control model's run state is
-reset when a run starts, here or by the link it shares; a value a user may
-configure and the run then changes, such as a held command, returns to its value
-before the model's first run. Default: nothing.
+reset when a run starts, here or by the link it shares. A value a user may
+configure that the run also writes, such as a held command, returns to its value
+at the previous run's start while it still equals the model's last write in that
+run; a value the user changed since is kept, and later runs start from it.
+Default: nothing.
 """
 initialize_control!(model, u, p, t) = nothing
 
@@ -130,4 +133,39 @@ end
 
 # Shallow copy of a plain struct with all fields set by position (kwdef types included).
 _shallow_copy(x::T) where {T} = T((getfield(x, i) for i in 1:fieldcount(T))...)
+
+# Values a user may configure that a run also writes, such as a held command or a
+# plan buffer's plan. A model records its last write of them (`written`) during a
+# run. At the next run's start, an entry still equal to that write returns to its
+# value at the previous run's start (`start`, a copy); an entry changed since is the
+# user's new configuration and is kept. The result is the run's start and the new
+# baseline. Before the first run (`start === nothing`), or when the model wrote
+# nothing, every entry is kept. Entries are the fields of `current`; `written` may
+# hold more. The burn scheduler applies the same rule to its schedule entries.
+function _run_start_entries(start, written, current::NamedTuple)
+    (start === nothing || written === nothing) && return current
+    names = keys(current)
+    values = map(names) do name
+        now = getfield(current, name)
+        _same_value(now, getfield(written, name)) ? deepcopy(getfield(start, name)) : now
+    end
+    return NamedTuple{names}(values)
+end
+
+# Equal contents: numbers, strings, symbols and `nothing` by `isequal` (NaN equals
+# NaN), arrays element by element, other objects field by field.
+function _same_value(a, b)
+    a === b && return true
+    typeof(a) === typeof(b) || return false
+    (a isa Number || a isa AbstractString || a isa Symbol) && return isequal(a, b)
+    a isa AbstractArray && return size(a) == size(b) && all(i -> _same_value(a[i], b[i]), eachindex(a, b))
+    a isa AbstractDict && return isequal(a, b)
+    T = typeof(a)
+    fieldcount(T) == 0 && return isequal(a, b)
+    for i in 1:fieldcount(T)
+        isdefined(a, i) == isdefined(b, i) || return false
+        isdefined(a, i) && !_same_value(getfield(a, i), getfield(b, i)) && return false
+    end
+    return true
+end
 end

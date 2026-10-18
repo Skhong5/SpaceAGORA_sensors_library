@@ -226,7 +226,7 @@ the engine calls around the ticks. Each default does nothing.
 | Hook | When the engine calls it | Implement it to |
 |---|---|---|
 | `preflight_guidance(model, args; isolate_state)`, `preflight_control(model, args; isolate_state)` | before the run, on the caller's configuration | refuse a configuration the model cannot run, with an `ArgumentError`; it must change nothing |
-| `initialize_navigation!(model, u, p, t)`, `initialize_guidance!(model, u, p, t)`, `initialize_control!(model, u, p, t)` | at the start of each run: after the links' `link_initialize!`, the navigation models, then guidance, then control | reset the model's run state, so that two runs of one configuration with `isolate_state=false` start equal |
+| `initialize_navigation!(model, u, p, t)`, `initialize_guidance!(model, u, p, t)`, `initialize_control!(model, u, p, t)` | at the start of each run: after the links' `link_initialize!`, the navigation models, then guidance, then control | reset the model's run state, so that two runs of one configuration with `isolate_state=false` start equal, and keep a change a user made between the runs (see the house rules) |
 | `requires_atmosphere_events(model)`, `atmosphere_transition!(model, u, p, t, spacecraft_index, inside)` | when a spacecraft enters or leaves the atmosphere, in runs where a model declares `true` | react to the entry or exit |
 | `before_reference_control!(producer, consumer, u, p, t)` | before each periodic tick of a control model, for each model that produces a link it consumes | bring what the producer writes up to date, as the RPO planner checks its reference |
 
@@ -759,6 +759,14 @@ pull request (the repository's contributor guide,
 - **Keep run state in the model** (feedback) or in the state
   `initialize_algorithm` returns (planning), never in globals, and reset a
   model's run state in its `initialize_*!` hook.
+- **Keep a user's change between two runs.** A value a user may configure that
+  the run also writes, such as a held command or a plan buffer's plan, goes back
+  at the next run's start only while it still equals the model's last write:
+  record a copy of each write in the model, and in `initialize_*!` return an
+  entry still equal to it to its value at the previous run's start, and keep an
+  entry changed since as the user's new configuration. Every built-in model
+  follows this rule, the burn scheduler's schedule included, so a held command
+  configured with no plan is the command for the whole run, in every run.
 - **Survive `deepcopy`.** `run_simulation` runs a copy of the configuration unless
   `isolate_state=false`, and a link shared by two models stays shared in the copy.
 - **`bind_spacecraft` gives fresh run state** to each spacecraft's copy.

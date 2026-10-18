@@ -1,3 +1,7 @@
+# The internal state of a `MagneticMomentumManagerModel` that a run writes.
+const _ManagerRunState = NamedTuple{(:h_wheels, :held_torque_body, :held_dipole_am2, :last_update_s, :initialized, :ticks),
+    Tuple{SVector{3, Float64}, SVector{3, Float64}, SVector{3, Float64}, Float64, Bool, Int}}
+
 """
 Closed-loop magnetic momentum management as a discrete-rate control effector.
 
@@ -51,10 +55,15 @@ estimate of that field.
 To read `h_wheels`/`held_dipole_am2` back after a run, call
 `run_simulation(args; isolate_state=false)`: the default `isolate_state=true`
 deep-copies the configuration — including this model — so the simulation
-advances a copy and the caller's handle is left untouched. Each run starts the
-accumulator, the held command and the tick count from their values before the
-model's first run (`initialize_control!` restores them), so two runs of one
-configuration with `isolate_state=false` start equal.
+advances a copy and the caller's handle is left untouched. Between two such runs
+a user may change the configuration, including the state a run writes: the
+accumulator, the held command and the tick count. At each run's start
+(`initialize_control!`) a value the model wrote in the previous run returns to its
+value at that run's start, and a value changed since is kept as the new
+configuration, so two runs of one unedited configuration start equal. A run that
+starts uninitialized sets the accumulator to `h_wheels_0` at its first tick
+(without integrated wheels); a held command holds until the first tick, or for
+the whole run when `commanded_torque` or `b_field_ii` is `nothing`.
 
 `spacecraft_index` is the run position of the managed spacecraft; `sat_idx`, its
 old name, still works with a deprecation warning until SpaceAGORA 0.5.0.
@@ -75,7 +84,8 @@ mutable struct MagneticMomentumManagerModel <: AbstractControlEffectorModel
     ticks::Int                                # diagnostic: discrete updates applied
     actuation::Symbol                         # :ideal holds the rod torque; :mounted drives mounted torque rods
     mounted_levels::Vector{Float64}           # :mounted: one level per mounted actuator, refreshed each tick
-    run_start::Union{Nothing, NamedTuple}     # the internal state before the first run, restored at each run's start
+    run_start::Union{Nothing, _ManagerRunState}     # the internal state the previous run started from
+    run_written::Union{Nothing, _ManagerRunState}   # the model's last write of it in that run
 end
 # The deprecated name forwards, as a keyword and as a property.
 function MagneticMomentumManagerModel(; spacecraft_index=_NOT_PASSED, sat_idx=_NOT_PASSED, mu_gain=3.0e-4, m_max_am2=Inf,
@@ -86,7 +96,7 @@ function MagneticMomentumManagerModel(; spacecraft_index=_NOT_PASSED, sat_idx=_N
     T = MagneticMomentumManagerModel
     return T(_renamed_keyword(T, :sat_idx, sat_idx, :spacecraft_index, spacecraft_index, 1),
         mu_gain, m_max_am2, h_wheels_0, commanded_torque, b_field_ii, h_wheels, held_torque_body, held_dipole_am2,
-        last_update_s, initialized, ticks, actuation, mounted_levels, nothing)
+        last_update_s, initialized, ticks, actuation, mounted_levels, nothing, nothing)
 end
 @inline _momentum_manager_field(name::Symbol) = name === :sat_idx ?
     _renamed_field_warning(MagneticMomentumManagerModel, :sat_idx, :spacecraft_index) : name
@@ -96,20 +106,20 @@ end
     return setfield!(m, field, convert(fieldtype(MagneticMomentumManagerModel, field), x))
 end
 
-# The internal state a run changes. The first run records it; every later run
-# starts from the recorded values (G-8). The mounted levels start empty, as in a
-# bound copy.
-_manager_run_state(m::MagneticMomentumManagerModel) = (h_wheels=m.h_wheels, held_torque_body=m.held_torque_body,
-    held_dipole_am2=m.held_dipole_am2, last_update_s=m.last_update_s, initialized=m.initialized, ticks=m.ticks)
+_manager_run_state(m::MagneticMomentumManagerModel) = _ManagerRunState((m.h_wheels, m.held_torque_body,
+    m.held_dipole_am2, m.last_update_s, m.initialized, m.ticks))
 
+# Records the tick's writes of the internal state.
+_note_manager_writes!(m::MagneticMomentumManagerModel) = (m.run_written = _manager_run_state(m); nothing)
+
+# Each run starts the internal state from the configuration (G-8): a value the
+# previous run wrote returns to its value at that run's start, one the user changed
+# since is kept. The mounted levels start empty, as in a bound copy.
 function SimulationLifecycle.initialize_control!(m::MagneticMomentumManagerModel, u, p, t)
-    if m.run_start === nothing
-        m.run_start = _manager_run_state(m)
-    else
-        s = m.run_start
-        m.h_wheels, m.held_torque_body, m.held_dipole_am2 = s.h_wheels, s.held_torque_body, s.held_dipole_am2
-        m.last_update_s, m.initialized, m.ticks = s.last_update_s, s.initialized, s.ticks
-    end
+    s = SimulationLifecycle._run_start_entries(m.run_start, m.run_written, _manager_run_state(m))
+    m.h_wheels, m.held_torque_body, m.held_dipole_am2 = s.h_wheels, s.held_torque_body, s.held_dipole_am2
+    m.last_update_s, m.initialized, m.ticks = s.last_update_s, s.initialized, s.ticks
+    m.run_start, m.run_written = _manager_run_state(m), nothing
     empty!(m.mounted_levels)
     return nothing
 end
@@ -158,6 +168,7 @@ function update_control!(model::MagneticMomentumManagerModel, u, p, t::Float64, 
         model.held_dipole_am2 = SVector{3, Float64}(0.0, 0.0, 0.0)
         model.held_torque_body = SVector{3, Float64}(0.0, 0.0, 0.0)
         model.actuation === :mounted && _manager_fill_mounted_levels!(model, p.args.dynamics_model.spacecraft[sat_idx], model.held_dipole_am2)
+        _note_manager_writes!(model)
         return nothing
     end
     m = model.mu_gain * cross(model.h_wheels, b_body) / b2
@@ -168,6 +179,7 @@ function update_control!(model::MagneticMomentumManagerModel, u, p, t::Float64, 
     model.held_dipole_am2 = m
     model.held_torque_body = cross(m, b_body)
     model.actuation === :mounted && _manager_fill_mounted_levels!(model, p.args.dynamics_model.spacecraft[sat_idx], m)
+    _note_manager_writes!(model)
     return nothing
 end
 

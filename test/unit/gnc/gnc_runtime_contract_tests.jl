@@ -284,6 +284,7 @@ end
             SM.update_rpo_plan_buffer!(m.plan_buffer, SM.RPOPlan(valid=true, t_ref_s=[0.0]), 4.0)
             push!(m.replanning_events, (time_s=4.0, action=:brake))
             m.replan_count, m.safe_hold_count, m.replanning_phase, m.force_replan = 2, 1, :braking, true
+            SM.GuidanceHooks._note_rpo_guidance_writes!(m)   # as a tick records its writes
         end)
         @test model.plan_buffer === buffer && !buffer.valid   # the controller's link, restored in place
     end
@@ -294,6 +295,7 @@ end
         initialize!(controller)
         workspace = controller.controller.qp_model
         controller.held = SM.RPOHeldActuation(force_ii=SVector(1.0, 0.0, 0.0))
+        controller.run_written = deepcopy(controller.held)   # as a tick records its write
         controller.controller.U_prev .= 1.0
         push!(log.t_s, 1.0)
         initialize!(controller)
@@ -301,18 +303,19 @@ end
         @test controller.controller.qp_model !== workspace
         @test controller.command_log === log && isempty(log.t_s)
     end
-    @testset "The robot-arm controller: held command from before the first run, zero warm start" begin
+    @testset "The robot-arm controller: the held command it wrote returns, zero warm start" begin
         arm = SM.default_robot_arm_model()
         configured = SM.RobotArmHeldActuation(joint_torque_nm=[0.5, -0.25, 0.0], base_force_ii=SVector(1.0, 2.0, 3.0))
         model = SM.RobotArmControlEffector(held=configured, controller=SM.init_robot_arm_joint_mpc(arm; dt_s=0.1, horizon=4))
         @test starts_equal(model, m -> (m.held = SM.RobotArmHeldActuation(joint_torque_nm=[9.0, 9.0, 9.0]);
-            m.controller.U_prev .= 1.0))
+            m.run_written = deepcopy(m.held); m.controller.U_prev .= 1.0))
         @test model.held.base_force_ii == SVector(1.0, 2.0, 3.0) && all(iszero, model.controller.U_prev)
     end
     @testset "The momentum manager: accumulator, held command and ticks" begin
         model = SM.ControlHooks.MagneticMomentumManagerModel(h_wheels_0=SVector(0.1, 0.0, 0.0))
         @test starts_equal(model, m -> (m.h_wheels = SVector(5.0, 5.0, 5.0); m.held_torque_body = SVector(1.0, 0.0, 0.0);
-            m.initialized = true; m.ticks = 30; m.last_update_s = 29.0; push!(m.mounted_levels, 1.0)))
+            m.initialized = true; m.ticks = 30; m.last_update_s = 29.0; SM.ControlHooks._note_manager_writes!(m);
+            push!(m.mounted_levels, 1.0)))
         @test !model.initialized && model.ticks == 0 && isempty(model.mounted_levels)
     end
     @testset "The burn scheduler: what it wrote returns, a change made since stays" begin
@@ -349,6 +352,133 @@ end
     @testset "The planner guidance refuses reuse: every run gets a fresh copy" begin
         err = try run_simulation(rpo_configuration(); isolate_state=false) catch e e end
         @test err isa ArgumentError && occursin("isolate_state=true", sprint(showerror, err))
+    end
+end
+
+# ---- A user's edit between two runs is kept (G-8) ------------------------------
+
+same_run(a, b) = a.t == b.t && all(isequal(collect(x), collect(y)) for (x, y) in zip(a.u, b.u))
+reused_run(args) = run_simulation(args; isolate_state=false, return_solution=true)
+fixture_run(model; spacecraft_count=1) =
+    C.conformance_fixture(control=(model,), spacecraft_count=spacecraft_count, mission_time_s=20.0).configuration
+
+# A run of `build(value)`'s configuration, then one with `edit!` applied to its model,
+# then one more without an edit. The edited run starts as a fresh configuration built
+# with the edited value, and the run after it starts as the edited run did.
+function edit_between_runs(build, configured, edited, edit!)
+    args = build(configured)
+    model = only(args.control_model.control_effectors)
+    first_run = reused_run(args)
+    edit!(model, edited)
+    edited_run = reused_run(args)
+    next_run = reused_run(args)
+    fresh_run = reused_run(build(edited))
+    return (; model, first_run, edited_run, next_run, fresh_run)
+end
+
+@testset "A user's edit between two runs is kept, an unedited model starts equal (G-8)" begin
+    @testset "The robot-arm controller with no plan: its held command is the command" begin
+        build(force) = fixture_run(SM.RobotArmControlEffector(control_dt_s=1.0,
+            held=SM.RobotArmHeldActuation(base_force_ii=force)))
+        r = edit_between_runs(build, SVector(0.2, 0.0, 0.0), SVector(0.0, 0.3, 0.0),
+            (m, force) -> (m.held = SM.RobotArmHeldActuation(base_force_ii=force)))
+        @test r.model.held.base_force_ii == SVector(0.0, 0.3, 0.0)
+        @test !same_run(r.first_run, r.edited_run)
+        @test same_run(r.edited_run, r.fresh_run) && same_run(r.next_run, r.edited_run)
+        # Unedited, two runs start equal and the configured command stays.
+        args = build(SVector(0.2, 0.0, 0.0))
+        @test same_run(reused_run(args), reused_run(args))
+        @test only(args.control_model.control_effectors).held.base_force_ii == SVector(0.2, 0.0, 0.0)
+    end
+    @testset "The RPO controller with no plan: its held command is the command" begin
+        build(force) = fixture_run(SM.RPOMPCControlModel(held=SM.RPOHeldActuation(force_ii=force)); spacecraft_count=2)
+        r = edit_between_runs(build, SVector(0.2, 0.0, 0.0), SVector(0.0, 0.3, 0.0),
+            (m, force) -> (m.held.force_ii = force))   # changed in place
+        @test r.model.held.force_ii == SVector(0.0, 0.3, 0.0)
+        @test !same_run(r.first_run, r.edited_run)
+        @test same_run(r.edited_run, r.fresh_run) && same_run(r.next_run, r.edited_run)
+        args = build(SVector(0.2, 0.0, 0.0))
+        @test same_run(reused_run(args), reused_run(args))
+        @test only(args.control_model.control_effectors).held.force_ii == SVector(0.2, 0.0, 0.0)
+    end
+    @testset "The momentum manager with no torque law: its held command is the command" begin
+        build(torque) = fixture_run(SM.ControlHooks.MagneticMomentumManagerModel(held_torque_body=torque))
+        r = edit_between_runs(build, SVector(1.0e-4, 0.0, 0.0), SVector(0.0, 2.0e-4, 0.0),
+            (m, torque) -> (m.held_torque_body = torque))
+        @test r.model.held_torque_body == SVector(0.0, 2.0e-4, 0.0)
+        @test !same_run(r.first_run, r.edited_run)
+        @test same_run(r.edited_run, r.fresh_run) && same_run(r.next_run, r.edited_run)
+    end
+    @testset "The momentum manager with a torque law: what it wrote returns, a change made since stays" begin
+        manager = SM.ControlHooks.MagneticMomentumManagerModel(h_wheels_0=SVector(0.1, 0.0, 0.0),
+            commanded_torque=(t, r, v, q, w) -> SVector(1.0e-5, 0.0, 0.0), b_field_ii=(t, r) -> SVector(0.0, 3.0e-5, 0.0))
+        args = fixture_run(manager)
+        first_run = reused_run(args)
+        ticks, h_wheels = manager.ticks, manager.h_wheels
+        @test ticks > 0 && manager.initialized
+        @test same_run(reused_run(args), first_run)   # unedited: starts equal
+        @test manager.ticks == ticks && manager.h_wheels == h_wheels
+        manager.ticks = 100   # the user's change
+        @test same_run(reused_run(args), first_run)
+        @test manager.ticks == 100 + ticks
+        # The changed value is the configuration the next run starts from.
+        reused_run(args)
+        @test manager.ticks == 100 + ticks && manager.h_wheels == h_wheels
+    end
+end
+
+@testset "A change made after the model's write stays and becomes the start (G-8)" begin
+    @testset "The robot-arm controller" begin
+        model = SM.RobotArmControlEffector(held=SM.RobotArmHeldActuation(joint_torque_nm=[0.5, -0.25, 0.0]))
+        initialize!(model)
+        written = SM.RobotArmHeldActuation(joint_torque_nm=[9.0, 9.0, 9.0])
+        model.held, model.run_written = written, deepcopy(written)   # as a tick writes and records
+        model.held.joint_torque_nm[2] = 1.0   # the user's change, in place
+        initialize!(model)
+        @test model.held.joint_torque_nm == [9.0, 1.0, 9.0]
+        model.held, model.run_written = SM.RobotArmHeldActuation(), SM.RobotArmHeldActuation()
+        initialize!(model)
+        @test model.held.joint_torque_nm == [9.0, 1.0, 9.0]
+    end
+    @testset "The RPO controller" begin
+        model = SM.RPOMPCControlModel()
+        initialize!(model)
+        model.held = SM.RPOHeldActuation(force_ii=SVector(1.0, 0.0, 0.0))
+        model.run_written = deepcopy(model.held)
+        model.held = SM.RPOHeldActuation(force_ii=SVector(0.0, 2.0, 0.0))   # the user's change
+        initialize!(model)
+        @test model.held.force_ii == SVector(0.0, 2.0, 0.0)
+        model.held = SM.RPOHeldActuation(force_ii=SVector(3.0, 0.0, 0.0))
+        model.run_written = deepcopy(model.held)
+        initialize!(model)
+        @test model.held.force_ii == SVector(0.0, 2.0, 0.0)
+    end
+    @testset "The momentum manager" begin
+        model = SM.ControlHooks.MagneticMomentumManagerModel()
+        initialize!(model)
+        model.held_torque_body, model.ticks, model.initialized = SVector(1.0, 0.0, 0.0), 30, true
+        SM.ControlHooks._note_manager_writes!(model)
+        model.held_torque_body = SVector(0.0, 0.5, 0.0)   # the user's change
+        initialize!(model)
+        @test model.held_torque_body == SVector(0.0, 0.5, 0.0) && model.ticks == 0 && !model.initialized
+    end
+    @testset "The deprecated RPO guidance" begin
+        model = SM.GuidanceModels.RPOGuidanceModel(goal_rtn=SVector(5.0, 0.0, 0.0))
+        buffer = model.plan_buffer
+        initialize!(model)
+        plan = SM.RPOPlan(valid=true, t_ref_s=[0.0])
+        SM.update_rpo_plan_buffer!(buffer, plan, 4.0)
+        model.goal_rtn, model.replan_count = SVector(1.0, 2.0, 3.0), 2
+        push!(model.replanning_events, (time_s=4.0, action=:brake))
+        SM.GuidanceHooks._note_rpo_guidance_writes!(model)
+        # The user's changes: the goal, and the plan's time grid in place.
+        model.goal_rtn = SVector(0.0, 7.0, 0.0)
+        plan.t_ref_s[1] = 1.0
+        initialize!(model)
+        @test model.goal_rtn == SVector(0.0, 7.0, 0.0)
+        @test buffer.plan === plan && buffer.plan.t_ref_s == [1.0] && buffer.valid && buffer.updated_at_s == 4.0
+        @test model.replan_count == 0 && isempty(model.replanning_events)
+        @test model.plan_buffer === buffer
     end
 end
 

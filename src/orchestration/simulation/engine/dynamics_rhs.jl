@@ -2851,15 +2851,18 @@ end
 # The plan an effector's arm tracks and the time (s into the run) its axis starts
 # from: the plan buffer's for an effector that reads one (`plan_buffer`, the
 # joint-reference link), otherwise its own `plan` and `updated_at_s`. With
-# `run_start=true`, a buffer that has recorded the plan it starts each run from
-# (its `run_start`, from an earlier run) gives that plan: the initial state is
-# built before the run restores the buffer.
+# `run_start=true`, a buffer gives the plan and time the run will start from
+# (`_buffer_run_start`, the configured plan of a reused buffer rather than the
+# previous run's last install): the initial state is built before the run sets
+# the buffer to its start.
 @inline function _robot_arm_reference(effector; run_start::Bool=false)
     if hasproperty(effector, :plan_buffer)
         buffer = getproperty(effector, :plan_buffer)
         if buffer !== nothing
-            recorded = buffer.run_start
-            run_start && recorded !== nothing && return recorded[1], Float64(recorded[2])
+            if run_start
+                start = SimulationModel.RobotArmPlanning._buffer_run_start(buffer)
+                return start.plan, Float64(start.updated_at_s)
+            end
             return buffer.plan, Float64(buffer.updated_at_s)
         end
     end

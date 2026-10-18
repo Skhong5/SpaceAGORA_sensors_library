@@ -277,7 +277,7 @@ module ControlHooks
         b.spacecraft_index = sat_idx
         b.controller = deepcopy(m.controller)  # its own MPC warm start, not the template's
         b.held = deepcopy(m.held)              # its own held command, starting from the template's
-        b.run_start = deepcopy(m.run_start)
+        b.run_start, b.run_written = deepcopy(m.run_start), deepcopy(m.run_written)
         return b
     end
     function SimulationLifecycle.bind_spacecraft(m::ApolloDescentControlModel, sat_idx::Int)

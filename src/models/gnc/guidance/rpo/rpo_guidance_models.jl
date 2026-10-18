@@ -8,8 +8,10 @@ model's replanning spheres (`geometry_provider=RPOReplanningSpheres(...)`), its
 safe hold (`on_rejection=:install_fallback`) and retiming
 (`retime_tracking_error_m`). The model will be removed in a later release.
 
-Each run starts the goal, the plan buffer and the replanning record from their
-values before the model's first run (`initialize_guidance!`).
+A user may set the goal, the plan buffer and the replanning record between two
+runs of one model. At each run's start (`initialize_guidance!`) a value the model
+wrote in the previous run returns to its value at that run's start, and a value a
+user changed since is kept as the new configuration.
 """
 Base.@kwdef mutable struct RPOGuidanceModel <: AbstractGuidanceModel
     chaser_idx::Int = 1
@@ -33,6 +35,8 @@ Base.@kwdef mutable struct RPOGuidanceModel <: AbstractGuidanceModel
     pending_replan::Any = nothing
     hold_position_tolerance_m::Float64 = 0.02
     hold_speed_tolerance_mps::Float64 = 0.002
-    # The run-written fields and plan buffer before the first run, restored at each run's start.
+    # The run-written fields and plan buffer at the previous run's start, and a copy
+    # of the model's last write of them in that run (`initialize_guidance!`).
     run_start::Any = nothing
+    run_written::Any = nothing
 end
