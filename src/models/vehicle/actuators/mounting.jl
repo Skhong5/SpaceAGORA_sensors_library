@@ -293,6 +293,8 @@ at time `t`, within its angle and rate limits, turn its thruster's thrust and
 record the tick. Returns the angle reached.
 """
 function move_gimbal!(link::Link, gimbal::ThrusterGimbal, level::Real, t::Real)::Float64
+    # The angle before this tick; a second application at the same time keeps it.
+    Float64(t) == gimbal.last_update_s || (gimbal.previous_angle_rad = gimbal.angle_rad)
     angle = gimbal_step(gimbal, level, t)
     gimbal.angle_rad = angle
     gimbal.last_update_s = Float64(t)

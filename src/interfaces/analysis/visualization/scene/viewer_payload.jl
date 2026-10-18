@@ -261,6 +261,24 @@ function build_viewer_frames(
             acc += n
         end
     end
+    # Thruster exhaust directions (three per thruster, in its link's frame, in
+    # the same order), saved when a run turns a thruster with a gimbal; the
+    # frames carry the block only then.
+    dir_counts = zeros(Int, S)
+    for i in 1:S
+        n = length(scene.spacecraft[i].thrusters)
+        n > 0 || continue
+        _has_columns(df, ["sc$(i)_thruster_direction_$(k)" for k in 1:(3 * n)]) || continue
+        dir_counts[i] = n
+    end
+    dir_total = 3 * sum(dir_counts)
+    dir_offsets = Int[]
+    let acc = 0
+        for n in dir_counts
+            push!(dir_offsets, acc)
+            acc += 3 * n
+        end
+    end
     arm_counts = Int[sc.arm === nothing ? 0 : length(sc.arm.links) for sc in scene.spacecraft]
     has_arm = any(>(0), arm_counts) && all(1:S) do i
         arm_counts[i] == 0 || _has_columns(df, ["sc$(i)_arm_pose_$(k)" for k in 1:(stride_lp * arm_counts[i])])
@@ -275,7 +293,7 @@ function build_viewer_frames(
     channel_specs = _resolved_channels(df, channels, S)
     bytes_per_frame = S * ((pos_f64 ? 24 : 12) + (has_vel ? 12 : 0) + (has_q ? 16 : 0) + (has_mass ? 4 : 0) +
                            (has_density ? 4 : 0) + (has_heat ? 4 : 0) + (has_drag ? 4 : 0) + (has_wind ? 12 : 0) +
-                           (has_plume ? 4 * length(PLUME_FRAME_FIELDS) : 0) + 4 * length(channel_specs)) + 4 * lp_total + 4 * arm_total + 4 * thr_total + (has_sun ? 12 : 0) + 8
+                           (has_plume ? 4 * length(PLUME_FRAME_FIELDS) : 0) + 4 * length(channel_specs)) + 4 * lp_total + 4 * arm_total + 4 * thr_total + 4 * dir_total + (has_sun ? 12 : 0) + 8
     budget = visualization_frame_budget(n_rows, S; max_frames=max_frames, data_budget_mb=data_budget_mb,
                                         bytes_per_sat_frame=cld(bytes_per_frame, S))
     regular_rows = kept_row_indices(n_rows, budget.stride)
@@ -297,6 +315,7 @@ function build_viewer_frames(
     ap = has_arm ? Vector{Float64}(undef, N * arm_total) : Float64[]
     plume = has_plume ? [Vector{Float64}(undef, N * S) for _ in PLUME_FRAME_FIELDS] : Vector{Float64}[]
     thr = thr_total > 0 ? Vector{Float64}(undef, N * thr_total) : Float64[]
+    tdir = dir_total > 0 ? Vector{Float64}(undef, N * dir_total) : Float64[]
     if has_sun
         scols = [df[!, "sun_dir_$(c)"] for c in 1:3]
         @inbounds for (f, r) in enumerate(rows)
@@ -318,6 +337,7 @@ function build_viewer_frames(
         plcols = has_plume ? [df[!, "sc$(i)_plume_$(f)"] for f in PLUME_FRAME_FIELDS] : nothing
         lcols = (has_lp && counts[i] > 0) ? [df[!, "sc$(i)_$(scene.link_pose_field)_$(k)"] for k in 1:(stride_lp * counts[i])] : nothing
         tcols = thruster_counts[i] > 0 ? [df[!, "sc$(i)_thruster_level_$(k)"] for k in 1:thruster_counts[i]] : nothing
+        dcols = dir_counts[i] > 0 ? [df[!, "sc$(i)_thruster_direction_$(k)"] for k in 1:(3 * dir_counts[i])] : nothing
         @inbounds for (f, r) in enumerate(rows)
             base3 = ((f - 1) * S + (i - 1)) * 3
             for c in 1:3
@@ -374,6 +394,12 @@ function build_viewer_frames(
                     thr[baset + k] = clamp(Float64(tcols[k][r]), 0.0, 1.0)
                 end
             end
+            if dcols !== nothing
+                based = (f - 1) * dir_total + dir_offsets[i]
+                for k in eachindex(dcols)
+                    tdir[based + k] = Float64(dcols[k][r])
+                end
+            end
         end
     end
 
@@ -420,6 +446,11 @@ function build_viewer_frames(
             "data" => _float32_base64(ap)
         ) : nothing,
     )
+    if dir_total > 0
+        frames["thruster_direction"] = Dict{String, Any}(
+            "stride" => 3, "counts" => dir_counts, "offsets" => dir_offsets, "total" => dir_total,
+            "data" => _float32_base64(tdir))
+    end
     return frames
 end
 

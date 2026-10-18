@@ -204,6 +204,7 @@ for the conditions:
 |---|---|---|
 | `sc1_link_pose_1` .. `sc1_link_pose_7n` | m, — | `[rx, ry, rz, qx, qy, qz, qw]` per non-root link, relative to the root bus, in the sidecar's link order |
 | `sc1_thruster_level_1` .. `sc1_thruster_level_k` | — | Firing level of each thruster, 0 to 1, in the sidecar's thruster order |
+| `sc1_thruster_direction_1` .. `sc1_thruster_direction_3k` | — | Exhaust direction of each thruster (a unit vector in its link's frame), in the sidecar's thruster order; written when a spacecraft carries a thruster gimbal, which turns it |
 | `sc1_arm_pose_1` .. `sc1_arm_pose_7m` | m, — | `[rx, ry, rz, qx, qy, qz, qw]` per robot-arm link: centre of mass relative to the spacecraft (inertial) and inertial attitude |
 | `sc1_density` | kg/m³ | Atmospheric density at the spacecraft |
 | `sun_dir_1` .. `sun_dir_3` | — | Unit vector from the planet's centre to the Sun, inertial frame, one per row (not per spacecraft) |

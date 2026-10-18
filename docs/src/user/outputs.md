@@ -150,8 +150,12 @@ With the flag on, spacecraft that have non-root links also get the
 `link_pose` save field: columns `sc{N}_link_pose_1` .. `sc{N}_link_pose_7n`
 holding `[rx, ry, rz, qx, qy, qz, qw]` per non-root link, in the link order
 recorded in the sidecar. These are the link poses relative to the root bus
-at each saved step, so articulated panels play back as they moved. Reading
-the sidecar back:
+at each saved step, so articulated panels play back as they moved. A
+spacecraft that carries a thruster gimbal also gets the `thruster_direction`
+field (`sc{N}_thruster_direction_1` .. `_3k`): every thruster's exhaust
+direction in its link's frame at each saved step, so the viewer turns the
+gimballed thruster's cone and plume as the gimbal moved. Reading the sidecar
+back:
 
 ```julia
 using SpaceAGORA
