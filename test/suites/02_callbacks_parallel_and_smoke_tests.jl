@@ -1230,7 +1230,11 @@ end
 
     @test dynamic_effectors._multibody_use_threads(1) == false
     if Threads.nthreads() > 1
+        # Each case sets SPACEAGORA_MULTIBODY_PARALLEL, so it refreshes the
+        # cached mode inside its withenv the way a solve start would; without
+        # the refresh the decision reads the ambient mode instead.
         withenv("SPACEAGORA_MULTIBODY_PARALLEL" => "on") do
+            dynamic_effectors.refresh_multibody_parallel_mode!()
             @test dynamic_effectors._multibody_use_threads(64) == true
         end
         withenv(
@@ -1239,6 +1243,7 @@ end
             "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1",
             "SPACEAGORA_MULTIBODY_PARALLEL_ALLOW_WITH_OUTER" => "0"
         ) do
+            dynamic_effectors.refresh_multibody_parallel_mode!()
             @test dynamic_effectors._multibody_use_threads(64) == false
         end
         withenv(
@@ -1247,8 +1252,11 @@ end
             "SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "0",
             "SPACEAGORA_MULTIBODY_PARALLEL_HEAVY_ONLY" => "1"
         ) do
+            dynamic_effectors.refresh_multibody_parallel_mode!()
             @test dynamic_effectors._multibody_use_threads(64; heavy_work=false) == false
         end
+        # Leave the cache agreeing with the ambient environment for later testsets.
+        dynamic_effectors.refresh_multibody_parallel_mode!()
     end
 
     @test dynamic_effectors._threadid_capacity() >= Threads.maxthreadid()
