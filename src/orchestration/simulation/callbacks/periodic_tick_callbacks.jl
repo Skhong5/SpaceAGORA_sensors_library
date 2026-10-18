@@ -48,6 +48,19 @@ end
     return nothing
 end
 
+# The callback's affect, shaped as DiffEqCallbacks' `PeriodicCallbackAffect`:
+# `affect!` is the tick function itself, which tests call without scheduling the
+# next stop.
+struct _RunClockTickAffect{F}
+    affect!::F
+    Δt::Float64
+    key::Symbol
+end
+function (tick::_RunClockTickAffect)(integrator)
+    _schedule_next_periodic_tick!(integrator, _periodic_tick_clock(tick.key), tick.Δt)
+    return tick.affect!(integrator)
+end
+
 """
     _run_clock_periodic_callback(f, Δt; on_clock=(origin, integrator) -> nothing)
 
@@ -66,10 +79,7 @@ function _run_clock_periodic_callback(f, Δt::Float64; on_clock=(origin, integra
         return isnan(horizon) ? t != last(integrator.sol.prob.tspan) : t < horizon
     end
 
-    affect! = function (integrator)
-        _schedule_next_periodic_tick!(integrator, _periodic_tick_clock(key), Δt)
-        return f(integrator)
-    end
+    affect! = _RunClockTickAffect(f, Δt, key)
 
     initialize = function (cb, u, t, integrator)
         @assert integrator.tdir == sign(Δt)
