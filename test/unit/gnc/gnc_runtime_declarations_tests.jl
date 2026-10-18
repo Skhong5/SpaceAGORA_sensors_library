@@ -187,6 +187,14 @@ SpaceAGORA.sensor_measure(s::KeptCountSensor, truth::SensorTruth, ctx, rng) = SV
 SpaceAGORA.initialize_sensor!(s::KeptCountSensor, truth::SensorTruth, ctx, rng) = (s.count = 0; push!(s.initialized_at, truth.t_s); nothing)
 L.checkpoint_state(s::KeptCountSensor) = (count=s.count,)
 L.restore_checkpoint_state!(s::KeptCountSensor, data) = (s.count = data.count; nothing)
+# A kind that keeps state only when its parameter says so.
+mutable struct MaybeKept <: AbstractNavigationModel
+    keeps::Bool
+    ticks::Int
+end
+SpaceAGORA.update_navigation!(m::MaybeKept, u, p, t::Float64, i::Int) = (m.ticks += 1; nothing)
+L.checkpoint_state(m::MaybeKept) = m.keeps ? (ticks=m.ticks,) : nothing
+L.restore_checkpoint_state!(m::MaybeKept, data) = (m.ticks = data.ticks; nothing)
 struct HalfKept <: AbstractNavigationModel end
 SpaceAGORA.update_navigation!(::HalfKept, u, p, t::Float64, i::Int) = nothing
 L.checkpoint_state(::HalfKept) = (ticks=0,)
@@ -406,6 +414,14 @@ SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
         @test !hasproperty(SM.IOSerialization._load_checkpoint(plain_args).runtime_state, :models)   # nothing kept: no entry
         msg = refusal(() -> run!(counted(6.0, checkpointed(plain; resume_from_checkpoint=true); sensor=CountingSensor())))
         @test msg !== nothing && occursin("The run state of TickCounter", msg)
+        # A snapshot written by another model (the sensor) holds nothing for a
+        # model of the same kind that keeps state only on the resume.
+        mixed = mktempdir()
+        run!(counted(3.0, checkpointed(mixed); navigation=MaybeKept(false, 0)))
+        @test SM.IOSerialization._load_checkpoint(counted(3.0, checkpointed(mixed))).runtime_state.models.navigation == Any[nothing]
+        msg = refusal(() -> run!(counted(6.0, checkpointed(mixed; resume_from_checkpoint=true); navigation=MaybeKept(true, 0))))
+        @test msg !== nothing && occursin("The run state of MaybeKept", msg)
+        @test refusal(() -> run!(counted(6.0, checkpointed(mixed; resume_from_checkpoint=true); navigation=MaybeKept(false, 0)))) === nothing
         # A model that saves state it cannot restore is refused when the run
         # checkpoints, and runs otherwise.
         msg = refusal(() -> run!(counted(3.0, checkpointed(mktempdir()); navigation=HalfKept())))

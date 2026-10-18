@@ -227,16 +227,18 @@ function _check_model_checkpoint_state(args, checkpoint)
     return snapshot
 end
 
-# After the run-start initializers of a resumed run.
+# After the run-start initializers of a resumed run. Before anything is
+# restored, a model that keeps run state now and has none in the file is
+# refused: no snapshot at all, or `nothing` saved at its position (another
+# model wrote the snapshot, and this one kept no state then).
 function _restore_model_checkpoint_state!(args, snapshot)
-    models = _checkpoint_models(args)
-    if snapshot === nothing
-        kept = unique(nameof(typeof(m)) for m in _each_model(models) if SimulationLifecycle.checkpoint_state(m) !== nothing)
-        isempty(kept) || throw(ArgumentError("The run state of $(join(kept, ", ")) (checkpoint_state) is not in this checkpoint " *
-            "(it was written by an earlier SpaceAGORA or by another configuration). Run from the start."))
-        return nothing
-    end
-    for (model, data) in zip(_each_model(models), _each_model(snapshot))
+    models = collect(_each_model(_checkpoint_models(args)))
+    saved = snapshot === nothing ? fill(nothing, length(models)) : collect(_each_model(snapshot))
+    kept = unique(nameof(typeof(m)) for (m, data) in zip(models, saved)
+                  if data === nothing && SimulationLifecycle.checkpoint_state(m) !== nothing)
+    isempty(kept) || throw(ArgumentError("The run state of $(join(kept, ", ")) (checkpoint_state) is not in this checkpoint " *
+        "(it was written by an earlier SpaceAGORA or by another configuration, or the model kept none then). Run from the start."))
+    for (model, data) in zip(models, saved)
         data === nothing || SimulationLifecycle.restore_checkpoint_state!(model, data)
     end
     return nothing
