@@ -351,6 +351,22 @@ end
         # A spacecraft the scene draws thrusters for but the run saved no levels for stays at zero count.
         partial = select(df, Not(["sc1_thruster_level_2"]))
         @test SV.build_viewer_frames(partial, scene)["thruster_level"] === nothing
+
+        # Gimballed thrusters' directions: the block only with all its columns,
+        # three per thruster in scene order, aligned with the kept frames.
+        @test !haskey(frames, "thruster_direction")
+        for k in 1:6
+            df[!, "sc1_thruster_direction_$(k)"] = [k == 3 ? cos(r / 25) : k == 1 ? sin(r / 25) : k == 4 ? 1.0 : 0.0 for r in 1:25]
+        end
+        turned = SV.build_viewer_frames(df, scene)
+        block = turned["thruster_direction"]
+        @test block["stride"] == 3 && block["counts"] == [2] && block["offsets"] == [0] && block["total"] == 6
+        dirs = _decode_f32(block["data"])
+        @test length(dirs) == 25 * 6
+        @test dirs[1:6] ≈ Float32[sin(1 / 25), 0, cos(1 / 25), 1, 0, 0]
+        @test length(_decode_f32(SV.build_viewer_frames(df, scene; max_frames=6)["thruster_direction"]["data"])) ==
+              SV.build_viewer_frames(df, scene; max_frames=6)["count"] * 6
+        @test !haskey(SV.build_viewer_frames(select(df, Not(["sc1_thruster_direction_5"])), scene), "thruster_direction")
     end
 
     @testset "scalar channels align with selected rows" begin
