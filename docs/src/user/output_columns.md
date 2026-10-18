@@ -255,7 +255,7 @@ integrated state:
 
 | Column | Unit | Description |
 |---|---|---|
-| `sc1_cmg_angle_1` .. `sc1_cmg_angle_n` | rad | Gimbal angle of each control moment gyro, in mounting order |
+| `sc1_cmg_angle_1` .. `sc1_cmg_angle_n` | rad | Gimbal angle of each control moment gyro, in mounting order, then of each double-gimbal CMG's inner gimbal |
 
 ### Power budget
 

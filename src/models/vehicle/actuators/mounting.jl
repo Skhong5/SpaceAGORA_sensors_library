@@ -15,7 +15,7 @@ actuators of user-defined kinds.
 5. every hinge, link by link (one per hinged link);
 6. every thruster gimbal axis, link by link in `link.gimbals` order;
 7. every control moment gyro, in mounting order (CMGs mount on the root
-   link);
+   link), then every double-gimbal CMG's inner gimbal, in mounting order;
 8. every actuator of a user-defined kind, link by link in
    `link.custom_actuators` order.
 
@@ -30,7 +30,7 @@ using ..QuaternionMath: rot
 using ..Actuators
 using ..Components: Thruster, ReactionWheel, wheel_momentum_saturate, wheel_power, Magnetorquer, LaserTerminal, PanelHinge, hinge_step
 using ..Components: ThrusterGimbal, gimbal_step, _gimbal_rotation
-using ..Components: ControlMomentGyro, cmg_torque_axis, cmg_angle_saturate
+using ..Components: ControlMomentGyro, cmg_torque_axis, cmg_angle_saturate, CMGInnerGimbal, cmg_torque_axes
 using ..SpacecraftModels: Link, SpacecraftModel
 using ..Assembly: add_thruster!
 
@@ -129,8 +129,23 @@ function add_actuator!(model::SpacecraftModel, link::Link, cmg::ControlMomentGyr
     assembly = link.rw_assembly
     any(c -> c === cmg, assembly.cmgs) && throw(ArgumentError("This control moment gyro is already mounted."))
     push!(assembly.cmgs, cmg)
-    push!(assembly.cmg_rates, 0.0)
+    insert!(assembly.cmg_rates, length(assembly.cmgs), 0.0)    # the outer gimbals' rates come before the inner ones'
+    push!(assembly.cmg_inner_of, 0)
     return cmg
+end
+
+function add_actuator!(model::SpacecraftModel, link::Link, inner::CMGInnerGimbal)
+    link === model.root || throw(ArgumentError(
+        "A double-gimbal CMG's inner gimbal mounts on the root link, with its control moment gyro."))
+    _check_own_link(model, link)
+    assembly = link.rw_assembly
+    j = findfirst(c -> c === inner.cmg, assembly.cmgs)
+    j === nothing && throw(ArgumentError("Mount the inner gimbal's control moment gyro before the inner gimbal."))
+    assembly.cmg_inner_of[j] == 0 || throw(ArgumentError("This control moment gyro already has an inner gimbal."))
+    push!(assembly.cmg_inner, inner)
+    push!(assembly.cmg_rates, 0.0)
+    assembly.cmg_inner_of[j] = length(assembly.cmg_inner)
+    return inner
 end
 
 # The thruster's thrust turned by its gimbals on `link` at their current angles.
@@ -309,6 +324,9 @@ The number of control moment gyros mounted on `model` (on its root link).
 """
 mounted_cmg_count(model::SpacecraftModel)::Int = length(model.root.rw_assembly.cmgs)
 
+# The number of double-gimbal CMGs' inner gimbals mounted on `model`.
+_cmg_inner_count(model::SpacecraftModel)::Int = length(model.root.rw_assembly.cmg_inner)
+
 # The number of mounted actuators before the first CMG in the mounting order.
 _cmg_level_offset(model::SpacecraftModel)::Int =
     mounted_thruster_count(model) + mounted_wheel_count(model) + mounted_magnetorquer_count(model) +
@@ -318,9 +336,11 @@ _cmg_level_offset(model::SpacecraftModel)::Int =
     cmg_steering(model::SpacecraftModel, angles, torque_body; λ0=0.01, μ=10.0) -> Vector{Float64}
 
 Gimbal rates for `model`'s mounted control moment gyros, at gimbal angles
-`angles` (mounting order), that put `torque_body` (N m, body frame) on the
-vehicle: the singularity-robust inverse of the CMGs' torque Jacobian
-(Bedrossian): with `A = [g_j × h_j]` normalized by the largest rotor
+`angles` (the CMGs' gimbals in mounting order, then the double-gimbal CMGs'
+inner gimbals, as the `cmg_angles` state), that put `torque_body` (N m, body
+frame) on the vehicle: the singularity-robust inverse of the gimbals' torque
+Jacobian (Bedrossian): with `A` the columns `g × h` of every gimbal (a
+double-gimbal CMG's outer `g_o × h` and inner `g_i(α) × h`), normalized by the largest rotor
 momentum, `δ̇ = -Aᵀ (A Aᵀ + λ I)⁻¹ τ` and `λ = λ0 exp(-μ det(A Aᵀ))`, which
 stays bounded near a singular gimbal configuration at the cost of a torque
 error (`λ0 = 0` gives the pseudo-inverse). A CMG at a gimbal stop whose rate
@@ -329,30 +349,40 @@ commanded zero; rates beyond a CMG's limit are then scaled down together,
 keeping the torque's direction.
 """
 function cmg_steering(model::SpacecraftModel, angles::AbstractVector, torque_body::AbstractVector; λ0::Real=0.01, μ::Real=10.0)::Vector{Float64}
-    cmgs = model.root.rw_assembly.cmgs
-    n = length(cmgs)
-    length(angles) == n || throw(ArgumentError("cmg_steering: $(length(angles)) gimbal angles for $(n) mounted CMGs."))
+    assembly = model.root.rw_assembly
+    cmgs = assembly.cmgs
+    n_outer = length(cmgs)
+    n = n_outer + length(assembly.cmg_inner)
+    length(angles) == n || throw(ArgumentError("cmg_steering: $(length(angles)) gimbal angles for $(n) mounted CMG gimbals."))
     n == 0 && return Float64[]
+    gimbals = AbstractActuator[cmgs; assembly.cmg_inner]
     href = maximum(c -> c.rotor_momentum_nms, cmgs)
     stopped = falses(n)
     rates = zeros(Float64, n)
     for _ in 0:n
         A = zeros(Float64, 3, n)
-        for j in 1:n
-            stopped[j] || (A[:, j] .= cmg_torque_axis(cmgs[j], angles[j]) ./ href)
+        for j in 1:n_outer
+            ι = assembly.cmg_inner_of[j]
+            if ι == 0
+                stopped[j] || (A[:, j] .= cmg_torque_axis(cmgs[j], angles[j]) ./ href)
+            else
+                outer, inner = cmg_torque_axes(assembly.cmg_inner[ι], angles[j], angles[n_outer + ι])
+                stopped[j] || (A[:, j] .= outer ./ href)
+                stopped[n_outer + ι] || (A[:, n_outer + ι] .= inner ./ href)
+            end
         end
         M = A * transpose(A)
         λ = Float64(λ0) * exp(-Float64(μ) * det(M))
         # pinv: the inverse for λ > 0, the least-squares minimum-norm solution for λ = 0 at a singular A.
         rates = -(transpose(A) * (pinv(M + λ * Matrix{Float64}(I, 3, 3)) * Vector{Float64}(torque_body))) ./ href
         # A CMG at a stop that the solution would drive further is left out.
-        blocked = [j for j in 1:n if !stopped[j] && rates[j] != 0.0 && cmg_angle_saturate(cmgs[j], rates[j], angles[j]) == 0.0]
+        blocked = [j for j in 1:n if !stopped[j] && rates[j] != 0.0 && cmg_angle_saturate(gimbals[j], rates[j], angles[j]) == 0.0]
         isempty(blocked) && break
         stopped[blocked] .= true
     end
     scale = 1.0
     for j in 1:n
-        limit = cmgs[j].max_gimbal_rate_rad_s
+        limit = gimbals[j].max_gimbal_rate_rad_s
         isfinite(limit) && (scale = max(scale, abs(rates[j]) / limit))
     end
     return rates ./ scale
@@ -365,7 +395,7 @@ The number of actuators mounted on `model`, of every kind.
 """
 function mounted_actuator_count(model::SpacecraftModel)::Int
     n = mounted_thruster_count(model) + mounted_wheel_count(model) + mounted_magnetorquer_count(model) + mounted_laser_count(model) +
-        mounted_hinge_count(model) + mounted_gimbal_count(model) + mounted_cmg_count(model)
+        mounted_hinge_count(model) + mounted_gimbal_count(model) + mounted_cmg_count(model) + _cmg_inner_count(model)
     for link in model.links
         n += length(link.custom_actuators)
     end
@@ -400,6 +430,9 @@ function mounted_actuators(model::SpacecraftModel)
     end
     for cmg in model.root.rw_assembly.cmgs
         push!(out, (link=model.root, actuator=cmg))
+    end
+    for inner in model.root.rw_assembly.cmg_inner
+        push!(out, (link=model.root, actuator=inner))
     end
     for link in model.links, actuator in link.custom_actuators
         push!(out, (link=link, actuator=actuator))
@@ -578,7 +611,7 @@ function mounted_wrench(model::SpacecraftModel, levels::AbstractVector, mass_kg:
     end
     # Hinges and gimbals move geometry at control ticks; CMGs act through their
     # gimbal-angle state in the attitude equation. No wrench here.
-    k += mounted_hinge_count(model) + mounted_gimbal_count(model) + mounted_cmg_count(model)
+    k += mounted_hinge_count(model) + mounted_gimbal_count(model) + mounted_cmg_count(model) + _cmg_inner_count(model)
     @inbounds for link in model.links
         isempty(link.custom_actuators) && continue
         ctx = actuator_context(link, mass_kg, q_ib, ω_body, magnetic_field_body, environment)
@@ -656,6 +689,13 @@ function applied_actuator_levels(model::SpacecraftModel, levels::AbstractVector;
         k += 1
         x = actuator_saturate(cmg, levels[k])
         cmg_angles === nothing || (x = cmg_angle_saturate(cmg, x, Float64(cmg_angles[j])))
+        out[k] = x
+    end
+    n_outer = mounted_cmg_count(model)
+    for (ι, inner) in enumerate(model.root.rw_assembly.cmg_inner)
+        k += 1
+        x = actuator_saturate(inner, levels[k])
+        cmg_angles === nothing || (x = cmg_angle_saturate(inner, x, Float64(cmg_angles[n_outer + ι])))
         out[k] = x
     end
     for link in model.links, actuator in link.custom_actuators

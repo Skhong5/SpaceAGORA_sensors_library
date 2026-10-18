@@ -796,6 +796,7 @@ const NOT_HOOKS = [
     (symbol = :cmg_momentum, reason = "a control moment gyro's rotor momentum at a gimbal angle"),
     (symbol = :cmg_torque_axis, reason = "a control moment gyro's torque axis at a gimbal angle"),
     (symbol = :cmg_angle_saturate, reason = "a control moment gyro's gimbal rate at its angle stops"),
+    (symbol = :cmg_torque_axes, reason = "a double-gimbal control moment gyro's two torque axes at its gimbal angles"),
     (symbol = :cmg_steering, reason = "solves for the mounted control moment gyros' gimbal rates"),
     (symbol = :thrust_direction, reason = "a thruster's thrust direction, turned by its gimbals"),
     (symbol = :applied_actuator_levels, reason = "reports the levels the mounted actuators apply"),
