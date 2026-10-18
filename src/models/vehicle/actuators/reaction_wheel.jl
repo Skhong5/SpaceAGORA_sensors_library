@@ -171,6 +171,12 @@ why.
     "Control moment gyros mounted with add_actuator! (their gimbal angles are the `cmg_angles` state)"
     cmgs::Vector{ControlMomentGyro} = ControlMomentGyro[]
 
-    "Gimbal rate of each mounted CMG (rad/s) commanded in the current right-hand-side evaluation, written by the engine"
+    "Gimbal rate of each mounted CMG (rad/s) commanded in the current right-hand-side evaluation, written by the engine; the outer gimbals' first, then the inner gimbals', as the `cmg_angles` state"
     cmg_rates::Vector{Float64} = Float64[]
+
+    "Inner gimbals of double-gimbal CMGs mounted with add_actuator!, after every CMG in the `cmg_angles` state and the mounting order"
+    cmg_inner::Vector{CMGInnerGimbal} = CMGInnerGimbal[]
+
+    "For each mounted CMG, the position of its inner gimbal in `cmg_inner` (0 for a single-gimbal CMG)"
+    cmg_inner_of::Vector{Int} = Int[]
 end

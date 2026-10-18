@@ -109,3 +109,98 @@ torque alike.
     ((r > 0.0 && angle >= cmg.max_gimbal_angle_rad) || (r < 0.0 && angle <= cmg.min_gimbal_angle_rad)) && return 0.0
     return r
 end
+
+# ---- Double-gimbal CMGs -------------------------------------------------------
+
+"""
+    CMGInnerGimbal(cmg; axis, max_gimbal_rate_rad_s=Inf, gimbal_angle_rad=0.0,
+                   min_gimbal_angle_rad=-Inf, max_gimbal_angle_rad=Inf)
+
+The inner gimbal of a double-gimbal control moment gyro. `cmg`'s gimbal is the
+outer one, fixed in the body; this one turns the rotor's spin axis about
+`axis`, given in the body frame at outer angle 0 (perpendicular to `cmg`'s spin
+axis, and not along its gimbal axis), which the outer gimbal carries round. At
+outer angle α and inner angle β the rotor's momentum is
+`h = h₀ R(g_o, α) R(g_i, β) s` and the vehicle feels
+`-(α̇ (g_o × h) + β̇ (g_i(α) × h))`, with `g_i(α) = R(g_o, α) g_i` the inner
+axis as the outer gimbal has turned it.
+
+Its level is the inner gimbal rate β̇ in rad/s, with its own rate limit and
+stops, as the outer gimbal's. Mount it with `add_actuator!` on the root link
+after `cmg` (one inner gimbal per CMG); the inner angles follow every CMG's
+outer angle in the `cmg_angles` state and the inner gimbals follow the CMGs in
+the mounting order.
+"""
+mutable struct CMGInnerGimbal <: AbstractActuator
+    cmg::ControlMomentGyro
+    axis::SVector{3, Float64}
+    max_gimbal_rate_rad_s::Float64
+    gimbal_angle_rad::Float64
+    min_gimbal_angle_rad::Float64
+    max_gimbal_angle_rad::Float64
+
+    function CMGInnerGimbal(cmg::ControlMomentGyro, axis, max_gimbal_rate_rad_s::Real, gimbal_angle_rad::Real,
+                            min_gimbal_angle_rad::Real, max_gimbal_angle_rad::Real)
+        a = SVector{3, Float64}(axis)
+        n = norm(a)
+        (isfinite(n) && n > 0.0) || throw(ArgumentError("CMGInnerGimbal axis must be finite and nonzero."))
+        a = a / n
+        abs(dot(a, cmg.spin_axis)) <= 1e-9 ||
+            throw(ArgumentError("CMGInnerGimbal axis must be perpendicular to the CMG's spin axis."))
+        abs(dot(a, cmg.gimbal_axis)) < 1.0 - 1e-9 ||
+            throw(ArgumentError("CMGInnerGimbal axis must not lie along the CMG's gimbal axis."))
+        (max_gimbal_rate_rad_s > 0.0 && !isnan(max_gimbal_rate_rad_s)) ||
+            throw(ArgumentError("CMGInnerGimbal max_gimbal_rate_rad_s must be positive, got $(max_gimbal_rate_rad_s)."))
+        isfinite(gimbal_angle_rad) || throw(ArgumentError("CMGInnerGimbal gimbal_angle_rad must be finite, got $(gimbal_angle_rad)."))
+        (isnan(min_gimbal_angle_rad) || isnan(max_gimbal_angle_rad) || min_gimbal_angle_rad > max_gimbal_angle_rad) &&
+            throw(ArgumentError("CMGInnerGimbal needs min_gimbal_angle_rad <= max_gimbal_angle_rad, got $(min_gimbal_angle_rad) and $(max_gimbal_angle_rad)."))
+        min_gimbal_angle_rad <= gimbal_angle_rad <= max_gimbal_angle_rad ||
+            throw(ArgumentError("CMGInnerGimbal gimbal_angle_rad $(gimbal_angle_rad) is outside its stops [$(min_gimbal_angle_rad), $(max_gimbal_angle_rad)]."))
+        return new(cmg, a, Float64(max_gimbal_rate_rad_s), Float64(gimbal_angle_rad),
+                   Float64(min_gimbal_angle_rad), Float64(max_gimbal_angle_rad))
+    end
+end
+
+CMGInnerGimbal(cmg::ControlMomentGyro; axis, max_gimbal_rate_rad_s::Real=Inf, gimbal_angle_rad::Real=0.0,
+               min_gimbal_angle_rad::Real=-Inf, max_gimbal_angle_rad::Real=Inf) =
+    CMGInnerGimbal(cmg, axis, max_gimbal_rate_rad_s, gimbal_angle_rad, min_gimbal_angle_rad, max_gimbal_angle_rad)
+
+actuator_limits(g::CMGInnerGimbal) = (-g.max_gimbal_rate_rad_s, g.max_gimbal_rate_rad_s)
+
+@inline actuator_wrench(::CMGInnerGimbal, ::Real, ::ActuatorContext) =
+    (SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
+
+# The inner gimbal's rate at its stops, as `cmg_angle_saturate` for a CMG.
+@inline function cmg_angle_saturate(g::CMGInnerGimbal, rate::Real, angle::Real)::Float64
+    r = Float64(rate)
+    ((r > 0.0 && angle >= g.max_gimbal_angle_rad) || (r < 0.0 && angle <= g.min_gimbal_angle_rad)) && return 0.0
+    return r
+end
+
+# `v` turned by `angle` about the unit vector `axis` (Rodrigues).
+@inline _cmg_turn(v::SVector{3, Float64}, axis::SVector{3, Float64}, angle::Real)::SVector{3, Float64} =
+    v * cos(angle) + cross(axis, v) * sin(angle) + axis * (dot(axis, v) * (1.0 - cos(angle)))
+
+"""
+    cmg_momentum(inner::CMGInnerGimbal, outer_angle, inner_angle) -> SVector{3}
+
+The rotor's momentum of `inner`'s double-gimbal CMG in the body frame at the
+outer and inner gimbal angles, N m s: `h₀ R(g_o, α) R(g_i, β) s`.
+"""
+@inline function cmg_momentum(inner::CMGInnerGimbal, outer_angle::Real, inner_angle::Real)::SVector{3, Float64}
+    cmg = inner.cmg
+    return cmg.rotor_momentum_nms * _cmg_turn(_cmg_turn(cmg.spin_axis, inner.axis, inner_angle), cmg.gimbal_axis, outer_angle)
+end
+
+"""
+    cmg_torque_axes(inner::CMGInnerGimbal, outer_angle, inner_angle) -> (outer, inner)
+
+The two columns of a double-gimbal CMG's torque Jacobian, negated: `g_o × h`
+and `g_i(α) × h`, so the vehicle feels `-(α̇ outer + β̇ inner)`.
+"""
+@inline function cmg_torque_axes(inner::CMGInnerGimbal, outer_angle::Real, inner_angle::Real)
+    h = cmg_momentum(inner, outer_angle, inner_angle)
+    g_i = _cmg_turn(inner.axis, inner.cmg.gimbal_axis, outer_angle)
+    return (cross(inner.cmg.gimbal_axis, h), cross(g_i, h))
+end
+

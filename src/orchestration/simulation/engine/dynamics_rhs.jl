@@ -460,25 +460,45 @@ end
     @inbounds for (j, cmg) in enumerate(assembly.cmgs)
         assembly.cmg_rates[j] += SimulationModel.actuator_saturate(cmg, levels[k + j])
     end
+    # Double-gimbal CMGs' inner gimbals follow the CMGs in the levels and the rates.
+    n = length(assembly.cmgs)
+    @inbounds for (ι, inner) in enumerate(assembly.cmg_inner)
+        assembly.cmg_rates[n + ι] += SimulationModel.actuator_saturate(inner, levels[k + n + ι])
+    end
     return nothing
 end
 
 # The mounted CMGs' momentum in the body frame at gimbal angles `angles`, and
 # its rate relative to the body at the gimbal rates they apply (the commanded
-# rates, zero at a stop they would pass): `Σ δ̇ (g × h)`.
+# rates, zero at a stop they would pass): `Σ δ̇ (g × h)`, and for a
+# double-gimbal CMG `α̇ (g_o × h) + β̇ (g_i(α) × h)`, its inner angle after
+# every outer one.
 @inline function _cmg_momentum_and_rate(assembly, angles)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     h = SVector{3, Float64}(0.0, 0.0, 0.0)
     hdot = SVector{3, Float64}(0.0, 0.0, 0.0)
+    n = length(assembly.cmgs)
     @inbounds for (j, cmg) in enumerate(assembly.cmgs)
-        hj = SimulationModel.cmg_momentum(cmg, angles[j])
-        h += hj
-        hdot += _cmg_applied_rate(assembly, j, angles[j]) * cross(cmg.gimbal_axis, hj)
+        ι = assembly.cmg_inner_of[j]
+        if ι == 0
+            hj = SimulationModel.cmg_momentum(cmg, angles[j])
+            h += hj
+            hdot += _cmg_applied_rate(assembly, j, angles[j]) * cross(cmg.gimbal_axis, hj)
+        else
+            inner = assembly.cmg_inner[ι]
+            outer_axis, inner_axis = SimulationModel.cmg_torque_axes(inner, angles[j], angles[n + ι])
+            h += SimulationModel.cmg_momentum(inner, angles[j], angles[n + ι])
+            hdot += _cmg_applied_rate(assembly, j, angles[j]) * outer_axis +
+                    _cmg_applied_inner_rate(assembly, ι, angles[n + ι]) * inner_axis
+        end
     end
     return h, hdot
 end
 
 @inline _cmg_applied_rate(assembly, j::Int, angle)::Float64 =
     SimulationModel.cmg_angle_saturate(assembly.cmgs[j], assembly.cmg_rates[j], angle)
+
+@inline _cmg_applied_inner_rate(assembly, ι::Int, angle)::Float64 =
+    SimulationModel.cmg_angle_saturate(assembly.cmg_inner[ι], assembly.cmg_rates[length(assembly.cmgs) + ι], angle)
 
 @inline function _ensure_rhs_flat_effector_scratch!(
     shared_buffers,
@@ -2826,6 +2846,10 @@ end
             @inbounds for j in eachindex(rw_assembly.cmgs)
                 du_view.cmg_angles[j] = _cmg_applied_rate(rw_assembly, j, sc_view.cmg_angles[j])
             end
+            n_outer = length(rw_assembly.cmgs)
+            @inbounds for ι in eachindex(rw_assembly.cmg_inner)
+                du_view.cmg_angles[n_outer + ι] = _cmg_applied_inner_rate(rw_assembly, ι, sc_view.cmg_angles[n_outer + ι])
+            end
         else
             du_view.cmg_angles .= 0.0
         end
@@ -4029,7 +4053,7 @@ function build_initial_conditions(args)::ComponentVector
         n_rw = args.mission_configuration.orientation_sim ? sc.root.rw_assembly.n_wheels : 0
         base_shape = n_rw > 0 ? merge(base_shape, (h_wheels = zeros(n_rw),)) : base_shape
         # Control moment gyros' gimbal angles, only when CMGs are mounted.
-        n_cmg = length(sc.root.rw_assembly.cmgs)
+        n_cmg = length(sc.root.rw_assembly.cmgs) + length(sc.root.rw_assembly.cmg_inner)
         (n_cmg > 0 && !args.mission_configuration.orientation_sim) && throw(ArgumentError(
             "Control moment gyros need the attitude state: set orientation_sim=true (spacecraft $(i))."))
         base_shape = n_cmg > 0 ? merge(base_shape, (cmg_angles = zeros(n_cmg),)) : base_shape
@@ -4074,7 +4098,8 @@ function build_initial_conditions(args)::ComponentVector
                 sc_view.h_wheels .= spacecraft.root.rw_assembly.h_wheels
             end
             cmgs = spacecraft.root.rw_assembly.cmgs
-            isempty(cmgs) || (sc_view.cmg_angles .= [c.gimbal_angle_rad for c in cmgs])
+            isempty(cmgs) || (sc_view.cmg_angles .= [[c.gimbal_angle_rad for c in cmgs];
+                                                    [g.gimbal_angle_rad for g in spacecraft.root.rw_assembly.cmg_inner]])
         end
         if SimulationModel.has_battery(spacecraft)
             sc_view.battery_wh = SimulationModel.initial_battery_wh(spacecraft)

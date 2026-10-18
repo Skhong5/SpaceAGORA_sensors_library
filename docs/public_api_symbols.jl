@@ -381,6 +381,8 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :cmg_momentum, rendered = "SpaceAGORA.cmg_momentum"),
             (owner = :SpaceAGORA, symbol = :cmg_torque_axis, rendered = "SpaceAGORA.cmg_torque_axis"),
             (owner = :SpaceAGORA, symbol = :cmg_angle_saturate, rendered = "SpaceAGORA.cmg_angle_saturate"),
+            (owner = :SpaceAGORA, symbol = :CMGInnerGimbal, rendered = "SpaceAGORA.CMGInnerGimbal"),
+            (owner = :SpaceAGORA, symbol = :cmg_torque_axes, rendered = "SpaceAGORA.cmg_torque_axes"),
             (owner = :SpaceAGORA, symbol = :cmg_steering, rendered = "SpaceAGORA.cmg_steering"),
             (owner = :SpaceAGORA, symbol = :ActuatorContext, rendered = "SpaceAGORA.ActuatorContext"),
             (owner = :SpaceAGORA, symbol = :actuator_wrench, rendered = "SpaceAGORA.actuator_wrench"),

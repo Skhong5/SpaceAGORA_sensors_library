@@ -31,8 +31,11 @@ end
 # The vehicle's angular momentum, body plus rotors (CMGs and wheels), in the inertial frame.
 function inertial_momentum(sc, x)
     q = SVector{4}(x.q)
-    h = sum(SM.cmg_momentum(c, x.cmg_angles[j]) for (j, c) in enumerate(sc.root.rw_assembly.cmgs))
     assembly = sc.root.rw_assembly
+    n = length(assembly.cmgs)
+    rotor(j, c) = assembly.cmg_inner_of[j] == 0 ? SM.cmg_momentum(c, x.cmg_angles[j]) :
+        SM.cmg_momentum(assembly.cmg_inner[assembly.cmg_inner_of[j]], x.cmg_angles[j], x.cmg_angles[n + assembly.cmg_inner_of[j]])
+    h = sum(rotor(j, c) for (j, c) in enumerate(assembly.cmgs))
     assembly.n_wheels > 0 && (h += SVector{3}(assembly.J_rw * x.h_wheels))
     return SM.rot(q)' * (sc.inertia_tensor * SVector{3}(x.ω) + h)
 end
@@ -205,6 +208,70 @@ gyro(; kw...) = ControlMomentGyro(; rotor_momentum_nms=2.0, gimbal_axis=SVector(
         sc, root = far_spacecraft()
         add_actuator!(sc, root, gyro())
         @test_throws ArgumentError cmg_run(sc, Float64[]; mission_time=1.0, orientation_sim=false)
+    end
+
+    @testset "double-gimbal CMGs: the inner gimbal record and its mounting" begin
+        sc, root = far_spacecraft()
+        c = add_actuator!(sc, root, gyro())                                       # g_o = z, s = x
+        @test_throws ArgumentError CMGInnerGimbal(c; axis=SVector(1.0, 0.0, 0.0))     # along the spin axis
+        @test_throws ArgumentError CMGInnerGimbal(c; axis=SVector(0.0, 0.0, 1.0))     # along the outer gimbal axis
+        @test_throws ArgumentError CMGInnerGimbal(c; axis=SVector(0.0, 1.0, 0.0), gimbal_angle_rad=0.3, max_gimbal_angle_rad=0.2)
+        loose = CMGInnerGimbal(gyro(); axis=SVector(0.0, 1.0, 0.0))
+        @test_throws ArgumentError add_actuator!(sc, root, loose)                 # its CMG is not mounted
+        panel = SM.Link(m=1.0, r=MVector(0.0, 1.0, 0.0)); push!(sc.links, panel)
+        inner = CMGInnerGimbal(c; axis=SVector(0.0, 1.0, 0.0), max_gimbal_rate_rad_s=0.4)
+        @test_throws ArgumentError add_actuator!(sc, panel, inner)                # the root link only
+        @test add_actuator!(sc, root, inner) === inner
+        @test_throws ArgumentError add_actuator!(sc, root, CMGInnerGimbal(c; axis=SVector(0.0, 1.0, 0.0)))   # one per CMG
+        other = add_actuator!(sc, root, gyro())                                   # mounted after the inner gimbal
+        @test [e.actuator for e in mounted_actuators(sc)] == [c, other, inner]   # inner gimbals after every CMG
+        @test sc.root.rw_assembly.cmg_inner_of == [1, 0] && length(sc.root.rw_assembly.cmg_rates) == 3
+        @test actuator_limits(inner) == (-0.4, 0.4)
+    end
+
+    @testset "double-gimbal CMGs: the rotor's momentum and its two torque axes" begin
+        c = gyro()                                                                # h0 = 2, g_o = z, s = x
+        inner = CMGInnerGimbal(c; axis=SVector(0.0, 1.0, 0.0))
+        @test cmg_momentum(inner, 0.3, 0.0) ≈ cmg_momentum(c, 0.3)                # no inner angle: the single gimbal
+        @test cmg_momentum(inner, 0.0, π / 2) ≈ SVector(0.0, 0.0, -2.0) atol=1e-15 # x turned about y to -z
+        α, β, ε = 0.4, -0.3, 1e-7
+        outer_axis, inner_axis = cmg_torque_axes(inner, α, β)
+        @test outer_axis ≈ (cmg_momentum(inner, α + ε, β) - cmg_momentum(inner, α - ε, β)) / (2ε) rtol=1e-6
+        @test inner_axis ≈ (cmg_momentum(inner, α, β + ε) - cmg_momentum(inner, α, β - ε)) / (2ε) rtol=1e-6
+    end
+
+    @testset "double-gimbal CMGs: a run integrates both angles and conserves the angular momentum" begin
+        sc, root = far_spacecraft(ω0=SVector(0.001, 0.0, 0.0))
+        c = add_actuator!(sc, root, gyro(gimbal_angle_rad=0.1))
+        add_actuator!(sc, root, CMGInnerGimbal(c; axis=SVector(0.0, 1.0, 0.0), gimbal_angle_rad=-0.2))
+        res = cmg_run(sc, [0.02, 0.01]; mission_time=20.0)
+        x0, x = res.solution.u[1].sc[1], res.solution.u[end].sc[1]
+        @test x.cmg_angles[1] ≈ 0.1 + 0.02 * 20.0 rtol=1e-9
+        @test x.cmg_angles[2] ≈ -0.2 + 0.01 * 20.0 atol=1e-12
+        @test res.table.sc1_cmg_angle_2[end] ≈ x.cmg_angles[2] && res.table.sc1_actuator_level_2[end] == 0.01
+        @test inertial_momentum(sc, x) ≈ inertial_momentum(sc, x0) rtol=1e-8
+        @test norm(SVector{3}(x.ω) - SVector(0.001, 0.0, 0.0)) > 1e-5             # the body took up the rotor's change
+    end
+
+    @testset "double-gimbal CMGs: steering is exact with two of them, and an inner stop holds" begin
+        sc, root = far_spacecraft()
+        for (g, s, i) in ((SVector(0.0, 0.0, 1.0), SVector(1.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0)),
+                          (SVector(1.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0), SVector(0.0, 0.0, 1.0)))
+            c = add_actuator!(sc, root, ControlMomentGyro(rotor_momentum_nms=2.0, gimbal_axis=g, spin_axis=s, gimbal_angle_rad=0.2))
+            add_actuator!(sc, root, CMGInnerGimbal(c; axis=i, gimbal_angle_rad=0.1))
+        end
+        a = sc.root.rw_assembly
+        angles = [0.2, 0.2, 0.1, 0.1]                                             # outer, outer, inner, inner
+        τ = SVector(0.01, -0.02, 0.03)
+        rates = cmg_steering(sc, angles, τ; λ0=0.0)
+        columns = [cmg_torque_axes(a.cmg_inner[1], 0.2, 0.1)..., cmg_torque_axes(a.cmg_inner[2], 0.2, 0.1)...]
+        made = -(rates[1] * columns[1] + rates[3] * columns[2] + rates[2] * columns[3] + rates[4] * columns[4])
+        @test made ≈ τ rtol=1e-9
+        held, hroot = far_spacecraft()
+        c = add_actuator!(held, hroot, gyro())
+        add_actuator!(held, hroot, CMGInnerGimbal(c; axis=SVector(0.0, 1.0, 0.0), max_gimbal_angle_rad=0.05))
+        x = cmg_run(held, [0.0, 0.01]; mission_time=10.0).solution.u[end].sc[1]   # the inner stop at 5 s
+        @test x.cmg_angles[2] == 0.05
     end
 end
 

@@ -318,6 +318,14 @@ The built-in kinds:
   `cmg_steering(spacecraft, angles, torque)` turns a desired torque into
   gimbal rates with a singularity-robust inverse. The gravity-backbone mode
   and articulated spacecraft refuse CMGs.
+- `CMGInnerGimbal`: the inner gimbal of a double-gimbal CMG. The CMG's gimbal
+  is the outer one, fixed in the body, and the inner one turns the spin axis
+  about an axis the outer gimbal carries round; its level is the inner gimbal
+  rate, with its own rate limit and stops. Mount it on the root link after its
+  CMG. The inner angles follow every outer angle in `cmg_angles`, the inner
+  gimbals follow the CMGs in the mounting order, `cmg_torque_axes` gives a
+  double-gimbal CMG's two torque axes and `cmg_steering` solves for every
+  gimbal.
 
 The actuators' power feeds the spacecraft's power budget when it carries one:
 solar arrays, a battery and constant loads mounted with `add_power!`. See
