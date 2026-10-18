@@ -151,11 +151,27 @@ end
             model isa SM.RPOMPCControlModel || @test C._same_state(model, copied)
         end
     end
+    # The RPO LQ-MPC controller: each deep copy owns its solver workspace, results
+    # and warm start, so solving with one leaves the other and the original as they
+    # were, and two copies solve the same problem.
     controller = only(rpo_configuration().control_model.control_effectors).controller
-    copied = deepcopy(controller)
-    @test copied.qp_model !== controller.qp_model
+    a, b = deepcopy(controller), deepcopy(controller)
+    for (one, other) in ((a, b), (a, controller), (b, controller))
+        @test one.qp_model !== other.qp_model && one.qp_results !== other.qp_results && one.U_prev !== other.U_prev
+    end
     x, ref = SVector(1.0, 0.5, -0.2, 0.0, 0.01, 0.0), zeros(6, controller.horizon + 1)
-    @test SM.ControlHooks.rpo_lqmpc_control(copied, x, ref) == SM.ControlHooks.rpo_lqmpc_control(controller, x, ref)
+    untouched(c) = (workspace=c.qp_model, results=c.qp_results, warm_start=copy(c.U_prev))
+    b_before, original_before = untouched(b), untouched(controller)
+    command_a = SM.ControlHooks.rpo_lqmpc_control(a, x, ref)
+    @test any(!iszero, a.U_prev)
+    for (c, before) in ((b, b_before), (controller, original_before))
+        @test c.qp_model === before.workspace && c.qp_results === before.results && c.U_prev == before.warm_start
+    end
+    command_b = SM.ControlHooks.rpo_lqmpc_control(b, x, ref)
+    # The QP solver stops at its tolerance (1e-4) and adapts its step size during the
+    # solve, so two copies agree to that tolerance, not bit for bit.
+    @test a.qp_results.info.status === b.qp_results.info.status
+    @test isapprox(command_a, command_b; rtol=1e-3) && any(!iszero, command_a)
 end
 
 @testset "Bound copies get their own run state (R-S4)" begin
