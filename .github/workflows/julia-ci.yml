@@ -809,6 +809,28 @@ jobs:
         env:
           JULIA_PKG_OFFLINE: "true"
         run: julia --startup-file=no --project=examples/rpo_planner_env examples/rpo_planner_env/smoke.jl
+      # The worked examples of docs/src/user/gnc_algorithm.md, in a project of their
+      # own; the HPC and extensibility docs gate keeps the page's code equal to them.
+      - name: Prepare separate GNC algorithm example project
+        env:
+          JULIA_PKG_PRECOMPILE_AUTO: "0"
+        run: julia --startup-file=no --project=examples/gnc_algorithm_env examples/gnc_algorithm_env/setup.jl
+      - name: GNC algorithm examples and their conformance checks without package downloads
+        env:
+          JULIA_PKG_OFFLINE: "true"
+          JULIA_NUM_THREADS: "2"
+        run: julia --startup-file=no --depwarn=error --project=examples/gnc_algorithm_env examples/gnc_algorithm_env/smoke.jl
+      # The complete scripts of the force and actuator walkthroughs
+      # (docs/src/user/custom_effector.md, custom_actuator.md), kept equal to their
+      # pages by the same gate.
+      - name: Prepare separate extension walkthrough project
+        env:
+          JULIA_PKG_PRECOMPILE_AUTO: "0"
+        run: julia --startup-file=no --project=examples/walkthrough_env examples/walkthrough_env/setup.jl
+      - name: Extension walkthrough scripts without package downloads
+        env:
+          JULIA_PKG_OFFLINE: "true"
+        run: julia --startup-file=no --depwarn=error --project=examples/walkthrough_env examples/walkthrough_env/smoke.jl
 
   # The reusable contributor workflow on each starter, generated from this checkout
   # as a contributor would generate it, with this checkout as the core. The three

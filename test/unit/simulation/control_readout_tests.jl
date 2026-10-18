@@ -97,16 +97,21 @@ end
 include(joinpath(@__DIR__, "..", "..", "..", "templates", "control_hook_template.jl"))
 
 @testset "control template dispatches through the engine parameter boundary" begin
-    model = ExampleControlHookTemplate.ExampleControlHook(
-        SVector(1.0, 2.0, 3.0), SVector(0.1, 0.2, 0.3), 0.125)
+    force, torque = SVector(1.0, 2.0, 3.0), SVector(0.1, 0.2, 0.3)
+    model = ExampleControlHookTemplate.ExampleControlHook(force_ii=force, torque_body=torque, isp_s=250.0)
     p = readout_params((model,); n_sats=1)
-    u = ComponentVector(mass=500.0)
     x = SE._control_state_sample(readout_state(p), p, 1)
-    @test SpaceAGORA.update_control!(model, u, p, 0.0, 1) === nothing
-    @test SpaceAGORA.control_wrench(model, x, p, 0.0) == (model.force_n, model.torque_n_m)
-    @test SpaceAGORA.control_propellant_rate(model, x, p, 0.0) === 0.125
+    rate = SpaceAGORA.propellant_mass_rate(sqrt(14.0), 250.0)
+    @test SpaceAGORA.control_wrench(model, x, p, 0.0) == (force, torque)
+    @test SpaceAGORA.control_propellant_rate(model, x, p, 0.0) == rate > 0
+    @test SpaceAGORA.held_command(model, 1) == (force_ii=force, torque_body=torque)
     # The engine subtracts the propellant used from the mass derivative.
-    @test readout(p, 1) == (model.force_n, model.torque_n_m, ZERO3, -0.125)
+    @test readout(p, 1) == (force, torque, ZERO3, -rate)
+    # The tick holds the law's command (none in the template) for the readouts after it.
+    u = SE.build_initial_conditions(p.args)
+    @test SpaceAGORA.update_control!(model, u, p, 1.0, 1) === nothing
+    @test SpaceAGORA.held_command_time(model, 1) == 1.0
+    @test readout(p, 1) == (ZERO3, ZERO3, ZERO3, 0.0)
 end
 
 # Hook methods typed on the effector alone, as the template's could be: the

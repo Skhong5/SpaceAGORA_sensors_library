@@ -89,6 +89,67 @@ function SpaceAGORA.wrench(::NcStallsOnce, x::Sample, env::Env, t::Float64)
     return along_velocity(x, -1.0e-3)
 end
 
+# concurrent_equals_sequential: the first call after the token is set throws, so one of
+# two concurrent runs fails and must release the other.
+const NC_FAIL = Threads.Atomic{Bool}(false)
+struct NcFailsOnce <: ForceModel end
+function SpaceAGORA.wrench(::NcFailsOnce, x::Sample, env::Env, t::Float64)
+    t > 0.0 && Threads.atomic_cas!(NC_FAIL, true, false) && error("NcFailsOnce stops this run")
+    return along_velocity(x, -1.0e-3)
+end
+
+# How two concurrent runs call the model: the most calls in flight at once, and which
+# run (its deep copy's identity) made each call. With `meet` set, a run's call waits up
+# to 10 s for the other run to be inside a call too, until the two have met once.
+mutable struct NcProbe <: ForceModel end
+const NC_PROBE = (active=Threads.Atomic{Int}(0), peak=Threads.Atomic{Int}(0), met=Threads.Atomic{Bool}(false),
+    meet=Threads.Atomic{Bool}(false), order=UInt[], lock=ReentrantLock())
+function SpaceAGORA.wrench(m::NcProbe, x::Sample, env::Env, t::Float64)
+    probe = NC_PROBE
+    Threads.atomic_max!(probe.peak, Threads.atomic_add!(probe.active, 1) + 1)
+    @lock probe.lock push!(probe.order, objectid(m))
+    deadline = time() + 10.0
+    while probe.meet[] && !probe.met[] && time() < deadline
+        probe.active[] >= 2 ? (probe.met[] = true) : yield()
+    end
+    Threads.atomic_sub!(probe.active, 1)
+    return along_velocity(x, -1.0e-3)
+end
+function probe_concurrency(turns::Bool; meet::Bool)
+    fixture = conformance_fixture(effectors=(NcProbe(),))
+    base, again = C._solve(fixture.configuration), C._solve(fixture.configuration)
+    NC_PROBE.peak[] = 0
+    NC_PROBE.met[] = false
+    NC_PROBE.meet[] = meet
+    empty!(NC_PROBE.order)
+    check = try
+        C._concurrency_check(fixture.configuration, base, again, v"0.3.0"; turns)
+    finally
+        NC_PROBE.meet[] = false
+    end
+    order = NC_PROBE.order
+    return (check=check, peak=NC_PROBE.peak[], runs=length(unique(order)),
+        switches=count(k -> order[k] != order[k - 1], 2:length(order)))
+end
+
+# The concurrency check of a force/torque model, a sensor or a control model, in step
+# (`turns=false`) or taking turns, whichever this process would use by default.
+function concurrency_check(kind::Symbol, model; turns::Bool)
+    if kind === :force_torque_model
+        configuration = conformance_fixture(effectors=(model,)).configuration
+        run = factories -> C._solve(configuration; extra_callback_factories=factories)
+        return C._concurrency_check(run, run(()), run(()), v"0.3.0"; turns)
+    elseif kind === :sensor
+        configuration = conformance_fixture(sensors=(model,)).configuration
+        position = C._sensor_position(configuration, model)
+        run = factories -> C._sensor_run(configuration, position; factories).outcome
+        return C._concurrency_check(run, run(()), run(()), v"0.3.0"; noun="measurement", turns)
+    end
+    configuration = conformance_fixture(control=(model,)).configuration
+    run = factories -> C._model_solve(configuration, :control_model, 1; factories)
+    return C._concurrency_check(run, run(()), run(()), v"0.3.0"; difference=C._model_run_difference, turns)
+end
+
 # environment_declared: reads the atmosphere without declaring it, and returns a
 # non-finite force when the undeclared solar sample is missing.
 struct NcUndeclaredAtmosphere <: ForceModel end
@@ -760,22 +821,77 @@ const MAY_SKIP = (:concurrent_equals_sequential, :bind_fresh_state, :stream_unto
         @test occursin("is_current has no method for this family",
             only(check.detail for check in bare.checks if check.id === :family_obligations))
     end
+    threaded = Threads.nthreads() >= 2
     @testset "concurrent_equals_sequential: a run stalls past the rendezvous limit" begin
         model = NcStallsOnce()
         fixture = conformance_fixture(effectors=(model,))
         base = C._solve(fixture.configuration)
         again = C._solve(fixture.configuration)
-        NC_STALL[] = true
-        check = C._concurrency_check(fixture.configuration, base, again, v"0.3.0"; timeout_s=1.0)
-        @test !NC_STALL[]   # one concurrent run took the token and stalled
-        if Threads.nthreads() >= 2
-            @testset let status = check.status, detail = check.detail
-                @test status === :fail
-                @test occursin("the concurrent runs fell out of step", detail)
-                @test !occursin("differ", detail)   # equal results do not rescue it
+        for turns in (false, true)
+            NC_STALL[] = true
+            check = C._concurrency_check(fixture.configuration, base, again, v"0.3.0"; timeout_s=1.0, turns)
+            stalled = !NC_STALL[]
+            NC_STALL[] = false
+            @testset let turns = turns, status = check.status, detail = check.detail
+                if threaded
+                    @test stalled   # one concurrent run took the token and stalled
+                    @test status === :fail
+                    @test occursin("the concurrent runs fell out of step", detail)
+                    @test !occursin("differ", detail)   # equal results do not rescue it
+                else
+                    @test status === :skip
+                end
             end
-        else
-            @test check.status === :skip
+        end
+    end
+    @testset "concurrent_equals_sequential: a run that fails releases the other" begin
+        fixture = conformance_fixture(effectors=(NcFailsOnce(),))
+        base = C._solve(fixture.configuration)
+        again = C._solve(fixture.configuration)
+        for turns in (false, true)
+            NC_FAIL[] = true
+            # A run left waiting would wait out this limit and report the runs out of step.
+            check = C._concurrency_check(fixture.configuration, base, again, v"0.3.0"; timeout_s=30.0, turns)
+            NC_FAIL[] = false
+            @testset let turns = turns, status = check.status, detail = check.detail
+                if threaded
+                    @test status === :fail
+                    @test occursin("NcFailsOnce stops this run", detail)
+                    @test !occursin("fell out of step", detail)
+                else
+                    @test status === :skip
+                end
+            end
+        end
+    end
+    @testset "concurrent_equals_sequential: in step the runs overlap, taking turns they alternate" begin
+        # In step (without line counting) both runs are inside the model at once;
+        # taking turns (under coverage or allocation tracking) they never are, and
+        # their calls still interleave, step by step.
+        together = probe_concurrency(false; meet=true)
+        turns = probe_concurrency(true; meet=false)
+        @testset let peak = together.peak, turns_peak = turns.peak, switches = turns.switches
+            @test together.check.status === (threaded ? :pass : :skip)
+            @test turns.check.status === (threaded ? :pass : :skip)
+            if threaded
+                @test together.runs == turns.runs == 2
+                @test peak == 2
+                @test turns_peak == 1
+                # Sequential runs would switch once; the fixture run takes five steps.
+                @test switches >= 8
+            end
+        end
+    end
+    @testset "concurrent_equals_sequential: shared state is caught in step and taking turns" begin
+        for turns in (false, true), (kind, clean, shared) in ((:force_torque_model, NcClean(), NcSharedScratch()),
+                (:sensor, NcCleanSensor(), NcSharedSensor()), (:control_model, NcCtl{:Clean}(), NcCtl{:Shared}()))
+            passing = concurrency_check(kind, clean; turns)
+            failing = concurrency_check(kind, shared; turns)
+            @testset let kind = kind, turns = turns, clean = passing.status, shared = failing.status, detail = failing.detail
+                @test clean === (threaded ? :pass : :skip)
+                @test shared === (threaded ? :fail : :skip)
+                threaded && @test occursin("and sequential run ", detail)
+            end
         end
     end
     @testset "the state comparison matches mutable objects one to one" begin

@@ -178,6 +178,15 @@ benchmarks/studies/small_wins/results/
 /examples/rpo_planner_env/Project.toml
 /examples/rpo_planner_env/Manifest.toml
 
+# Generated GNC algorithm example environment; Project.template.toml is tracked.
+/examples/gnc_algorithm_env/Project.toml
+/examples/gnc_algorithm_env/Manifest.toml
+
+# Generated extension walkthrough environment and the walkthroughs' results.
+/examples/walkthrough_env/Project.toml
+/examples/walkthrough_env/Manifest.toml
+/examples/walkthrough_env/output/
+
 # Optional viewer installation environment
 .visualizer-env/
 
