@@ -26,10 +26,16 @@ function rename_warnings(f)
     return filter(is_rename, [string(l.message) for l in logger.logs])
 end
 
+# A contributor model whose index field keeps the older name.
+struct ContributorIndexEffector
+    spacecraft_idx::Int
+end
+
 # Each renamed type, its old and new names, and a value for the field.
 const RENAMES = [
     (SM.MagneticMomentumManagerModel, :sat_idx, :spacecraft_index, 3),
     (SM.RobotArmControlEffector, :spacecraft_idx, :spacecraft_index, 3),
+    (SM.RobotArmReactionEffector, :spacecraft_idx, :spacecraft_index, 3),
     (SM.RPOMPCControlModel, :chaser_idx, :chaser_index, 3),
     (SM.RPOMPCControlModel, :target_idx, :target_index, 4),
 ]
@@ -57,6 +63,11 @@ const RENAMES = [
             end
             @test getfield(m, new) == value + 1
             @test length(logger.logs) == 1 && logger.logs[1].group === :depwarn
+        else
+            # Under --depwarn=error the old property refuses, for reads and writes.
+            @test_throws ErrorException getproperty(m, old)
+            @test_throws ErrorException setproperty!(m, old, value + 1)
+            @test getfield(m, new) == value
         end
         @test_throws ArgumentError T(; (old => value, new => value)...)
     end
@@ -90,6 +101,12 @@ const RENAMES = [
             arm.control_dt_s, arm.k_translation_n_m, arm.c_translation_n_s_m, arm.k_rotation_n_m_rad,
             arm.c_rotation_n_m_s_rad) == (1, nothing, nothing, 0.0, 0.0, 0.0, 0.1, 5.0e3, 30.0, 15.0, 0.5)
         @test arm.held.joint_torque_nm == Float64[]
+        reaction = SM.RobotArmReactionEffector()
+        @test (reaction.spacecraft_index, reaction.plan, reaction.updated_at_s, reaction.force_scale,
+            reaction.torque_scale, reaction.k_translation_n_m, reaction.c_translation_n_s_m, reaction.k_rotation_n_m_rad,
+            reaction.c_rotation_n_m_s_rad) == (1, nothing, 0.0, 0.0, 0.0, 5.0e3, 30.0, 15.0, 0.5)
+        @test isempty(reaction.joint_actuators)
+        @test SM.RobotArmReactionEffector().joint_actuators !== reaction.joint_actuators  # a fresh vector each time
         mpc = SM.RPOMPCControlModel()
         @test (mpc.chaser_index, mpc.target_index, mpc.minimum_throttle_fraction, mpc.controller, mpc.control_dt_s,
             mpc.attitude_kp, mpc.rate_kd, mpc.max_rw_torque_nm, mpc.command_log, mpc.actuation) ==
@@ -129,7 +146,15 @@ const RENAMES = [
         @test !SE._control_effector_targets_owned(SM.MagneticMomentumManagerModel(spacecraft_index=2), [1])
         @test !SE._control_effector_targets_owned(SM.RPOMPCControlModel(chaser_index=1, target_index=2), [2])
         @test SE._effector_spacecraft_index(SM.RobotArmControlEffector(spacecraft_index=2)) == 2
-        @test SE._effector_spacecraft_index(SM.RobotArmReactionEffector(spacecraft_idx=2)) == 2           # older name
+        reaction = SM.RobotArmReactionEffector(spacecraft_index=2)
+        @test SE._effector_spacecraft_index(reaction) == 2
+        @test SE._control_effector_targets_owned(reaction, [2]) && !SE._control_effector_targets_owned(reaction, [1])
+        @test isempty(rename_warnings(() -> (SE._effector_spacecraft_index(reaction),
+            SE._control_effector_targets_owned(reaction, [2]))))
+        # A contributor model that still has the older field is still read.
+        legacy = ContributorIndexEffector(2)
+        @test SE._effector_spacecraft_index(legacy) == 2
+        @test SE._control_effector_targets_owned(legacy, [2]) && !SE._control_effector_targets_owned(legacy, [1])
         @test SE._effector_spacecraft_index(SM.BaseThrusterModel(thrust=[0.0], direction=[0.0], Δv=[0.0],
             start_burn_time=[0.0], stop_burn_time=[0.0], Isp=[300.0])) === nothing
     end
