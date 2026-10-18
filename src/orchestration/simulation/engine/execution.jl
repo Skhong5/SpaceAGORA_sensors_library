@@ -710,7 +710,7 @@ function run_simulation(
 
     t_start = 0.0
     u_start = initial_conditions
-    resumed, model_snapshot = false, nothing
+    resumed, model_snapshot, pending_ticks_s = false, nothing, NaN
     if args.simulation_settings.resume_from_checkpoint
         ckpt = _load_checkpoint(args)
         if ckpt === nothing
@@ -734,6 +734,7 @@ function run_simulation(
             _restore_interlink_checkpoint_state!(args, ckpt, p.is_active)
             _restore_callback_checkpoint_state!(args, ckpt, p)
             model_snapshot = _check_model_checkpoint_state(args, ckpt)
+            pending_ticks_s = _pending_periodic_ticks_s(ckpt)
             resumed = true
             t_start = ckpt.t
             u_start = ckpt.u
@@ -750,11 +751,19 @@ function run_simulation(
     # println("ODE parameters:")
     # println(p)
     # println("args.mission_configuration.mission_time: $(args.mission_configuration.mission_time)")
+    # A checkpointed or resumed run keeps one tick grid for its periodic
+    # navigation, guidance and control, from the run's start at 0 to its end, and
+    # ticks at segment boundaries on it; a resumed run takes the ticks pending
+    # at its start.
+    run_clock = checkpoint_active || resumed
+    p.shared_buffers.periodic_clock_origin_s[] = run_clock ? 0.0 : NaN
+    p.shared_buffers.periodic_clock_horizon_s[] = run_clock ? Float64(mission_end) : NaN
+    p.shared_buffers.periodic_clock_pending_s[] = pending_ticks_s
     # The links first (each initialized once), then the control clocks, then
     # navigation, guidance and control: each stage may read what the previous one
     # set up.
     SimulationModel.SimulationCallbacks.initialize_gnc_links!(args, u_start, p, t_start)
-    SimulationModel.SimulationCallbacks._report_gnc_clocks!(args, t_start)
+    SimulationModel.SimulationCallbacks._report_gnc_clocks!(args, run_clock ? 0.0 : t_start)
     for navigation in args.navigation_model.navigation_effectors
         SimulationLifecycle.initialize_navigation!(navigation, u_start, p, t_start)
     end
@@ -1052,7 +1061,8 @@ function run_simulation(
             t_cursor = Float64(seg_sol.t[end])
             u_cursor = deepcopy(seg_sol.u[end])
             _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode); is_active=p.is_active,
-                callback_state=_callback_checkpoint_state(args), model_state=_model_checkpoint_state(args))
+                callback_state=_callback_checkpoint_state(args), model_state=_model_checkpoint_state(args),
+                periodic_ticks=_periodic_tick_checkpoint_state(t_cursor, mission_end))
             checkpoint_written = true
             if string(seg_sol.retcode) != "Success" || !_gravity_backbone_time_reached(t_cursor, t_next)
                 break

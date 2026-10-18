@@ -211,8 +211,9 @@ Called with the period of control `model`'s periodic callback and the time its
 clock starts from (s into the run): when the run starts, after the links are
 initialized and before the models' own initializers, and again when the callback
 starts, at every solve's start, so a checkpointed run calls it again at each
-segment. A model that keeps a clock of its own ticks records it here. Default:
-nothing.
+segment. The clock starts from the solve's start, or from the run's start (0) in a
+checkpointed or resumed run, whose ticks keep one grid across segments. A model
+that keeps a clock of its own ticks records it here. Default: nothing.
 """
 gnc_clock_started!(model, period_s, origin_s) = nothing
 

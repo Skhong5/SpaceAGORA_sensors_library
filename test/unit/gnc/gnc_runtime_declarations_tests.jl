@@ -380,8 +380,8 @@ SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
     end
 
     @testset "a resumed run restores the run state models keep in checkpoint files" begin
-        # Navigation ticks every 0.3 s, off the 1 s checkpoint boundaries: a
-        # periodic tick at a segment boundary is skipped.
+        # Navigation ticks every 0.3 s, off the 1 s checkpoint boundaries (the
+        # next testset ticks on them).
         checkpointed(dir; kw...) = (checkpoint_enabled=true, checkpoint_interval_s=1.0, checkpoint_directory=dir, kw...)
         counted(mission_time, settings; navigation=TickCounter(), sensor=KeptCountSensor()) =
             runtime_args((); sensor=sensor, navigation=(navigation,), navigation_period=0.3, mission_time=mission_time,
@@ -427,6 +427,25 @@ SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
         msg = refusal(() -> run!(counted(3.0, checkpointed(mktempdir()); navigation=HalfKept())))
         @test msg !== nothing && occursin("has no restore_checkpoint_state!", msg)
         @test refusal(() -> run!(counted(3.0, (;); navigation=HalfKept()))) === nothing
+    end
+
+    @testset "a resumed run ticks as a run in one piece, at checkpoint boundaries too" begin
+        # Navigation ticks every 0.25 s: the 1 s checkpoint boundaries and the
+        # 3 s resume time fall on its grid.
+        checkpointed(dir; kw...) = (checkpoint_enabled=true, checkpoint_interval_s=1.0, checkpoint_directory=dir, kw...)
+        counted(mission_time, settings) = runtime_args((); sensor=KeptCountSensor(), navigation=(TickCounter(),),
+            navigation_period=0.25, mission_time=mission_time, settings=settings)
+        run!(args) = (run_simulation(args; isolate_state=false); args)
+        nav(args) = only(args.navigation_model.navigation_effectors)
+        straight = run!(counted(6.0, (;)))
+        split = run!(counted(6.0, checkpointed(mktempdir())))
+        dir = mktempdir()
+        early = run!(counted(3.0, checkpointed(dir)))
+        resumed = run!(counted(6.0, checkpointed(dir; resume_from_checkpoint=true)))
+        @test nav(straight).ticks == 23                                    # 0.25 s to 5.75 s
+        @test nav(split).ticks == nav(straight).ticks                      # with the ticks at 1 s to 5 s
+        @test nav(early).ticks == 11                                       # none at the run's end
+        @test nav(resumed).this_run == 12 && nav(resumed).ticks == nav(straight).ticks   # 3 s to 5.75 s
     end
 
     @testset "an unknown schedule is refused" begin

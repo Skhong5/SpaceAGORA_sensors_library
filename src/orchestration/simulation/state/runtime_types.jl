@@ -869,6 +869,14 @@ export RhsEffectorDecision, RhsExecutionPlan
         current_time::Base.RefValue{Float64} = Ref(0.0)
         et_start::Base.RefValue{Float64} = Ref(0.0)
         solve_segment_end_time::Base.RefValue{Float64} = Ref(NaN)
+        # Tick grid origin and end of a checkpointed or resumed run for the
+        # periodic GNC callbacks (SimulationCallbacks._run_clock_periodic_callback);
+        # NaN leaves each solve its own grid.
+        periodic_clock_origin_s::Base.RefValue{Float64} = Ref(NaN)
+        periodic_clock_horizon_s::Base.RefValue{Float64} = Ref(NaN)
+        # A resumed run's start when the ticks due there are pending: its
+        # checkpoint was written at the end of the run that wrote it.
+        periodic_clock_pending_s::Base.RefValue{Float64} = Ref(NaN)
         debug_control::Base.RefValue{Bool} = Ref(false)
         debug_initial_derivative::Base.RefValue{Bool} = Ref(false)
         effector_cost_ns_per_item::Base.RefValue{Float64} = Ref(NaN)
