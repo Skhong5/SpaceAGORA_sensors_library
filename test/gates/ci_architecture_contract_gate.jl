@@ -13,9 +13,9 @@ reference_system_config_src = _read(joinpath("src", "foundation", "core", "state
 spacecraft_model_src = _read(joinpath("src", "models", "vehicle", "spacecraft", "model.jl"))
 legacy_model_codes_src = _read(joinpath("src", "foundation", "core", "types", "compat_model_codes.jl"))
 runtime_types_src = _read(joinpath("src", "orchestration", "simulation", "state", "runtime_types.jl"))
-command_types_src = _read(joinpath("src", "models", "gnc", "command_types.jl"))
+command_types_src = _read(joinpath("src", "models", "gnc", "contracts", "command_types.jl"))
 top_level_thruster_models_src = _read(joinpath("src", "models", "vehicle", "actuators", "thruster_models_module.jl"))
-top_level_guidance_models_src = _read(joinpath("src", "models", "gnc", "guidance", "guidance_models.jl"))
+top_level_guidance_models_src = _read(joinpath("src", "models", "gnc", "guidance", "models.jl"))
 top_level_gravity_effectors_src = _read(joinpath("src", "models", "environment", "gravity", "gravity_effectors.jl"))
 engine_src = _read(joinpath("src", "orchestration", "simulation", "engine", "simulation_engine.jl"))
 engine_public_api_src = _read(joinpath("src", "orchestration", "simulation", "engine", "public_api.jl"))
@@ -27,8 +27,8 @@ gravity_effectors_src = _read(joinpath("src", "models", "dynamics", "effectors",
 aerodynamic_effectors_src = _read(joinpath("src", "models", "dynamics", "effectors", "force_torque_models", "aerodynamic_effectors.jl"))
 perturbation_effectors_src = _read(joinpath("src", "models", "dynamics", "effectors", "force_torque_models", "perturbation_effectors.jl"))
 guidance_models_src = _read(joinpath("src", "models", "dynamics", "effectors", "force_torque_models", "guidance_models.jl"))
-guidance_hooks_src = _read(joinpath("src", "models", "gnc", "guidance", "guidance_hooks.jl"))
-control_hooks_src = _read(joinpath("src", "models", "gnc", "control", "control_hooks.jl"))
+guidance_hooks_src = _read(joinpath("src", "models", "gnc", "guidance", "hooks.jl"))
+control_hooks_src = _read(joinpath("src", "models", "gnc", "control", "hooks.jl"))
 callback_registry_src = _read(joinpath("src", "orchestration", "simulation", "callbacks", "registry.jl"))
 density_callback_assembly_src = _read(joinpath("src", "orchestration", "simulation", "callbacks", "density_callbacks", "assembly.jl"))
 density_models_src = _read(joinpath("src", "models", "environment", "atmosphere", "density_models.jl"))
@@ -87,9 +87,9 @@ occursin("using ..SpacecraftModels: SpacecraftModel", runtime_types_src) ||
     error("ConfigTypes is not importing SpacecraftModel from SpacecraftModels.")
 !occursin("@enum Legacy", runtime_types_src) ||
     error("ConfigTypes still defines Legacy*Code enums directly in runtime_types.jl.")
-occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"command_types.jl\"))", simulation_model_src) ||
-    error("SimulationModel does not include src/models/gnc/command_types.jl before runtime types.")
-findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"command_types.jl\"))", simulation_model_src) <
+occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"contracts\", \"command_types.jl\"))", simulation_model_src) ||
+    error("SimulationModel does not include src/models/gnc/contracts/command_types.jl before runtime types.")
+findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"contracts\", \"command_types.jl\"))", simulation_model_src) <
     findfirst("include(joinpath(@__DIR__, \"..\", \"state\", \"runtime_types.jl\"))", simulation_model_src) ||
     error("SimulationModel is not loading CommandTypes before ConfigTypes.")
 occursin("module CommandTypes", command_types_src) ||
@@ -108,16 +108,16 @@ occursin("module ThrusterModels", top_level_thruster_models_src) ||
     error("Top-level ThrusterModels owner module is missing.")
 occursin("include(joinpath(@__DIR__, \"thruster_models.jl\"))", top_level_thruster_models_src) ||
     error("Top-level ThrusterModels owner is not including vehicle/actuators/thruster_models.jl.")
-occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"guidance\", \"guidance_models.jl\"))", simulation_model_src) ||
+occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"guidance\", \"models.jl\"))", simulation_model_src) ||
     error("SimulationModel does not include the top-level GuidanceModels owner.")
 occursin("module GuidanceModels", top_level_guidance_models_src) ||
     error("Top-level GuidanceModels owner module is missing.")
-occursin("include(joinpath(@__DIR__, \"thruster_guidance\", \"thruster_guidance_models.jl\"))", top_level_guidance_models_src) ||
+occursin("include(joinpath(@__DIR__, \"maneuvers\", \"thruster_guidance_models.jl\"))", top_level_guidance_models_src) ||
     error("Top-level GuidanceModels owner is not including the thruster guidance model definitions.")
 findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"vehicle\", \"actuators\", \"thruster_models_module.jl\"))", simulation_model_src) <
     findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"dynamics\", \"effectors\", \"force_torque_models.jl\"))", simulation_model_src) ||
     error("SimulationModel is not loading ThrusterModels before DynamicEffectors.")
-findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"guidance\", \"guidance_models.jl\"))", simulation_model_src) <
+findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"guidance\", \"models.jl\"))", simulation_model_src) <
     findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"dynamics\", \"effectors\", \"force_torque_models.jl\"))", simulation_model_src) ||
     error("SimulationModel is not loading GuidanceModels before DynamicEffectors.")
 occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"environment\", \"gravity\", \"gravity_effectors.jl\"))", simulation_model_src) ||

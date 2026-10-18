@@ -56,7 +56,8 @@ owns execution, and `callbacks/` consumes the internal operations declared in
 `interfaces/io/checkpoints/`. The engine still decides when to save and resume.
 
 Planning sources are grouped under `models/gnc/planning/`: RPO, robot-arm
-references, shared geometry and tree operations, and optional-adapter services.
+references, and shared geometry and tree operations. The core-owned adapters of
+the optional companions are in `models/gnc/companions/`.
 Navigation retains its estimator hook; reference and collision geometry belongs
 to planning. Completed planner-comparison reports are implemented in
 `interfaces/analysis/planning/`, while historical function bindings remain

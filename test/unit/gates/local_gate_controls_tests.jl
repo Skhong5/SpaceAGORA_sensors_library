@@ -18,10 +18,14 @@ function _copy_into!(fixture::String, repo::String, rel::String)
     return target
 end
 
+# The one source file whose path ends with `name`: a file name, or a folder and a
+# file name ("guidance/hooks.jl") where the file name alone is not unique.
 function _unique_source(fixture::String, name::String)
+    tail = splitpath(name)
     hits = String[]
-    for (root, _, files) in walkdir(joinpath(fixture, "src"))
-        name in files && push!(hits, joinpath(root, name))
+    for (root, _, files) in walkdir(joinpath(fixture, "src")), file in files
+        parts = splitpath(joinpath(root, file))
+        length(parts) >= length(tail) && parts[end-length(tail)+1:end] == tail && push!(hits, joinpath(root, file))
     end
     length(hits) == 1 || error("Expected exactly one $(name) under the fixture source tree; found $(length(hits)).")
     return only(hits)
@@ -177,7 +181,7 @@ end
             @test isnothing(run_gate().failure)
 
             owner_dir = dirname(_unique_source(fixture, "translational_models.jl"))
-            outsider_dir = dirname(_unique_source(fixture, "guidance_hooks.jl"))
+            outsider_dir = dirname(_unique_source(fixture, "guidance/hooks.jl"))
             forbidden = "du_view.pos .= sc_view.vel\n"
             outsider_probe = joinpath(outsider_dir, "translational_probe.jl")
 
@@ -540,7 +544,7 @@ end
             @test isnothing(run_gate().failure)
 
             # The control owner must import the typed command from CommandTypes.
-            hooks = _unique_source(fixture, "control_hooks.jl")
+            hooks = _unique_source(fixture, "control/hooks.jl")
             hooks_source = read(hooks, String)
             needle = "using ..CommandTypes: PropulsiveManeuverCommand"
             @test occursin(needle, hooks_source)
@@ -549,7 +553,7 @@ end
                     "Typed-command boundary violation: ControlHooks is not importing PropulsiveManeuverCommand from CommandTypes.")
             end
             # maneuver_commands may only be touched by the typed writer and consumer.
-            guidance_dir = dirname(_unique_source(fixture, "guidance_hooks.jl"))
+            guidance_dir = dirname(_unique_source(fixture, "guidance/hooks.jl"))
             probe = joinpath(guidance_dir, "ownership_probe.jl")
             _with_probe(probe, "x = p.shared_buffers.maneuver_commands\n") do
                 rejected = run_gate()

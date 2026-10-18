@@ -3,8 +3,8 @@
 module GNCAlgorithmContractTests
 using Test, Random, LinearAlgebra, SHA
 const SRC = joinpath(@__DIR__, "..", "..", "..", "src", "models", "gnc")
-include(joinpath(SRC, "interfaces", "gnc_algorithms.jl"))
-include(joinpath(SRC, "interfaces", "rpo_planner.jl"))
+include(joinpath(SRC, "contracts", "gnc_algorithms.jl"))
+include(joinpath(SRC, "planning", "rpo", "contract", "rpo_planner.jl"))
 include(joinpath(SRC, "planning", "rpo", "direct_planner.jl"))
 const G = GNCAlgorithms
 const P = RPOPlannerInterfaces

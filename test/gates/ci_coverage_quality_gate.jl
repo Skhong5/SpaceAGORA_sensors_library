@@ -31,7 +31,7 @@ const MAIN_FILE_MIN_OVERRIDES = Dict(
 
 const CRITICAL_FILE_MIN_OVERRIDES = Dict(
     "src/orchestration/simulation/engine/execution.jl" => 90.0,
-    "src/models/gnc/control/propulsive_maneuvers.jl" => 90.0,
+    "src/models/gnc/control/maneuvers/propulsive_maneuvers.jl" => 90.0,
     "src/foundation/core/interfaces/reference_system.jl" => 90.0,
 )
 
