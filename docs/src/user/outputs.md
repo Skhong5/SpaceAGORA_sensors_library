@@ -235,7 +235,7 @@ selectable on the page). Zooming in on a spacecraft, or selecting it and
 pressing F, swaps its marker for the link-box assembly with thruster and
 facet glyphs; `stl=Dict(id => "model.stl")` draws a CAD mesh instead.
 The [Interactive Visualization](visualization.md) page covers the options,
-ensembles and textures; [the independent renderer guide](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl/blob/31a62181653e57cd7ae769ce26d954afa94e704d/viewer/README.md) documents the controls and how to
+ensembles and textures; [the independent renderer guide](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl/blob/75b32bc610e3227035810a4c8e12a515106c5a62/viewer/README.md) documents the controls and how to
 develop the viewer itself.
 
 ## Loading results in Julia
