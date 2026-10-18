@@ -2842,8 +2842,8 @@ end
 end
 
 # The run position an effector is bound to: its `spacecraft_index`, or the older
-# `spacecraft_idx` (still the field of `RobotArmReactionEffector`); `nothing` when
-# it has neither.
+# `spacecraft_idx` that contributor models may still have; `nothing` when it has
+# neither.
 @inline _effector_spacecraft_index(effector) =
     hasproperty(effector, :spacecraft_index) ? getproperty(effector, :spacecraft_index) :
     hasproperty(effector, :spacecraft_idx) ? getproperty(effector, :spacecraft_idx) : nothing
