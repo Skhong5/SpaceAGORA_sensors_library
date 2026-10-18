@@ -168,10 +168,10 @@ end
         @test c.qp_model === before.workspace && c.qp_results === before.results && c.U_prev == before.warm_start
     end
     command_b = SM.ControlHooks.rpo_lqmpc_control(b, x, ref)
-    # The QP solver stops at its tolerance (1e-4) and adapts its step size during the
-    # solve, so two copies agree to that tolerance, not bit for bit.
+    # The solver adapts its step size on a fixed iteration schedule, not on measured
+    # time, so two copies solve the same problem to the same bits.
     @test a.qp_results.info.status === b.qp_results.info.status
-    @test isapprox(command_a, command_b; rtol=1e-3) && any(!iszero, command_a)
+    @test command_a == command_b && a.qp_results.x == b.qp_results.x && any(!iszero, command_a)
 end
 
 @testset "Bound copies get their own run state (R-S4)" begin

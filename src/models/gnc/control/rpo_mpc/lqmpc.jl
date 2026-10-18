@@ -102,6 +102,10 @@ function _rpo_lqmpc_workspace(H, G, W)
         eps_abs=1.0e-4,
         eps_rel=1.0e-4,
         max_iter=1000,
+        # Adapt rho every 25 iterations, OSQP's termination-check interval. The
+        # default (0) has OSQP pick the interval during the first solve from the
+        # measured setup time, which makes the commands depend on wall-clock timing.
+        adaptive_rho_interval=25,
     )
     return model
 end

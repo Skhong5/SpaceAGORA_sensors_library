@@ -167,14 +167,9 @@ end
     end
     # Batches: default objects against names, and aliases/repeats against their objects.
     batch(c) = quietly(() -> G.rpo_run_planner_comparison_batch(CASES, geometry(), c))
-    # Planning outputs and timed references only: the LQ-MPC closed loop varies run to run
-    # on unchanged code too (its solver adapts on measured time), so its metrics are not compared.
-    planned(plan) = merge(Base.structdiff(plan, NamedTuple{(:tracking,)}),
-        (t_ref=plan.tracking.t_ref, r_ref_rtn=plan.tracking.r_ref_rtn, v_ref_rtn=plan.tracking.v_ref_rtn))
-    planned_row(row) = (row.planner, row.planner_label, row.case_id, row.case_label, row.planner_iteration_count,
-        row.planner_cost, row.refinement_improved, row.planned_travel_duration)
-    science(b) = (b.planner_types, Dict(k => planned_row.(v) for (k, v) in b.results_by_planner),
-        Dict(k => planned.(v) for (k, v) in b.plans_by_planner))
+    # Every result and plan field but the measured planner times, the LQ-MPC closed
+    # loop included.
+    science(b) = (b.planner_types, b.results_by_planner, b.plans_by_planner)
     finite_kwargs = (optimizer=finite.optimizer,)
     defaults = batch(comparison_config(; finite_kwargs...))
     named = batch(comparison_config(; planners=collect(IDS), finite_kwargs...))

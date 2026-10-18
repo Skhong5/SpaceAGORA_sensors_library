@@ -606,6 +606,7 @@ function _write_rpo_planner_comparison_reproducibility_csv(
     _rpo_repro_push!(rows, "osqp", "eps_abs", 1.0e-4; source="init_rpo_lqmpc")
     _rpo_repro_push!(rows, "osqp", "eps_rel", 1.0e-4; source="init_rpo_lqmpc")
     _rpo_repro_push!(rows, "osqp", "max_iter", 1000; source="init_rpo_lqmpc")
+    _rpo_repro_push!(rows, "osqp", "adaptive_rho_interval", 25; source="init_rpo_lqmpc")
 
     _rpo_repro_push!(rows, "geometry", "station_asset", "gateway")
     _rpo_repro_push!(rows, "geometry", "point_cloud_resolution", n_station_points; units="points")
