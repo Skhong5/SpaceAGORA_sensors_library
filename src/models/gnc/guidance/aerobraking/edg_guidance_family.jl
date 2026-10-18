@@ -101,7 +101,7 @@ The EDG guidance family's owned request for the spacecraft at
   cumulative per-link heat (J/cm²) of every spacecraft, as the provider receives
   them;
 - `state`: a copy of the run's `AerobrakingEnergyDepletionState`, including the
-  control clock the engine reported when the solve started;
+  control clock the engine reported when the run started;
 - `services`: an opaque handle to the run's prediction services. Copies of the
   request share it; each provider call borrows its own call-scoped prediction
   context from it.
@@ -169,9 +169,12 @@ candidate is accepted, with reason `:accepted` and metrics `selected_mode` and
 `targeting_switch_s`, when its product is an `EDGGuidanceDecision`
 (`:invalid_product`) for the request's spacecraft (`:spacecraft_mismatch`) whose
 mode is `:inactive`, `:safe_low_drag` or a guidance mode of the request's
-configuration (`:unknown_mode`, `:mode_not_configured`), and whose bracketing
-count has not decreased (`:count_decreased`). Validation installs nothing and
-draws from no random stream.
+configuration (`:unknown_mode`, `:mode_not_configured`), whose targeting plan is
+consistent (`:inconsistent_targeting`: `targeting_active` exactly in the
+`:targeting` mode), whose switch time is a time (`:invalid_switch_time`: never
+`NaN`, and finite for an active targeting plan; `Inf` means no switch), and whose
+bracketing count has not decreased (`:count_decreased`). Validation installs
+nothing and draws from no random stream.
 """
 function validate_edg_guidance_decision(request::EDGGuidanceRequest, result)
     refuse(reason, metrics=NamedTuple()) = GA.ValidationResult(false, reason, metrics)
@@ -186,6 +189,11 @@ function validate_edg_guidance_decision(request::EDGGuidanceRequest, result)
     mode in _MODES || return refuse(:unknown_mode, (selected_mode=mode,))
     mode in (:max_energy_depletion, :targeting) && !(mode in request.config.guidance_modes) &&
         return refuse(:mode_not_configured, (selected_mode=mode,))
+    decision.targeting_active == (mode === :targeting) ||
+        return refuse(:inconsistent_targeting, (selected_mode=mode, targeting_active=decision.targeting_active))
+    switch_s = decision.targeting_switch_s
+    (isnan(switch_s) || decision.targeting_active && !isfinite(switch_s)) &&
+        return refuse(:invalid_switch_time, (targeting_switch_s=switch_s,))
     decision.energy_bracketing_count >= request.state.energy_bracketing_count[i] ||
         return refuse(:count_decreased)
     return GA.ValidationResult(true, :accepted, (selected_mode=mode, targeting_switch_s=decision.targeting_switch_s))

@@ -61,11 +61,12 @@ consumed by the kernels. Mutable physical geometry is never passed to the provid
 | `_edg_targeting_control_clock(p)` | The period and origin (s) of the EDG control ticks, on which targeting predicts its switch times. |
 
 Every query takes the prediction context first. The control clock is the one the
-engine reported to the EDG state when the solve started (`gnc_clock_started!`):
-the context of a provider call carries the clock of the EDG state passed to that
-call, and core no longer searches the run's configuration for the EDG controller.
-A call without an EDG state, or before the clock has started (a run without the
-EDG control model), has no clock, and the query raises an `ArgumentError`.
+engine reports to the EDG state (`gnc_clock_started!`) when the run starts,
+before the models' initializers, and again at each solve's start: the context of a
+provider call carries the clock of the EDG state passed to that call, and core no
+longer searches the run's configuration for the EDG controller. A call without an
+EDG state, or in a run without the EDG control model, has no clock, and the query
+raises an `ArgumentError`.
 
 Environment values use metres, kg/m³, kelvin, m/s and pascals; molecular speed
 ratio is dimensionless. Heat rate is W/cm² and specific energy is J/kg. Frame

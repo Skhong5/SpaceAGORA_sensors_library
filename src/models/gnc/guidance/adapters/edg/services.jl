@@ -12,7 +12,7 @@ observation, `p` a borrowed prediction context, `t` elapsed seconds and
 `spacecraft_index` the spacecraft's position in the run, from 1. The queries take
 the context first: `_edg_environment_state(p, u, t, spacecraft_index)` and
 `_edg_targeting_control_clock(p)`, which returns the control clock the engine
-reported to that state when the solve started.
+reported to that state when the run started (and again at each solve's start).
 """
 module EDGServices
 using ..SimulationModel.EDGServices: CONTRACT_VERSION, CompatibilityError, EDGUnavailableError,

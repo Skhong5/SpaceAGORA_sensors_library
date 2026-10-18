@@ -118,9 +118,10 @@ end
 Per-spacecraft mutable state for energy-depletion guidance: the selected
 mode, targeting/bracketing activity flags and counters, and the target and
 bracket specific-energy values (J/kg) maintained across guidance calls. It also
-keeps the clock of the EDG control ticks, which the engine reports when each
-solve starts (`gnc_clock_started!`): `control_clock_period_s` (`NaN` until then)
-and `control_clock_origin_s`, in seconds.
+keeps the clock of the EDG control ticks, which the engine reports when the run
+starts and again when each solve starts (`gnc_clock_started!`):
+`control_clock_period_s` (`NaN` until then) and `control_clock_origin_s`, in
+seconds.
 """
 mutable struct AerobrakingEnergyDepletionState
     selected_mode::Vector{Symbol}

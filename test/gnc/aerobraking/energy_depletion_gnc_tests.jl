@@ -86,7 +86,7 @@ function _edg_test_context(;
     )
 
     state = _EDG_SM.AerobrakingEnergyDepletionState(num_sats=1)
-    # A solve reports the EDG control clock when it starts; direct calls here use the
+    # A run reports the EDG control clock when it starts; direct calls here use the
     # configured 1 s control period from the origin.
     state.control_clock_period_s = 1.0
     config = _EDG_SM.AerobrakingEnergyDepletionConfig(
@@ -714,7 +714,7 @@ end
     @test_throws ErrorException hooks._edg_exact_targeting_exit(ctx.config,ctx.p,ctx.spacecraft,461.0,t,track)
     ctx.state.control_clock_period_s=0.0
     @test_throws ArgumentError hooks._edg_targeting_control_clock(_edg_clocked(ctx))
-    # Before its solve starts the clock has no period, and a call without an EDG
+    # Before its run starts the clock has no period, and a call without an EDG
     # state has no clock at all; neither is read from the configuration.
     ctx.state.control_clock_period_s=NaN
     @test_throws ArgumentError hooks._edg_targeting_control_clock(_edg_clocked(ctx))

@@ -132,7 +132,7 @@ function _edg_checked_clock(clock)
     clock === nothing && throw(ArgumentError(
         "EDG prediction requires the control clock of the EDG state passed to the provider call."))
     isnan(clock.period) && throw(ArgumentError(
-        "EDG prediction requires its configured control effector, whose clock starts with the solve."))
+        "EDG prediction requires its configured control effector, whose clock the run reports when it starts."))
     isfinite(clock.period) && clock.period > 0.0 ||
         throw(ArgumentError("EDG prediction requires a positive control period."))
     isfinite(clock.origin) || throw(ArgumentError("EDG prediction requires a finite control-clock origin."))

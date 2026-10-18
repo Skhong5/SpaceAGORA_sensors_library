@@ -290,6 +290,20 @@ function check_gnc_links(args)
     return nothing
 end
 
+# At the run's start, before the models' own initializers: each periodic control
+# effector learns the clock its callback reports at the solve's start (its configured
+# rate, from `t`), so an initializer that predicts before the solve has it (the EDG
+# guidance family's first request).
+function _report_gnc_clocks!(args, t)
+    model = args.control_model
+    for i in eachindex(model.control_effectors)
+        control = model.control_effectors[i]
+        tick_schedule(control) === :periodic || continue
+        gnc_clock_started!(control, Float64(model.control_rates[i]), Float64(t))
+    end
+    return nothing
+end
+
 """
     initialize_gnc_links!(args, u, p, t) -> nothing
 

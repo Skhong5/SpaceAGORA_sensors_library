@@ -134,6 +134,22 @@ end
     @test reason(candidate(request, replace_fields(decision; selected_mode=:inactive))) === :accepted
     @test reason(candidate(request, replace_fields(decision; selected_mode=:safe_low_drag))) === :accepted
     @test reason(candidate(request, replace_fields(decision; energy_bracketing_count=1))) === :count_decreased
+    # NaN is no switch time (Inf is the no-switch sentinel), and an active targeting
+    # plan is the targeting mode with a switch time.
+    @test reason(candidate(request, replace_fields(decision; targeting_switch_s=NaN))) === :invalid_switch_time
+    @test reason(candidate(request, replace_fields(decision; targeting_active=true))) === :inconsistent_targeting
+    targeting = _edg_test_context(guidance_modes=(:targeting, :max_energy_depletion))
+    plan_request = SpaceAGORA.family_request(FAMILY, EDGGuidanceSettings(config=targeting.config, state=targeting.state),
+        targeting.u, targeting.p, 0.0, 1, :interval, 1)
+    plan = replace_fields(EDGGuidanceDecision(plan_request.state, 1); selected_mode=:targeting, targeting_active=true,
+        targeting_switch_s=42.0)
+    plan_reason(d) = validate_edg_guidance_decision(plan_request, candidate(plan_request, d)).reason
+    @test plan_reason(plan) === :accepted
+    @test plan_reason(replace_fields(plan; targeting_switch_s=NaN)) === :invalid_switch_time
+    @test plan_reason(replace_fields(plan; targeting_switch_s=Inf)) === :invalid_switch_time
+    @test plan_reason(replace_fields(plan; targeting_active=false)) === :inconsistent_targeting
+    @test plan_reason(replace_fields(plan; selected_mode=:max_energy_depletion)) === :inconsistent_targeting
+    @test plan_reason(replace_fields(plan; selected_mode=:max_energy_depletion, targeting_active=false)) === :accepted
 end
 
 @testset "EDG guidance capabilities and configuration checks" begin
@@ -259,6 +275,31 @@ end
     @test only(model.state.targeting_diagnostics).mode === :targeting
     records = bound.guide.runtime.records
     @test count(r -> r.event === :installed, records) == count(r -> r.event === :request, records) == 13
+end
+
+@testset "A targeting binding that starts inside the drag passage plans at once" begin
+    # The binding's first request comes before the solve starts; the run reports the
+    # configured control clock when it starts, so that plan has its clock.
+    c = _edg_test_context(guidance_modes=(:targeting, :max_energy_depletion), density_reference_kg_m3=1e-7)
+    @test c.u.sc[1].pos[1] - c.args.environment_model.planet.Rp_e < 1e3 * c.args.environment_model.EI
+    state = SpaceAGORA.AerobrakingEnergyDepletionState(num_sats=1)
+    binding = AlgorithmGuidance(; algorithm=ALGORITHM, spacecraft_index=1,
+        settings=EDGGuidanceSettings(config=c.config, state=state), replan_interval_s=1.0)
+    args = SC._with_configuration(c.args;
+        guidance_model=S.GuidanceModel((binding,), [1.0]),
+        control_model=S.ControlModel((S.AerobrakingEnergyDepletionControlModel(c.config, state),), [1.0]),
+        mission_configuration=S.MissionConfiguration(mission_type=S.MissionTime, mission_time=0.5, orientation_sim=false),
+        simulation_settings=S.SimulationSettings(results=false, verbose=false, generate_plots=false),
+        solver_config=S.SolverConfig(solver_mode=:tsit5))
+    result = run_simulation(args; return_results=true, return_solution=true)
+    report = only(algorithm_run_report(result.solution).bindings)
+    first_install = first(r for r in report.records if r.event === :installed)
+    @test first_install.time_s == 0.0
+    @test first_install.product.energy_bracketing_count == 1
+    @test first_install.product.targeting_diagnostics.status in (:no_admissible_family, :exact_sample, :quantized_bracket)
+    run_state = only(result.configuration.control_model.control_effectors).state
+    @test run_state.control_clock_period_s == 1.0 && run_state.control_clock_origin_s == 0.0
+    @test !(:failure in [r.event for r in report.records])
 end
 
 @testset "A refused EDG guidance decision stops the run" begin

@@ -33,8 +33,9 @@ Guidance and control model types remain in `GuidanceHooks` and `ControlHooks`.
 Core owns lifecycle, scheduling, physical integration and panel actuation. Under
 contract 2.0.0 the provider receives the run-owned EDG state first, then the
 configuration, copied observations and call-scoped prediction queries. The
-prediction clock is the one the engine reported to that state when the solve
-started (`gnc_clock_started!`); core does not search the configuration for it.
+prediction clock is the one the engine reports to that state when the run starts
+and at each solve's start (`gnc_clock_started!`); core does not search the
+configuration for it.
 `ODEParams`, live physical state and mutable vehicle geometry remain inside core.
 Shared typed numerical calls forward to the companion.
 
