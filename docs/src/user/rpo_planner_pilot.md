@@ -232,7 +232,7 @@ The helper checks out `packages/robotics/HYPR.jl` at the parent repository's
 recorded revision, verifies its identity and clean state, and delegates to the
 existing HYPR installer with that path. The pin agrees with
 `packages/SpaceAGORAHYPR/HYPRSource.toml`. It selects HYPR 0.2.0 alongside
-SpaceAGORA 0.2.0 and compatibility shim 0.2.0. The shim keeps its existing location;
+SpaceAGORA 0.3.0 and compatibility shim 0.2.0. The shim keeps its existing location;
 HYPR remains optional for the simulator core.
 
 The original external-source route is also supported:
