@@ -18,6 +18,7 @@ end
         density_reference_kg_m3=1e-7,heat_load_limit_j_cm2=30.0,
         gravity_models=(SM.InverseSquaredJ2GravityModel(),))
     c.args.control_model.control_rates[1]=1/3
+    c.state.control_clock_period_s=1/3   # as the solve reports it at its start
     c.args.guidance_model.guidance_rates[1]=1/3
     planet=c.args.environment_model.planet
     rp=planet.Rp_e+100e3;ra=_ODYSSEY_RA_INITIAL_M;a=(rp+ra)/2
@@ -25,7 +26,7 @@ end
     nu=acos((sl/radius-1)/e)
     r=SVector(radius*cos(nu),radius*sin(nu),0.0)
     v=sqrt(planet.μ/sl)*SVector(-sin(nu),e+cos(nu),0.0)
-    known=CH._edg_predict_targeting_outcome(c.config,c.p,c.spacecraft,r,v,461.0,0.0,10.0;
+    known=CH._edg_predict_targeting_outcome(c.config,_edg_clocked(c),c.spacecraft,r,v,461.0,0.0,10.0;
         heat_rate_control=true,structural_control=true)
     coast=CH._edg_vacuum_apoapsis_correction(c.p,known.exit_position,known.exit_velocity,461.0,known.duration_s)
     @test coast.event_reached

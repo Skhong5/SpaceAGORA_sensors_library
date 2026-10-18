@@ -15,7 +15,7 @@ let SM=SimulationModel, CH=SimulationModel.ControlHooks
         fields=(; (key=>getfield(c.config,key) for key in fieldnames(typeof(c.config)))...)
         config=SM.AerobrakingEnergyDepletionConfig(;merge(fields,(heat_load_security_mode=security,))...)
         model=SM.AerobrakingEnergyDepletionControlModel(config,c.state)
-        env=CH._edg_environment_state(c.u,c.p,0.0,1)
+        env=CH._edg_environment_state(c.p,c.u,0.0,1)
         angle=CH._edg_command_alpha!(model,c.p,c.u,env,c.spacecraft,base,load,false,1)
         @test angle == base # Diagnostic heat status must not add a new command policy.
         @test c.state.last_heat_budget_status[1] == (load >= 30.0 ? :exhausted : :available)
@@ -40,7 +40,7 @@ let SM=SimulationModel, CH=SimulationModel.ControlHooks
         @test CH._edg_heat_budget_status(config,load)==expected
     end
     c=_edg_test_context(heat_load_limit_j_cm2=30.0)
-    env=CH._edg_environment_state(c.u,c.p,0.0,1)
+    env=CH._edg_environment_state(c.p,c.u,0.0,1)
     for scale in (1.0,1e-6)
         scaled=merge(env,(rho=env.rho*scale,dynamic_pressure=env.dynamic_pressure*scale))
         angle=CH._edg_command_alpha!(c.control,c.p,c.u,scaled,c.spacecraft,c.config.min_alpha_rad,34.56,false,1)
@@ -53,7 +53,7 @@ let SM=SimulationModel, CH=SimulationModel.ControlHooks
     end
     # Disabling only accumulated-heat control preserves the existing angle choice.
     c=_edg_test_context(max_energy_submodes=(:heat_rate,),heat_load_limit_j_cm2=30.0)
-    env=CH._edg_environment_state(c.u,c.p,0.0,1)
+    env=CH._edg_environment_state(c.p,c.u,0.0,1)
     a=CH._edg_command_alpha!(c.control,c.p,c.u,env,c.spacecraft,pi/2,29.0,false,1)
     b=CH._edg_command_alpha!(c.control,c.p,c.u,env,c.spacecraft,pi/2,34.56,false,1)
     @test a==b

@@ -223,7 +223,9 @@ SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
             run_simulation(args; isolate_state=false)
             run == 1 && (ticks_per_run[] = clocked.ticks)
             @test LOG == repeat([:navigation, :guidance, :control], run)
-            @test clocked.clock == fill((0.5, 0.0), run)           # one clock start per solve
+            # Each run reports the clock when it starts, before the initializers, and
+            # again when its solve starts.
+            @test clocked.clock == fill((0.5, 0.0), 2run)
             @test ticks_per_run[] > 0 && clocked.ticks == run * ticks_per_run[]
             @test clocked.stops == clocked.ticks                   # one stop request per tick
             @test scheduled.ticks == 0 && scheduled.fired == fill(1.5, run) && scheduled.period_s == 0.5

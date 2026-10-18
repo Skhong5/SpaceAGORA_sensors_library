@@ -227,10 +227,9 @@ has the full table and the schedule.
 `EDGServices`, `ExternalPropagationServices` and `HYPRServices` are named,
 versioned boundaries for optional packages. A companion checks the facade's
 `CONTRACT_VERSION` exactly, and a major version marks a change of any
-signature. `ExternalPropagationServices` and `HYPRServices` are at contract
-2.0.0 and follow these conventions; `EDGServices` is at 1.0.0. Names in a
-facade's inventory keep their exact spelling, underscores included. See the
-[Optional Adapter Standard](adapter_contract.md) and each facade's page.
+signature. All three are at contract 2.0.0 and follow these conventions.
+Names in a facade's inventory keep their exact spelling, underscores included.
+See the [Optional Adapter Standard](adapter_contract.md) and each facade's page.
 
 ## Run state and randomness
 
@@ -249,5 +248,3 @@ facade's inventory keep their exact spelling, underscores included. See the
 - The ephemerides hooks still take the planet first, as in
   `planet_frame_lpi(planet, et, model)`. They are internal until a later release
   moves the model first and makes them public.
-- `EDGServices` is at contract 1.0.0; its 2.0.0 puts the mutated state first in
-  its two decision services.

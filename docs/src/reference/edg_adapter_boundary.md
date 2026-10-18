@@ -2,7 +2,7 @@
 
 `SpaceAGORAEDG.jl` is the optional, experimental implementation of the typed
 energy-depletion guidance used by SpaceAGORA. The core facade is
-`SpaceAGORA.EDGServices`, contract `v"1.0.0"`. This separation follows the
+`SpaceAGORA.EDGServices`, contract `v"2.0.0"`. This separation follows the
 [optional adapter standard](adapter_contract.md). It changes where numerical
 kernels live; it does not establish manuscript equivalence or make the
 controller flight-qualified. The [user guide](../user/edg_guidance.md) explains
@@ -21,12 +21,20 @@ the scientific policy and its current limits.
 
 ## Supported calls and values
 
-`IMPLEMENTED_FUNCTIONS` names `guidance_decision!` and `control_decision!`.
-Core invokes them with the existing immutable configuration, the run-owned
-mutable EDG state, a copied observation and a borrowed prediction context.
-`CONSUMED_SERVICES` lists the exact types and query operations used by the
-companion. The retained helper inventory supports compatibility routes and
-regression fixtures; it is not a general-purpose simulation API.
+`IMPLEMENTED_FUNCTIONS` names the two decision services the companion
+implements:
+
+- `guidance_decision!(state, config, u, p, t, spacecraft_index)`;
+- `control_decision!(state, config, controlled_panel_links, u, p, t, spacecraft_index)`.
+
+Core invokes them with the run-owned mutable EDG state first, which the
+companion updates, then the immutable configuration, the controlled panel links
+(control only), a copied observation `u`, a borrowed prediction context `p`, the
+elapsed time `t` in seconds and the spacecraft's position in the run,
+`spacecraft_index`, from 1. `CONSUMED_SERVICES` lists the exact types and query
+operations used by the companion. The retained helper inventory supports
+compatibility routes and regression fixtures; it is not a general-purpose
+simulation API.
 
 `control_decision!` returns the core-owned `EDGControlDecision`: an angle command
 in radians, an `apply` flag, a switch/cache action and diagnostics. The flag
@@ -43,13 +51,22 @@ consumed by the kernels. Mutable physical geometry is never passed to the provid
 
 | Service | Meaning |
 |---|---|
-| `planet_constants`, `thermal_parameters`, `entry_altitude_m`, `spacecraft_geometry` | Immutable value projections, with entry altitude in metres. |
-| `_edg_environment_state` | Current geodetic altitude, atmosphere and air-relative motion for a copied spacecraft observation. |
+| `planet_constants`, `thermal_parameters`, `entry_altitude_m`, `spacecraft_geometry(p, spacecraft_index)` | Immutable value projections, with entry altitude in metres. |
+| `_edg_environment_state(p, u, t, spacecraft_index)` | Current geodetic altitude, atmosphere and air-relative motion for a copied spacecraft observation. |
 | `_edg_targeting_prediction_environment` | The same physical conventions at an explicit inertial state and elapsed simulation time. |
 | `_edg_sample_prediction_atmosphere` | Altitude-only prediction at zero latitude/longitude; it is not interchangeable with a full trajectory query. |
 | `_edg_ephemeris_time`, `_edg_planet_frame_lpi`, `frame_state` | Configured epoch and frame services; `l_pi` maps inertial components to planet-fixed components. |
 | `gravity_acceleration` | The configured central/J2 and N-body acceleration, preserving the existing predictor's arithmetic. |
-| `density_scale_height`, `_edg_targeting_control_clock` | Existing density-model fallback and callback-grid semantics. |
+| `density_scale_height` | Existing density-model fallback. |
+| `_edg_targeting_control_clock(p)` | The period and origin (s) of the EDG control ticks, on which targeting predicts its switch times. |
+
+Every query takes the prediction context first. The control clock is the one the
+engine reports to the EDG state (`gnc_clock_started!`) when the run starts,
+before the models' initializers, and again at each solve's start: the context of a
+provider call carries the clock of the EDG state passed to that call, and core no
+longer searches the run's configuration for the EDG controller. A call without an
+EDG state, or in a run without the EDG control model, has no clock, and the query
+raises an `ArgumentError`.
 
 Environment values use metres, kg/m³, kelvin, m/s and pascals; molecular speed
 ratio is dimensionless. Heat rate is W/cm² and specific energy is J/kg. Frame
@@ -97,12 +114,63 @@ with core alone. Selecting an EDG model without its provider raises
 silently selects another guidance law.
 
 The companion checks that the facade exists and requires exactly contract
-`v"1.0.0"` before including its algorithms. The extension repeats the version
+`v"2.0.0"` before including its algorithms. The extension repeats the version
 check during initialization and dispatch. An incompatible contract raises
 `CompatibilityError`; install a supported pair and start a fresh process.
 Core retains existing configuration, state pairing and panel-mapping validation.
 Prediction failures, unreachable targets and observed constraint violations keep
 their existing diagnostics and scientific meaning.
+
+## The EDG guidance family
+
+The guidance decision is also an algorithm of the
+[GNC algorithm contract](rpo_planner_contract.md#The-general-algorithm-contract), so the generic binding
+`AlgorithmGuidance` can run it in place of
+`AerobrakingEnergyDepletionGuidanceModel`:
+
+```julia
+config = AerobrakingEnergyDepletionConfig(guidance_modes = (:max_energy_depletion,))
+state = AerobrakingEnergyDepletionState(num_sats = 1)
+guidance = AlgorithmGuidance(algorithm = EDGGuidanceAlgorithm(), spacecraft_index = 1,
+    settings = EDGGuidanceSettings(config = config, state = state), replan_interval_s = 1 / 3)
+control = AerobrakingEnergyDepletionControlModel(config, state)
+```
+
+| Part | The EDG guidance family (`EDGGuidanceFamily`) |
+|---|---|
+| Algorithm | `EDGGuidanceAlgorithm()`: the companion's `guidance_decision!`. Capabilities (`EDGGuidanceCapabilities`): the `:max_energy_depletion` and `:targeting` guidance modes. It draws no random numbers (`consumes_rng` is `false`) and needs the companion to be loaded. |
+| Request | `EDGGuidanceRequest`: copies of the observation, the configuration and the EDG state (with its control clock), and an opaque handle from which each provider call borrows its prediction context. |
+| Product | `EDGGuidanceDecision`: the spacecraft's guidance fields of the EDG state. The provider decides on a copy of the state; a proposal fails if it changes anything else. |
+| Validation | `validate_edg_guidance_decision`: the request's identity and spacecraft, a known mode that the configuration allows (`:inactive` and `:safe_low_drag` always), and a bracketing count that has not decreased. |
+| Install target | The EDG state of the settings, which the EDG control model reads. |
+| On rejection | `:fail`, as when the provider raises. |
+| Contract version | `family_contract_version` is this facade's contract version. |
+
+Requests come at the binding's guidance ticks (`replan_interval_s`, with one at
+the run's start), and the binding ticks before the same tick's control. The
+binding runs one spacecraft; a run with several uses the EDG guidance model.
+The binding keeps a record of every request, which costs memory over long
+campaigns.
+
+## Changes from contract 1.0.0
+
+Contract 2.0.0 follows SpaceAGORA's [extension conventions](extension_conventions.md):
+
+- `guidance_decision!` and `control_decision!` take the EDG state first, then the
+  configuration (1.0.0: configuration first).
+- `_edg_environment_state(p, u, t, spacecraft_index)` takes the context first
+  (1.0.0: `(u, p, t, i)`).
+- `_edg_targeting_control_clock(p)` takes the context alone and returns the clock
+  of the call's EDG state (1.0.0: `(config, p)`, which searched the configuration
+  for the control model holding `config`). The EDG state gained
+  `control_clock_period_s`.
+- Spacecraft indices are named `spacecraft_index`.
+- The other queries, `require_version`, `require_provider` and the errors are
+  unchanged, and so are the numerical kernels. The values of the queries do not
+  change.
+
+SpaceAGORAEDG implements contract 2.0.0 from version 0.2.0. A companion built for
+1.0.0 is refused at load.
 
 ## Evidence and limits
 

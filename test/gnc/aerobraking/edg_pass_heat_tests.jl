@@ -191,7 +191,7 @@ end
         # old spherical callback and EDG's geodetic entry.
         @test norm(u.sc[1].pos) - planet.Rp_e < 160000.0
         @test CH._edg_heat_boundary_distance(u, p, 0.0, 1) > 0.0
-        env = CH._edg_environment_state(u, p, 0.0, 1)
+        env = CH._edg_environment_state(p, u, 0.0, 1)
         @test !CH._edg_in_drag_passage(p, env)
         @test CH._edg_heat_boundary_distance(u, p, 0.0, 1) ≈ env.altitude_m - 160000.0
         # Start above both surfaces so both spherical and geodetic callbacks
