@@ -136,7 +136,7 @@ function SpaceAGORA.initialize_sensor!(s::CountingSensor, truth::SensorTruth, ct
 end
 
 function runtime_args(control; sensor=CountingSensor(), mission_time=4.0, guidance=(LoggedGuidance(),),
-                      navigation=(LoggedNavigation(),), settings=(;))
+                      navigation=(LoggedNavigation(),), navigation_period=1.0, settings=(;))
     root = SM.Link(root=true, m=50.0, dims=MVector(1.0, 1.0, 1.0))
     r = SM.Earth().Rp_e + 500e3
     ic = SM.CartesianInitialCondition(SVector(r, 0.0, 0.0), SVector(0.0, sqrt(SM.Earth().μ / r), 0.0);
@@ -154,7 +154,7 @@ function runtime_args(control; sensor=CountingSensor(), mission_time=4.0, guidan
         extra = (; simulation_settings=SM.SimulationSettings(; merge(fields, settings)...))
     end
     return SM.SimConfig._with_configuration(base; extra...,
-        navigation_model=SM.NavigationModel(navigation_effectors=navigation, navigation_rates=fill(1.0, length(navigation))),
+        navigation_model=SM.NavigationModel(navigation_effectors=navigation, navigation_rates=fill(navigation_period, length(navigation))),
         guidance_model=SM.GuidanceModel(guidance_effectors=guidance, guidance_rates=fill(1.0, length(guidance))),
         control_model=SM.ControlModel(control_effectors=control, control_rates=fill(0.5, length(control))))
 end
@@ -372,9 +372,12 @@ SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
     end
 
     @testset "a resumed run restores the run state models keep in checkpoint files" begin
+        # Navigation ticks every 0.3 s, off the 1 s checkpoint boundaries: a
+        # periodic tick at a segment boundary is skipped.
         checkpointed(dir; kw...) = (checkpoint_enabled=true, checkpoint_interval_s=1.0, checkpoint_directory=dir, kw...)
         counted(mission_time, settings; navigation=TickCounter(), sensor=KeptCountSensor()) =
-            runtime_args((); sensor=sensor, navigation=(navigation,), mission_time=mission_time, settings=settings)
+            runtime_args((); sensor=sensor, navigation=(navigation,), navigation_period=0.3, mission_time=mission_time,
+                         settings=settings)
         run!(args) = (run_simulation(args; isolate_state=false); args)
         straight = run!(counted(6.0, (;)))
         dir = mktempdir()
