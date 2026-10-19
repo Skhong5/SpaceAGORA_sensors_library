@@ -121,7 +121,7 @@ SpaceAGORA.ephemerides_epoch_seconds(m::FixedFrame, initial_time) = 0.0
 | Item | Replacement | Status | Removed in |
 |---|---|---|---|
 | `RPOGuidanceModel` | `make_rpo_configuration` with a planner, for example `planner=HYPRRPOPlanner(RPOPSOConfig(...))`, which configures a `PlannerGuidance` | warned before the run from 0.3.0; 0.4.0 is the last release that has it | 0.5.0 |
-| index fields and keywords `sat_idx`, `spacecraft_idx`, `chaser_idx`, `target_idx`, and `RobotArmReactionEffector.spacecraft_idx` | `spacecraft_index`, `chaser_index`, `target_index` | warned from 0.3.0, `RobotArmReactionEffector`'s from 0.3.1; an old keyword is now a `MethodError` and an old property a `FieldError` | 0.5.0 |
+| the index fields and keywords `MagneticMomentumManagerModel.sat_idx`, `RobotArmControlEffector.spacecraft_idx`, `RobotArmReactionEffector.spacecraft_idx`, and `chaser_idx` and `target_idx` of `RPOMPCControlModel` and `PlannerGuidance` | `spacecraft_index`, `chaser_index`, `target_index` | warned from 0.3.0, `RobotArmReactionEffector`'s from 0.3.1; on these five types an old keyword is now a `MethodError` and an old property a `FieldError` (for the older names that still work on other types, see [Deprecated in 0.5.0](#Deprecated-in-0.5.0)) | 0.5.0 |
 | selecting an RPO planner by a Symbol, such as `:rrt_star` | a planner object | warned from 0.3.0; a name is now a `MethodError` | 0.5.0 |
 | a default random stream in the GNC planning functions | an explicit `rng` keyword | required now, without a window | |
 
@@ -146,8 +146,10 @@ Rename the fields; nothing else changes.
 ## Deprecated in 0.5.0
 
 Three older index names that were never deprecated follow the same convention.
-Each keeps working as a keyword or property, with a warning before the run, until
-SpaceAGORA 1.0; under `julia --depwarn=error` it is an error.
+Each keeps working as a keyword or property until SpaceAGORA 1.0, with one warning
+per type and name. An old keyword warns where it is passed, which is before the
+run; an old property warns where it is read, which can be inside a callback
+during the run. Under `julia --depwarn=error` either is an error at that point.
 
 | Item | Replacement | Status | Removed in |
 |---|---|---|---|

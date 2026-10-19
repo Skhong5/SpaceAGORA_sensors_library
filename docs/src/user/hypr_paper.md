@@ -48,9 +48,12 @@ The example suite launches the paper entry point in the dedicated HYPR example
 environment. With `SPACEAGORA_EXAMPLE_SMOKE=1`, it loads the actual packages and
 configuration without running a numerical experiment or writing scientific
 results. The optional HYPR integration job separately exercises the planner,
-replanning contracts and failed-run evidence handling, and replays the saved
-case-4 baseline below through `RetainedPathRPOPlanner`. A smoke pass does not
-establish maneuver success or paper-table reproduction. Leave the smoke flag unset
+replanning contracts and failed-run evidence handling. The unit test
+`test/unit/gnc/rpo_examples_planner_contract_tests.jl` replays the saved case-4
+baseline below through `RetainedPathRPOPlanner` when the SPICE kernels in
+`data/GRAMSuite.jl/GRAM Suite 2.0/SPICE` are present, and skips the replay without
+them. A smoke pass does not establish maneuver success or paper-table
+reproduction. Leave the smoke flag unset
 for the scientific runs above and below.
 
 ## The original reconstructed dynamic case
