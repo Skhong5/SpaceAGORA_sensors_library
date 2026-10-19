@@ -143,6 +143,21 @@ gets these behaviours:
 
 Rename the fields; nothing else changes.
 
+## Deprecated in 0.5.0
+
+Three older index names that were never deprecated follow the same convention.
+Each keeps working as a keyword or property, with a warning before the run, until
+SpaceAGORA 1.0; under `julia --depwarn=error` it is an error.
+
+| Item | Replacement | Status | Removed in |
+|---|---|---|---|
+| `SchedulingPolicyModel`'s keywords and properties `target_idx` and `target_idxs` | `target_index` and `target_indices` | warn from 0.5.0 | 1.0 |
+| the `StateAnchor` property `sat_idx` | `spacecraft_index` | warns from 0.5.0 | 1.0 |
+| the `sat_idx` keyword of `get_periapsis_pulse_callback` | `spacecraft_index` | warns from 0.5.0 | 1.0 |
+
+An interlink checkpoint keeps its stored keys, so a checkpoint written before
+0.5.0 resumes unchanged.
+
 ## Schedule
 
 - **0.3.0.** The new names, with warnings for the old ones.

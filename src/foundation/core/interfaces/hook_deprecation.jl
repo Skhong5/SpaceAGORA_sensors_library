@@ -32,4 +32,39 @@ function _preflight_warning(key::Tuple, msg::String; group::Symbol=:preflight)
     return nothing
 end
 
+# Old-style index names deprecated in 0.5.0 (`SchedulingPolicyModel.target_idx`
+# and `target_idxs`, `StateAnchor.sat_idx`, the `sat_idx` keyword of
+# `get_periapsis_pulse_callback`): an old keyword or property warns through
+# `_hook_deprecation`, keyed by `(owner, old name)`, so the warning shows once per
+# owner and name. The owner is the type or the function that had the name.
+_renamed_name(owner::Type, old::Symbol) = "$(nameof(owner)).$(old)"
+_renamed_name(owner::Function, old::Symbol) = "The $(old) keyword of $(nameof(owner))"
+@noinline function _renamed_field_warning(owner, old::Symbol, new::Symbol)
+    _hook_deprecation((owner, old),
+        "$(_renamed_name(owner, old)) is deprecated and will be removed in SpaceAGORA 1.0; use $(new) instead: " *
+        "only the name changes.")
+    return new
+end
+
+# The default of a renamed keyword and of its old name: "not passed". It is not
+# `nothing`, so an explicit `nothing` reaches the field.
+struct _NotPassed end
+const _NOT_PASSED = _NotPassed()
+
+"""
+    _renamed_keyword(owner, old, old_value, new, new_value, default)
+
+The value of a keyword that was renamed from `old` to `new`, where `_NOT_PASSED`
+means "not passed" (any other value, `nothing` included, counts as passed).
+Passing `old` warns once per owner and name (see `_renamed_field_warning`);
+passing both names throws an `ArgumentError`; passing neither gives `default`.
+"""
+function _renamed_keyword(owner, old::Symbol, old_value, new::Symbol, new_value, default)
+    old_value === _NOT_PASSED && return new_value === _NOT_PASSED ? default : new_value
+    new_value === _NOT_PASSED || throw(ArgumentError(
+        "$(nameof(owner)): pass $(new) only; $(old) is its deprecated name."))
+    _renamed_field_warning(owner, old, new)
+    return old_value
+end
+
 end # module HookDeprecation

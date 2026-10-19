@@ -129,7 +129,7 @@ engine detects a switch from the per-step algorithm record, and an explicit
 `SPACEAGORA_SOLVER_SAVE_EVERYSTEP` / `SPACEAGORA_SOLVER_SAVE_ON` value in the
 environment is passed through unchanged.
 
-The mechanism is general: `StateAnchor(elapsed_s, sat_idx, state)` and
+The mechanism is general: `StateAnchor(elapsed_s, spacecraft_index, state)` and
 `get_state_anchor_callback(anchors)` build a discrete callback that any run can
 pass through `run_simulation(args; extra_callbacks=(cb,))`. It is supported on
 the first-order solver paths; under `SPACEAGORA_SOLVER_MODE=gravity_backbone_split`

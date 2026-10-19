@@ -44,7 +44,7 @@ const SM = SpaceAGORA.SimulationModel
         register_allowed_link!(multi_target.interlink_model, multi_target.dynamics_model.spacecraft,
             (2, 1), (3, 1); parameters=InterLinkParameters(range=500e3))
         multi_target = SM.SimConfig._with_configuration(multi_target;
-            scheduling_policy_model=SchedulingPolicyModel(:gve_sma; target_idxs=[3, 1, 2]))
+            scheduling_policy_model=SchedulingPolicyModel(:gve_sma; target_indices=[3, 1, 2]))
         multi_solution = run_simulation(multi_target; return_solution=true)
         multi_ran = multi_solution.prob.p.args
         @test multi_solution.t[end] == 20.0

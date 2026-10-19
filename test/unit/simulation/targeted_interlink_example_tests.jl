@@ -6,7 +6,7 @@ include(joinpath(@__DIR__, "..", "..", "..", "examples", "targeted_40sat_sma_int
     args = targeted_40sat_configuration(save_results=false)
     sc = args.dynamics_model.spacecraft
     @test length(sc) == 40
-    @test args.scheduling_policy_model.target_idxs == collect(31:40)
+    @test args.scheduling_policy_model.target_indices == collect(31:40)
     @test length(args.interlink_model.graph.edges) == 300
     for (ring, altitude, spacing, offset) in ((1:30, 1000e3, 12.0, 0.0), (31:40, 1100e3, 36.0, 1.0))
         phases = Float64[]
