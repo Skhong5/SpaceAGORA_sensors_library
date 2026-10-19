@@ -3356,15 +3356,21 @@ end
     return nothing
 end
 
-function _apply_interlink_rhs!(derivative, state, parameters)
+# The forces of the selected interlinks, each from its link's `link_force`.
+_apply_interlink_rhs!(derivative, state, parameters) = _apply_interlink_rhs!(derivative, state, parameters, NaN)
+function _apply_interlink_rhs!(derivative, state, parameters, t)
     model = parameters.args.interlink_model
     model === nothing && return nothing
-    mu = parameters.args.environment_model.planet.μ
+    planet = parameters.args.environment_model.planet
+    mu = planet.μ
+    spacecraft = parameters.args.dynamics_model.spacecraft
+    context = SimulationModel.LinkContext(time_s=Float64(t), planet=planet)
     for satellite in eachindex(state.sc)
         parameters.is_active[satellite] || continue
         current = state.sc[satellite]
         current_derivative = derivative.sc[satellite]
-        force = SimulationModel.laser_force_on_spacecraft(model, state, satellite; is_active=parameters.is_active)
+        force = SimulationModel.interlink_force_on_spacecraft(model, state, satellite;
+            is_active=parameters.is_active, spacecraft, context)
         acceleration = force / current.mass
         current_derivative.vel .+= acceleration
         current_derivative.laser_dv .= acceleration
@@ -3436,7 +3442,7 @@ function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector,
     plan = _rhs_execution_plan(p.args, p, dynamic_effectors, length(spacecraft))
     if plan.mode == :flat_constellation_effector_queue
         _spacecraft_dynamics_flat_constellation_effector_queue!(du, u, p, t, plan; rhs_kind=:full)
-        return _apply_interlink_rhs!(du, u, p)
+        return _apply_interlink_rhs!(du, u, p, t)
     end
     effector_decision = plan.effector_decision
     use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(p, length(spacecraft))
@@ -3563,7 +3569,7 @@ function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector,
             end
         end
     end
-    _apply_interlink_rhs!(du, u, p)
+    _apply_interlink_rhs!(du, u, p, t)
 end # function spacecraft_dynamics!
 
 function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t::Float64)

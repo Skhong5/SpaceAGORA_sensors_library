@@ -6,11 +6,17 @@ using SpaceAGORA
 
 const SE = SpaceAGORA.SimulationEngine
 
+# A second link kind, for a checkpoint whose link kind changes.
+struct OtherLink <: AbstractInterlink
+    range_m::Float64
+end
+SpaceAGORA.link_range_m(link::OtherLink) = link.range_m
+
 function checkpoint_fixture(directory)
     spacecraft = [(n_terminal=2,) for _ in 1:3]
-    model = ConstellationInterLinkModel(forbidden_pairs=[(3, 2)])
-    register_allowed_link!(model, spacecraft, (1, 1), (2, 1);
-        parameters=InterLinkParameters(P=12.0, B=3.0, range=100.0))
+    model = InterlinkModel(forbidden_pairs=[(3, 2)])
+    register_link!(model, spacecraft, (1, 1), (2, 1),
+        LaserMomentumLink(power_w=12.0, magnification=3.0, range_m=100.0))
     policy = SchedulingPolicyModel(:gve_sma; target_idxs=[1, 2])
     args = (interlink_model=model, scheduling_policy_model=policy,
         dynamics_model=(spacecraft=spacecraft,),
@@ -26,9 +32,9 @@ end
         snapshot = SE._interlink_checkpoint_runtime_state(args, flags)
         flags[2] = true
         @test snapshot.interlinks.is_active == [true, false, true]
-        @test snapshot.interlinks.version === 1
-        @test snapshot.interlinks.configuration.candidates == [(
-            endpoints=((1, 1), (2, 1)), P=12.0, B=3.0, range=100.0)]
+        @test snapshot.interlinks.version === 2
+        @test snapshot.interlinks.configuration.candidates == [(endpoints=((1, 1), (2, 1)),
+            link=(kind=:LaserMomentumLink, fields=(power_w=12.0, magnification=3.0, range_m=100.0)))]
         @test snapshot.interlinks.configuration.forbidden_pairs == [(2, 3)]
         @test snapshot.interlinks.configuration.terminal_counts == [2, 2, 2]
         SE._write_checkpoint!(args, 12.5, state, "tsit5"; is_active=snapshot.interlinks.is_active)
@@ -46,27 +52,27 @@ end
 
         changes = (
             "topology" => a -> begin
-                register_allowed_link!(a.interlink_model, a.dynamics_model.spacecraft, (1, 2), (3, 1))
+                register_link!(a.interlink_model, a.dynamics_model.spacecraft, (1, 2), (3, 1), LaserMomentumLink())
                 a
             end,
             "power" => a -> begin
-                a.interlink_model.graph.edge_properties[1] = InterLinkParameters(P=24.0, B=3.0, range=100.0)
+                a.interlink_model.graph.edge_properties[1] = LaserMomentumLink(power_w=24.0, magnification=3.0, range_m=100.0)
                 a
             end,
             "magnification" => a -> begin
-                a.interlink_model.graph.edge_properties[1] = InterLinkParameters(P=12.0, B=4.0, range=100.0)
+                a.interlink_model.graph.edge_properties[1] = LaserMomentumLink(power_w=12.0, magnification=4.0, range_m=100.0)
                 a
             end,
             "range" => a -> begin
-                a.interlink_model.graph.edge_properties[1] = InterLinkParameters(P=12.0, B=3.0, range=101.0)
+                a.interlink_model.graph.edge_properties[1] = LaserMomentumLink(power_w=12.0, magnification=3.0, range_m=101.0)
                 a
             end,
             "forbidden pairs" => a -> begin
                 empty!(a.interlink_model.forbidden_pairs)
                 a
             end,
-            "link type" => a -> begin
-                a.interlink_model.constellation_link_type = :radio
+            "link kind" => a -> begin
+                a.interlink_model.graph.edge_properties[1] = OtherLink(100.0)
                 a
             end,
             "policy" => a -> merge(a, (scheduling_policy_model=SchedulingPolicyModel(:gve_sma_first_index),)),
@@ -87,12 +93,27 @@ end
 
         @test_throws ArgumentError SE._write_checkpoint!(args, 12.5, state, "tsit5")
         for invalid_runtime in (nothing,
-            (interlinks=merge(snapshot.interlinks, (version=2,)),),
+            (interlinks=merge(snapshot.interlinks, (version=3,)),),
             (interlinks=merge(snapshot.interlinks, (is_active=Bool[true, false],)),),
             (interlinks=merge(snapshot.interlinks, (is_active=[1, 0, 1],)),))
             invalid = merge(checkpoint, (runtime_state=invalid_runtime,))
             @test_throws ArgumentError SE._restore_interlink_checkpoint_state!(args, invalid, trues(3))
         end
+        # A version 1 snapshot (SpaceAGORA 0.4 and earlier: one laser link type
+        # for the run, P, B and range per candidate) resumes the same run; with
+        # another link type it is refused.
+        v1_configuration = (link_type=:laser, vertices=[(1, 1), (2, 1)],
+            candidates=[(endpoints=((1, 1), (2, 1)), P=12.0, B=3.0, range=100.0)],
+            forbidden_pairs=[(2, 3)], policy=:gve_sma, target_idx=1, target_idxs=[1, 2], terminal_counts=[2, 2, 2])
+        v1 = merge(checkpoint, (runtime_state=(interlinks=(version=1, configuration=v1_configuration,
+            is_active=[true, false, true]),),))
+        restored = trues(3)
+        @test isnothing(SE._restore_interlink_checkpoint_state!(args, v1, restored))
+        @test restored == [true, false, true]
+        radio = merge(checkpoint, (runtime_state=(interlinks=(version=1,
+            configuration=merge(v1_configuration, (link_type=:radio,)), is_active=[true, false, true]),),))
+        @test_throws ArgumentError SE._restore_interlink_checkpoint_state!(args, radio, trues(3))
+
         legacy_args = merge(args, (interlink_model=nothing,))
         @test_throws ArgumentError SE._restore_interlink_checkpoint_state!(legacy_args, checkpoint, trues(3))
 

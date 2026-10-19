@@ -256,7 +256,7 @@ makedocs(
             "Articulated and Compliant Vehicles" => "user/articulated_compliant.md",
             "Mesh Aerodynamics" => "user/mesh_aerodynamics.md",
             "Plume Interaction" => "user/plume_interaction.md",
-            "Laser Interlinks" => "user/laser_interlinks.md",
+            "Interlinks" => "user/interlinks.md",
         ],
         "Atmosphere and Data" => Any[
             "Atmosphere Models" => "user/atmosphere_models.md",
