@@ -165,11 +165,16 @@ function _missing_model_hooks(args, call, solver_mode::Symbol=:tsit5)::Vector{St
         # preallocated kernel instead.
         sampled(SimulationModel.wrench, T) && continue
         # A model that opts into the per-link kernel is evaluated through
-        # link_wrench on articulated spacecraft with live-pose loads; it is
-        # accepted without the base-body hooks the other runs would need.
-        SimulationModel.link_wrench_capable(model) && continue
+        # link_wrench, and needs no `wrench`, when the run applies live-pose
+        # loads to articulated spacecraft: a run with one articulated spacecraft
+        # has only articulated spacecraft (`_validate_articulated_spacecraft!`).
+        # Any other run evaluates it through `wrench`.
+        per_link = SimulationModel.link_wrench_capable(model)
+        per_link && _per_link_kernel_run(args) && continue
         push!(problems, _missing_hook_line(location, "dynamics_model.dynamic_effectors", model, SimulationModel.wrench,
-            "wrench(model, x::StateSample, env::EnvironmentSample, t::Float64)"))
+            "wrench(model, x::StateSample, env::EnvironmentSample, t::Float64)" * (per_link ?
+                ", which this run calls because it does not apply live-pose loads to articulated spacecraft " *
+                "(SimulationSettings.articulated_live_pose_loads), where link_wrench would serve" : "")))
     end
     density_model = args.environment_model.density_model
     hasmethod(SimulationModel.getDensity, Tuple{typeof(density_model), Float64, Float64, Float64, Float64, Bool, P}) ||
@@ -2512,6 +2517,11 @@ end
     end
     return false
 end
+
+# Whether the dynamics evaluate per-link models through `link_wrench` on every
+# spacecraft of the run, as `_initialize_articulated_runtimes!` switches it on.
+_per_link_kernel_run(args)::Bool =
+    args.simulation_settings.articulated_live_pose_loads && _any_articulated_spacecraft(args)
 
 # Link indices an effector drives kinematically (`controlled_panel_links`), looking one level into
 # its fields (the energy-depletion controller holds its panel effector as a field).

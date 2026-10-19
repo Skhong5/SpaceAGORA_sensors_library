@@ -69,6 +69,9 @@ struct HpKickNoAccel <: SpaceAGORA.AbstractForceTorqueModel end
 SpaceAGORA.gravity_backbone_kick_structure(::HpKickNoAccel) = :velocity_kick_explicit
 struct HpLinkOnly <: SpaceAGORA.AbstractForceTorqueModel end
 HP_SM.link_wrench_capable(::HpLinkOnly) = true
+# A spacecraft the check reads as articulated (one with a moving joint).
+struct HpArticulatedSpacecraft end
+HP_SM.articulated_has_moving_joints(::HpArticulatedSpacecraft) = true
 
 struct HpDensitySixArgs <: SpaceAGORA.AbstractDensityModel end
 SpaceAGORA.getDensity(::HpDensitySixArgs, h::Float64, lat::Float64, lon::Float64, t::Float64, wind::Bool) =
@@ -80,11 +83,13 @@ SpaceAGORA.getDensity(::HpDensitySevenArgs, h::Float64, lat::Float64, lon::Float
 include(joinpath(@__DIR__, "..", "..", "..", "templates", "force_torque_model_template.jl"))
 
 # The parts of a configuration the check reads.
-hp_args(; guidance=(), navigation=(), control=(), effectors=(), density=SpaceAGORA.NoAtmosphereModel()) = (
+hp_args(; guidance=(), navigation=(), control=(), effectors=(), density=SpaceAGORA.NoAtmosphereModel(),
+        spacecraft=(), live_pose_loads=false) = (
     guidance_model=HP_SM.GuidanceModel(guidance, fill(1.0, length(guidance))),
     navigation_model=HP_SM.NavigationModel(navigation, fill(1.0, length(navigation))),
     control_model=HP_SM.ControlModel(control, fill(1.0, length(control))),
-    dynamics_model=(dynamic_effectors=effectors,),
+    dynamics_model=(dynamic_effectors=effectors, spacecraft=spacecraft),
+    simulation_settings=(articulated_live_pose_loads=live_pose_loads,),
     environment_model=(density_model=density, ephemerides_model=SpaceAGORA.SimpleEphemeridesModel(),
         planet=HP_SM.make_no_gram_planet(:earth)),
     initial_time=HP_SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
@@ -295,12 +300,23 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
             effectors=(HpForceCounter(0),), density=HpDensitySevenArgs(),
         ), HP_U0, HP_PARAMS) === nothing
 
-        # Outside gravity_backbone_split the backbone hooks do not count; a per-link
-        # model passes in any mode.
+        # Outside gravity_backbone_split the backbone hooks do not count. A per-link
+        # model needs no `wrench` only in a run that applies live-pose loads to
+        # articulated spacecraft, where link_wrench serves it.
         special = hp_args(effectors=(HpBackboneCore(), HpBackboneOnly(), HpKickNoAccel(), HpLinkOnly()))
         plain = HP_SE._missing_model_hooks(special, HP_CALL)
-        @test length(plain) == 3
-        @test all(k -> any(l -> occursin("dynamic_effectors[$k] (", l) && occursin("has no method wrench(", l), plain), 1:3)
+        @test length(plain) == 4
+        @test all(k -> any(l -> occursin("dynamic_effectors[$k] (", l) && occursin("has no method wrench(", l), plain), 1:4)
+        @test any(l -> occursin("(HpLinkOnly)", l) && occursin("articulated_live_pose_loads", l), plain)
+        @test !any(l -> occursin("(HpBackboneOnly)", l) && occursin("articulated_live_pose_loads", l), plain)
+        for (spacecraft, live) in (((HpArticulatedSpacecraft(),), false), ((), true))
+            @test length(HP_SE._missing_model_hooks(hp_args(effectors=special.dynamics_model.dynamic_effectors,
+                spacecraft=spacecraft, live_pose_loads=live), HP_CALL)) == 4
+        end
+        live = hp_args(effectors=special.dynamics_model.dynamic_effectors, spacecraft=(HpArticulatedSpacecraft(),),
+            live_pose_loads=true)
+        @test length(HP_SE._missing_model_hooks(live, HP_CALL)) == 3
+        @test !any(l -> occursin("HpLinkOnly", l), HP_SE._missing_model_hooks(live, HP_CALL))
         # In gravity_backbone_split a declaration needs its acceleration hook.
         split = HP_SE._missing_model_hooks(special, HP_CALL, :gravity_backbone_split)
         @test length(split) == 2

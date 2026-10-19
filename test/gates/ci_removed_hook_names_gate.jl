@@ -2,16 +2,18 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
 # The extension hooks SpaceAGORA 0.5.0 removed (docs/src/reference/migrating_extension_hooks.md
 # gives each one's replacement). This gate parses every Julia file under src/,
-# templates/ and examples/ and fails on any method of a removed name, qualified or
-# not and including the callable form `(f::typeof(hook))(...)`, and on any other use
-# of one as an identifier: a declaration, a call, an import or export, a quoted
-# symbol. It also fails on a `wrench` method with five positional arguments, the
-# removed form that took the spacecraft index as an argument. Comments and strings
-# are not code and are not checked here.
+# ext/, templates/ and examples/ and fails on any method of a removed name,
+# qualified or not and including the callable form `(f::typeof(hook))(...)`, and on
+# any other use of one as an identifier: a declaration, a call, an import or export,
+# a quoted symbol. It also fails on a `wrench` method or call with five positional
+# arguments, the removed form that took the spacecraft index as an argument.
+# Comments and strings are not code and are not checked here, so a name built from
+# a string (`Symbol("calcForceTorque")`, `Meta.parse`, `include_string`) is out of
+# its reach.
 const REMOVED_HOOKS = (:calcForceTorque, :calcControlForceTorque, :calcControlMassFlowRate, :calcReactionWheelTorque,
     :calcControlEffect!, :calcGuidanceEffect!, :calcNavigationEffect!,
     :planet_frame_lpi, :ephemerides_sun_direction_ii, :ephemerides_time_seconds)
-const SCANNED_DIRS = ("src", "templates", "examples")
+const SCANNED_DIRS = ("src", "ext", "templates", "examples")
 
 _last_name(name::Symbol) = name
 function _last_name(ex::Expr)
@@ -61,10 +63,15 @@ function _removed_uses!(found, ex, line::Ref{Int})
                 return found
             elseif name === :wrench && _positional_count(call) == 5
                 push!(found, (line[], "defines a five-argument method of", :wrench))
+                foreach(arg -> _removed_uses!(found, arg, line), ex.args[2:end])
+                return found
             elseif call === nothing && ex.head === :function && length(ex.args) == 1 && _last_name(ex.args[1]) in REMOVED_HOOKS
                 push!(found, (line[], "declares", _last_name(ex.args[1])))
                 return found
             end
+        end
+        if ex.head === :call && _last_name(ex.args[1]) === :wrench && _positional_count(ex) == 5
+            push!(found, (line[], "calls the five-argument form of", :wrench))
         end
         foreach(arg -> _removed_uses!(found, arg, line), ex.args)
     end
@@ -115,6 +122,6 @@ end
 if !isempty(violations)
     println("removed_hook_names_violations:")
     foreach(v -> println("  - ", v), violations)
-    error("Removed hook names found in src/, templates/ or examples/.")
+    error("Removed hook names found in src/, ext/, templates/ or examples/.")
 end
 println("removed_hook_names_gate_ok")

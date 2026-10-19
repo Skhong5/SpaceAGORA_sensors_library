@@ -341,14 +341,14 @@ end
 NcCtl{V}() where {V} = NcCtl{V}(0.0, false, [0.0], 0)
 const NC_CTL_STEPS = (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoReset)
 for variant in (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoReset, :NoWrench, :Narrow,
-        :Impure, :Negative, :NoCheckpoint)
+        :Impure, :Negative, :NoCheckpoint, :WrenchOnly, :Mounted)
     step = variant in NC_CTL_STEPS ? variant : :Clean
     @eval SpaceAGORA.update_control!(m::NcCtl{$(QuoteNode(variant))}, u, p, t::Float64, i::Int) =
         (m.acc += gnc_step(Val($(QuoteNode(step))), m, u, i); nothing)
-    variant === :NoWrench && continue
+    variant in (:NoWrench, :Mounted) && continue
     @eval SpaceAGORA.control_wrench(m::NcCtl{$(QuoteNode(variant))}, x::Sample, p, t::Float64) =
         (SVector(1.0e-4 * m.acc / (1 + abs(m.acc)), 0.0, 0.0), Z3)
-    variant === :Negative || @eval SpaceAGORA.control_propellant_rate(m::NcCtl{$(QuoteNode(variant))}, x::Sample, p, t::Float64) =
+    variant in (:Negative, :WrenchOnly) || @eval SpaceAGORA.control_propellant_rate(m::NcCtl{$(QuoteNode(variant))}, x::Sample, p, t::Float64) =
         1.0e-6 * abs(m.acc) / (1 + abs(m.acc))
 end
 # The models reset their own state at a run's start, except NoReset.
@@ -358,6 +358,8 @@ SpaceAGORA.bind_spacecraft(m::NcCtl{:SharedBind}, i::Int) = NcCtl{:SharedBind}(m
 SpaceAGORA.control_wrench(m::NcCtl{:Narrow}, x::Sample{Nothing}, p, t::Float64) = (Z3, Z3)
 SpaceAGORA.control_wrench(m::NcCtl{:Impure}, x::Sample, p, t::Float64) = (m.calls += 1; (Z3, Z3))
 SpaceAGORA.control_propellant_rate(m::NcCtl{:Negative}, x::Sample, p, t::Float64) = -1.0e-5
+# No output hook of its own: the mounted actuators carry its command.
+SpaceAGORA.actuation_mode(::NcCtl{:Mounted}) = :mounted
 SpaceAGORA.checkpoint_state(m::NcCtl) = merge(nc_checkpoint_state(m), (calls=m.calls,))
 SpaceAGORA.restore_checkpoint_state!(m::NcCtl, data) = (nc_restore!(m, data); m.calls = data.calls; nothing)
 SpaceAGORA.checkpoint_state(m::NcCtl{:NoCheckpoint}) = nothing
@@ -761,6 +763,18 @@ const MAY_SKIP = (:concurrent_equals_sequential, :bind_fresh_state, :stream_unto
             @test all(check -> check.status in (:pass, :skip), report.checks)
             @test passed(report)
         end
+        # control_propellant_rate and control_wheel_torque have untyped defaults for
+        # every model; they are not a model's own output hooks, so a model without its
+        # own methods skips the checks of them as before the defaults existed.
+        wrench_only = check_control_model(NcCtl{:WrenchOnly}())
+        @test status_of(wrench_only, :output_hook_pure) === :pass
+        @test status_of(wrench_only, :positive_consumption) === :skip
+        @test passed(wrench_only)
+        mounted = check_control_model(NcCtl{:Mounted}())
+        @test status_of(mounted, :hooks_present) === :pass
+        @test status_of(mounted, :output_hook_pure) === :skip
+        @test status_of(mounted, :positive_consumption) === :skip
+        @test passed(mounted)
         # The two-spacecraft bind check keeps the fixture's sensor, which the model reads.
         reader = check_navigation_model(NcNSensorReader(0.0); sensors=(NcCleanSensor(),))
         @test status_of(reader, :bind_fresh_state) === :pass

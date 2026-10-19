@@ -21,7 +21,8 @@ end
 # Models evaluated without `wrench`: the harmonics model, which has `wrench` but
 # is evaluated here, through its kernel with preallocated workspaces (see
 # `_wrench_method_available`). The pre-run check refuses any other model without
-# `wrench`.
+# `wrench`, except a per-link model in a run that applies live-pose loads to
+# articulated spacecraft, which reaches it only through `link_wrench`.
 _force_torque_without_wrench(effector, sc_view, p, sat_idx::Int) = throw(ArgumentError(
     "$(nameof(typeof(effector))) has no method wrench(model, x::StateSample, env::EnvironmentSample, t::Float64)."))
 @inline _force_torque_without_wrench(effector::SimulationModel.GravitationalHarmonicsModel, sc_view, p, sat_idx::Int) =

@@ -3,9 +3,11 @@
 SpaceAGORA's extension hooks follow one set of [conventions](extension_conventions.md):
 time before the spacecraft index, a state sample for right-hand-side hooks, and
 positive consumption. Ten hook names, and one form of the plume model's
-`wrench`, did not. SpaceAGORA 0.3.0 deprecated them, 0.3.0 and 0.4.0 warned
-about them before each run, and 0.5.0 removed them. This page lists each with
-its replacement.
+`wrench`, did not. SpaceAGORA 0.3.0 deprecated them and 0.5.0 removed them.
+In 0.3.0 and 0.4.0, the pre-run check warned about a model's method of an old
+name once per process for each model type and name, a direct call of an old
+name warned too, and the five-argument plume form warned only when called
+directly. This page lists each name with its replacement.
 
 A method of a removed name no longer runs. One that names the package, such as
 `SpaceAGORA.calcForceTorque(...) = ...`, fails when its file loads, because the

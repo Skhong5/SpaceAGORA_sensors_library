@@ -562,7 +562,7 @@ end
         @testset "Removed hook names gate" begin
             run_gate = _gate_runner(repo, fixture, "ci_removed_hook_names_gate.jl")
             @test isnothing(run_gate().failure)
-            message = "Removed hook names found in src/, templates/ or examples/."
+            message = "Removed hook names found in src/, ext/, templates/ or examples/."
             probe = joinpath(dirname(_unique_source(fixture, "gravity_gradient_effector.jl")), "removed_hook_probe.jl")
             # A method of a removed hook is refused in every spelling.
             for text in ("calcForceTorque(model::Probe, x, p, i) = (0.0, 0.0)\n",
@@ -594,15 +594,36 @@ end
                     @test _reports(rejected, probe, fixture, "$(kind) the removed hook $(hook)")
                 end
             end
-            # A five-argument wrench is the removed plume form; the four-argument hook is not.
+            # A five-argument wrench is the removed plume form, as a method or a call;
+            # the four-argument hook is not.
             for text in ("SpaceAGORA.wrench(model::Probe, x::StateSample, env::EnvironmentSample, t::Float64, i::Int) = (0.0, 0.0)\n",
                          "function wrench(model::Probe, x, env, t, i; extra=nothing)\n    return 0.0, 0.0\nend\n")
                 _with_probe(probe, text) do
                     rejected = run_gate()
                     @test _failed_with(rejected, message)
                     @test _reports(rejected, probe, fixture, "defines a five-argument method of wrench")
+                    @test !_reports(rejected, probe, fixture, "calls the five-argument form")
                 end
             end
+            for text in ("f, τ = wrench(model, x, env, t, 2)\n",
+                         "SimulationModel.wrench(model, x, env, t, i; extra=1)\n")
+                _with_probe(probe, text) do
+                    rejected = run_gate()
+                    @test _failed_with(rejected, message)
+                    @test _reports(rejected, probe, fixture, "calls the five-argument form of wrench")
+                end
+            end
+            _with_probe(probe, "f, τ = wrench(model, x, env, t)\nf, τ = wrench(model, x, env, t; i=2)\nargs = (1, 2, 3, 4, 5)\nwrench(args...)\n") do
+                @test isnothing(run_gate().failure)
+            end
+            # Shipped extension code under ext/ is scanned too.
+            extension = joinpath(fixture, "ext", "SpaceAGORAProbeExt", "probe.jl")
+            _with_probe(extension, "SpaceAGORA.calcGuidanceEffect!(m::Probe, u, p, t, i) = nothing\n") do
+                rejected = run_gate()
+                @test _failed_with(rejected, message)
+                @test _reports(rejected, extension, fixture, "defines a method of the removed hook calcGuidanceEffect!")
+            end
+            rm(joinpath(fixture, "ext"); recursive=true, force=true)
             # Comments, strings and longer names are not uses, and the current hooks are fine.
             _with_probe(probe, "# calcForceTorque was removed in 0.5.0.\nnote = \"calcControlEffect! is now update_control!\"\n" *
                                "my_calcForceTorque(x) = x\nSpaceAGORA.wrench(model::Probe, x, env, t::Float64) = (0.0, 0.0)\n") do
