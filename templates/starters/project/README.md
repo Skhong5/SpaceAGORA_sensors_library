@@ -18,13 +18,15 @@ The study is tested in a separate environment that develops the pinned SpaceAGOR
 commit by path. Once:
 
 ```bash
-GIT_LFS_SKIP_SMUDGE=1 git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../SpaceAGORA.jl
+git clone -c lfs.fetchexclude='*' https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../SpaceAGORA.jl
 git -C ../SpaceAGORA.jl checkout <the rev in SpaceAGORASource.toml>
 julia --startup-file=no ../SpaceAGORA.jl/scripts/contributor_environment.jl project . ../StarterName-env --manifest committed
 ```
 
-`GIT_LFS_SKIP_SMUDGE=1` skips SpaceAGORA's large data files (Git LFS), which a
-contributor repository does not use.
+`-c lfs.fetchexclude='*'` keeps this clone, its checkouts and later pulls from
+downloading SpaceAGORA's large data files (Git LFS), which a contributor
+repository does not use. Without Git LFS installed the setting does nothing,
+and nothing is downloaded either.
 
 Then, from `test/`:
 

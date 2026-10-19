@@ -19,13 +19,15 @@ The package is developed against the SpaceAGORA commit in `SpaceAGORASource.toml
 in a separate environment that develops that commit by path. Once:
 
 ```bash
-GIT_LFS_SKIP_SMUDGE=1 git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../SpaceAGORA.jl
+git clone -c lfs.fetchexclude='*' https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../SpaceAGORA.jl
 git -C ../SpaceAGORA.jl checkout <the rev in SpaceAGORASource.toml>
 julia --startup-file=no ../SpaceAGORA.jl/scripts/contributor_environment.jl package . ../StarterName-env --manifest core
 ```
 
-`GIT_LFS_SKIP_SMUDGE=1` skips SpaceAGORA's large data files (Git LFS), which a
-contributor repository does not use.
+`-c lfs.fetchexclude='*'` keeps this clone, its checkouts and later pulls from
+downloading SpaceAGORA's large data files (Git LFS), which a contributor
+repository does not use. Without Git LFS installed the setting does nothing,
+and nothing is downloaded either.
 
 Then `julia --project=../StarterName-env -e 'using Pkg; Pkg.test("StarterName")'`.
 `test/runtests.jl` runs SpaceAGORA's conformance checks for planners on the family's

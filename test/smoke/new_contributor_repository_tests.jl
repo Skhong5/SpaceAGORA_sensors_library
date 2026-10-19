@@ -42,6 +42,19 @@ clean_checkout() = isempty(readchomp(`git -C $ROOT status --porcelain=v1 --untra
         end
     end
 
+    # The kit's clone commands keep SpaceAGORA's LFS data out of the clone for good: a
+    # variable on the clone alone would not cover the checkout of the pinned commit.
+    @testset "clone commands exclude SpaceAGORA's LFS data" begin
+        pages = [joinpath(ROOT, "docs", "src", "user", "research_repository.md");
+                 [joinpath(STARTERS, kind, "README.md") for kind in G.KINDS]]
+        for page in pages
+            clones = filter(line -> occursin("git clone", line) && occursin("SpaceAGORA.jl.git", line), readlines(page))
+            @test !isempty(clones)
+            @test all(line -> occursin("git clone -c lfs.fetchexclude='*' ", line), clones)
+            @test !occursin("GIT_LFS_SKIP_SMUDGE", read(page, String))
+        end
+    end
+
     @testset "names, series and targets" begin
         @test G.check_name("MyPlanner") == "MyPlanner"
         for bad in ("myPlanner", "My-Planner", "My Planner", "SpaceAGORA", "StarterName", "MyPlanner.jl", "")
