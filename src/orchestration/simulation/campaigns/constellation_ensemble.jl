@@ -32,6 +32,11 @@ function _ensemble_member_settings(settings::SimulationSettings, member_tag::Str
     )
 end
 
+# The folder of ensemble member `index` of `count`: its index, zero-padded to the
+# digits of `count` so the folders sort in member order, and its spacecraft id.
+_ensemble_member_tag(index::Integer, count::Integer, id::Integer) =
+    "sat_$(lpad(index, ndigits(count), '0'))_id_$(id)"
+
 function _ensemble_member_configuration(
     args::SimulationConfiguration,
     spacecraft::SpacecraftModel,
@@ -80,7 +85,8 @@ Sample `i` of the returned [`MonteCarloResult`](@ref) holds the `run_simulation`
 value for spacecraft `i` (in `args.dynamics_model.spacecraft` order) in `value`. When
 result saving, checkpointing, or checkpoint resume is enabled, each member uses
 per-satellite `sat_<index>_id_<spacecraft id>` subdirectories so members do not read or
-clobber each other's files.
+clobber each other's files. The index is zero-padded to the digits of the member count
+(`sat_01` to `sat_12` for twelve members), so the folders sort in member order.
 
 # Parallel execution
 
@@ -140,9 +146,10 @@ function run_constellation_ensemble(
         "run_constellation_ensemble requires at least one spacecraft in args.dynamics_model.spacecraft."
     ))
     _validate_ensemble_uncoupled(args, allow_gnc_effectors)
+    SimulationEngine._warn_repeated_spacecraft_ids(args)
 
     member_configs = [
-        _ensemble_member_configuration(args, sc, "sat_$(idx)_id_$(sc.id)")
+        _ensemble_member_configuration(args, sc, _ensemble_member_tag(idx, length(spacecraft), sc.id))
         for (idx, sc) in enumerate(spacecraft)
     ]
 

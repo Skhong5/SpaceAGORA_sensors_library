@@ -11,4 +11,19 @@ using StaticArrays
          sin(Ω)*sin(i)                       -cos(Ω)*sin(i)                       cos(i)
     ]
 end
+
+# The true anomaly (rad, in [0, 2π)) at mean anomaly `M` (rad) on an ellipse of
+# eccentricity 0 <= e < 1: Kepler's equation M = E - e sin E by Newton's method,
+# started at M (or at π for a very eccentric orbit, where M is a poor start).
+function _true_anomaly_from_mean(M::Float64, e::Float64)::Float64
+    0.0 <= e < 1.0 || throw(ArgumentError("The mean anomaly needs an elliptic orbit, 0 <= e < 1; got e = $e."))
+    M = mod(M, 2pi)
+    E = e < 0.8 ? M : Float64(pi)
+    for _ in 1:50
+        step = (E - e * sin(E) - M) / (1.0 - e * cos(E))
+        E -= step
+        abs(step) <= 1e-14 && break   # Newton is quadratic: E is then exact to rounding
+    end
+    return mod(2.0 * atan(sqrt(1.0 + e) * sin(E / 2.0), sqrt(1.0 - e) * cos(E / 2.0)), 2pi)
+end
 end
