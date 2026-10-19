@@ -287,9 +287,19 @@ SM.SimulationSettings(
 )
 ```
 
+A checkpointed run is solved in segments of `checkpoint_interval_s`. Its
+navigation, guidance and control effectors tick at the same times as in a run
+solved in one piece, including a tick that falls on a segment boundary, which
+comes before the checkpoint written there.
+
 A crashed or interrupted run can be resumed by setting
-`resume_from_checkpoint = true` in `SimulationSettings`. The checkpoint
-directory defaults to `results_directory/checkpoints` when left empty. Besides
+`resume_from_checkpoint = true` in `SimulationSettings`. The resumed run's
+effectors keep the same tick times, from the run's start. A run resumed from a
+checkpoint written at a segment boundary starts with the first tick after it;
+one resumed from the checkpoint written at the end of a run, to extend that
+run, first takes the ticks due at that time, which the ended run did not take.
+The checkpoint directory defaults to `results_directory/checkpoints` when left
+empty. Besides
 the state, the checkpoint holds the run state the callbacks keep on the
 spacecraft: the batteries' empty and full flags and shedding tier, the
 actuator faults' activity and held levels, the sensors' random streams,
@@ -300,6 +310,14 @@ control model, or a sensor kind, that keeps run state of its own adds it to
 the file through `checkpoint_state` (see
 [Run state in checkpoint files](../extensibility.md#Run-state-in-checkpoint-files));
 without it, a resumed run starts that state from its reset.
+
+The checkpoint also records which spacecraft are active. A spacecraft lost to
+an impact or a touchdown before the checkpoint stays inactive in the resumed
+run, as it would in a run that was never interrupted: it is not propagated, its
+guidance, navigation and control models treat it as inactive (`skip_inactive`),
+and its impact or touchdown does not happen again. A checkpoint written by an
+earlier SpaceAGORA records this only for an interlinked run; any other run
+resumed from such a checkpoint starts with every spacecraft active, as before.
 
 ## Campaign and multi-process runs
 

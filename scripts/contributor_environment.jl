@@ -7,7 +7,8 @@ environment's core. The environment develops this checkout by path, so the teste
 core is exactly the checked-out commit, and the pin file must name that commit. The
 reusable workflow `.github/workflows/contributor-ci.yml` calls this script; it also
 works from a local clone of the pinned commit, after which `Pkg.test` runs in the
-environment as usual.
+environment as usual. `repin`, run from a checkout of another commit, moves a
+repository's pin to that commit.
 
     # SpaceAGORASource.toml
     url = "https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git"
@@ -35,8 +36,10 @@ const HELP = """Usage: julia --startup-file=no scripts/contributor_environment.j
        julia --startup-file=no scripts/contributor_environment.jl check <project|package|companion> <repository> [--rev <sha>]
        julia --startup-file=no scripts/contributor_environment.jl scan <project|package|companion> <repository>
        julia --startup-file=no scripts/contributor_environment.jl summary <report-directory> [<environment>]
+       julia --startup-file=no scripts/contributor_environment.jl repin <project|package|companion> <repository> [--rev <sha>]
 The environment directory must be new and outside both the repository and this checkout.
 --rev defaults to this checkout's HEAD; the repository's $PIN_FILE must pin SpaceAGORA to it.
+repin points the repository's pin file, workflow calls and [compat] at this checkout's commit.
 --core-from-caller (core CI only) also accepts a pin file whose path is this checkout."""
 
 full_sha(rev) = rev isa AbstractString && occursin(r"^[0-9a-f]{40}$", rev)
@@ -316,6 +319,100 @@ function build(p)
 end
 
 setup(kind, repository, environment; kw...) = build(plan(kind, repository, environment; kw...))
+
+# --- moving the pin ------------------------------------------------------------------------------
+
+const WORKFLOW_CALL = r"Space-FALCON-Lab/SpaceAGORA\.jl/\.github/workflows/contributor-ci\.yml@([0-9a-f]{40})"
+
+# `text` with the string value of `key = "..."` replaced by `value`, on the first such line
+# at the top level (`table=nothing`) or in `[table]`; `nothing` when there is no such line.
+function replace_toml_string(text::AbstractString, key::AbstractString, value::AbstractString; table=nothing)
+    lines = split(text, '\n')
+    pattern = Regex("^(\\s*\\Q$(key)\\E\\s*=\\s*)\"[^\"]*\"(.*)\$")
+    current = nothing
+    for (k, line) in enumerate(lines)
+        header = match(r"^\s*\[\s*([^\[\]]+?)\s*\]\s*(#.*)?$", line)
+        if header !== nothing
+            current = header.captures[1]
+            continue
+        end
+        current == table || continue
+        m = match(pattern, line)
+        m === nothing && continue
+        lines[k] = string(m.captures[1], '"', value, '"', m.captures[2])
+        return join(lines, '\n')
+    end
+    return nothing
+end
+
+"""
+    repin(kind, repository; rev=nothing, root=ROOT) -> Vector{String}
+
+Point a contributor repository at this checkout's commit (`rev`, which must be its
+`HEAD`; it defaults to `HEAD`): the `rev` of its pin file and, when the file has one,
+its `version`; the ref after `@` and the `spaceagora-rev` of every call of
+`contributor-ci.yml` in `.github/workflows/`; and the `SpaceAGORA` entry in `[compat]`
+of its `Project.toml` and `test/Project.toml`, when that entry does not admit this
+core's version, which then becomes this core's release series. Only those values
+change; the rest of each file keeps its text. A contributor moving to a release runs
+it from a checkout of the release, and core CI runs it on a checkout of a contributor
+repository to test that repository against the commit under test. Returns the changed
+files, relative to the repository, and changes nothing when it refuses (a path pin,
+a pin file it cannot rewrite in place).
+"""
+function repin(kind, repository; rev=nothing, root=ROOT)
+    kind in KINDS || fail("Unknown kind '$kind'. Choose from $(join(KINDS, ", ")).")
+    core = verified_core(root, rev)
+    isdir(repository) || fail("Repository directory not found: $repository")
+    repository = realpath(repository)
+    version = isempty(core.version) ? nothing : VersionNumber(core.version)
+    series = version === nothing ? nothing : version.major == 0 ? "0.$(version.minor)" : "$(version.major)"
+    # Every edit is decided before any file is written, so a refusal changes nothing.
+    edits = Pair{String,String}[]
+    edit!(path, text, updated) = (updated == text || push!(edits, path => updated); nothing)
+
+    pinfile = joinpath(repository, PIN_FILE)
+    isfile(pinfile) || fail("$pinfile is missing. It records the SpaceAGORA commit this repository is tested against.")
+    text = read(pinfile, String)
+    pin = TOML.parse(text)
+    haskey(pin, "path") && fail("$pinfile: a path pin names a checkout, not a commit; there is no commit to move.")
+    old = get(pin, "rev", nothing)
+    full_sha(old) || fail("$pinfile: rev must be a full 40-character lowercase commit SHA, not $(repr(old)).")
+    updated = replace_toml_string(text, "rev", core.rev)
+    haskey(pin, "version") && updated !== nothing && (updated = replace_toml_string(updated, "version", core.version))
+    (updated !== nothing && get(TOML.parse(updated), "rev", nothing) == core.rev &&
+        get(TOML.parse(updated), "version", core.version) == core.version) ||
+        fail("$pinfile: could not rewrite rev and version in place; set rev = \"$(core.rev)\" and version = \"$(core.version)\" by hand.")
+    edit!(pinfile, text, updated)
+
+    # Every commit the workflow calls name, and the old pin, become this commit.
+    workflows = joinpath(repository, ".github", "workflows")
+    for file in (isdir(workflows) ? sort!(readdir(workflows)) : String[])
+        endswith(file, ".yml") || endswith(file, ".yaml") || continue
+        path = joinpath(workflows, file)
+        text = read(path, String)
+        calls = [m.captures[1] for m in eachmatch(WORKFLOW_CALL, text)]
+        isempty(calls) && continue
+        edit!(path, text, foldl((t, sha) -> replace(t, sha => core.rev), unique!(push!(calls, old)); init=text))
+    end
+
+    # A [compat] bound that does not admit this core's version becomes its release series.
+    for directory in (repository, joinpath(repository, "test"))
+        file = project_file(directory)
+        (series === nothing || file === nothing) && continue
+        text = read(file, String)
+        bound = get(get(TOML.parse(text), "compat", Dict{String,Any}()), "SpaceAGORA", nothing)
+        (bound === nothing || version in Pkg.Versions.semver_spec(bound)) && continue
+        updated = replace_toml_string(text, "SpaceAGORA", series; table="compat")
+        updated === nothing && fail("$file: could not rewrite [compat] SpaceAGORA in place; set it to \"$series\" by hand.")
+        edit!(file, text, updated)
+    end
+
+    for (path, updated) in edits
+        write(path, updated)
+    end
+    return [relpath(path, repository) for (path, _) in edits]
+end
 
 # --- internal-name scan --------------------------------------------------------------------------
 
@@ -664,6 +761,11 @@ function main(args=ARGS)
             "Internal-name scan: a $(positional[2]) is not scanned; it uses its facade's bindings")
     elseif length(positional) in (2, 3) && positional[1] == "summary" && isempty(named)
         print(summary(positional[2], get(positional, 3, nothing)))
+    elseif length(positional) == 3 && positional[1] == "repin" && !haskey(named, "manifest") && !core_from_caller
+        changed = repin(positional[2], positional[3]; rev=get(named, "rev", nothing))
+        core = verified_core(ROOT, get(named, "rev", nothing))
+        println(isempty(changed) ? "$(positional[3]) already pins SpaceAGORA $(core.rev)" :
+            "Pinned $(positional[3]) to SpaceAGORA $(core.rev) ($(core.version)): $(join(changed, ", "))")
     elseif length(positional) == 3 && positional[1] == "check" && !haskey(named, "manifest")
         c = check_repository(positional[2], positional[3]; rev=get(named, "rev", nothing), core_from_caller)
         println("SpaceAGORA pin: ", c.pin, " in ", joinpath(c.repository, PIN_FILE), " matches ", c.core.path)

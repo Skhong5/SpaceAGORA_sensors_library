@@ -96,25 +96,18 @@ SpaceAGORA.update_control!(::PeriodicLaw, u, p, t, i) = nothing
 SpaceAGORA.control_wrench(::PeriodicLaw, x, p, t) = (ZERO3, ZERO3)
 SpaceAGORA.gnc_period_s(m::PeriodicLaw) = m.period_s
 
-# The period warnings `f()` gives. Under --depwarn=error the shared pre-run
-# warning throws instead, with the same message.
-function period_warnings(f)
-    is_period(msg) = occursin("will refuse this run", msg)
-    if Base.JLOptions().depwarn == 2
-        try
-            f()
-            return String[]
-        catch e
-            msg = sprint(showerror, e)
-            is_period(msg) || rethrow()
-            return [msg]
-        end
+# The message of the `ArgumentError` that `f()` refuses with, or `nothing` when it
+# returns.
+function refusal(f)
+    try
+        f()
+        return nothing
+    catch e
+        e isa ArgumentError || rethrow()
+        return sprint(showerror, e)
     end
-    logger = Test.TestLogger(min_level=Logging.Warn)
-    with_logger(f, logger)
-    return filter(is_period, [string(l.message) for l in logger.logs])
 end
-period_messages(args) = period_warnings(() -> SM.SimulationCallbacks.check_control_periods(args))
+period_refusal(args) = refusal(() -> SM.SimulationCallbacks.check_control_periods(args))
 
 # A sensor with state of its own: the number of samples since the run started.
 mutable struct CountingSensor <: AbstractSensor
@@ -308,26 +301,24 @@ SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
         ctrl = SM.init_rpo_lqmpc(0.001, 0.2, Matrix(1.0I, 6, 6), Matrix(1.0I, 3, 3), Matrix(1.0I, 6, 6), 4)
         @test ctrl.dt_s == 0.2 && deepcopy(ctrl).dt_s == 0.2
         # A contributor's declared period against its callback's rate (0.5 s).
-        @test isempty(period_messages(runtime_args((PeriodicLaw(0.5),))))
-        warned = period_messages(runtime_args((PeriodicLaw(0.25),)))
-        @test length(warned) == 1 && occursin("0.25 s period", only(warned)) && occursin("every 0.5 s", only(warned))
-        # A configuration check, not a deprecation: the :preflight log group.
-        if Base.JLOptions().depwarn != 2
-            logger = Test.TestLogger(min_level=Logging.Warn)
-            with_logger(() -> SM.SimulationCallbacks.check_control_periods(runtime_args((PeriodicLaw(0.25),))), logger)
-            @test only(logger.logs).group === :preflight
-        end
-        # The RPO pilot builds its controller with the model's step; a different step warns.
+        @test period_refusal(runtime_args((PeriodicLaw(0.5),))) === nothing
+        refused = period_refusal(runtime_args((PeriodicLaw(0.25),)))
+        @test occursin("PeriodicLaw declares a 0.25 s period", refused) && occursin("every 0.5 s (control_rates[1])", refused)
+        # A refusal, not a warning, whatever --depwarn says: nothing is logged.
+        logger = Test.TestLogger(min_level=Logging.Warn)
+        refused = with_logger(() -> period_refusal(runtime_args((PeriodicLaw(0.25),))), logger)
+        @test refused isa String && isempty(logger.logs)
+        # The RPO pilot builds its controller with the model's step; a different step is refused.
         rpo = make_rpo_configuration(planner=DirectRPOPlanner(), mission_time_s=0.2)
         mpc = only(rpo.control_model.control_effectors)
         @test gnc_period_s(mpc) == mpc.control_dt_s == mpc.controller.dt_s
-        @test isempty(period_messages(rpo))
+        @test period_refusal(rpo) === nothing
         mpc.controller.dt_s = 2mpc.control_dt_s
-        warned = period_messages(rpo)
-        @test length(warned) == 1 && occursin("discretized with a", only(warned))
+        refused = period_refusal(rpo)
+        @test occursin("RPOMPCControlModel ticks every 0.1 s but its controller was discretized with a 0.2 s step", refused)
         # The engine runs the check before every run.
-        warned = period_warnings(() -> run_simulation(runtime_args((PeriodicLaw(0.25),))))
-        @test length(warned) == 1 && occursin("0.25 s period", only(warned))
+        refused = refusal(() -> run_simulation(runtime_args((PeriodicLaw(0.25),))))
+        @test occursin("0.25 s period", refused)
     end
 
     @testset "links pair models, and the engine checks and initializes each once" begin
@@ -380,8 +371,8 @@ SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
     end
 
     @testset "a resumed run restores the run state models keep in checkpoint files" begin
-        # Navigation ticks every 0.3 s, off the 1 s checkpoint boundaries: a
-        # periodic tick at a segment boundary is skipped.
+        # Navigation ticks every 0.3 s, off the 1 s checkpoint boundaries (the
+        # next testset ticks on them).
         checkpointed(dir; kw...) = (checkpoint_enabled=true, checkpoint_interval_s=1.0, checkpoint_directory=dir, kw...)
         counted(mission_time, settings; navigation=TickCounter(), sensor=KeptCountSensor()) =
             runtime_args((); sensor=sensor, navigation=(navigation,), navigation_period=0.3, mission_time=mission_time,
@@ -427,6 +418,25 @@ SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
         msg = refusal(() -> run!(counted(3.0, checkpointed(mktempdir()); navigation=HalfKept())))
         @test msg !== nothing && occursin("has no restore_checkpoint_state!", msg)
         @test refusal(() -> run!(counted(3.0, (;); navigation=HalfKept()))) === nothing
+    end
+
+    @testset "a resumed run ticks as a run in one piece, at checkpoint boundaries too" begin
+        # Navigation ticks every 0.25 s: the 1 s checkpoint boundaries and the
+        # 3 s resume time fall on its grid.
+        checkpointed(dir; kw...) = (checkpoint_enabled=true, checkpoint_interval_s=1.0, checkpoint_directory=dir, kw...)
+        counted(mission_time, settings) = runtime_args((); sensor=KeptCountSensor(), navigation=(TickCounter(),),
+            navigation_period=0.25, mission_time=mission_time, settings=settings)
+        run!(args) = (run_simulation(args; isolate_state=false); args)
+        nav(args) = only(args.navigation_model.navigation_effectors)
+        straight = run!(counted(6.0, (;)))
+        split = run!(counted(6.0, checkpointed(mktempdir())))
+        dir = mktempdir()
+        early = run!(counted(3.0, checkpointed(dir)))
+        resumed = run!(counted(6.0, checkpointed(dir; resume_from_checkpoint=true)))
+        @test nav(straight).ticks == 23                                    # 0.25 s to 5.75 s
+        @test nav(split).ticks == nav(straight).ticks                      # with the ticks at 1 s to 5 s
+        @test nav(early).ticks == 11                                       # none at the run's end
+        @test nav(resumed).this_run == 12 && nav(resumed).ticks == nav(straight).ticks   # 3 s to 5.75 s
     end
 
     @testset "an unknown schedule is refused" begin

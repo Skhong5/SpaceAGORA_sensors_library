@@ -84,7 +84,8 @@ Run records mark these requests with `event=:trigger`.
 Defaults: station keepout 0.25 m plus largest chaser half-extent 0.15 m;
 clearance 0.2 m; speed 0.5 m/s; reference acceleration 0.5*0.05/5.2 m/s².
 The controller uses a 12-step preview. `extra_effectors` extends the existing
-force interface. Checkpoints and `isolate_state=false` are refused at startup.
+force interface. `isolate_state=false` is refused at startup; a checkpoint holds the
+planners' and controllers' run state, and a resumed run continues from it.
 `simulation_settings`/`solver_config` may use their existing public types. Only
 the default `:tsit5` route is validated for this lifecycle; other solver modes are
 outside the pilot. The first control update needs 13 steps of validity, although

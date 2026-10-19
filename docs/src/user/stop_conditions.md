@@ -37,7 +37,10 @@ does what you need:
 - `mission_type = SM.MissionOrbits` stops after `number_of_orbits` orbits
   (counted at apoapsis passages) and prints `termination_cause=orbit_count`;
 - a spacecraft that descends to 50 km above a sphere of the planet's
-  equatorial radius is deactivated (it stops being propagated); when every
+  equatorial radius is deactivated: it stops being propagated, and its
+  guidance, navigation and control models stop ticking for it, unless a model
+  declares `skip_inactive(model) = false` (see
+  [Writing a GNC Algorithm](gnc_algorithm.md#Declarations)); when every
   spacecraft in the run is inactive the run ends and prints
   `termination_cause=impact`.
 

@@ -125,7 +125,9 @@ Before each periodic tick of control model `consumer`, once per tick and on the
 callback's thread, for each model that produces a link `consumer` consumes
 (`gnc_links`), in configuration order: let `producer` bring what it writes up to
 date for time `t` (s into the run), as the RPO planner checks its reference. `u`
-is the state and `p` the run's parameters. Default: nothing.
+is the state and `p` the run's parameters. Not called at a tick that runs
+`consumer` for no spacecraft, as when every spacecraft in its scope is inactive
+and it declares `skip_inactive`. Default: nothing.
 """
 before_reference_control!(producer, consumer, u, p, t) = nothing
 

@@ -2,8 +2,8 @@
 # operation, network access or core import. The contributor workflow runs them in core CI.
 using Test, TOML
 include(joinpath(@__DIR__, "..", "..", "scripts", "contributor_environment.jl"))
-using .ContributorEnvironment: plan, check_repository, scan, scan_source, summary, options, companion_names,
-    CORE_URL, PIN_FILE, RECORD
+using .ContributorEnvironment: plan, check_repository, scan, scan_source, summary, options, companion_names, repin,
+    replace_toml_string, CORE_URL, PIN_FILE, RECORD
 
 const CORE_UUID = "afbfb69f-5c0b-4832-b760-43725dff8540"
 const TEST_UUID = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
@@ -397,6 +397,83 @@ end
     end
 end
 
+@testset "Moving a repository's pin" begin
+    contributor_fixture() do fixture
+        repo, old = fixture.repo, fixture.rev
+        # The repository as a contributor keeps it: comments, a version in the pin file, a
+        # workflow call at the pinned commit, and bounds in both projects.
+        pin_text = "# The commit this package is tested against.\nurl = \"$CORE_URL\"\nrev = \"$old\"  # pinned\n" *
+                   "uuid = \"$CORE_UUID\"\nversion = \"0.2.0\"\n"
+        write(joinpath(repo, PIN_FILE), pin_text)
+        workflow = joinpath(mkpath(joinpath(repo, ".github", "workflows")), "ci.yml")
+        workflow_text = "jobs:\n  spaceagora:\n    uses: Space-FALCON-Lab/SpaceAGORA.jl/.github/workflows/contributor-ci.yml@$old\n" *
+                        "    with:\n      spaceagora-rev: \"$old\"\n      kind: package\n"
+        write(workflow, workflow_text)
+        write(joinpath(repo, ".github", "workflows", "other.yml"), "name: Other\n# $old is not a call here\n")
+        project_text = read(joinpath(repo, "Project.toml"), String)
+        test_project = joinpath(mkpath(joinpath(repo, "test")), "Project.toml")
+        write(test_project, "[deps]\nSpaceAGORA = \"$CORE_UUID\"\n\n[compat]\nSpaceAGORA = \"0.2\"  # one series\n")
+        # The next release of the core.
+        write_toml(joinpath(fixture.core, "Project.toml"), Dict("name" => "SpaceAGORA", "uuid" => CORE_UUID, "version" => "0.3.0"))
+        fixture_run("-C", fixture.core, "commit", "--quiet", "-am", "Release 0.3.0")
+        new = fixture_read("-C", fixture.core, "rev-parse", "HEAD")
+
+        refused_with("not the requested revision") do
+            repin("package", repo; root=fixture.core, rev=old)
+        end
+        @test repin("package", repo; root=fixture.core) ==
+              [PIN_FILE, joinpath(".github", "workflows", "ci.yml"), "Project.toml", joinpath("test", "Project.toml")]
+        @test read(joinpath(repo, PIN_FILE), String) == replace(pin_text, old => new, "\"0.2.0\"" => "\"0.3.0\"")
+        @test read(workflow, String) == replace(workflow_text, old => new)
+        @test read(joinpath(repo, ".github", "workflows", "other.yml"), String) == "name: Other\n# $old is not a call here\n"
+        # Only the [compat] entry changes; the [deps] entry of the same name keeps its UUID.
+        @test read(joinpath(repo, "Project.toml"), String) == replace(project_text, "SpaceAGORA = \"0.2\"" => "SpaceAGORA = \"0.3\"")
+        @test TOML.parsefile(joinpath(repo, "Project.toml"))["deps"]["SpaceAGORA"] == CORE_UUID
+        @test read(test_project, String) == "[deps]\nSpaceAGORA = \"$CORE_UUID\"\n\n[compat]\nSpaceAGORA = \"0.3\"  # one series\n"
+        @test check_repository("package", repo; root=fixture.core).pin == "rev $new"
+        @test isempty(repin("package", repo; root=fixture.core))
+
+        # A bound that admits the core's version stays as it is.
+        write(test_project, "[compat]\nSpaceAGORA = \"0.2, 0.3\"\n")
+        write_toml(joinpath(fixture.core, "Project.toml"), Dict("name" => "SpaceAGORA", "uuid" => CORE_UUID, "version" => "0.3.1"))
+        fixture_run("-C", fixture.core, "commit", "--quiet", "-am", "Release 0.3.1")
+        @test repin("package", repo; root=fixture.core) == [PIN_FILE, joinpath(".github", "workflows", "ci.yml")]
+        @test read(test_project, String) == "[compat]\nSpaceAGORA = \"0.2, 0.3\"\n"
+
+        # A pre-release is admitted by its series, as Pkg's [compat] admits it.
+        write_toml(joinpath(fixture.core, "Project.toml"), Dict("name" => "SpaceAGORA", "uuid" => CORE_UUID, "version" => "0.4.0-DEV"))
+        fixture_run("-C", fixture.core, "commit", "--quiet", "-am", "Start 0.4.0")
+        @test "Project.toml" in repin("package", repo; root=fixture.core)
+        @test TOML.parsefile(joinpath(repo, "Project.toml"))["compat"]["SpaceAGORA"] == "0.4"
+        @test TOML.parsefile(joinpath(repo, PIN_FILE))["version"] == "0.4.0-DEV"
+        # A refusal changes no file, even when it comes after the pin and workflow edits
+        # are decided: here a [compat] entry it cannot rewrite in place (a quoted key).
+        write(joinpath(repo, PIN_FILE), pin_text)
+        write(workflow, workflow_text)
+        write(joinpath(repo, "Project.toml"), replace(read(joinpath(repo, "Project.toml"), String),
+                                                      "SpaceAGORA = \"0.4\"" => "\"SpaceAGORA\" = \"0.2\""))
+        files = [joinpath(repo, PIN_FILE), workflow, joinpath(repo, "Project.toml"), test_project]
+        before = read.(files, String)
+        refused_with("could not rewrite [compat] SpaceAGORA in place") do
+            repin("package", repo; root=fixture.core)
+        end
+        @test read.(files, String) == before
+        # A path pin names no commit to move; a quoted rev key is not rewritten in place.
+        write(joinpath(repo, PIN_FILE), "path = \"../core\"\nuuid = \"$CORE_UUID\"\n")
+        refused_with("a path pin names a checkout") do
+            repin("package", repo; root=fixture.core)
+        end
+        write(joinpath(repo, PIN_FILE), "url = \"$CORE_URL\"\nuuid = \"$CORE_UUID\"\n\"rev\" = \"$old\"\n")
+        refused_with("could not rewrite rev and version in place") do
+            repin("package", repo; root=fixture.core)
+        end
+    end
+    text = "[deps]\nSpaceAGORA = \"u\"\n\n[ compat ]  # bounds\nSpaceAGORA = \"0.2\"\nrev = \"x\"\n"
+    @test replace_toml_string(text, "SpaceAGORA", "0.3"; table="compat") == replace(text, "\"0.2\"" => "\"0.3\"")
+    @test replace_toml_string(text, "rev", "y") === nothing
+    @test replace_toml_string("rev = \"x\" # pin\n", "rev", "y") == "rev = \"y\" # pin\n"
+end
+
 @testset "Summary and command line" begin
     mktempdir() do dir
         reports, environment = mkpath(joinpath(dir, "reports")), mkpath(joinpath(dir, "env"))
@@ -420,6 +497,7 @@ end
     @test options(["project", "r", "e", "--manifest=core", "--rev", "x"]) ==
           (["project", "r", "e"], Dict("manifest" => "core", "rev" => "x"))
     @test options(["check", "project", "r", "--core-from-caller"]) == (["check", "project", "r"], Dict("core-from-caller" => "true"))
+    @test options(["repin", "package", "r", "--rev", "x"]) == (["repin", "package", "r"], Dict("rev" => "x"))
     @test_throws ArgumentError options(["project", "r", "e", "--frozen", "x"])
     @test_throws ArgumentError options(["project", "r", "e", "--companions", "mujoco"])
     @test_throws ArgumentError options(["project", "--manifest"])

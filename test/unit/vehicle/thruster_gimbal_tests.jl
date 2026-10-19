@@ -176,6 +176,37 @@ engine(; location=(0.0, 0.0, -1.0)) = Thruster(max_thrust=2.0, direction=MVector
         @test thrust_direction(rjet) == thrust_direction(sjet)
     end
 
+    @testset "a resumed run turns a gimbal as a run in one piece, ticking at the checkpoints" begin
+        # Ticks every 0.5 s fall on the 1 s checkpoint boundaries and on the 3 s
+        # resume time, which the run that ended there did not tick at.
+        function turning_run(; mission_time, settings=(;))
+            sc, root = far_spacecraft()
+            jet = add_actuator!(sc, root, engine(location=(0.0, 0.0, 0.0)))
+            g = add_actuator!(sc, root, ThrusterGimbal(jet; axis=SVector(0.0, 1.0, 0.0), max_rate_rad_s=0.03))
+            base = make_example_config(planet=SM.Earth(), spacecraft=sc, mission_time=mission_time,
+                initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+                dynamic_effectors=(), ephemerides_model=SM.SimpleEphemeridesModel(), orientation_sim=true,
+                keplerian=false, EI_km=1.0, verbose=false, results=false)
+            st = base.simulation_settings
+            fields = NamedTuple{fieldnames(typeof(st))}(map(n -> getfield(st, n), fieldnames(typeof(st))))
+            args = SM.SimConfig._with_configuration(base; simulation_settings=SM.SimulationSettings(; merge(fields, settings)...),
+                control_model=SM.ControlModel(control_effectors=(HoldLevels([1.0, 0.2]),), control_rates=[0.5]))
+            run_simulation(args; isolate_state=false)
+            return g, jet
+        end
+        checkpointed(dir; kw...) = (checkpoint_enabled=true, checkpoint_interval_s=1.0, checkpoint_directory=dir, kw...)
+        straight, sjet = turning_run(mission_time=6.0)                                                     # in one piece
+        split, _ = turning_run(mission_time=6.0, settings=checkpointed(mktempdir()))
+        dir = mktempdir()
+        early, _ = turning_run(mission_time=3.0, settings=checkpointed(dir))
+        resumed, rjet = turning_run(mission_time=6.0, settings=checkpointed(dir; resume_from_checkpoint=true))
+        @test early.last_update_s == 2.5 && straight.last_update_s == 5.5
+        @test 0.0 < straight.angle_rad < 0.2                                                                 # still turning at the end
+        @test split.angle_rad == straight.angle_rad && split.last_update_s == straight.last_update_s
+        @test resumed.angle_rad == straight.angle_rad && resumed.last_update_s == straight.last_update_s
+        @test thrust_direction(rjet) == thrust_direction(sjet)
+    end
+
     @testset "a failed gimbal holds its angle" begin
         sc, root = far_spacecraft()
         jet = add_actuator!(sc, root, engine())

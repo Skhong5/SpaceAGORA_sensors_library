@@ -28,6 +28,11 @@ report order:
 - `custom_state_reset`: two runs with `isolate_state=false` on one configuration give
   the same measurements, so any state the sensor keeps beyond the engine's fields is
   reset by `initialize_sensor!`.
+- `checkpoint_round_trip` (added in 0.4.0, advisory in 0.4): the fixture run with a
+  checkpoint halfway, interrupted after it and resumed from the file, gives the
+  measurements of an uninterrupted run with the same checkpoints from halfway on, so
+  any state the sensor keeps beyond the engine's fields is in `checkpoint_state`.
+  Skipped when the fixture refuses checkpointed runs at setup.
 
 When the fixture cannot be built (`add_sensor!` refuses the sensor), the checks that
 need a run fail with its error. Every run deep-copies the fixture except the
@@ -41,7 +46,8 @@ function check_sensor(sensor; fixture::Union{Nothing, ConformanceFixture}=nothin
     built = fixture === nothing ? _built_fixture(() -> conformance_fixture(sensors=(sensor,))) : fixture
     if built isa Exception
         why = "the fixture could not be built: " * _summary(built)
-        rest = [_check(id, since, false, why) for id in CHECK_IDS.sensor[3:end]]
+        rest = [_check(id, id === :checkpoint_round_trip ? CHECKPOINT_ROUND_TRIP_SINCE : since, false, why)
+                for id in CHECK_IDS.sensor[3:end]]
         return ConformanceReport(string(nameof(typeof(sensor))), :sensor, [fields, requirements, rest...])
     end
     configuration = built.configuration
@@ -60,6 +66,10 @@ function check_sensor(sensor; fixture::Union{Nothing, ConformanceFixture}=nothin
     reused = deepcopy(configuration)
     first_reuse = run(reused; isolate_state=false)
     second_reuse = run(reused; isolate_state=false)
+    half = configuration.mission_configuration.mission_time / 2
+    round_trip = _checkpoint_round_trip_check((cfg, factories) -> run(cfg; factories).outcome,
+        (a, b) -> _run_difference(_measurements_from(a, half), _measurements_from(b, half); noun="measurement"),
+        sensor, configuration)
     # Last: this run uses the caller's objects.
     original = run(; isolate_state=false)
 
@@ -85,6 +95,7 @@ function check_sensor(sensor; fixture::Union{Nothing, ConformanceFixture}=nothin
         _check(:custom_state_reset, since, reset_gap === nothing,
             "two runs with isolate_state=false on one configuration differ: $(reset_gap); reset the state the " *
             "sensor keeps beyond the engine's fields in initialize_sensor!"),
+        round_trip,
     ]
     return ConformanceReport(string(nameof(typeof(sensor))), :sensor, checks)
 end
@@ -96,6 +107,13 @@ Run [`check_sensor`](@ref) and record its report with [`test_report`](@ref). Nee
 the `Test` standard library: `using Test` loads the method.
 """
 function test_sensor end
+
+# A run's measurements taken at `t_s` or later.
+function _measurements_from(outcome::_RunOutcome, t_s::Float64)
+    _failed(outcome) && return outcome
+    kept = findall(>=(t_s), outcome.solution.t)
+    return _RunOutcome((t=outcome.solution.t[kept], u=outcome.solution.u[kept]), nothing)
+end
 
 _built_fixture(build) = try
     build()
