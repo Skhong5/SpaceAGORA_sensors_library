@@ -62,7 +62,7 @@ end
 
 @testset "Include-Order + Name Ambiguity Smoke" begin
     sandbox = INCLUDE_ORDER_SANDBOX
-    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "models", "gnc", "interfaces", "simulation_lifecycle.jl"))
+    @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "models", "gnc", "contracts", "simulation_lifecycle.jl"))
     lifecycle = sandbox.SimulationLifecycle
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "interfaces", "analysis", "visualization", "visualizer_services.jl"))
     visualizer = sandbox.VisualizerServices
@@ -98,7 +98,7 @@ end
     spacecraft_model_src = read(joinpath(REPO_ROOT, "src", "models", "vehicle", "spacecraft", "model.jl"), String)
     legacy_model_codes_src = read(joinpath(REPO_ROOT, "src", "foundation", "core", "types", "compat_model_codes.jl"), String)
     runtime_types_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "state", "runtime_types.jl"), String)
-    command_types_src = read(joinpath(REPO_ROOT, "src", "models", "gnc", "command_types.jl"), String)
+    command_types_src = read(joinpath(REPO_ROOT, "src", "models", "gnc", "contracts", "command_types.jl"), String)
     engine_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "simulation_engine.jl"), String)
     engine_public_api_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "public_api.jl"), String)
     engine_execution_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "engine", "execution.jl"), String)
@@ -132,8 +132,8 @@ end
     @test occursin("using ..LegacyModelCodes:", runtime_types_src)
     @test occursin("using ..SpacecraftModels: SpacecraftModel", runtime_types_src)
     @test !occursin("@enum Legacy", runtime_types_src)
-    @test occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"command_types.jl\"))", simulation_model_src)
-    @test findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"command_types.jl\"))", simulation_model_src) <
+    @test occursin("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"contracts\", \"command_types.jl\"))", simulation_model_src)
+    @test findfirst("include(joinpath(@__DIR__, \"..\", \"..\", \"..\", \"models\", \"gnc\", \"contracts\", \"command_types.jl\"))", simulation_model_src) <
         findfirst("include(joinpath(@__DIR__, \"..\", \"state\", \"runtime_types.jl\"))", simulation_model_src)
     @test occursin("module CommandTypes", command_types_src)
     @test occursin("using ..CommandTypes: PropulsiveManeuverCommand", runtime_types_src)
@@ -178,11 +178,11 @@ end
     perturbation_effectors_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "force_torque_models", "perturbation_effectors.jl"), String)
     guidance_models_src = read(joinpath(REPO_ROOT, "src", "models", "dynamics", "effectors", "force_torque_models", "guidance_models.jl"), String)
     top_level_thruster_models_src = read(joinpath(REPO_ROOT, "src", "models", "vehicle", "actuators", "thruster_models_module.jl"), String)
-    top_level_guidance_models_src = read(joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "guidance_models.jl"), String)
+    top_level_guidance_models_src = read(joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "models.jl"), String)
     top_level_gravity_effectors_src = read(joinpath(REPO_ROOT, "src", "models", "environment", "gravity", "gravity_effectors.jl"), String)
-    command_types_src = read(joinpath(REPO_ROOT, "src", "models", "gnc", "command_types.jl"), String)
-    guidance_hooks_src = read(joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "guidance_hooks.jl"), String)
-    control_hooks_src = read(joinpath(REPO_ROOT, "src", "models", "gnc", "control", "control_hooks.jl"), String)
+    command_types_src = read(joinpath(REPO_ROOT, "src", "models", "gnc", "contracts", "command_types.jl"), String)
+    guidance_hooks_src = read(joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "hooks.jl"), String)
+    control_hooks_src = read(joinpath(REPO_ROOT, "src", "models", "gnc", "control", "hooks.jl"), String)
     callback_registry_src = read(joinpath(REPO_ROOT, "src", "orchestration", "simulation", "callbacks", "registry.jl"), String)
 
     for include_name in (
@@ -549,8 +549,8 @@ function ensure_guidance_sandbox_loaded!()
         return
     end
 
-    Core.eval(GUIDANCE_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "models", "gnc", "guidance", "thruster_guidance", "thruster_guidance_models.jl"))))
-    Core.eval(GUIDANCE_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "models", "gnc", "guidance", "thruster_guidance", "thruster_guidance_functions.jl"))))
+    Core.eval(GUIDANCE_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "models", "gnc", "guidance", "maneuvers", "thruster_guidance_models.jl"))))
+    Core.eval(GUIDANCE_SANDBOX, :(include(joinpath(Main.REPO_ROOT, "src", "models", "gnc", "guidance", "maneuvers", "thruster_guidance_functions.jl"))))
     GUIDANCE_SANDBOX_LOADED[] = true
 end
 

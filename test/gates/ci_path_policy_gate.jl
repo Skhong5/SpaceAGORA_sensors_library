@@ -102,7 +102,6 @@ const RETIRED_PATHS = (
     joinpath("src", "models", "gnc", "guidance", "aerobraking", "e_edg"),
     joinpath("src", "models", "gnc", "guidance", "aerobraking", "t_edg"),
     joinpath("src", "models", "gnc", "guidance", "aerobraking", "common"),
-    joinpath("src", "models", "gnc", "control", "aerobraking"),
     joinpath("src", "models", "gnc", "internal"),
     joinpath("src", "orchestration", "mission", "operations", "aerobraking_policy"),
     # browser rendering belongs to the optional SpaceAGORAVisualizer companion
@@ -116,6 +115,11 @@ const RETIRED_PATHS = (
     joinpath("src", "models", "gnc", "control", "bridge_helpers.jl"),
     joinpath("src", "models", "gnc", "guidance", "aerobraking", "interfaces.jl"),
     joinpath("src", "models", "gnc", "guidance", "aerobraking", "dispatcher.jl"),
+    # the older E-EDG/T-EDG control routes; control/aerobraking/ now holds the
+    # typed EDG control files
+    joinpath("src", "models", "gnc", "control", "aerobraking", "constraint_tracking.jl"),
+    joinpath("src", "models", "gnc", "control", "aerobraking", "control_commands.jl"),
+    joinpath("src", "models", "gnc", "control", "aerobraking", "tracking_executor.jl"),
     joinpath("src", "orchestration", "mission", "campaigns", "run.jl"),
     joinpath("src", "orchestration", "mission", "campaigns", "set_and_run.jl"),
     joinpath("src", "orchestration", "mission", "campaigns", "define_mission.jl"),

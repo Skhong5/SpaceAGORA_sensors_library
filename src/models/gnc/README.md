@@ -3,16 +3,20 @@
 This is a source-owner map, not a new Julia namespace hierarchy. Existing module,
 type and function identities remain stable, including qualified compatibility names.
 
+Guidance and control keep their models in the same application subfolders:
+`aerobraking/`, `landing/`, `maneuvers/` and `rpo/`, and control also
+`robot_arm/`, `attitude/` and `interlinks/`.
+
 | Directory | Responsibility |
 | --- | --- |
-| `guidance/` | Simulation guidance models and update hooks; aerobraking/EDG, landing and propulsive decisions. RPO hooks consume planned references. |
-| `control/` | Tracking controllers, held actuator commands and simulation effectors. The small typed EDG calculation files retain compatibility bindings. |
-| `navigation/` | Sensor/estimator extension hook. Historical `NavigationHooks` geometry identities load their implementations from `planning/rpo/geometry/`. |
-| `planning/rpo/` | Direct baseline, RPO geometry, reusable sampling/retiming/metrics, RRT and comparison planner kernels, and the neutral planner lifecycle. |
+| `contracts/` | The general GNC contract: command types, the algorithm contract and its simulation binding, the runtime declarations and the lifecycle hooks. These are domain contracts, not the top-level CLI/file-interface group. |
+| `guidance/` | Simulation guidance models (`models.jl`) and update hooks (`hooks.jl`): typed EDG in `aerobraking/`, Apollo descent in `landing/`, thruster guidance in `maneuvers/`, and in `rpo/` the hooks that consume planned references. |
+| `control/` | Tracking controllers, held actuator commands and simulation effectors (`hooks.jl`): EDG heat accounting, targeting and the compatibility bindings of the small typed EDG calculation files in `aerobraking/`, Apollo descent in `landing/`, propulsive maneuvers and the burn-plan family in `maneuvers/`, LQ-MPC in `rpo/`, the arm controller in `robot_arm/`, the magnetic momentum manager in `attitude/`, interlink scheduling in `interlinks/`. |
+| `navigation/` | Sensor/estimator extension hook (`hooks.jl`). Historical `NavigationHooks` geometry identities load their implementations from `planning/rpo/geometry/`. |
+| `planning/rpo/` | The RPO planner contract (`contract/`), direct baseline, RPO geometry, reusable sampling/retiming/metrics, RRT and comparison planner kernels, and the neutral planner lifecycle. |
 | `planning/robot_arm/` | Quintic joint-space references and reusable arm path geometry. Vehicle construction and physical dynamics have separate owners. |
 | `planning/common/` | Path geometry and RRT tree operations shared by RPO and robot-arm planning. |
-| `planning/adapters/hypr/` | Core-owned HYPR configuration, availability and versioned services, compatibility entry points and simulation integration. HYPR search execution remains in the external HYPR repository. |
-| `interfaces/` | Planner request/result/validation contracts and simulation lifecycle extension points. These are domain contracts, not the top-level CLI/file-interface group. |
+| `companions/` | Core-owned adapters of the optional companion packages. `edg/`: the `EDGServices` facade of SpaceAGORAEDG. `hypr/`: HYPR configuration, availability and versioned services, compatibility entry points and simulation integration; HYPR search execution remains in the external HYPR repository. |
 
 Completed planner-comparison CSVs and plots are implemented in
 `src/interfaces/analysis/planning/rpo_comparison_reports.jl`, inside the internal
@@ -30,7 +34,7 @@ the companion. The older E-EDG/T-EDG strategy routes were removed; the companion
 the only EDG implementation. See the [EDG package boundary](../../../docs/src/reference/edg_adapter_boundary.md)
 for ownership and supported calls.
 
-Interlink scoring and terminal matching live in `control/interlink_scheduling.jl`.
+Interlink scoring and terminal matching live in `control/interlinks/interlink_scheduling.jl`.
 They choose actuation from a candidate
 graph; the graph and terminal metadata belong to vehicle models. Accepted-step
 callback lifecycle belongs to simulation orchestration, and the central laser

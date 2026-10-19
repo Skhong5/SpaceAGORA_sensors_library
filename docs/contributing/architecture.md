@@ -154,13 +154,13 @@ The source-owner table below distinguishes vehicle construction from dynamics.
 Robot hardware belongs to `src/models/vehicle/robotics/`, compliant equations to
 `src/models/dynamics/multibody/compliant/`, reference planning to
 `src/models/gnc/planning/robot_arm/`, and tracking control to
-`src/models/gnc/control/robot_arm_control.jl`. HYPR robot-arm
+`src/models/gnc/control/robot_arm/robot_arm_control.jl`. HYPR robot-arm
 search is implemented in the separate [HYPR.jl repository](https://github.com/Space-FALCON-Lab/HYPR.jl),
 under its `ext/robot/` adapter files. SpaceAGORA retains configuration types,
 shared kinematics and dynamics, and compatibility entry points. The
 [versioned HYPR service contract](../src/reference/hypr_services.md) defines the
 services this adapter may use. Core-owned configuration and adapter services
-live under `src/models/gnc/planning/adapters/hypr/`; this folder does not contain
+live under `src/models/gnc/companions/hypr/`; this folder does not contain
 the external search implementation.
 
 Use a joint simulation when spacecraft interact. The independent
@@ -230,17 +230,22 @@ the file that performs each step.
    These source boundaries do not introduce new evaluations or equations. The
    hook contract is on the [Extensibility](../src/extensibility.md) page.
 6. **Guidance, navigation and control.** The hooks are three modules:
-   `src/models/gnc/guidance/guidance_hooks.jl`,
-   `src/models/gnc/navigation/navigation_hooks.jl`
-   and `src/models/gnc/control/control_hooks.jl`.
-   Planner contracts live under `src/models/gnc/interfaces/`. The
-   `src/models/gnc/planning/` tree groups RPO geometry, planning and lifecycle in
-   `rpo/`, robot-arm references in `robot_arm/`, shared path and tree operations
-   in `common/`, and core-owned adapter services in `adapters/`. Navigation's
-   extension hook remains in `navigation/`; reference and collision geometry
-   lives in `planning/rpo/geometry/`, retaining its historical `NavigationHooks`
-   bindings. That geometry is not itself a sensor or estimator. Guidance and
-   control models remain in their respective folders. Core typed EDG models,
+   `src/models/gnc/guidance/hooks.jl`,
+   `src/models/gnc/navigation/hooks.jl`
+   and `src/models/gnc/control/hooks.jl`.
+   The general GNC contract (command types, the algorithm contract and its
+   simulation binding, the runtime declarations and the lifecycle hooks) lives in
+   `src/models/gnc/contracts/`. Guidance and control group their models by
+   application in the same subfolders (`aerobraking/`, `landing/`, `maneuvers/`,
+   `rpo/`; control also `robot_arm/`, `attitude/` and `interlinks/`). The
+   `src/models/gnc/planning/` tree groups the RPO planner contract, geometry,
+   planning and lifecycle in `rpo/`, robot-arm references in `robot_arm/`, and
+   shared path and tree operations in `common/`; the core-owned adapters of the
+   optional companions are in `companions/edg/` and `companions/hypr/`.
+   Navigation's extension hook remains in `navigation/`; reference and collision
+   geometry lives in `planning/rpo/geometry/`, retaining its historical
+   `NavigationHooks` bindings. That geometry is not itself a sensor or estimator.
+   Core typed EDG models,
    services and compatibility bindings live in `guidance/aerobraking/typed_edg/`;
    the optional SpaceAGORAEDG companion owns the numerical kernels and is the
    only EDG implementation. Configured HYPR
@@ -326,13 +331,13 @@ are relative to the directory in the first column.
 | `src/models/vehicle/` | Spacecraft components and assembly, structure and mass properties, mesh readers, actuators, thermal models, kinematics and robotics | vehicle boundary per the [topology contract](../architecture/canonical_topology_contract.md): `spacecraft/` composes, `structure/` computes mass, inertia and geometry, `actuators/actuators.jl` owns the actuator contract, `actuators/mounting.jl` mounting, one file per actuator kind beside them |
 | `src/models/environment/` | Planets and ephemerides, atmosphere models and presets, gravity fields and terrain grids | density sampling: `atmosphere/density_models.jl`; terrain queries: `terrain/terrain_models.jl` |
 | `src/models/dynamics/` | Translational and rotational equations, force and torque effectors under `effectors/`, compliant and articulated multibody dynamics under `multibody/` | effector evaluation: `effectors/force_torque_models.jl`; gravity adapters: `effectors/gravity/`; other perturbations: `effectors/perturbations/`; articulated solver: `multibody/articulated_body.jl` |
-| `src/models/gnc/` | Guidance, navigation and control hooks, planner contracts and lifecycle, shared calculations, baseline algorithms and HYPR compatibility types | the three hook files named above; planner contracts: `interfaces/`; planning and lifecycle: `planning/rpo/`; arm references: `planning/robot_arm/`; shared kernels: `planning/common/`; optional-adapter services: `planning/adapters/`; typed EDG: `guidance/aerobraking/typed_edg/` and `guidance/aerobraking/energy_depletion_lifecycle.jl`, with its control lifecycle, passage heat accounting and targeting in `control/energy_depletion_lifecycle.jl`, `control/edg_heat_accounting.jl` and `control/targeting_control.jl` |
+| `src/models/gnc/` | Guidance, navigation and control hooks, planner contracts and lifecycle, shared calculations, baseline algorithms and HYPR compatibility types | the three hook files named above; the general contract: `contracts/`; the RPO planner contract, planning and lifecycle: `planning/rpo/`; arm references: `planning/robot_arm/`; shared kernels: `planning/common/`; optional-companion adapters: `companions/`; typed EDG: `guidance/aerobraking/typed_edg/` and `guidance/aerobraking/energy_depletion_lifecycle.jl`, with its control lifecycle, passage heat accounting and targeting in `control/aerobraking/` |
 | `src/foundation/core/` | Abstract types and shared model contracts, reference frames, geodesy, orbital geometry and quaternions | frames: `interfaces/reference_system.jl`; shared geometry: `numerics/geodesy.jl` and `numerics/orbital_geometry.jl`; canonical quaternions: `numerics/quaternion_utils.jl`; robotics/compliant orientation policy: `numerics/orientation_quaternion_utils.jl`; run buffers and composition belong to simulation orchestration |
 | `src/foundation/assets/` | Manifest lookup and availability checks, RPO station assets and the Odyssey surrogate | reusable manifest records and local checks: `asset_catalog.jl`; CLI report types and presentation remain in the CLI; see [Assets & Modes](../src/assets.md) |
 | `ext/` | Optional package connections for GRAMSuite, the visualizer and EDG | Each extension activates when its package pair is loaded; see [GRAMSuite Setup](../src/user/gramsuite_setup.md) and the [optional adapter standard](../src/reference/adapter_contract.md). |
 | `packages/robotics/` | Pinned submodules for HYPR and SpaceAGORAMuJoCo; each remains an independently maintained repository | `scripts/optional_packages.jl` selects and verifies source, then delegates to its installer; see [Optional package commands](../src/user/installation_environment.md#optional-package-commands). |
 | `packages/gnc/` | Optional guidance-domain packages, including experimental SpaceAGORAEDG | The companion owns numerical kernels; core retains model types, lifecycle and physics through [EDGServices](../src/reference/edg_adapter_boundary.md). |
-| `packages/SpaceAGORAHYPR/` | Compatibility package and source pin for external HYPR | `src/SpaceAGORAHYPR.jl` checks and aliases the external adapter; `HYPRSource.toml` pins its revision. Core services are defined in `src/models/gnc/planning/adapters/hypr/services.jl`. Install and load with the [RPO planner guide](../src/user/rpo_planner_pilot.md#installing-optional-hypr). |
+| `packages/SpaceAGORAHYPR/` | Compatibility package and source pin for external HYPR | `src/SpaceAGORAHYPR.jl` checks and aliases the external adapter; `HYPRSource.toml` pins its revision. Core services are defined in `src/models/gnc/companions/hypr/services.jl`. Install and load with the [RPO planner guide](../src/user/rpo_planner_pilot.md#installing-optional-hypr). |
 | `examples/` | Runnable scenarios; `common.jl` is the shared bootstrap | primary scenario entrypoints; development viewer demos also live in `scripts/dev/viewer_demos/`; see the [Examples Catalog](../src/user/examples_catalog.md) |
 | `templates/` | Starting files for a force/torque model, a density model and a control hook | copy one of these to begin an extension |
 | `test/` | Unit, integration, smoke and stress suites; companion suites under `test/optional/{hypr,edg,visualizer}/`; workflow entry points under `test/smoke/`; fixtures under `test/fixtures/`; CI gates under `test/gates/`, contract checks under `test/contracts/`, review artifacts under `test/ai_reviews/` | the gates enforce the ownership rules on this page |
@@ -390,7 +395,7 @@ and result types, geometry, metrics, RRT and retiming services, and compatibilit
 entry points. `SpaceAGORA.HYPRServices` exposes the adapter contract without
 changing the original owners of those bindings. Only the explicitly listed
 services and extension points are supported; arbitrary internal-module access is
-not the integration API. The current supported pair is SpaceAGORA 0.3.1 with
+not the integration API. The current supported pair is SpaceAGORA 0.4.0 with
 HYPR 0.3.0, service contract 2.0.0 and compatibility package 0.2.0. Install the
 pinned pair and explicitly load `SpaceAGORAHYPR` using the
 [RPO planner guide](../src/user/rpo_planner_pilot.md#installing-optional-hypr).

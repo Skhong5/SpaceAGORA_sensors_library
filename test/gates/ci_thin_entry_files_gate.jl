@@ -4,7 +4,7 @@ const THIN_ENTRY_PATHS = [
     joinpath("src", "models", "dynamics", "effectors", "perturbations.jl"),
     joinpath("src", "models", "environment", "gravity", "gravity_models.jl"),
     joinpath("src", "interfaces", "analysis", "verification", "telemetry_verification.jl"),
-    joinpath("src", "models", "gnc", "guidance", "guidance_models.jl"),
+    joinpath("src", "models", "gnc", "guidance", "models.jl"),
     joinpath("src", "orchestration", "parallel", "policy", "parallel_policy.jl"),
     joinpath("src", "orchestration", "simulation", "callbacks", "density_callbacks.jl"),
     joinpath("src", "orchestration", "simulation", "callbacks", "gram_track_cache.jl"),

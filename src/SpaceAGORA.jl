@@ -4,10 +4,10 @@ module SpaceAGORA
 
 ## 1. Include package modules
 # Internal contract only; runtime guidance still uses its existing path.
-include(joinpath(@__DIR__, "models", "gnc", "interfaces", "gnc_algorithms.jl"))
-include(joinpath(@__DIR__, "models", "gnc", "interfaces", "rpo_planner.jl"))
-include(joinpath(@__DIR__, "models", "gnc", "interfaces", "gnc_runtime.jl"))
-include(joinpath(@__DIR__, "models", "gnc", "interfaces", "simulation_lifecycle.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "contracts", "gnc_algorithms.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "contract", "rpo_planner.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "contracts", "gnc_runtime.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "contracts", "simulation_lifecycle.jl"))
 include(joinpath(@__DIR__, "orchestration", "parallel", "routing", "parallel_profiles.jl"))
 include(joinpath(@__DIR__, "orchestration", "parallel", "process", "parallel_process.jl"))
 include(joinpath(@__DIR__, "interfaces", "analysis", "visualization", "visualizer_services.jl"))
@@ -15,14 +15,14 @@ include(joinpath(@__DIR__, "orchestration", "simulation", "runtime_services.jl")
 include(joinpath(@__DIR__, "orchestration", "simulation", "callback_services.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "composition", "simulation_model.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "direct_planner.jl"))
-include(joinpath(@__DIR__, "models", "gnc", "planning", "adapters", "hypr", "rpo_planner_adapter.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "companions", "hypr", "rpo_planner_adapter.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "comparison", "planner_contract.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "lifecycle.jl"))
-include(joinpath(@__DIR__, "models", "gnc", "planning", "algorithm_lifecycle.jl"))
-include(joinpath(@__DIR__, "models", "gnc", "control", "burn_planning.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "contracts", "algorithm_lifecycle.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "control", "maneuvers", "burn_planning.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "robot_arm", "joint_reference_family.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "guidance", "aerobraking", "edg_guidance_family.jl"))
-include(joinpath(@__DIR__, "models", "gnc", "planning", "adapters", "hypr", "services.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "companions", "hypr", "services.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "engine", "simulation_engine.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "campaigns", "simulation_campaigns.jl"))
 include(joinpath(@__DIR__, "orchestration", "mission", "mission_workflow.jl"))
@@ -34,7 +34,7 @@ include(joinpath(@__DIR__, "foundation", "assets", "asset_catalog.jl"))
 include(joinpath(@__DIR__, "interfaces", "cli", "spaceagora_cli.jl"))
 include(joinpath(@__DIR__, "orchestration", "simulation", "external_propagation_services.jl"))
 public ExternalPropagationServices
-include(joinpath(@__DIR__, "models", "gnc", "guidance", "adapters", "edg", "services.jl"))
+include(joinpath(@__DIR__, "models", "gnc", "companions", "edg", "services.jl"))
 public EDGServices
 include(joinpath(@__DIR__, "interfaces", "analysis", "conformance", "conformance.jl"))
 public Conformance
@@ -105,7 +105,7 @@ export force_on_endpoint, laser_force_on_spacecraft
 @doc (@doc SimulationModel.ExampleConfiguration.make_example_config) make_example_config
 @doc (@doc SimulationModel.ExampleConfiguration.make_three_body_spacecraft) make_three_body_spacecraft
 @doc """Dynamics model of a run: the spacecraft list and the tuple of force/torque effectors, `DynamicsModel([spacecraft], effectors)`.""" DynamicsModel
-@doc """Initial orbit of a spacecraft from Keplerian elements (`ra`, `rp`, `i`, `ω`, `Ω`, `ν`).""" InitialCondition
+@doc """Initial orbit of a spacecraft from Keplerian elements (`ra`, `rp`, `i`, `ω`, `Ω`, `ν`), with an optional initial attitude `q` (x, y, z, w, inertial to body) and body rate `ang_vel` (rad/s), each any vector or tuple of 4 or 3 numbers.""" InitialCondition
 @doc """Complete one-run scenario: simulation settings, mission configuration, environment, dynamics, guidance, navigation and control models, initial time, and integration tolerances. Pass it to `run_simulation`.""" SimulationConfiguration
 @doc """Mission length and bookkeeping: `mission_type` (`MissionTime` or `MissionOrbits`), `mission_time`, `number_of_orbits`, `keplerian`, `orientation_sim`, and `num_steps_to_save`.""" MissionConfiguration
 @doc """Enum selecting how a mission ends: `MissionTime` (fixed duration) or `MissionOrbits` (fixed orbit count).""" MissionType
@@ -118,7 +118,7 @@ export force_on_endpoint, laser_force_on_spacecraft
 @doc """Multi-link spacecraft: joints, links, root link, mass properties, propellant mass, initial condition, and id. Build the links with `Link` and `Joint`, or use `make_three_body_spacecraft`.""" SpacecraftModel
 @doc """One rigid body of a `SpacecraftModel`: mass, dimensions, reference area, offset `r`, attitude `q`, and reflection coefficient. Exported at the root; note that other packages may also export a `Link` name.""" Link
 @doc """Articulated connection between two `Link`s of a `SpacecraftModel`. Exported at the root; note that other packages may also export a `Joint` name.""" Joint
-@doc """Initial spacecraft state given as a Cartesian position and velocity.""" CartesianInitialCondition
+@doc """Initial spacecraft state given as a Cartesian position and velocity, with an optional initial attitude `q` (x, y, z, w, inertial to body) and body rate `ang_vel` (rad/s), each any vector or tuple of 4 or 3 numbers.""" CartesianInitialCondition
 @doc """Epoch at which a simulation starts (calendar date and time).""" InitialTime
 @doc """ODE solver tolerances and maximum step sizes for the orbit and atmosphere phases (`reltol_*`, `abstol_*`, `dt_max_*`).""" IntegrationTolerances
 @doc """Declaration of one quantity written to the saved results.""" SaveField

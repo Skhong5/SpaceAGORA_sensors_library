@@ -5,7 +5,8 @@ using Test
     # Include a nested owner so the fixtures also enforce recursive scanning.
     owner_paths = (
         joinpath("src", "models", "gnc", "planning", "common"),
-        joinpath("src", "models", "gnc", "planning", "adapters", "hypr"),
+        joinpath("src", "models", "gnc", "companions", "hypr"),
+        joinpath("src", "models", "gnc", "companions", "edg"),
         joinpath("src", "models", "gnc", "planning", "rpo"),
         joinpath("src", "models", "gnc", "planning", "robot_arm"),
         joinpath("src", "models", "gnc", "planning", "rpo", "nested_probe"),
@@ -28,16 +29,16 @@ using Test
     # Only copy the small source files required by these gates. Each fixture is
     # isolated, so a forbidden source file never enters the working checkout.
     required = (
-        "src/models/gnc/command_types.jl",
-        "src/models/gnc/guidance/guidance_hooks.jl",
-        "src/models/gnc/guidance/thruster_guidance/thruster_guidance_functions.jl",
-        "src/models/gnc/control/control_hooks.jl",
-        "src/models/gnc/control/propulsive_maneuvers.jl",
+        "src/models/gnc/contracts/command_types.jl",
+        "src/models/gnc/guidance/hooks.jl",
+        "src/models/gnc/guidance/maneuvers/thruster_guidance_functions.jl",
+        "src/models/gnc/control/hooks.jl",
+        "src/models/gnc/control/maneuvers/propulsive_maneuvers.jl",
         # The aerobraking gate also verifies the complete typed EDG owner.
         "src/models/gnc/guidance/aerobraking/typed_edg/algorithms.jl",
         "src/models/gnc/guidance/aerobraking/typed_edg/services.jl",
         "src/models/gnc/guidance/aerobraking/typed_edg/adapter_queries.jl",
-        "src/models/gnc/guidance/adapters/edg/services.jl",
+        "src/models/gnc/companions/edg/services.jl",
     )
     mktempdir() do fixture
         for rel in required
@@ -56,6 +57,7 @@ using Test
             joinpath("src", "models", "environment"),
             joinpath("src", "models", "gnc", "control"),
             joinpath("src", "models", "gnc", "guidance"),
+            joinpath("src", "models", "gnc", "contracts"),
             joinpath("src", "orchestration", "simulation", "engine"),
             joinpath("src", "orchestration", "simulation", "callbacks"),
             joinpath("src", "orchestration", "parallel"),
