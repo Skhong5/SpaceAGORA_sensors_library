@@ -256,6 +256,13 @@ end
 end
 
 using DiffEqCallbacks: PresetTimeCallback
+# A guidance that is not a planner, on the plan buffer it shares with the
+# controller: it writes no plan, so the controller tracks what the test installs.
+struct SharedBufferGuidance <: SpaceAGORA.AbstractGuidanceModel
+    plan_buffer::S.RPOPlanBuffer
+end
+SpaceAGORA.update_guidance!(::SharedBufferGuidance, u, p, t::Float64, spacecraft_index::Int) = nothing
+SpaceAGORA.gnc_links(g::SharedBufferGuidance) = (SpaceAGORA.Produces(g.plan_buffer),)
 @testset "Matched legacy HYPR references and propagated control" begin
     for (mode,adaptive,forced) in ((:legacy,false,false),(:manuscript,false,false),(:legacy,true,true))
         cfg=rpo_pso_config(RPOPublicPilot.hypr().config;hypr_mode=mode,adaptive_enable=adaptive)
@@ -283,7 +290,7 @@ using DiffEqCallbacks: PresetTimeCallback
         legacy=deepcopy(args)
         control=only(legacy.control_model.control_effectors)
         S.update_rpo_plan_buffer!(control.plan_buffer,plans[1],0.)
-        guide=S.RPOGuidanceModel(chaser_idx=1,target_idx=2,plan_buffer=control.plan_buffer)
+        guide=SharedBufferGuidance(control.plan_buffer)
         legacy=S.SimConfig._with_configuration(legacy;guidance_model=S.GuidanceModel(
             guidance_effectors=(guide,),guidance_rates=[.1]))
         callback=PresetTimeCallback([.1],integ->begin

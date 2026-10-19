@@ -1,30 +1,11 @@
 # The index fields renamed to `spacecraft_index`, `chaser_index` and
-# `target_index`: the old keywords and properties forward with one deprecation
-# warning per type and name, and the engine's index-field checks read the new
-# names.
+# `target_index` in 0.3.0 (0.3.1 for `RobotArmReactionEffector`): the old keywords
+# and properties were removed in 0.5.0, and the engine's index-field checks read
+# the new names.
 module IndexFieldRenameTests
-using Test, Logging, StaticArrays, SpaceAGORA
+using Test, StaticArrays, SpaceAGORA
 const SM = SpaceAGORA.SimulationModel
 const SE = SpaceAGORA.SimulationEngine
-
-# Deprecation messages that `f` logs, or the one it throws under --depwarn=error.
-function rename_warnings(f)
-    is_rename(msg) = occursin("is deprecated and will be removed in SpaceAGORA 0.5.0", msg)
-    if Base.JLOptions().depwarn == 2
-        try
-            f()
-            return String[]
-        catch e
-            msg = sprint(showerror, e)
-            is_rename(msg) || rethrow()
-            return [msg]
-        end
-    end
-    logger = Test.TestLogger(min_level=Logging.Warn)
-    with_logger(f, logger)
-    @test all(l -> l.group === :depwarn, logger.logs)
-    return filter(is_rename, [string(l.message) for l in logger.logs])
-end
 
 # A contributor model whose index field keeps the older name.
 struct ContributorIndexEffector
@@ -40,51 +21,23 @@ const RENAMES = [
     (SM.RPOMPCControlModel, :target_idx, :target_index, 4),
 ]
 
-@testset "GNC index field renames" begin
-    @testset "$(nameof(T)).$(old) forwards to $(new)" for (T, old, new, value) in RENAMES
+@testset "GNC index field names" begin
+    @testset "$(nameof(T)) has $(new) and no longer $(old)" for (T, old, new, value) in RENAMES
         @test new in fieldnames(T) && !(old in fieldnames(T))
-        @test !hasproperty(T(), old)                          # engine checks never see the old name
         m = T(; (new => value,)...)
-        @test getfield(m, new) == value
-        @test isempty(rename_warnings(() -> T(; (new => value,)...)))
-        # The old keyword: one warning, the same value.
-        warned = rename_warnings(() -> T(; (old => value,)...))
-        @test length(warned) == 1 && occursin("$(nameof(T)).$(old)", only(warned)) && occursin("use $(new)", only(warned))
-        if Base.JLOptions().depwarn != 2
-            logger = Test.TestLogger(min_level=Logging.Warn)
-            built = with_logger(() -> (T(; (old => value,)...), T(; (old => value,)...)), logger)
-            @test all(b -> getfield(b, new) == value, built)
-            @test length(logger.logs) == 1                     # once per type and name
-            # The old property reads and writes the new field.
-            logger = Test.TestLogger(min_level=Logging.Warn)
-            with_logger(logger) do
-                @test getproperty(m, old) == value
-                setproperty!(m, old, value + 1)
-            end
-            @test getfield(m, new) == value + 1
-            @test length(logger.logs) == 1 && logger.logs[1].group === :depwarn
-        else
-            # Under --depwarn=error the old property refuses, for reads and writes.
-            @test_throws ErrorException getproperty(m, old)
-            @test_throws ErrorException setproperty!(m, old, value + 1)
-            @test getfield(m, new) == value
-        end
-        @test_throws ArgumentError T(; (old => value, new => value)...)
+        @test getfield(m, new) == getproperty(m, new) == value
+        # The old keyword and property are gone: no forwarding, no warning.
+        @test_throws MethodError T(; (old => value,)...)
+        @test !hasproperty(m, old)
+        @test_throws FieldError getproperty(m, old)
+        @test_throws FieldError setproperty!(m, old, value + 1)
+        setproperty!(m, new, value + 1)
+        @test getfield(m, new) == value + 1
     end
 
-    @testset "an explicit nothing is refused, as before the rename" begin
+    @testset "an explicit nothing is refused" begin
         for (T, old, new, value) in RENAMES
             @test_throws MethodError T(; (new => nothing,)...)        # the Int field refuses it
-            if Base.JLOptions().depwarn == 2
-                @test_throws ErrorException T(; (old => nothing,)...)  # the old name's warning refuses first
-            else
-                with_logger(Test.TestLogger()) do
-                    @test_throws MethodError T(; (old => nothing,)...)
-                end
-            end
-            # Both names are refused whichever of them is nothing.
-            @test_throws ArgumentError T(; (old => value, new => nothing)...)
-            @test_throws ArgumentError T(; (old => nothing, new => value)...)
         end
     end
 
@@ -118,30 +71,25 @@ const RENAMES = [
         rpo = make_rpo_configuration(planner=DirectRPOPlanner(), mission_time_s=0.2)
         planner = only(rpo.guidance_model.guidance_effectors)
         @test (planner.chaser_index, planner.target_index) == (1, 2)
-        @test isempty(rename_warnings(() -> make_rpo_configuration(planner=DirectRPOPlanner(), mission_time_s=0.2)))
         fields = Dict(name => getfield(planner, name) for name in fieldnames(typeof(planner)))
         kwargs = Dict(k => v for (k, v) in fields if !(k in (:chaser_index, :target_index)))
         T = typeof(planner)
-        @test length(rename_warnings(() -> T(; kwargs..., chaser_idx=1, target_index=2))) == 1
-        if Base.JLOptions().depwarn != 2
-            old = with_logger(() -> T(; kwargs..., chaser_idx=1, target_idx=2), Test.TestLogger())
-            @test (old.chaser_index, old.target_index) == (1, 2)
-        end
+        built = T(; kwargs..., chaser_index=1, target_index=2)
+        @test (built.chaser_index, built.target_index) == (1, 2)
+        @test !(:chaser_idx in fieldnames(T)) && !(:target_idx in fieldnames(T))
+        # An old keyword is unsupported, and no longer stands in for the new one.
+        @test_throws MethodError T(; kwargs..., chaser_index=1, target_index=2, chaser_idx=1)
+        @test_throws MethodError T(; kwargs..., chaser_index=1, target_index=2, target_idx=2)
+        @test_throws UndefKeywordError T(; kwargs..., chaser_idx=1, target_index=2)
         @test_throws UndefKeywordError T(; kwargs..., target_index=2)
         @test_throws MethodError T(; kwargs..., chaser_index=nothing, target_index=2)
-        @test_throws ArgumentError T(; kwargs..., chaser_idx=1, chaser_index=nothing, target_index=2)
-        @test_throws ArgumentError T(; kwargs..., chaser_idx=nothing, chaser_index=1, target_index=2)
-        if Base.JLOptions().depwarn != 2
-            logger = Test.TestLogger(min_level=Logging.Warn)
-            with_logger(() -> (@test planner.chaser_idx == 1), logger)
-            @test length(logger.logs) == 1
-        end
+        @test !hasproperty(planner, :chaser_idx)
+        @test_throws FieldError planner.chaser_idx
     end
 
     @testset "the engine reads the new names" begin
         @test SE._effector_couples_satellites(SM.RPOMPCControlModel(chaser_index=1, target_index=2))
         @test !SE._effector_couples_satellites(SM.RPOMPCControlModel(chaser_index=2, target_index=2))
-        @test SE._effector_couples_satellites(SM.RPOGuidanceModel(chaser_idx=1, target_idx=2))   # not renamed
         @test SE._control_effector_targets_owned(SM.MagneticMomentumManagerModel(spacecraft_index=2), [2])
         @test !SE._control_effector_targets_owned(SM.MagneticMomentumManagerModel(spacecraft_index=2), [1])
         @test !SE._control_effector_targets_owned(SM.RPOMPCControlModel(chaser_index=1, target_index=2), [2])
@@ -149,8 +97,6 @@ const RENAMES = [
         reaction = SM.RobotArmReactionEffector(spacecraft_index=2)
         @test SE._effector_spacecraft_index(reaction) == 2
         @test SE._control_effector_targets_owned(reaction, [2]) && !SE._control_effector_targets_owned(reaction, [1])
-        @test isempty(rename_warnings(() -> (SE._effector_spacecraft_index(reaction),
-            SE._control_effector_targets_owned(reaction, [2]))))
         # A contributor model that still has the older field is still read.
         legacy = ContributorIndexEffector(2)
         @test SE._effector_spacecraft_index(legacy) == 2

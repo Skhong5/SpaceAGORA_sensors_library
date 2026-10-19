@@ -35,13 +35,13 @@ SpaceAGORA.actuator_consumption(n::ExampleColdGasNozzle, level, ctx) =
 #    actuator of its spacecraft, updated at each control tick. It writes no
 #    force, mass-flow or firing-level hook; the engine derives them.
 mutable struct ExampleNozzleController <: SpaceAGORA.AbstractControlEffectorModel
-    sat_idx::Int
+    spacecraft_index::Int
     levels::Vector{Float64}
 end
 
 SpaceAGORA.actuation_mode(::ExampleNozzleController) = :mounted
 SpaceAGORA.actuator_levels(c::ExampleNozzleController, spacecraft_index::Int) =
-    spacecraft_index == c.sat_idx ? c.levels : nothing
+    spacecraft_index == c.spacecraft_index ? c.levels : nothing
 
 function SpaceAGORA.update_control!(c::ExampleNozzleController, u, p, t::Float64, spacecraft_index::Int)
     # Compute and store the levels here (they are held until the next tick).

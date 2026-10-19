@@ -228,8 +228,6 @@ deactivate(i, t_s) = PresetTimeCallback([t_s], integrator -> (integrator.p.is_ac
         binding = AlgorithmGuidance(algorithm=ApoapsisBurnPlanner(delta_v_mps=1.0), spacecraft_index=2)
         @test spacecraft_scope(binding) == BoundSpacecraft((2,)) && !skip_inactive(binding)
 
-        legacy = SM.RPOGuidanceModel(chaser_idx=1, target_idx=2)
-        @test spacecraft_scope(legacy) == CoupledSpacecraft(1, (2,))
         rpo = make_rpo_configuration(planner=DirectRPOPlanner(), mission_time_s=0.2)
         planner, control = only(rpo.guidance_model.guidance_effectors), only(rpo.control_model.control_effectors)
         @test spacecraft_scope(planner) == spacecraft_scope(control) == CoupledSpacecraft(1, (2,))

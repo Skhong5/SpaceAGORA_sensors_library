@@ -6,8 +6,8 @@ using LinearAlgebra: Diagonal, I
     RPOReplanningSpheres(config::GuidanceHooks.RPOReplanningConfig)
 
 A geometry provider (`AbstractRPOGeometryProvider`) for spherical obstacles that
-appear and disappear during a run: the planner-path form of `RPOGuidanceModel`'s
-replanning spheres, built with the same functions. Each sphere is a
+appear and disappear during a run, built with `rpo_active_replanning_spheres` and
+`rpo_geometry_with_replanning_spheres`. Each sphere is a
 `GuidanceHooks.RPOReplanningSphere` or a named tuple with `center_rtn` (m) and
 `radius_m`, and optionally `appear_time_s`, `disappear_time_s` (s),
 `velocity_rtn_mps` and `label`. A sphere is active from its appearance until
@@ -17,7 +17,7 @@ cloud. The revision is the base revision, then `+spheres:` and the active sphere
 positions in `spheres`; while an active sphere moves, the snapshot time follows
 `@`, so each time has its own revision. With no active sphere it is the base
 revision and geometry. The second form uses the spheres, surface samples and
-observation window of an existing legacy replanning configuration.
+observation window of an existing `RPOReplanningConfig`.
 """
 struct RPOReplanningSpheres <: P.AbstractRPOGeometryProvider
     config::S.GuidanceHooks.RPOReplanningConfig

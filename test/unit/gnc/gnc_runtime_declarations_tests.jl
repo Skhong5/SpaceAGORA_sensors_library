@@ -263,8 +263,8 @@ SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
         thruster = SM.BaseThrusterModel(thrust=[0.0], direction=[0.0], Δv=[0.0], start_burn_time=[0.0],
             stop_burn_time=[0.0], Isp=[300.0])
         @test tick_schedule(thruster) === :event_driven
-        @test !SM.SimulationCallbacks.control_requires_periodic_callback(thruster)
-        @test SM.SimulationCallbacks.control_requires_periodic_callback(ClockedControl())
+        @test tick_schedule(ClockedControl()) === :periodic
+        @test !isdefined(SM.SimulationCallbacks, :control_requires_periodic_callback)   # removed in 0.5.0
         # Its schedule callback and its burn-edge callback; no mounted tick in :ideal actuation.
         @test length(gnc_callbacks(thruster, 1, runtime_args((thruster,)), 0.5)) == 2
         own(f, T) = which(f, T).module !== SpaceAGORA.GNCRuntime

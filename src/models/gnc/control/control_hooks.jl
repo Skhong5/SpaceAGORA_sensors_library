@@ -2,7 +2,6 @@ module ControlHooks
     import ...SimulationLifecycle
     import ...GNCRuntime
     using ...GNCRuntime: BoundSpacecraft, CoupledSpacecraft
-    using ..HookDeprecation: _renamed_field_warning, _renamed_keyword, _NOT_PASSED
     using ..Structure
 
     using ..ConfigTypes: ODEParams

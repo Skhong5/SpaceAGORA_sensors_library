@@ -250,9 +250,8 @@ the file that performs each step.
    Navigation and guidance hooks run as periodic callbacks between integrator
    steps; control commands are refreshed on periodic or event-driven schedules, and the
    resulting control force and torque are evaluated inside the right-hand side
-   through `control_wrench`. The planner-neutral `RPOPlannerLifecycle`
-   and existing HYPR-specific `RPOGuidanceModel` remain separate integration
-   paths. See [GNC and planning ownership](gnc_ownership.md).
+   through `control_wrench`. RPO guidance runs through the planner-neutral
+   `RPOPlannerLifecycle`. See [GNC and planning ownership](gnc_ownership.md).
 7. **Callbacks.** Save fields, density updates, thermal and plume updates, GNC
    dispatch, state anchors and stop conditions are registered from
    `src/orchestration/simulation/callbacks/callbacks.jl`;

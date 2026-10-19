@@ -11,7 +11,7 @@ module GuidanceHooks
     using ..AbstractTypes: AbstractPlanet, AbstractControlEffectorModel, AbstractGuidanceModel
     using ..GuidanceModels: AerobrakingCampaignPropulsiveManeuverGuidanceModel
     using ..GuidanceModels: ApoapsisTargetPeriapsisRaiseGuidanceModel
-    using ..GuidanceModels: RPOGuidanceModel, RPOPlan, RPOPlanBuffer, update_rpo_plan_buffer!
+    using ..GuidanceModels: RPOPlan, RPOPlanBuffer, update_rpo_plan_buffer!
     using ..NavigationHooks: RPOReferenceGeometry, RPOStationGeometry
     using ..NavigationHooks: rpo_clearance_distance_to_station, rpo_clearance_to_station, rpo_path_clearance_stats
     using ..CommandTypes: PropulsiveManeuverCommand, AerobrakingControlCommand
@@ -22,7 +22,6 @@ module GuidanceHooks
     using ..StaticArrays
     using ..Kinematics
     using ..HYPRUtils
-    using ..HookDeprecation: _hook_deprecation
     using ...RPOPlannerInterfaces: AbstractRPOPlanner, RPOPlanningHeadroom
     using Base.Threads: @threads, maxthreadid, threadid
     using Logging: Logging
@@ -127,7 +126,6 @@ module GuidanceHooks
     include(joinpath(@__DIR__, "..", "planning", "rpo", "comparison", "planner_objects.jl"))
     include(joinpath(@__DIR__, "..", "planning", "rpo", "comparison", "planner_comparison.jl"))
     include(joinpath(@__DIR__, "..", "planning", "adapters", "hypr", "replanning.jl"))
-    include(joinpath(@__DIR__, "rpo", "rpo_guidance_hooks.jl"))
     include(joinpath(@__DIR__, "aerobraking", "typed_edg", "guidance_models.jl"))
     include(joinpath(@__DIR__, "aerobraking", "energy_depletion_lifecycle.jl"))
 
@@ -141,10 +139,8 @@ module GuidanceHooks
         return ApolloDescentGuidanceModel(m.config, m.state, m.terrain, ids)
     end
 
-    # The spacecraft each built-in guidance model acts on (GNCRuntime). The legacy
-    # RPO guidance plans for the chaser from the target's state; the descent
+    # The spacecraft each built-in guidance model acts on (GNCRuntime): the descent
     # guidance flies its selected spacecraft and stops at touchdown.
-    GNCRuntime.spacecraft_scope(m::RPOGuidanceModel) = GNCRuntime.CoupledSpacecraft(m.chaser_idx, (m.target_idx,))
     GNCRuntime.spacecraft_scope(m::ApolloDescentGuidanceModel) = GNCRuntime.BoundSpacecraft(m.spacecraft_indices)
     GNCRuntime.skip_inactive(::ApolloDescentGuidanceModel) = true
 
@@ -156,40 +152,6 @@ module GuidanceHooks
     end
     function SimulationLifecycle.initialize_guidance!(m::ApoapsisTargetPeriapsisRaiseGuidanceModel, u, p, t)
         empty!(m.command_state)
-        return nothing
-    end
-
-    # The deprecated RPO guidance rewrites its goal, its plan buffer (shared with the
-    # controller, so set in place) and its replanning record during a run. At each
-    # run's start an entry the model wrote in the previous run returns to its value
-    # at that run's start, and an entry a user changed since is kept
-    # (`_run_start_entries`); the model records its writes after each tick. The plan
-    # buffer's plan, validity and time are written together and count as one entry.
-    const _RPO_GUIDANCE_RUN_FIELDS = (:goal_rtn, :force_replan, :replanning_events, :replan_count, :retime_count,
-        :safe_hold_count, :replan_failure_count, :last_replanning_time_s, :last_replanning_signature,
-        :replanning_persistence_count, :replanning_phase, :pending_replan)
-    _rpo_buffer_entry(b::RPOPlanBuffer) = (valid=b.valid, plan=b.plan, updated_at_s=b.updated_at_s)
-    _rpo_guidance_entries(m::RPOGuidanceModel) =
-        merge(NamedTuple{_RPO_GUIDANCE_RUN_FIELDS}(map(f -> getfield(m, f), _RPO_GUIDANCE_RUN_FIELDS)),
-            (plan_buffer=_rpo_buffer_entry(m.plan_buffer),))
-    # The model replaces the plan and the pending replan, never changes them in
-    # place, so their copies are reused while the objects are the ones last copied.
-    function _note_rpo_guidance_writes!(m::RPOGuidanceModel)
-        last = m.run_written
-        plan, pending = m.plan_buffer.plan, m.pending_replan
-        plan_copy = last !== nothing && last.plan_source === plan ? last.plan_buffer.plan : deepcopy(plan)
-        pending_copy = last !== nothing && last.pending_source === pending ? last.pending_replan : deepcopy(pending)
-        m.run_written = merge(_rpo_guidance_entries(m), (replanning_events=copy(m.replanning_events),
-            plan_buffer=merge(_rpo_buffer_entry(m.plan_buffer), (plan=plan_copy,)), pending_replan=pending_copy,
-            plan_source=plan, pending_source=pending))
-        return nothing
-    end
-    function SimulationLifecycle.initialize_guidance!(m::RPOGuidanceModel, u, p, t)
-        start = SimulationLifecycle._run_start_entries(m.run_start, m.run_written, _rpo_guidance_entries(m))
-        foreach(f -> setfield!(m, f, getfield(start, f)), _RPO_GUIDANCE_RUN_FIELDS)
-        buffer, entry = m.plan_buffer, start.plan_buffer
-        buffer.valid, buffer.plan, buffer.updated_at_s = entry.valid, entry.plan, entry.updated_at_s
-        m.run_start, m.run_written = deepcopy(start), nothing
         return nothing
     end
 end

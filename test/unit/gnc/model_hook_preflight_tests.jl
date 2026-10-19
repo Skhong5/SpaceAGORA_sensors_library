@@ -160,7 +160,6 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
         # The docstring each public hook shows is the generic one, not a method's.
         root_doc(name) = string(Docs.meta(SpaceAGORA)[Docs.Binding(SpaceAGORA, name)].docs[Union{}].text...)
         @test startswith(root_doc(:update_guidance!), "    update_guidance!(model, u, p, t, spacecraft_index)")
-        @test !occursin("RPOGuidanceModel", root_doc(:update_guidance!))
         @test startswith(root_doc(:update_navigation!), "    update_navigation!(model, u, p, t, spacecraft_index)")
         @test startswith(root_doc(:update_control!), "    update_control!(model, u, p, t, spacecraft_index)")
         @test !occursin("update_control!(model::BaseThrusterModel", root_doc(:update_control!))
@@ -202,12 +201,6 @@ hp_declares(f, T) = which(f, Tuple{T}).sig !== Tuple{typeof(f), Any}
             @test startswith(root_doc(old), "    $(old)$(form)")
             @test occursin("\n\nDeprecated, use [`$(new)`]", root_doc(old))
         end
-        # The RPO text stays on the RPO method.
-        gh = HP_SM.GuidanceHooks
-        rpo_sig = Tuple{HP_SM.GuidanceModels.RPOGuidanceModel, Any, Any, Float64, Int}
-        rpo_doc = Docs.meta(gh)[Docs.Binding(gh, :update_guidance!)].docs[rpo_sig]
-        @test occursin("model.chaser_idx", string(rpo_doc.text...))
-
         # No catch-all navigation method: an effector without one is still a
         # MethodError when called, under either name.
         @test_throws MethodError SpaceAGORA.update_navigation!(HpNavigationNoHook(), Float64[], nothing, 0.0, 1)

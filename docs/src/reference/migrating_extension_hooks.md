@@ -120,9 +120,9 @@ SpaceAGORA.ephemerides_epoch_seconds(m::FixedFrame, initial_time) = 0.0
 
 | Item | Replacement | Status | Removed in |
 |---|---|---|---|
-| `RPOGuidanceModel` | `make_rpo_configuration` with a planner, for example `planner=HYPRRPOPlanner(RPOPSOConfig(...))`, which configures a `PlannerGuidance` | warns before the run, once per session; the warning does not stop a run under `--depwarn=error` | a later release |
-| index fields and keywords `sat_idx`, `spacecraft_idx`, `chaser_idx`, `target_idx`, and `RobotArmReactionEffector.spacecraft_idx` | `spacecraft_index`, `chaser_index`, `target_index` | warn from 0.3.0; `RobotArmReactionEffector`'s from 0.3.1 | 0.5.0 |
-| selecting an RPO planner by a Symbol, such as `:rrt_star` | a planner object | warns from 0.3.0 | 0.5.0 |
+| `RPOGuidanceModel` | `make_rpo_configuration` with a planner, for example `planner=HYPRRPOPlanner(RPOPSOConfig(...))`, which configures a `PlannerGuidance` | warned before the run from 0.3.0; 0.4.0 is the last release that has it | 0.5.0 |
+| index fields and keywords `sat_idx`, `spacecraft_idx`, `chaser_idx`, `target_idx`, and `RobotArmReactionEffector.spacecraft_idx` | `spacecraft_index`, `chaser_index`, `target_index` | warned from 0.3.0, `RobotArmReactionEffector`'s from 0.3.1; an old keyword is now a `MethodError` and an old property a `FieldError` | 0.5.0 |
+| selecting an RPO planner by a Symbol, such as `:rrt_star` | a planner object | warned from 0.3.0; a name is now a `MethodError` | 0.5.0 |
 | a default random stream in the GNC planning functions | an explicit `rng` keyword | required now, without a window | |
 
 ## Schedule

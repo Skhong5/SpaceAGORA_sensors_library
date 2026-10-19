@@ -45,10 +45,9 @@ mutable struct TriggerState
     revision::String
 end
 
-# Kept separate from RPOGuidanceModel and RPOPlanBuffer for legacy compatibility.
 # The fields after `runtime` configure the contract extensions; their defaults are
 # the static geometry, the `:fail` policy and no retiming trigger.
-mutable struct PlannerGuidance <: S.AbstractGuidanceModel
+Base.@kwdef mutable struct PlannerGuidance <: S.AbstractGuidanceModel
     planner::P.AbstractRPOPlanner
     chaser_id::Int
     target_id::Int
@@ -67,39 +66,13 @@ mutable struct PlannerGuidance <: S.AbstractGuidanceModel
     replan_interval_s::Float64
     tracking_error_limit_m::Float64
     plan_buffer::S.RPOPlanBuffer
-    runtime::Union{Nothing,PlannerRuntime}
-    family::P.RPOReferenceFamily
-    geometry_provider::Union{Nothing,P.AbstractRPOGeometryProvider}
-    retime_tracking_error_m::Float64
-    hold_position_tolerance_m::Float64
-    hold_speed_tolerance_mps::Float64
-    triggers::Union{Nothing,TriggerState}
-end
-# `chaser_idx` and `target_idx` are the deprecated names of `chaser_index` and
-# `target_index` (until 0.5.0); they forward as keywords and as properties.
-const _NOT_PASSED = S.HookDeprecation._NOT_PASSED
-function PlannerGuidance(; planner, chaser_id, target_id, chaser_index=_NOT_PASSED, target_index=_NOT_PASSED,
-        chaser_idx=_NOT_PASSED, target_idx=_NOT_PASSED, goal_rtn_m, geometry, geometry_revision, constraints, validation,
-        reference_dt_s, preview_horizon_steps, validity_s, seed, events, replan_interval_s, tracking_error_limit_m,
-        plan_buffer, runtime=nothing, family=P.RPOReferenceFamily(), geometry_provider=nothing,
-        retime_tracking_error_m=Inf, hold_position_tolerance_m=.02, hold_speed_tolerance_mps=.002, triggers=nothing)
-    T = PlannerGuidance
-    chaser = S.HookDeprecation._renamed_keyword(T, :chaser_idx, chaser_idx, :chaser_index, chaser_index, _NOT_PASSED)
-    target = S.HookDeprecation._renamed_keyword(T, :target_idx, target_idx, :target_index, target_index, _NOT_PASSED)
-    chaser === _NOT_PASSED && throw(UndefKeywordError(:chaser_index))
-    target === _NOT_PASSED && throw(UndefKeywordError(:target_index))
-    return T(planner, chaser_id, target_id, chaser, target, goal_rtn_m, geometry, geometry_revision, constraints,
-        validation, reference_dt_s, preview_horizon_steps, validity_s, seed, events, replan_interval_s,
-        tracking_error_limit_m, plan_buffer, runtime, family, geometry_provider, retime_tracking_error_m,
-        hold_position_tolerance_m, hold_speed_tolerance_mps, triggers)
-end
-@inline _planner_field(name::Symbol) =
-    name === :chaser_idx ? S.HookDeprecation._renamed_field_warning(PlannerGuidance, :chaser_idx, :chaser_index) :
-    name === :target_idx ? S.HookDeprecation._renamed_field_warning(PlannerGuidance, :target_idx, :target_index) : name
-@inline Base.getproperty(g::PlannerGuidance, name::Symbol) = getfield(g, _planner_field(name))
-@inline function Base.setproperty!(g::PlannerGuidance, name::Symbol, x)
-    field = _planner_field(name)
-    return setfield!(g, field, convert(fieldtype(PlannerGuidance, field), x))
+    runtime::Union{Nothing,PlannerRuntime} = nothing
+    family::P.RPOReferenceFamily = P.RPOReferenceFamily()
+    geometry_provider::Union{Nothing,P.AbstractRPOGeometryProvider} = nothing
+    retime_tracking_error_m::Float64 = Inf
+    hold_position_tolerance_m::Float64 = .02
+    hold_speed_tolerance_mps::Float64 = .002
+    triggers::Union{Nothing,TriggerState} = nothing
 end
 
 # The planner ticks for its chaser and reads the target (GNCRuntime). The indices
@@ -149,8 +122,7 @@ end
 GR.gnc_links(g::PlannerGuidance) = (GR.Produces(g.plan_buffer),)
 
 # A plan buffer written by a planner: exactly one RPO MPC controller reads it, with
-# the planner's preview settings. A buffer written only by the deprecated
-# RPOGuidanceModel gets no check.
+# the planner's preview settings. A buffer no planner writes gets no check.
 function GR.check_link(b::S.RPOPlanBuffer, producers, consumers, args)
     planners = [x for x in producers if x isa PlannerGuidance]
     isempty(planners) && return nothing

@@ -65,8 +65,7 @@ starts uninitialized sets the accumulator to `h_wheels_0` at its first tick
 (without integrated wheels); a held command holds until the first tick, or for
 the whole run when `commanded_torque` or `b_field_ii` is `nothing`.
 
-`spacecraft_index` is the run position of the managed spacecraft; `sat_idx`, its
-old name, still works with a deprecation warning until SpaceAGORA 0.5.0.
+`spacecraft_index` is the run position of the managed spacecraft.
 """
 mutable struct MagneticMomentumManagerModel <: AbstractControlEffectorModel
     spacecraft_index::Int
@@ -87,23 +86,15 @@ mutable struct MagneticMomentumManagerModel <: AbstractControlEffectorModel
     run_start::Union{Nothing, _ManagerRunState}     # the internal state the previous run started from
     run_written::Union{Nothing, _ManagerRunState}   # the model's last write of it in that run
 end
-# The deprecated name forwards, as a keyword and as a property.
-function MagneticMomentumManagerModel(; spacecraft_index=_NOT_PASSED, sat_idx=_NOT_PASSED, mu_gain=3.0e-4, m_max_am2=Inf,
+# `run_start` and `run_written` start empty; they are not keywords.
+function MagneticMomentumManagerModel(; spacecraft_index=1, mu_gain=3.0e-4, m_max_am2=Inf,
         h_wheels_0=SVector{3, Float64}(0.0, 0.0, 0.0), commanded_torque=nothing, b_field_ii=nothing,
         h_wheels=SVector{3, Float64}(0.0, 0.0, 0.0), held_torque_body=SVector{3, Float64}(0.0, 0.0, 0.0),
         held_dipole_am2=SVector{3, Float64}(0.0, 0.0, 0.0), last_update_s=NaN, initialized=false, ticks=0,
         actuation=:ideal, mounted_levels=Float64[])
-    T = MagneticMomentumManagerModel
-    return T(_renamed_keyword(T, :sat_idx, sat_idx, :spacecraft_index, spacecraft_index, 1),
-        mu_gain, m_max_am2, h_wheels_0, commanded_torque, b_field_ii, h_wheels, held_torque_body, held_dipole_am2,
-        last_update_s, initialized, ticks, actuation, mounted_levels, nothing, nothing)
-end
-@inline _momentum_manager_field(name::Symbol) = name === :sat_idx ?
-    _renamed_field_warning(MagneticMomentumManagerModel, :sat_idx, :spacecraft_index) : name
-@inline Base.getproperty(m::MagneticMomentumManagerModel, name::Symbol) = getfield(m, _momentum_manager_field(name))
-@inline function Base.setproperty!(m::MagneticMomentumManagerModel, name::Symbol, x)
-    field = _momentum_manager_field(name)
-    return setfield!(m, field, convert(fieldtype(MagneticMomentumManagerModel, field), x))
+    return MagneticMomentumManagerModel(spacecraft_index, mu_gain, m_max_am2, h_wheels_0, commanded_torque,
+        b_field_ii, h_wheels, held_torque_body, held_dipole_am2, last_update_s, initialized, ticks, actuation,
+        mounted_levels, nothing, nothing)
 end
 
 _manager_run_state(m::MagneticMomentumManagerModel) = _ManagerRunState((m.h_wheels, m.held_torque_body,

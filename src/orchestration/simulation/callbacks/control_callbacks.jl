@@ -67,10 +67,6 @@ end
     return nothing
 end
 
-# Whether the engine ticks `control_model` with a periodic callback (internal;
-# the model declares it with `tick_schedule`).
-@inline control_requires_periodic_callback(control_model) = tick_schedule(control_model) === :periodic
-
 @inline function _run_guidance_for_thruster_schedule!(integrator, sat_idx::Int)
     @inbounds for guidance_model in integrator.p.args.guidance_model.guidance_effectors
         _gnc_tick!(_update_guidance!, guidance_model, integrator.u, integrator.p, integrator.t, sat_idx)
@@ -236,10 +232,9 @@ function check_control_periods(args)
 end
 
 # Links of the built-in models (GNCRuntime). The RPO plan buffer is written by the
-# planner (its method lives with the planner) or the deprecated RPOGuidanceModel,
-# and read by the RPO MPC controller. The energy-depletion state is shared by the
-# EDG guidance and control; the link initializes it once per run.
-GNCRuntime.gnc_links(g::_simulation_model_module.RPOGuidanceModel) = (Produces(g.plan_buffer),)
+# planner (its method lives with the planner) and read by the RPO MPC controller.
+# The energy-depletion state is shared by the EDG guidance and control; the link
+# initializes it once per run.
 GNCRuntime.gnc_links(c::_simulation_model_module.RPOMPCControlModel) = (Consumes(c.plan_buffer),)
 GNCRuntime.gnc_links(g::_simulation_model_module.AerobrakingEnergyDepletionGuidanceModel) = (Produces(g.state),)
 GNCRuntime.gnc_links(c::_simulation_model_module.AerobrakingEnergyDepletionControlModel) = (Consumes(c.state),)

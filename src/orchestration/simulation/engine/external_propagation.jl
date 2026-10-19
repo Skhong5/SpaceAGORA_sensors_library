@@ -8,7 +8,7 @@
 
 const _EXTERNAL_ALLOWED_SOLVER_MODES = (:tsit5, :auto_stiff, :rodas5p, :dp8)
 # The spacecraft-index fields of a control effector; the `*_idx` names are the older
-# ones, kept by some models.
+# ones, which contributor models may still have.
 const _EXTERNAL_INDEX_FIELDS = (:chaser_index, :spacecraft_index, :chaser_idx, :spacecraft_idx, :sat_idx)
 
 @inline _external_propagators(args) = args.external_propagators
@@ -125,7 +125,7 @@ end
 function _periodic_control_rates(args)
     rates = Float64[]
     for (effector, rate) in zip(args.control_model.control_effectors, args.control_model.control_rates)
-        SimulationModel.SimulationCallbacks.control_requires_periodic_callback(effector) && push!(rates, rate)
+        SimulationModel.SimulationCallbacks.tick_schedule(effector) === :periodic && push!(rates, rate)
     end
     return rates
 end

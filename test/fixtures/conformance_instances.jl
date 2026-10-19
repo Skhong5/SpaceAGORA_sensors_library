@@ -167,8 +167,6 @@ function gnc_instances()
         full(:guidance_model, SpaceAGORA.ApoapsisTargetPeriapsisRaiseGuidanceModel(target_apoapsis_radius_m=planet.Rp_e + 800e3)),
         static(:guidance_model, SpaceAGORA.AerobrakingEnergyDepletionGuidanceModel(edg, edg_state()), edg_reason),
         static(:guidance_model, SpaceAGORA.ApolloDescentGuidanceModel(apollo, SpaceAGORA.ApolloDescentState(1)), apollo_reason),
-        static(:guidance_model, SM.GuidanceModels.RPOGuidanceModel(),
-            "deprecated, and its run needs the optional HYPR package; checked without a run"),
         full(:control_model, SM.ControlHooks.MagneticMomentumManagerModel()),
         # Its declared control period matches the fixture's 1 s control rate.
         full(:control_model, SM.ControlHooks.RobotArmControlEffector(control_dt_s=1.0)),
