@@ -731,6 +731,7 @@ function run_simulation(
                     hasproperty(sc, :laser_delta_sma) == has_interlinks, ckpt.u.sc) ||
                     throw(ArgumentError("Checkpoint interlink state does not match the configured interlink_model; resume with the same interlink setting."))
             end
+            _restore_activity_checkpoint_state!(args, ckpt, p.is_active)
             _restore_interlink_checkpoint_state!(args, ckpt, p.is_active)
             _restore_callback_checkpoint_state!(args, ckpt, p)
             model_snapshot = _check_model_checkpoint_state(args, ckpt)

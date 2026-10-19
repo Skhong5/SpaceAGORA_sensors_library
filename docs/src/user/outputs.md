@@ -311,6 +311,14 @@ the file through `checkpoint_state` (see
 [Run state in checkpoint files](../extensibility.md#Run-state-in-checkpoint-files));
 without it, a resumed run starts that state from its reset.
 
+The checkpoint also records which spacecraft are active. A spacecraft lost to
+an impact or a touchdown before the checkpoint stays inactive in the resumed
+run, as it would in a run that was never interrupted: it is not propagated, its
+guidance, navigation and control models treat it as inactive (`skip_inactive`),
+and its impact or touchdown does not happen again. A checkpoint written by an
+earlier SpaceAGORA records this only for an interlinked run; any other run
+resumed from such a checkpoint starts with every spacecraft active, as before.
+
 ## Campaign and multi-process runs
 
 `run_monte_carlo` and `run_constellation_ensemble` samples each call
