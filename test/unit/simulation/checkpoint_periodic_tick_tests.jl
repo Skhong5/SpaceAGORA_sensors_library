@@ -80,10 +80,12 @@ function ramp_setup(; interval=nothing, period, data_rate=period, guidance_perio
     return (args=args, control=control, second=second, guidance=guidance, navigation=navigation)
 end
 
-# The final state of a checkpointed run is its last checkpoint.
-function ramp_run(; interval=nothing, kw...)
+# The final state of a checkpointed run is its last checkpoint. `factories` adds
+# callbacks to the run (`extra_callback_factories`).
+function ramp_run(; interval=nothing, factories=(), kw...)
     s = ramp_setup(; interval=interval, kw...)
-    out = run_simulation(s.args; return_results=true, return_solution=interval === nothing, isolate_state=false)
+    out = run_simulation(s.args; return_results=true, return_solution=interval === nothing, isolate_state=false,
+        extra_callback_factories=factories)
     final = interval === nothing ? out.solution.u[end].sc[1] : SE._load_checkpoint(s.args).u.sc[1]
     return (table=out.table, final=final, control=s.control.ticks, second=s.second.ticks, guidance=s.guidance.ticks,
             navigation=s.navigation.ticks, clock=s.second.clock, args=s.args)
@@ -167,6 +169,26 @@ runtime_state(args) = get(SE._load_checkpoint(args), :runtime_state, nothing)
         @test resumed.table.sc1_actuator_level_1[end] == unsplit.table.sc1_actuator_level_1[end]
     end
 
+    @testset "a run stopped by an event at a tick takes the tick before its checkpoint" begin
+        # An event at 2.5 s, on the control and guidance grids, ends the checkpointed
+        # solve with terminate!, as an impact or an orbit count does. The solver applies
+        # the step's discrete callbacks after the event's, so the ticks due then run and
+        # the checkpoint written there needs no pending entry.
+        unsplit = ramp_run(period=0.125)
+        dir = mktempdir()
+        stop = configuration -> SC.ContinuousCallback((u, t, integrator) -> t - 2.5, integrator -> SC.terminate!(integrator))
+        stopped = ramp_run(period=0.125, interval=1.0, dir=dir, factories=(stop,))
+        @test last(stopped.control) == 2.5 && last(stopped.guidance) == 2.5 && last(stopped.navigation) < 2.5
+        checkpoint = SE._load_checkpoint(stopped.args)
+        @test checkpoint.t == 2.5 && !hasproperty(checkpoint.runtime_state, :periodic_ticks)
+        resumed = ramp_run(period=0.125, interval=1.0, dir=dir, resume=true)
+        @test resumed.control[1] == 2.625
+        for field in TICKS
+            @test vcat(getfield(stopped, field), getfield(resumed, field)) == getfield(unsplit, field)
+        end
+        @test resumed.final.h_wheels[1] ≈ unsplit.final.h_wheels[1] rtol=1e-12
+    end
+
     @testset "a run extended from the end of a finished run takes the ticks due there" begin
         unsplit = ramp_run(period=0.125)
         dir, again_dir = mktempdir(), mktempdir()
@@ -197,7 +219,7 @@ runtime_state(args) = get(SE._load_checkpoint(args), :runtime_state, nothing)
 end
 
 @testset "periodic GNC callback outside a checkpointed run is PeriodicCallback" begin
-    function direct_ticks(make_callback, tspan; origin=NaN, horizon=NaN, pending=NaN)
+    function direct_ticks(make_callback, tspan; origin=NaN, horizon=NaN, pending=NaN, before=())
         p = SM.ODEParams(n_sats=1, args=wheel_config(5.0))
         p.shared_buffers.periodic_clock_origin_s[] = origin
         p.shared_buffers.periodic_clock_horizon_s[] = horizon
@@ -205,7 +227,7 @@ end
         ticks = Float64[]
         cb = make_callback(integrator -> push!(ticks, integrator.t))
         prob = SC.ODEProblem((du, u, p, t) -> fill!(du, 0.0), [1.0], tspan, p)
-        sol = SC.solve(prob, SC.Tsit5(); callback=cb)
+        sol = SC.solve(prob, SC.Tsit5(); callback=SC.CallbackSet(before..., cb))
         return ticks, sol.t
     end
     for tspan in ((0.0, 1.0), (12.345, 13.0), (0.0, 0.95))
@@ -232,6 +254,16 @@ end
     @test ticks == 2.125:0.125:3.0
     ticks, _ = direct_ticks(f -> SC._run_clock_periodic_callback(f, 0.3), (2.0, 3.0); origin=0.0, horizon=5.0, pending=2.0)
     @test ticks == [k * 0.3 for k in 7:10]
+    # A solve terminated at a tick, by an event or by an earlier discrete callback,
+    # takes that tick (PeriodicCallback threw there, scheduling a stop after
+    # terminate! had emptied the stops).
+    event = SC.ContinuousCallback((u, t, integrator) -> t - 2.5, integrator -> SC.terminate!(integrator))
+    at_stop = SC.DiscreteCallback((u, t, integrator) -> t == 2.5, integrator -> SC.terminate!(integrator);
+        initialize=(c, u, t, integrator) -> SC.add_tstop!(integrator, 2.5))
+    for terminator in (event, at_stop), clock in ((origin=0.0, horizon=5.0), (origin=NaN, horizon=NaN))
+        ticks, times = direct_ticks(recorded, (2.0, 3.0); before=(terminator,), clock...)
+        @test ticks == 2.125:0.125:2.5 && last(times) == 2.5
+    end
 end
 
 end

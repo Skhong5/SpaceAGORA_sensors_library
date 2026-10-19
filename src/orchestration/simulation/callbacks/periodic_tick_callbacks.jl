@@ -38,9 +38,12 @@ const _PeriodicTickClock = NamedTuple{(:origin, :index, :horizon),
             buffers.periodic_clock_pending_s[])
 end
 
-# Stop at the next tick unless the solve ends first, as PeriodicCallback does.
+# Stop at the next tick unless the solve ends first, as PeriodicCallback does. A
+# solve terminated in this step (`terminate!` empties its stops; an event's or an
+# earlier discrete callback's) has no next stop, and the tick it is taking still runs.
 @inline function _schedule_next_periodic_tick!(integrator, clock::_PeriodicTickClock, Δt::Float64)
     clock.index[] += 1
+    isempty(DiffEqBase.get_tstops_array(integrator)) && return nothing
     tnew = _periodic_tick_time(clock, Δt, clock.index[])
     if integrator.tdir * tnew < DiffEqBase.get_tstops_max(integrator)
         DiffEqBase.add_tstop!(integrator, tnew)

@@ -247,7 +247,10 @@ end
 # A checkpoint written at its run's end: the run did not take the periodic
 # navigation, guidance and control ticks due then, so a run resumed from it takes
 # them at its start. One written at a segment boundary holds no entry: the ticks
-# due there came before it.
+# due there came before it. So does one written where a solve stopped early, at an
+# event's `terminate!` (impact, touchdown, orbit or entry count): the solver applies
+# every discrete callback of that step after the event's, so a tick due then ran
+# before the checkpoint, as in a run in one piece.
 _periodic_tick_checkpoint_state(t::Float64, mission_end) = t >= mission_end ? (version=1, pending_s=t) : nothing
 
 # The resumed run's start when the ticks due there are pending, NaN otherwise.
