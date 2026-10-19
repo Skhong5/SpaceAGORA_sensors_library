@@ -184,7 +184,8 @@ runtime_state(args) = get(SE._load_checkpoint(args), :runtime_state, nothing)
         @test resumed.final.h_wheels[1] ≈ unsplit.final.h_wheels[1] rtol=1e-12
         # The row saved at the resume time holds the level commanded there.
         @test resumed.table.time[1] == 2.0 && resumed.table.sc1_actuator_level_1[1] == 0.002
-        # Resumed without checkpoints: the same ticks.
+        # Resumed with checkpoint writing off (a resume is still checkpointed, here in
+        # one segment): the same ticks.
         again = ramp_run(period=0.125, dir=again_dir, resume=true)
         @test again.control == resumed.control && again.guidance == resumed.guidance
         @test again.final.h_wheels[1] ≈ unsplit.final.h_wheels[1] rtol=1e-12
