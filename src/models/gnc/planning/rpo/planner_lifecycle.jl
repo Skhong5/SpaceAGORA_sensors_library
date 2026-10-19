@@ -193,8 +193,10 @@ function L.initialize_guidance!(g::PlannerGuidance, u, p, t)
             (seed=g.seed, chaser_id=g.chaser_id, target_id=g.target_id,
              epoch=deepcopy(p.args.initial_time), stream_words=copy(words)))
     end
-    # A checkpoint holds the algorithm's own state only for a planner that declares restart.
-    g.runtime.state === nothing || !p.args.simulation_settings.checkpoint_enabled ||
+    # A checkpoint holds the algorithm's own state only for a planner that declares
+    # restart. A run set to resume writes checkpoints too.
+    ss = p.args.simulation_settings
+    g.runtime.state === nothing || !(ss.checkpoint_enabled || ss.resume_from_checkpoint) ||
         P.planner_capabilities(g.planner).restart || throw(ArgumentError(
             "$(nameof(typeof(g.planner))) keeps run state of its own (initialize_planner) and does not declare " *
             "restart in planner_capabilities, so a checkpoint cannot hold it; run without checkpoints."))
