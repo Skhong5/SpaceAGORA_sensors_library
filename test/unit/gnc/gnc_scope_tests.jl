@@ -237,7 +237,7 @@ deactivate(i, t_s) = PresetTimeCallback([t_s], integrator -> (integrator.p.is_ac
         maneuver = SM.AerobrakingCampaignPropulsiveManeuverGuidanceModel(maneuver_orbit_number=[1], maneuver_Δv=[1.0])
         raise = SM.ApoapsisTargetPeriapsisRaiseGuidanceModel(target_apoapsis_radius_m=7.0e6)
         @test all(skip_inactive, (mpc, arm, mm, thruster, edg, SM.SolarPanelAngleOfAttackControlModel(), binding,
-            legacy, planner, control, edg_guidance, maneuver, raise))
+            planner, control, edg_guidance, maneuver, raise))
         @test scope_refusal(rpo) === nothing
     end
 
