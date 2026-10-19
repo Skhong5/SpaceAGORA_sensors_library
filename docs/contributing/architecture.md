@@ -216,8 +216,7 @@ the file that performs each step.
    The fixed-grid path needs the wrapper and a grid file, not native GRAM binaries.
    See [Atmosphere Models](../src/user/atmosphere_models.md) for choosing one.
 5. **Forces and torques.** The engine obtains the state and environment required by
-   each effector and calls its `wrench` (or the compatibility
-   `calcForceTorque`). The wrapper module and its models are under
+   each effector and calls its `wrench`. The wrapper module and its models are under
    `src/models/dynamics/effectors/force_torque_models.jl`
    and the `force_torque_models/`
    folder (gravity, aerodynamics, perturbations, thrusters, plume, reaction
