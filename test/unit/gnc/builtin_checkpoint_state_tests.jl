@@ -42,24 +42,34 @@ rpo_configuration(planner=DirectRPOPlanner(segment_clearance_at=SpaceAGORA.RPOPl
     make_rpo_configuration(; planner=planner, mission_time_s=4.0, planning_events=(RPOPlanningEvent(3.0; reason=:replan),),
         kwargs...)
 
-# A user planner that counts its proposals in its own state, with or without
-# declaring restart.
-struct CountingPlanner{R} <: SpaceAGORA.AbstractRPOPlanner end
-SpaceAGORA.planner_capabilities(::CountingPlanner{R}) where {R} =
-    SpaceAGORA.RPOPlannerCapabilities(state_sources=(:truth,), frames=(:target_rtn,), restart=R)
-SpaceAGORA.initialize_planner(::CountingPlanner, context) = Ref(0)
-function SpaceAGORA.plan_rpo!(state, ::CountingPlanner, r::SpaceAGORA.RPOPlanningRequest, rng::Random.AbstractRNG)
-    state[] += 1
+# User planners holding the chaser at its goal: one that counts its proposals in
+# its own state, with or without declaring restart, and one that fails an initial
+# request made after the run's start (a resumed run must not plan again).
+function hold_result(r::SpaceAGORA.RPOPlanningRequest, diagnostics)
     reference = SpaceAGORA.RPOReference(t_ref_s=[0.0, r.reference_dt_s],
         r_ref_rtn_m=hcat(collect(r.x_rtn[1:3]), collect(r.goal_rtn_m)), v_ref_rtn_mps=zeros(3, 2),
         origin_time_s=r.time_s, valid_until_s=r.valid_until_s, chaser_id=r.chaser_id, target_id=r.target_id,
         geometry_revision=r.geometry_revision)
     return SpaceAGORA.RPOPlanningResult(request_id=r.request_id, status=:candidate, termination=:completed,
-        reference=reference, diagnostics=(calls=state[], draw=rand(rng)))
+        reference=reference, diagnostics=diagnostics)
+end
+struct CountingPlanner{R} <: SpaceAGORA.AbstractRPOPlanner end
+SpaceAGORA.planner_capabilities(::CountingPlanner{R}) where {R} =
+    SpaceAGORA.RPOPlannerCapabilities(state_sources=(:truth,), frames=(:target_rtn,), restart=R)
+SpaceAGORA.initialize_planner(::CountingPlanner, context) = Ref(0)
+SpaceAGORA.plan_rpo!(state, ::CountingPlanner, r::SpaceAGORA.RPOPlanningRequest, rng::Random.AbstractRNG) =
+    (state[] += 1; hold_result(r, (calls=state[], draw=rand(rng))))
+struct StartOnlyPlanner <: SpaceAGORA.AbstractRPOPlanner end
+SpaceAGORA.planner_capabilities(::StartOnlyPlanner) =
+    SpaceAGORA.RPOPlannerCapabilities(state_sources=(:truth,), frames=(:target_rtn,))
+function SpaceAGORA.plan_rpo!(::Nothing, ::StartOnlyPlanner, r::SpaceAGORA.RPOPlanningRequest, rng::Random.AbstractRNG)
+    r.reason === :initial && r.time_s > 0 && error("an initial request after the run's start")
+    return hold_result(r, (draw=rand(rng),))
 end
 
 # Guidance models for the round trip's other outcomes: one that refuses checkpointed
-# runs at setup, and one that returns run state it cannot restore.
+# runs at setup, one whose run state is not in a checkpoint, and one that returns
+# run state it cannot restore.
 mutable struct RefusesCheckpoints <: SpaceAGORA.AbstractGuidanceModel
     ticks::Int
 end
@@ -69,6 +79,11 @@ function L.preflight_guidance(m::RefusesCheckpoints, args; isolate_state)
     args.simulation_settings.checkpoint_enabled && throw(ArgumentError("RefusesCheckpoints does not run with checkpoints."))
     return nothing
 end
+mutable struct NoCheckpoint <: SpaceAGORA.AbstractGuidanceModel
+    ticks::Int
+end
+SpaceAGORA.update_guidance!(m::NoCheckpoint, u, p, t::Float64, i::Int) = (m.ticks += 1; nothing)
+L.initialize_guidance!(m::NoCheckpoint, u, p, t) = (m.ticks = 0; nothing)
 mutable struct CannotRestore <: SpaceAGORA.AbstractGuidanceModel
     ticks::Int
 end
@@ -153,16 +168,21 @@ end
         @test !C._same_state(MersenneTwister(3), MersenneTwister(4))
     end
 
-    @testset "the round trip skips a refusal and fails a model that cannot restore" begin
+    @testset "the round trip skips a refusal and fails a model whose state does not survive" begin
+        # Added in 0.4.0: advisory in 0.4, required from 0.5.0.
+        @test C.CHECKPOINT_ROUND_TRIP_SINCE == v"0.4.0"
+        failing = C._failure_status(v"0.4.0")
+        @test C._failure_status(v"0.4.0", v"0.4.3") === :advisory_fail && C._failure_status(v"0.4.0", v"0.5.0") === :fail
         refusing = RefusesCheckpoints(0)
         check = round_trip(refusing, :guidance_model, C.conformance_fixture(guidance=(refusing,)).configuration)
         @test check.status === :skip && occursin("refuses to run with checkpoints", check.detail)
+        forgetful = NoCheckpoint(0)
+        check = round_trip(forgetful, :guidance_model, C.conformance_fixture(guidance=(forgetful,)).configuration)
+        @test check.status === failing && check.since == v"0.4.0" &&
+            occursin("and an uninterrupted run differ after it: the model's own state", check.detail)
         unrestorable = CannotRestore(0)
         check = round_trip(unrestorable, :guidance_model, C.conformance_fixture(guidance=(unrestorable,)).configuration)
-        @test check.status === C._failure_status(C.CHECKPOINT_ROUND_TRIP_SINCE) &&
-            occursin("has no restore_checkpoint_state! method", check.detail)
-        @test C._failure_status(C.CHECKPOINT_ROUND_TRIP_SINCE, v"0.4.3") === :advisory_fail
-        @test C._failure_status(C.CHECKPOINT_ROUND_TRIP_SINCE, v"0.5.0") === :fail
+        @test check.status === failing && occursin("has no restore_checkpoint_state! method", check.detail)
     end
 
     @testset "the RPO planner binding" begin
@@ -173,6 +193,10 @@ end
         L.initialize_guidance!(g, nothing, (args=args, shared_buffers=(model_resume=Ref(true),)), 0.0)
         @test g.runtime.request_id == 0 && isempty(g.runtime.records) && g.runtime.product === nothing
         @test g.chaser_index == 1 && g.target_index == 2 && !g.plan_buffer.valid
+        # In a run: the resumed run's initializer would fail an initial request.
+        start_only = rpo_configuration(StartOnlyPlanner(); goal_rtn_m=(3.0, 0.0, 0.0))
+        check = round_trip(only(start_only.guidance_model.guidance_effectors), :guidance_model, start_only)
+        @test check.status === :pass
         # A planner with state of its own runs with checkpoints when it declares
         # restart, and its state then resumes with the run.
         restartable = rpo_configuration(CountingPlanner{true}(); goal_rtn_m=(3.0, 0.0, 0.0))
