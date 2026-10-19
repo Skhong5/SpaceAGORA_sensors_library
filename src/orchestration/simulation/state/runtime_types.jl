@@ -869,6 +869,14 @@ export RhsEffectorDecision, RhsExecutionPlan
         current_time::Base.RefValue{Float64} = Ref(0.0)
         et_start::Base.RefValue{Float64} = Ref(0.0)
         solve_segment_end_time::Base.RefValue{Float64} = Ref(NaN)
+        # Tick grid origin and end of a checkpointed or resumed run for the
+        # periodic GNC callbacks (SimulationCallbacks._run_clock_periodic_callback);
+        # NaN leaves each solve its own grid.
+        periodic_clock_origin_s::Base.RefValue{Float64} = Ref(NaN)
+        periodic_clock_horizon_s::Base.RefValue{Float64} = Ref(NaN)
+        # A resumed run's start when the ticks due there are pending: its
+        # checkpoint was written at the end of the run that wrote it.
+        periodic_clock_pending_s::Base.RefValue{Float64} = Ref(NaN)
         debug_control::Base.RefValue{Bool} = Ref(false)
         debug_initial_derivative::Base.RefValue{Bool} = Ref(false)
         effector_cost_ns_per_item::Base.RefValue{Float64} = Ref(NaN)
@@ -1031,6 +1039,10 @@ export RhsEffectorDecision, RhsExecutionPlan
         # checkpoint (`_restore_callback_checkpoint_state!`): the callbacks then
         # skip their run-start resets.
         callback_resume::Base.RefValue{Bool} = Ref(false)
+        # Set when a resumed run will put back the models' own run state from its
+        # checkpoint after the run-start initializers (`_restore_model_checkpoint_state!`):
+        # an initializer may skip work the restore replaces.
+        model_resume::Base.RefValue{Bool} = Ref(false)
     end
 
     # SaveData is an output/persistence boundary and intentionally remains heterogeneous.

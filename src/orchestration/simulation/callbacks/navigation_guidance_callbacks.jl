@@ -10,7 +10,7 @@ function get_navigation_callbacks(num_sats::Int, args::SimulationConfiguration):
                 _gnc_tick!(_update_navigation!, navigation_model, integrator.u, integrator.p, integrator.t, sat_idx)
             end
         end
-        callbacks[i] = PeriodicCallback(navigation_func, navigation_rate)
+        callbacks[i] = _run_clock_periodic_callback(navigation_func, navigation_rate)
     end
     return callbacks
 end
@@ -27,7 +27,7 @@ function get_guidance_callbacks(num_sats::Int, args::SimulationConfiguration)::V
                 _gnc_tick!(_update_guidance!, guidance_model, integrator.u, integrator.p, integrator.t, sat_idx)
             end
         end
-        callbacks[i] = PeriodicCallback(guidance_func, guidance_rate)
+        callbacks[i] = _run_clock_periodic_callback(guidance_func, guidance_rate)
     end
     return callbacks
 end

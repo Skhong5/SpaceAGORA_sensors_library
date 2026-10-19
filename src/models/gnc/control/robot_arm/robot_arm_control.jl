@@ -291,6 +291,23 @@ function SimulationLifecycle.initialize_control!(model::RobotArmControlEffector,
     return nothing
 end
 
+# The held command with the record of the run's last write of it (G-8) and the MPC
+# warm start go into checkpoint files; a resumed run puts them back after its
+# run-start reset.
+function SimulationLifecycle.checkpoint_state(model::RobotArmControlEffector)
+    ctrl = model.controller
+    return (held=deepcopy(model.held), run_written=deepcopy(model.run_written),
+        U_prev=ctrl isa RobotArmJointMPCController ? copy(ctrl.U_prev) : nothing)
+end
+function SimulationLifecycle.restore_checkpoint_state!(model::RobotArmControlEffector, data)
+    ctrl = model.controller
+    (ctrl isa RobotArmJointMPCController) == (data.U_prev !== nothing) || throw(ArgumentError(
+        "The checkpoint's robot-arm controller state does not match this model's controller; resume with the same controller."))
+    model.held, model.run_written = data.held, data.run_written
+    ctrl isa RobotArmJointMPCController && copyto!(ctrl.U_prev, data.U_prev)
+    return nothing
+end
+
 """Return the held force and torque command for a control effector."""
 function control_wrench(model::RobotArmControlEffector, x::StateSample, p::ODEParams, t::Float64)
     x.spacecraft_index == model.spacecraft_index || return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)

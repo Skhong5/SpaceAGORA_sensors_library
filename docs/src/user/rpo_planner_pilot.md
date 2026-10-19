@@ -180,9 +180,13 @@ Reading and changing this report cannot change the run. The returned solution
 itself still exposes the usual advanced solver internals; do not mutate them while
 running. Reference acceptance is distinct from physical tracking acceptance.
 
-Checkpoint writing/resume and `isolate_state=false` are refused before propagation
-or output creation. Faithful restart needs a future contract for planner/RNG,
-controller, active-reference and trigger state. General restart remains open work.
+`isolate_state=false` is refused before propagation or output creation. A
+checkpoint holds the planner binding's run state (its random stream, installed
+request and reference, records and trigger state), the plan buffer and the
+controller's held command, warm start and solver iterate, so a run resumed from
+it continues as the uninterrupted run would. A planner that keeps state of its
+own (`initialize_planner` returns something) runs with checkpoints only if it
+declares `restart` in `planner_capabilities`; the built-in planners keep none.
 A core-only installation can run the direct planner without HYPR; see the optional
 installation instructions below.
 
@@ -231,7 +235,7 @@ julia --startup-file=no scripts/optional_packages.jl setup hypr /path/to/my-rpo-
 The helper checks out `packages/robotics/HYPR.jl` at the parent repository's
 recorded revision, verifies its identity and clean state, and delegates to the
 existing HYPR installer with that path. The pin agrees with
-`packages/SpaceAGORAHYPR/HYPRSource.toml`. It selects HYPR 0.2.0 alongside
+`packages/SpaceAGORAHYPR/HYPRSource.toml`. It selects HYPR 0.3.0 alongside
 SpaceAGORA 0.3.1 and compatibility shim 0.2.0. The shim keeps its existing location;
 HYPR remains optional for the simulator core.
 

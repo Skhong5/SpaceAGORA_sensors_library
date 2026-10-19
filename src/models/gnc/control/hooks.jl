@@ -289,7 +289,11 @@ module ControlHooks
     # The spacecraft each built-in control model acts on, and the command its
     # output hooks read between ticks (GNCRuntime). Each held command is returned
     # as a value or a named tuple of values, not the model's own storage. The
-    # descent controller records its tick times; the others do not.
+    # descent controller records its tick times; the others do not. Every built-in
+    # control model stops ticking for an inactive spacecraft (`skip_inactive`, true by
+    # default): its tick writes only that spacecraft's command and run state, which
+    # the right-hand side no longer reads. The descent controller declares it,
+    # since its `release_command!` turns the engine off.
     GNCRuntime.spacecraft_scope(m::RPOMPCControlModel) = CoupledSpacecraft(m.chaser_index, (m.target_index,))
     GNCRuntime.held_command(m::RPOMPCControlModel, spacecraft_index) =
         spacecraft_index == m.chaser_index ?
@@ -331,5 +335,12 @@ module ControlHooks
         1 <= spacecraft_index <= length(m.burning) || return nothing
         start_s, stop_s, thrust_n = m.burn_windows[spacecraft_index]
         return (window_start_s=start_s, window_stop_s=stop_s, thrust_n=thrust_n, burning=m.burning[spacecraft_index])
+    end
+    # Its release, at each tick while the spacecraft is inactive: in `:mounted`
+    # actuation the engine and the wheels off, as between burns. The schedule stays.
+    function GNCRuntime.release_command!(m::BaseThrusterModel, t, spacecraft_index)
+        m.actuation === :mounted && 1 <= spacecraft_index <= length(m.mounted_levels) &&
+            fill!(m.mounted_levels[spacecraft_index], 0.0)
+        return nothing
     end
 end

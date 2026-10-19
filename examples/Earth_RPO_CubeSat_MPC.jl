@@ -151,7 +151,7 @@ Guidance is the planner contract: a `PlannerGuidance` with `HYPRRPOPlanner(pso_c
 plans inside the run, at its first guidance tick, from the run's own random stream
 (`seed` and the spacecraft IDs 101 and 201). The run validates the reference against
 the request's clearance (`safe_distance_m`) and the retimer's limits before the
-controller uses it, and refuses checkpoints and `isolate_state=false`. Run the
+controller uses it, and refuses `isolate_state=false`. Run the
 scenario with `run_rpo_case(demo)` (or pass `demo.stop_callback` to `run_simulation`)
 and read the installed reference with `rpo_installed_plan(solution)`.
 

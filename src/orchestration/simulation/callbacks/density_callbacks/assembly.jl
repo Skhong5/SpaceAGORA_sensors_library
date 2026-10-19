@@ -258,7 +258,7 @@ function get_callbacks(
         guidance_callbacks = get_guidance_callbacks(num_sats, args)
         guidance_models = args.guidance_model.guidance_effectors
         # EDG targeting must publish its plan before the same tick's panel
-        # command. Each callback keeps its own period and solve-start phase.
+        # command. Each callback keeps its own period and tick grid.
         for i in eachindex(guidance_callbacks)
             if _guidance_precedes_control(guidance_models[i])
                 callbacks = _append_callback(callbacks, guidance_callbacks[i])

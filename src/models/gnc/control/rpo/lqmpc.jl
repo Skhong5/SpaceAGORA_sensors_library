@@ -134,6 +134,27 @@ function Base.deepcopy_internal(ctrl::RpoLQMPCController, dict::IdDict)
     return copied
 end
 
+# The solver state a warm-started solve continues from, for checkpoint files: the
+# dual iterate (in the solver's scaling) and the step size rho, which the solves
+# adapt. The warm start sets the primal iterate before each solve. Read from and
+# written to the native workspace through OSQP.jl's own view of it, so a resumed
+# run's solves repeat an uninterrupted run's bit for bit.
+function _rpo_lqmpc_solver_state(model::OSQP.Model)
+    work = unsafe_load(model.workspace)
+    _, m = OSQP.dimensions(model)
+    return (y=copy(unsafe_wrap(Array, work.y, m)), rho=unsafe_load(work.settings).rho)
+end
+function _restore_rpo_lqmpc_solver_state!(model::OSQP.Model, state)
+    _, m = OSQP.dimensions(model)
+    length(state.y) == m || throw(ArgumentError(
+        "The checkpoint's RPO MPC solver state has $(length(state.y)) constraints; this controller has $m."))
+    work = unsafe_load(model.workspace)
+    unsafe_load(work.settings).rho == state.rho || OSQP.update_settings!(model; rho=state.rho)
+    y = Vector{Float64}(state.y)
+    GC.@preserve y unsafe_copyto!(work.y, pointer(y), m)
+    return nothing
+end
+
 """Initialize RPO LQ-MPC prediction, cost, and gain matrices."""
 function init_rpo_lqmpc(n, dt, Q, R, Qf, horizon; u_min=nothing, u_max=nothing)
     A, B = rpo_hcw_continuous_mats(n)

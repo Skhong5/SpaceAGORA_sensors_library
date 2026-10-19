@@ -183,6 +183,8 @@ end
 end
 
 @testset "Preflight refusal before outputs" begin
+    # The hold planner keeps state of its own (its proposal count) and declares no
+    # restart, so a checkpoint cannot hold it: checkpoint writing and resume are refused.
     mktempdir() do folder
         output=joinpath(folder,"must-not-exist")
         for settings in (SimulationSettings(results=true,results_directory=output,checkpoint_enabled=true),
