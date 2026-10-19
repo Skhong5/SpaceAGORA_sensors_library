@@ -163,12 +163,19 @@ interval, while integrated diagnostic states continue from the checkpoint.
 ## Deprecated names
 
 The names from when every link was a laser link keep working until SpaceAGORA
-1.0, and warn:
+1.0. The old keywords, fields and functions warn once per process, and throw
+under `julia --depwarn=error`. The two old type names are aliases of the new
+types and cannot warn on their own: `InterLinkParameters()`,
+`InterLinkParameters(terminal)`, the positional `InterLinkParameters(P, B, range)`
+and `ConstellationInterLinkModel(; forbidden_pairs)` run silently, so search for
+those names when you move to the new ones.
 
-| Deprecated | Use instead |
-| --- | --- |
-| `ConstellationInterLinkModel(; constellation_link_type, forbidden_pairs)` | `InterlinkModel(; forbidden_pairs)`; each link has its own kind |
-| `InterLinkParameters(; P, B, range)`, fields `P`, `B`, `range` | `LaserMomentumLink(; power_w, magnification, range_m)` |
-| `register_allowed_link!(model, spacecraft, a, b; parameters)` | `register_link!(model, spacecraft, a, b, link)` |
-| `force_on_endpoint(current, other, link)` | `link_force(link, a, b, ctx)` |
-| `laser_force_on_spacecraft(model, state, satellite)` | `interlink_force_on_spacecraft(model, state, satellite)` |
+| Deprecated | Use instead | Warns |
+| --- | --- | --- |
+| `ConstellationInterLinkModel` | `InterlinkModel` | no, an alias |
+| its `constellation_link_type` keyword and property | nothing: each link has its own kind | yes |
+| `InterLinkParameters` | `LaserMomentumLink` | no, an alias |
+| its keywords and fields `P`, `B`, `range` | `power_w`, `magnification`, `range_m` | yes |
+| `register_allowed_link!(model, spacecraft, a, b; parameters)` | `register_link!(model, spacecraft, a, b, link)` | yes |
+| `force_on_endpoint(current, other, link)` | `link_force(link, a, b, ctx)` | yes |
+| `laser_force_on_spacecraft(model, state, satellite)` | `interlink_force_on_spacecraft(model, state, satellite)` | yes |

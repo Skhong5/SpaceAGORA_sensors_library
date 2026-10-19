@@ -12,6 +12,18 @@ struct OtherLink <: AbstractInterlink
 end
 SpaceAGORA.link_range_m(link::OtherLink) = link.range_m
 
+# A kind with the laser link's name and fields, from another package (here the
+# tests): its checkpoint identity differs from the built-in kind's.
+module ForeignKinds
+import SpaceAGORA
+struct LaserMomentumLink <: SpaceAGORA.AbstractInterlink
+    power_w::Float64
+    magnification::Float64
+    range_m::Float64
+end
+SpaceAGORA.link_range_m(link::LaserMomentumLink) = link.range_m
+end
+
 function checkpoint_fixture(directory)
     spacecraft = [(n_terminal=2,) for _ in 1:3]
     model = InterlinkModel(forbidden_pairs=[(3, 2)])
@@ -34,7 +46,11 @@ end
         @test snapshot.interlinks.is_active == [true, false, true]
         @test snapshot.interlinks.version === 2
         @test snapshot.interlinks.configuration.candidates == [(endpoints=((1, 1), (2, 1)),
-            link=(kind=:LaserMomentumLink, fields=(power_w=12.0, magnification=3.0, range_m=100.0)))]
+            link=(kind=(package=:SpaceAGORA, name=:LaserMomentumLink),
+                fields=(power_w=12.0, magnification=3.0, range_m=100.0)))]
+        foreign = SE._interlink_link_identity(ForeignKinds.LaserMomentumLink(12.0, 3.0, 100.0))
+        @test foreign.kind.name === :LaserMomentumLink && foreign.kind.package !== :SpaceAGORA
+        @test foreign.fields == snapshot.interlinks.configuration.candidates[1].link.fields
         @test snapshot.interlinks.configuration.forbidden_pairs == [(2, 3)]
         @test snapshot.interlinks.configuration.terminal_counts == [2, 2, 2]
         SE._write_checkpoint!(args, 12.5, state, "tsit5"; is_active=snapshot.interlinks.is_active)
@@ -73,6 +89,10 @@ end
             end,
             "link kind" => a -> begin
                 a.interlink_model.graph.edge_properties[1] = OtherLink(100.0)
+                a
+            end,
+            "same-named kind of another package" => a -> begin
+                a.interlink_model.graph.edge_properties[1] = ForeignKinds.LaserMomentumLink(12.0, 3.0, 100.0)
                 a
             end,
             "policy" => a -> merge(a, (scheduling_policy_model=SchedulingPolicyModel(:gve_sma_first_index),)),

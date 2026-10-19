@@ -19,9 +19,12 @@ module InterLinkModels
 	"""
 	    InterLinkParameters
 
-	Deprecated, use `LaserMomentumLink`: the same link under its old name, which
-	will be removed in SpaceAGORA 1.0. Its keywords `P`, `B` and `range` and the
-	fields of those names are `power_w`, `magnification` and `range_m`, and warn.
+	Deprecated, use `LaserMomentumLink`: the same type under its old name, which
+	will be removed in SpaceAGORA 1.0. The name is an alias and cannot warn on its
+	own: `InterLinkParameters()`, `InterLinkParameters(terminal)` and the positional
+	`InterLinkParameters(P, B, range)` run silently. Its keywords `P`, `B` and
+	`range` and the fields of those names (now `power_w`, `magnification` and
+	`range_m`) warn.
 	"""
 	const InterLinkParameters = LaserMomentumLink
 
@@ -89,9 +92,11 @@ module InterLinkModels
 	"""
 	    ConstellationInterLinkModel
 
-	Deprecated, use `InterlinkModel`: the same model under its old name, which will
-	be removed in SpaceAGORA 1.0. Its `constellation_link_type` keyword is
-	deprecated too: each registered link has its own kind.
+	Deprecated, use `InterlinkModel`: the same type under its old name, which will
+	be removed in SpaceAGORA 1.0. The name is an alias and cannot warn on its own:
+	`ConstellationInterLinkModel(; forbidden_pairs)` runs silently. Its
+	`constellation_link_type` keyword and property warn: each registered link has
+	its own kind.
 	"""
 	const ConstellationInterLinkModel = InterlinkModel
 

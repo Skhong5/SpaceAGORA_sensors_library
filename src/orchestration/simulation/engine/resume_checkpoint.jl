@@ -3,10 +3,15 @@
 
 # Keep feature identity and lifecycle knowledge in the simulation engine. The
 # file layer stores this plain-data snapshot without importing interlink models.
-# A link's identity is its kind and its fields.
+# A link's identity is its kind and its fields. The kind is named with the
+# package that defines it, so same-named kinds of two packages differ; the
+# package rather than the full module path, so a kind moved between a
+# package's own modules still resumes.
 function _interlink_link_identity(link)
-    names = fieldnames(typeof(link))
-    return (kind=nameof(typeof(link)), fields=NamedTuple{names}(map(name -> getfield(link, name), names)))
+    kind = typeof(link)
+    names = fieldnames(kind)
+    return (kind=(package=nameof(Base.moduleroot(parentmodule(kind))), name=nameof(kind)),
+        fields=NamedTuple{names}(map(name -> getfield(link, name), names)))
 end
 
 function _interlink_checkpoint_configuration(args)
