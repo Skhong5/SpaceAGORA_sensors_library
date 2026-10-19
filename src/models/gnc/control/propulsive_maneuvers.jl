@@ -326,6 +326,30 @@ function SimulationLifecycle.initialize_control!(model::BaseThrusterModel, u, p,
     return nothing
 end
 
+# The schedule, the burn state, the mounted levels and the refusal records go into
+# checkpoint files; a resumed run puts them back after its reset, the schedule with
+# the scheduler's record of its writes.
+function SimulationLifecycle.checkpoint_state(model::BaseThrusterModel)
+    return (schedule=[_schedule_entry(model, i) for i in eachindex(model.thrust)],
+        written_schedule=copy(model.written_schedule), burn_windows=copy(model.burn_windows),
+        burning=copy(model.burning), mounted_levels=deepcopy(model.mounted_levels),
+        plan_rejections=deepcopy(model.plan_rejections))
+end
+function SimulationLifecycle.restore_checkpoint_state!(model::BaseThrusterModel, data)
+    n = length(model.thrust)
+    length(data.schedule) == n || throw(ArgumentError(
+        "The checkpoint's burn scheduler serves $(length(data.schedule)) spacecraft; this one serves $n."))
+    for i in 1:n
+        model.Δv[i], model.direction[i], model.start_burn_time[i], model.stop_burn_time[i] = data.schedule[i]
+    end
+    copyto!(model.written_schedule, data.written_schedule)
+    copyto!(model.burn_windows, data.burn_windows)
+    copyto!(model.burning, data.burning)
+    foreach(copy!, model.mounted_levels, data.mounted_levels)
+    foreach(copy!, model.plan_rejections, data.plan_rejections)
+    return nothing
+end
+
 # The window of a burn of `burn_time_s` centred on the next apoapsis after `t`,
 # from the osculating elements `a`, `e` and the wrapped true anomaly
 # `ν_wrapped` about a body of gravitational parameter `μ`, or `nothing` when the

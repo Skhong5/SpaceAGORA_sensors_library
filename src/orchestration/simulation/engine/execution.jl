@@ -734,6 +734,7 @@ function run_simulation(
             _restore_interlink_checkpoint_state!(args, ckpt, p.is_active)
             _restore_callback_checkpoint_state!(args, ckpt, p)
             model_snapshot = _check_model_checkpoint_state(args, ckpt)
+            p.shared_buffers.model_resume[] = model_snapshot !== nothing
             resumed = true
             t_start = ckpt.t
             u_start = ckpt.u

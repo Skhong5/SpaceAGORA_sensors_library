@@ -124,6 +124,19 @@ function SimulationLifecycle.initialize_control!(m::MagneticMomentumManagerModel
     return nothing
 end
 
+# The internal state, the mounted levels and the record of the run's last write of
+# the state (G-8) go into checkpoint files; a resumed run puts them back after its
+# run-start reset.
+SimulationLifecycle.checkpoint_state(m::MagneticMomentumManagerModel) =
+    merge(_manager_run_state(m), (mounted_levels=copy(m.mounted_levels), run_written=m.run_written))
+function SimulationLifecycle.restore_checkpoint_state!(m::MagneticMomentumManagerModel, data)
+    m.h_wheels, m.held_torque_body, m.held_dipole_am2 = data.h_wheels, data.held_torque_body, data.held_dipole_am2
+    m.last_update_s, m.initialized, m.ticks = data.last_update_s, data.initialized, data.ticks
+    copy!(m.mounted_levels, data.mounted_levels)
+    m.run_written = data.run_written
+    return nothing
+end
+
 # The body-frame momentum of the wheels the engine integrates for spacecraft
 # `sat_idx` (its root wheel assembly), or `nothing` when it carries none.
 function _integrated_wheel_momentum(u, p, sat_idx::Int)

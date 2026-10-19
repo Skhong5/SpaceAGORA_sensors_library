@@ -76,6 +76,36 @@ function SimulationLifecycle.initialize_control!(model::RPOMPCControlModel, u, p
     return nothing
 end
 
+# The held command with the record of the run's last write of it (G-8), the
+# controller's warm start with the solver state it continues from, the mounted
+# levels and an attached command log go into checkpoint files. A resumed run puts
+# them back after its run-start reset.
+function SimulationLifecycle.checkpoint_state(model::RPOMPCControlModel)
+    ctrl = model.controller
+    solver = ctrl isa RpoLQMPCController ?
+        (U_prev=copy(ctrl.U_prev), osqp=_rpo_lqmpc_solver_state(ctrl.qp_model)) : nothing
+    return (held=deepcopy(model.held), run_written=deepcopy(model.run_written), controller=solver,
+        mounted_levels=copy(model.mounted_levels), command_log=deepcopy(model.command_log))
+end
+function SimulationLifecycle.restore_checkpoint_state!(model::RPOMPCControlModel, data)
+    ctrl = model.controller
+    (ctrl isa RpoLQMPCController) == (data.controller !== nothing) || throw(ArgumentError(
+        "The checkpoint's RPO MPC controller state does not match this model's controller; resume with the same controller."))
+    model.held, model.run_written = data.held, data.run_written
+    if ctrl isa RpoLQMPCController
+        copyto!(ctrl.U_prev, data.controller.U_prev)
+        _restore_rpo_lqmpc_solver_state!(ctrl.qp_model, data.controller.osqp)
+    end
+    copy!(model.mounted_levels, data.mounted_levels)
+    log, saved = model.command_log, data.command_log
+    if log !== nothing && saved !== nothing
+        for name in fieldnames(RPOControlCommandLog)
+            append!(empty!(getfield(log, name)), getfield(saved, name))
+        end
+    end
+    return nothing
+end
+
 """Return the held force and torque command for a control effector."""
 function control_wrench(model::RPOMPCControlModel, x::StateSample, p::ODEParams, t::Float64)
     x.spacecraft_index == model.chaser_index || return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)

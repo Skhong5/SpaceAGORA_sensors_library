@@ -493,9 +493,18 @@ data and which has no `restore_checkpoint_state!` method for it. A resumed run
 refuses a checkpoint whose models differ in kind or position from its own, or
 that holds no run state for a model that keeps some. Without the two methods,
 a resumed run starts a guidance, navigation or control model's own state from
-its reset, and a sensor's from what the sensor object holds. The built-in
-models do not implement them yet; the energy-depletion guidance, the RPO
-planners and the GNC algorithm adapters refuse checkpointed runs.
+its reset, and a sensor's from what the sensor object holds. The conformance
+check `checkpoint_round_trip` (added in 0.4.0) compares a run resumed from a
+checkpoint with an uninterrupted one, so it finds run state the two methods
+leave out.
+
+The built-in models that keep run state implement them: the momentum manager,
+the Apollo descent guidance and control, the periapsis-raise guidance, the burn
+scheduler (`BaseThrusterModel`), the RPO planner binding with the plan buffer it
+writes, the deprecated `RPOGuidanceModel`, the RPO MPC controller (its held
+command, warm start and solver iterate) and the robot-arm controller. The
+energy-depletion guidance and the GNC algorithm adapter (`AlgorithmGuidance`)
+refuse checkpointed runs.
 
 ## Planet, ephemerides, thermal and thruster extensions
 
