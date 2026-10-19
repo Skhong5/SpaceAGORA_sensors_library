@@ -1425,11 +1425,6 @@ end
     _initialize_nbody_workspace_buffers!(p_probe)
     u_probe = build_initial_conditions(args_probe)
 
-    # The probe reads a wrench effector's state sample from the flat route's
-    # per-satellite buffers, which a warm-up on another route leaves empty: fill
-    # them as the flat route's prefill does.
-    SimulationEngine._ensure_rhs_flat_effector_scratch!(p_probe.shared_buffers, 4, 3)
-    SimulationEngine._prefill_rhs_flat_state_samples!(p_probe.shared_buffers, u_probe.sc, p_probe)
     probes = SimulationEngine.probe_effector_costs!(p_probe, u_probe, args_probe)
 
     @test length(probes) == 3
