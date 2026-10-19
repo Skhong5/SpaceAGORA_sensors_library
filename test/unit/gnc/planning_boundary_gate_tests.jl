@@ -6,6 +6,7 @@ using Test
     owner_paths = (
         joinpath("src", "models", "gnc", "planning", "common"),
         joinpath("src", "models", "gnc", "companions", "hypr"),
+        joinpath("src", "models", "gnc", "companions", "edg"),
         joinpath("src", "models", "gnc", "planning", "rpo"),
         joinpath("src", "models", "gnc", "planning", "robot_arm"),
         joinpath("src", "models", "gnc", "planning", "rpo", "nested_probe"),
@@ -56,6 +57,7 @@ using Test
             joinpath("src", "models", "environment"),
             joinpath("src", "models", "gnc", "control"),
             joinpath("src", "models", "gnc", "guidance"),
+            joinpath("src", "models", "gnc", "contracts"),
             joinpath("src", "orchestration", "simulation", "engine"),
             joinpath("src", "orchestration", "simulation", "callbacks"),
             joinpath("src", "orchestration", "parallel"),

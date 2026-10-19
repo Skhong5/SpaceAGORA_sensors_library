@@ -43,6 +43,9 @@ const ALLOWED_RAW_INCLUDE_FILES = Set([
     joinpath("src", "models", "gnc", "planning", "rpo", "comparison", "reporting_compat.jl"),
     joinpath("packages", "SpaceAGORAHYPR", "src", "SpaceAGORAHYPR.jl"),
     joinpath("src", "models", "gnc", "planning", "rpo", "lifecycle.jl"),
+    # The RPO planner contract loads its validation and headroom parts; it sat in
+    # gnc/interfaces/, outside these scan roots, until the GNC regroup.
+    joinpath("src", "models", "gnc", "planning", "rpo", "contract", "rpo_planner.jl"),
     joinpath("src", "orchestration", "simulation", "composition", "simulation_model.jl"),
     joinpath("src", "models", "environment", "physical_models.jl"),
     joinpath("src", "models", "environment", "ephemerides", "ephemerides_models.jl"),

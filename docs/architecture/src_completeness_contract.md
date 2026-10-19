@@ -50,7 +50,7 @@ This contract defines how canonical source files are classified and what is forb
 
 ## GNC Aerobraking Boundary
 1. Typed EDG guidance ownership is `src/models/gnc/guidance/aerobraking/*` (`typed_edg/` and `energy_depletion_lifecycle.jl`).
-2. The older E-EDG and T-EDG strategy routes, their `control/aerobraking/*` execution paths, `internal/bridge_helpers.jl` and the mission-owned `operations/aerobraking_policy/*` selector were removed; `test/gates/ci_path_policy_gate.jl` keeps those paths retired.
+2. The older E-EDG and T-EDG strategy routes, their execution files (`control/aerobraking/constraint_tracking.jl`, `control_commands.jl` and `tracking_executor.jl`; the folder now holds the typed EDG control files), `internal/bridge_helpers.jl` and the mission-owned `operations/aerobraking_policy/*` selector were removed; `test/gates/ci_path_policy_gate.jl` keeps those paths retired.
 3. Guidance files must not include control source files directly.
 4. EDG control code in `src/models/gnc/control/` does not define numerical EDG solvers; its compatibility bindings import the typed calculations.
 5. Propulsive maneuver guidance/control coupling must use typed command buffers; guidance must not mutate thruster runtime state directly.
