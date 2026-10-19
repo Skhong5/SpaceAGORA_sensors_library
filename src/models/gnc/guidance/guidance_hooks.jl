@@ -143,7 +143,9 @@ module GuidanceHooks
 
     # The spacecraft each built-in guidance model acts on (GNCRuntime). The legacy
     # RPO guidance plans for the chaser from the target's state; the descent
-    # guidance flies its selected spacecraft and stops at touchdown.
+    # guidance flies its selected spacecraft and stops at touchdown. Like every
+    # built-in guidance model, neither plans for an inactive spacecraft
+    # (`skip_inactive`, true by default; the descent guidance declares it).
     GNCRuntime.spacecraft_scope(m::RPOGuidanceModel) = GNCRuntime.CoupledSpacecraft(m.chaser_idx, (m.target_idx,))
     GNCRuntime.spacecraft_scope(m::ApolloDescentGuidanceModel) = GNCRuntime.BoundSpacecraft(m.spacecraft_indices)
     GNCRuntime.skip_inactive(::ApolloDescentGuidanceModel) = true

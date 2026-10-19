@@ -96,25 +96,18 @@ SpaceAGORA.update_control!(::PeriodicLaw, u, p, t, i) = nothing
 SpaceAGORA.control_wrench(::PeriodicLaw, x, p, t) = (ZERO3, ZERO3)
 SpaceAGORA.gnc_period_s(m::PeriodicLaw) = m.period_s
 
-# The period warnings `f()` gives. Under --depwarn=error the shared pre-run
-# warning throws instead, with the same message.
-function period_warnings(f)
-    is_period(msg) = occursin("will refuse this run", msg)
-    if Base.JLOptions().depwarn == 2
-        try
-            f()
-            return String[]
-        catch e
-            msg = sprint(showerror, e)
-            is_period(msg) || rethrow()
-            return [msg]
-        end
+# The message of the `ArgumentError` that `f()` refuses with, or `nothing` when it
+# returns.
+function refusal(f)
+    try
+        f()
+        return nothing
+    catch e
+        e isa ArgumentError || rethrow()
+        return sprint(showerror, e)
     end
-    logger = Test.TestLogger(min_level=Logging.Warn)
-    with_logger(f, logger)
-    return filter(is_period, [string(l.message) for l in logger.logs])
 end
-period_messages(args) = period_warnings(() -> SM.SimulationCallbacks.check_control_periods(args))
+period_refusal(args) = refusal(() -> SM.SimulationCallbacks.check_control_periods(args))
 
 # A sensor with state of its own: the number of samples since the run started.
 mutable struct CountingSensor <: AbstractSensor
@@ -308,26 +301,24 @@ SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
         ctrl = SM.init_rpo_lqmpc(0.001, 0.2, Matrix(1.0I, 6, 6), Matrix(1.0I, 3, 3), Matrix(1.0I, 6, 6), 4)
         @test ctrl.dt_s == 0.2 && deepcopy(ctrl).dt_s == 0.2
         # A contributor's declared period against its callback's rate (0.5 s).
-        @test isempty(period_messages(runtime_args((PeriodicLaw(0.5),))))
-        warned = period_messages(runtime_args((PeriodicLaw(0.25),)))
-        @test length(warned) == 1 && occursin("0.25 s period", only(warned)) && occursin("every 0.5 s", only(warned))
-        # A configuration check, not a deprecation: the :preflight log group.
-        if Base.JLOptions().depwarn != 2
-            logger = Test.TestLogger(min_level=Logging.Warn)
-            with_logger(() -> SM.SimulationCallbacks.check_control_periods(runtime_args((PeriodicLaw(0.25),))), logger)
-            @test only(logger.logs).group === :preflight
-        end
-        # The RPO pilot builds its controller with the model's step; a different step warns.
+        @test period_refusal(runtime_args((PeriodicLaw(0.5),))) === nothing
+        refused = period_refusal(runtime_args((PeriodicLaw(0.25),)))
+        @test occursin("PeriodicLaw declares a 0.25 s period", refused) && occursin("every 0.5 s (control_rates[1])", refused)
+        # A refusal, not a warning, whatever --depwarn says: nothing is logged.
+        logger = Test.TestLogger(min_level=Logging.Warn)
+        refused = with_logger(() -> period_refusal(runtime_args((PeriodicLaw(0.25),))), logger)
+        @test refused isa String && isempty(logger.logs)
+        # The RPO pilot builds its controller with the model's step; a different step is refused.
         rpo = make_rpo_configuration(planner=DirectRPOPlanner(), mission_time_s=0.2)
         mpc = only(rpo.control_model.control_effectors)
         @test gnc_period_s(mpc) == mpc.control_dt_s == mpc.controller.dt_s
-        @test isempty(period_messages(rpo))
+        @test period_refusal(rpo) === nothing
         mpc.controller.dt_s = 2mpc.control_dt_s
-        warned = period_messages(rpo)
-        @test length(warned) == 1 && occursin("discretized with a", only(warned))
+        refused = period_refusal(rpo)
+        @test occursin("RPOMPCControlModel ticks every 0.1 s but its controller was discretized with a 0.2 s step", refused)
         # The engine runs the check before every run.
-        warned = period_warnings(() -> run_simulation(runtime_args((PeriodicLaw(0.25),))))
-        @test length(warned) == 1 && occursin("0.25 s period", only(warned))
+        refused = refusal(() -> run_simulation(runtime_args((PeriodicLaw(0.25),))))
+        @test occursin("0.25 s period", refused)
     end
 
     @testset "links pair models, and the engine checks and initializes each once" begin

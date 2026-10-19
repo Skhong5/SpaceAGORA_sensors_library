@@ -72,8 +72,8 @@ CoupledSpacecraft(primary::Integer, partners::Tuple{Vararg{Integer}}) =
 The spacecraft guidance, navigation or control `model` acts on. The engine ticks
 the model only for the spacecraft its scope names (every one, the `BoundSpacecraft`
 indices, or the `CoupledSpacecraft` primary), reading the scope at each tick.
-Before the run it warns when the scope names a run position the run does not have;
-SpaceAGORA 0.4.0 will refuse such a run. The output hooks are still called for
+Before the run it refuses a scope that names a run position the run does not have.
+The output hooks are still called for
 every spacecraft, so they keep their own index checks. Default: `AllSpacecraft()`.
 """
 spacecraft_scope(model) = AllSpacecraft()
@@ -86,10 +86,11 @@ Whether the engine stops ticking `model` for a spacecraft that is no longer acti
 that returns `true`, while spacecraft `spacecraft_index` is inactive, each tick
 time calls `release_command!(model, t, spacecraft_index)` instead of the tick. For
 a `CoupledSpacecraft` model the primary decides; a model that must react to an
-inactive partner checks `p.is_active` itself. Default: `false`, ticked as for an
-active spacecraft; SpaceAGORA 0.4.0 will make `true` the default.
+inactive partner checks `p.is_active` itself. Default: `true` (since SpaceAGORA
+0.4.0; `false` before). Return `false` for a model that must keep ticking, as for
+an active spacecraft.
 """
-skip_inactive(model) = false
+skip_inactive(model) = true
 
 """
     held_command(model, spacecraft_index) -> Any
@@ -164,7 +165,7 @@ end
 
 Wraps a shared object that a model reads, in `gnc_links`. Before a periodic control
 model's tick, the engine calls `before_reference_control!` for each model that
-produces a link it consumes.
+produces a link it consumes, unless the tick releases or skips every spacecraft.
 """
 struct Consumes{L}
     link::L
@@ -221,8 +222,8 @@ gnc_clock_started!(model, period_s, origin_s) = nothing
 
 The tick period (s) that control `model`'s law assumes, such as the step its
 controller was discretized with. Before the run the engine compares it with the
-rate of the model's periodic callback and warns when they differ; SpaceAGORA
-0.4.0 will refuse such a run. Default: `nothing`, no declared period, as for a
+rate of the model's periodic callback and refuses the run when they differ.
+Default: `nothing`, no declared period, as for a
 law that measures the elapsed time itself.
 """
 gnc_period_s(model) = nothing

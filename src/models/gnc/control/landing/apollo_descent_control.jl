@@ -107,11 +107,11 @@ end
 Control effector paired with `ApolloDescentGuidanceModel` through the
 shared [`ApolloDescentState`](@ref). Carries the terrain model so the engine
 registers the touchdown event on it. When a configuration has both models,
-`run_simulation` warns before the run (once per session) if any spacecraft is
-guided or controlled without its counterpart on the same state, and refuses the
-configuration under `--depwarn=error`. A guidance (or
-control) model of another type in the configuration may write (or fly) the
-state, so the check then skips spacecraft without Apollo guidance (or control).
+`run_simulation` refuses it before the run, with an `ArgumentError`, if any
+spacecraft is guided or controlled without its counterpart on the same state.
+A guidance (or control) model of another type in the configuration may write (or
+fly) the state, so the check then skips spacecraft without Apollo guidance (or
+control).
 
 `actuation=:ideal` applies the slew-limited engine thrust along body -z and
 the clamped attitude torque directly, with the configured specific impulses.
@@ -151,7 +151,6 @@ function ApolloDescentControlModel(config::ApolloDescentControlConfig, guidance:
 end
 
 import ..GuidanceHooks
-using ..HookDeprecation: _preflight_warning
 
 # The guidance hands its commands to this control through the shared state.
 # When a configuration has both models, a spacecraft controlled on a state that
@@ -200,10 +199,9 @@ function SimulationLifecycle.preflight_control(c::ApolloDescentControlModel, arg
     isempty(pairing.uncontrolled) || push!(problems, "spacecraft $(join(pairing.uncontrolled, ", ")) " *
         "have an ApolloDescentGuidanceModel but no ApolloDescentControlModel on the same ApolloDescentState, " *
         "so no control flies their guidance commands")
-    _preflight_warning((ApolloDescentControlModel, :apollo_pairing),
+    throw(ArgumentError(
         "Apollo descent guidance and control are not paired: $(join(problems, "; ")). Build both models " *
-        "from one ApolloDescentState with the same spacecraft_indices.")
-    return nothing
+        "from one ApolloDescentState with the same spacecraft_indices."))
 end
 
 const _DESCENT_G0 = 9.80665
