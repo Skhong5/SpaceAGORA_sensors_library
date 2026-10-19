@@ -142,6 +142,27 @@ function _reset_descent_entries!(state::ApolloDescentState, indices)
     return state
 end
 
+# The selected spacecraft's entries of the shared state, by field (each field's
+# entries in the order of `indices`), and their restore.
+function _descent_entries(state::ApolloDescentState, indices)
+    ids = collect(indices)
+    return NamedTuple{fieldnames(ApolloDescentState)}(map(fieldnames(ApolloDescentState)) do name
+        data = getfield(state, name)
+        name === :phase_start_s ? data[:, ids] : data[ids]
+    end)
+end
+function _restore_descent_entries!(state::ApolloDescentState, indices, entries)
+    for name in fieldnames(ApolloDescentState), (k, i) in enumerate(indices)
+        data, saved = getfield(state, name), getfield(entries, name)
+        if name === :phase_start_s
+            data[:, i] .= view(saved, :, k)
+        else
+            data[i] = saved[k]
+        end
+    end
+    return state
+end
+
 # Both models use the same selected run indices and explicit terrain datum.
 function _descent_indices(state::ApolloDescentState, indices)
     n = length(state.phase)

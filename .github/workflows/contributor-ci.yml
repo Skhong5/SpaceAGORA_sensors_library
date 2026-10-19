@@ -67,6 +67,17 @@ on:
           by scripts/new_contributor_repository.jl, instead of `directory`.
         type: boolean
         default: false
+      repository:
+        description: >-
+          Core CI only: a public contributor repository (owner/name) to test instead
+          of the caller's, with `directory` inside it. Its pin is moved to the caller's
+          commit first (scripts/contributor_environment.jl repin).
+        type: string
+        default: ""
+      repository-ref:
+        description: Core CI only; the branch, tag or commit of `repository` to test (default its default branch).
+        type: string
+        default: ""
 
 defaults:
   run:
@@ -92,6 +103,8 @@ jobs:
       DIRECTORY: ${{ inputs.directory }}
       CORE_FROM_CALLER: ${{ inputs.core-from-caller }}
       STARTER: ${{ inputs.starter }}
+      REPOSITORY: ${{ inputs.repository }}
+      REPOSITORY_REF: ${{ inputs.repository-ref }}
       JULIA_NUM_THREADS: ${{ inputs.threads }}
       JULIA_LOAD_PATH: "@:@stdlib"
       JULIA_PKG_PRECOMPILE_AUTO: "0"
@@ -114,6 +127,12 @@ jobs:
             fail "threads must be 2 or more, so that the concurrency checks run on threads."
           [[ "$LOAD_ORDERS" != true || "$KIND" == companion ]] || fail "load-orders applies to kind companion only."
           [[ "$STARTER" != true || "$CORE_FROM_CALLER" == true ]] || fail "starter applies to core CI only (core-from-caller: true)."
+          if [ -n "$REPOSITORY" ]; then
+            [[ "$CORE_FROM_CALLER" == true ]] || fail "repository applies to core CI only (core-from-caller: true)."
+            [[ "$STARTER" != true ]] || fail "give starter or repository, not both."
+            [[ "$REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || fail "repository must be owner/name, not '$REPOSITORY'."
+          fi
+          [[ -z "$REPOSITORY_REF" || -n "$REPOSITORY" ]] || fail "repository-ref applies only with repository."
           case "/$DIRECTORY/" in */../*|//*) fail "directory must be a relative path inside the repository, not '$DIRECTORY'." ;; esac
           if [ -z "$WORKFLOW_SHA" ]; then
             echo "::warning::This runner does not report the workflow's own commit; only the pin file is checked against spaceagora-rev."
@@ -139,6 +158,17 @@ jobs:
           lfs: false
           persist-credentials: false
 
+      # A contributor repository tested by core CI; nothing in the core checkout tracks it.
+      - name: Check out the contributor repository (core CI)
+        if: inputs.repository != ''
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.repository-ref }}
+          path: .contributor-repository
+          lfs: false
+          persist-credentials: false
+
       - name: Verify the core commit and locate the repository
         run: |
           set -euo pipefail
@@ -149,7 +179,14 @@ jobs:
             exit 1
           fi
           # A starter is generated once Julia is set up, outside the workspace.
-          if [ "$STARTER" = true ]; then repository="$RUNNER_TEMP/starter-$KIND"; else repository="$(cd "$GITHUB_WORKSPACE/$DIRECTORY" && pwd -P)"; fi
+          if [ "$STARTER" = true ]; then
+            repository="$RUNNER_TEMP/starter-$KIND"
+          elif [ -n "$REPOSITORY" ]; then
+            repository="$(cd "$GITHUB_WORKSPACE/.contributor-repository/$DIRECTORY" && pwd -P)"
+            echo "::notice::Testing $REPOSITORY at $(git -C "$repository" rev-parse HEAD) against SpaceAGORA $SPACEAGORA_REV."
+          else
+            repository="$(cd "$GITHUB_WORKSPACE/$DIRECTORY" && pwd -P)"
+          fi
           {
             echo "SPACEAGORA_CORE=$core"
             echo "CONTRIBUTOR_REPOSITORY=$repository"
@@ -198,6 +235,16 @@ jobs:
         run: >-
           julia --startup-file=no --project=@stdlib "$SPACEAGORA_CORE/scripts/new_contributor_repository.jl"
           "$KIND" "$CONTRIBUTOR_REPOSITORY" --name "Starter${KIND^}"
+
+      # The repository's pin, workflow call and [compat] move to the commit under
+      # test; staging the move lets the last step see any later change to tracked files.
+      - name: Pin the contributor repository to the commit under test (core CI)
+        if: inputs.repository != ''
+        run: |
+          set -euo pipefail
+          julia --startup-file=no --project=@stdlib "$SPACEAGORA_CORE/scripts/contributor_environment.jl" \
+            repin "$KIND" "$CONTRIBUTOR_REPOSITORY" --rev "$SPACEAGORA_REV"
+          git -C "$CONTRIBUTOR_REPOSITORY" add --update
 
       - name: Check the SpaceAGORA pin
         run: |
@@ -263,6 +310,7 @@ jobs:
           set -euo pipefail
           git -C "$GITHUB_WORKSPACE" diff --exit-code
           if [ "$CORE_FROM_CALLER" != true ]; then git -C "$SPACEAGORA_CORE" diff --exit-code; fi
+          if [ -n "$REPOSITORY" ]; then git -C "$CONTRIBUTOR_REPOSITORY" diff --exit-code; fi
 
       - name: Conformance summary
         if: ${{ !cancelled() && env.SPACEAGORA_CORE != '' }}

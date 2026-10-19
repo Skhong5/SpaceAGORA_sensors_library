@@ -21,9 +21,10 @@ end
 # Declarations: what the controller acts on and what it assumes.
 SpaceAGORA.spacecraft_scope(c::RateDamper) = BoundSpacecraft((c.spacecraft_index,))
 SpaceAGORA.gnc_period_s(c::RateDamper) = c.period_s
-SpaceAGORA.skip_inactive(::RateDamper) = true
 SpaceAGORA.held_command(c::RateDamper, spacecraft_index) = c.torque_body
 SpaceAGORA.held_command_time(c::RateDamper, spacecraft_index) = c.tick_s
+# While its spacecraft is inactive (after an impact or a touchdown), the engine calls
+# this at each tick in place of the tick (`skip_inactive`): the off command.
 function SpaceAGORA.release_command!(c::RateDamper, t, spacecraft_index)
     c.torque_body, c.tick_s = zero(SVector{3, Float64}), t
     return nothing

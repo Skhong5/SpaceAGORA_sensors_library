@@ -48,6 +48,7 @@ export test_algorithm, test_algorithm_family
 include(joinpath(@__DIR__, "reports.jl"))
 include(joinpath(@__DIR__, "fixtures.jl"))
 include(joinpath(@__DIR__, "walker.jl"))
+include(joinpath(@__DIR__, "checkpoints.jl"))
 include(joinpath(@__DIR__, "effectors.jl"))
 include(joinpath(@__DIR__, "facades.jl"))
 include(joinpath(@__DIR__, "sensors.jl"))
@@ -65,14 +66,15 @@ const CHECK_IDS = (
         :environment_declared),
     service_facade = (:facade_shape,),
     sensor = (:run_state_fields, :requirements_supported, :measurement_shape, :repeatable_run, :deepcopy_equivalent,
-        :global_rng_independent, :concurrent_equals_sequential, :seed_repeatable, :custom_state_reset),
+        :global_rng_independent, :concurrent_equals_sequential, :seed_repeatable, :custom_state_reset,
+        :checkpoint_round_trip),
     guidance_model = (:hooks_present, :repeatable_run, :deepcopy_equivalent, :global_rng_independent,
-        :concurrent_equals_sequential, :initialize_resets, :bind_fresh_state),
+        :concurrent_equals_sequential, :initialize_resets, :bind_fresh_state, :checkpoint_round_trip),
     navigation_model = (:hooks_present, :repeatable_run, :deepcopy_equivalent, :global_rng_independent,
-        :concurrent_equals_sequential, :initialize_resets, :bind_fresh_state),
+        :concurrent_equals_sequential, :initialize_resets, :bind_fresh_state, :checkpoint_round_trip),
     control_model = (:hooks_present, :supported_sample_signature, :repeatable_run,
         :deepcopy_equivalent, :global_rng_independent, :concurrent_equals_sequential, :initialize_resets,
-        :output_hook_pure, :positive_consumption, :bind_fresh_state),
+        :output_hook_pure, :positive_consumption, :bind_fresh_state, :checkpoint_round_trip),
     algorithm = _ALGORITHM_CHECK_IDS,
     algorithm_family = _ALGORITHM_FAMILY_CHECK_IDS,
 )

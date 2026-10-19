@@ -173,7 +173,7 @@ using .ConformanceInstances: on_spice, spice_available
 # Sensors: one record shape, a 3-component measurement every second, and a counter
 # some controls keep. The clean one adds noise from its own stream to the body rate.
 for name in (:NcCleanSensor, :NcShortSensor, :NcNaNSensor, :NcRunEpochSensor, :NcIdentitySensor, :NcGlobalRandSensor,
-        :NcSharedSensor, :NcFixedSeedSensor, :NcCountingSensor, :NcAtmosphereSensor)
+        :NcSharedSensor, :NcFixedSeedSensor, :NcCountingSensor, :NcAtmosphereSensor, :NcUncheckpointedSensor)
     @eval begin
         mutable struct $name <: SpaceAGORA.AbstractSensor
             period_s::Float64
@@ -214,6 +214,10 @@ SpaceAGORA.initialize_sensor!(::NcFixedSeedSensor, truth, ctx, rng) = (Random.se
 SpaceAGORA.sensor_measure(::NcFixedSeedSensor, truth, ctx, rng) = noisy(truth, rng)
 # custom_state_reset: a sample counter that initialize_sensor! does not reset.
 SpaceAGORA.sensor_measure(s::NcCountingSensor, truth, ctx, rng) = (s.count += 1; noisy(truth, rng) .+ 1.0e-6 * s.count)
+# checkpoint_round_trip: a sample counter reset by initialize_sensor! but not in its
+# checkpoint_state, which a resumed run (no initialize_sensor!) starts from the record's value.
+SpaceAGORA.initialize_sensor!(s::NcUncheckpointedSensor, truth, ctx, rng) = (s.count = 0; nothing)
+SpaceAGORA.sensor_measure(s::NcUncheckpointedSensor, truth, ctx, rng) = (s.count += 1; noisy(truth, rng) .+ 1.0e-6 * s.count)
 # requirements_supported: asks for the atmosphere.
 SpaceAGORA.sensor_requirements(::NcAtmosphereSensor) = SpaceAGORA.ActuatorRequirements(atmosphere=true)
 SpaceAGORA.sensor_measure(::NcAtmosphereSensor, truth, ctx, rng) = noisy(truth, rng)
@@ -250,6 +254,9 @@ NcNeedsInitSensor() = NcNeedsInitSensor(1.0, 1, nothing, SVector(NaN, NaN, NaN),
 SpaceAGORA.sensor_dimension(::NcNeedsInitSensor) = 3
 SpaceAGORA.initialize_sensor!(s::NcNeedsInitSensor, truth, ctx, rng) = (s.offset = 0.0; nothing)
 SpaceAGORA.sensor_measure(s::NcNeedsInitSensor, truth, ctx, rng) = noisy(truth, rng) .+ s.offset
+# A resumed run does not call initialize_sensor!: the offset it sets is in the checkpoint.
+SpaceAGORA.checkpoint_state(s::NcNeedsInitSensor) = (offset=s.offset,)
+SpaceAGORA.restore_checkpoint_state!(s::NcNeedsInitSensor, data) = (s.offset = data.offset; nothing)
 # seed_repeatable: like a gyro whose bias walks, its first reading draws nothing (the
 # current bias) and later ones do; initialize_sensor! resets the stream to a fixed seed.
 mutable struct NcFixedSeedWalkSensor <: SpaceAGORA.AbstractSensor
@@ -271,12 +278,13 @@ function SpaceAGORA.sensor_measure(s::NcFixedSeedWalkSensor, truth, ctx, rng)
 end
 
 const SENSOR_RUN_LEVEL = (:repeatable_run, :deepcopy_equivalent, :global_rng_independent, :concurrent_equals_sequential,
-    :seed_repeatable, :custom_state_reset)
+    :seed_repeatable, :custom_state_reset, :checkpoint_round_trip)
 sensor_except(ids...) = filter(id -> !(id in ids), CHECK_IDS.sensor)
 
 # Guidance and navigation models: one record shape and one behaviour per control.
 # `acc` is the model's own state, which the run-level checks compare at the end of a
-# run; `ticked` marks a run's first tick; `buffer` is what bind_spacecraft shares.
+# run; `ticked` marks a run's first tick; `buffer` is what bind_spacecraft shares. All
+# but NoCheckpoint keep that state in checkpoint files.
 const NC_GNC_EPOCH = Ref(0)
 const NC_GNC_SCRATCH = Ref(0.0)
 const NC_GNC_GAINS = IdDict{Any, Float64}()
@@ -287,9 +295,12 @@ gnc_step(::Val{:Rand}, m, u, i) = rand()
 gnc_step(::Val{:Shared}, m, u, i) = (m.ticked || (m.ticked = true; NC_GNC_SCRATCH[] = 0.0); NC_GNC_SCRATCH[] += 1.0)
 gnc_step(::Val{:SharedBind}, m, u, i) = (m.buffer[1] += 1.0; m.buffer[1])
 gnc_step(::Val{:NoReset}, m, u, i) = 1.0
+gnc_step(::Val{:NoCheckpoint}, m, u, i) = gnc_step(Val(:Clean), m, u, i)
+nc_checkpoint_state(m) = (acc=m.acc, ticked=m.ticked, buffer=copy(m.buffer))
+nc_restore!(m, data) = (m.acc = data.acc; m.ticked = data.ticked; copyto!(m.buffer, data.buffer); nothing)
 for (prefix, Abstract, tick, initializer) in ((:NcG, SpaceAGORA.AbstractGuidanceModel, :update_guidance!, :initialize_guidance!),
         (:NcN, SpaceAGORA.AbstractNavigationModel, :update_navigation!, :initialize_navigation!))
-    for variant in (:Clean, :NoTick, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoReset)
+    for variant in (:Clean, :NoTick, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoReset, :NoCheckpoint)
         name = Symbol(prefix, variant)
         @eval begin
             mutable struct $name <: $Abstract
@@ -305,6 +316,9 @@ for (prefix, Abstract, tick, initializer) in ((:NcG, SpaceAGORA.AbstractGuidance
         variant !== :NoReset &&
             @eval SpaceAGORA.SimulationLifecycle.$initializer(m::$name, u, p, t) = (m.acc = 0.0; m.ticked = false; nothing)
         variant === :SharedBind && @eval SpaceAGORA.bind_spacecraft(m::$name, i::Int) = $name(m.acc, m.ticked, m.buffer)
+        variant === :NoCheckpoint && continue
+        @eval SpaceAGORA.checkpoint_state(m::$name) = nc_checkpoint_state(m)
+        @eval SpaceAGORA.restore_checkpoint_state!(m::$name, data) = nc_restore!(m, data)
     end
 end
 registered(model) = (NC_GNC_GAINS[model] = 1.0e-3; model)
@@ -327,7 +341,7 @@ end
 NcCtl{V}() where {V} = NcCtl{V}(0.0, false, [0.0], 0)
 const NC_CTL_STEPS = (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoReset)
 for variant in (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoReset, :NoWrench, :Narrow,
-        :Impure, :Negative)
+        :Impure, :Negative, :NoCheckpoint)
     step = variant in NC_CTL_STEPS ? variant : :Clean
     @eval SpaceAGORA.update_control!(m::NcCtl{$(QuoteNode(variant))}, u, p, t::Float64, i::Int) =
         (m.acc += gnc_step(Val($(QuoteNode(step))), m, u, i); nothing)
@@ -344,10 +358,13 @@ SpaceAGORA.bind_spacecraft(m::NcCtl{:SharedBind}, i::Int) = NcCtl{:SharedBind}(m
 SpaceAGORA.control_wrench(m::NcCtl{:Narrow}, x::Sample{Nothing}, p, t::Float64) = (Z3, Z3)
 SpaceAGORA.control_wrench(m::NcCtl{:Impure}, x::Sample, p, t::Float64) = (m.calls += 1; (Z3, Z3))
 SpaceAGORA.control_propellant_rate(m::NcCtl{:Negative}, x::Sample, p, t::Float64) = -1.0e-5
+SpaceAGORA.checkpoint_state(m::NcCtl) = merge(nc_checkpoint_state(m), (calls=m.calls,))
+SpaceAGORA.restore_checkpoint_state!(m::NcCtl, data) = (nc_restore!(m, data); m.calls = data.calls; nothing)
+SpaceAGORA.checkpoint_state(m::NcCtl{:NoCheckpoint}) = nothing
 
 gnc_except(kind, ids...) = filter(id -> !(id in ids), CHECK_IDS[kind])
 const GNC_RUN_LEVEL = (:repeatable_run, :deepcopy_equivalent, :global_rng_independent, :concurrent_equals_sequential,
-    :initialize_resets)
+    :initialize_resets, :checkpoint_round_trip)
 function gnc_controls()
     controls = Any[]
     for (kind, prefix, check) in ((:guidance_model, :NcG, check_guidance_model), (:navigation_model, :NcN, check_navigation_model))
@@ -364,16 +381,20 @@ function gnc_controls()
                 report=() -> check(registered(model(:Identity))), passing=gnc_except(kind, :deepcopy_equivalent)),
             (kind=kind, id=:global_rng_independent, broken="rand() in the tick", expect="seeded 1 and 2 differ: ",
                 report=() -> check(model(:Rand)), passing=(:hooks_present, :bind_fresh_state)),
+            # Its scratch also outlives the interrupted run that the round trip resumes.
             (kind=kind, id=:concurrent_equals_sequential, broken="scratch shared by every instance",
                 expect="and sequential run ", report=() -> check(model(:Shared)),
-                passing=gnc_except(kind, :concurrent_equals_sequential)),
+                passing=gnc_except(kind, :concurrent_equals_sequential, :checkpoint_round_trip)),
             # Its shared buffer is never reset either.
             (kind=kind, id=:bind_fresh_state, broken="bind_spacecraft copies share a buffer the tick changes",
                 expect="changed during the run", report=() -> check(model(:SharedBind)),
                 passing=gnc_except(kind, :bind_fresh_state, :initialize_resets)),
             (kind=kind, id=:initialize_resets, broken="its own state never reset in $(initializer)",
                 expect="reset the model's run state in $(initializer)",
-                report=() -> check(model(:NoReset)), passing=gnc_except(kind, :initialize_resets)))
+                report=() -> check(model(:NoReset)), passing=gnc_except(kind, :initialize_resets)),
+            (kind=kind, id=:checkpoint_round_trip, broken="its own state not in a checkpoint_state",
+                expect="a run resumed from its checkpoint at 30.0 s and an uninterrupted run differ after it: the model's own state",
+                report=() -> check(model(:NoCheckpoint)), passing=gnc_except(kind, :checkpoint_round_trip)))
     end
     ctl(variant) = NcCtl{variant}()
     kind = :control_model
@@ -392,7 +413,8 @@ function gnc_controls()
         (kind=kind, id=:global_rng_independent, broken="rand() in the tick", expect="seeded 1 and 2 differ: ",
             report=() -> check_control_model(ctl(:Rand)), passing=(:hooks_present,)),
         (kind=kind, id=:concurrent_equals_sequential, broken="scratch shared by every instance", expect="and sequential run ",
-            report=() -> check_control_model(ctl(:Shared)), passing=gnc_except(kind, :concurrent_equals_sequential)),
+            report=() -> check_control_model(ctl(:Shared)),
+            passing=gnc_except(kind, :concurrent_equals_sequential, :checkpoint_round_trip)),
         (kind=kind, id=:output_hook_pure, broken="control_wrench counts its calls in the model",
             expect="calls of control_wrench at t = ", report=() -> check_control_model(ctl(:Impure)),
             passing=gnc_except(kind, :output_hook_pure)),
@@ -405,7 +427,10 @@ function gnc_controls()
         # Its shared buffer is never reset either.
         (kind=kind, id=:bind_fresh_state, broken="bind_spacecraft copies share a buffer the tick changes",
             expect="changed during the run", report=() -> check_control_model(ctl(:SharedBind)),
-            passing=gnc_except(kind, :bind_fresh_state, :initialize_resets)))
+            passing=gnc_except(kind, :bind_fresh_state, :initialize_resets)),
+        (kind=kind, id=:checkpoint_round_trip, broken="its own state not in a checkpoint_state",
+            expect="a run resumed from its checkpoint at 30.0 s and an uninterrupted run differ after it: ",
+            report=() -> check_control_model(ctl(:NoCheckpoint)), passing=gnc_except(kind, :checkpoint_round_trip)))
     return controls
 end
 
@@ -659,7 +684,7 @@ controls() = [
     (kind=:sensor, id=:global_rng_independent, broken="noise from the global generator", expect="seeded 1 and 2 differ: ",
         report=() -> check_sensor(NcGlobalRandSensor()), passing=(:run_state_fields, :requirements_supported, :measurement_shape)),
     (kind=:sensor, id=:concurrent_equals_sequential, broken="scratch shared by every instance", expect="and sequential run ",
-        report=() -> check_sensor(NcSharedSensor()), passing=sensor_except(:concurrent_equals_sequential)),
+        report=() -> check_sensor(NcSharedSensor()), passing=sensor_except(:concurrent_equals_sequential, :checkpoint_round_trip)),
     (kind=:sensor, id=:seed_repeatable, broken="its stream reset to a fixed seed",
         expect="yet runs with those seeds give the same measurements",
         report=() -> check_sensor(NcFixedSeedSensor()), passing=sensor_except(:seed_repeatable)),
@@ -668,7 +693,10 @@ controls() = [
         report=() -> check_sensor(NcFixedSeedWalkSensor()), passing=sensor_except(:seed_repeatable)),
     (kind=:sensor, id=:custom_state_reset, broken="a sample counter it never resets",
         expect="two runs with isolate_state=false on one configuration differ: ",
-        report=() -> check_sensor(NcCountingSensor()), passing=sensor_except(:custom_state_reset)),
+        report=() -> check_sensor(NcCountingSensor()), passing=sensor_except(:custom_state_reset, :checkpoint_round_trip)),
+    (kind=:sensor, id=:checkpoint_round_trip, broken="a sample counter it resets but does not checkpoint",
+        expect="a run resumed from its checkpoint at 30.0 s and an uninterrupted run differ after it: ",
+        report=() -> check_sensor(NcUncheckpointedSensor()), passing=sensor_except(:checkpoint_round_trip)),
     gnc_controls()...,
     algorithm_controls()...,
     (kind=:service_facade, id=:facade_shape, broken="CONTRACT_VERSION other than the reviewed one", expect="CONTRACT_VERSION is v\"1.0.1\", not the reviewed 1.0.0",
@@ -753,16 +781,19 @@ const MAY_SKIP = (:concurrent_equals_sequential, :bind_fresh_state, :stream_unto
         catch err
             err
         end
-        expected = control.id === :concurrent_equals_sequential && Threads.nthreads() < 2 ? :skip : :fail
         @testset "$(control.id): $(control.broken)" begin
             @testset let id = control.id, thrown = report isa Exception ? sprint(showerror, report) : ""
                 @test !(report isa Exception)
             end
             if !(report isa Exception)
-                detail = only(check.detail for check in report.checks if check.id === control.id)
-                @testset let id = control.id, status = status_of(report, control.id), detail = detail
+                found = only(check for check in report.checks if check.id === control.id)
+                # A check added after the first release fails as advisory while it is new (K-4).
+                expected = control.id === :concurrent_equals_sequential && Threads.nthreads() < 2 ? :skip :
+                    C._failure_status(found.since)
+                detail = found.detail
+                @testset let id = control.id, status = found.status, detail = detail
                     @test status === expected
-                    expected === :fail && @test occursin(control.expect, detail)
+                    expected === :skip || @test occursin(control.expect, detail)
                     # A run-level control fails by its behaviour, not by a run that stopped.
                     control.id in (control.kind === :sensor ? SENSOR_RUN_LEVEL :
                         control.kind in (:guidance_model, :navigation_model, :control_model) ? GNC_RUN_LEVEL : RUN_LEVEL) &&

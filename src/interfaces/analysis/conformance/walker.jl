@@ -30,12 +30,13 @@ function package_types(T::Type, root::Module=parentmodule(@__MODULE__))
     return unique(found)
 end
 
-# Whether `a` and `b` hold the same state: equal bits for bits values, equal
-# elements for arrays and dictionaries, and the same field values for every other
-# object, followed recursively. Mutable objects are matched one to one in both
-# directions, so aliasing is part of the state: two objects of `a` cannot both
-# correspond to one object of `b`, nor the reverse. Tasks, locks and IO streams are
-# not model state and are not compared.
+# Whether `a` and `b` hold the same state: equal bits for bits values, equal values
+# for big numbers (a `BigInt`'s limbs live behind a pointer that differs between
+# copies, as in a `MersenneTwister`), equal elements for arrays and dictionaries, and
+# the same field values for every other object, followed recursively. Mutable
+# objects are matched one to one in both directions, so aliasing is part of the
+# state: two objects of `a` cannot both correspond to one object of `b`, nor the
+# reverse. Tasks, locks and IO streams are not model state and are not compared.
 _same_state(a, b) = _same_state(a, b, IdDict{Any, Any}(), IdDict{Any, Any}())
 
 function _same_state(a, b, seen::IdDict{Any, Any}, back::IdDict{Any, Any})
@@ -44,6 +45,7 @@ function _same_state(a, b, seen::IdDict{Any, Any}, back::IdDict{Any, Any})
     isbitstype(T) && return a === b
     (a isa Module || a isa Function && !_has_captures(a) || a isa Type || a isa Symbol) && return a === b
     a isa AbstractString && return a == b
+    a isa Union{BigInt, BigFloat} && return isequal(a, b)
     (a isa Task || a isa Base.AbstractLock || a isa IO || a isa Threads.Condition) && return true
     if ismutable(a)
         haskey(seen, a) && return seen[a] === b

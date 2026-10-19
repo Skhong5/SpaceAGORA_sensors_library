@@ -103,8 +103,8 @@ drains propellant through both. The two effectors share an
 `SM.ApolloDescentState` (phase, time-to-go, thrust, commanded attitude, radar
 altitude, site-frame state, touchdown record). Build both from the same state
 with the same `spacecraft_indices`: the control flies only the commands its
-guidance writes there, and `run_simulation` warns before the run when a
-spacecraft has one model without the other on that state. A guidance model of
+guidance writes there, and `run_simulation` refuses the run, before it starts,
+when a spacecraft has one model without the other on that state. A guidance model of
 another type in the configuration may write the state, so the check then skips
 spacecraft without Apollo guidance; likewise for control. Run the simulation with
 `isolate_state=false` when you want to read that state afterwards; the demo

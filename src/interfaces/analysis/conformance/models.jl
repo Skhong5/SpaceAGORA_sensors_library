@@ -48,6 +48,12 @@ its configuration's guidance effectors. The checks, in report order:
   fixture with the model declared on its first two spacecraft instead of in the
   shared container (a fixture with one spacecraft gets a copy of it as the second,
   its mounted sensors included). Skipped without a method.
+- `checkpoint_round_trip` (added in 0.4.0, advisory in 0.4): the fixture run with a
+  checkpoint halfway, interrupted after it and resumed from the file, ends its second
+  half with the states and the model's own state of an uninterrupted run with the same
+  checkpoints, bit for bit: `checkpoint_state` and `restore_checkpoint_state!` carry
+  the run state the model keeps from the checkpoint into the fresh copy the resumed
+  run starts from. Skipped when the fixture refuses checkpointed runs at setup.
 
 A pass certifies interface behaviour, not the guidance law.
 """
@@ -78,7 +84,8 @@ sample argument narrower than `StateSample`); the four run-level checks of
 model's run state, as for guidance); `output_hook_pure` (each output hook the model has,
 called twice on the same arguments, returns equal values, leaves the model unchanged
 and logs nothing at `Info` level or above); `positive_consumption`
-(`control_propellant_rate` is finite and not negative); `bind_fresh_state`.
+(`control_propellant_rate` is finite and not negative); `bind_fresh_state`;
+`checkpoint_round_trip`, as for guidance.
 
 The output hooks are called on the states, parameters and copies of the model the
 engine holds at the start, quarters and end of a fixture run, on spacecraft
@@ -138,6 +145,7 @@ function _check_gnc_model(model, kind::Symbol, fixture::ConformanceFixture, spac
         "two runs with isolate_state=false on one configuration differ: $(reset_gap); reset the model's run " *
         "state in $(_INITIALIZERS[kind])")
     bound = _bind_fresh_state_check(model, kind, since; configuration, index)
+    round_trip = _gnc_checkpoint_round_trip(model, kind, configuration)
     # Last: this run uses the caller's objects.
     original = run(; isolate_state=false)
 
@@ -157,9 +165,9 @@ function _check_gnc_model(model, kind::Symbol, fixture::ConformanceFixture, spac
     ]
     checks = if kind === :control_model
         [hooks, _sample_signature_check(model, since; hooks=_CONTROL_OUTPUT_HOOKS), runs..., resets, control_checks...,
-            bound]
+            bound, round_trip]
     else
-        [hooks, runs..., resets, bound]
+        [hooks, runs..., resets, bound, round_trip]
     end
     return ConformanceReport(string(nameof(typeof(model))), kind, checks)
 end
