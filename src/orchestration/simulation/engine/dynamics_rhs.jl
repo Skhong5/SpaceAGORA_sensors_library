@@ -380,11 +380,13 @@ function _accumulate_control_effectors_from_tuple!(
         # Each hook is called through a call-site `@noinline`, so it is compiled
         # on its own, as a run-time-dispatched hook is, and LLVM fuses its
         # StaticArrays arithmetic the same way in every caller (see
-        # `_evaluate_dynamic_effector`).
-        x = _control_state_sample(sc_view, p, sat_idx)
+        # `_evaluate_dynamic_effector`). A mounted effector's own checks of the
+        # state run before the sample is built.
         if mounted
             control_force, control_torque, control_mass_rate, _ = _mounted_control_effect(control_effector, sc_view, p, sat_idx, t)
+            x = _control_state_sample(sc_view, p, sat_idx)
         else
+            x = _control_state_sample(sc_view, p, sat_idx)
             control_force, control_torque = @noinline SimulationModel.control_wrench(control_effector, x, p, t)
             control_mass_rate = @noinline SimulationModel.control_propellant_rate(control_effector, x, p, t)
         end
