@@ -31,13 +31,20 @@ _without_warnings(f) = Logging.with_logger(f, Logging.ConsoleLogger(stderr, Logg
 # resumed from it. `run(configuration, factories)` runs a configuration with extra
 # callback factories and returns its outcome; `difference(a, b)` compares the resumed
 # and the uninterrupted runs' outcomes over the second half, or returns `nothing`.
+# The interrupting callback also marks when the solve starts (the solver initializes
+# it then), so only an `ArgumentError` before that counts as a refusal at setup.
 function _checkpoint_round_trip_check(run::Function, difference::Function, subject, configuration,
         since::VersionNumber=CHECKPOINT_ROUND_TRIP_SINCE)
     id = :checkpoint_round_trip
     half = configuration.mission_configuration.mission_time / 2
-    armed = Ref(false)
+    armed, solving = Ref(false), Ref(false)
+    started! = function (callback, u, t, integrator)
+        solving[] = true
+        SciMLBase.derivative_discontinuity!(integrator, false)
+        return nothing
+    end
     interrupt = _ -> SciMLBase.DiscreteCallback((u, t, integrator) -> armed[] && t > half,
-        integrator -> throw(_Interrupted()); save_positions=(false, false))
+        integrator -> throw(_Interrupted()); initialize=started!, save_positions=(false, false))
     directory = mktempdir()
     try
         uninterrupted = _without_warnings(() -> run(_checkpointed(configuration, joinpath(directory, "a")), (interrupt,)))
@@ -45,8 +52,9 @@ function _checkpoint_round_trip_check(run::Function, difference::Function, subje
             err = _unwrapped(uninterrupted.error)
             unrestorable = sprint(showerror, SimulationEngine._missing_restore(subject))
             sprint(showerror, err) == unrestorable && return _check(id, since, false, unrestorable)
-            # A refusal of checkpointed runs at setup, by the model or the engine.
-            err isa ArgumentError && return _skip(id, since,
+            # A refusal of checkpointed runs at setup, by the model or the engine,
+            # before the solve started; any error after that fails the check.
+            err isa ArgumentError && !solving[] && return _skip(id, since,
                 "the fixture refuses to run with checkpoints: " * _summary(err))
             return _check(id, since, false, "the fixture failed with checkpoints every $(half) s: " * _summary(err))
         end

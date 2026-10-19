@@ -84,6 +84,16 @@ mutable struct NoCheckpoint <: SpaceAGORA.AbstractGuidanceModel
 end
 SpaceAGORA.update_guidance!(m::NoCheckpoint, u, p, t::Float64, i::Int) = (m.ticks += 1; nothing)
 L.initialize_guidance!(m::NoCheckpoint, u, p, t) = (m.ticks = 0; nothing)
+# A model that fails during a checkpointed run, after its start.
+mutable struct FailsCheckpointedTick <: SpaceAGORA.AbstractGuidanceModel
+    ticks::Int
+end
+function SpaceAGORA.update_guidance!(m::FailsCheckpointedTick, u, p, t::Float64, i::Int)
+    p.args.simulation_settings.checkpoint_enabled && t > 5.0 && throw(ArgumentError("a tick of a checkpointed run failed"))
+    m.ticks += 1
+    return nothing
+end
+L.initialize_guidance!(m::FailsCheckpointedTick, u, p, t) = (m.ticks = 0; nothing)
 mutable struct CannotRestore <: SpaceAGORA.AbstractGuidanceModel
     ticks::Int
 end
@@ -176,6 +186,11 @@ end
         refusing = RefusesCheckpoints(0)
         check = round_trip(refusing, :guidance_model, C.conformance_fixture(guidance=(refusing,)).configuration)
         @test check.status === :skip && occursin("refuses to run with checkpoints", check.detail)
+        # An ArgumentError once the solve has started is a failure, not a refusal.
+        failing_tick = FailsCheckpointedTick(0)
+        check = round_trip(failing_tick, :guidance_model, C.conformance_fixture(guidance=(failing_tick,)).configuration)
+        @test check.status === failing && occursin("the fixture failed with checkpoints", check.detail) &&
+            occursin("a tick of a checkpointed run failed", check.detail)
         forgetful = NoCheckpoint(0)
         check = round_trip(forgetful, :guidance_model, C.conformance_fixture(guidance=(forgetful,)).configuration)
         @test check.status === failing && check.since == v"0.4.0" &&
