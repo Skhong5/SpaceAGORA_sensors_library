@@ -160,6 +160,21 @@ module GuidanceHooks
         empty!(m.command_state)
         return nothing
     end
+    # The same run state goes into checkpoint files, and a resumed run puts it back
+    # after the reset: the descent guidance's entries of the shared state (which its
+    # control reads) and the periapsis-raise guidance's command states.
+    SimulationLifecycle.checkpoint_state(m::ApolloDescentGuidanceModel) =
+        (entries=_descent_entries(m.state, m.spacecraft_indices),)
+    function SimulationLifecycle.restore_checkpoint_state!(m::ApolloDescentGuidanceModel, data)
+        _restore_descent_entries!(m.state, m.spacecraft_indices, data.entries)
+        return nothing
+    end
+    SimulationLifecycle.checkpoint_state(m::ApoapsisTargetPeriapsisRaiseGuidanceModel) =
+        (command_state=copy(m.command_state),)
+    function SimulationLifecycle.restore_checkpoint_state!(m::ApoapsisTargetPeriapsisRaiseGuidanceModel, data)
+        copy!(m.command_state, data.command_state)
+        return nothing
+    end
 
     # The deprecated RPO guidance rewrites its goal, its plan buffer (shared with the
     # controller, so set in place) and its replanning record during a run. At each
@@ -192,6 +207,19 @@ module GuidanceHooks
         buffer, entry = m.plan_buffer, start.plan_buffer
         buffer.valid, buffer.plan, buffer.updated_at_s = entry.valid, entry.plan, entry.updated_at_s
         m.run_start, m.run_written = deepcopy(start), nothing
+        return nothing
+    end
+    # Its run-written entries and plan buffer, with the record of its last write of
+    # them, go into checkpoint files; a resumed run puts them back after the reset.
+    # One copy keeps the record's references to the plan and the pending replan.
+    SimulationLifecycle.checkpoint_state(m::RPOGuidanceModel) =
+        deepcopy((entries=_rpo_guidance_entries(m), run_written=m.run_written))
+    function SimulationLifecycle.restore_checkpoint_state!(m::RPOGuidanceModel, data)
+        entries = data.entries
+        foreach(f -> setfield!(m, f, getfield(entries, f)), _RPO_GUIDANCE_RUN_FIELDS)
+        buffer, entry = m.plan_buffer, entries.plan_buffer
+        buffer.valid, buffer.plan, buffer.updated_at_s = entry.valid, entry.plan, entry.updated_at_s
+        m.run_written = data.run_written
         return nothing
     end
 end

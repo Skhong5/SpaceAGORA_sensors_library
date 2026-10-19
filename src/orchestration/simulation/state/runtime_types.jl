@@ -1039,6 +1039,10 @@ export RhsEffectorDecision, RhsExecutionPlan
         # checkpoint (`_restore_callback_checkpoint_state!`): the callbacks then
         # skip their run-start resets.
         callback_resume::Base.RefValue{Bool} = Ref(false)
+        # Set when a resumed run will put back the models' own run state from its
+        # checkpoint after the run-start initializers (`_restore_model_checkpoint_state!`):
+        # an initializer may skip work the restore replaces.
+        model_resume::Base.RefValue{Bool} = Ref(false)
     end
 
     # SaveData is an output/persistence boundary and intentionally remains heterogeneous.

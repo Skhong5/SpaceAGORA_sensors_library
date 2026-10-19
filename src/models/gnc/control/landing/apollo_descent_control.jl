@@ -189,6 +189,20 @@ function SimulationLifecycle.initialize_control!(c::ApolloDescentControlModel, u
     return nothing
 end
 
+# Its spacecraft's actuator entries go into checkpoint files, by field (the shared
+# descent state is the guidance's).
+function SimulationLifecycle.checkpoint_state(c::ApolloDescentControlModel)
+    act, ids = c.actuators, collect(c.spacecraft_indices)
+    return NamedTuple{fieldnames(ApolloDescentControlState)}(
+        map(name -> deepcopy(getfield(act, name)[ids]), fieldnames(ApolloDescentControlState)))
+end
+function SimulationLifecycle.restore_checkpoint_state!(c::ApolloDescentControlModel, data)
+    for name in fieldnames(ApolloDescentControlState), (k, i) in enumerate(c.spacecraft_indices)
+        getfield(c.actuators, name)[i] = getfield(data, name)[k]
+    end
+    return nothing
+end
+
 function SimulationLifecycle.preflight_control(c::ApolloDescentControlModel, args; isolate_state)
     pairing = _apollo_unpaired_spacecraft(args)
     isempty(pairing.unguided) && isempty(pairing.uncontrolled) && return nothing

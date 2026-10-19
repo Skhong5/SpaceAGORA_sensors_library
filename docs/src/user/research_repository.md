@@ -104,8 +104,8 @@ checks as tests.
 | What you wrote | Check | It runs |
 |---|---|---|
 | a force or torque model | `test_force_torque_model(model)` | the pre-run hook check, repeated and concurrent runs, a deep copy, a reseeded global stream, pure output hooks, declared environment |
-| a sensor kind | `test_sensor(sensor)` | its run-state fields and requirements, measurement shape, seeds that repeat, reset of its own state |
-| a guidance, navigation or control model | `test_guidance_model`, `test_navigation_model(model; sensors)`, `test_control_model` | the pre-run hook check, the run-level checks, the reset at the run's start (`initialize_*!`), pure output hooks and positive consumption (control), fresh state from `bind_spacecraft` |
+| a sensor kind | `test_sensor(sensor)` | its run-state fields and requirements, measurement shape, seeds that repeat, reset of its own state, a run resumed from a checkpoint against an uninterrupted one |
+| a guidance, navigation or control model | `test_guidance_model`, `test_navigation_model(model; sensors)`, `test_control_model` | the pre-run hook check, the run-level checks, the reset at the run's start (`initialize_*!`), pure output hooks and positive consumption (control), fresh state from `bind_spacecraft`, a run resumed from a checkpoint against an uninterrupted one |
 | an algorithm of a family | `test_algorithm(algorithm, requests; trusted, simulation)` | the family's representative requests (`rpo_conformance_requests()`, `burn_plan_conformance_requests()`, `joint_reference_conformance_requests()`), a deterministic walk, an untouched stream when declared, the request driver, a short simulation |
 | a family or a facade (a core pull request) | `test_algorithm_family`, `test_service_facade(facade; version)` | the family's obligations and rejection policy; the facade's shape at its contract version |
 
@@ -121,7 +121,11 @@ Each check records the release that added it. A check is `:pass`, `:fail`,
 `:skip` (it could not apply, and its detail says why) or `:advisory_fail`: a
 check added in the current minor release reports a failure without failing,
 and becomes required in the next minor release. The checks of SpaceAGORA 0.3.0
-are required from 0.3.0.
+are required from 0.3.0. `checkpoint_round_trip`, added in 0.4.0, is advisory
+in 0.4 and required from 0.5.0: a run of the fixture checkpointed halfway,
+interrupted after the checkpoint and resumed from it must end like an
+uninterrupted run, so the model's `checkpoint_state` carries the run state it
+keeps (see [Run state in checkpoint files](../extensibility.md#Run-state-in-checkpoint-files)).
 
 ## Continuous integration
 
