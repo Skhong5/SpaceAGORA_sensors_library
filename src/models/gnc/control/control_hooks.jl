@@ -336,4 +336,11 @@ module ControlHooks
         start_s, stop_s, thrust_n = m.burn_windows[spacecraft_index]
         return (window_start_s=start_s, window_stop_s=stop_s, thrust_n=thrust_n, burning=m.burning[spacecraft_index])
     end
+    # Its release, at each tick while the spacecraft is inactive: in `:mounted`
+    # actuation the engine and the wheels off, as between burns. The schedule stays.
+    function GNCRuntime.release_command!(m::BaseThrusterModel, t, spacecraft_index)
+        m.actuation === :mounted && 1 <= spacecraft_index <= length(m.mounted_levels) &&
+            fill!(m.mounted_levels[spacecraft_index], 0.0)
+        return nothing
+    end
 end

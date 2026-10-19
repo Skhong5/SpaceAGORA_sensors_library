@@ -92,7 +92,10 @@ end
 function _mounted_burn_tick_callback(control_model::BaseThrusterModel, period::Float64, num_sats::Int)
     tick! = integrator -> begin
         @inbounds for sat_idx in 1:num_sats
-            mounted_burn_tick!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
+            # As every periodic tick (`_gnc_tick!`): an inactive spacecraft's command
+            # is released instead, and the mounted actuators then apply it.
+            _gnc_tick!(mounted_burn_tick!, control_model, integrator.u, integrator.p, integrator.t, sat_idx) ||
+                continue
             _apply_mounted_tick!(control_model, integrator.p, sat_idx, integrator.t, period)
         end
         return nothing
