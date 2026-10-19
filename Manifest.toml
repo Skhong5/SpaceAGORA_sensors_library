@@ -1763,9 +1763,9 @@ version = "2.4.2"
 
 [[deps.OrdinaryDiffEqSDIRK]]
 deps = ["ADTypes", "CommonSolve", "ConstructionBase", "DiffEqBase", "FastBroadcast", "LinearAlgebra", "MacroTools", "MuladdMacro", "OrdinaryDiffEqCore", "OrdinaryDiffEqDifferentiation", "OrdinaryDiffEqNonlinearSolve", "PrecompileTools", "Preferences", "RecursiveArrayTools", "Reexport", "SciMLBase", "TruncatedStacktraces"]
-git-tree-sha1 = "693be93138c2e1f13d56a8e4d0114936492dd3db"
+git-tree-sha1 = "9e2bd5473cf2fb7c813f7c3f93a1f5a61b5a699a"
 uuid = "2d112036-d095-4a1e-ab9a-08536f3ecdbf"
-version = "2.9.7"
+version = "2.9.8"
 
 [[deps.OrdinaryDiffEqSymplecticRK]]
 deps = ["DiffEqBase", "FastBroadcast", "MuladdMacro", "OrdinaryDiffEqCore", "RecursiveArrayTools", "Reexport", "SciMLBase"]
@@ -2426,10 +2426,18 @@ uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
 version = "0.4.0"
 
     [deps.SpaceAGORA.extensions]
+    SpaceAGORAEDGExt = "SpaceAGORAEDG"
     SpaceAGORAGRAMSuiteExt = "GRAMSuite"
+    SpaceAGORAPythonCallExt = "PythonCall"
+    SpaceAGORATestExt = "Test"
+    SpaceAGORAVisualizerExt = "SpaceAGORAVisualizer"
 
     [deps.SpaceAGORA.weakdeps]
     GRAMSuite = "b50455af-6a46-4eae-bf92-8039261dd674"
+    PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
+    SpaceAGORAEDG = "a782e8ee-96d7-4dd6-8231-bb64649e6ad4"
+    SpaceAGORAVisualizer = "a4677e92-0b7f-4d10-9ebd-8cde6a49f03a"
+    Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [[deps.SpaceIndices]]
 deps = ["Dates", "DelimitedFiles", "Downloads", "JSON", "OptionalData", "Reexport", "Scratch"]
