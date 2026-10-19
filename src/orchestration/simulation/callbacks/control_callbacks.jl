@@ -100,7 +100,7 @@ function _mounted_burn_tick_callback(control_model::BaseThrusterModel, period::F
         end
         return nothing
     end
-    return PeriodicCallback(tick!, period)
+    return _run_clock_periodic_callback(tick!, period)
 end
 
 # A burn switches only between integration steps: the solver stops at the
@@ -287,14 +287,14 @@ end
 
 # At the run's start, before the models' own initializers: each periodic control
 # effector learns the clock its callback reports at the solve's start (its configured
-# rate, from `t`), so an initializer that predicts before the solve has it (the EDG
-# guidance family's first request).
-function _report_gnc_clocks!(args, t)
+# rate, from the grid's origin `origin`), so an initializer that predicts before the
+# solve has it (the EDG guidance family's first request).
+function _report_gnc_clocks!(args, origin)
     model = args.control_model
     for i in eachindex(model.control_effectors)
         control = model.control_effectors[i]
         tick_schedule(control) === :periodic || continue
-        gnc_clock_started!(control, Float64(model.control_rates[i]), Float64(t))
+        gnc_clock_started!(control, Float64(model.control_rates[i]), Float64(origin))
     end
     return nothing
 end
@@ -390,13 +390,10 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
                 )
             end
         end
-        # At each solve's start the model learns its clock's period and origin.
-        # The flag reset is PeriodicCallback's own default initialization.
-        start_clock = (cb, u, t, integrator) -> begin
-            gnc_clock_started!(control_model, Float64(control_rate), Float64(t))
-            DiffEqBase.derivative_discontinuity!(integrator, false)
-        end
-        push!(callbacks, PeriodicCallback(control_func, control_rate; initialize=start_clock))
+        # At each solve's start the model learns its clock's period and origin:
+        # the solve's start, or the run's in a checkpointed or resumed run.
+        start_clock = (origin, integrator) -> gnc_clock_started!(control_model, Float64(control_rate), origin)
+        push!(callbacks, _run_clock_periodic_callback(control_func, Float64(control_rate); on_clock=start_clock))
     end
     return callbacks
 end

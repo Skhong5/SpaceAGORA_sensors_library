@@ -18,8 +18,8 @@ field direction to rotate along the orbit).
 
 [`MagneticMomentumManagerModel`](@ref) reproduces that loop as a stateful
 zero-order-hold control effector on the discrete `ControlModel` callback path:
-`update_control!` fires at the configured control rate (a
-`PeriodicCallback`, i.e. only at accepted solver steps), advances the internal
+`update_control!` fires at the configured control rate (a periodic
+discrete callback, i.e. only at accepted solver steps), advances the internal
 wheel-momentum accumulator from the re-evaluated attitude-control command,
 and refreshes the held rod torque; `control_wrench` returns that held
 torque on every RHS evaluation. Keeping the accumulator on the discrete path

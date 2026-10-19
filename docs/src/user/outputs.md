@@ -287,9 +287,19 @@ SM.SimulationSettings(
 )
 ```
 
+A checkpointed run is solved in segments of `checkpoint_interval_s`. Its
+navigation, guidance and control effectors tick at the same times as in a run
+solved in one piece, including a tick that falls on a segment boundary, which
+comes before the checkpoint written there.
+
 A crashed or interrupted run can be resumed by setting
-`resume_from_checkpoint = true` in `SimulationSettings`. The checkpoint
-directory defaults to `results_directory/checkpoints` when left empty. Besides
+`resume_from_checkpoint = true` in `SimulationSettings`. The resumed run's
+effectors keep the same tick times, from the run's start. A run resumed from a
+checkpoint written at a segment boundary starts with the first tick after it;
+one resumed from the checkpoint written at the end of a run, to extend that
+run, first takes the ticks due at that time, which the ended run did not take.
+The checkpoint directory defaults to `results_directory/checkpoints` when left
+empty. Besides
 the state, the checkpoint holds the run state the callbacks keep on the
 spacecraft: the batteries' empty and full flags and shedding tier, the
 actuator faults' activity and held levels, the sensors' random streams,

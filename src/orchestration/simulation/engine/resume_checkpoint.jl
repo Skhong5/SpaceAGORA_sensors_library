@@ -244,14 +244,37 @@ function _restore_model_checkpoint_state!(args, snapshot)
     return nothing
 end
 
+# A checkpoint written at its run's end: the run did not take the periodic
+# navigation, guidance and control ticks due then, so a run resumed from it takes
+# them at its start. One written at a segment boundary holds no entry: the ticks
+# due there came before it. So does one written where a solve stopped early, at an
+# event's `terminate!` (impact, touchdown, orbit or entry count): the solver applies
+# every discrete callback of that step after the event's, so a tick due then ran
+# before the checkpoint, as in a run in one piece.
+_periodic_tick_checkpoint_state(t::Float64, mission_end) = t >= mission_end ? (version=1, pending_s=t) : nothing
+
+# The resumed run's start when the ticks due there are pending, NaN otherwise.
+function _pending_periodic_ticks_s(checkpoint)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    entry = runtime !== nothing && hasproperty(runtime, :periodic_ticks) ? runtime.periodic_ticks : nothing
+    entry === nothing && return NaN
+    hasproperty(entry, :version) && entry.version === 1 && hasproperty(entry, :pending_s) &&
+        entry.pending_s == checkpoint.t ||
+        throw(ArgumentError("Periodic tick checkpoint state version 1 is required to resume this run."))
+    return Float64(entry.pending_s)
+end
+
 @inline function _write_checkpoint!(args, t::Float64, u_state, solver_mode::String; is_active=nothing, callback_state=nothing,
-                                     model_state=nothing)
+                                     model_state=nothing, periodic_ticks=nothing)
     runtime = _interlink_checkpoint_runtime_state(args, is_active)
     if callback_state !== nothing
         runtime = runtime === nothing ? (callbacks=callback_state,) : merge(runtime, (callbacks=callback_state,))
     end
     if model_state !== nothing
         runtime = runtime === nothing ? (models=model_state,) : merge(runtime, (models=model_state,))
+    end
+    if periodic_ticks !== nothing
+        runtime = runtime === nothing ? (periodic_ticks=periodic_ticks,) : merge(runtime, (periodic_ticks=periodic_ticks,))
     end
     return SimulationModel.IOSerialization._write_checkpoint!(
         args,
