@@ -1,7 +1,7 @@
 # The index fields renamed to `spacecraft_index`, `chaser_index` and
 # `target_index` in 0.3.0 (0.3.1 for `RobotArmReactionEffector`): the old keywords
 # and properties were removed in 0.5.0, and the engine's index-field checks read
-# the new names.
+# only the new names.
 module IndexFieldRenameTests
 using Test, StaticArrays, SpaceAGORA
 const SM = SpaceAGORA.SimulationModel
@@ -97,10 +97,12 @@ const RENAMES = [
         reaction = SM.RobotArmReactionEffector(spacecraft_index=2)
         @test SE._effector_spacecraft_index(reaction) == 2
         @test SE._control_effector_targets_owned(reaction, [2]) && !SE._control_effector_targets_owned(reaction, [1])
-        # A contributor model that still has the older field is still read.
+        # A contributor model with only the older field name is not read: it is bound
+        # to no spacecraft, so the external-propagation check counts it as acting on
+        # every spacecraft.
         legacy = ContributorIndexEffector(2)
-        @test SE._effector_spacecraft_index(legacy) == 2
-        @test SE._control_effector_targets_owned(legacy, [2]) && !SE._control_effector_targets_owned(legacy, [1])
+        @test SE._effector_spacecraft_index(legacy) === nothing
+        @test SE._control_effector_targets_owned(legacy, [1]) && SE._control_effector_targets_owned(legacy, [2])
         @test SE._effector_spacecraft_index(SM.BaseThrusterModel(thrust=[0.0], direction=[0.0], Δv=[0.0],
             start_burn_time=[0.0], stop_burn_time=[0.0], Isp=[300.0])) === nothing
     end

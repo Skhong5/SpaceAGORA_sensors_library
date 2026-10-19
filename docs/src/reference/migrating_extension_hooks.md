@@ -125,6 +125,24 @@ SpaceAGORA.ephemerides_epoch_seconds(m::FixedFrame, initial_time) = 0.0
 | selecting an RPO planner by a Symbol, such as `:rrt_star` | a planner object | warned from 0.3.0; a name is now a `MethodError` | 0.5.0 |
 | a default random stream in the GNC planning functions | an explicit `rng` keyword | required now, without a window | |
 
+A model of your own that names its spacecraft by a field must use the new names
+too: from 0.5.0 the engine reads only `chaser_index`, `target_index` and
+`spacecraft_index`. A model whose only index fields are older names no longer
+gets these behaviours:
+
+- with `chaser_idx` and `target_idx`, it is no longer seen as coupling two
+  spacecraft, so the stiff solvers' Jacobian sparsity pattern leaves out the
+  entries between them;
+- with `chaser_idx`, `spacecraft_idx` or `sat_idx`, a control effector is no
+  longer bound to its spacecraft by the external-propagation checks: it counts as
+  acting on every spacecraft, and a run with an external propagator refuses it;
+- with `spacecraft_idx`, a control effector is no longer bound to its spacecraft
+  by the robot-arm and articulated-panel checks: the run does not couple an arm to
+  the effector's plan, the panel-link check applies the effector to every
+  spacecraft, and the viewer shows no arm plan for it.
+
+Rename the fields; nothing else changes.
+
 ## Schedule
 
 - **0.3.0.** The new names, with warnings for the old ones.

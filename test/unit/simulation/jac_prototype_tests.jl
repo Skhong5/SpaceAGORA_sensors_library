@@ -19,7 +19,7 @@ struct _SingleSatEffectorStub
     chaser_index::Int
 end
 
-# A contributor model that keeps the older field names.
+# A contributor model with only the older field names, which the gate does not read.
 struct _OlderNamesCouplingEffectorStub
     chaser_idx::Int
     target_idx::Int
@@ -34,8 +34,7 @@ struct _PlainEffectorStub end
     # Same satellite named twice is not coupling: the derivative still depends
     # on that one block only.
     @test !SE._effector_couples_satellites(_CouplingEffectorStub(3, 3))
-    @test SE._effector_couples_satellites(_OlderNamesCouplingEffectorStub(1, 2))
-    @test !SE._effector_couples_satellites(_OlderNamesCouplingEffectorStub(3, 3))
+    @test !SE._effector_couples_satellites(_OlderNamesCouplingEffectorStub(1, 2))
 
     # One index alone names the satellite the effector acts on, not a second one.
     @test !SE._effector_couples_satellites(_SingleSatEffectorStub(1))

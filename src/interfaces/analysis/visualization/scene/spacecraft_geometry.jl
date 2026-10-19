@@ -88,10 +88,7 @@ function robot_arm_plan_for(args::SimulationConfiguration, sat_idx::Integer)
     hasproperty(args, :control_model) && hasproperty(args.control_model, :control_effectors) || return nothing
     for effector in args.control_model.control_effectors
         hasproperty(effector, :plan) || continue
-        # `spacecraft_idx` is the older name of the index field, which contributor
-        # models may still have.
-        index = hasproperty(effector, :spacecraft_index) ? getproperty(effector, :spacecraft_index) :
-            hasproperty(effector, :spacecraft_idx) ? getproperty(effector, :spacecraft_idx) : nothing
+        index = hasproperty(effector, :spacecraft_index) ? getproperty(effector, :spacecraft_index) : nothing
         index == sat_idx || continue
         # An effector that reads a plan buffer tracks the buffer's plan.
         buffer = hasproperty(effector, :plan_buffer) ? getproperty(effector, :plan_buffer) : nothing

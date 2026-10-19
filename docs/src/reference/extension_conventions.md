@@ -97,7 +97,8 @@ the run in the same way.
   models' fields `sat_idx`, `spacecraft_idx`, `chaser_idx` and `target_idx`
   became `spacecraft_index`, `chaser_index` and `target_index` in 0.3.0, and the
   `spacecraft_idx` of `RobotArmReactionEffector` in 0.3.1; the old names were
-  removed in 0.5.0 (see the [migration page](migrating_extension_hooks.md)).
+  removed in 0.5.0, and the engine reads only the new ones on a model of your
+  own (see the [migration page](migrating_extension_hooks.md)).
 - In the external-propagation facade the owner-local position of a spacecraft is
   called `slot`, because it counts within the owner's list, not the run.
 

@@ -122,11 +122,10 @@ function _build_block_diagonal_jac_prototype(
 end
 
 # Satellite-index fields an effector uses to name a satellite other than the one
-# it is being evaluated for (`chaser_idx` and `target_idx` are the older names,
-# which contributor models may still have). An effector carrying two of these with
-# different values reads across satellites, so its contribution to the Jacobian
-# lands off-block.
-const _CROSS_SATELLITE_INDEX_FIELDS = (:chaser_index, :target_index, :chaser_idx, :target_idx)
+# it is being evaluated for. An effector carrying two of these with different
+# values reads across satellites, so its contribution to the Jacobian lands
+# off-block.
+const _CROSS_SATELLITE_INDEX_FIELDS = (:chaser_index, :target_index)
 
 """Return whether `effector` reads state belonging to more than one satellite."""
 @inline function _effector_couples_satellites(effector)::Bool
