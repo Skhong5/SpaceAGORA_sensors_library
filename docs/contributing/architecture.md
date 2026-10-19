@@ -237,7 +237,7 @@ the file that performs each step.
    simulation binding, the runtime declarations and the lifecycle hooks) lives in
    `src/models/gnc/contracts/`. Guidance and control group their models by
    application in the same subfolders (`aerobraking/`, `landing/`, `maneuvers/`,
-   `rpo/`; control also `robot_arm/`, `attitude/` and `constellation/`). The
+   `rpo/`; control also `robot_arm/`, `attitude/` and `interlinks/`). The
    `src/models/gnc/planning/` tree groups the RPO planner contract, geometry,
    planning and lifecycle in `rpo/`, robot-arm references in `robot_arm/`, and
    shared path and tree operations in `common/`; the core-owned adapters of the
