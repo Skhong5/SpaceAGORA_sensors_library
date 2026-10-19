@@ -36,6 +36,10 @@ end
 
 _positional_count(call::Expr) = count(arg -> !(arg isa Expr && arg.head === :parameters), call.args[2:end])
 
+# `Meta.parseall` does not throw on a syntax error: it leaves an `:error` or
+# `:incomplete` node in the tree, which would hide the rest of the file.
+_parse_failed(ex) = ex isa Expr && (ex.head in (:error, :incomplete) || any(_parse_failed, ex.args))
+
 # Each use of a removed name in `ex`, as (kind, name), with the line it is on.
 function _removed_uses!(found, ex, line::Ref{Int})
     if ex isa LineNumberNode
@@ -79,6 +83,10 @@ for dir in SCANNED_DIRS
             Meta.parseall(read(path, String); filename=rel)
         catch err
             push!(violations, "$(rel): does not parse ($(sprint(showerror, err)))")
+            continue
+        end
+        if _parse_failed(parsed)
+            push!(violations, "$(rel): does not parse, so it cannot be checked.")
             continue
         end
         for (line, kind, name) in unique(_removed_uses!(Tuple{Int, String, Symbol}[], parsed, Ref(0)))
