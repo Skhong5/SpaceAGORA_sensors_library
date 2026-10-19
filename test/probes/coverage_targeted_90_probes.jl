@@ -24,11 +24,11 @@ struct CoverageForceEffector <: SimulationModel.AbstractForceTorqueModel
     torque::SVector{3, Float64}
 end
 
-function SimulationModel.calcForceTorque(
+function SimulationModel.wrench(
     model::CoverageForceEffector,
-    x,
-    p,
-    i::Int64
+    x::SimulationModel.StateSample,
+    env::SimulationModel.EnvironmentSample,
+    t::Float64
 )
     return model.force, model.torque
 end

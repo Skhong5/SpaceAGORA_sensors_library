@@ -13,7 +13,7 @@ const RS = SpaceAGORA.RuntimeServices
 # Evaluate the unchanged arithmetic in a separate namespace to detect changes
 # caused by ownership, imports, or module-scoped configuration.
 module RawFrameSandbox
-using SpaceAGORA.SimulationModel.EphemeridesModels: ephemerides_requires_spice, _ephemerides_frame_lpi
+using SpaceAGORA.SimulationModel.EphemeridesModels: ephemerides_requires_spice, ephemerides_frame_lpi
 const args = :legacy_includer
 include(joinpath(@__DIR__, "..", "helpers", "reference_system_sandbox.jl"))
 end

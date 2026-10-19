@@ -552,8 +552,8 @@ function _initial_condition_in_j2000(
         "Unsupported element_frame=$element_frame for orbit-element initial conditions."
     ))
     model = SimulationModel.SpiceEphemeridesModel()
-    et = SimulationModel.EphemeridesModels._ephemerides_epoch_seconds(model, initial_time)
-    l_pi = SimulationModel.EphemeridesModels._ephemerides_frame_lpi(model, planet, et)
+    et = SimulationModel.EphemeridesModels.ephemerides_epoch_seconds(model, initial_time)
+    l_pi = SimulationModel.EphemeridesModels.ephemerides_frame_lpi(model, planet, et)
     pole_j2000 = SVector{3, Float64}(l_pi[3, 1], l_pi[3, 2], l_pi[3, 3])
     rot = _body_equator_frame_rotation(pole_j2000)
     r_body, v_body = SimulationEngine.orbitalelemtorv(ic, planet)

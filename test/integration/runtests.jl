@@ -241,6 +241,10 @@ end
 struct InvalidPartitionForceModel <: SimulationModel.AbstractForceTorqueModel
 end
 
+# No force or torque hook at all.
+struct NoWrenchForceModel <: SimulationModel.AbstractForceTorqueModel
+end
+
 struct BackboneCustomGravityModel <: SimulationModel.AbstractForceTorqueModel
     accel::SVector{3, Float64}
 end
@@ -347,39 +351,52 @@ function SimulationModel.wrench(
     error("intentional derivative failure")
 end
 
-function SimulationModel.calcForceTorque(
+function SimulationModel.wrench(
     model::NaNForceModel,
-    x::AbstractVector{Float64},
-    p::ODEParams,
-    i::Int64
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
 )
     return SVector{3, Float64}(NaN, NaN, NaN), SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-function SimulationModel.calcForceTorque(
+function SimulationModel.wrench(
     model::NaNParamForceModel,
-    x::AbstractVector{Float64},
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
+)
+    return SVector{3, Float64}(NaN, NaN, NaN), SVector{3, Float64}(0.0, 0.0, 0.0)
+end
+
+# The dynamics evaluate a model through wrench_caching!, which has the run's
+# parameters: this one also writes a NaN into them.
+function SimulationModel.wrench_caching!(
+    model::NaNParamForceModel,
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64,
     p::ODEParams,
-    i::Int64
+    sat_idx::Int
 )
     p.shared_buffers.current_time[] = NaN
-    return SVector{3, Float64}(NaN, NaN, NaN), SVector{3, Float64}(0.0, 0.0, 0.0)
+    return SimulationModel.wrench(model, x, env, t)
 end
 
-function SimulationModel.calcForceTorque(
+function SimulationModel.wrench(
     model::ConstantTorqueModel,
-    x::AbstractVector{Float64},
-    p::ODEParams,
-    i::Int64
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
 )
     return SVector{3, Float64}(0.0, 0.0, 0.0), model.torque
 end
 
-function SimulationModel.calcForceTorque(
+function SimulationModel.wrench(
     model::ConstantForceModel,
-    x::AbstractVector{Float64},
-    p::ODEParams,
-    i::Int64
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
 )
     return model.force, SVector{3, Float64}(0.0, 0.0, 0.0)
 end
@@ -435,11 +452,11 @@ function SimulationModel.gravity_backbone_kick_acceleration_ii(
     return SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-function SimulationModel.calcForceTorque(
+function SimulationModel.wrench(
     model::InvalidPartitionForceModel,
-    x::AbstractVector{Float64},
-    p::ODEParams,
-    i::Int64
+    x::StateSample,
+    env::EnvironmentSample,
+    t::Float64
 )
     return SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)
 end
@@ -866,7 +883,7 @@ module GuidanceSandbox
 using ..SimulationModel
 using ..SimulationModel.Geodesy: geodetic_altitude, ellipsoid_surface_radius, radius_for_geodetic_altitude
 using ..SimulationModel.AbstractTypes: AbstractGuidanceModel
-using ..SimulationModel.EphemeridesModels: _ephemerides_frame_lpi
+using ..SimulationModel.EphemeridesModels: ephemerides_frame_lpi
 using ComponentArrays
 using LinearAlgebra
 using StaticArrays

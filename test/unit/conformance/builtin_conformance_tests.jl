@@ -98,10 +98,6 @@ end
         fixture = C.conformance_fixture(control=(aoa(),))
         @test !hasmethod(SpaceAGORA.update_control!, Tuple{aoa, fixture.call.state, fixture.call.params, Float64, Int})
         @test hasmethod(SpaceAGORA.control_wrench, Tuple{aoa, SpaceAGORA.StateSample, fixture.call.params, Float64})
-        X = only(fixture.call.spacecraft)
-        for old in (SpaceAGORA.calcControlForceTorque, SpaceAGORA.calcControlMassFlowRate, SpaceAGORA.calcReactionWheelTorque)
-            @test !SpaceAGORA.SimulationEngine._own_method(old, Tuple{aoa, X, fixture.call.params, Int, Float64})
-        end
     end
     for entry in instances
         if entry.runs

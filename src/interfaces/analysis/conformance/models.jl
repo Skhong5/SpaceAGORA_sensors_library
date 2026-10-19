@@ -71,8 +71,7 @@ check_navigation_model(model; sensors::Tuple=(),
         -> ConformanceReport
 
 Check a control model. The checks, in report order: `hooks_present`;
-`no_deprecated_hooks` (the pre-run check has no deprecated output hook of the model's
-own to warn about); `supported_sample_signature` (no method of `control_wrench`,
+`supported_sample_signature` (no method of `control_wrench`,
 `control_propellant_rate` or `control_wheel_torque` that applies to the model types its
 sample argument narrower than `StateSample`); the four run-level checks of
 [`check_guidance_model`](@ref); `initialize_resets` (`initialize_control!` resets the
@@ -157,8 +156,8 @@ function _check_gnc_model(model, kind::Symbol, fixture::ConformanceFixture, spac
         concurrency,
     ]
     checks = if kind === :control_model
-        [hooks, _no_deprecated_hooks_check(fixture, model, since),
-            _sample_signature_check(model, since; hooks=_CONTROL_OUTPUT_HOOKS), runs..., resets, control_checks..., bound]
+        [hooks, _sample_signature_check(model, since; hooks=_CONTROL_OUTPUT_HOOKS), runs..., resets, control_checks...,
+            bound]
     else
         [hooks, runs..., resets, bound]
     end
@@ -166,14 +165,13 @@ function _check_gnc_model(model, kind::Symbol, fixture::ConformanceFixture, spac
 end
 
 # The checks that need no run: the pre-run check and, for a control model, its
-# deprecated hooks and sample signature. Core's tests use them on built-in models
-# that cannot run in the fixture.
+# sample signature. Core's tests use them on built-in models that cannot run in the
+# fixture.
 function _static_gnc_report(model, kind::Symbol;
         fixture::ConformanceFixture=conformance_fixture(; NamedTuple{(_PER_SPACECRAFT_KEYS[kind],)}(((model,),))...))
     since = FIRST_RELEASE
     checks = [_hooks_present_check(fixture, since)]
-    kind === :control_model && push!(checks, _no_deprecated_hooks_check(fixture, model, since),
-        _sample_signature_check(model, since; hooks=_CONTROL_OUTPUT_HOOKS))
+    kind === :control_model && push!(checks, _sample_signature_check(model, since; hooks=_CONTROL_OUTPUT_HOOKS))
     return ConformanceReport(string(nameof(typeof(model))), kind, checks)
 end
 
@@ -232,7 +230,15 @@ function _capture_control_samples(configuration, index::Int, spacecraft_index::I
     return _Samples(arguments, failure[])
 end
 
-_has_output_hook(f, model, p) = hasmethod(f, Tuple{typeof(model), SimulationModel.StateSample, typeof(p), Float64})
+# Whether the model has an output hook of its own: the untyped fallbacks of
+# control_propellant_rate and control_wheel_torque, which serve every model, do not
+# count.
+function _has_output_hook(f, model, p)
+    tt = Tuple{typeof(model), SimulationModel.StateSample, typeof(p), Float64}
+    hasmethod(f, tt) || return false
+    fallback = Tuple{Any, Any, Any, Any}
+    return !hasmethod(f, fallback) || which(f, tt) !== which(f, fallback)
+end
 
 function _output_hooks_pure_check(model, samples::_Samples, since::VersionNumber)
     samples.error === nothing || return _check(:output_hook_pure, since, false, _sampling_failure(samples))

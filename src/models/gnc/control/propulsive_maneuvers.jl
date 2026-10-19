@@ -424,45 +424,6 @@ end
 end
 
 """
-    calcControlMassFlowRate(model, u, p, spacecraft_index, t) -> Float64
-
-Deprecated, use [`control_propellant_rate`](@ref)`(model, x::StateSample, p, t)`;
-this name will be removed in SpaceAGORA 0.5.0. **The sign changes:** this hook
-returns the spacecraft's mass derivative in kg/s, negative while propellant is
-used, and `control_propellant_rate` returns the propellant used, positive.
-
-Until then the dynamics call an effector's own method of this hook when its
-type has no `control_propellant_rate`, and `run_simulation` warns once per type
-before integration starts. The arguments are those of the deprecated
-`calcControlForceTorque`. An effector with neither method uses no propellant.
-
-A direct call on an effector that implements `control_propellant_rate` returns
-that hook's result negated, and warns once per type that it is deprecated
-(under `julia --depwarn=error` it throws instead). On any other effector it
-returns `0.0`.
-"""
-function calcControlMassFlowRate end
-
-"""
-    calcReactionWheelTorque(model, u, p, spacecraft_index, t) -> Union{Nothing, AbstractVector}
-
-Deprecated, use [`control_wheel_torque`](@ref)`(model, x::StateSample, p, t)`;
-this name will be removed in SpaceAGORA 0.5.0. The torque, its frame and how
-the dynamics apply it are unchanged.
-
-Until then the dynamics call an effector's own method of this hook when its
-type has no `control_wheel_torque`, and `run_simulation` warns once per type
-before integration starts. The arguments are those of the deprecated
-`calcControlForceTorque`. An effector with neither method drives no wheel.
-
-A direct call on an effector that implements `control_wheel_torque` returns
-that hook's result, and warns once per type that it is deprecated (under
-`julia --depwarn=error` it throws instead). On any other effector it returns
-`nothing`.
-"""
-function calcReactionWheelTorque end
-
-"""
     control_thruster_levels(controlModel::BaseThrusterModel, i)
 
 The commanded throttle of the maneuver engine: 1 while spacecraft `i`'s burn

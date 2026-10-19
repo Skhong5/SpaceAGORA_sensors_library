@@ -351,7 +351,7 @@ function descent_environment(model::ApolloDescentGuidanceModel, u, p::ODEParams,
     ephem = p.args.environment_model.ephemerides_model
     et = _descent_ephemeris_time(p, t)
     r_p, v_p = r_intor_p!(pos, vel, planet, et, ephem)
-    l_pi = _ephemerides_frame_lpi(ephem, planet, et)
+    l_pi = ephemerides_frame_lpi(ephem, planet, et)
     i in model.spacecraft_indices || throw(ArgumentError("spacecraft index $i is not selected for descent"))
     frame = model.state.site_frame[i]
     if frame === nothing

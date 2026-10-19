@@ -117,11 +117,11 @@
         @test control_propellant_rate(model, x_of(u, 2), p, 100.0) == 0.0
 
         model_subtyped = TimedTangentialThrusterModel(1.0, +1.0, 10.0, 20.0)
-        # Without a rate hook the dynamics take the rate as zero.
-        @test SpaceAGORA.SimulationEngine._control_propellant_rate(model_subtyped, u, p, 1, 15.0) == 0.0
+        # Without a rate method of its own an effector gets the default: none used.
+        @test control_propellant_rate(model_subtyped, x_of(u, 1), p, 15.0) === 0.0
 
         struct UntypedControlEffector end
-        @test SpaceAGORA.SimulationEngine._control_propellant_rate(UntypedControlEffector(), u, p, 1, 100.0) == 0.0
+        @test control_propellant_rate(UntypedControlEffector(), x_of(u, 1), p, 100.0) === 0.0
     end
 
     @testset "update_control!" begin

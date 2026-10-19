@@ -8,7 +8,6 @@ using ...AbstractTypes: AbstractForceTorqueModel, AbstractTerrainModel
 using ...TerrainModels: NoTerrainModel, DEMTerrainModel, terrain_radius
 using ...EffectorSampling: StateSample, EnvironmentSample, EffectorEnvironmentRequirements
 using ...SimulationModel: rot
-using ...HookDeprecation: _hook_deprecation
 import ..DynamicEffectors: wrench, wrench_caching!, environment_requirements
 export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState
 export plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
@@ -155,13 +154,10 @@ that same axis, so augmentation returns no reference-point torque.
 `wrench` and `wrench_caching!` do not mutate plume diagnostics. The engine's
 accepted-step callback owns the diagnostic state and mass quadrature. Default
 save fields sample the supplied saved state and the held interval thrust, with
-mass interpolated from accepted-step quadrature. The four-argument pure wrench
-selects the spacecraft by `x.spacecraft_index`, which every sample the engine
-builds carries; a sample built outside a run (index 0) is valid for a
-one-spacecraft plume only. The five-argument form `wrench(model, x, env, t, i)`,
-with an explicit index, is deprecated and will be removed in SpaceAGORA 0.5.0:
-it warns once, and under `julia --depwarn=error` it throws. Build the sample
-with `spacecraft_index` instead.
+mass interpolated from accepted-step quadrature. The pure wrench selects the
+spacecraft by `x.spacecraft_index`, which every sample the engine builds
+carries; a sample built outside a run (index 0) is valid for a one-spacecraft
+plume only.
 """
 struct PlumeSurfaceInteractionModel{C, T <: AbstractTerrainModel} <: AbstractForceTorqueModel
     config::PlumeSurfaceConfig
@@ -361,14 +357,6 @@ function wrench(model::PlumeSurfaceInteractionModel, x::StateSample, env::Enviro
             "A multi-spacecraft plume needs the spacecraft's run index: build the StateSample with spacecraft_index."))
         i = 1
     end
-    return _plume_wrench(model, x, env, t, i)
-end
-# The deprecated five-argument form: the index as an argument instead of in the sample.
-function wrench(model::PlumeSurfaceInteractionModel, x::StateSample, env::EnvironmentSample, t::Float64, i::Int)
-    _hook_deprecation((PlumeSurfaceInteractionModel, :wrench_with_index),
-        "wrench(model::PlumeSurfaceInteractionModel, x, env, t, i), with the spacecraft index as a fifth " *
-        "argument, is deprecated and will be removed in SpaceAGORA 0.5.0. Call wrench(model, x, env, t) " *
-        "with a StateSample whose spacecraft_index is the spacecraft's position in the run.")
     return _plume_wrench(model, x, env, t, i)
 end
 function wrench_caching!(model::PlumeSurfaceInteractionModel, x::StateSample,

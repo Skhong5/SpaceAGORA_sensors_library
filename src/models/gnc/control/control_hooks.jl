@@ -38,7 +38,6 @@ module ControlHooks
     const config = Structure
 
     export update_control!, control_wrench, control_propellant_rate, control_wheel_torque
-    export calcControlForceTorque, calcControlEffect!, calcControlMassFlowRate, calcReactionWheelTorque
     export control_thruster_levels, touchdown_spec, refresh_burn!, mounted_burn_tick!, burn_edge
     export AerobrakingEnergyDepletionControlModel, SolarPanelAngleOfAttackControlModel
     export ApolloDescentControlConfig, ApolloDescentControlModel, ApolloDescentControlState, attitude_error_vector
@@ -117,8 +116,7 @@ module ControlHooks
 
     Return the command held since the last `update_control!` tick rather than
     recomputing the control law here. A method typed `x::StateSample`, or with
-    `x` untyped, is the one the dynamics call. This hook replaces the deprecated
-    `calcControlForceTorque`.
+    `x` untyped, is the one the dynamics call.
     """
     function control_wrench end
 
@@ -127,19 +125,18 @@ module ControlHooks
 
     The propellant a control effector uses, in kg/s: **positive** while
     propellant is used, and `0.0` when none is. The engine subtracts it from the
-    spacecraft's mass derivative. This is the opposite sign of the deprecated
-    `calcControlMassFlowRate`, which returned the mass derivative itself. A
-    nonfinite rate is ignored.
+    spacecraft's mass derivative. A nonfinite rate is ignored.
 
     The dynamics call it at every right-hand-side evaluation in `:ideal`
     actuation, so return the rate held since the last `update_control!` tick.
-    An effector that uses no propellant needs no method: the dynamics then take
-    the rate as zero. The arguments are those of [`control_wrench`](@ref); the
+    An effector that uses no propellant needs no method: the fallback, for any
+    model, returns `0.0`. The arguments are those of [`control_wrench`](@ref); the
     spacecraft's index in the run is `x.spacecraft_index`. The
     `BaseThrusterModel` method returns `norm(force) / (Isp * g0)` during an
     active valid burn and `0.0` otherwise.
     """
     function control_propellant_rate end
+    control_propellant_rate(model, x, p, t) = 0.0
 
     """
         control_wheel_torque(model, x::StateSample, p, t::Float64) -> Union{Nothing, AbstractVector}
@@ -147,7 +144,7 @@ module ControlHooks
     Optional hook for a control effector that drives reaction wheels: the part
     of its commanded torque on the spacecraft that the wheels produce, a 3-vector
     in the bus frame in N·m. An effector that drives no wheel needs no method:
-    the dynamics then take it as `nothing`.
+    the fallback, for any model, returns `nothing`.
 
     The momentum stored in the wheels (the `h_wheels` state) changes at the
     opposite rate, mapped onto the wheel axes. In `:ideal` actuation the engine
@@ -158,32 +155,10 @@ module ControlHooks
     The dynamics call it at every right-hand-side evaluation, so return the
     torque held since the last `update_control!` tick. The arguments are
     those of [`control_wrench`](@ref); the spacecraft's index in the run is
-    `x.spacecraft_index`. This hook replaces the deprecated
-    `calcReactionWheelTorque`.
+    `x.spacecraft_index`.
     """
     function control_wheel_torque end
-
-    """
-        calcControlForceTorque(model, u, p, spacecraft_index, t) -> (force, torque)
-
-    Deprecated, use [`control_wrench`](@ref)`(model, x::StateSample, p, t)`; this
-    name will be removed in SpaceAGORA 0.5.0. The new hook takes the
-    spacecraft's state as a sample, the time before the index, and the index from
-    `x.spacecraft_index`. Its frames and units are this hook's.
-
-    Until then the dynamics call an effector's own method of this hook when its
-    type has no `control_wrench`, and `run_simulation` warns once per type before
-    integration starts. `u` is the state of that spacecraft alone (`u.pos`,
-    `u.vel`, `u.mass`, and with attitude propagation `u.q` and `u.ω`), and
-    `spacecraft_index` its position in the run (`Int`, from 1). The returned
-    `force` is inertial, in N, and `torque` is in the bus frame, about the root
-    body's centre of mass, in N·m.
-
-    A direct call on an effector that implements `control_wrench` returns that
-    hook's result, and warns once per type that it is deprecated (under
-    `julia --depwarn=error` it throws instead).
-    """
-    function calcControlForceTorque end
+    control_wheel_torque(model, x, p, t) = nothing
 
     """
         update_control!(model, u, p, t, spacecraft_index) -> nothing
@@ -223,28 +198,11 @@ module ControlHooks
     schedule that spacecraft's burns.
 
     Before integration starts, `run_simulation` checks that every control
-    effector has a method of this function (or of the deprecated
-    `calcControlEffect!`) and, unless its actuation is `:mounted`, of
-    `control_wrench` (or of the deprecated `calcControlForceTorque`), and stops
-    with an `ArgumentError` naming the effector otherwise. This hook replaces the
-    deprecated `calcControlEffect!`.
+    effector has a method of this function and, unless its actuation is
+    `:mounted`, of `control_wrench`, and stops with an `ArgumentError` naming the
+    effector otherwise.
     """
     function update_control! end
-
-    """
-        calcControlEffect!(model, u, p, t, spacecraft_index) -> nothing
-
-    Deprecated, use [`update_control!`](@ref); this name will be removed in
-    SpaceAGORA 0.5.0. Only the name changes: the arguments, their order and when
-    the engine calls the hook are those of `update_control!`.
-
-    Until then the engine calls an effector's own method of this hook when its
-    type has no `update_control!`, and `run_simulation` warns once per type
-    before integration starts. A direct call on an effector that implements
-    `update_control!` runs it, and warns once per type that the name is
-    deprecated (under `julia --depwarn=error` it throws instead).
-    """
-    function calcControlEffect! end
 
     using ..QuaternionMath
     include(joinpath(@__DIR__, "propulsive_maneuvers.jl"))

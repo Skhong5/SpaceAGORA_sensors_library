@@ -23,7 +23,7 @@ along_velocity(x, newtons) = (newtons * x.vel_ii / sqrt(sum(abs2, x.vel_ii)), Z3
 struct NcClean <: ForceModel end
 SpaceAGORA.wrench(::NcClean, x::Sample, env::Env, t::Float64) = along_velocity(x, -1.0e-3)
 
-# hooks_present: neither wrench nor the deprecated calcForceTorque.
+# hooks_present: no wrench.
 struct NcNoHook <: ForceModel end
 
 # supported_sample_signature: a method on a concrete StateSample{Nothing}, which
@@ -274,11 +274,6 @@ const SENSOR_RUN_LEVEL = (:repeatable_run, :deepcopy_equivalent, :global_rng_ind
     :seed_repeatable, :custom_state_reset)
 sensor_except(ids...) = filter(id -> !(id in ids), CHECK_IDS.sensor)
 
-# no_deprecated_hooks (force/torque): a calcForceTorque method of its own beside wrench.
-struct NcDeprecatedForce <: ForceModel end
-SpaceAGORA.wrench(::NcDeprecatedForce, x::Sample, env::Env, t::Float64) = along_velocity(x, -1.0e-3)
-SpaceAGORA.calcForceTorque(::NcDeprecatedForce, x, p, i) = (Z3, Z3)
-
 # Guidance and navigation models: one record shape and one behaviour per control.
 # `acc` is the model's own state, which the run-level checks compare at the end of a
 # run; `ticked` marks a run's first tick; `buffer` is what bind_spacecraft shares.
@@ -331,7 +326,7 @@ mutable struct NcCtl{V} <: SpaceAGORA.AbstractControlEffectorModel
 end
 NcCtl{V}() where {V} = NcCtl{V}(0.0, false, [0.0], 0)
 const NC_CTL_STEPS = (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoReset)
-for variant in (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoReset, :NoWrench, :Deprecated, :Narrow,
+for variant in (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoReset, :NoWrench, :Narrow,
         :Impure, :Negative)
     step = variant in NC_CTL_STEPS ? variant : :Clean
     @eval SpaceAGORA.update_control!(m::NcCtl{$(QuoteNode(variant))}, u, p, t::Float64, i::Int) =
@@ -346,7 +341,6 @@ end
 SpaceAGORA.SimulationLifecycle.initialize_control!(m::NcCtl, u, p, t) = (m.acc = 0.0; m.ticked = false; m.calls = 0; nothing)
 SpaceAGORA.SimulationLifecycle.initialize_control!(m::NcCtl{:NoReset}, u, p, t) = nothing
 SpaceAGORA.bind_spacecraft(m::NcCtl{:SharedBind}, i::Int) = NcCtl{:SharedBind}(m.acc, m.ticked, m.buffer, m.calls)
-SpaceAGORA.calcControlForceTorque(::NcCtl{:Deprecated}, u, p, i, t) = (Z3, Z3)
 SpaceAGORA.control_wrench(m::NcCtl{:Narrow}, x::Sample{Nothing}, p, t::Float64) = (Z3, Z3)
 SpaceAGORA.control_wrench(m::NcCtl{:Impure}, x::Sample, p, t::Float64) = (m.calls += 1; (Z3, Z3))
 SpaceAGORA.control_propellant_rate(m::NcCtl{:Negative}, x::Sample, p, t::Float64) = -1.0e-5
@@ -385,21 +379,18 @@ function gnc_controls()
     kind = :control_model
     push!(controls,
         (kind=kind, id=:hooks_present, broken="a tick but no control_wrench", expect="has no method",
-            report=() -> check_control_model(ctl(:NoWrench)), passing=(:no_deprecated_hooks, :supported_sample_signature)),
-        (kind=kind, id=:no_deprecated_hooks, broken="a calcControlForceTorque method beside control_wrench",
-            expect="implements both control_wrench and calcControlForceTorque",
-            report=() -> check_control_model(ctl(:Deprecated)), passing=(:hooks_present, :supported_sample_signature)),
+            report=() -> check_control_model(ctl(:NoWrench)), passing=(:supported_sample_signature,)),
         (kind=kind, id=:supported_sample_signature, broken="a control_wrench method on StateSample{Nothing}",
             expect="StateSample{Nothing}, narrower than StateSample",
             report=() -> check_control_model(ctl(:Narrow)), passing=gnc_except(kind, :supported_sample_signature)),
         (kind=kind, id=:repeatable_run, broken="state outside the model advanced at every run start",
             expect="two runs of the fixture with isolate_state=true differ: ",
-            report=() -> check_control_model(ctl(:RunEpoch)), passing=(:hooks_present, :no_deprecated_hooks)),
+            report=() -> check_control_model(ctl(:RunEpoch)), passing=(:hooks_present,)),
         (kind=kind, id=:deepcopy_equivalent, broken="a gain keyed by the model's identity",
             expect="and a run of its deep copy (isolate_state=true) differ: ",
             report=() -> check_control_model(registered(ctl(:Identity))), passing=gnc_except(kind, :deepcopy_equivalent)),
         (kind=kind, id=:global_rng_independent, broken="rand() in the tick", expect="seeded 1 and 2 differ: ",
-            report=() -> check_control_model(ctl(:Rand)), passing=(:hooks_present, :no_deprecated_hooks)),
+            report=() -> check_control_model(ctl(:Rand)), passing=(:hooks_present,)),
         (kind=kind, id=:concurrent_equals_sequential, broken="scratch shared by every instance", expect="and sequential run ",
             report=() -> check_control_model(ctl(:Shared)), passing=gnc_except(kind, :concurrent_equals_sequential)),
         (kind=kind, id=:output_hook_pure, broken="control_wrench counts its calls in the model",
@@ -414,10 +405,7 @@ function gnc_controls()
         # Its shared buffer is never reset either.
         (kind=kind, id=:bind_fresh_state, broken="bind_spacecraft copies share a buffer the tick changes",
             expect="changed during the run", report=() -> check_control_model(ctl(:SharedBind)),
-            passing=gnc_except(kind, :bind_fresh_state, :initialize_resets)),
-        (kind=:force_torque_model, id=:no_deprecated_hooks, broken="a calcForceTorque method beside wrench",
-            expect="implements both wrench and calcForceTorque",
-            report=() -> check_force_torque_model(NcDeprecatedForce()), passing=(:hooks_present, :supported_sample_signature)))
+            passing=gnc_except(kind, :bind_fresh_state, :initialize_resets)))
     return controls
 end
 
@@ -617,7 +605,7 @@ except(ids...) = filter(id -> !(id in ids), ALL_FORCE)
 const RUN_LEVEL = (:repeatable_run, :deepcopy_equivalent, :global_rng_independent, :concurrent_equals_sequential)
 
 controls() = [
-    (kind=:force_torque_model, id=:hooks_present, broken="no wrench and no calcForceTorque", expect="has no method wrench(",
+    (kind=:force_torque_model, id=:hooks_present, broken="no wrench", expect="has no method wrench(",
         report=() -> check_force_torque_model(NcNoHook()), passing=(:supported_sample_signature,)),
     (kind=:force_torque_model, id=:supported_sample_signature, broken="a method on StateSample{Nothing}", expect="StateSample{Nothing}, narrower than StateSample",
         report=() -> check_force_torque_model(NcConcreteSample()), passing=except(:supported_sample_signature)),
@@ -745,14 +733,6 @@ const MAY_SKIP = (:concurrent_equals_sequential, :bind_fresh_state, :stream_unto
             @test all(check -> check.status in (:pass, :skip), report.checks)
             @test passed(report)
         end
-        # A clean model is not answerable for another model of its fixture that uses a
-        # deprecated hook.
-        target = NcClean()
-        mixed = check_force_torque_model(target; fixture=conformance_fixture(effectors=(target, NcDeprecatedForce())))
-        @test status_of(mixed, :no_deprecated_hooks) === :pass
-        controller = NcCtl{:Clean}()
-        mixed = check_control_model(controller; fixture=conformance_fixture(control=(controller, NcCtl{:Deprecated}())))
-        @test status_of(mixed, :no_deprecated_hooks) === :pass
         # The two-spacecraft bind check keeps the fixture's sensor, which the model reads.
         reader = check_navigation_model(NcNSensorReader(0.0); sensors=(NcCleanSensor(),))
         @test status_of(reader, :bind_fresh_state) === :pass

@@ -16,7 +16,7 @@ using ..SimulationModel: PlanetFrameEphemerisCache, rot
 using ..SimulationModel: ExternalPropagation
 using ..ArticulatedBody: articulated_forward_kinematics, articulated_link_poses, articulated_has_moving_joints
 using ..SimulationModel: ephemerides_requires_spice
-using ..SimulationModel.EphemeridesModels: _ephemerides_epoch_seconds, _ephemerides_frame_lpi, _ephemerides_sun_ii
+using ..SimulationModel.EphemeridesModels: ephemerides_epoch_seconds, ephemerides_frame_lpi, ephemerides_sun_ii
 using ..ParallelPolicy
 using ..EnvironmentModels
 using ..EnvironmentModels: getDensity, getDensityBatch!, NoAtmosphereModel
@@ -30,7 +30,7 @@ using ..ConfigTypes: SaveData
 using ..SceneVisualization: link_pose_vector, link_pose_link_indices, arm_pose_vector, robot_arm_plan_for
 import ..ConfigTypes: GramTrackCache, VacuumPredictedGRAMCache, GramDensityPerturbationState
 import ..ConfigTypes: GramTrackCacheConfig, CallbackEnvConfig, PolicyDecisionEnvConfig
-using ..ControlHooks: calcControlEffect!, control_thruster_levels, _thruster_levels_at, touchdown_spec, refresh_burn!, mounted_burn_tick!, burn_edge
+using ..ControlHooks: update_control!, control_thruster_levels, _thruster_levels_at, touchdown_spec, refresh_burn!, mounted_burn_tick!, burn_edge
 using ..ControlHooks: _effective_burn_window, _burn_window_changed, _burn_window_pending
 using ..Actuators: actuation_mode, actuator_levels
 using ..ActuatorMounting: mounted_gimbal_count, apply_gimbal_levels!
@@ -49,8 +49,8 @@ using ..SensorMounting: SensorMounting, mounted_sensors, reset_sensors!
 using ..ActuatorMounting: actuator_context
 using ..TerrainModels: AbstractTerrainModel, DEMTerrainModel, terrain_radius
 using ..ControlHooks: _edg_heat_states, _edg_heat_boundary_distance, _edg_heat_boundary_vertical_speed, _edg_capture_entry_heat!, _edg_capture_exit_heat!, _edg_reconcile_heat_boundary!
-using ..GuidanceHooks: calcGuidanceEffect!
-using ..NavigationHooks: calcNavigationEffect!
+using ..GuidanceHooks: update_guidance!
+using ..NavigationHooks: update_navigation!
 using ..SimConfig: SimulationConfiguration, MissionOrbits
 export SaveField, default_save_fields, get_callbacks
 export TrajectoryRecorder, get_trajectory_recorder_callback
