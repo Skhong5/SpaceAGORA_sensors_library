@@ -105,7 +105,7 @@ export force_on_endpoint, laser_force_on_spacecraft
 @doc (@doc SimulationModel.ExampleConfiguration.make_example_config) make_example_config
 @doc (@doc SimulationModel.ExampleConfiguration.make_three_body_spacecraft) make_three_body_spacecraft
 @doc """Dynamics model of a run: the spacecraft list and the tuple of force/torque effectors, `DynamicsModel([spacecraft], effectors)`.""" DynamicsModel
-@doc """Initial orbit of a spacecraft from Keplerian elements (`ra`, `rp`, `i`, `ω`, `Ω`, `ν`).""" InitialCondition
+@doc """Initial orbit of a spacecraft from Keplerian elements (`ra`, `rp`, `i`, `ω`, `Ω`, `ν`), with an optional initial attitude `q` (x, y, z, w, inertial to body) and body rate `ang_vel` (rad/s), each any vector or tuple of 4 or 3 numbers.""" InitialCondition
 @doc """Complete one-run scenario: simulation settings, mission configuration, environment, dynamics, guidance, navigation and control models, initial time, and integration tolerances. Pass it to `run_simulation`.""" SimulationConfiguration
 @doc """Mission length and bookkeeping: `mission_type` (`MissionTime` or `MissionOrbits`), `mission_time`, `number_of_orbits`, `keplerian`, `orientation_sim`, and `num_steps_to_save`.""" MissionConfiguration
 @doc """Enum selecting how a mission ends: `MissionTime` (fixed duration) or `MissionOrbits` (fixed orbit count).""" MissionType
@@ -118,7 +118,7 @@ export force_on_endpoint, laser_force_on_spacecraft
 @doc """Multi-link spacecraft: joints, links, root link, mass properties, propellant mass, initial condition, and id. Build the links with `Link` and `Joint`, or use `make_three_body_spacecraft`.""" SpacecraftModel
 @doc """One rigid body of a `SpacecraftModel`: mass, dimensions, reference area, offset `r`, attitude `q`, and reflection coefficient. Exported at the root; note that other packages may also export a `Link` name.""" Link
 @doc """Articulated connection between two `Link`s of a `SpacecraftModel`. Exported at the root; note that other packages may also export a `Joint` name.""" Joint
-@doc """Initial spacecraft state given as a Cartesian position and velocity.""" CartesianInitialCondition
+@doc """Initial spacecraft state given as a Cartesian position and velocity, with an optional initial attitude `q` (x, y, z, w, inertial to body) and body rate `ang_vel` (rad/s), each any vector or tuple of 4 or 3 numbers.""" CartesianInitialCondition
 @doc """Epoch at which a simulation starts (calendar date and time).""" InitialTime
 @doc """ODE solver tolerances and maximum step sizes for the orbit and atmosphere phases (`reltol_*`, `abstol_*`, `dt_max_*`).""" IntegrationTolerances
 @doc """Declaration of one quantity written to the saved results.""" SaveField

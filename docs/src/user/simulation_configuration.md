@@ -198,19 +198,18 @@ For non-Keplerian starts or when state is available in an inertial Cartesian
 frame:
 
 ```julia
-using StaticArrays: SVector
-
 ic = SM.CartesianInitialCondition(
     [6_778_137.0, 0.0, 0.0],              # inertial position, m (positional)
     [0.0, 7784.0, 0.0];                   # inertial velocity, m/s (positional)
-    q       = SVector(0.0, 0.0, 0.0, 1.0),   # unit quaternion, scalar-last [x, y, z, w]; the identity attitude
-    ang_vel = SVector(0.0, 0.0, 0.0)         # bus angular velocity, rad/s
+    q       = [0.0, 0.0, 0.0, 1.0],       # unit quaternion, scalar-last [x, y, z, w]; the identity attitude
+    ang_vel = [0.0, 0.0, 0.0]             # bus angular velocity, rad/s
 )
 ```
 
 Position and velocity are positional arguments; `q` and `ang_vel` are keyword
-arguments that must be `SVector`s and default to the values shown, so
-`SM.CartesianInitialCondition(pos, vel)` is also valid.
+arguments, each any vector or tuple of 4 or 3 numbers (an `SVector` too), and
+default to the values shown, so `SM.CartesianInitialCondition(pos, vel)` is
+also valid. `InitialCondition` takes `q` and `ang_vel` the same way.
 
 ## MissionConfiguration
 
