@@ -82,18 +82,19 @@ Clone SpaceAGORA beside your repository at the pinned commit, then build a
 separate environment that develops that checkout by path:
 
 ```bash
-git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../SpaceAGORA.jl
+GIT_LFS_SKIP_SMUDGE=1 git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../SpaceAGORA.jl
 git -C ../SpaceAGORA.jl checkout <the rev in SpaceAGORASource.toml>
 julia --startup-file=no ../SpaceAGORA.jl/scripts/contributor_environment.jl package . ../MyPlanner-env --manifest core
 ```
 
-The first argument is the starter's kind. `--manifest core` seeds the
-environment from the core's Manifest and keeps its versions; a project uses
-`--manifest committed`, its own Manifest. The script refuses a pin file whose
-`rev` is not the checked-out commit, so the commit you record is the commit you
-test. Then run the tests in that environment: `Pkg.test` for a package or a
-companion, `test/runtests.jl` for a project. Each starter's README gives the
-exact commands.
+`GIT_LFS_SKIP_SMUDGE=1` skips SpaceAGORA's large data files (Git LFS), which a
+contributor repository does not use. The first argument is the starter's kind.
+`--manifest core` seeds the environment from the core's Manifest and keeps its
+versions; a project uses `--manifest committed`, its own Manifest. The script
+refuses a pin file whose `rev` is not the checked-out commit, so the commit you
+record is the commit you test. Then run the tests in that environment:
+`Pkg.test` for a package or a companion, `test/runtests.jl` for a project. Each
+starter's README gives the exact commands.
 
 ## The conformance checks
 

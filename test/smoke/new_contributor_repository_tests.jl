@@ -1,7 +1,7 @@
 # Self-test of scripts/new_contributor_repository.jl, with the standard library only.
 # Core CI runs it in the contributor-kit job, before that job tests each generated
 # starter through the contributor workflow.
-using Test, TOML
+using Dates, Test, TOML
 
 const ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 include(joinpath(ROOT, "scripts", "new_contributor_repository.jl"))
@@ -29,6 +29,15 @@ clean_checkout() = isempty(readchomp(`git -C $ROOT status --porcelain=v1 --untra
             end
             pin = TOML.parsefile(joinpath(dir, "SpaceAGORASource.toml"))
             @test pin["rev"] == G.REV_TOKEN && pin["version"] == "0.0.0"
+            # A package or a companion ships core's MIT license with the year and holder left open.
+            if kind == "project"
+                @test !isfile(joinpath(dir, "LICENSE"))
+            else
+                core_license = readlines(joinpath(ROOT, "LICENSE"))
+                license = readlines(joinpath(dir, "LICENSE"))
+                @test license[3] == G.LICENSE_TOKEN
+                @test license[[1:2; 4:end]] == core_license[[1:2; 4:end]]
+            end
             @test !haskey(get(TOML.parsefile(joinpath(dir, "Project.toml")), "sources", Dict()), "SpaceAGORA")
         end
     end
@@ -53,6 +62,14 @@ clean_checkout() = isempty(readchomp(`git -C $ROOT status --porcelain=v1 --untra
         end
         @test refused(() -> G.check_target(joinpath(ROOT, "starter-probe"), ROOT), "inside the SpaceAGORA checkout")
         @test refused(() -> G.generate("library", mktempdir(); name="Abc", require_clean=false), "Unknown kind")
+        @test G.check_holder("  Space-FALCON Lab ") == "Space-FALCON Lab"
+        @test refused(() -> G.check_holder(" "), "--holder must name")
+        @test refused(() -> G.check_holder("A\nB"), "single line")
+        mktempdir() do parent
+            target = joinpath(parent, "Abc")
+            @test refused(() -> G.generate("package", target; name="Abc", holder="", require_clean=false), "--holder")
+            @test !ispath(target)
+        end
     end
 
     @testset "a checkout with tracked changes is refused" begin
@@ -127,6 +144,10 @@ clean_checkout() = isempty(readchomp(`git -C $ROOT status --porcelain=v1 --untra
                 if kind == "companion"
                     @test occursin("const CORE_CONTRACT_VERSION = v\"$(core.contract)\"", read(joinpath(target, "src", "$(name).jl"), String))
                 end
+                if kind != "project"
+                    @test readlines(joinpath(target, "LICENSE"))[3] ==
+                          "Copyright (c) $(Dates.year(Dates.today())) $(G.HOLDER_PLACEHOLDER)"
+                end
                 # The contributor workflow's pin check accepts it, at this commit when the checkout is clean.
                 if clean_checkout()
                     checked = ContributorEnvironment.check_repository(kind, target; rev=core.rev)
@@ -137,5 +158,11 @@ clean_checkout() = isempty(readchomp(`git -C $ROOT status --porcelain=v1 --untra
             end
         end
         @test allunique(uuids)
+        # The holder and the year fill the license line.
+        mktempdir() do parent
+            target = G.generate("package", joinpath(parent, "HeldPlanner"); name="HeldPlanner", holder="Space-FALCON Lab",
+                                year=2026, require_clean=false)
+            @test readlines(joinpath(target, "LICENSE"))[3] == "Copyright (c) 2026 Space-FALCON Lab"
+        end
     end
 end

@@ -19,10 +19,13 @@ The package is developed against the SpaceAGORA commit in `SpaceAGORASource.toml
 in a separate environment that develops that commit by path. Once:
 
 ```bash
-git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../SpaceAGORA.jl
+GIT_LFS_SKIP_SMUDGE=1 git clone https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../SpaceAGORA.jl
 git -C ../SpaceAGORA.jl checkout <the rev in SpaceAGORASource.toml>
 julia --startup-file=no ../SpaceAGORA.jl/scripts/contributor_environment.jl package . ../StarterName-env --manifest core
 ```
+
+`GIT_LFS_SKIP_SMUDGE=1` skips SpaceAGORA's large data files (Git LFS), which a
+contributor repository does not use.
 
 Then `julia --project=../StarterName-env -e 'using Pkg; Pkg.test("StarterName")'`.
 `test/runtests.jl` runs SpaceAGORA's conformance checks for planners on the family's
@@ -33,6 +36,12 @@ in the RPO pilot; CI runs it after the tests.
 Users of the package install SpaceAGORA first: the pin file is for this package's
 own development and CI, and it does not reach them. `[compat]` admits one
 SpaceAGORA release series.
+
+## License
+
+`LICENSE` is the MIT license, as for SpaceAGORA, with the year and the copyright
+holder the generator was given (`--holder`). Replace `Your name or organization`
+if it is still there, or replace the file to choose another license.
 
 ## Claims
 
