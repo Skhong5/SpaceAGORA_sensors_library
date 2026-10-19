@@ -847,7 +847,8 @@ SpaceAGORA commit, start from a contributor starter: see
 ## Templates
 
 - `templates/control_hook_template.jl`: a controller in the feedback profile,
-  with its declarations, a tick that holds the command and the output hooks.
+  with its declarations, a tick that holds the command, the output hooks, and
+  the checkpoint hooks that carry the held command through a checkpoint.
 - `templates/gnc_planner_template.jl`: an RPO planner on the public names, and
   the steps for another family.
 
