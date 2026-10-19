@@ -205,21 +205,20 @@ from `pos` and `vel` through the orbital energy, as the effector page does.
 - **Two spacecraft.** Pass two spacecraft to `DynamicsModel`; the state gains
   `u.sc[2]` with the same fields and the results gain `sc2_*` columns.
 - **Start from a Cartesian state.** Position and velocity are positional
-  arguments; the quaternion and the angular velocity are keyword arguments
-  that must be `SVector`s, scalar-last for `q`:
+  arguments; the quaternion and the angular velocity are keyword arguments,
+  each any vector or tuple of 4 or 3 numbers, scalar-last for `q`:
 
   ```julia
-  using StaticArrays: SVector
   ic = SM.CartesianInitialCondition(
       [6_778_137.0, 0.0, 0.0],          # inertial position, m
       [0.0, 7668.6, 0.0];               # inertial velocity, m/s
-      q = SVector(0.0, 0.0, 0.0, 1.0),  # identity attitude, [x, y, z, w]
-      ang_vel = SVector(0.0, 0.0, 0.0)) # bus angular velocity, rad/s
+      q = [0.0, 0.0, 0.0, 1.0],         # identity attitude, [x, y, z, w]
+      ang_vel = [0.0, 0.0, 0.0])        # bus angular velocity, rad/s
   ```
 
   It sets `pos`, `vel`, `q` and `ω` directly. Both keywords have those
-  defaults, so `SM.CartesianInitialCondition(pos, vel)` alone is valid; a
-  plain `Vector` for `q` is rejected with a type error.
+  defaults, so `SM.CartesianInitialCondition(pos, vel)` alone is valid; a `q`
+  without 4 numbers or an `ang_vel` without 3 is refused.
 - **Propellant.** Give the spacecraft `prop_mass` and a thruster control
   effector; `mass` then decreases during burns and the `sc1_mass` column shows
   it.

@@ -23,8 +23,8 @@ The families today:
 
 | Family | Module and file | Request, product | On rejection | Binding |
 |---|---|---|---|---|
-| `RPOReferenceFamily` | `RPOPlannerInterfaces`, `src/models/gnc/interfaces/rpo_planner.jl` | `RPOPlanningRequest`, `RPOReference` | `:fail`, or `:install_fallback` when the binding configures it | `PlannerGuidance`, the RPO pilot |
-| `BurnPlanFamily` | `BurnPlanning`, `src/models/gnc/control/burn_planning.jl` | `BurnPlanRequest`, `PropulsiveBurnPlan` | `:keep_previous` | `AlgorithmGuidance` |
+| `RPOReferenceFamily` | `RPOPlannerInterfaces`, `src/models/gnc/planning/rpo/contract/rpo_planner.jl` | `RPOPlanningRequest`, `RPOReference` | `:fail`, or `:install_fallback` when the binding configures it | `PlannerGuidance`, the RPO pilot |
+| `BurnPlanFamily` | `BurnPlanning`, `src/models/gnc/control/maneuvers/burn_planning.jl` | `BurnPlanRequest`, `PropulsiveBurnPlan` | `:keep_previous` | `AlgorithmGuidance` |
 | `JointReferenceFamily` | `JointReferencePlanning`, `src/models/gnc/planning/robot_arm/joint_reference_family.jl` | `JointReferenceRequest`, `RobotArmPlan` | `:fail` | `AlgorithmGuidance`, with the arm controller's `RobotArmPlanBuffer` as its link |
 | `EDGGuidanceFamily` | `EDGGuidanceFamilies`, `src/models/gnc/guidance/aerobraking/edg_guidance_family.jl` | `EDGGuidanceRequest`, `EDGGuidanceDecision` | `:fail` | `AlgorithmGuidance`, with `EDGGuidanceSettings`; its algorithm comes from the SpaceAGORAEDG companion through `EDGServices`, whose contract version is the family's |
 
@@ -35,7 +35,7 @@ scheduler's command buffer, which the typed-command boundary gate
 ## The family's obligations
 
 A family is a subtype of `AbstractAlgorithmFamily` with methods of these
-functions (all in `GNCAlgorithms`, `src/models/gnc/interfaces/gnc_algorithms.jl`):
+functions (all in `GNCAlgorithms`, `src/models/gnc/contracts/gnc_algorithms.jl`):
 
 | Function | Required | Notes |
 |---|---|---|

@@ -17,6 +17,20 @@ const DEFAULT_INITIAL_CONDITION_ANG_VEL = SVector{3, Float64}(0.0, 0.0, 0.0)
 
 abstract type AbstractInitialCondition end
 
+# An initial attitude quaternion (x, y, z, w) or body rate (rad/s) given as any vector
+# or tuple of 4 or 3 numbers; an SVector passes through with the same values.
+function _initial_attitude(q)::SVector{4, Float64}
+    length(q) == 4 || throw(ArgumentError(
+        "An initial condition's q is a quaternion (x, y, z, w), scalar last: give 4 numbers, not $(length(q))."))
+    return SVector{4, Float64}(Tuple(q))
+end
+
+function _initial_rate(ang_vel)::SVector{3, Float64}
+    length(ang_vel) == 3 || throw(ArgumentError(
+        "An initial condition's ang_vel is a body rate in rad/s: give 3 numbers, not $(length(ang_vel))."))
+    return SVector{3, Float64}(Tuple(ang_vel))
+end
+
 struct InitialCondition <: AbstractInitialCondition
     a::Float64 # Semimajor axis (m)
     e::Float64 # Eccentricity (nd)
@@ -59,8 +73,8 @@ function InitialCondition(
         deg2rad(Float64(ω)),
         deg2rad(Float64(Ω)),
         deg2rad(Float64(ν)),
-        q,
-        ang_vel,
+        _initial_attitude(q),
+        _initial_rate(ang_vel),
         Val(:radians)
     )
 end
@@ -74,8 +88,8 @@ function InitialCondition(;
     ω::Float64=0.0,
     Ω::Float64=0.0,
     ν::Union{Nothing, Float64}=nothing,
-    q::SVector{4, Float64}=DEFAULT_INITIAL_CONDITION_Q,
-    ang_vel::SVector{3, Float64}=DEFAULT_INITIAL_CONDITION_ANG_VEL
+    q=DEFAULT_INITIAL_CONDITION_Q,
+    ang_vel=DEFAULT_INITIAL_CONDITION_ANG_VEL
 )
     if (ra === nothing) != (rp === nothing)
         throw(ArgumentError("InitialCondition keyword construction requires both ra and rp when using apsides inputs."))
@@ -139,14 +153,17 @@ function _initial_condition_radius_for_oblate_altitude(
 end
 
 """
-    InitialCondition(planet; ra, hp, i=0.0, ω=0.0, Ω=0.0, ν=180.0, initial_time=nothing, ephemerides_model=nothing, L_PI=nothing)
+    InitialCondition(planet; ra, hp, i=0.0, ω=0.0, Ω=0.0, ν=180.0, q=(0, 0, 0, 1), ang_vel=(0, 0, 0),
+                     initial_time=nothing, ephemerides_model=nothing, L_PI=nothing)
 
 Construct orbital elements from apoapsis altitude `ra` and periapsis altitude
 `hp`, measured above the planet's oblate reference ellipsoid along the apsis
 directions. Pass `initial_time` and `ephemerides_model` to compute the
 inertial-to-planet-fixed frame at construction time. Pass `L_PI` to use a
 specific frame directly; otherwise the constructor uses `planet.L_PI` when it
-has been initialized.
+has been initialized. `q` is the initial attitude quaternion (x, y, z, w),
+inertial to body, and `ang_vel` the initial body rate (rad/s), each any vector
+or tuple of 4 or 3 numbers.
 """
 function InitialCondition(
     planet;
@@ -156,8 +173,8 @@ function InitialCondition(
     ω::Real=0.0,
     Ω::Real=0.0,
     ν::Union{Nothing, Real}=nothing,
-    q::SVector{4, Float64}=DEFAULT_INITIAL_CONDITION_Q,
-    ang_vel::SVector{3, Float64}=DEFAULT_INITIAL_CONDITION_ANG_VEL,
+    q=DEFAULT_INITIAL_CONDITION_Q,
+    ang_vel=DEFAULT_INITIAL_CONDITION_ANG_VEL,
     initial_time=nothing,
     ephemerides_model=nothing,
     L_PI::Union{Nothing, AbstractMatrix}=nothing
@@ -203,14 +220,14 @@ end
 function CartesianInitialCondition(
     pos,
     vel;
-    q::SVector{4, Float64}=DEFAULT_INITIAL_CONDITION_Q,
-    ang_vel::SVector{3, Float64}=DEFAULT_INITIAL_CONDITION_ANG_VEL
+    q=DEFAULT_INITIAL_CONDITION_Q,
+    ang_vel=DEFAULT_INITIAL_CONDITION_ANG_VEL
 )
     return CartesianInitialCondition(
         SVector{3, Float64}(pos),
         SVector{3, Float64}(vel),
-        q,
-        ang_vel
+        _initial_attitude(q),
+        _initial_rate(ang_vel)
     )
 end
 

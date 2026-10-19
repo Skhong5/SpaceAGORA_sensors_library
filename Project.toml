@@ -1,6 +1,6 @@
 name = "SpaceAGORA"
 uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["SpaceAGORA Contributors"]
 
 [deps]
@@ -75,6 +75,7 @@ GRAMSuite = "b50455af-6a46-4eae-bf92-8039261dd674"
 GRAMSuite = {path = "data/GRAMSuite.jl"}
 
 [compat]
+Printf = "1.11"
 PythonCall = "0.9.36"
 SpaceAGORAEDG = "0.3"
 SpaceAGORAVisualizer = "0.1"
@@ -109,6 +110,7 @@ Reexport = "1"
 Roots = "2, 3"
 SHA = "0.7, 1"
 Serialization = "1.11"
+SparseArrays = "1.12"
 TOML = "1"
 SPICE = "0.2"
 SatelliteToolboxAtmosphericModels = "2.0.1"

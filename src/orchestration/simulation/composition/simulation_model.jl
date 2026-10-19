@@ -12,10 +12,10 @@ isdefined(parentmodule(@__MODULE__), :RuntimeServices) ||
     Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "runtime_services.jl"))
 
 isdefined(parentmodule(@__MODULE__), :GNCRuntime) ||
-    Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "interfaces", "gnc_runtime.jl"))
+    Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "contracts", "gnc_runtime.jl"))
 
 isdefined(parentmodule(@__MODULE__), :SimulationLifecycle) ||
-    Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "interfaces", "simulation_lifecycle.jl"))
+    Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "contracts", "simulation_lifecycle.jl"))
 
 isdefined(parentmodule(@__MODULE__), :CallbackServices) ||
     Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "callback_services.jl"))
@@ -25,10 +25,10 @@ isdefined(parentmodule(@__MODULE__), :VisualizerServices) ||
 
 # The RPO comparison planners in GuidanceHooks subtype the RPO planner contract.
 isdefined(parentmodule(@__MODULE__), :GNCAlgorithms) ||
-    Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "interfaces", "gnc_algorithms.jl"))
+    Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "contracts", "gnc_algorithms.jl"))
 
 isdefined(parentmodule(@__MODULE__), :RPOPlannerInterfaces) ||
-    Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "interfaces", "rpo_planner.jl"))
+    Base.include(parentmodule(@__MODULE__), joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "planning", "rpo", "contract", "rpo_planner.jl"))
 
 # --- Utils ---
 include(joinpath(@__DIR__, "..", "..", "..", "foundation", "core", "numerics", "quaternion_utils.jl"))
@@ -48,11 +48,11 @@ include(joinpath(@__DIR__, "..", "..", "..", "foundation", "core", "types", "eff
 @reexport using .EffectorSampling
 include(joinpath(@__DIR__, "..", "..", "..", "foundation", "core", "interfaces", "hook_deprecation.jl"))
 
-include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "command_types.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "contracts", "command_types.jl"))
 @reexport using .CommandTypes
 
-include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "planning", "adapters", "hypr", "support.jl"))
-include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "planning", "adapters", "hypr", "hypr_utils.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "companions", "hypr", "support.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "companions", "hypr", "hypr_utils.jl"))
 
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "robotics", "robotics.jl"))
 @reexport using .Robotics
@@ -68,7 +68,7 @@ const CompliantRobotArmDynamics = ClothRobotArmDynamics
 
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "actuators", "thruster_models_module.jl"))
 @reexport using .ThrusterModels
-include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "guidance", "guidance_models.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "guidance", "models.jl"))
 @reexport using .GuidanceModels
 
 	include(joinpath(@__DIR__, "..", "..", "..", "models", "environment", "ephemerides", "planets.jl"))
@@ -94,7 +94,7 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "spacecraft", 
 
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "spacecraft", "interlink_graph.jl"))
 @reexport using .InterLinkModels
-include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "control", "interlink_scheduling.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "control", "interlinks", "interlink_scheduling.jl"))
 @reexport using .SchedulingPolicies
 
 # 4. Functions for building the model (add_...!)
@@ -203,17 +203,17 @@ include(joinpath(@__DIR__, "..", "..", "..", "interfaces", "io", "outputs", "io_
 @reexport using .IOOutputs
 
 # --- Navigation Effectors ---
-include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "navigation", "navigation_hooks.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "navigation", "hooks.jl"))
 @reexport using .NavigationHooks
 # --- Typed EDG platform services ---
 include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "guidance", "aerobraking", "typed_edg", "services.jl"))
 # --- Guidance Effectors ---
-include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "guidance", "guidance_hooks.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "guidance", "hooks.jl"))
 @reexport using .GuidanceHooks
 # --- Typed EDG prediction and decisions ---
 include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "guidance", "aerobraking", "typed_edg", "algorithms.jl"))
 # --- Control Effectors ---
-include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "control", "control_hooks.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "control", "hooks.jl"))
 @reexport using .ControlHooks
 
 	# --- Vehicle Thermal Models ---

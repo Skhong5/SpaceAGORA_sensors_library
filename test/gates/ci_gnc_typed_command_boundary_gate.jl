@@ -12,11 +12,11 @@ function _active_source(path::String)
     )
 end
 
-const COMMAND_TYPES_PATH = joinpath(REPO_ROOT, "src", "models", "gnc", "command_types.jl")
-const GUIDANCE_HOOKS_PATH = joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "guidance_hooks.jl")
-const GUIDANCE_THRUSTER_PATH = joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "thruster_guidance", "thruster_guidance_functions.jl")
-const CONTROL_HOOKS_PATH = joinpath(REPO_ROOT, "src", "models", "gnc", "control", "control_hooks.jl")
-const CONTROL_PROPULSIVE_PATH = joinpath(REPO_ROOT, "src", "models", "gnc", "control", "propulsive_maneuvers.jl")
+const COMMAND_TYPES_PATH = joinpath(REPO_ROOT, "src", "models", "gnc", "contracts", "command_types.jl")
+const GUIDANCE_HOOKS_PATH = joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "hooks.jl")
+const GUIDANCE_THRUSTER_PATH = joinpath(REPO_ROOT, "src", "models", "gnc", "guidance", "maneuvers", "thruster_guidance_functions.jl")
+const CONTROL_HOOKS_PATH = joinpath(REPO_ROOT, "src", "models", "gnc", "control", "hooks.jl")
+const CONTROL_PROPULSIVE_PATH = joinpath(REPO_ROOT, "src", "models", "gnc", "control", "maneuvers", "propulsive_maneuvers.jl")
 
 for path in (
     COMMAND_TYPES_PATH,
@@ -64,12 +64,15 @@ occursin("controlModel.direction[i] = command.direction_rad", control_propulsive
 const GUIDANCE_ROOT = joinpath(REPO_ROOT, "src", "models", "gnc", "guidance")
 const CONTROL_ROOT = joinpath(REPO_ROOT, "src", "models", "gnc", "control")
 const GUIDANCE_ROOTS = (GUIDANCE_ROOT, joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"),
-    (joinpath(REPO_ROOT, "src", "models", "gnc", owner) for owner in ("planning",))...,
+    (joinpath(REPO_ROOT, "src", "models", "gnc", owner) for owner in ("planning", "companions"))...,
     joinpath(REPO_ROOT, "src", "interfaces", "analysis", "planning"))
-const GNC_ROOTS = (GUIDANCE_ROOTS..., CONTROL_ROOT)
+# The general contract serves guidance and control alike: the GNC-wide checks
+# apply to it, the guidance-only patterns do not.
+const CONTRACTS_ROOT = joinpath(REPO_ROOT, "src", "models", "gnc", "contracts")
+const GNC_ROOTS = (GUIDANCE_ROOTS..., CONTROL_ROOT, CONTRACTS_ROOT)
 const ALLOWED_MANEUVER_COMMAND_OWNERS = Set([
-    joinpath("src", "models", "gnc", "guidance", "thruster_guidance", "thruster_guidance_functions.jl"),
-    joinpath("src", "models", "gnc", "control", "propulsive_maneuvers.jl"),
+    joinpath("src", "models", "gnc", "guidance", "maneuvers", "thruster_guidance_functions.jl"),
+    joinpath("src", "models", "gnc", "control", "maneuvers", "propulsive_maneuvers.jl"),
 ])
 const GUIDANCE_FORBIDDEN_PATTERNS = (
     r"\bBaseThrusterModel\b" => "guidance must not depend on BaseThrusterModel directly",

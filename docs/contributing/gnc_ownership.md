@@ -8,12 +8,14 @@ not create new Julia modules.
 
 ## Planning and its adapters
 
-`src/models/gnc/planning/` collects the planning sources in four groups. `rpo/`
-contains target-relative geometry, the direct baseline, RRT kernels, sampling,
-retiming, metrics and the planner-neutral lifecycle. `robot_arm/` contains quintic
-joint references and arm path geometry. `common/` contains path and tree
-operations shared by those applications. `adapters/hypr/` contains the core-owned
-configuration and compatibility surface used by the optional HYPR implementation.
+`src/models/gnc/planning/` collects the planning sources in three groups. `rpo/`
+contains the RPO planner contract (`contract/`), target-relative geometry, the
+direct baseline, RRT kernels, sampling, retiming, metrics and the planner-neutral
+lifecycle. `robot_arm/` contains quintic joint references and arm path geometry.
+`common/` contains path and tree operations shared by those applications.
+`src/models/gnc/companions/hypr/` contains the core-owned configuration and
+compatibility surface used by the optional HYPR implementation, and
+`companions/edg/` the `EDGServices` facade of the optional EDG package.
 
 HYPR's search implementation remains in its companion repository. A
 `HYPRServices` name in core may identify an extension point or a service supplied
@@ -58,12 +60,12 @@ kernels. Core retains public model types, run-owned state and passage resets,
 physical integration, queries, outputs and panel actuation.
 `guidance/aerobraking/typed_edg/` contains these core models and services; its
 `algorithms.jl` forwards to the optional provider through `SpaceAGORA.EDGServices`.
-The short files in `control/` that import EDG calculations are compatibility
-bindings, not additional algorithms.
+The short files in `control/aerobraking/` that import EDG calculations are
+compatibility bindings, not additional algorithms.
 
 SpaceAGORA no longer carries the older E-EDG and T-EDG strategy routes: the
-`guidance/aerobraking/e_edg/` and `t_edg/` solvers, their `control/aerobraking/`
-execution paths, the `internal/bridge_helpers.jl` runtime context conversions and
+`guidance/aerobraking/e_edg/` and `t_edg/` solvers, their execution paths (then in a
+`control/aerobraking/` folder), the `internal/bridge_helpers.jl` runtime context conversions and
 the mission-owned `operations/aerobraking_policy/` selector. They were
 SpaceAGORA's port of the original energy depletion guidance (Falcone and Putnam,
 JGCD 45(4), 2022) and of the earlier targeting route, and no simulation path had

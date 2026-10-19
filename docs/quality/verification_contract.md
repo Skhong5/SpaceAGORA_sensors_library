@@ -64,7 +64,7 @@ Main thresholds:
 
 Critical-file thresholds (`>= 90.0%`):
 1. `src/orchestration/simulation/engine/execution.jl`
-2. `src/models/gnc/control/propulsive_maneuvers.jl`
+2. `src/models/gnc/control/maneuvers/propulsive_maneuvers.jl`
 3. `src/foundation/core/interfaces/reference_system.jl`
 
 Main per-file overrides:

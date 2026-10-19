@@ -308,7 +308,7 @@ end
     end
     @test refused("src/models/gnc/guidance/aerobraking/typed_edg/guidance_models.jl","_control_module()._edg_prediction_time_grid(1.0)")
     bad=copy(sources)
-    path="src/models/gnc/control/targeting_control.jl"
+    path="src/models/gnc/control/aerobraking/targeting_control.jl"
     bad[path]=replace(bad[path],"    return EDGAlgorithms._edg_base_alpha"=>"    t += 1.0\n    return EDGAlgorithms._edg_base_alpha")
     @test !isempty(EDGOwnershipChecks.violations(bad))
     for definition in (
