@@ -76,6 +76,11 @@ Replacement planning uses seed 1744.
     `examples/Earth_RPO_Planner_Disturbances.jl`
     ([Run an RPO case with interchangeable planners](rpo_planner_pilot.md)).
 
+!!! warning "TODO: rerun from v0.4.0 pending"
+    The rerun of these results from SpaceAGORA v0.4.0 has not been done yet. It
+    follows the v0.4.0 tag; until then, that they are reproducible from v0.4.0 is
+    unchecked.
+
 In a checkout of the v0.4.0 tag, with the HYPR environment set up as in
 [Install and run](#Install-and-run), the case runs with:
 
