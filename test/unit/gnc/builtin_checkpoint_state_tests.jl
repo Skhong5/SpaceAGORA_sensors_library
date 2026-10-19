@@ -216,29 +216,45 @@ end
             return_solution=true).retcode) == "Success"
     end
 
-    @testset "the RPO MPC solver continues from its saved iterate and step size" begin
-        controller = only(rpo_configuration().control_model.control_effectors).controller
+    @testset "the RPO MPC controller continues from its saved warm start, iterate and step size" begin
+        model = only(rpo_configuration().control_model.control_effectors)
+        controller = model.controller
         reference = zeros(6, controller.horizon + 1)
         reference[1, :] .= 5.0
         state(k) = SVector(3.0 + 0.1k, 0.01k, 0.0, 0.002, 0.0, 0.0)
         for k in 1:30
             SM.ControlHooks.rpo_lqmpc_control(controller, state(k), reference)
         end
-        saved = from_file((U_prev=copy(controller.U_prev),
-            osqp=SM.ControlHooks._rpo_lqmpc_solver_state(controller.qp_model)))
-        fresh = deepcopy(controller)                     # a fresh workspace: rho and the iterate start over
-        copyto!(fresh.U_prev, saved.U_prev)
-        unrestored = deepcopy(fresh)
-        SM.ControlHooks._restore_rpo_lqmpc_solver_state!(fresh.qp_model, saved.osqp)
-        @test SM.ControlHooks._rpo_lqmpc_solver_state(fresh.qp_model) == saved.osqp
+        data = from_file(L.checkpoint_state(model))
+        # A copy has a fresh workspace, whose iterate and step size start over.
+        fresh, unrestored = deepcopy(model), deepcopy(model)
+        L.restore_checkpoint_state!(fresh, data)
+        copyto!(unrestored.controller.U_prev, data.controller.U_prev)
+        @test SM.ControlHooks._rpo_lqmpc_solver_state(fresh.controller.qp_model) == data.controller.osqp
         commands(c) = [SM.ControlHooks.rpo_lqmpc_control(c, state(k), reference) for k in 31:40]
         expected = commands(controller)
-        @test commands(fresh) == expected                 # bit for bit
-        @test commands(unrestored) != expected            # the fresh workspace's iterate and step size differ
-        @test_throws ArgumentError SM.ControlHooks._restore_rpo_lqmpc_solver_state!(fresh.qp_model, (y=zeros(2), rho=0.1))
+        @test commands(fresh.controller) == expected                  # bit for bit
+        @test commands(unrestored.controller) != expected             # the warm start alone does not repeat them
+        @test_throws ArgumentError SM.ControlHooks._restore_rpo_lqmpc_solver_state!(fresh.controller.qp_model,
+            (y=zeros(2), rho=0.1))
+        # A checkpoint of a model without a controller is refused.
+        @test_throws ArgumentError L.restore_checkpoint_state!(fresh,
+            from_file(L.checkpoint_state(SM.ControlHooks.RPOMPCControlModel())))
     end
 
     @testset "each built-in model's data restores into a fresh copy" begin
+        # The momentum manager, with and without a write of its state recorded (G-8).
+        manager() = SM.ControlHooks.MagneticMomentumManagerModel(h_wheels_0=SVector(0.1, 0.0, 0.0))
+        written = manager()
+        written.h_wheels, written.held_torque_body, written.held_dipole_am2 = SVector(1.0, 2.0, 3.0), SVector(0.1, 0.0, 0.0),
+            SVector(0.0, 2.0, 0.0)
+        written.ticks, written.last_update_s, written.initialized = 7, 6.5, true
+        restored = manager()
+        L.restore_checkpoint_state!(restored, from_file(L.checkpoint_state(written)))
+        @test C._same_state(restored, written) && restored.run_written === nothing
+        SM.ControlHooks._note_manager_writes!(written)
+        L.restore_checkpoint_state!(restored, from_file(L.checkpoint_state(written)))
+        @test C._same_state(restored, written)
         # The deprecated RPO guidance and the robot-arm controller: state a run
         # wrote, saved, read back and put into a fresh copy after its reset.
         legacy = SM.GuidanceModels.RPOGuidanceModel()
