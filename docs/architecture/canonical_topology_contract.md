@@ -132,7 +132,7 @@ routes. Source grouping does not move companion implementations into core.
    documentation.
 
 ## Canonical GNC and Runtime IO Owners
-1. GNC hook owners: `src/models/gnc/control/control_hooks.jl`, `src/models/gnc/guidance/guidance_hooks.jl`, `src/models/gnc/navigation/navigation_hooks.jl`.
+1. GNC hook owners: `src/models/gnc/control/hooks.jl`, `src/models/gnc/guidance/hooks.jl`, `src/models/gnc/navigation/hooks.jl`.
 2. Runtime IO owners: `src/interfaces/io/paths/io_paths.jl`, `src/interfaces/io/checkpoints/checkpoint_storage.jl`, `src/interfaces/io/outputs/io_outputs.jl`; `src/orchestration/simulation/engine/*` orchestrates IO but does not own serialization or output implementations.
 3. No `legacy_` identifiers in `src/`.
 

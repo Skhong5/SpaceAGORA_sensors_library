@@ -115,8 +115,8 @@ module GuidanceHooks
     using ..FrameTransforms
     # Shared calculations and compatibility types/bindings retain this module.
     include(joinpath(@__DIR__, "..", "planning", "rpo", "sampling_settings.jl"))
-    include(joinpath(@__DIR__, "..", "planning", "adapters", "hypr", "pso_parameters.jl"))
-    include(joinpath(@__DIR__, "..", "planning", "adapters", "hypr", "execution_contracts.jl"))
+    include(joinpath(@__DIR__, "..", "companions", "hypr", "pso_parameters.jl"))
+    include(joinpath(@__DIR__, "..", "companions", "hypr", "execution_contracts.jl"))
     include(joinpath(@__DIR__, "..", "planning", "rpo", "path_geometry.jl"))
     include(joinpath(@__DIR__, "..", "planning", "rpo", "profile_evaluation.jl"))
     include(joinpath(@__DIR__, "..", "planning", "rpo", "path_retiming.jl"))
@@ -126,12 +126,12 @@ module GuidanceHooks
     include(joinpath(@__DIR__, "..", "planning", "rpo", "comparison", "trajectory_optimizers.jl"))
     include(joinpath(@__DIR__, "..", "planning", "rpo", "comparison", "planner_objects.jl"))
     include(joinpath(@__DIR__, "..", "planning", "rpo", "comparison", "planner_comparison.jl"))
-    include(joinpath(@__DIR__, "..", "planning", "adapters", "hypr", "replanning.jl"))
+    include(joinpath(@__DIR__, "..", "companions", "hypr", "replanning.jl"))
     include(joinpath(@__DIR__, "rpo", "rpo_guidance_hooks.jl"))
     include(joinpath(@__DIR__, "aerobraking", "typed_edg", "guidance_models.jl"))
     include(joinpath(@__DIR__, "aerobraking", "energy_depletion_lifecycle.jl"))
 
-    include(joinpath(@__DIR__, "thruster_guidance", "thruster_guidance_functions.jl"))
+    include(joinpath(@__DIR__, "maneuvers", "thruster_guidance_functions.jl"))
     include(joinpath(@__DIR__, "landing", "apollo_descent_guidance.jl"))
 
     # Per-spacecraft GNC binding (see SimulationLifecycle.bind_spacecraft).

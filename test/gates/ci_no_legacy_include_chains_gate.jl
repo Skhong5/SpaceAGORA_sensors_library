@@ -8,6 +8,8 @@ const SCAN_ROOTS = (
     joinpath(REPO_ROOT, "src", "models", "gnc", "control"),
     joinpath(REPO_ROOT, "src", "models", "gnc", "guidance"),
     joinpath(REPO_ROOT, "src", "models", "gnc", "planning"),
+    joinpath(REPO_ROOT, "src", "models", "gnc", "companions"),
+    joinpath(REPO_ROOT, "src", "models", "gnc", "contracts"),
     joinpath(REPO_ROOT, "src", "interfaces", "analysis", "planning"),
     joinpath(REPO_ROOT, "src", "orchestration", "simulation", "composition"),
     joinpath(REPO_ROOT, "src", "orchestration", "simulation", "state"),
@@ -35,26 +37,29 @@ const CROSS_GROUP_COMPOSITION_OWNERS = Set([
 const ALLOWED_RAW_INCLUDE_FILES = Set([
     # Ordered model manifests and planning composition, not duplicate owners.
     joinpath("src", "models", "environment", "gravity", "gravity_models.jl"),
-    joinpath("src", "models", "gnc", "planning", "adapters", "hypr", "robot_arm.jl"),
+    joinpath("src", "models", "gnc", "companions", "hypr", "robot_arm.jl"),
     joinpath("src", "models", "gnc", "planning", "robot_arm", "planning.jl"),
     joinpath("src", "models", "gnc", "planning", "rpo", "comparison", "planner_comparison.jl"),
     joinpath("src", "models", "gnc", "planning", "rpo", "comparison", "reporting_compat.jl"),
     joinpath("packages", "SpaceAGORAHYPR", "src", "SpaceAGORAHYPR.jl"),
     joinpath("src", "models", "gnc", "planning", "rpo", "lifecycle.jl"),
+    # The RPO planner contract loads its validation and headroom parts; it sat in
+    # gnc/interfaces/, outside these scan roots, until the GNC regroup.
+    joinpath("src", "models", "gnc", "planning", "rpo", "contract", "rpo_planner.jl"),
     joinpath("src", "orchestration", "simulation", "composition", "simulation_model.jl"),
     joinpath("src", "models", "environment", "physical_models.jl"),
     joinpath("src", "models", "environment", "ephemerides", "ephemerides_models.jl"),
     joinpath("src", "models", "environment", "ephemerides", "planets.jl"),
-    joinpath("src", "models", "gnc", "control", "control_hooks.jl"),
-    joinpath("src", "models", "gnc", "control", "propulsive_maneuvers.jl"),
-    joinpath("src", "models", "gnc", "guidance", "guidance_models.jl"),
-    joinpath("src", "models", "gnc", "guidance", "guidance_hooks.jl"),
+    joinpath("src", "models", "gnc", "control", "hooks.jl"),
+    joinpath("src", "models", "gnc", "control", "maneuvers", "propulsive_maneuvers.jl"),
+    joinpath("src", "models", "gnc", "guidance", "models.jl"),
+    joinpath("src", "models", "gnc", "guidance", "hooks.jl"),
     # EDG physical services include only their reviewed capability wrapper file.
     # The ownership gate checks that exact include; algorithms.jl has none.
     joinpath("src", "models", "gnc", "guidance", "aerobraking", "typed_edg", "services.jl"),
     # Existing helper module now loads its shared and RRT source owners.
-    joinpath("src", "models", "gnc", "planning", "adapters", "hypr", "hypr_utils.jl"),
-    joinpath("src", "models", "gnc", "navigation", "navigation_hooks.jl"),
+    joinpath("src", "models", "gnc", "companions", "hypr", "hypr_utils.jl"),
+    joinpath("src", "models", "gnc", "navigation", "hooks.jl"),
     joinpath("src", "orchestration", "simulation", "engine", "simulation_engine.jl"),
     joinpath("src", "orchestration", "simulation", "engine", "setup.jl"),
     joinpath("src", "orchestration", "simulation", "callbacks", "callbacks.jl"),

@@ -247,20 +247,20 @@ module ControlHooks
     function calcControlEffect! end
 
     using ..QuaternionMath
-    include(joinpath(@__DIR__, "propulsive_maneuvers.jl"))
-    include(joinpath(@__DIR__, "heat_rate_control.jl"))
-    include(joinpath(@__DIR__, "heat_load_control.jl"))
-    include(joinpath(@__DIR__, "struct_load_control.jl"))
-    include(joinpath(@__DIR__, "targeting_control.jl"))
-    include(joinpath(@__DIR__, "edg_heat_accounting.jl"))
-    include(joinpath(@__DIR__, "energy_depletion_lifecycle.jl"))
-    include(joinpath(@__DIR__, "rpo_mpc", "lqmpc.jl"))
-    include(joinpath(@__DIR__, "rpo_mpc", "rpo_control_types.jl"))
+    include(joinpath(@__DIR__, "maneuvers", "propulsive_maneuvers.jl"))
+    include(joinpath(@__DIR__, "aerobraking", "heat_rate_control.jl"))
+    include(joinpath(@__DIR__, "aerobraking", "heat_load_control.jl"))
+    include(joinpath(@__DIR__, "aerobraking", "struct_load_control.jl"))
+    include(joinpath(@__DIR__, "aerobraking", "targeting_control.jl"))
+    include(joinpath(@__DIR__, "aerobraking", "edg_heat_accounting.jl"))
+    include(joinpath(@__DIR__, "aerobraking", "energy_depletion_lifecycle.jl"))
+    include(joinpath(@__DIR__, "rpo", "lqmpc.jl"))
+    include(joinpath(@__DIR__, "rpo", "rpo_control_types.jl"))
     include(joinpath(@__DIR__, "..", "..", "vehicle", "actuators", "thruster_allocation.jl"))
-    include(joinpath(@__DIR__, "rpo_mpc", "reaction_wheel_allocator.jl"))
-    include(joinpath(@__DIR__, "rpo_mpc", "rpo_mpc_control_model.jl"))
-    include(joinpath(@__DIR__, "robot_arm_control.jl"))
-    include(joinpath(@__DIR__, "momentum_manager.jl"))
+    include(joinpath(@__DIR__, "rpo", "reaction_wheel_allocator.jl"))
+    include(joinpath(@__DIR__, "rpo", "rpo_mpc_control_model.jl"))
+    include(joinpath(@__DIR__, "robot_arm", "robot_arm_control.jl"))
+    include(joinpath(@__DIR__, "attitude", "momentum_manager.jl"))
     include(joinpath(@__DIR__, "landing", "apollo_descent_control.jl"))
 
     # Per-spacecraft GNC binding (see SimulationLifecycle.bind_spacecraft).

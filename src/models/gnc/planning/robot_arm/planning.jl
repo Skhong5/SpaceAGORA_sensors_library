@@ -100,7 +100,7 @@ function _reference_times(dt_s::Float64, duration_s::Float64)
     return t
 end
 
-include(joinpath(@__DIR__, "..", "adapters", "hypr", "robot_arm.jl"))
+include(joinpath(@__DIR__, "..", "..", "companions", "hypr", "robot_arm.jl"))
 include(joinpath(@__DIR__, "path_geometry.jl"))
 
 """

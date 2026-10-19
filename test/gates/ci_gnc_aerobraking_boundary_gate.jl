@@ -22,6 +22,8 @@ for root_rel in (
     joinpath("packages", "SpaceAGORAHYPR", "src"),
     joinpath("src", "models", "gnc", "guidance"),
     joinpath("src", "models", "gnc", "planning"),
+    joinpath("src", "models", "gnc", "companions"),
+    joinpath("src", "models", "gnc", "contracts"),
     joinpath("src", "interfaces", "analysis", "planning"),
     joinpath("src", "models", "gnc", "control"),
 )

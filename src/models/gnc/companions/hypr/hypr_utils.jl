@@ -10,8 +10,8 @@ export hypr_rrt_tree_path, hypr_rrt_join_paths, hypr_rrt_refresh_subtree_costs!
 
 # Keep the compatibility module and exports; source owners are shared paths,
 # RRT tree operations and HYPR swarm policy.
-include(joinpath(@__DIR__, "..", "..", "common", "path_geometry.jl"))
-include(joinpath(@__DIR__, "..", "..", "common", "rrt_tree_operations.jl"))
+include(joinpath(@__DIR__, "..", "..", "planning", "common", "path_geometry.jl"))
+include(joinpath(@__DIR__, "..", "..", "planning", "common", "rrt_tree_operations.jl"))
 
 
 using ..HYPRSupport

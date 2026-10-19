@@ -119,7 +119,7 @@ const RETIRED_KERNEL_FILES = ("heat_rate.jl", "heat_load.jl", "structural_load.j
     "targeting.jl", "targeting_plan.jl", "pass_heat.jl", "guidance_decision.jl", "angle_decision.jl")
 const SERVICE_OVERLOADS = Set(("_edg_environment_state", "_edg_in_drag_passage", "_edg_ephemeris_time",
     "_edg_planet_frame_lpi", "_edg_targeting_prediction_environment", "_edg_sample_prediction_atmosphere"))
-const FACADE_FILE = "src/models/gnc/guidance/adapters/edg/services.jl"
+const FACADE_FILE = "src/models/gnc/companions/edg/services.jl"
 const FACADE_FORWARD = Dict(
     "_edg_environment_state" => :(_environment(p, u, t, spacecraft_index)),
     "_edg_in_drag_passage" => :(_in_passage(p, env)),
@@ -141,8 +141,8 @@ const FORWARD_CALLS = Dict(
 )
 
 const WRAPPER_FILES = Set((
-    "src/models/gnc/control/targeting_control.jl",
-    "src/models/gnc/control/heat_load_control.jl",
+    "src/models/gnc/control/aerobraking/targeting_control.jl",
+    "src/models/gnc/control/aerobraking/heat_load_control.jl",
     "src/models/gnc/guidance/aerobraking/typed_edg/guidance_models.jl",
 ))
 
