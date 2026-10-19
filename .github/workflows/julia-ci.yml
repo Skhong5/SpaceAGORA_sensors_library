@@ -1202,7 +1202,7 @@ jobs:
           gramsuite-smoke: "false"
           edg: "false"
           token: ${{ github.token }}
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Install the explicit matching backend

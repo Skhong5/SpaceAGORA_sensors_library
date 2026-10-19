@@ -13,7 +13,7 @@ runs it through `.github/workflows/contributor-ci.yml`):
 Create one from a clean checkout of the SpaceAGORA commit to build on:
 
 ```bash
-julia --startup-file=no scripts/new_contributor_repository.jl package ../MyPlanner --name MyPlanner
+julia --startup-file=no scripts/new_contributor_repository.jl package ../MyPlanner --name MyPlanner --holder "Your Lab"
 ```
 
 The generator fills in the placeholders below and refuses a checkout with tracked
@@ -27,6 +27,7 @@ changes, a non-empty or in-checkout directory, and a name that is not a package 
 | `SpaceAGORA = "0.0"` | the core's release series in `[compat]` |
 | `version = "0.0.0"` (pin file) | the core's version at that commit |
 | `CORE_CONTRACT_VERSION = v"0.0.0"` | the facade's current contract version |
+| `Copyright (c) 0000 Your name or organization` (`LICENSE`) | this year and `--holder`; without `--holder`, the holder stays for the author to fill |
 
 The starters use only current hook names (the deprecated-hook gate refuses any
 deprecated name under `templates/starters/`) and only root names or
