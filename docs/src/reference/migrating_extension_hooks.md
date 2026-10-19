@@ -165,7 +165,15 @@ An interlink checkpoint keeps its stored keys, so a checkpoint written before
   contract 2.0.0, with SpaceAGORAMuJoCo 0.2.0, HYPR 0.2.0 and SpaceAGORAEDG 0.2.0.
 - **0.3.1.** `RobotArmReactionEffector.spacecraft_idx` becomes `spacecraft_index`,
   with a warning for the old name.
-- **0.4.0.** The companion packages use the new names.
+- **0.4.0.** The companion packages use the new names. `skip_inactive` defaults
+  to `true`: a guidance, navigation or control model stops ticking for a
+  spacecraft once it is inactive, unless it returns `false`. The pre-run
+  configuration checks that warned in 0.3 refuse the run with an `ArgumentError`,
+  whether or not Julia runs with `--depwarn=error`: a control period
+  (`gnc_period_s`) that differs from its control rate or from its controller's
+  discretization step, a spacecraft scope that names a position outside the run,
+  and Apollo descent guidance and control that do not share their state and
+  spacecraft.
 - **0.5.0, or 1.0 if that comes first.** The deprecated names are removed, and
   `control_propellant_rate` and `control_wheel_torque` gain defaults, `0.0` and
   `nothing`. The removal waits until a tagged release has carried the warnings

@@ -1,5 +1,6 @@
 module ActuatorContractTests
 using Test, StaticArrays, LinearAlgebra, Random, ComponentArrays, SpaceAGORA
+using DiffEqCallbacks: PresetTimeCallback
 import SpaceAGORA.TelemetryVerification: make_example_config
 const SM = SpaceAGORA.SimulationModel
 const SE = SpaceAGORA.SimulationEngine
@@ -890,6 +891,42 @@ end
         SM.ControlHooks.refresh_burn!(ideal, readout_params(SM.SpacecraftModel[ideal_sc], (ideal,)), 1, 0.0)
         @test SM.SimulationCallbacks._effector_thruster_levels(ideal, 1, ideal_sc, 350.0) == [1.0]
         @test SM.SimulationCallbacks._effector_thruster_levels(ideal, 1, ideal_sc, 400.0) == [0.0]
+    end
+
+    @testset "a mounted burn releases the engine and wheels of an inactive spacecraft" begin
+        # Two spacecraft burn from 300.5 s to 400.5 s; the second becomes inactive at
+        # 350 s, mid-burn, and the run ends at 380 s, with both windows open. From then
+        # on its mounted tick is released (`skip_inactive`): engine and wheels off.
+        model = SM.BaseThrusterModel(thrust=[1.0, 1.0], direction=[0.0, 0.0], Δv=[0.0, 0.0],
+            start_burn_time=[300.5, 300.5], stop_burn_time=[400.5, 400.5], Isp=[300.0, 300.0], actuation=:mounted)
+        sc1, sc2 = orbit_spacecraft(id=41), orbit_spacecraft(id=42)
+        base = make_example_config(planet=SM.Earth(), spacecraft=sc1, mission_time=380.0,
+            initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+            dynamic_effectors=(SM.InverseSquaredGravityModel(),), ephemerides_model=SM.SimpleEphemeridesModel(),
+            orientation_sim=true, keplerian=false, EI_km=1.0, verbose=false, results=false)
+        args = SM.SimConfig._with_configuration(base;
+            dynamics_model=SM.DynamicsModel(SM.SpacecraftModel[sc1, sc2], (SM.InverseSquaredGravityModel(),)),
+            control_model=SM.ControlModel(control_effectors=(model,), control_rates=[1.0]))
+        deactivate = PresetTimeCallback([350.0], integrator -> (integrator.p.is_active[2] = false);
+            save_positions=(false, false))
+        sol = run_simulation(args; isolate_state=false, return_solution=true, extra_callbacks=(deactivate,))
+        @test sol.prob.p.is_active == [true, false] && sol.t[end] == 380.0
+        @test model.burning == [true, true]                    # the release leaves the schedule
+        # The active spacecraft's tick goes on: engine at the burn's thrust, wheels pointing it.
+        on = model.mounted_levels[1]
+        @test length(on) == 4 && on[1] == 1.0 && any(!iszero, on[2:4])
+        @test 110.0 - sol.u[end].sc[1].mass ≈ 79.5 / (300.0 * G0) rtol=1e-6
+        # The inactive one's tick is released: engine and wheels off. Its state stays
+        # where the deactivation left it, after 49.5 s of the burn.
+        off = model.mounted_levels[2]
+        @test length(off) == 4 && all(iszero, off)
+        @test 110.0 - sol.u[end].sc[2].mass ≈ 49.5 / (300.0 * G0) rtol=1e-6
+        # The release on its own: the mounted engine and wheels off, the schedule kept.
+        @test release_command!(model, 380.0, 1) === nothing && all(iszero, model.mounted_levels[1]) && model.burning[1]
+        @test release_command!(model, 380.0, 3) === nothing
+        ideal = SM.BaseThrusterModel(thrust=[1.0], direction=[0.0], Δv=[0.0], start_burn_time=[300.5],
+            stop_burn_time=[400.5], Isp=[300.0])
+        @test release_command!(ideal, 0.0, 1) === nothing && all(isempty, ideal.mounted_levels)
     end
 
     @testset "two burn runs at once match two in sequence" begin

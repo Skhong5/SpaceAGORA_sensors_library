@@ -88,12 +88,15 @@ end
 function _mounted_burn_tick_callback(control_model::BaseThrusterModel, period::Float64, num_sats::Int)
     tick! = integrator -> begin
         @inbounds for sat_idx in 1:num_sats
-            mounted_burn_tick!(control_model, integrator.u, integrator.p, integrator.t, sat_idx)
+            # As every periodic tick (`_gnc_tick!`): an inactive spacecraft's command
+            # is released instead, and the mounted actuators then apply it.
+            _gnc_tick!(mounted_burn_tick!, control_model, integrator.u, integrator.p, integrator.t, sat_idx) ||
+                continue
             _apply_mounted_tick!(control_model, integrator.p, sat_idx, integrator.t, period)
         end
         return nothing
     end
-    return PeriodicCallback(tick!, period)
+    return _run_clock_periodic_callback(tick!, period)
 end
 
 # A burn switches only between integration steps: the solver stops at the
@@ -201,32 +204,24 @@ _discretization_step(control_model::_simulation_model_module.RobotArmControlEffe
 """
     check_control_periods(args) -> nothing
 
-Before a run: warn when a periodic control model's declared period
-(`gnc_period_s`) differs from the rate of its callback, or when its controller
-was discretized with a different step. Equality is exact, since builders set
-both from one value. These are configuration checks, not deprecations: they use
-the shared pre-run warning for such checks (`_preflight_warning`, log group
-`:preflight`), once per model type, which throws under `--depwarn=error`.
-SpaceAGORA 0.4.0 will refuse such a run.
+Before a run: refuse it with an `ArgumentError` when a periodic control model's
+declared period (`gnc_period_s`) differs from the rate of its callback, or when
+its controller was discretized with a different step. Equality is exact, since
+builders set both from one value. (SpaceAGORA 0.3 warned instead.)
 """
 function check_control_periods(args)
-    warn = _simulation_model_module.HookDeprecation._preflight_warning
     models, rates = args.control_model.control_effectors, args.control_model.control_rates
     for (i, control_model) in enumerate(models)
         tick_schedule(control_model) === :periodic || continue
         T = typeof(control_model)
         period = gnc_period_s(control_model)
-        if period !== nothing && Float64(period) != Float64(rates[i])
-            warn((T, :gnc_period_s),
-                "$(nameof(T)) declares a $(period) s period (gnc_period_s) but its callback runs every " *
-                "$(rates[i]) s (control_rates[$(i)]). Set both from one value; SpaceAGORA 0.4.0 will refuse this run.")
-        end
+        period !== nothing && Float64(period) != Float64(rates[i]) && throw(ArgumentError(
+            "$(nameof(T)) declares a $(period) s period (gnc_period_s) but its callback runs every " *
+            "$(rates[i]) s (control_rates[$(i)]). Set both from one value."))
         step = _discretization_step(control_model)
-        if period !== nothing && step !== nothing && step != Float64(period)
-            warn((T, :discretization_step),
-                "$(nameof(T)) ticks every $(period) s but its controller was discretized with a $(step) s step. " *
-                "Build the controller with the model's control step; SpaceAGORA 0.4.0 will refuse this run.")
-        end
+        period !== nothing && step !== nothing && step != Float64(period) && throw(ArgumentError(
+            "$(nameof(T)) ticks every $(period) s but its controller was discretized with a $(step) s step. " *
+            "Build the controller with the model's control step."))
     end
     return nothing
 end
@@ -287,14 +282,14 @@ end
 
 # At the run's start, before the models' own initializers: each periodic control
 # effector learns the clock its callback reports at the solve's start (its configured
-# rate, from `t`), so an initializer that predicts before the solve has it (the EDG
-# guidance family's first request).
-function _report_gnc_clocks!(args, t)
+# rate, from the grid's origin `origin`), so an initializer that predicts before the
+# solve has it (the EDG guidance family's first request).
+function _report_gnc_clocks!(args, origin)
     model = args.control_model
     for i in eachindex(model.control_effectors)
         control = model.control_effectors[i]
         tick_schedule(control) === :periodic || continue
-        gnc_clock_started!(control, Float64(model.control_rates[i]), Float64(t))
+        gnc_clock_started!(control, Float64(model.control_rates[i]), Float64(origin))
     end
     return nothing
 end
@@ -351,11 +346,14 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
         end
         # The models that write what this one reads (its links) prepare it first,
         # once per tick and on this thread: the RPO planner checks its reference.
+        # Not when the tick releases or skips every spacecraft (`_ticks_any`).
         producers = _linked_producers(control_model, args)
         control_func = (integrator) -> begin
-            for producer in producers
-                SimulationLifecycle.before_reference_control!(producer, control_model, integrator.u, integrator.p,
-                    integrator.t)
+            if !isempty(producers) && _ticks_any(control_model, integrator.p, num_sats)
+                for producer in producers
+                    SimulationLifecycle.before_reference_control!(producer, control_model, integrator.u, integrator.p,
+                        integrator.t)
+                end
             end
             decision = _control_callback_thread_decision(integrator.p, control_model, num_sats)
             use_threads = decision.use_threads
@@ -387,13 +385,10 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
                 )
             end
         end
-        # At each solve's start the model learns its clock's period and origin.
-        # The flag reset is PeriodicCallback's own default initialization.
-        start_clock = (cb, u, t, integrator) -> begin
-            gnc_clock_started!(control_model, Float64(control_rate), Float64(t))
-            DiffEqBase.derivative_discontinuity!(integrator, false)
-        end
-        push!(callbacks, PeriodicCallback(control_func, control_rate; initialize=start_clock))
+        # At each solve's start the model learns its clock's period and origin:
+        # the solve's start, or the run's in a checkpointed or resumed run.
+        start_clock = (origin, integrator) -> gnc_clock_started!(control_model, Float64(control_rate), origin)
+        push!(callbacks, _run_clock_periodic_callback(control_func, Float64(control_rate); on_clock=start_clock))
     end
     return callbacks
 end

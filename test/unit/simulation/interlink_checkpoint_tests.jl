@@ -35,9 +35,13 @@ end
         checkpoint = SE._load_checkpoint(args)
         @test checkpoint.t == 12.5
         @test checkpoint.u == state
-        @test checkpoint.runtime_state == snapshot
+        # Every checkpoint also records the flags in its activity entry.
+        @test checkpoint.runtime_state == merge(snapshot, (activity=(version=1, is_active=[true, false, true]),))
         restored = trues(3)
         @test isnothing(SE._restore_interlink_checkpoint_state!(args, checkpoint, restored))
+        @test restored == [true, false, true]
+        restored = trues(3)
+        @test isnothing(SE._restore_activity_checkpoint_state!(args, checkpoint, restored))
         @test restored == [true, false, true]
 
         changes = (

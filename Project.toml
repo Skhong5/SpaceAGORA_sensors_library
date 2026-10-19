@@ -76,7 +76,7 @@ GRAMSuite = {path = "data/GRAMSuite.jl"}
 
 [compat]
 PythonCall = "0.9.36"
-SpaceAGORAEDG = "0.2"
+SpaceAGORAEDG = "0.3"
 SpaceAGORAVisualizer = "0.1"
 ADTypes = "1"
 Aqua = "0.8.14"

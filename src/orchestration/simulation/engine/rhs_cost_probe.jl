@@ -26,11 +26,14 @@ rather than trusted; the resulting `EffectorProbe` carries `declared = true` and
 `probe_ns_map` omits it from the cost path.
 
 One full RHS evaluation runs first. That is not warm-up for its own sake --
-wrench-based effectors read per-satellite environment samples out of
-`shared_buffers.rhs_flat_state_*`, which only the RHS's prefill phase populates,
-and n-body/solar effectors need `_prefill_shared_body_samples!` to have warmed
-the SPICE memo. Probing before that would measure a cold path the solve never
+n-body/solar effectors need `_prefill_shared_body_samples!` to have warmed the
+SPICE memo, and probing before that would measure a cold path the solve never
 takes, or throw.
+
+A wrench-based effector is handed the state sample the serial, satellite-batch
+and per-satellite routes build from the state. On the flat route that is the
+sample the flat route keeps in `shared_buffers.rhs_flat_state_*`, so the
+measurement does not depend on which route the warm-up evaluation took.
 
 Two distinct failure modes, both non-fatal:
 
@@ -96,10 +99,11 @@ function probe_effector_costs!(
 
         measured = try
             @views sc_view = sc_state[sat_idx]
+            # From the state, as the serial, satellite-batch and per-satellite
+            # routes build it. The flat route's per-satellite buffers hold the
+            # same sample, but only after a flat-route evaluation.
             state_sample = _wrench_method_available(effector) ?
-                _rhs_flat_state_sample_from_buffers(
-                    p.shared_buffers, spacecraft, sat_idx, orientation_sim
-                ) :
+                build_state_sample(sc_view, spacecraft[sat_idx], orientation_sim, sat_idx) :
                 nothing
             PC.timed_min(k = k) do
                 force, torque = _evaluate_dynamic_effector(

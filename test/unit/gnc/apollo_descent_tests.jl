@@ -474,20 +474,21 @@ end
         @test isnan(copied_guidance.state.phase_start_s[1, 1])
         @test CH.touchdown_spec(control, 1) === nothing
         @test CH.control_thruster_levels(control, 1) === nothing
-        # Guidance on a state of its own: the control never receives a command,
-        # and the run says so before it starts.
+        # Guidance on a state of its own: the control would never receive a
+        # command, so the run is refused before it starts.
         lone = ApolloDescentGuidanceModel(gcfg, ApolloDescentState(2), NoTerrainModel(); spacecraft_indices=(2,))
         split = SM.SimConfig._with_configuration(short;
             guidance_model=SM.GuidanceModel(guidance_effectors=(lone,), guidance_rates=[1.0]))
-        if Base.JLOptions().depwarn == 2
-            @test_throws ErrorException run_simulation(split; return_solution=true)
-        else
-            unpaired = @test_logs (:warn, r"not paired: spacecraft 2 have an ApolloDescentControlModel but no ApolloDescentGuidanceModel") match_mode=:any run_simulation(
-                split; return_solution=true)
-            unpaired_control = only(unpaired.prob.p.args.control_model.control_effectors)
-            @test all(isnan, unpaired_control.state.phase_start_s)
-            @test all(iszero, unpaired_control.actuators.thrust_n)
+        unpaired = try
+            run_simulation(split; return_solution=true)
+            nothing
+        catch e
+            e
         end
+        @test unpaired isa ArgumentError && occursin(
+            r"not paired: spacecraft 2 have an ApolloDescentControlModel but no ApolloDescentGuidanceModel",
+            sprint(showerror, unpaired))
+        @test all(isnan, control.state.phase_start_s) && all(iszero, control.actuators.thrust_n)
 
         result = run_simulation(args; isolate_state=false, return_solution=true)
         @test state.phase[2] == :landed
@@ -524,13 +525,13 @@ end
         preflight(args) = foreach(c -> SpaceAGORA.SimulationLifecycle.preflight_control(c, args; isolate_state=true),
             args.control_model.control_effectors)
         state, other = ApolloDescentState(2), ApolloDescentState(2)
-        key = (ApolloDescentControlModel, :apollo_pairing)
         unguided = r"not paired: spacecraft 2 have an ApolloDescentControlModel but no ApolloDescentGuidanceModel on the same ApolloDescentState, so their descent engine never receives a command\. Build both"
         uncontrolled = r"not paired: spacecraft 2 have an ApolloDescentGuidanceModel but no ApolloDescentControlModel on the same ApolloDescentState, so no control flies their guidance commands\. Build both"
+        # A mismatch is refused at every preflight, not once per session as a
+        # warning was, and nothing is logged.
         function check_mismatch(args, message)
-            if Base.JLOptions().depwarn == 2
-                # Strict mode must refuse every preflight, even after the key
-                # would have been suppressed in ordinary warning mode.
+            logger = Test.TestLogger(min_level=Logging.Warn)
+            with_logger(logger) do
                 for _ in 1:2
                     err = try
                         preflight(args)
@@ -538,24 +539,11 @@ end
                     catch e
                         e
                     end
-                    @test err isa ErrorException
+                    @test err isa ArgumentError
                     @test occursin(message, sprint(showerror, err))
                 end
-            else
-                logger = Test.TestLogger(min_level=Logging.Warn, respect_maxlog=true)
-                with_logger(logger) do
-                    preflight(args)
-                    preflight(args)
-                end
-                @test length(logger.logs) == 1
-                if length(logger.logs) == 1
-                    entry = only(logger.logs)
-                    @test entry.level == Logging.Warn
-                    @test entry.group == :preflight
-                    @test entry.id == key
-                    @test occursin(message, entry.message)
-                end
             end
+            @test isempty(logger.logs)
         end
         # Paired: one pair for both spacecraft, or one bound pair per spacecraft.
         paired = gnc((guide(state, (1, 2)),), (ctrl(state, (1, 2)),))
@@ -564,28 +552,18 @@ end
         # A configuration with only one side is not checked.
         @test_logs preflight(gnc((), (ctrl(state, (1, 2)),)))
         @test_logs preflight(gnc((guide(state, (1, 2)),), ()))
-        # Separate states: both directions still share one aggregate warning,
-        # despite two control models and repeated full preflight passes.
+        # Separate states (the unshared state of the design's link check): both
+        # directions in one refusal, despite two control models.
         check_mismatch(gnc((guide(other, (1, 2)),), (ctrl(state, (1,)), ctrl(state, (2,)))),
             r"not paired: spacecraft 1, 2 have an ApolloDescentControlModel but no ApolloDescentGuidanceModel on the same ApolloDescentState, so their descent engine never receives a command; spacecraft 1, 2 have an ApolloDescentGuidanceModel but no ApolloDescentControlModel")
-        # Same state, different spacecraft selections. Each direction gets a
-        # fresh logger, but both passes within check_mismatch share that logger.
+        # Same state, different spacecraft selections.
         missing_guidance = gnc((guide(state, (1,)),), (ctrl(state, (1,)), ctrl(state, (2,))))
         missing_control = gnc((guide(state, (1, 2)),), (ctrl(state, (1,)),))
         check_mismatch(missing_guidance, unguided)
         check_mismatch(missing_control, uncontrolled)
-        if Base.JLOptions().depwarn != 2
-            # Changing selections, state identities, or diagnostic text does
-            # not create another warning key on the same logger.
-            logger = Test.TestLogger(min_level=Logging.Warn, respect_maxlog=true)
-            with_logger(logger) do
-                preflight(missing_guidance)
-                preflight(missing_control)
-                preflight(gnc((guide(other, (1, 2)),), (ctrl(state, (1, 2)),)))
-            end
-            @test length(logger.logs) == 1
-            @test only(logger.logs).id == key
-            @test occursin(unguided, only(logger.logs).message)
+        # Each refusal is independent of the ones before it.
+        for args in (missing_guidance, missing_control, gnc((guide(other, (1, 2)),), (ctrl(state, (1, 2)),)))
+            @test_throws ArgumentError preflight(args)
         end
         # Rule A is broad: another model type exempts its direction even if it
         # has unrelated state. The opposite direction must still be checked.
@@ -596,8 +574,11 @@ end
             check_mismatch(gnc((guide(state, (1,)),), (ctrl(state, (1, 2)), CustomDescentControl(custom_state))), unguided)
         end
 
-        # A real strict child exercises the Apollo preflight hook, not only the
-        # helper. Test both mismatch directions independently in one process.
+        # Under --depwarn=error the pre-run refusals are the same ArgumentErrors:
+        # they no longer go through the strict-mode warning. A child process
+        # checks the Apollo pairing through its preflight hook, in both
+        # directions, and the engine's period, step and scope checks on the RPO
+        # pilot.
         strict = raw"""
             using SpaceAGORA, Test, Logging
             const SM = SpaceAGORA.SimulationModel
@@ -624,17 +605,39 @@ end
                         catch e
                             e
                         end
-                        @test err isa ErrorException
+                        @test err isa ArgumentError
                         @test occursin(expected, sprint(showerror, err))
                         @test occursin("spacecraft 2", sprint(showerror, err))
                     end
                 end
+                checks = SM.SimulationCallbacks
+                function rpo(change!)
+                    args = make_rpo_configuration(planner=DirectRPOPlanner(), mission_time_s=0.2)
+                    change!(only(args.control_model.control_effectors), args)
+                    return args
+                end
+                for (args, check, expected) in (
+                        (rpo((c, a) -> (a.control_model.control_rates[1] = 0.2)), checks.check_control_periods,
+                         "declares a 0.1 s period"),
+                        (rpo((c, a) -> (c.controller.dt_s = 0.2)), checks.check_control_periods,
+                         "discretized with a 0.2 s step"),
+                        (rpo((c, a) -> (c.target_index = 5)), checks.check_spacecraft_scopes,
+                         "names spacecraft 5"))
+                    err = try
+                        check(args)
+                        nothing
+                    catch e
+                        e
+                    end
+                    @test err isa ArgumentError
+                    @test occursin(expected, sprint(showerror, err))
+                end
             end
             @test isempty(logger.logs)
-            print("apollo_pairing_strict_ok")
+            print("strict_refusals_ok")
             """
         cmd = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=existing --depwarn=error --project=$(pkgdir(SpaceAGORA)) -e $strict`
-        @test read(cmd, String) == "apollo_pairing_strict_ok"
+        @test read(cmd, String) == "strict_refusals_ok"
     end
 end
 

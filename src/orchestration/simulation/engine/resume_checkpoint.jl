@@ -63,6 +63,35 @@ function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
     return nothing
 end
 
+# Which spacecraft are active: an impact or a touchdown deactivates one for the
+# rest of the run. Written with every checkpoint and restored before a resumed
+# run's initializers, so a spacecraft inactive at the checkpoint stays inactive:
+# its state is not integrated, the GNC models that skip inactive spacecraft do
+# not tick for it, and its impact and touchdown do not fire again (both act on
+# active spacecraft only, and the touchdown's start check skips inactive ones).
+# An interlink checkpoint also carries the flags in its own entry; the two must
+# agree. A checkpoint without the entry, written by an earlier SpaceAGORA,
+# resumes with every spacecraft active, except in an interlinked run, which
+# restores its entry's flags.
+_activity_checkpoint_state(is_active) = (version=1, is_active=Vector{Bool}(is_active))
+
+function _restore_activity_checkpoint_state!(args, checkpoint, is_active)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    entry = runtime !== nothing && hasproperty(runtime, :activity) ? runtime.activity : nothing
+    entry === nothing && return nothing
+    hasproperty(entry, :version) && entry.version === 1 ||
+        throw(ArgumentError("Spacecraft activity checkpoint state version 1 is required to resume this run."))
+    count = length(args.dynamics_model.spacecraft)
+    hasproperty(entry, :is_active) && entry.is_active isa AbstractVector{Bool} &&
+        length(entry.is_active) == count && length(is_active) == count ||
+        throw(ArgumentError("The checkpoint's spacecraft activity flags must match the spacecraft count."))
+    interlinks = hasproperty(runtime, :interlinks) ? runtime.interlinks : nothing
+    interlinks === nothing || !hasproperty(interlinks, :is_active) || interlinks.is_active == entry.is_active ||
+        throw(ArgumentError("The checkpoint's spacecraft activity flags differ from its interlink entry's."))
+    copyto!(is_active, entry.is_active)
+    return nothing
+end
+
 # The run state the callbacks keep on the spacecraft records: the batteries'
 # flags, the faults' activity and held levels, the sensors' streams, latest
 # measurements and gyro biases, and the hinges' and gimbals' angles. A plain-data
@@ -245,14 +274,41 @@ function _restore_model_checkpoint_state!(args, snapshot)
     return nothing
 end
 
+# A checkpoint written at its run's end: the run did not take the periodic
+# navigation, guidance and control ticks due then, so a run resumed from it takes
+# them at its start. One written at a segment boundary holds no entry: the ticks
+# due there came before it. So does one written where a solve stopped early, at an
+# event's `terminate!` (impact, touchdown, orbit or entry count): the solver applies
+# every discrete callback of that step after the event's, so a tick due then ran
+# before the checkpoint, as in a run in one piece.
+_periodic_tick_checkpoint_state(t::Float64, mission_end) = t >= mission_end ? (version=1, pending_s=t) : nothing
+
+# The resumed run's start when the ticks due there are pending, NaN otherwise.
+function _pending_periodic_ticks_s(checkpoint)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    entry = runtime !== nothing && hasproperty(runtime, :periodic_ticks) ? runtime.periodic_ticks : nothing
+    entry === nothing && return NaN
+    hasproperty(entry, :version) && entry.version === 1 && hasproperty(entry, :pending_s) &&
+        entry.pending_s == checkpoint.t ||
+        throw(ArgumentError("Periodic tick checkpoint state version 1 is required to resume this run."))
+    return Float64(entry.pending_s)
+end
+
 @inline function _write_checkpoint!(args, t::Float64, u_state, solver_mode::String; is_active=nothing, callback_state=nothing,
-                                     model_state=nothing)
+                                     model_state=nothing, periodic_ticks=nothing)
     runtime = _interlink_checkpoint_runtime_state(args, is_active)
     if callback_state !== nothing
         runtime = runtime === nothing ? (callbacks=callback_state,) : merge(runtime, (callbacks=callback_state,))
     end
+    if is_active !== nothing
+        activity = _activity_checkpoint_state(is_active)
+        runtime = runtime === nothing ? (activity=activity,) : merge(runtime, (activity=activity,))
+    end
     if model_state !== nothing
         runtime = runtime === nothing ? (models=model_state,) : merge(runtime, (models=model_state,))
+    end
+    if periodic_ticks !== nothing
+        runtime = runtime === nothing ? (periodic_ticks=periodic_ticks,) : merge(runtime, (periodic_ticks=periodic_ticks,))
     end
     return SimulationModel.IOSerialization._write_checkpoint!(
         args,

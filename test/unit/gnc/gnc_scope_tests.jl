@@ -48,6 +48,13 @@ SpaceAGORA.release_command!(m::Scoped, t, i) = (m.counts.released[i] += 1; nothi
 # A model with no declaration of its own.
 struct PlainControl <: SM.AbstractControlEffectorModel end
 
+# A model with the default declarations that counts its ticks per spacecraft.
+struct CountingControl <: SM.AbstractControlEffectorModel
+    ticks::Vector{Int}
+end
+SpaceAGORA.update_control!(m::CountingControl, u, p, t, i) = (m.ticks[i] += 1; nothing)
+SpaceAGORA.control_wrench(::CountingControl, x::StateSample, p, t) = (ZERO3, ZERO3)
+
 function constellation_args(; n=3, control=(), guidance=(), navigation=(), mission_time=5.0)
     planet = SM.make_no_gram_planet(:earth)
     sats = map(1:n) do id
@@ -71,32 +78,26 @@ function constellation_args(; n=3, control=(), guidance=(), navigation=(), missi
         initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0))
 end
 
-# The scope check's messages: logged, or thrown under --depwarn=error.
-function scope_warnings(f)
-    is_scope(msg) = occursin("in its spacecraft_scope", msg)
-    if Base.JLOptions().depwarn == 2
-        try
-            f()
-            return String[]
-        catch e
-            msg = sprint(showerror, e)
-            is_scope(msg) || rethrow()
-            return [msg]
-        end
+# The message of the `ArgumentError` that `f()` refuses with, or `nothing` when it
+# returns.
+function refusal(f)
+    try
+        f()
+        return nothing
+    catch e
+        e isa ArgumentError || rethrow()
+        return sprint(showerror, e)
     end
-    logger = Test.TestLogger(min_level=Logging.Warn)
-    with_logger(f, logger)
-    return filter(is_scope, [string(l.message) for l in logger.logs])
 end
-scope_messages(args) = scope_warnings(() -> SM.SimulationCallbacks.check_spacecraft_scopes(args))
+scope_refusal(args) = refusal(() -> SM.SimulationCallbacks.check_spacecraft_scopes(args))
 
 # Deactivate spacecraft `i` at time `t_s`, as an impact or touchdown event does.
 deactivate(i, t_s) = PresetTimeCallback([t_s], integrator -> (integrator.p.is_active[i] = false); save_positions=(false, false))
 
 @testset "GNC spacecraft scope" begin
-    @testset "defaults keep today's ticks" begin
+    @testset "the defaults" begin
         @test spacecraft_scope(:any_model) === AllSpacecraft()
-        @test skip_inactive(:any_model) === false
+        @test skip_inactive(:any_model) === true
         @test held_command(:any_model, 1) === nothing
         @test isnan(held_command_time(:any_model, 1))
         @test release_command!(:any_model, 0.0, 1) === nothing
@@ -127,7 +128,8 @@ deactivate(i, t_s) = PresetTimeCallback([t_s], integrator -> (integrator.p.is_ac
         skipping = (ScopedControl(AllSpacecraft(), 2; skip=true), ScopedGuidance(AllSpacecraft(), 2; skip=true),
                     ScopedNavigation(AllSpacecraft(), 2; skip=true))
         ticking = ScopedControl(AllSpacecraft(), 2)
-        args = constellation_args(n=2, control=(skipping[1], ticking), guidance=(skipping[2],),
+        default = CountingControl(zeros(Int, 2))
+        args = constellation_args(n=2, control=(skipping[1], ticking, default), guidance=(skipping[2],),
             navigation=(skipping[3],))
         run_simulation(args; isolate_state=false, extra_callbacks=(deactivate(2, 2.5),))
         for m in skipping
@@ -135,7 +137,9 @@ deactivate(i, t_s) = PresetTimeCallback([t_s], integrator -> (integrator.p.is_ac
             @test m.counts.released[1] == 0
             @test 0 < m.counts.released[2] < k && m.counts.ticks[2] + m.counts.released[2] == k
         end
-        # The default, skip_inactive = false: ticked as before.
+        # The default, skip_inactive = true: no tick for the inactive spacecraft.
+        @test default.ticks == skipping[1].counts.ticks
+        # A model that declares skip_inactive = false keeps ticking.
         @test ticking.counts.ticks[2] == ticking.counts.ticks[1] && iszero(ticking.counts.released)
         # A coupled model follows its primary only.
         coupled = ScopedControl(CoupledSpacecraft(1, (2,)), 2; skip=true)
@@ -157,20 +161,17 @@ deactivate(i, t_s) = PresetTimeCallback([t_s], integrator -> (integrator.p.is_ac
     end
 
     @testset "scopes are checked before the run" begin
-        @test isempty(scope_messages(constellation_args(control=(ScopedControl(BoundSpacecraft((3,)), 3),))))
-        warned = scope_messages(constellation_args(control=(ScopedControl(BoundSpacecraft((2, 4, 5)), 3),)))
-        @test length(warned) == 1 && occursin("spacecraft 4, 5", only(warned)) && occursin("positions 1 to 3", only(warned))
-        warned = scope_messages(constellation_args(guidance=(ScopedGuidance(CoupledSpacecraft(1, (0,)), 3),)))
-        @test length(warned) == 1 && occursin("spacecraft 0", only(warned))
-        # A configuration check, not a deprecation: the :preflight log group.
-        if Base.JLOptions().depwarn != 2
-            logger = Test.TestLogger(min_level=Logging.Warn)
-            with_logger(logger) do
-                SM.SimulationCallbacks.check_spacecraft_scopes(
-                    constellation_args(navigation=(ScopedNavigation(BoundSpacecraft((9,)), 3),)))
-            end
-            @test only(logger.logs).group === :preflight
+        @test scope_refusal(constellation_args(control=(ScopedControl(BoundSpacecraft((3,)), 3),))) === nothing
+        refused = scope_refusal(constellation_args(control=(ScopedControl(BoundSpacecraft((2, 4, 5)), 3),)))
+        @test occursin("ScopedControl names spacecraft 4, 5", refused) && occursin("positions 1 to 3", refused)
+        refused = scope_refusal(constellation_args(guidance=(ScopedGuidance(CoupledSpacecraft(1, (0,)), 3),)))
+        @test occursin("ScopedGuidance names spacecraft 0", refused)
+        # A refusal, not a warning, whatever --depwarn says: nothing is logged.
+        logger = Test.TestLogger(min_level=Logging.Warn)
+        refused = with_logger(logger) do
+            scope_refusal(constellation_args(navigation=(ScopedNavigation(BoundSpacecraft((9,)), 3),)))
         end
+        @test occursin("ScopedNavigation names spacecraft 9", refused) && isempty(logger.logs)
         # Malformed declarations are refused.
         for bad in (ScopedControl(:chaser, 3), ScopedControl(AllSpacecraft(), 3; skip=:yes))
             err = try
@@ -182,14 +183,14 @@ deactivate(i, t_s) = PresetTimeCallback([t_s], integrator -> (integrator.p.is_ac
             @test err isa ArgumentError
         end
         # The engine runs the check before every run.
-        warned = scope_warnings(() -> run_simulation(constellation_args(n=2,
+        refused = refusal(() -> run_simulation(constellation_args(n=2,
             control=(ScopedControl(BoundSpacecraft((3,)), 2),))))
-        @test length(warned) == 1
+        @test occursin("names spacecraft 3", refused) && occursin("positions 1 to 2", refused)
     end
 
     @testset "the built-in models declare their scope and held command" begin
         mpc = SM.RPOMPCControlModel(chaser_index=2, target_index=1)
-        @test spacecraft_scope(mpc) == CoupledSpacecraft(2, (1,)) && !skip_inactive(mpc)
+        @test spacecraft_scope(mpc) == CoupledSpacecraft(2, (1,))
         mpc.held = SM.RPOHeldActuation(force_ii=SVector(1.0, 2.0, 3.0))
         @test held_command(mpc, 2) == (force_ii=SVector(1.0, 2.0, 3.0), torque_body=ZERO3,
             thruster_forces_n=zero(SVector{6, Float64}), rw_torque_body=ZERO3)
@@ -226,12 +227,18 @@ deactivate(i, t_s) = PresetTimeCallback([t_s], integrator -> (integrator.p.is_ac
         @test held_command(edg, 2) == 0.25 && held_command(edg, 3) === nothing
 
         binding = AlgorithmGuidance(algorithm=ApoapsisBurnPlanner(delta_v_mps=1.0), spacecraft_index=2)
-        @test spacecraft_scope(binding) == BoundSpacecraft((2,)) && !skip_inactive(binding)
+        @test spacecraft_scope(binding) == BoundSpacecraft((2,))
 
         rpo = make_rpo_configuration(planner=DirectRPOPlanner(), mission_time_s=0.2)
         planner, control = only(rpo.guidance_model.guidance_effectors), only(rpo.control_model.control_effectors)
         @test spacecraft_scope(planner) == spacecraft_scope(control) == CoupledSpacecraft(1, (2,))
-        @test isempty(scope_messages(rpo))
+        # No built-in model ticks for an inactive spacecraft.
+        edg_guidance = SM.AerobrakingEnergyDepletionGuidanceModel(SM.AerobrakingEnergyDepletionConfig(), edg_state)
+        maneuver = SM.AerobrakingCampaignPropulsiveManeuverGuidanceModel(maneuver_orbit_number=[1], maneuver_Δv=[1.0])
+        raise = SM.ApoapsisTargetPeriapsisRaiseGuidanceModel(target_apoapsis_radius_m=7.0e6)
+        @test all(skip_inactive, (mpc, arm, mm, thruster, edg, SM.SolarPanelAngleOfAttackControlModel(), binding,
+            legacy, planner, control, edg_guidance, maneuver, raise))
+        @test scope_refusal(rpo) === nothing
     end
 
     @testset "the binding refusal names the scope" begin

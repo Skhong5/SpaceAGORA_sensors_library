@@ -106,9 +106,6 @@ end
 function L.preflight_guidance(g::PlannerGuidance, args; isolate_state)
     P.require_planner_support(g.planner)
     isolate_state || throw(ArgumentError("The RPO planner lifecycle requires isolate_state=true."))
-    ss = args.simulation_settings
-    (ss.checkpoint_enabled || ss.resume_from_checkpoint) &&
-        throw(ArgumentError("The RPO planner lifecycle does not support checkpoint writing or resume."))
     ids = [sc.id for sc in args.dynamics_model.spacecraft]
     length(ids) == length(unique(ids)) || throw(ArgumentError("Spacecraft IDs must be unique."))
     g.chaser_id in ids && g.target_id in ids || throw(ArgumentError("Planner spacecraft ID is missing."))
@@ -160,15 +157,50 @@ function L.initialize_guidance!(g::PlannerGuidance, u, p, t)
     g.runtime = GA.AlgorithmRuntime(words)
     g.triggers = TriggerState(:none, g.geometry_revision)
     g.plan_buffer.valid = false
-    try
+    # A resumed run puts back the planner's run state from its checkpoint right
+    # after the run-start initializers (`restore_checkpoint_state!`): no initial request.
+    hasproperty(p, :shared_buffers) && p.shared_buffers.model_resume[] && return nothing
+    _guarded_initialization(g) do
         g.runtime.state = GA.initialize_algorithm(g.planner,
             (seed=g.seed, chaser_id=g.chaser_id, target_id=g.target_id,
              epoch=deepcopy(p.args.initial_time), stream_words=copy(words)))
-        request_plan!(g, u, p, Float64(t), :initial)
+    end
+    # A checkpoint holds the algorithm's own state only for a planner that declares
+    # restart. A run set to resume writes checkpoints too.
+    ss = p.args.simulation_settings
+    g.runtime.state === nothing || !(ss.checkpoint_enabled || ss.resume_from_checkpoint) ||
+        P.planner_capabilities(g.planner).restart || throw(ArgumentError(
+            "$(nameof(typeof(g.planner))) keeps run state of its own (initialize_planner) and does not declare " *
+            "restart in planner_capabilities, so a checkpoint cannot hold it; run without checkpoints."))
+    _guarded_initialization(() -> request_plan!(g, u, p, Float64(t), :initial), g)
+    return nothing
+end
+
+# A failure while the planner initializes is the run's planning failure.
+function _guarded_initialization(f, g)
+    try
+        f()
     catch e
         e isa RPOPlanningError && rethrow()
         fail!(g, :initialization_exception; cause=e, backtrace=catch_backtrace())
     end
+    return nothing
+end
+
+# The planner's run state goes into checkpoint files: the request driver's runtime
+# (the random stream, the installed request and reference, the records and the
+# algorithm's own state), the trigger state and the plan buffer the planner shares
+# with its controller.
+function L.checkpoint_state(g::PlannerGuidance)
+    g.runtime === nothing && return nothing
+    b = g.plan_buffer
+    return deepcopy((runtime=g.runtime, triggers=g.triggers,
+        plan_buffer=(valid=b.valid, plan=b.plan, updated_at_s=b.updated_at_s)))
+end
+function L.restore_checkpoint_state!(g::PlannerGuidance, data)
+    g.runtime, g.triggers = data.runtime, data.triggers
+    b, saved = g.plan_buffer, data.plan_buffer
+    b.valid, b.plan, b.updated_at_s = saved.valid, saved.plan, saved.updated_at_s
     return nothing
 end
 

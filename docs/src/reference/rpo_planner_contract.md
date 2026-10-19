@@ -120,9 +120,10 @@ reference, or a hold, is replaced by a `:replan` request. `RPOReplanningSpheres`
 provides the spheres of the legacy replanning model.
 
 Capability checks describe the algorithm only. Use the pilot's supported
-lifecycle to install validated references. The current pilot refuses checkpoint
-writing and resume because they do not restore its complete run-owned state;
-a planner capability declaration does not remove that restriction.
+lifecycle to install validated references. A checkpoint holds the binding's
+run-owned state, including the algorithm's own state from `initialize_planner`;
+a planner that keeps such state (anything but `nothing`) declares `restart` in
+its capabilities to run with checkpoints, and the binding refuses it otherwise.
 
 ## The general algorithm contract
 

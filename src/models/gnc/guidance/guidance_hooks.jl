@@ -140,7 +140,9 @@ module GuidanceHooks
     end
 
     # The spacecraft each built-in guidance model acts on (GNCRuntime): the descent
-    # guidance flies its selected spacecraft and stops at touchdown.
+    # guidance flies its selected spacecraft and stops at touchdown. Like every
+    # built-in guidance model, it does not plan for an inactive spacecraft
+    # (`skip_inactive`, true by default; the descent guidance declares it).
     GNCRuntime.spacecraft_scope(m::ApolloDescentGuidanceModel) = GNCRuntime.BoundSpacecraft(m.spacecraft_indices)
     GNCRuntime.skip_inactive(::ApolloDescentGuidanceModel) = true
 
@@ -152,6 +154,21 @@ module GuidanceHooks
     end
     function SimulationLifecycle.initialize_guidance!(m::ApoapsisTargetPeriapsisRaiseGuidanceModel, u, p, t)
         empty!(m.command_state)
+        return nothing
+    end
+    # The same run state goes into checkpoint files, and a resumed run puts it back
+    # after the reset: the descent guidance's entries of the shared state (which its
+    # control reads) and the periapsis-raise guidance's command states.
+    SimulationLifecycle.checkpoint_state(m::ApolloDescentGuidanceModel) =
+        (entries=_descent_entries(m.state, m.spacecraft_indices),)
+    function SimulationLifecycle.restore_checkpoint_state!(m::ApolloDescentGuidanceModel, data)
+        _restore_descent_entries!(m.state, m.spacecraft_indices, data.entries)
+        return nothing
+    end
+    SimulationLifecycle.checkpoint_state(m::ApoapsisTargetPeriapsisRaiseGuidanceModel) =
+        (command_state=copy(m.command_state),)
+    function SimulationLifecycle.restore_checkpoint_state!(m::ApoapsisTargetPeriapsisRaiseGuidanceModel, data)
+        copy!(m.command_state, data.command_state)
         return nothing
     end
 end

@@ -11,6 +11,9 @@ using SpaceAGORA.Conformance: check_sensor, check_guidance_model, check_control_
 const SM = SpaceAGORA.SimulationModel
 const C = SpaceAGORA.Conformance
 
+# The status of a report's checkpoint round trip.
+round_trip_status(report) = only(check.status for check in report.checks if check.id === :checkpoint_round_trip)
+
 @testset "Built-in force/torque models pass the conformance checks" begin
     types = package_types(SpaceAGORA.AbstractForceTorqueModel)
     instances = force_torque_instances()
@@ -58,7 +61,9 @@ end
         end
     end
     for sensor in instances
-        test_report(check_sensor(sensor))
+        report = test_report(check_sensor(sensor))
+        # Advisory in 0.4 (so test_report records a failure as broken), required here.
+        @test round_trip_status(report) === :pass
     end
 end
 
@@ -106,7 +111,9 @@ end
     for entry in instances
         if entry.runs
             check = entry.kind === :guidance_model ? check_guidance_model : check_control_model
-            test_report(entry.fixture === nothing ? check(entry.model) : check(entry.model; fixture=entry.fixture))
+            report = test_report(entry.fixture === nothing ? check(entry.model) : check(entry.model; fixture=entry.fixture))
+            # Advisory in 0.4 (so test_report records a failure as broken), required here.
+            @test round_trip_status(report) === :pass
         else
             test_report(C._static_gnc_report(entry.model, entry.kind))
         end

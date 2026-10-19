@@ -156,7 +156,7 @@ function gnc_instances()
     static(kind, model, reason) = (kind=kind, model=model, runs=false, reason=reason, fixture=nothing)
     # The RPO controller ticks for its chaser and reads its target, spacecraft 1 and 2,
     # so it runs on two spacecraft; in a one-spacecraft run its scope names a spacecraft
-    # the run does not have, and the engine warns (and refuses under --depwarn=error).
+    # the run does not have, and the engine refuses the run.
     mpc = SM.ControlHooks.RPOMPCControlModel()
     edg_reason = "energy-depletion guidance and control need the optional SpaceAGORAEDG package, an atmosphere " *
         "and each other; checked without a run"

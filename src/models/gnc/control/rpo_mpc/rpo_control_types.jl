@@ -42,6 +42,9 @@ At each run's start (`initialize_control!`) the controller's warm start returns
 to zero with a fresh solver workspace and an attached command log is emptied. A
 held command the controller wrote in the previous run returns to its value at
 that run's start, while one a user set since is kept as the new configuration.
+A checkpoint holds the held command, the warm start with the solver's dual
+iterate and step size, the mounted levels and the command log, from which a
+resumed run continues.
 """
 mutable struct RPOMPCControlModel <: AbstractControlEffectorModel
     chaser_index::Int
