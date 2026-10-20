@@ -30,7 +30,7 @@ for marker in (
     "If new extension points were added, I updated `docs/src/extensibility.md`",
     "If a hook was added, renamed or deprecated, I updated `docs/extension_hooks.jl`",
     "If new CLI commands or flags were added, I updated `docs/src/cli.md`",
-    "`julia --project=docs docs/make.jl`",
+    "`julia --startup-file=no docs/setup.jl`, then `julia --project=docs docs/make.jl`",
     "`julia --project=. test/gates/ci_public_api_surface_gate.jl`",
     "`julia --project=. test/gates/ci_hpc_extensibility_docs_gate.jl`",
 )
@@ -43,7 +43,9 @@ for marker in (
     "Operational docs",
     "docs/public_api_symbols.jl",
     "data/assets_manifest.toml",
-    "Before merge to `main`, the documentation release gate is:",
+    # The docs environment's manifest is generated, so the build starts with its setup.
+    "Before merge to `main`, the documentation release gate is:\n\n```text\n" *
+        "julia --startup-file=no docs/setup.jl\njulia --project=docs docs/make.jl\n",
 )
     occursin(marker, doc_policy) || error("documentation_policy.md missing marker: $(marker)")
 end

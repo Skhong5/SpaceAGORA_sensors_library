@@ -1,7 +1,11 @@
 # Build from the docs environment, which takes SpaceAGORA from this checkout:
 # `julia --startup-file=no docs/setup.jl`, then `julia --project=docs docs/make.jl`.
+# The setup writes the environment's ignored manifest; a fresh checkout has none.
+const DOCS_SETUP = "run `julia --startup-file=no docs/setup.jl`, then `julia --project=docs docs/make.jl`"
 samefile(something(Base.active_project(), ""), joinpath(@__DIR__, "Project.toml")) ||
-    error("Build the documentation from the docs environment: run `julia --startup-file=no docs/setup.jl`, then `julia --project=docs docs/make.jl`.")
+    error("Build the documentation from the docs environment: $(DOCS_SETUP).")
+isfile(joinpath(@__DIR__, "Manifest.toml")) ||
+    error("The docs environment is not prepared: $(DOCS_SETUP).")
 using Documenter
 using SpaceAGORA
 using Dates

@@ -14,6 +14,6 @@
 
 ## Release Docs Gates
 
-- [ ] `julia --project=docs docs/make.jl`
+- [ ] `julia --startup-file=no docs/setup.jl`, then `julia --project=docs docs/make.jl`
 - [ ] `julia --project=. test/gates/ci_public_api_surface_gate.jl`
 - [ ] `julia --project=. test/gates/ci_hpc_extensibility_docs_gate.jl`
