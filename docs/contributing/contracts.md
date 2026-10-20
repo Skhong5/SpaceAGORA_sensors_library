@@ -9,7 +9,8 @@ start with the [User Guide](../src/index.md) instead.
 Quickest related build command:
 
 ```text
-julia --project=. docs/make.jl
+julia --startup-file=no docs/setup.jl
+julia --project=docs docs/make.jl
 ```
 
 What to read next:

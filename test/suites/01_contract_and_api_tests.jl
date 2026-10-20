@@ -1,6 +1,41 @@
+# Check the comparison owner in the actual standalone module world, including
+# the route that begins with pre-existing lifecycle and visualizer services.
+function _test_standalone_comparison_tracking(model)
+    owner = model.RPOComparisonTracking
+    guidance = model.GuidanceHooks
+    @test parentmodule(owner) === model
+    @test !isdefined(guidance, :RPOComparisonTracking)
+    @test !Base.isexported(model, :RPOComparisonTracking)
+    for name in (:rpo_lqmpc_reference_preview, :rpo_lqmpc_tracking_fuel_used_pct,
+                 :rpo_track_retimed_path_lqmpc, :rpo_comparison_segment_clearance,
+                 :rpo_track_two_body_path, :rpo_execute_two_body_reference)
+        f = getproperty(guidance, name)
+        @test getproperty(owner, name) === f
+        @test parentmodule(f) === guidance
+        @test length(methods(f)) == 1
+        @test only(methods(f)).module === owner
+    end
+    for (source, names) in (
+        (model.ControlHooks, (:init_rpo_lqmpc, :rpo_lqmpc_control,
+            :rpo_allocate_six_axis_thrusters, :rpo_thruster_wrench_body)),
+        (guidance, (:RPOPSOConfig, :RPOLQMPCTrackingSettings, :rpo_pso_config,
+            :rpo_reference_from_path, :rpo_init_two_body_plant, :rpo_step_two_body!)),
+        (model.ThrusterModels, (:SixAxisThrusterModel,)),
+        (model.NavigationHooks, (:rpo_clearance_distance_to_station,)),
+        (model.FrameTransforms, (:rtn_dcm_from_inertial,)),
+    )
+        for name in names
+            @test getproperty(owner, name) === getproperty(source, name)
+        end
+    end
+    @test owner.HYPRSupport === model.HYPRSupport
+    @test model.rpo_track_retimed_path_lqmpc === guidance.rpo_track_retimed_path_lqmpc
+end
+
 @testset "SimulationModel Export Contract" begin
     sandbox = EXPORT_IMPORT_SANDBOX
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "orchestration", "simulation", "composition", "simulation_model.jl"))
+    _test_standalone_comparison_tracking(sandbox.SimulationModel)
     @test Core.eval(sandbox, :(isdefined(@__MODULE__, :RuntimeServices)))
     @test isdefined(sandbox, :SimulationLifecycle)
     @test isdefined(sandbox, :VisualizerServices)
@@ -76,6 +111,7 @@ end
     """)
 
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "orchestration", "simulation", "composition", "simulation_model.jl"))
+    _test_standalone_comparison_tracking(sandbox.SimulationModel)
     @test sandbox.SimulationLifecycle === lifecycle
     @test sandbox.SimulationModel.ControlHooks.SimulationLifecycle === lifecycle
     @test sandbox.VisualizerServices === visualizer
