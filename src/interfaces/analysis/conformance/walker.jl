@@ -32,7 +32,8 @@ end
 
 # Whether `a` and `b` hold the same state: equal bits for bits values, equal values
 # for big numbers (a `BigInt`'s limbs live behind a pointer that differs between
-# copies, as in a `MersenneTwister`), equal elements for arrays and dictionaries, and
+# copies, as in a `MersenneTwister`), equal elements for arrays, the same entries for
+# dictionaries (keys paired one to one and compared like values, `_same_entries`), and
 # the same field values for every other object, followed recursively. Mutable
 # objects are matched one to one in both directions, so aliasing is part of the
 # state: two objects of `a` cannot both correspond to one object of `b`, nor the
@@ -53,14 +54,7 @@ function _same_state(a, b, seen::IdDict{Any, Any}, back::IdDict{Any, Any})
         seen[a] = b
         back[b] = a
     end
-    if a isa AbstractDict
-        length(a) == length(b) || return false
-        for (k, v) in a
-            haskey(b, k) || return false
-            _same_state(v, b[k], seen, back) || return false
-        end
-        return true
-    end
+    a isa AbstractDict && return _same_entries(a, b, seen, back)
     if a isa Array
         size(a) == size(b) || return false
         for i in eachindex(a)
@@ -77,6 +71,69 @@ function _same_state(a, b, seen::IdDict{Any, Any}, back::IdDict{Any, Any})
 end
 
 _has_captures(f::Function) = fieldcount(typeof(f)) > 0
+
+# Keys whose identity carries no state (bits values, symbols, strings): such a key is
+# found by lookup and then compared with the key it finds.
+_plain_key(k) = isbitstype(typeof(k)) || k isa Symbol || k isa String
+
+# The key of `b` that `k` looks up to, or a `_NoKey()` when there is none. A `Dict`
+# finds keys by `isequal`, so it can be another value (`1.0` for `1`); other
+# dictionaries (an `IdDict` finds keys by identity) give `k` itself.
+struct _NoKey end
+_looked_up_key(b::Dict, k) = getkey(b, k, _NoKey())
+_looked_up_key(b::AbstractDict, k) = haskey(b, k) ? k : _NoKey()
+
+# Whether two dictionaries hold the same entries. Keys are paired one to one and
+# compared like any other state, through the same alias maps as the values, so a key
+# that is shared with another part of the state must stay shared, and a copied
+# identity dictionary (an `IdDict`, whose keys are found by identity) still matches.
+# Plain keys are paired by lookup. Every other key of `a` is paired with the key of `b`
+# the alias maps already give it, or else with the first unpaired key of `b` (the one
+# it looks up to, first) whose key and value both compare equal; each trial runs on
+# copies of the alias maps, which only a match commits.
+function _same_entries(a::AbstractDict, b::AbstractDict, seen::IdDict{Any, Any}, back::IdDict{Any, Any})
+    length(a) == length(b) || return false
+    others = Pair[]
+    for (k, v) in a
+        if _plain_key(k)
+            _same_state(k, _looked_up_key(b, k), seen, back) || return false
+            _same_state(v, b[k], seen, back) || return false
+        else
+            push!(others, k => v)
+        end
+    end
+    unpaired = Pair[k => v for (k, v) in b if !_plain_key(k)]
+    length(unpaired) == length(others) || return false
+    for (k, v) in others
+        if ismutable(k) && haskey(seen, k)
+            # The key is already matched elsewhere in the state: only its partner will do.
+            j = findfirst(entry -> first(entry) === seen[k], unpaired)
+            j === nothing && return false
+            _same_state(v, last(unpaired[j]), seen, back) || return false
+        else
+            j = _paired_entry(k, v, b, unpaired, seen, back)
+            j === nothing && return false
+        end
+        deleteat!(unpaired, j)
+    end
+    return true
+end
+
+function _paired_entry(k, v, b::AbstractDict, unpaired::Vector{Pair}, seen::IdDict{Any, Any}, back::IdDict{Any, Any})
+    order = collect(eachindex(unpaired))
+    looked_up = _looked_up_key(b, k)
+    i = findfirst(entry -> first(entry) === looked_up, unpaired)
+    i === nothing || (deleteat!(order, i); pushfirst!(order, i))
+    for j in order
+        trial_seen, trial_back = copy(seen), copy(back)
+        _same_state(k, first(unpaired[j]), trial_seen, trial_back) &&
+            _same_state(v, last(unpaired[j]), trial_seen, trial_back) || continue
+        merge!(empty!(seen), trial_seen)
+        merge!(empty!(back), trial_back)
+        return j
+    end
+    return nothing
+end
 
 # Every mutable object reachable from `x` (arrays, dictionaries, mutable structs),
 # by identity, skipping what `_same_state` does not compare.

@@ -80,6 +80,20 @@ end
 NcBreaksAliasing() = (v = [1.0e-3]; NcBreaksAliasing(v, v))
 SpaceAGORA.wrench(m::NcBreaksAliasing, x::Sample, env::Env, t::Float64) = (m.b = copy(m.b); along_velocity(x, -m.a[1]))
 
+# State with a dictionary whose key is also held by another field, for the state
+# comparison's key pairing; keys hashed by identity, and keys whose hashes all collide.
+mutable struct NcKeyedState
+    dict::Any
+    key::Any
+end
+mutable struct NcIdentityKey
+    x::Float64
+end
+struct NcCollidingKey
+    x::Int
+end
+Base.hash(::NcCollidingKey, h::UInt) = h
+
 # concurrent_equals_sequential: the first call after the token is set sleeps, so one
 # of two concurrent runs stalls while the other waits for it at the rendezvous.
 const NC_STALL = Threads.Atomic{Bool}(false)
@@ -933,6 +947,46 @@ const MAY_SKIP = (:concurrent_equals_sequential, :bind_fresh_state, :stream_unto
         @test C._same_state(separate, deepcopy(separate))
         @test !C._same_state(aliased, separate)
         @test !C._same_state(separate, aliased)
+    end
+    @testset "the state comparison pairs dictionary keys one to one" begin
+        for D in (Dict, IdDict)
+            @testset let dictionary = D
+                # A key shared with another field, restored as two equal objects, is a
+                # different state, whichever of the two the comparison meets first.
+                k = [1.0]
+                original = NcKeyedState(D(k => 3.0), k)
+                broken = NcKeyedState(D([1.0] => 3.0), [1.0])
+                @test !C._same_state(original, broken)
+                @test !C._same_state(broken, original)
+                @test !C._same_state((key=original.key, dict=original.dict), (key=broken.key, dict=broken.dict))
+                # A correct copy keeps the sharing; an identity dictionary's copied key
+                # is another object, found through the pairing, not by lookup.
+                @test C._same_state(original, deepcopy(original))
+                state = (dict=D(k => 3), key=k)
+                @test C._same_state(state, deepcopy(state))
+            end
+        end
+        # A plain dictionary: equal entries, a changed value, another key (also one the
+        # dictionary finds by lookup, `1.0` for `1`), value aliasing.
+        plain = Dict(:a => [1.0], :b => [2.0])
+        @test C._same_state(plain, deepcopy(plain))
+        @test !C._same_state(plain, Dict(:a => [1.0], :b => [2.5]))
+        @test !C._same_state(plain, Dict(:a => [1.0], :c => [2.0]))
+        @test !C._same_state(Dict{Any, Int}(1 => 1), Dict{Any, Int}(1.0 => 1))
+        v = [1.0]
+        @test C._same_state(Dict(:a => v, :b => v), deepcopy(Dict(:a => v, :b => v)))
+        @test !C._same_state(Dict(:a => v, :b => v), Dict(:a => [1.0], :b => [1.0]))
+        # Equal keys hashed by identity, and keys whose hashes all collide, pair by
+        # their entries, so the result does not depend on the order of iteration.
+        twins = Dict(NcIdentityKey(1.0) => 1, NcIdentityKey(1.0) => 2)
+        @test C._same_state(twins, deepcopy(twins))
+        @test !C._same_state(twins, Dict(NcIdentityKey(1.0) => 1, NcIdentityKey(1.0) => 3))
+        colliding = Dict(NcCollidingKey(1) => [1.0], NcCollidingKey(2) => [2.0])
+        @test C._same_state(colliding, deepcopy(colliding))
+        @test !C._same_state(colliding, Dict(NcCollidingKey(1) => [2.0], NcCollidingKey(2) => [1.0]))
+        vector_keys = Dict([1.0] => 1, [2.0] => 2)
+        @test C._same_state(vector_keys, deepcopy(vector_keys))
+        @test !C._same_state(vector_keys, Dict([1.0] => 2, [2.0] => 1))
     end
     # The checks run copies; only the deepcopy_equivalent run mutates the model given.
     counter = NcCountsCalls(0)
