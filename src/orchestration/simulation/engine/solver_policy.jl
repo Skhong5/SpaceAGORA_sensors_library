@@ -220,6 +220,13 @@ end
         end
     end
     has_core || return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires at least one supported gravity core effector."
+    # The backbone state carries position and velocity only, and no density or
+    # thermal callback can read it: a density model would never be sampled.
+    density_model = args.environment_model.density_model
+    density_model isa SimulationModel.EnvironmentModels.NoAtmosphereModel ||
+        return "SPACEAGORA_SOLVER_MODE=gravity_backbone_split requires density_model=NoAtmosphereModel(), got " *
+            "$(nameof(typeof(density_model))): it samples no atmosphere, so density and heating would never be " *
+            "computed. Use another solver mode for a run with an atmosphere."
     return nothing
 end
 
