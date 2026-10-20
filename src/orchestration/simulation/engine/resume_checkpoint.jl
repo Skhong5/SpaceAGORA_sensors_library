@@ -46,16 +46,17 @@ function _interlink_checkpoint_configuration(args)
         terminal_counts=[spacecraft.n_terminal for spacecraft in args.dynamics_model.spacecraft],
     )
     # Terminal numbers past `n_terminal` name mounted terminal hardware, so a run
-    # with any records each spacecraft's terminal kinds, in order; a run without
-    # keeps the configuration it had before hardware terminals.
+    # with any records each spacecraft's terminal kinds, in order and named as
+    # link kinds are; a run without keeps the configuration it had before
+    # hardware terminals.
     hardware = [_mounted_terminal_kinds(spacecraft) for spacecraft in args.dynamics_model.spacecraft]
     all(isempty, hardware) && return configuration
     return merge(configuration, (hardware_terminals=hardware,))
 end
 
 _mounted_terminal_kinds(spacecraft::SimulationModel.SpacecraftModel) =
-    [nameof(typeof(entry.terminal)) for entry in SimulationModel.mounted_link_terminals(spacecraft)]
-_mounted_terminal_kinds(spacecraft) = Symbol[]
+    Any[_interlink_kind_identity(typeof(entry.terminal)) for entry in SimulationModel.mounted_link_terminals(spacecraft)]
+_mounted_terminal_kinds(spacecraft) = Any[]
 
 function _interlink_checkpoint_runtime_state(args, is_active)
     args.interlink_model === nothing && return nothing

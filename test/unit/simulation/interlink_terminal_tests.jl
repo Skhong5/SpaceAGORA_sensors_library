@@ -222,7 +222,8 @@ end
     @testset "checkpoints record the terminal hardware" begin
         spacecraft, model = linked_pair()
         args = run_args(spacecraft, model)
-        @test SE._interlink_checkpoint_configuration(args).hardware_terminals == [[:LaserTerminal], [:LaserTerminal]]
+        laser = (module_path=(:SpaceAGORA, :SimulationModel, :Components), name=:LaserTerminal, parameters=())
+        @test SE._interlink_checkpoint_configuration(args).hardware_terminals == [[laser], [laser]]
         virtual = [terminal_sat(1; terminals=0, n_terminal=1), terminal_sat(2; terminals=0, n_terminal=1)]
         plain = InterlinkModel()
         register_link!(plain, virtual, (1, 1), (2, 1), LaserMomentumLink())
