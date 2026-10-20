@@ -29,6 +29,14 @@ _scope_indices(scope::CoupledSpacecraft) = (scope.primary, scope.partners...)
     return true
 end
 
+# Whether `model`'s command for spacecraft `sat_idx` is released at this time, as
+# `_gnc_tick!` releases it: the spacecraft is in the model's scope and inactive, and
+# the model declares `skip_inactive`. A path that writes the command outside the
+# tick (the burn scheduler's scheduling and burn edges) releases it again after its
+# bookkeeping, so nothing undoes a release.
+@inline _released(model, p, sat_idx::Int) =
+    _ticks_for(spacecraft_scope(model), sat_idx) && skip_inactive(model) && !p.is_active[sat_idx]
+
 # Whether a tick of `model` at this time runs its tick for some spacecraft, rather
 # than skipping or releasing every one: the condition for preparing it first
 # (`before_reference_control!` for its linked producers).

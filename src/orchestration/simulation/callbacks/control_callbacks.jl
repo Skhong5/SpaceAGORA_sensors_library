@@ -78,11 +78,20 @@ end
     return nothing
 end
 
+# The burn's bookkeeping for spacecraft `sat_idx` (its window, burn flag and trace)
+# goes on while the spacecraft is inactive, but a released command stays released
+# (`_released`): no scheduling pass or burn edge turns its mounted engine back on.
+@inline function _refresh_burn_keeping_release!(control_model::BaseThrusterModel, p, sat_idx::Int, t)
+    refresh_burn!(control_model, p, sat_idx, t)
+    _released(control_model, p, sat_idx) && release_command!(control_model, t, sat_idx)
+    return nothing
+end
+
 @inline function _schedule_thruster_control!(integrator, control_model::BaseThrusterModel, sat_idx::Int)
     _run_guidance_for_thruster_schedule!(integrator, sat_idx)
     _gnc_tick!(_update_control!, control_model, integrator.u, integrator.p, integrator.t, sat_idx)
     _register_control_tstops!(integrator, control_model, sat_idx)
-    refresh_burn!(control_model, integrator.p, sat_idx, integrator.t)
+    _refresh_burn_keeping_release!(control_model, integrator.p, sat_idx, integrator.t)
     return nothing
 end
 
@@ -118,7 +127,7 @@ function _burn_edge_callback(control_model::BaseThrusterModel, num_sats::Int)
         @inbounds for sat_idx in 1:num_sats
             _burn_window_changed(control_model, integrator.p, sat_idx) &&
                 _register_control_tstops!(integrator, control_model, sat_idx)
-            refresh_burn!(control_model, integrator.p, sat_idx, integrator.t)
+            _refresh_burn_keeping_release!(control_model, integrator.p, sat_idx, integrator.t)
         end
         return nothing
     end
