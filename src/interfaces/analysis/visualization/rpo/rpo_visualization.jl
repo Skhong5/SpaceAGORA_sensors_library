@@ -1,10 +1,12 @@
 module RPOVisualization
 
 using PlotlyJS
+import ..SimulationModel.GuidanceHooks.RPOComparisonReports: _plotlyjs_extension_notice
 
 export rpo_path_plot, rpo_tracking_plot
 
 function rpo_path_plot(path_rtn, station_points=nothing; title::AbstractString="RPO Path")
+    _plotlyjs_extension_notice()
     traces = PlotlyJS.GenericTrace[]
     path = Matrix{Float64}(path_rtn)
     push!(traces, scatter3d(
@@ -29,6 +31,7 @@ function rpo_path_plot(path_rtn, station_points=nothing; title::AbstractString="
 end
 
 function rpo_tracking_plot(t, err_norm; title::AbstractString="RPO Tracking Error")
+    _plotlyjs_extension_notice()
     return Plot(
         [scatter(x=t, y=err_norm, mode="lines", name="tracking error")],
         Layout(title=title, xaxis_title="time (s)", yaxis_title="error norm (m)"),

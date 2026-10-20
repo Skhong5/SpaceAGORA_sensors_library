@@ -380,13 +380,13 @@ add_sensor!(spacecraft, root, RateGyro(period_s=1.0))      # no noise and no bia
 estimate = RateEstimate()
 estimator = GyroRateEstimator(1, 1, estimate)
 damper = EstimatedRateDamper(estimate=estimate)
-mission_s = 13.0  # conformance checkpoints halfway, at 6.5 s between the 1 s ticks
+mission_s = 120.0
 planet = make_no_gram_planet(:earth)
-config = SimulationConfiguration(
+estimator_configuration(mission_time_s) = SimulationConfiguration(
     simulation_settings=SimulationSettings(
         results=false, verbose=false, generate_plots=false, normalize=false),
     mission_configuration=MissionConfiguration(
-        mission_type=MissionTime, mission_time=mission_s, number_of_orbits=1,
+        mission_type=MissionTime, mission_time=mission_time_s, number_of_orbits=1,
         keplerian=false, orientation_sim=true, num_steps_to_save=120, data_rate=1.0),
     environment_model=EnvironmentModel(
         planet=planet, EI=120.0, density_model=NoAtmosphereModel(),
@@ -400,6 +400,7 @@ config = SimulationConfiguration(
     initial_time=InitialTime(year=2024, month=1, day=1, hour=0, minute=0, second=0.0),
     integration_tolerances=IntegrationTolerances())
 
+config = estimator_configuration(mission_s)
 solution = run_simulation(config; return_solution=true)
 
 # With an exact gyro sampled at the control ticks, the controller sees the true
@@ -438,16 +439,17 @@ example script ends with them:
 end
 ```
 
-Check the estimator and its controller on the spinning configuration above,
-which includes their shared estimate and mounted gyro. Its 13-second mission puts
-the checkpoint at 6.5 seconds, between ticks, so the check must preserve the
-estimate and held command until the next update:
+Keep the estimator demonstration at 120 seconds. For conformance, build a separate
+13-second configuration with the same spinning spacecraft, shared estimate and
+mounted gyro. Its checkpoint falls at 6.5 seconds, between ticks, so the check
+must preserve the estimate and held command until the next update:
 
 ```julia
 @testset "Estimator and controller conformance" begin
-    # Check the exact pair in the spinning case above. A zero-rate fixture could
-    # hide lost state; the checkpoint between ticks needs both held values.
-    fixture = conformance_fixture(configuration=config)
+    # Keep the student demonstration at 120 s. This separate short configuration
+    # checkpoints at 6.5 s, between ticks, while retaining the same nonzero-spin pair.
+    conformance_config = estimator_configuration(13.0)
+    fixture = conformance_fixture(configuration=conformance_config)
     reports = (test_navigation_model(estimator; fixture=fixture),
                test_control_model(damper; fixture=fixture))
     for report in reports
