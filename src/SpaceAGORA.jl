@@ -389,6 +389,10 @@ using .RPOStationAssets: station_geometry_path, station_cad_path, load_rpo_stati
 
 ## 2.8. RPO Visualization
 using .RPOVisualization: rpo_path_plot, rpo_tracking_plot
+# The figures come from the PlotlyJS package extension.
+using .SimulationModel.GuidanceHooks.RPOComparisonReports: PlotlyJSUnavailableError
+export PlotlyJSUnavailableError
+@doc (@doc SimulationModel.GuidanceHooks.RPOComparisonReports.PlotlyJSUnavailableError) PlotlyJSUnavailableError
 
 ## 2.9. SpaceAGORA CLI
 using .SpaceAGORACLI: AssetCheckItem, AssetCheckReport

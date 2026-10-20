@@ -40,7 +40,6 @@ const FULL_PACKAGES = [
     :Interpolations,
     :LoopVectorization,
     :OrdinaryDiffEq,
-    :PlotlyJS,
     :Polyester,
     :Reexport,
     :SPICE,
