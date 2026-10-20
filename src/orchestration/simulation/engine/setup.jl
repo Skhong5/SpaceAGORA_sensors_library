@@ -2590,7 +2590,7 @@ function _validate_interlinks!(args, solver_mode::Symbol)
         1 <= satellite <= length(spacecraft) ||
             throw(ArgumentError("Interlink graph references spacecraft index $satellite, but the configuration has $(length(spacecraft)) spacecraft."))
         sc = spacecraft[satellite]
-        1 <= terminal <= sc.n_terminal ||
+        1 <= terminal <= SimulationModel.terminal_count(sc) ||
             throw(ArgumentError("Invalid interlink terminal $terminal on spacecraft $satellite."))
         satellite in external_owned && throw(ArgumentError(
             "Interlinks cannot act on externally propagated spacecraft $satellite; force exchange with the external propagator is not implemented."))
@@ -2598,6 +2598,24 @@ function _validate_interlinks!(args, solver_mode::Symbol)
             _robot_arm_coupling(args, satellite, 0.0) !== nothing) && throw(ArgumentError(
             "Interlinks currently apply a net translational force to rigid spacecraft; articulated or compliant spacecraft $satellite is not supported."))
     end
+    _prepare_interlink_terminals!(args)
+    return nothing
+end
+
+# Terminal hardware endpoints: record them on the model; a spacecraft whose
+# link-driven terminals a mounted-actuation controller also holds levels for is
+# told once that the link drives them (the controller's levels for them apply
+# nothing).
+function _prepare_interlink_terminals!(args)
+    model = args.interlink_model
+    spacecraft = args.dynamics_model.spacecraft
+    SimulationModel.InterlinkTerminals.prepare_terminal_endpoints!(model, spacecraft) || return nothing
+    any(effector -> SimulationModel.actuation_mode(effector) === :mounted, args.control_model.control_effectors) ||
+        return nothing
+    driven = ["spacecraft $satellite at mounted actuator positions $(join(sort!(unique(last.(endpoints))), ", "))"
+              for (satellite, endpoints) in enumerate(model.terminal_endpoints) if !isempty(endpoints)]
+    @info "Interlinks drive their terminal hardware for the whole run ($(join(driven, "; "))): a " *
+        "mounted-actuation controller's levels for those terminals apply nothing." _id=:interlink_driven_terminals maxlog=1
     return nothing
 end
 
