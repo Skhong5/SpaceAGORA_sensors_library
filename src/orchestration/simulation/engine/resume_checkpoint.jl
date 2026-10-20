@@ -23,14 +23,22 @@ end
 # parameter can hold) is recorded with its own type, since `1`, `1.0`, `true`
 # and `Int32(1)` select different methods yet compare equal as numbers. A
 # floating-point value also keeps its bits, so that -0.0 and 0.0, and NaNs with
-# different payloads, stay apart as they do in types.
+# different payloads, stay apart as they do in types. A composite bits value (a
+# `ComplexF64`, a struct of numbers) is recorded field by field, the same way:
+# its own `isequal` can merge values that are distinct types (two NaN payloads
+# in one `Complex`), and its padding bytes carry no meaning.
 _interlink_kind_identity(kind::DataType) = (module_path=fullname(parentmodule(kind)), name=nameof(kind),
     parameters=map(_interlink_kind_parameter, Tuple(kind.parameters)))
 _interlink_kind_parameter(parameter::DataType) = _interlink_kind_identity(parameter)
 _interlink_kind_parameter(parameter::Union) = (union=map(_interlink_kind_parameter, Tuple(Base.uniontypes(parameter))),)
 _interlink_kind_parameter(parameter::Type) = string(parameter)   # a UnionAll parameter: its printed form
 _interlink_kind_parameter(parameter::Tuple) = map(_interlink_kind_parameter, parameter)
-_interlink_kind_parameter(parameter) = (type=_interlink_kind_identity(typeof(parameter)), value=parameter)
+function _interlink_kind_parameter(parameter)
+    kind = typeof(parameter)
+    isbitstype(kind) && !isprimitivetype(kind) && return (type=_interlink_kind_identity(kind),
+        fields=ntuple(index -> _interlink_kind_parameter(getfield(parameter, index)), fieldcount(kind)))
+    return (type=_interlink_kind_identity(kind), value=parameter)
+end
 _interlink_kind_parameter(parameter::Base.IEEEFloat) = (type=_interlink_kind_identity(typeof(parameter)),
     value=parameter, bits=reinterpret(Base.uinttype(typeof(parameter)), parameter))
 
@@ -46,8 +54,9 @@ function _interlink_checkpoint_configuration(args)
         ) for (index, edge) in enumerate(graph.edges)],
         forbidden_pairs=sort!(collect(model.forbidden_pairs)),
         policy=policy.policy,
-        target_idx=policy.target_idx,
-        target_idxs=policy.target_idxs === nothing ? nothing : copy(policy.target_idxs),
+        # The keys keep the names checkpoints were written with, so those resume.
+        target_idx=policy.target_index,
+        target_idxs=policy.target_indices === nothing ? nothing : copy(policy.target_indices),
         terminal_counts=[spacecraft.n_terminal for spacecraft in args.dynamics_model.spacecraft],
     )
     # Terminal numbers past `n_terminal` name mounted terminal hardware, so a run
@@ -146,43 +155,79 @@ end
 
 # The run state the callbacks keep on the spacecraft records: the batteries'
 # flags, the faults' activity and held levels, the sensors' streams, latest
-# measurements and gyro biases, and the hinges' and gimbals' angles. A plain-data
+# measurements and gyro biases, the hinges' and gimbals' angles, and the firing
+# state of the mounted thrusters with firing dynamics (the ramp factor `κ` and
+# the average thrust `thrust` their last control tick scheduled). A plain-data
 # snapshot written with every checkpoint and restored, after checking it belongs
 # to the same configuration, before a resumed run's callbacks initialize.
 _record_faults(sc) = sc.root.faults.faults
 _record_hinges(sc) = [(link, h) for link in sc.links for h in link.hinges]
 _record_gimbals(sc) = [(link, g) for link in sc.links for g in link.gimbals]
+_record_firing(sc) = [(link, t) for link in sc.links for t in link.thrusters if t.firing_dynamics]
 
 # Runs whose resume needs the snapshot (their resume was refused before it
-# existed), and runs with articulated actuators whose angles it also carries.
+# existed, or its firing state is missing from it), and runs with articulated
+# actuators whose angles it also carries.
 _needs_callback_state(sc) = SimulationModel.battery(sc) !== nothing || !isempty(_record_faults(sc)) ||
-    !isempty(SimulationModel.mounted_sensors(sc))
+    !isempty(SimulationModel.mounted_sensors(sc)) || !isempty(_record_firing(sc))
 _has_callback_state(sc) = _needs_callback_state(sc) || !isempty(_record_hinges(sc)) || !isempty(_record_gimbals(sc))
 
-# Each record with where it sits: a fault with its actuator's position in the
-# mounting order (as `resolve_faults!` finds it), a sensor, hinge or gimbal with
-# its link's position, a gimbal also with its thruster's on that link, so a
-# record moved to another device of the same kind refuses the snapshot.
-_link_position(sc, link) = findfirst(l -> l === link, sc.links)
-_mounting_position(sc, actuator) = findfirst(e -> e.actuator === actuator, SimulationModel.mounted_actuators(sc))
+# Version 2 added the thrusters' firing state, and the link of a faulted
+# actuator. A version 1 snapshot (SpaceAGORA 0.4 and earlier) still resumes a run
+# without firing dynamics; a run with them refuses it, since it cannot restore
+# their firing state.
+const CALLBACK_CHECKPOINT_STATE_VERSION = 2
 
-function _callback_checkpoint_configuration(args)
-    return [(
-        battery=(b = SimulationModel.battery(sc); b === nothing ? nothing : (b.capacity_wh, b.recovery_soc)),
-        faults=[(nameof(typeof(f.actuator)), _mounting_position(sc, f.actuator), f.kind, f.start_s, f.stop_s, f.value)
-                for f in _record_faults(sc)],
-        sensors=[(nameof(typeof(e.sensor)), _link_position(sc, e.link), e.sensor.period_s, e.sensor.seed)
-                 for e in SimulationModel.mounted_sensors(sc)],
-        hinges=[_link_position(sc, link) for (link, _) in _record_hinges(sc)],
-        gimbals=[(_link_position(sc, link), findfirst(t -> t === g.thruster, link.thrusters)) for (link, g) in _record_gimbals(sc)],
-    ) for sc in args.dynamics_model.spacecraft]
+# Each record with where it sits, so a record moved to another device of the same
+# kind refuses the snapshot: a fault or a thruster with firing dynamics with its
+# actuator's place (`_actuator_place`), a sensor, hinge or gimbal with its link's
+# position, a gimbal also with its thruster's on that link. A thruster also with
+# the parameters of its firing dynamics, which its saved state follows.
+_link_position(sc, link) = findfirst(l -> l === link, sc.links)
+
+# Where an actuator is mounted: its position in the mounting order (as
+# `resolve_faults!` finds it), its link's position, and its position among the
+# actuators on that link, in mounting order. The mounting order alone stays the
+# same when an actuator moves to another link with nothing mounted between.
+function _actuator_place(sc, actuator)
+    entries = SimulationModel.mounted_actuators(sc)
+    k = findfirst(e -> e.actuator === actuator, entries)
+    k === nothing && return nothing
+    link = entries[k].link
+    return (k, _link_position(sc, link), count(e -> e.link === link, view(entries, 1:k)))
+end
+
+# The configuration a snapshot of `version` was written with. Version 1 had no
+# thrusters, so a run with firing dynamics has none to compare (it is refused),
+# and placed a faulted actuator by its position in the mounting order alone.
+function _callback_checkpoint_configuration(args, version=CALLBACK_CHECKPOINT_STATE_VERSION)
+    return [begin
+        configuration = (
+            battery=(b = SimulationModel.battery(sc); b === nothing ? nothing : (b.capacity_wh, b.recovery_soc)),
+            faults=[(nameof(typeof(f.actuator)), (place = _actuator_place(sc, f.actuator); version === 1 ? first(place) : place),
+                     f.kind, f.start_s, f.stop_s, f.value) for f in _record_faults(sc)],
+            sensors=[(nameof(typeof(e.sensor)), _link_position(sc, e.link), e.sensor.period_s, e.sensor.seed)
+                     for e in SimulationModel.mounted_sensors(sc)],
+            hinges=[_link_position(sc, link) for (link, _) in _record_hinges(sc)],
+            gimbals=[(_link_position(sc, link), findfirst(t -> t === g.thruster, link.thrusters)) for (link, g) in _record_gimbals(sc)],
+        )
+        version === 1 ? configuration : merge(configuration, (thrusters=[(_actuator_place(sc, t), t.max_thrust,
+            t.cutoff_frequency, t.min_firing_time, t.level_on, t.level_off) for (_, t) in _record_firing(sc)],))
+    end for sc in args.dynamics_model.spacecraft]
+end
+
+function _callback_snapshot_configuration(args, version)
+    version === 1 && any(sc -> !isempty(_record_firing(sc)), args.dynamics_model.spacecraft) && throw(ArgumentError(
+        "This run has thrusters with firing dynamics, whose firing state this checkpoint does not hold " *
+        "(it was written by SpaceAGORA 0.4 or earlier). Run from the start."))
+    return _callback_checkpoint_configuration(args, version)
 end
 
 function _callback_checkpoint_state(args)
     spacecraft = args.dynamics_model.spacecraft
     any(_has_callback_state, spacecraft) || return nothing
     return (
-        version=1,
+        version=CALLBACK_CHECKPOINT_STATE_VERSION,
         configuration=_callback_checkpoint_configuration(args),
         spacecraft=[(
             battery=(b = SimulationModel.battery(sc); b === nothing ? nothing : (full=b.full, empty=b.empty, shed_tier=b.shed_tier)),
@@ -193,6 +238,7 @@ function _callback_checkpoint_state(args)
             hinges=[(angle_rad=h.angle_rad, last_update_s=h.last_update_s) for (_, h) in _record_hinges(sc)],
             gimbals=[(angle_rad=g.angle_rad, last_update_s=g.last_update_s, previous_angle_rad=g.previous_angle_rad)
                      for (_, g) in _record_gimbals(sc)],
+            thrusters=[(κ=t.κ, thrust=t.thrust) for (_, t) in _record_firing(sc)],
         ) for sc in spacecraft],
     )
 end
@@ -206,16 +252,18 @@ function _restore_callback_checkpoint_state!(args, checkpoint, p)
     if snapshot === nothing
         any(_has_callback_state, spacecraft) || return nothing
         any(_needs_callback_state, spacecraft) && throw(ArgumentError(
-            "This run has batteries, actuator faults or sensors, whose run state this checkpoint does not hold " *
-            "(it was written by an earlier SpaceAGORA or by another configuration). Run from the start."))
+            "This run has batteries, actuator faults, sensors or thrusters with firing dynamics, whose run state " *
+            "this checkpoint does not hold (it was written by an earlier SpaceAGORA or by another configuration). " *
+            "Run from the start."))
         @warn "The checkpoint holds no hinge or gimbal angles; the resumed run starts them from their current values."
         return nothing
     end
-    hasproperty(snapshot, :version) && snapshot.version === 1 ||
-        throw(ArgumentError("Callback checkpoint state version 1 is required to resume this run."))
-    hasproperty(snapshot, :configuration) && isequal(snapshot.configuration, _callback_checkpoint_configuration(args)) ||
-        throw(ArgumentError("The batteries, actuator faults, sensors, hinges or gimbals differ from the checkpoint's. " *
-            "Resume with the same configuration, or run from the start."))
+    version = hasproperty(snapshot, :version) ? snapshot.version : nothing
+    version === 1 || version === CALLBACK_CHECKPOINT_STATE_VERSION ||
+        throw(ArgumentError("Callback checkpoint state version 1 or $(CALLBACK_CHECKPOINT_STATE_VERSION) is required to resume this run."))
+    hasproperty(snapshot, :configuration) && isequal(snapshot.configuration, _callback_snapshot_configuration(args, version)) ||
+        throw(ArgumentError("The batteries, actuator faults, sensors, hinges, gimbals or thrusters with firing dynamics " *
+            "differ from the checkpoint's. Resume with the same configuration, or run from the start."))
     length(snapshot.spacecraft) == length(spacecraft) ||
         throw(ArgumentError("The callback checkpoint state must match the spacecraft count."))
     # Checked above: from here on the restore cannot fail part-way.
@@ -241,6 +289,11 @@ function _restore_callback_checkpoint_state!(args, checkpoint, p)
         for ((link, g), s) in zip(_record_gimbals(sc), saved.gimbals)
             g.angle_rad, g.last_update_s, g.previous_angle_rad = s.angle_rad, s.last_update_s, s.previous_angle_rad
             SimulationModel.ActuatorMounting._update_gimbal_rotation!(link, g.thruster)
+        end
+        # Version 1 holds no thrusters: the run has none with firing dynamics (checked).
+        version === 1 && continue
+        for ((_, t), s) in zip(_record_firing(sc), saved.thrusters)
+            t.κ, t.thrust = s.κ, s.thrust
         end
     end
     p.shared_buffers.callback_resume[] = true
@@ -326,24 +379,66 @@ function _restore_model_checkpoint_state!(args, snapshot)
     return nothing
 end
 
-# A checkpoint written at its run's end: the run did not take the periodic
-# navigation, guidance and control ticks due then, so a run resumed from it takes
-# them at its start. One written at a segment boundary holds no entry: the ticks
-# due there came before it. So does one written where a solve stopped early, at an
-# event's `terminate!` (impact, touchdown, orbit or entry count): the solver applies
-# every discrete callback of that step after the event's, so a tick due then ran
-# before the checkpoint, as in a run in one piece.
-_periodic_tick_checkpoint_state(t::Float64, mission_end) = t >= mission_end ? (version=1, pending_s=t) : nothing
+# A checkpointed run's segment from `t` ends one interval later, or at the run's
+# end when that comes first or is the same time to the periodic tick clock
+# (`_same_run_time`): accumulated decimal intervals stop short of the end by an
+# ulp (ten 0.1 s intervals reach 0.9999999999999999), and a last segment that
+# short is a step the solver can reject and then abort as unstable.
+function _checkpoint_segment_end(t::Float64, interval::Float64, mission_end::Float64)
+    t_next = t + interval
+    t_next >= mission_end && return mission_end
+    return SimulationModel.SimulationCallbacks._same_run_time(t_next, mission_end) ? mission_end : t_next
+end
 
-# The resumed run's start when the ticks due there are pending, NaN otherwise.
-function _pending_periodic_ticks_s(checkpoint)
+# Every checkpoint a run writes records, for each of the run's periodic
+# navigation, guidance and control clocks (in the order of their callbacks), whether
+# it had not yet taken the tick due at the checkpoint's time, up to the clock's
+# rounding tolerance (`_same_run_time`, on both sides of that time). That is what
+# each clock did, not a rule about the time: at a segment boundary the ticks due
+# there ran before the checkpoint, and at the run's end they did not. Where a solve
+# stopped early, at an event's `terminate!` (impact, touchdown, orbit or entry
+# count) or a discrete callback's, a tick exactly then ran; one an ulp or so off ran
+# only if its callback came after the termination (the solver applies the step's
+# discrete callbacks after its events, in order), and none ran when the stop came
+# just before the run's end, whose ticks the run leaves.
+function _periodic_tick_checkpoint_state(p, t::Float64)
+    pending = NamedTuple{(:clock, :period_s), Tuple{Int, Float64}}[]
+    for (position, clock) in pairs(p.shared_buffers.periodic_clocks)
+        next_tick = clock.origin[] + clock.index[] * clock.period_s
+        SimulationModel.SimulationCallbacks._same_run_time(next_tick, t) &&
+            push!(pending, (clock=position, period_s=clock.period_s))
+    end
+    return (version=2, time_s=t, pending=pending)
+end
+
+# The ticks a run resumed from `checkpoint` takes at its start, at `at_s` (the
+# checkpoint's time; NaN when there are none), up to `_same_run_time`: those of the
+# clocks the checkpoint lists, as (position, period) pairs, matched to the resumed
+# run's clocks, or, when it lists none, every clock's tick from `from_s` on.
+# Checkpoints written before the list (SpaceAGORA 0.4.0 and earlier) are read as
+# that version left them: it compared tick times exactly, so it took a tick just
+# before its checkpoint's time at that tick's own time and left one just after it
+# (3 * 0.1 after a boundary at 0.3) to the next segment, where the solver could not
+# reach it.
+# - A version 1 entry (0.4.0, at the run's end): the ticks at the end and just after
+#   it are pending.
+# - No entry (at a segment boundary or an early stop): the ticks at that time ran
+#   before the checkpoint, and those just after it are pending.
+function _pending_periodic_ticks(checkpoint)
+    t = Float64(checkpoint.t)
     runtime = get(checkpoint, :runtime_state, nothing)
     entry = runtime !== nothing && hasproperty(runtime, :periodic_ticks) ? runtime.periodic_ticks : nothing
-    entry === nothing && return NaN
-    hasproperty(entry, :version) && entry.version === 1 && hasproperty(entry, :pending_s) &&
-        entry.pending_s == checkpoint.t ||
-        throw(ArgumentError("Periodic tick checkpoint state version 1 is required to resume this run."))
-    return Float64(entry.pending_s)
+    entry === nothing && return (at_s=t, from_s=nextfloat(t), clocks=nothing)
+    version = hasproperty(entry, :version) ? entry.version : nothing
+    if version === 2 && hasproperty(entry, :time_s) && hasproperty(entry, :pending) &&
+            entry.time_s == t && entry.pending isa AbstractVector &&
+            all(c -> hasproperty(c, :clock) && hasproperty(c, :period_s) && c.clock isa Int &&
+                c.period_s isa Float64, entry.pending)
+        return (at_s=t, from_s=-Inf, clocks=Tuple{Int, Float64}[(c.clock, c.period_s) for c in entry.pending])
+    elseif version === 1 && hasproperty(entry, :pending_s) && entry.pending_s == t
+        return (at_s=t, from_s=t, clocks=nothing)
+    end
+    throw(ArgumentError("Periodic tick checkpoint state version 1 or 2, at the checkpoint's time, is required to resume this run."))
 end
 
 @inline function _write_checkpoint!(args, t::Float64, u_state, solver_mode::String; is_active=nothing, callback_state=nothing,

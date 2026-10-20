@@ -270,16 +270,8 @@ end
         SM.ControlHooks._note_manager_writes!(written)
         L.restore_checkpoint_state!(restored, from_file(L.checkpoint_state(written)))
         @test C._same_state(restored, written)
-        # The deprecated RPO guidance and the robot-arm controller: state a run
-        # wrote, saved, read back and put into a fresh copy after its reset.
-        legacy = SM.GuidanceModels.RPOGuidanceModel()
-        legacy.replan_count, legacy.replanning_phase = 3, :holding
-        push!(legacy.replanning_events, (t_s=1.0, reason=:replan))
-        legacy.plan_buffer.valid, legacy.plan_buffer.updated_at_s = true, 2.0
-        SM.GuidanceHooks._note_rpo_guidance_writes!(legacy)
-        fresh = SM.GuidanceModels.RPOGuidanceModel()
-        L.restore_checkpoint_state!(fresh, from_file(L.checkpoint_state(legacy)))
-        @test C._same_state(fresh, legacy)
+        # The robot-arm controller: state a run wrote, saved, read back and put into
+        # a fresh copy after its reset.
         arm = SM.default_robot_arm_model()
         model = SM.RobotArmControlEffector(controller=SM.init_robot_arm_joint_mpc(arm; dt_s=0.1, horizon=4))
         model.held = SM.RobotArmHeldActuation(joint_torque_nm=[0.5, -0.25, 0.0])

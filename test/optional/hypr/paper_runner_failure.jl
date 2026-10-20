@@ -26,6 +26,7 @@ paper_config()=(n=1,)
 tracking_config(args...;kwargs...)=nothing
 paper_case_ids()=[1]
 paper_planners()=[:hypr,:chomp]
+paper_planner_object(name,cfg)=name   # the stubbed comparison entry checks the name
 paper_planning_failed(plan)=false
 RPOReferenceGeometry(args...;kwargs...)=nothing
 RPOStationGeometry(args...;kwargs...)=nothing

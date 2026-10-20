@@ -61,7 +61,7 @@ include(joinpath(@__DIR__, "joint_reference.jl"))
 # The check ids of each report kind, in report order. Core's negative controls
 # fail when an id here has no control.
 const CHECK_IDS = (
-    force_torque_model = (:hooks_present, :no_deprecated_hooks, :supported_sample_signature, :repeatable_run,
+    force_torque_model = (:hooks_present, :supported_sample_signature, :repeatable_run,
         :deepcopy_equivalent, :global_rng_independent, :concurrent_equals_sequential, :output_hook_pure,
         :environment_declared),
     service_facade = (:facade_shape,),
@@ -72,7 +72,7 @@ const CHECK_IDS = (
         :concurrent_equals_sequential, :initialize_resets, :bind_fresh_state, :checkpoint_round_trip),
     navigation_model = (:hooks_present, :repeatable_run, :deepcopy_equivalent, :global_rng_independent,
         :concurrent_equals_sequential, :initialize_resets, :bind_fresh_state, :checkpoint_round_trip),
-    control_model = (:hooks_present, :no_deprecated_hooks, :supported_sample_signature, :repeatable_run,
+    control_model = (:hooks_present, :supported_sample_signature, :repeatable_run,
         :deepcopy_equivalent, :global_rng_independent, :concurrent_equals_sequential, :initialize_resets,
         :output_hook_pure, :positive_consumption, :bind_fresh_state, :checkpoint_round_trip),
     algorithm = _ALGORITHM_CHECK_IDS,

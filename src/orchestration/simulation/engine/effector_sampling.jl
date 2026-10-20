@@ -492,34 +492,8 @@ end
     )
 end
 
-# A direct call of the deprecated calcForceTorque on a model that implements
-# `wrench` (every built-in model) evaluates `wrench_caching!` for spacecraft `i`
-# at the run's current time, so diagnostics such as the drag caches are written
-# as the removed methods wrote them; a call with another state overwrites them
-# until the next right-hand-side evaluation. The state sample and the
-# environment are both built from `x`: a direct call may pass a state other than
-# the one the right-hand side is evaluating, so the right-hand side's prefilled
-# environment buffers are not read. The dynamics call `wrench_caching!`
-# themselves, so they never take this path for such a model; for a model with
-# neither method it raises the MethodError the pre-run check reports first. The
-# call warns once per model type that it is deprecated, and under
-# --depwarn=error it throws before evaluating anything.
-function SimulationModel.calcForceTorque(model, x, p, i)
-    hasmethod(SimulationModel.wrench,
-        Tuple{typeof(model), SimulationModel.StateSample, SimulationModel.EnvironmentSample, Float64}) ||
-        throw(MethodError(SimulationModel.calcForceTorque, (model, x, p, i)))
-    SimulationModel.HookDeprecation._hook_deprecation((typeof(model), :calcForceTorque),
-        _direct_force_torque_deprecation(typeof(model)))
-    sat_idx = Int(i)
-    t = Float64(p.shared_buffers.current_time[])
-    sample = build_state_sample(x, p.args.dynamics_model.spacecraft[sat_idx],
+# The state sample a control effector's output hooks receive (`control_wrench`,
+# `control_propellant_rate`, `control_wheel_torque`) for spacecraft `sat_idx`.
+@inline _control_state_sample(sc_view, p, sat_idx::Int)::StateSample =
+    build_state_sample(sc_view, p.args.dynamics_model.spacecraft[sat_idx],
         p.args.mission_configuration.orientation_sim, sat_idx)
-    env = sample_environment(SimulationModel.environment_requirements(model), model, x, p, sat_idx, t;
-        write_buffers=false)
-    return SimulationModel.wrench_caching!(model, sample, env, t, p, sat_idx)
-end
-
-@noinline _direct_force_torque_deprecation(::Type{T}) where {T} =
-    "calcForceTorque(model, x, p, i) is deprecated and will be removed in SpaceAGORA 0.5.0; " *
-    "it was called directly on a $(nameof(T)). Call wrench(model, x::StateSample, " *
-    "env::EnvironmentSample, t::Float64) instead."

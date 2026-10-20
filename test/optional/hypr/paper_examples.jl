@@ -14,6 +14,14 @@ include(joinpath(@__DIR__, "..", "..", "..", "examples", "support", "hypr_paper_
     for value in ("chomp", "hypr,unknown", "hypr,hypr", "hypr,rrt_connect_bezier", "hypr,rrt_connect_bezier,rrt_connect")
         @test_throws ArgumentError paper_planners(Dict("HYPR_PLANNERS"=>value))
     end
+    # Each name stands for the planner object the comparison configuration builds by default.
+    cc = G.RPOPlannerComparisonConfig(show_progress=false)
+    for (name, planner) in zip((:hypr, :pso_unrefined, :rrt_connect, :rrt_connect_bezier, :rrt_star, :chomp, :stomp), cc.planners)
+        object = paper_planner_object(name, cc)
+        @test typeof(object) == typeof(planner) &&
+            all(f -> isequal(getfield(object, f), getfield(planner, f)), fieldnames(typeof(object)))
+    end
+    @test_throws ArgumentError paper_planner_object(:unknown, cc)
     @test paper_dynamic_budget(84.4, Dict()) == 600.
     @test paper_dynamic_budget(200., Dict()) == 800.
     @test paper_dynamic_budget(84.4, Dict("HYPR_DYNAMIC_MAX_TIME_S"=>"1200")) == 1200.

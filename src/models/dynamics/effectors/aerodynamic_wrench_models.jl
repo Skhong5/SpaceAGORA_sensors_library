@@ -131,14 +131,14 @@ end
 @inline function _simulation_model_module_for_aero()
     mod = @__MODULE__
     while true
-        if isdefined(mod, :planet_frame_lpi)
+        if isdefined(mod, :ephemerides_frame_lpi)
             return mod
         end
         parent = parentmodule(mod)
         parent === mod && break
         mod = parent
     end
-    error("SimulationModel.planet_frame_lpi not found in module ancestry for aerodynamic_wrench_models.jl")
+    error("SimulationModel.ephemerides_frame_lpi not found in module ancestry for aerodynamic_wrench_models.jl")
 end
 
 # Guards the lazy-growth path below, and nothing else.

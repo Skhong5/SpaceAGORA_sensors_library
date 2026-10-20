@@ -11,8 +11,8 @@ const SM = SpaceAGORA.SimulationModel
 const P = SpaceAGORA.RPOPlannerInterfaces
 
 # The example scripts carry their own includes and constants; load them into a
-# dedicated module so nothing leaks into Main or other test files. The replanning
-# study includes the reconstruction example, which includes the main example.
+# dedicated module so nothing leaks into Main or other test files. The
+# reconstruction example includes the batch example, which includes the main one.
 module RPOExamplesOnContract
 using SpaceAGORA
 end
@@ -64,32 +64,40 @@ end
     @test s.min_saved_clearance_m >= 0.2
 end
 
-@testset "Examples build the planner contract, the held study the deprecated model" begin
+@testset "Examples build the planner contract" begin
     source(name) = read(joinpath(RPO_EXAMPLES_DIR, name), String)
-    for name in ("Earth_RPO_CubeSat_MPC.jl", "Earth_RPO_CubeSat_MPC_Batch.jl", "Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl",
-            "Earth_RPO_Planner_Disturbances.jl")
+    for name in filter(endswith(".jl"), readdir(RPO_EXAMPLES_DIR))
         @test !occursin("RPOGuidanceModel", source(name))
     end
     @test occursin("PlannerGuidance", source("Earth_RPO_CubeSat_MPC.jl"))
     @test occursin("RetainedPathRPOPlanner", source("Earth_RPO_CubeSat_MPC.jl"))
     @test occursin("make_rpo_configuration", source("Earth_RPO_Planner_Disturbances.jl"))
-    # The replanning study stays the recorded legacy reproduction of the reconstructed
-    # results until the deprecated model is removed; it assembles that legacy guidance
-    # itself and names the commit to reproduce them from afterwards.
-    study = source("Earth_RPO_HyPR_FinalISpaRo_Replanning.jl")
-    @test occursin("legacy_guidance_demo", study)
-    @test occursin("b165c0528b782316db65142f19def374c181b47f", study)
+end
+
+# The saved baseline's configuration as an `RPOPSOConfig`: each field from the
+# record, with a non-finite default kept where the record holds `nothing`.
+function config_from_json(d)
+    defaults = Base.invokelatest(RPOExamplesOnContract.paper_config)
+    vals = Pair{Symbol, Any}[]
+    for k in fieldnames(RPOPSOConfig)
+        v = d[string(k)]; def = getfield(defaults, k)
+        v === nothing && def isa AbstractFloat && !isfinite(def) && (v = def)
+        value = def isa Symbol ? Symbol(v) : def isa Tuple ? Tuple(v) : def isa AbstractVector ? typeof(def)(v) :
+            convert(typeof(def), v)
+        push!(vals, k => value)
+    end
+    return RPOPSOConfig(; vals...)
 end
 
 if !isdir(RPO_EXAMPLES_SPICE)
     @info "SPICE kernels absent; skipping the RPO example planner-contract runs" RPO_EXAMPLES_SPICE
 else
-    Base.include(RPOExamplesOnContract, joinpath(RPO_EXAMPLES_DIR, "Earth_RPO_HyPR_FinalISpaRo_Replanning.jl"))
+    Base.include(RPOExamplesOnContract, joinpath(RPO_EXAMPLES_DIR, "Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl"))
     const X = RPOExamplesOnContract
 
     @testset "The published case-4 baseline replays to its recorded reference" begin
         d = JSON.parsefile(joinpath(RPO_EXAMPLES_DIR, "support", "hypr_final_isparo_case4.json"))
-        cfg = Base.invokelatest(X.config_from_json, d["config"]); case = d["case"]
+        cfg = config_from_json(d["config"]); case = d["case"]
         cloud = SpaceAGORA.load_rpo_station_cad_pointcloud(:gateway; n_points=10000, rng=MersenneTwister(740))
         geometry = SM.RPOReferenceGeometry(SM.RPOStationGeometry(cloud; keepout_radius_m=0.25, name="gateway_core");
             chaser=SM.RPOCubeSatGeometry(dims_m=(0.1, 0.1, 0.3)))
@@ -112,7 +120,7 @@ else
 
     @testset "The reconstruction records a refused plan without flying it" begin
         d = JSON.parsefile(joinpath(RPO_EXAMPLES_DIR, "support", "hypr_final_isparo_case4.json"))
-        cfg = Base.invokelatest(X.config_from_json, d["config"]); path = reduce(hcat, d["path"])
+        cfg = config_from_json(d["config"]); path = reduce(hcat, d["path"])
         case = (case_id=4, seed=744, start_rtn=SVector{3}(Float64.(d["case"]["start_rtn"])),
             goal_rtn=SVector{3}(Float64.(d["case"]["goal_rtn"])))
         # A station point on the saved path: the run refuses the plan at its first tick.

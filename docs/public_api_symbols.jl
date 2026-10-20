@@ -193,6 +193,16 @@ const PUBLIC_API_SECTIONS = [
         ]
     ),
     (
+        title = "Constellations",
+        items = [
+            (owner = :SpaceAGORA, symbol = :OrbitalPlane, rendered = "SpaceAGORA.OrbitalPlane"),
+            (owner = :SpaceAGORA, symbol = :build_constellation, rendered = "SpaceAGORA.build_constellation"),
+            (owner = :SpaceAGORA, symbol = :walker_planes, rendered = "SpaceAGORA.walker_planes"),
+            (owner = :SpaceAGORA, symbol = :walker_constellation, rendered = "SpaceAGORA.walker_constellation"),
+            (owner = :SpaceAGORA, symbol = :ConstellationSlot, rendered = "SpaceAGORA.ConstellationSlot"),
+        ]
+    ),
+    (
         title = "Simulation",
         items = [
             (owner = :SpaceAGORA, symbol = :run_simulation, rendered = "SpaceAGORA.run_simulation"),
@@ -369,21 +379,6 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :update_navigation!, rendered = "SpaceAGORA.update_navigation!"),
             (owner = :SpaceAGORA, symbol = :getHeatRate, rendered = "SpaceAGORA.getHeatRate"),
             (owner = :SpaceAGORA, symbol = :bind_spacecraft, rendered = "SpaceAGORA.bind_spacecraft")
-        ]
-    ),
-    (
-        title = "Deprecated hooks",
-        items = [
-            (owner = :SpaceAGORA, symbol = :calcForceTorque, rendered = "SpaceAGORA.calcForceTorque"),
-            (owner = :SpaceAGORA, symbol = :calcControlForceTorque, rendered = "SpaceAGORA.calcControlForceTorque"),
-            (owner = :SpaceAGORA, symbol = :calcControlMassFlowRate, rendered = "SpaceAGORA.calcControlMassFlowRate"),
-            (owner = :SpaceAGORA, symbol = :calcReactionWheelTorque, rendered = "SpaceAGORA.calcReactionWheelTorque"),
-            (owner = :SpaceAGORA, symbol = :calcControlEffect!, rendered = "SpaceAGORA.calcControlEffect!"),
-            (owner = :SpaceAGORA, symbol = :calcGuidanceEffect!, rendered = "SpaceAGORA.calcGuidanceEffect!"),
-            (owner = :SpaceAGORA, symbol = :calcNavigationEffect!, rendered = "SpaceAGORA.calcNavigationEffect!"),
-            (owner = :SpaceAGORA, symbol = :planet_frame_lpi, rendered = "SpaceAGORA.planet_frame_lpi"),
-            (owner = :SpaceAGORA, symbol = :ephemerides_sun_direction_ii, rendered = "SpaceAGORA.ephemerides_sun_direction_ii"),
-            (owner = :SpaceAGORA, symbol = :ephemerides_time_seconds, rendered = "SpaceAGORA.ephemerides_time_seconds")
         ]
     ),
     (

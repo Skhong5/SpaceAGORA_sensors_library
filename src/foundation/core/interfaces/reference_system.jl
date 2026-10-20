@@ -125,7 +125,7 @@ function r_intor_p!(
         return r_intor_p!(r_i, v_i, planet, et)
     end
 
-    l_pi = _ephemerides_frame_lpi(ephemerides_model, planet, et)
+    l_pi = ephemerides_frame_lpi(ephemerides_model, planet, et)
     r_p = SVector{3, Float64}(l_pi * r_i)
     # planet.ω is the spin vector in planet-fixed axes; apply the transport term
     # after rotating (identical for the z-spin simple-ephemerides frame).

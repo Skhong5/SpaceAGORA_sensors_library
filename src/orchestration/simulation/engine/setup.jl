@@ -59,6 +59,25 @@ function _validate_orientation_inertia!(args)
     return nothing
 end
 
+# A spacecraft's id names it in the scene and viewer, seeds its sensors' noise
+# and names its ensemble folder, so spacecraft that share an id are confused
+# there. Repeated ids warn once per process; SpaceAGORA 1.0 will refuse them.
+function _warn_repeated_spacecraft_ids(args)
+    ids = [sc.id for sc in args.dynamics_model.spacecraft]
+    allunique(ids) && return nothing
+    repeated = sort!(unique(id for id in ids if count(==(id), ids) > 1))
+    shown = map(first(repeated, 3)) do id
+        positions = findall(==(id), ids)
+        "id $id at positions $(join(first(positions, 4), ", "))$(length(positions) > 4 ? ", ..." : "")"
+    end
+    listing = join(shown, "; ") * (length(repeated) > 3 ? "; and $(length(repeated) - 3) more ids" : "")
+    SimulationModel.HookDeprecation._hook_deprecation((:SpacecraftModel, :repeated_id),
+        "Spacecraft ids repeat ($listing). An id names its spacecraft in the scene and viewer, seeds its " *
+        "sensors' noise and names its ensemble folder. Repeated ids are deprecated and SpaceAGORA 1.0 will " *
+        "refuse them: give each spacecraft its own id (build_constellation and walker_constellation number them).")
+    return nothing
+end
+
 function _validate_thermal_model_support!(args)
     thermal_model = args.environment_model.thermal_model
     if !hasmethod(SimulationModel.getHeatRate, Tuple{typeof(thermal_model), Float64, Float64, Float64, Float64, Float64})
@@ -81,18 +100,16 @@ function _model_kind_container(model)::Union{Nothing, String}
 end
 
 # Whether `f` has some method for `T` in its first argument, whatever the others.
-# A deprecated hook's untyped fallback for direct calls accepts every type, so it
-# does not count.
+# An untyped fallback accepts every type, so it does not count.
 _has_methods_for(f, ::Type{T}) where {T} = any(methods(f)) do m
     m.sig === Tuple{typeof(f), ntuple(_ -> Any, m.nargs - 1)...} && return false
     return typeintersect(m.sig, Tuple{typeof(f), T, Vararg{Any}}) !== Union{}
 end
 
-# `also`: the deprecated hook the new one `f` replaces, whose methods count too.
-function _missing_hook_line(location::String, container::String, model, f, needed::String; also=nothing)::String
+function _missing_hook_line(location::String, container::String, model, f, needed::String)::String
     T = typeof(model)
     line = "$location ($(nameof(T))) has no method $needed."
-    (_has_methods_for(f, T) || (also !== nothing && _has_methods_for(also, T))) &&
+    _has_methods_for(f, T) &&
         (line *= " It has methods of that function, but none accepts the arguments this run passes.")
     kind = _model_kind_container(model)
     if kind !== nothing && kind != container
@@ -102,13 +119,9 @@ function _missing_hook_line(location::String, container::String, model, f, neede
 end
 
 # The argument types the engine passes to the hooks in this run: the full state at
-# the GNC ticks, one spacecraft's state view in the dynamics (every spacecraft of a
-# run shares one state layout; each distinct view type is kept regardless) and the
-# run's parameters. The time is a Float64 and the spacecraft index an Int.
-function _hook_call_types(u0, p)
-    views = unique!(Any[typeof(u0.sc[i]) for i in eachindex(u0.sc)])
-    return (state=typeof(u0), spacecraft=views, params=typeof(p))
-end
+# the GNC ticks and the run's parameters. The time is a Float64 and the spacecraft
+# index an Int.
+_hook_call_types(u0, p) = (state=typeof(u0), params=typeof(p))
 
 # The hooks the engine calls on each guidance, navigation and control effector,
 # force/torque model and density model, checked before integration so that a
@@ -120,46 +133,34 @@ end
 # accepted; on abstract argument types it would refuse the latter. The thermal
 # model is checked by `_validate_thermal_model_support!`.
 function _missing_model_hooks(args, call, solver_mode::Symbol=:tsit5)::Vector{String}
-    U, P, views = call.state, call.params, call.spacecraft
+    U, P = call.state, call.params
     tick(T) = Tuple{T, U, P, Float64, Int}
     sampled(f, T) = hasmethod(f, Tuple{T, SimulationModel.StateSample, SimulationModel.EnvironmentSample, Float64})
     controlled(f, T) = hasmethod(f, Tuple{T, SimulationModel.StateSample, P, Float64})
     problems = String[]
-    # The callbacks tick a model through its new tick when its type has one for
-    # these arguments, and else through the type's own method of the deprecated
-    # name, which `_deprecated_model_hooks` warns about (`tick_hook_bridges.jl`).
-    ticked(new, old, T) = hasmethod(new, tick(T)) || _own_method(old, tick(T))
     for (k, model) in enumerate(args.guidance_model.guidance_effectors)
-        ticked(SimulationModel.update_guidance!, SimulationModel.calcGuidanceEffect!, typeof(model)) ||
+        hasmethod(SimulationModel.update_guidance!, tick(typeof(model))) ||
             push!(problems, _missing_hook_line("guidance_model.guidance_effectors[$k]", "guidance_model", model,
-                SimulationModel.update_guidance!, "update_guidance!(model, u, p, t::Float64, spacecraft_index::Int)";
-                also=SimulationModel.calcGuidanceEffect!))
+                SimulationModel.update_guidance!, "update_guidance!(model, u, p, t::Float64, spacecraft_index::Int)"))
     end
     for (k, model) in enumerate(args.navigation_model.navigation_effectors)
-        ticked(SimulationModel.update_navigation!, SimulationModel.calcNavigationEffect!, typeof(model)) ||
+        hasmethod(SimulationModel.update_navigation!, tick(typeof(model))) ||
             push!(problems, _missing_hook_line("navigation_model.navigation_effectors[$k]", "navigation_model", model,
-                SimulationModel.update_navigation!, "update_navigation!(model, u, p, t::Float64, spacecraft_index::Int)";
-                also=SimulationModel.calcNavigationEffect!))
+                SimulationModel.update_navigation!, "update_navigation!(model, u, p, t::Float64, spacecraft_index::Int)"))
     end
     for (k, model) in enumerate(args.control_model.control_effectors)
         location = "control_model.control_effectors[$k]"
         T = typeof(model)
-        ticked(SimulationModel.update_control!, SimulationModel.calcControlEffect!, T) ||
+        hasmethod(SimulationModel.update_control!, tick(T)) ||
             push!(problems, _missing_hook_line(location, "control_model", model, SimulationModel.update_control!,
-                "update_control!(model, u, p, t::Float64, spacecraft_index::Int)"; also=SimulationModel.calcControlEffect!))
+                "update_control!(model, u, p, t::Float64, spacecraft_index::Int)"))
         # The dynamics read a `:mounted` effector's wrench from its mounted
-        # actuators and never call control_wrench on it. Otherwise they call
-        # control_wrench when the type has it (the query `_control_wrench`
-        # makes), and else the type's own method of the deprecated
-        # calcControlForceTorque, which `_deprecated_model_hooks` warns about;
-        # the untyped fallback for direct calls does not count.
+        # actuators and never call control_wrench on it.
         mode = SimulationModel.actuation_mode(model)
         mode === :mounted && continue
         controlled(SimulationModel.control_wrench, T) && continue
-        all(X -> _own_method(SimulationModel.calcControlForceTorque, Tuple{T, X, P, Int, Float64}), views) && continue
         push!(problems, _missing_hook_line(location, "control_model", model, SimulationModel.control_wrench,
-            "control_wrench(model, x::StateSample, p, t::Float64), which the dynamics call in actuation_mode $(repr(mode))";
-            also=SimulationModel.calcControlForceTorque))
+            "control_wrench(model, x::StateSample, p, t::Float64), which the dynamics call in actuation_mode $(repr(mode))"))
     end
     for (k, model) in enumerate(args.dynamics_model.dynamic_effectors)
         location = "dynamics_model.dynamic_effectors[$k]"
@@ -178,19 +179,21 @@ function _missing_model_hooks(args, call, solver_mode::Symbol=:tsit5)::Vector{St
                     "gravity_backbone_kick_acceleration_ii(model, x::StateSample, env::EnvironmentSample, t::Float64), which its :velocity_kick_explicit declaration needs"))
             continue
         end
-        # The dynamics call `wrench` when the model has a method for the sampled
-        # arguments, and otherwise the model's own method of the deprecated
-        # calcForceTorque (`_deprecated_model_hooks` warns about it). The
-        # harmonics model has `wrench`; the dynamics evaluate it through its own
+        # The dynamics call `wrench` for the sampled arguments. The harmonics
+        # model has `wrench`; the dynamics evaluate it through its own
         # preallocated kernel instead.
         sampled(SimulationModel.wrench, T) && continue
-        all(X -> _own_method(SimulationModel.calcForceTorque, Tuple{T, X, P, Int}), views) && continue
         # A model that opts into the per-link kernel is evaluated through
-        # link_wrench on articulated spacecraft with live-pose loads; it is
-        # accepted without the base-body hooks the other runs would need.
-        SimulationModel.link_wrench_capable(model) && continue
+        # link_wrench, and needs no `wrench`, when the run applies live-pose
+        # loads to articulated spacecraft: a run with one articulated spacecraft
+        # has only articulated spacecraft (`_validate_articulated_spacecraft!`).
+        # Any other run evaluates it through `wrench`.
+        per_link = SimulationModel.link_wrench_capable(model)
+        per_link && _per_link_kernel_run(args) && continue
         push!(problems, _missing_hook_line(location, "dynamics_model.dynamic_effectors", model, SimulationModel.wrench,
-            "wrench(model, x::StateSample, env::EnvironmentSample, t::Float64)"))
+            "wrench(model, x::StateSample, env::EnvironmentSample, t::Float64)" * (per_link ?
+                ", which this run calls because it does not apply live-pose loads to articulated spacecraft " *
+                "(SimulationSettings.articulated_live_pose_loads), where link_wrench would serve" : "")))
     end
     density_model = args.environment_model.density_model
     hasmethod(SimulationModel.getDensity, Tuple{typeof(density_model), Float64, Float64, Float64, Float64, Bool, P}) ||
@@ -199,131 +202,9 @@ function _missing_model_hooks(args, call, solver_mode::Symbol=:tsit5)::Vector{St
     return problems
 end
 
-# Whether the deprecated hook `f` has a method of the model's own for the
-# argument types `tt`, rather than only the untyped fallback for direct calls
-# (`effector_sampling.jl` for calcForceTorque, `control_hook_bridges.jl` for the
-# control hooks, `tick_hook_bridges.jl` for the ticks, `ephemerides_hooks.jl` for
-# the ephemerides hooks), which accepts any arguments.
-function _own_method(f, tt::Type{<:Tuple})::Bool
-    hasmethod(f, tt) || return false
-    return which(f, tt) !== which(f, Tuple{ntuple(_ -> Any, fieldcount(tt))...})
-end
-
-# The deprecated control output hooks, each with its replacement.
-_control_output_hooks() = (
-    (SimulationModel.calcControlForceTorque, SimulationModel.control_wrench),
-    (SimulationModel.calcControlMassFlowRate, SimulationModel.control_propellant_rate),
-    (SimulationModel.calcReactionWheelTorque, SimulationModel.control_wheel_torque),
-)
-
-function _deprecated_control_hook_message(::Type{T}, old, new, has_new::Bool)::String where {T}
-    sign = new === SimulationModel.control_propellant_rate ?
-        " control_propellant_rate returns the propellant used, positive, where calcControlMassFlowRate " *
-        "returns the mass derivative, negative." : ""
-    has_new && return "$(nameof(T)) implements both $(nameof(new)) and $(nameof(old))(model, u, p, i, t). " *
-        "The dynamics call $(nameof(new)), so the $(nameof(old)) method is never used; delete it. " *
-        "$(nameof(old)) is deprecated and will be removed in SpaceAGORA 0.5.0." * sign
-    return "$(nameof(T)) implements $(nameof(old))(model, u, p, i, t), which is deprecated and will be " *
-        "removed in SpaceAGORA 0.5.0. Implement $(nameof(new))(model, x::StateSample, p, t::Float64) " *
-        "instead: the spacecraft's index in the run is x.spacecraft_index." * sign
-end
-
-# The deprecated ticks, each with its replacement and the effectors it ticks.
-_tick_hooks(args) = (
-    (args.guidance_model.guidance_effectors, SimulationModel.calcGuidanceEffect!, SimulationModel.update_guidance!),
-    (args.navigation_model.navigation_effectors, SimulationModel.calcNavigationEffect!, SimulationModel.update_navigation!),
-    (args.control_model.control_effectors, SimulationModel.calcControlEffect!, SimulationModel.update_control!),
-)
-
-function _deprecated_tick_message(::Type{T}, old, new, has_new::Bool)::String where {T}
-    has_new && return "$(nameof(T)) implements both $(nameof(new)) and $(nameof(old))(model, u, p, t, spacecraft_index). " *
-        "The engine calls $(nameof(new)), so the $(nameof(old)) method is never used; delete it. " *
-        "$(nameof(old)) is deprecated and will be removed in SpaceAGORA 0.5.0."
-    return "$(nameof(T)) implements $(nameof(old))(model, u, p, t, spacecraft_index), which is deprecated and will be " *
-        "removed in SpaceAGORA 0.5.0. Rename the method $(nameof(new)): only the name changes."
-end
-
-# The deprecated model-last ephemerides hooks, each with its replacement, the
-# argument types of each for this run's model, and the two forms for messages.
-function _ephemerides_hooks(args)
-    M, P, I = typeof(args.environment_model.ephemerides_model), typeof(args.environment_model.planet),
-        typeof(args.initial_time)
-    return (
-        (SimulationModel.planet_frame_lpi, Tuple{P, Float64, M}, SimulationModel.ephemerides_frame_lpi,
-            Tuple{M, P, Float64}, "(planet, et, model)", "(model, planet, et)"),
-        (SimulationModel.ephemerides_sun_direction_ii, Tuple{P, Float64, M}, SimulationModel.ephemerides_sun_ii,
-            Tuple{M, P, Float64}, "(planet, et, model)", "(model, planet, et)"),
-        (SimulationModel.ephemerides_time_seconds, Tuple{I, M}, SimulationModel.ephemerides_epoch_seconds,
-            Tuple{M, I}, "(initial_time, model)", "(model, initial_time)"),
-    )
-end
-
-function _deprecated_ephemerides_message(::Type{T}, old, new, old_form, new_form, has_new::Bool)::String where {T}
-    has_new && return "$(nameof(T)) implements both $(nameof(new))$(new_form) and $(nameof(old))$(old_form). " *
-        "The engine calls $(nameof(new)), so the $(nameof(old)) method is never used; rename it " *
-        "$(nameof(new)) with the model first, or delete it. $(nameof(old)) is deprecated and will be " *
-        "removed in SpaceAGORA 0.5.0."
-    return "$(nameof(T)) implements $(nameof(old))$(old_form), which is deprecated and will be removed in " *
-        "SpaceAGORA 0.5.0. Rename the method $(nameof(new)) and put the model first: $(nameof(new))$(new_form)."
-end
-
-# The deprecated hooks this run's models implement, as (key, message) pairs for
-# `_hook_deprecation`, one per model type and hook.
-function _deprecated_model_hooks(args, call)::Vector{Tuple{Tuple, String}}
-    P, views = call.params, call.spacecraft
-    found = Tuple{Tuple, String}[]
-    for model in args.dynamics_model.dynamic_effectors
-        T = typeof(model)
-        any(X -> _own_method(SimulationModel.calcForceTorque, Tuple{T, X, P, Int}), views) || continue
-        key = (T, :calcForceTorque)
-        any(entry -> first(entry) == key, found) && continue
-        has_wrench = hasmethod(SimulationModel.wrench,
-            Tuple{T, SimulationModel.StateSample, SimulationModel.EnvironmentSample, Float64})
-        message = has_wrench ?
-            "$(nameof(T)) implements both wrench and calcForceTorque(model, x, p, i). The dynamics call " *
-            "wrench, so the calcForceTorque method is never used; delete it. calcForceTorque is deprecated " *
-            "and will be removed in SpaceAGORA 0.5.0." :
-            "$(nameof(T)) implements calcForceTorque(model, x, p, i), which is deprecated and will be " *
-            "removed in SpaceAGORA 0.5.0. Implement wrench(model, x::StateSample, env::EnvironmentSample, " *
-            "t::Float64) instead: the spacecraft's index in the run is x.spacecraft_index."
-        push!(found, (key, message))
-    end
-    for model in args.control_model.control_effectors
-        T = typeof(model)
-        for (old, new) in _control_output_hooks()
-            any(X -> _own_method(old, Tuple{T, X, P, Int, Float64}), views) || continue
-            key = (T, nameof(old))
-            any(entry -> first(entry) == key, found) && continue
-            has_new = hasmethod(new, Tuple{T, SimulationModel.StateSample, P, Float64})
-            push!(found, (key, _deprecated_control_hook_message(T, old, new, has_new)))
-        end
-    end
-    for (models, old, new) in _tick_hooks(args), model in models
-        T = typeof(model)
-        tt = Tuple{T, call.state, P, Float64, Int}
-        _own_method(old, tt) || continue
-        key = (T, nameof(old))
-        any(entry -> first(entry) == key, found) && continue
-        push!(found, (key, _deprecated_tick_message(T, old, new, hasmethod(new, tt))))
-    end
-    M = typeof(args.environment_model.ephemerides_model)
-    for (old, old_tt, new, new_tt, old_form, new_form) in _ephemerides_hooks(args)
-        _own_method(old, old_tt) || continue
-        push!(found, ((M, nameof(old)),
-            _deprecated_ephemerides_message(M, old, new, old_form, new_form, hasmethod(new, new_tt))))
-    end
-    return found
-end
-
 function _validate_model_hooks!(args, u0, p, solver_mode::Symbol=:tsit5)
-    call = _hook_call_types(u0, p)
-    problems = _missing_model_hooks(args, call, solver_mode)
-    if isempty(problems)
-        for (key, message) in _deprecated_model_hooks(args, call)
-            SimulationModel.HookDeprecation._hook_deprecation(key, message)
-        end
-        return nothing
-    end
+    problems = _missing_model_hooks(args, _hook_call_types(u0, p), solver_mode)
+    isempty(problems) && return nothing
     throw(ArgumentError(
         "The run calls methods these models do not have:\n" *
         join(("  - " * line for line in problems), "\n") *
@@ -2224,13 +2105,11 @@ function _collect_nbody_query_names(dynamic_effectors::Tuple)::Vector{String}
 end
 
 # The run's start in the ephemerides model's seconds past J2000: its epoch hook,
-# under the model-first name or the deprecated one, and otherwise the built-in
-# conversion for a model whose type has a built-in model's name.
+# and otherwise the built-in conversion for a model whose type has a built-in
+# model's name.
 @inline function _ephemerides_time_seconds_flexible(initial_time, ephemerides_model)::Float64
-    M, I = typeof(ephemerides_model), typeof(initial_time)
-    if hasmethod(SimulationModel.ephemerides_epoch_seconds, Tuple{M, I}) ||
-            _own_method(SimulationModel.ephemerides_time_seconds, Tuple{I, M})
-        return SimulationModel.EphemeridesModels._ephemerides_epoch_seconds(ephemerides_model, initial_time)
+    if hasmethod(SimulationModel.ephemerides_epoch_seconds, Tuple{typeof(ephemerides_model), typeof(initial_time)})
+        return SimulationModel.EphemeridesModels.ephemerides_epoch_seconds(ephemerides_model, initial_time)
     end
 
     model_name = nameof(typeof(ephemerides_model))
@@ -2621,7 +2500,7 @@ function _initialize_planet_frame_ephemeris_cache!(p, et_start::Float64, mission
     @inbounds for sample_idx in 1:n_samples
         et = et_start + min((sample_idx - 1) * dt_s, mission_end_s)
         ets[sample_idx] = et
-        l_pi = SimulationModel.EphemeridesModels._ephemerides_frame_lpi(ephemerides_model, planet, et)
+        l_pi = SimulationModel.EphemeridesModels.ephemerides_frame_lpi(ephemerides_model, planet, et)
         quaternions[sample_idx] = SimulationModel.dcm_to_quaternion(l_pi)
         if SimulationModel.ephemerides_requires_spice(ephemerides_model)
             Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.planet_pxform_cache_build_calls, 1)
@@ -2657,6 +2536,11 @@ end
     end
     return false
 end
+
+# Whether the dynamics evaluate per-link models through `link_wrench` on every
+# spacecraft of the run, as `_initialize_articulated_runtimes!` switches it on.
+_per_link_kernel_run(args)::Bool =
+    args.simulation_settings.articulated_live_pose_loads && _any_articulated_spacecraft(args)
 
 # Link indices an effector drives kinematically (`controlled_panel_links`), looking one level into
 # its fields (the energy-depletion controller holds its panel effector as a field).

@@ -59,7 +59,7 @@ function checkpoint_fixture(directory)
     model = InterlinkModel(forbidden_pairs=[(3, 2)])
     register_link!(model, spacecraft, (1, 1), (2, 1),
         LaserMomentumLink(power_w=12.0, magnification=3.0, range_m=100.0))
-    policy = SchedulingPolicyModel(:gve_sma; target_idxs=[1, 2])
+    policy = SchedulingPolicyModel(:gve_sma; target_indices=[1, 2])
     args = (interlink_model=model, scheduling_policy_model=policy,
         dynamics_model=(spacecraft=spacecraft,),
         simulation_settings=(checkpoint_directory=directory, results_directory=directory))
@@ -128,7 +128,7 @@ end
                 a
             end,
             "policy" => a -> merge(a, (scheduling_policy_model=SchedulingPolicyModel(:gve_sma_first_index),)),
-            "targets" => a -> merge(a, (scheduling_policy_model=SchedulingPolicyModel(:gve_sma; target_idxs=[1, 3]),)),
+            "targets" => a -> merge(a, (scheduling_policy_model=SchedulingPolicyModel(:gve_sma; target_indices=[1, 3]),)),
             "terminal counts" => a -> begin
                 a.dynamics_model.spacecraft[3] = (n_terminal=3,)
                 a
@@ -170,8 +170,9 @@ end
         # a checkpoint, read back from its file, resumes the same kind and refuses
         # another. The cases are value, type, nested type, Union and tuple
         # parameters; same-named link kinds of two modules of one package, and such
-        # types in a parameter; and value parameters equal as numbers but of
-        # different types or bits, alone and in a tuple.
+        # types in a parameter; value parameters equal as numbers but of
+        # different types or bits, alone and in a tuple; and composite bits values
+        # whose own isequal merges them (two NaN payloads in a ComplexF64).
         nan_payload = reinterpret(Float64, 0x7ff8000000000001)
         for (written, same, changed) in (
                 (TypedLink{1}(100.0), TypedLink{1}(100.0), TypedLink{1.0}(100.0)),
@@ -181,6 +182,12 @@ end
                 (TypedLink{(1, :a)}(100.0), TypedLink{(1, :a)}(100.0), TypedLink{(Int32(1), :a)}(100.0)),
                 (TypedLink{0.0}(100.0), TypedLink{0.0}(100.0), TypedLink{-0.0}(100.0)),
                 (TypedLink{NaN}(100.0), TypedLink{NaN}(100.0), TypedLink{nan_payload}(100.0)),
+                (TypedLink{complex(NaN, 0.0)}(100.0), TypedLink{complex(NaN, 0.0)}(100.0),
+                    TypedLink{complex(nan_payload, 0.0)}(100.0)),
+                (TypedLink{complex(1.0, 2.0)}(100.0), TypedLink{complex(1.0, 2.0)}(100.0),
+                    TypedLink{complex(1.0, -2.0)}(100.0)),
+                (TypedLink{(complex(NaN, 0.0), :a)}(100.0), TypedLink{(complex(NaN, 0.0), :a)}(100.0),
+                    TypedLink{(complex(nan_payload, 0.0), :a)}(100.0)),
                 (Left.SameLink(100.0), Left.SameLink(100.0), Right.SameLink(100.0)),
                 (TypedLink{Left.Mode}(100.0), TypedLink{Left.Mode}(100.0), TypedLink{Right.Mode}(100.0)),
                 (TypedLink{Vector{Left.Mode}}(100.0), TypedLink{Vector{Left.Mode}}(100.0), TypedLink{Vector{Right.Mode}}(100.0)),
@@ -209,8 +216,14 @@ end
             (module_path=fullname(@__MODULE__), name=:ModeLink, parameters=((type=int64, value=-1),))
         @test SE._interlink_link_identity(TypedLink{Vector{Int}}(1.0)).kind.parameters ==
             ((module_path=(:Core,), name=:Array, parameters=(int64, (type=int64, value=1))),)
+        float64 = (module_path=(:Core,), name=:Float64, parameters=())
         @test SE._interlink_link_identity(TypedLink{-0.0}(1.0)).kind.parameters ==
-            ((type=(module_path=(:Core,), name=:Float64, parameters=()), value=-0.0, bits=0x8000000000000000),)
+            ((type=float64, value=-0.0, bits=0x8000000000000000),)
+        @test isequal(complex(NaN, 0.0), complex(nan_payload, 0.0))          # why fields, not the value
+        @test SE._interlink_link_identity(TypedLink{complex(1.0, -0.0)}(1.0)).kind.parameters ==
+            ((type=(module_path=(:Base,), name=:Complex, parameters=(float64,)),
+              fields=((type=float64, value=1.0, bits=0x3ff0000000000000),
+                      (type=float64, value=-0.0, bits=0x8000000000000000))),)
         @test SE._interlink_link_identity(TypedLink{Left.Mode}(1.0)).kind.parameters ==
             ((module_path=(fullname(@__MODULE__)..., :Left), name=:Mode, parameters=()),)
         SE._write_checkpoint!(args, 12.5, state, "tsit5"; is_active=snapshot.interlinks.is_active)

@@ -48,7 +48,10 @@ end
 # The mutable fields `thrust`, `κ` and `stop_firing_time` above hold the firing
 # state; `run_simulation(isolate_state=true)` copies them per run. The firing
 # dynamics that update them (Schmitt trigger, impulse integration, ramp
-# factor) are in `thruster_hooks.jl`, which needs the link types.
+# factor) are in `thruster_hooks.jl`, which needs the link types. A checkpoint
+# saves `κ` and `thrust` of a mounted thruster with firing dynamics, and a
+# resumed run restores them (the engine's callback snapshot,
+# `resume_checkpoint.jl`); the run never writes `stop_firing_time`.
 
 # ---- Methods of the actuator contract --------------------------------------
 

@@ -8,7 +8,7 @@ const HYPR_EXAMPLES = Set([
     "Earth_RPO_CubeSat_MPC.jl", "Earth_RPO_CubeSat_MPC_Batch.jl",
     "Earth_RPO_CubeSat_MPC_PlannerComparison.jl", "Earth_RPO_CubeSat_MPC_Replanning.jl",
     "Robot_Arm_Planner_Cloth_Demo.jl",
-    "Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl", "Earth_RPO_HyPR_FinalISpaRo_Replanning.jl",
+    "Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl",
 ])
 const EDG_EXAMPLES = Set([
     "AGORA_Odyssey_Energy_Depletion_Control_Test.jl", "odyssey_surrogate.jl",
@@ -33,10 +33,6 @@ function list_examples()
     # Odyssey uses its pinned example environment, not this repository environment.
     # surrogate-user.yml runs its full native-free passage and verifies the outputs.
     dedicated_environment_examples = Set(["odyssey_surrogate.jl"])
-    # Earth_RPO_HyPR_FinalISpaRo_Replanning.jl stays on the deprecated
-    # RPOGuidanceModel until its removal. In smoke mode it only checks its saved
-    # baseline and never configures that model; the optional HYPR routing test checks
-    # that its smoke output carries no deprecation warning.
     files = sort(filter(f -> endswith(f, ".jl"), readdir(EXAMPLES_DIR; join=true)))
     files = filter(f -> !(basename(f) in helper_files || basename(f) in dedicated_environment_examples), files)
     token = strip(get(ENV, "SPACEAGORA_EXAMPLE_FILTER", ""))

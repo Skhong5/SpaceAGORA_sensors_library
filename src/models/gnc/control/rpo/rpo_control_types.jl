@@ -28,8 +28,7 @@ end
 """
 RPO control effector that tracks guidance references with LQ-MPC and allocates
 actuators. `chaser_index` and `target_index` are the run positions of the chaser
-and the target; `chaser_idx` and `target_idx`, their old names, still work with a
-deprecation warning until SpaceAGORA 0.5.0.
+and the target.
 
 `actuation = :ideal` (the default) applies the allocated force, rotated to the
 inertial frame at the control tick and held there, with the jets' and the
@@ -66,22 +65,12 @@ mutable struct RPOMPCControlModel <: AbstractControlEffectorModel
     run_start::Union{Nothing, RPOHeldActuation}     # the held command the previous run started from
     run_written::Union{Nothing, RPOHeldActuation}   # a copy of the controller's last write of it in that run
 end
-# The deprecated names forward, as keywords and as properties.
-function RPOMPCControlModel(; chaser_index=_NOT_PASSED, target_index=_NOT_PASSED, chaser_idx=_NOT_PASSED, target_idx=_NOT_PASSED,
+# `run_start` and `run_written` start empty; they are not keywords.
+function RPOMPCControlModel(; chaser_index=1, target_index=2,
         thrusters=SixAxisThrusterModel(), minimum_throttle_fraction=0.0, controller=nothing,
         plan_buffer=RPOPlanBuffer(), held=RPOHeldActuation(), control_dt_s=1.0, attitude_kp=0.0, rate_kd=0.0,
         max_rw_torque_nm=Inf, command_log=nothing, actuation=:ideal, mounted_levels=Float64[])
-    T = RPOMPCControlModel
-    return T(_renamed_keyword(T, :chaser_idx, chaser_idx, :chaser_index, chaser_index, 1),
-        _renamed_keyword(T, :target_idx, target_idx, :target_index, target_index, 2),
-        thrusters, minimum_throttle_fraction, controller, plan_buffer, held, control_dt_s, attitude_kp, rate_kd,
-        max_rw_torque_nm, command_log, actuation, mounted_levels, nothing, nothing)
-end
-@inline _rpo_mpc_field(name::Symbol) =
-    name === :chaser_idx ? _renamed_field_warning(RPOMPCControlModel, :chaser_idx, :chaser_index) :
-    name === :target_idx ? _renamed_field_warning(RPOMPCControlModel, :target_idx, :target_index) : name
-@inline Base.getproperty(m::RPOMPCControlModel, name::Symbol) = getfield(m, _rpo_mpc_field(name))
-@inline function Base.setproperty!(m::RPOMPCControlModel, name::Symbol, x)
-    field = _rpo_mpc_field(name)
-    return setfield!(m, field, convert(fieldtype(RPOMPCControlModel, field), x))
+    return RPOMPCControlModel(chaser_index, target_index, thrusters, minimum_throttle_fraction, controller,
+        plan_buffer, held, control_dt_s, attitude_kp, rate_kd, max_rw_torque_nm, command_log, actuation,
+        mounted_levels, nothing, nothing)
 end

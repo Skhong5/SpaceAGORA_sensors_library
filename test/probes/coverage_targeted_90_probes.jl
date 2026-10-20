@@ -24,11 +24,11 @@ struct CoverageForceEffector <: SimulationModel.AbstractForceTorqueModel
     torque::SVector{3, Float64}
 end
 
-function SimulationModel.calcForceTorque(
+function SimulationModel.wrench(
     model::CoverageForceEffector,
-    x,
-    p,
-    i::Int64
+    x::SimulationModel.StateSample,
+    env::SimulationModel.EnvironmentSample,
+    t::Float64
 )
     return model.force, model.torque
 end
@@ -409,7 +409,18 @@ end
             CoverageForceEffector(SVector{3, Float64}(2.0, 3.0, 4.0), SVector{3, Float64}(0.4, 0.5, 0.6)),
         )
         decision = (use_threads=true, allotment=2, policy_applied=false, mode=:on)
-        SimulationEngine._accumulate_dynamic_effectors!(f, τ, ComponentVector((x=0.0,)), nothing, 1, effectors, decision)
+        # wrench reads a state sample, which the accumulation builds from the run's parameters.
+        args_branches = build_config(
+            spacecraft=make_spacecraft(ra_alt_m=500e3, rp_alt_m=500e3),
+            density_model=NoAtmosphereModel(),
+            orientation_sim=false,
+            mission_time=120.0,
+            EI_km=120.0,
+            dynamic_effectors=effectors
+        )
+        p_branches = ODEParams(n_sats=1, args=args_branches)
+        u_branches = build_initial_conditions(args_branches)
+        SimulationEngine._accumulate_dynamic_effectors!(f, τ, u_branches.sc[1], p_branches, 1, effectors, decision)
         @test f == MVector{3, Float64}(3.0, 5.0, 7.0)
         @test isapprox(norm(τ - MVector{3, Float64}(0.5, 0.7, 0.9)), 0.0; atol=1e-12, rtol=0.0)
 

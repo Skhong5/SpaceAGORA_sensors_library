@@ -32,7 +32,11 @@ mutable struct BurnFor <: SpaceAGORA.AbstractControlEffectorModel
     thrust_n::Float64           # commanded thrust while burning, N
     burn_s::Float64             # burn duration, s
     levels::Vector{Float64}     # one level per mounted actuator, held between ticks
+    initial_levels::Vector{Float64}  # the levels each run starts from
 end
+
+# Built with one vector of levels: each run starts from a copy of it.
+BurnFor(thrust_n, burn_s, levels) = BurnFor(thrust_n, burn_s, collect(Float64, levels), collect(Float64, levels))
 
 # snippet: levels
 SpaceAGORA.actuation_mode(::BurnFor) = :mounted
@@ -41,6 +45,19 @@ SpaceAGORA.actuator_levels(c::BurnFor, spacecraft_index::Int) = c.levels
 
 function SpaceAGORA.update_control!(c::BurnFor, u, p, t::Float64, spacecraft_index::Int)
     c.levels[1] = t < c.burn_s ? c.thrust_n : 0.0
+    return nothing
+end
+
+# At each run's start, the levels the controller was built with.
+function SpaceAGORA.initialize_control!(c::BurnFor, u, p, t)
+    copy!(c.levels, c.initial_levels)
+    return nothing
+end
+
+# The held levels through a checkpoint: saved with it, put back on a resumed run.
+SpaceAGORA.checkpoint_state(c::BurnFor) = (levels=copy(c.levels),)
+function SpaceAGORA.restore_checkpoint_state!(c::BurnFor, data)
+    copy!(c.levels, data.levels)
     return nothing
 end
 

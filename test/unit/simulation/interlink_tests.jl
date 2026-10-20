@@ -227,10 +227,10 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
             dot(state.sc[i].vel, i == 1 ? first_force : second_force) / state.sc[i].mass for i in 1:2]
         for (policy, expected) in (
             (SchedulingPolicyModel(:gve_sma), rates[1]),
-            (SchedulingPolicyModel(:gve_sma; target_idx=2), rates[2]),
-            (SchedulingPolicyModel(:gve_sma; target_idx=nothing), sum(rates)),
-            (SchedulingPolicyModel(:gve_sma; target_idx=99, target_idxs=[2, 1]), sum(rates)),
-            (SchedulingPolicyModel(:gve_sma_first_index; target_idx=2), rates[1]),
+            (SchedulingPolicyModel(:gve_sma; target_index=2), rates[2]),
+            (SchedulingPolicyModel(:gve_sma; target_index=nothing), sum(rates)),
+            (SchedulingPolicyModel(:gve_sma; target_index=99, target_indices=[2, 1]), sum(rates)),
+            (SchedulingPolicyModel(:gve_sma_first_index; target_index=2), rates[1]),
         )
             score_candidates!(model, policy, state, mu; candidate_force=force_on_endpoint)
             @test only(matching_workspace!(model, policy).score) ≈ expected
@@ -243,11 +243,11 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
         @test isapprox(only(eccentric_policy.matching.score),
             (eccentricity(plus, mu) - eccentricity(minus, mu)) / 2; rtol=1e-5, atol=1e-14)
         for targets in (Int[], [0], [1, 1])
-            @test_throws ArgumentError SchedulingPolicyModel(:gve_sma; target_idxs=targets)
+            @test_throws ArgumentError SchedulingPolicyModel(:gve_sma; target_indices=targets)
         end
         @test_throws ArgumentError SchedulingPolicyModel(:invalid)
-        @test_throws ArgumentError SchedulingPolicyModel(:gve_eccentricity; target_idxs=[1])
-        @test_throws ArgumentError score_candidates!(model, SchedulingPolicyModel(:gve_sma; target_idxs=[3]),
+        @test_throws ArgumentError SchedulingPolicyModel(:gve_eccentricity; target_indices=[1])
+        @test_throws ArgumentError score_candidates!(model, SchedulingPolicyModel(:gve_sma; target_indices=[3]),
             state, mu; candidate_force=force_on_endpoint)
         @test_throws ArgumentError score_candidates!(model, SchedulingPolicyModel(:gve_sma),
             state, 0.0; candidate_force=force_on_endpoint)

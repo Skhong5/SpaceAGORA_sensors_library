@@ -4,8 +4,8 @@ Every extension hook follows the same rules: one argument order, one name for
 each kind of state, stated frames, SI units and positive consumption. This page
 states each rule once. The [Extension Hook Reference](../generated/extension_hook_reference.md)
 lists every hook with its shape, signature and fallback, and
-[Migrating Extension Hooks](migrating_extension_hooks.md) maps the deprecated
-names to their replacements.
+[Migrating Extension Hooks](migrating_extension_hooks.md) maps the old names
+to their replacements.
 
 Use these rules when you write a method of a hook, and when you review a new
 public name.
@@ -95,9 +95,13 @@ the run in the same way.
   are never interchangeable.
 - Models that select their vehicle by a field use the same words. The built-in
   models' fields `sat_idx`, `spacecraft_idx`, `chaser_idx` and `target_idx`
-  become `spacecraft_index`, `chaser_index` and `target_index` in 0.3.0, and the
-  `spacecraft_idx` of `RobotArmReactionEffector` in 0.3.1, with a warning for the
-  old names (see the [migration page](migrating_extension_hooks.md)).
+  became `spacecraft_index`, `chaser_index` and `target_index` in 0.3.0, and the
+  `spacecraft_idx` of `RobotArmReactionEffector` in 0.3.1; the old names were
+  removed in 0.5.0, and the engine reads only the new ones on a model of your
+  own. `SchedulingPolicyModel`'s `target_idx` and `target_idxs`, `StateAnchor`'s
+  `sat_idx` and the `sat_idx` keyword of `get_periapsis_pulse_callback` became
+  `target_index`, `target_indices` and `spacecraft_index` in 0.5.0, with a warning
+  for the old names until 1.0 (see the [migration page](migrating_extension_hooks.md)).
 - In the external-propagation facade the owner-local position of a spacecraft is
   called `slot`, because it counts within the owner's list, not the run.
 
@@ -161,8 +165,8 @@ Three documented exceptions stay until 1.0 or later:
 - A thruster's direction is the force it puts on the vehicle.
 - Wind is the air's velocity relative to the rotating planet, as east, north and
   up components.
-- **The sign trap.** The deprecated `calcControlMassFlowRate` returned the mass
-  derivative, negative while propellant is used. A method renamed to
+- **The sign trap.** `calcControlMassFlowRate`, removed in 0.5.0, returned the
+  mass derivative, negative while propellant is used. A method renamed to
   `control_propellant_rate` without flipping its sign makes the vehicle gain
   mass.
 
@@ -188,10 +192,11 @@ Three documented exceptions stay until 1.0 or later:
   you subtype. A method you write for your own model type is therefore more
   specific and never ambiguous with the default.
 - A method you write never needs a type annotation only to avoid an ambiguity.
-- Until the deprecated names are removed, the right-hand-side hooks and the
-  ticks have no catch-all method: the engine asks `hasmethod` which models
-  implement them. An effector without `control_propellant_rate` uses no
-  propellant, and one without `control_wheel_torque` drives no wheel.
+- The ticks and the right-hand-side hooks have no catch-all method, except
+  `control_propellant_rate` and `control_wheel_torque`, whose untyped defaults
+  return `0.0` and `nothing`: an effector that uses no propellant, or drives no
+  wheel, needs no method of them. The pre-run check refuses a model without a
+  method of a hook the run calls.
 
 ## Deprecations
 
@@ -199,29 +204,23 @@ When a hook is renamed or retired, its old name keeps working for a deprecation
 window:
 
 - **Before the run.** The pre-run check warns once per model type and old name,
-  before integration, never during the solve. For example:
-
-  ```text
-  MyEffector implements calcControlEffect!(model, u, p, t, spacecraft_index), which is
-  deprecated and will be removed in SpaceAGORA 0.5.0. Rename the method update_control!:
-  only the name changes.
-  ```
+  before integration, never during the solve, and names the replacement.
 
 - **Direct calls.** Calling an old name on a model that implements the new hook
   runs the new hook and warns once per type.
 - **As an error.** Under `julia --depwarn=error` these warnings are errors: the
   run stops before integration, and a direct call throws. CI runs the examples
   and the probe scripts this way.
-- **Removal.** Deprecated hook names are removed in SpaceAGORA 0.5.0 (or 1.0 if
-  that comes first), and not before a tagged release has carried the warnings and
-  the companion packages have moved to the new names.
+- **Removal.** A deprecated name is removed in a later release, and not before a
+  tagged release has carried the warnings and the companion packages have moved
+  to the new names. SpaceAGORA 0.5.0 removed the hook names 0.3.0 deprecated.
 - **Version numbers** follow `version` in `Project.toml`. The older `v1.0.0` and
   `v2.0.0` git tags predate it.
 
-The same window covers the other deprecations of the 0.3.0 cycle, such as
-`RPOGuidanceModel`, whose warning does not stop a run under
-`--depwarn=error`. [Migrating Extension Hooks](migrating_extension_hooks.md)
-has the full table and the schedule.
+The other deprecations of the 0.3.0 cycle, the old index field names,
+`RPOGuidanceModel` and selecting a comparison planner by name, were removed in
+0.5.0. [Migrating Extension Hooks](migrating_extension_hooks.md) has the full
+table and the schedule.
 
 ## Versioned facades
 

@@ -149,7 +149,7 @@ function update_guidance!(guidanceAlg::ApoapsisTargetPeriapsisRaiseGuidanceModel
 
     ephemerides_model = p.args.environment_model.ephemerides_model
     et = p.shared_buffers.et_start[] + Float64(t)
-    l_pi = _ephemerides_frame_lpi(ephemerides_model, planet, et)
+    l_pi = ephemerides_frame_lpi(ephemerides_model, planet, et)
     periapsis_direction_pp = SVector{3, Float64}(l_pi * elements.periapsis_direction)
     periapsis_direction_pp = periapsis_direction_pp / norm(periapsis_direction_pp)
     target_periapsis_radius_m = _radius_for_oblate_altitude(
