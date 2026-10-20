@@ -213,7 +213,8 @@ function _gnc_phase_callbacks(num_sats::Int, args::SimulationConfiguration)
 end
 
 # The run's callbacks, in the order the solver applies them at one time; the
-# engine adds the interlink scheduler after them. "Callback order" in
+# engine adds the interlink scheduler around them (an initialization-only copy
+# first, the scheduler last). "Callback order" in
 # docs/contributing/architecture.md explains this order and what it guarantees;
 # change the two together.
 function get_callbacks(

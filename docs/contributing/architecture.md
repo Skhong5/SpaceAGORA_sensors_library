@@ -296,7 +296,8 @@ why it holds. `get_callbacks` in
 `src/orchestration/simulation/callbacks/density_callbacks/assembly.jl` builds
 them in this order, and `run_simulation` in
 `src/orchestration/simulation/engine/execution.jl` adds the interlink scheduler
-after them. Change the order and this section together.
+around them: an initialization-only copy before them and the scheduler after
+them. Change the order and this section together.
 
 ### How the solver applies them
 
@@ -317,20 +318,25 @@ and keeps each kind in the order below.
 
 ### The order
 
-1. Impact (continuous), for every spacecraft except touchdown spacecraft and
+1. With interlinks, the interlink scheduler's initialization-only copy
+   (`interlink_scheduler_initialization`). It is the first discrete callback,
+   so the first link selection is in place before the other discrete callbacks
+   initialize, and the first saved row shows what the links draw. It does
+   nothing after initialization.
+2. Impact (continuous), for every spacecraft except touchdown spacecraft and
    externally propagated ones.
-2. The planet-frame update.
-3. The external-propagation sync, when a spacecraft is propagated externally.
+3. The planet-frame update.
+4. The external-propagation sync, when a spacecraft is propagated externally.
    The discrete callbacks after it read the synced entries.
-4. The callbacks built by `run_simulation`'s `priority_callback_factories`,
+5. The callbacks built by `run_simulation`'s `priority_callback_factories`,
    such as a mission's operational segments.
-5. Touchdown (continuous).
-6. The opt-in GRAM density perturbation, before every callback that stages or
+6. Touchdown (continuous).
+7. The opt-in GRAM density perturbation, before every callback that stages or
    reads density, so that they see the factor updated at the same step.
-7. The staged density, the thermal update, orbit end (continuous), entry end
+8. The staged density, the thermal update, orbit end (continuous), entry end
    (continuous) and the drag-state phase crossings (continuous), each only when
    the run needs it.
-8. The GNC phase (`_gnc_phase_callbacks`):
+9. The GNC phase (`_gnc_phase_callbacks`):
    1. sensors sample;
    2. navigation ticks;
    3. guidance that must publish before the same tick's control: energy
@@ -342,18 +348,19 @@ and keeps each kind in the order below.
       update, which sheds by the load the switched faults leave;
    7. CMG gimbals stop at their limits (continuous);
    8. the remaining guidance ticks.
-9. The quaternion projection, when attitude is integrated.
-10. Plume interaction.
-11. The initial force output.
-12. Result saving.
-13. `run_simulation`'s `extra_callbacks`, then the callbacks built by its
+10. The quaternion projection, when attitude is integrated.
+11. Plume interaction.
+12. The initial force output.
+13. Result saving.
+14. `run_simulation`'s `extra_callbacks`, then the callbacks built by its
     `extra_callback_factories`.
-14. With interlinks, the interlink scheduler, at initialization and after every
-    accepted step.
+15. With interlinks, the interlink scheduler, at initialization (the same
+    selection again) and after every accepted step.
 
 When the run has EDG passage heat to observe, `_edg_observe_heat_callbacks`
-wraps every callback above except the interlink scheduler and adds one
-observer, which runs first among the discrete callbacks. Under
+wraps every callback above except the two interlink scheduler callbacks, and
+adds one observer. The observer runs first among the assembly's discrete
+callbacks; only the scheduler's initialization-only copy comes before it. Under
 `solver_mode=:gravity_backbone_split` only impact, the external-propagation
 sync, the priority callbacks, touchdown, orbit end, plume interaction, the
 initial force output and the extra callbacks are installed; that mode refuses
