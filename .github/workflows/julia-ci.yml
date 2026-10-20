@@ -109,7 +109,8 @@ jobs:
       # Every environment a job instantiates. The grid suite's environment is
       # seeded with the root manifest so it resolves to the same package
       # versions and reuses their package images (unseeded, it resolved to the
-      # newest registry versions and recompiled ~400 packages per job).
+      # newest registry versions and recompiled ~400 packages per job); the
+      # docs environment's setup seeds itself the same way.
       # SpaceAGORA's own image is dropped: it changes with every commit.
       - name: Build shared depot
         if: steps.has-depot.outputs.cache-hit != 'true'
@@ -117,6 +118,8 @@ jobs:
           cp Manifest.toml test/grid_atmosphere/Manifest.toml
           julia --startup-file=no test/grid_atmosphere/setup.jl
           julia --startup-file=no --project=test/grid_atmosphere -e 'using Pkg; Pkg.precompile()'
+          julia --startup-file=no docs/setup.jl
+          julia --startup-file=no --project=docs -e 'using Pkg; Pkg.precompile()'
           julia --startup-file=no --project=scripts/dev -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
           # GRAMSuite comes from a private repository and its compiled images carry
           # its source text; the shared cache is readable by fork pull requests, so
@@ -889,12 +892,16 @@ jobs:
           precompile: "false"
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      # Documenter lives in the docs environment, not in the root project.
+      - name: Prepare docs environment
+        run: julia --startup-file=no docs/setup.jl
+
       - name: Build docs
         env:
           # Authenticate GitHub link checks with the existing read-only job token.
           # Publishing remains the separate Documentation workflow's responsibility.
           GITHUB_TOKEN: ${{ github.token }}
-        run: julia --project=. docs/make.jl --no-deploy
+        run: julia --project=docs docs/make.jl --no-deploy
 
       - name: Public API surface gate
         run: julia --startup-file=no --project=. test/gates/ci_public_api_surface_gate.jl

@@ -30,7 +30,7 @@ for marker in (
     "If new extension points were added, I updated `docs/src/extensibility.md`",
     "If a hook was added, renamed or deprecated, I updated `docs/extension_hooks.jl`",
     "If new CLI commands or flags were added, I updated `docs/src/cli.md`",
-    "`julia --project=. docs/make.jl`",
+    "`julia --project=docs docs/make.jl`",
     "`julia --project=. test/gates/ci_public_api_surface_gate.jl`",
     "`julia --project=. test/gates/ci_hpc_extensibility_docs_gate.jl`",
 )

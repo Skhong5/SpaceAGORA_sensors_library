@@ -1,6 +1,12 @@
+# Build from the docs environment, which takes SpaceAGORA from this checkout:
+# `julia --startup-file=no docs/setup.jl`, then `julia --project=docs docs/make.jl`.
+samefile(something(Base.active_project(), ""), joinpath(@__DIR__, "Project.toml")) ||
+    error("Build the documentation from the docs environment: run `julia --startup-file=no docs/setup.jl`, then `julia --project=docs docs/make.jl`.")
 using Documenter
 using SpaceAGORA
 using Dates
+samefile(pkgdir(SpaceAGORA), dirname(@__DIR__)) ||
+    error("The docs environment loaded SpaceAGORA from $(pkgdir(SpaceAGORA)), not from this checkout; rerun `julia --startup-file=no docs/setup.jl`.")
 
 include(joinpath(@__DIR__, "public_api_symbols.jl"))
 using .PublicAPISymbols
