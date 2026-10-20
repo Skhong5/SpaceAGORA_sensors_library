@@ -34,7 +34,10 @@ end
 # for big numbers (a `BigInt`'s limbs live behind a pointer that differs between
 # copies, as in a `MersenneTwister`), equal elements for arrays, the same entries for
 # dictionaries (keys paired one to one and compared like values, `_same_entries`), and
-# the same field values for every other object, followed recursively. Mutable
+# the same field values for every other object, followed recursively. An
+# `ImmutableDict` is a chain of entries, newest first, in which a newer entry shadows an
+# older one with an equal key, so its entries are compared in that order
+# (`_same_chain`): the same entries in another order can look up other values. Mutable
 # objects are matched one to one in both directions, so aliasing is part of the
 # state: two objects of `a` cannot both correspond to one object of `b`, nor the
 # reverse. Tasks, locks and IO streams are not model state and are not compared.
@@ -72,6 +75,7 @@ function _same_state(a, b, seen::IdDict{Any, Any}, back::IdDict{Any, Any}, pairi
         seen[a] = b
         back[b] = a
     end
+    a isa Base.ImmutableDict && return _same_chain(a, b, seen, back, pairings)
     a isa AbstractDict && return _same_entries(a, b, seen, back, pairings)
     if a isa Array
         size(a) == size(b) || return false
@@ -129,7 +133,9 @@ _plain_key(k) = isbitstype(typeof(k)) || k isa Symbol || k isa String
 # `Dict` finds keys by `isequal`, so it can hold another value (`1.0` for `1`), and
 # `getkey` gives it; an `IdDict` finds keys by identity, so the stored key is `k`
 # itself. Other dictionaries do not say which key they hold, so they give none: their
-# lookup would hide a stored `1.0` behind a query `1`.
+# lookup would hide a stored `1.0` behind a query `1`. Their entries are paired as they
+# are iterated, each key held once (an `ImmutableDict`, which can hold a key more than
+# once, is compared as its chain instead, `_same_chain`).
 struct _NoKey end
 _looked_up_key(b::Dict, k) = getkey(b, k, _NoKey())
 _looked_up_key(b::IdDict, k) = haskey(b, k) ? k : _NoKey()
@@ -204,6 +210,18 @@ function _same_entries(a::AbstractDict, b::AbstractDict, seen::IdDict{Any, Any},
             i === nothing && return false
         end
         deleteat!(group, i)
+    end
+    return true
+end
+
+# Whether two `ImmutableDict`s hold the same entries in the same order, newest first.
+# The chains are compared entry by entry rather than field by field: the empty
+# dictionary at the end of each leaves its value field unset.
+function _same_chain(a::Base.ImmutableDict, b::Base.ImmutableDict, seen::IdDict{Any, Any}, back::IdDict{Any, Any},
+        pairings::_Pairings)
+    length(a) == length(b) || return false
+    for ((ka, va), (kb, vb)) in zip(a, b)
+        _same_state(ka, kb, seen, back, pairings) && _same_state(va, vb, seen, back, pairings) || return false
     end
     return true
 end

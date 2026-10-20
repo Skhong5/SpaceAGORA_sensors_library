@@ -103,6 +103,8 @@ Base.hash(::NcInsertionKey, h::UInt) = h
 # would see it.
 nc_key_command(::Int) = 1.0
 nc_key_command(::Float64) = -1.0
+# The command a controller reads from its schedule: the entry it looks up for key 1.
+nc_next_command(schedule) = 0.1 * schedule[1]
 
 # concurrent_equals_sequential: the first call after the token is set sleeps, so one
 # of two concurrent runs stalls while the other waits for it at the rendezvous.
@@ -1008,6 +1010,15 @@ const MAY_SKIP = (:concurrent_equals_sequential, :bind_fresh_state, :stream_unto
         @test C._same_state(stored_int, deepcopy(stored_int))
         shadowed = Base.ImmutableDict(Base.ImmutableDict{Any, Int}(1, 7), 1 => 8)
         @test C._same_state(shadowed, deepcopy(shadowed))
+        # An `ImmutableDict` keeps every entry, newest first, and looks up the newest of
+        # equal keys: the same entries with the other precedence are another state, whose
+        # next command differs. Equal chains built apart are the same state.
+        reversed = Base.ImmutableDict(Base.ImmutableDict{Any, Int}(1, 8), 1 => 7)
+        @test collect(shadowed) == [1 => 8, 1 => 7] && collect(reversed) == [1 => 7, 1 => 8]
+        @test nc_next_command(shadowed) != nc_next_command(reversed)
+        @test !C._same_state(shadowed, reversed)
+        @test !C._same_state(reversed, shadowed)
+        @test C._same_state(shadowed, Base.ImmutableDict(Base.ImmutableDict{Any, Int}(1, 7), 1 => 8))
     end
     @testset "the state comparison tries other pairings of look-alike entries" begin
         K = NcInsertionKey
