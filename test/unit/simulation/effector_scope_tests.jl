@@ -233,6 +233,9 @@ end
     p = SM.ODEParams(n_sats=4, args=unresolved)
     problems = SE._missing_model_hooks(unresolved, SE._hook_call_types(u0, p))
     @test any(occursin("dynamic_effectors[2] is a scoped entry", line) for line in problems)
+    # Checks that read effectors by type see the scoped effector itself.
+    @test_throws "does not support solar-radiation-pressure" solve(configuration((InverseSquaredGravityModel(),
+        scoped(SM.SolarRadiationPressureModel(1.8, 10.0), BoundSpacecraft((1,))))))
     # Conformance checks the effector itself.
     @test_throws "checks the effector itself" SpaceAGORA.Conformance.check_force_torque_model(scoped(push, BoundSpacecraft((1,))))
 end
@@ -249,6 +252,20 @@ end
         derivative(configuration((InverseSquaredGravityModel(), control)), route)
         @test sort!(unique(control.seen)) == [1, 2, 3, 4]
     end
+    # The per-effector thread paths (taken for thread-safe built-ins when the policy decides).
+    threads = (use_threads=true, allotment=2, mode=:threads, policy_applied=false)
+    probe, other = IndexProbe(), IndexProbe()
+    args = SE._resolve_effector_scopes(configuration((InverseSquaredGravityModel(), scoped(probe, BoundSpacecraft((2,))), other)))
+    u = SE.build_initial_conditions(args)
+    p = params(args, "serial")
+    for k in 1:4
+        forces, torques = MVector(0.0, 0.0, 0.0), MVector(0.0, 0.0, 0.0)
+        SE._accumulate_dynamic_effectors!(forces, torques, u.sc[k], p, k, 0.0, args.dynamics_model.dynamic_effectors, threads)
+        SE._accumulate_dynamic_effectors_partitioned!(forces, torques, u.sc[k], p, k, 0.0,
+            args.dynamics_model.dynamic_effectors, threads, :explicit)
+    end
+    @test unique(probe.seen) == [2]
+    @test sort!(unique(other.seen)) == [1, 2, 3, 4]
     # The implicit side of split IMEX.
     probe = IndexProbe(:implicit)
     args = SE._resolve_effector_scopes(configuration((InverseSquaredGravityModel(), scoped(probe, SpacecraftSelection(planes=2)));
