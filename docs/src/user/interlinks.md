@@ -36,11 +36,14 @@ key: the lower `(spacecraft, terminal)` pair first, or, for a directed link, the
 transmitter first. `ctx` is a `LinkContext`
 holding the time (s into the run) and the run's planet.
 
-The built-in kind is `LaserMomentumLink(; power_w, magnification, range_m)`: an
-open-cavity laser link with the idealized central force
-`magnification * power_w / c`, directed away from the other endpoint, equal and
-opposite on the two spacecraft. `LaserMomentumLink(terminal)` takes the numbers
-of a `LaserTerminal`.
+The built-in kinds are:
+
+- `LaserMomentumLink(; power_w, magnification, range_m)`: an open-cavity laser
+  link with the idealized central force `magnification * power_w / c`, directed
+  away from the other endpoint, equal and opposite on the two spacecraft.
+  `LaserMomentumLink(terminal)` takes the numbers of a `LaserTerminal`.
+- `PowerBeamLink(; power_w, wavelength_m, waist_radius_m, range_m)`: a power
+  beam from a `LaserTerminal` to a `PowerReceiver`. See [Power links](#Power-links).
 
 ## Setting up interlinks
 
@@ -162,6 +165,55 @@ sheds laser terminals. Links through shed hardware terminals then become
 unavailable, and stay so until the tier clears: a shed terminal keeps asking
 for its link's power, so the tier clears when the battery can supply it again.
 Virtual terminals draw nothing and are never shed.
+
+## Power links
+
+A `PowerBeamLink` carries power, one way, from a `LaserTerminal` (the
+transmitter) to a `PowerReceiver` (the receiver). It applies no force.
+
+```julia
+receiver = PowerReceiver(normal=[0.0, -1.0, 0.0], radius_m=0.25, efficiency=0.4)
+add_actuator!(other, other.root, receiver)
+register_link!(model, spacecraft, (1, terminal), (2, receiver),
+    PowerBeamLink(power_w=80.0, wavelength_m=1.064e-6, waist_radius_m=0.05, range_m=50e3))
+args = SimulationConfiguration(...; interlink_model=model,
+    scheduling_policy_model=SchedulingPolicyModel(:power_delivery))
+```
+
+- **The beam.** While the link is active, the transmitter runs at `power_w`
+  optical watts. It draws `power_w / efficiency` from its own battery as a
+  tier-1 laser load (see [Terminal hardware and power](#Terminal-hardware-and-power)).
+  The beam is Gaussian:
+  - its waist, of 1/e² radius `waist_radius_m`, is at the transmitter;
+  - its spot radius at range `d`, `beam_spot_radius_m(link, d)`, is
+    `w0 √(1 + (d / z_R)²)`, with the Rayleigh range `z_R = π w0² / λ`.
+- **The receiver.** It captures `beam_capture_fraction(link, radius_m, d)`,
+  `1 − exp(−2 r² / w²)`, of the beam through its aperture. It delivers that
+  times its `efficiency` to its bus, up to its `max_power_w`
+  (`link_received_power_w`).
+  - For example, with a 1.064 µm beam from a 5 cm waist, a 25 cm receiver
+    catches nearly all of it out to about 10 km, about a quarter at 100 km, and
+    under 1 % at 1000 km.
+- **Generation.** The delivered power is generation in the receiver's power
+  budget. It shows in `power_generated_w` and in its own `power_received_w`
+  column, charges the receiver's battery, and helps an empty battery recover.
+  A full receiver battery curtails it, as it does solar power; the transmitter
+  keeps paying.
+- **Availability.** The link can close within `range_m`, while the segment
+  between the spacecraft clears the planet (a sphere of its equatorial radius).
+  When the transmitter's battery sheds tier 1, the beam closes until the tier
+  clears.
+- **Direction.** A `PowerReceiver` can only receive, and a `LaserTerminal` can
+  only transmit a power beam (`terminal_supports(terminal, link, side)`).
+- **Scheduling.** Policies that score links by their forces never select a
+  power beam, so use `:power_delivery`, which scores each link by the power it
+  would deliver. A run uses one policy; mixing momentum and power links waits
+  for a later scheduling contract.
+- **Columns.** A run with a power beam adds `power_received_w` and
+  `power_beamed_w` per spacecraft to the [power columns](output_columns.md#Power-budget).
+- **Not yet modelled.** Pointing and jitter, the receiver's incidence angle,
+  the atmosphere, beam quality, and the beam's radiation pressure are not
+  modelled.
 
 ## Scheduling
 

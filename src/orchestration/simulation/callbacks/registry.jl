@@ -42,6 +42,8 @@ using ..ThrusterHooks: thrust_calculation_schmitt_trigger!
 using ..PowerSystems: has_battery, has_power_parts, battery, solar_generation_w, solar_flux_w_m2, mean_solar_distance_m
 using ..PowerSystems: bus_load_w, actuator_power_by_tier, battery_boundary!, update_power_state!, shed_levels
 using ..InterlinkTerminals: without_link_driven, link_driven_levels!, link_terminal_power, link_driven
+using ..InterlinkTerminals: link_receives, received_link_power_w, beamed_link_power_w
+using ..InterLinkModels: LinkContext, PowerBeamLink
 using ..DynamicEffectors: eclipse_area_calc, MagneticTorqueRodModel, rod_field_body
 using ..DynamicEffectors: is_gravitational
 using ..ActuatorFaults: has_faults, faulted_levels, refresh_faults!, fault_edge, resolve_faults!

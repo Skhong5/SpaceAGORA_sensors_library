@@ -10,7 +10,8 @@ module InterlinkTerminals
 using ..Components: LaserTerminal
 using ..AbstractTypes: AbstractActuator
 using ..SpacecraftModels: SpacecraftModel
-using ..InterLinkModels: InterlinkModel, link_terminal, link_terminal_levels, terminal_supports
+using ..InterLinkModels: InterlinkModel, LinkContext, link_terminal, link_terminal_levels, terminal_supports,
+    link_directed, link_received_power_w, link_endpoint, PowerBeamLink
 import ..InterLinkModels: terminal_count, _terminal_device, _terminal_number
 using ..ActuatorMounting: mounted_actuators, actuator_context
 using ..Actuators: actuator_consumption, actuator_limits
@@ -90,9 +91,10 @@ function prepare_terminal_endpoints!(model::InterlinkModel, spacecraft)::Bool
             "Interlinks: spacecraft $satellite has no terminal $number (terminal_count $(terminal_count(model_s)))."))
         entry = mounted[number - model_s.n_terminal]
         link = graph.edge_properties[edge]
-        terminal_supports(entry.terminal, link) || throw(ArgumentError(
+        role = link_directed(link) ? (side == 1 ? :transmitter : :receiver) : :either
+        terminal_supports(entry.terminal, link, role) || throw(ArgumentError(
             "Interlinks: terminal $number of spacecraft $satellite, a $(nameof(typeof(entry.terminal))), cannot " *
-            "carry a $(nameof(typeof(link))) (terminal_supports)."))
+            "carry a $(nameof(typeof(link)))$(role === :either ? "" : " as its $(role)") (terminal_supports)."))
         level = Float64(link_terminal_levels(link)[side])
         low, high = actuator_limits(entry.terminal)
         low <= level <= high || throw(ArgumentError(
@@ -188,6 +190,57 @@ function link_terminal_power(model, satellite::Int, spacecraft::SpacecraftModel)
         active && !shed && (load += w)
     end
     return ((lasers, 0.0, 0.0, other), load)
+end
+
+# ---- Received and beamed power ------------------------------------------------
+
+# Whether spacecraft `satellite` is the receiving end of a directed link on its
+# terminal hardware.
+@inline link_receives(model, satellite::Int) = link_driven(model, satellite) &&
+    any(endpoint -> endpoint[2] == 2 && link_directed(model.graph.edge_properties[endpoint[1]]),
+        model.terminal_endpoints[satellite])
+
+"""
+    received_link_power_w(model, satellite, spacecraft, state; context=LinkContext()) -> Float64
+
+The electrical power (W) that the active directed links ending on spacecraft
+`satellite`'s terminal hardware deliver to its bus, each from
+`link_received_power_w` at `state`. `spacecraft` is the run's spacecraft and
+`state` the run state, with every spacecraft. Returns 0 when it receives none.
+"""
+function received_link_power_w(model, satellite::Int, spacecraft, state; context=LinkContext())::Float64
+    link_receives(model, satellite) || return 0.0
+    graph = model.graph
+    entries = mounted_actuators(spacecraft[satellite])
+    total = 0.0
+    for (edge, side, position) in model.terminal_endpoints[satellite]
+        side == 2 && graph.active[edge] || continue
+        link = graph.edge_properties[edge]
+        link_directed(link) || continue
+        first, second = map(vertex -> graph.vertices[vertex], graph.edges[edge])
+        a = link_endpoint(state.sc[first[1]], spacecraft[first[1]], first[1])
+        b = link_endpoint(state.sc[second[1]], spacecraft[second[1]], second[1])
+        total += Float64(link_received_power_w(link, entries[position].actuator, a, b, context))
+    end
+    return total
+end
+
+"""
+    beamed_link_power_w(model, satellite) -> Float64
+
+The optical power (W) that spacecraft `satellite` transmits on its active power
+beams (`PowerBeamLink`). Returns 0 when it transmits none.
+"""
+function beamed_link_power_w(model, satellite::Int)::Float64
+    link_driven(model, satellite) || return 0.0
+    graph = model.graph
+    total = 0.0
+    for (edge, side, _) in model.terminal_endpoints[satellite]
+        side == 1 && graph.active[edge] || continue
+        link = graph.edge_properties[edge]
+        link isa PowerBeamLink && (total += link.power_w)
+    end
+    return total
 end
 
 """
