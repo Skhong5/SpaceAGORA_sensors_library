@@ -37,6 +37,14 @@ end
 SpaceAGORA.wrench(m::GatedPush, x::StateSample, env::EnvironmentSample, t::Float64) =
     x.spacecraft_index in m.indices ? (m.newtons * normalize(x.vel_ii), Z3) : (Z3, Z3)
 
+# A push that binds itself to a run position by its spacecraft_index field.
+struct BoundPush <: SpaceAGORA.AbstractForceTorqueModel
+    spacecraft_index::Int
+    newtons::Float64
+end
+SpaceAGORA.wrench(m::BoundPush, x::StateSample, env::EnvironmentSample, t::Float64) =
+    x.spacecraft_index == m.spacecraft_index ? (m.newtons * normalize(x.vel_ii), Z3) : (Z3, Z3)
+
 # Central gravity of the user's own, so a scoped built-in leaves every spacecraft some gravity.
 struct PointMass <: SpaceAGORA.AbstractForceTorqueModel end
 SpaceAGORA.is_gravitational(::PointMass) = true
@@ -370,6 +378,12 @@ end
                     solve(configuration((InverseSquaredJ2GravityModel(), Push(1e-3)); spacecraft=[walker4()[2]])))
     @test SpaceAGORA.SimulationCampaigns._ensemble_member_effectors(SE._resolve_effector_scopes(args), 2) ==
         (InverseSquaredJ2GravityModel(),)
+    # The ensemble's own checks see the effectors themselves: one bound to a run
+    # position by its own field is refused inside a scope as without one.
+    @test_throws "binds it to member 2" run_constellation_ensemble(configuration((InverseSquaredJ2GravityModel(),
+        scoped(BoundPush(2, 1e-3), BoundSpacecraft((2,))))))
+    @test_throws "binds it to member 2" run_constellation_ensemble(configuration((InverseSquaredJ2GravityModel(),
+        BoundPush(2, 1e-3))))
 end
 
 @testset "a checkpoint keeps the scopes, and a resume needs the same" begin
