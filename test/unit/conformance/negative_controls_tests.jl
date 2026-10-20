@@ -99,6 +99,10 @@ mutable struct NcInsertionKey
     x::Float64
 end
 Base.hash(::NcInsertionKey, h::UInt) = h
+# A command that depends on the type of a stored key, as a model iterating its schedule
+# would see it.
+nc_key_command(::Int) = 1.0
+nc_key_command(::Float64) = -1.0
 
 # concurrent_equals_sequential: the first call after the token is set sleeps, so one
 # of two concurrent runs stalls while the other waits for it at the rendezvous.
@@ -993,6 +997,17 @@ const MAY_SKIP = (:concurrent_equals_sequential, :bind_fresh_state, :stream_unto
         vector_keys = Dict([1.0] => 1, [2.0] => 2)
         @test C._same_state(vector_keys, deepcopy(vector_keys))
         @test !C._same_state(vector_keys, Dict([1.0] => 2, [2.0] => 1))
+        # A dictionary that does not say which key it holds has all its entries paired,
+        # so a stored `1.0` is not hidden behind a lookup with `1`. Lookup cannot tell the
+        # two apart; a command that depends on the stored key can.
+        stored_int, stored_float = Base.ImmutableDict{Any, Int}(1, 7), Base.ImmutableDict{Any, Int}(1.0, 7)
+        @test stored_int[1] == stored_float[1] == 7
+        @test nc_key_command(only(keys(stored_int))) != nc_key_command(only(keys(stored_float)))
+        @test !C._same_state(stored_int, stored_float)
+        @test !C._same_state(stored_float, stored_int)
+        @test C._same_state(stored_int, deepcopy(stored_int))
+        shadowed = Base.ImmutableDict(Base.ImmutableDict{Any, Int}(1, 7), 1 => 8)
+        @test C._same_state(shadowed, deepcopy(shadowed))
     end
     @testset "the state comparison tries other pairings of look-alike entries" begin
         K = NcInsertionKey
@@ -1033,6 +1048,32 @@ const MAY_SKIP = (:concurrent_equals_sequential, :bind_fresh_state, :stream_unto
         broken = deepcopy(identity_state)
         broken.key = ([2.0], broken.key[2])
         @test !C._same_state(identity_state, broken)
+        # A cache keyed by two look-alike nodes and the node that is active, held by a
+        # field after the dictionary, by one before it, or by a later entry; the order of
+        # the entries is set by addresses, so each case is made many times. Broken
+        # aliases are refused.
+        for D in (Dict, IdDict)
+            @testset let dictionary = D
+                after, before, later, refused = true, true, true, true
+                for _ in 1:64
+                    n1, n2 = NcIdentityKey(1.0), NcIdentityKey(1.0)
+                    cache = NcKeyedState(D(n1 => 3.0, n2 => 3.0), n1)
+                    copied = deepcopy(cache)
+                    after &= C._same_state(cache, copied)
+                    before &= C._same_state((key=cache.key, dict=cache.dict), (key=copied.key, dict=copied.dict))
+                    refused &= !C._same_state(cache, NcKeyedState(copied.dict, NcIdentityKey(1.0)))
+                    within = D{Any, Any}(n1 => 0.0, n2 => 0.0, NcIdentityKey(3.0) => n1)
+                    within_copy = deepcopy(within)
+                    later &= C._same_state(within, within_copy)
+                    within_copy[only(k for k in keys(within_copy) if k.x == 3.0)] = NcIdentityKey(1.0)
+                    refused &= !C._same_state(within, within_copy)
+                end
+                @test after
+                @test before
+                @test later
+                @test refused
+            end
+        end
         # The search is bounded: with many look-alike entries and a difference after
         # them, it gives up with a warning and reports the states as different.
         many = NcKeyedState(Dict(K(1.0) => [1.0] for _ in 1:8), 1.0)

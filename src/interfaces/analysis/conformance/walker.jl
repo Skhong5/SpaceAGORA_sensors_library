@@ -120,16 +120,20 @@ function _next_pairings!(pairings::_Pairings)
     return true
 end
 
-# Keys whose identity carries no state (bits values, symbols, strings): such a key is
-# found by lookup and then compared with the key it finds.
+# Keys whose identity carries no state (bits values, symbols, strings). In a `Dict` or
+# an `IdDict` such a key is found by lookup and then compared with the stored key the
+# lookup gives (`_looked_up_key`); other dictionaries pair all their entries.
 _plain_key(k) = isbitstype(typeof(k)) || k isa Symbol || k isa String
 
-# The key of `b` that `k` looks up to, or a `_NoKey()` when there is none. A `Dict`
-# finds keys by `isequal`, so it can be another value (`1.0` for `1`); other
-# dictionaries (an `IdDict` finds keys by identity) give `k` itself.
+# The stored key of `b` that `k` looks up to, or a `_NoKey()` when there is none. A
+# `Dict` finds keys by `isequal`, so it can hold another value (`1.0` for `1`), and
+# `getkey` gives it; an `IdDict` finds keys by identity, so the stored key is `k`
+# itself. Other dictionaries do not say which key they hold, so they give none: their
+# lookup would hide a stored `1.0` behind a query `1`.
 struct _NoKey end
 _looked_up_key(b::Dict, k) = getkey(b, k, _NoKey())
-_looked_up_key(b::AbstractDict, k) = haskey(b, k) ? k : _NoKey()
+_looked_up_key(b::IdDict, k) = haskey(b, k) ? k : _NoKey()
+_looked_up_key(b::AbstractDict, k) = _NoKey()
 
 # A hash of the state of `x` that does not depend on identity: states `_same_state`
 # finds the same hash alike. It follows at most `nodes[]` values, in a fixed order, and
@@ -166,22 +170,23 @@ _entry_shape(k, v) = _shape(v, _shape(k, zero(UInt), Ref(32)), Ref(32))
 # compared like any other state, through the same alias maps as the values, so a key
 # that is shared with another part of the state must stay shared, and a copied
 # identity dictionary (an `IdDict`, whose keys are found by identity) still matches.
-# Plain keys are paired by lookup. Every other entry of `a` is paired with an entry of
-# `b` of the same shape (`_entry_shape`): the one the alias maps already give its key,
-# or else one chosen by `_paired_entry`.
+# Plain keys of a `Dict` or an `IdDict` are paired by lookup. Every other entry of `a`
+# is paired with a stored entry of `b` of the same shape (`_entry_shape`): the one the
+# alias maps already give its key, or else one chosen by `_paired_entry`.
 function _same_entries(a::AbstractDict, b::AbstractDict, seen::IdDict{Any, Any}, back::IdDict{Any, Any},
         pairings::_Pairings)
     length(a) == length(b) || return false
+    lookup = a isa Union{Dict, IdDict}
     others = Pair[]
     for (k, v) in a
-        if _plain_key(k)
+        if lookup && _plain_key(k)
             _same_state(k, _looked_up_key(b, k), seen, back, pairings) || return false
             _same_state(v, b[k], seen, back, pairings) || return false
         else
             push!(others, k => v)
         end
     end
-    entries = Pair[k => v for (k, v) in b if !_plain_key(k)]
+    entries = Pair[k => v for (k, v) in b if !(lookup && _plain_key(k))]
     length(entries) == length(others) || return false
     groups = Dict{UInt, Vector{Int}}()
     for (j, (k, v)) in enumerate(entries)
