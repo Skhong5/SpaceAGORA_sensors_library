@@ -94,6 +94,7 @@ end
         _copy_into!(fixture, repo, "src")
         _copy_into!(fixture, repo, "Project.toml")
         _copy_into!(fixture, repo, joinpath("docs", "Project.toml"))
+        _copy_into!(fixture, repo, joinpath("test", "Project.toml"))
         _copy_into!(fixture, repo, joinpath("build", "build_sysimage.jl"))
         _copy_into!(fixture, repo, joinpath("packages", "SpaceAGORAHYPR", "src"))
 
@@ -135,6 +136,21 @@ end
             @test docs_without != docs_original
             _with_text(docs_project_path, docs_without) do
                 @test _failed_with(run_gate(), "Missing compat entries in docs/Project.toml: Documenter")
+            end
+            @test isnothing(run_gate().failure)
+
+            # So do the test environment's.
+            test_project_path = joinpath(fixture, "test", "Project.toml")
+            test_original = read(test_project_path, String)
+            @test haskey(TOML.parsefile(test_project_path)["compat"], "Aqua")
+            # Remove the entry from the [compat] table only; [deps] lists the same name first.
+            test_compat_start = first(findfirst("[compat]", test_original))
+            test_without = test_original[1:test_compat_start - 1] *
+                replace(test_original[test_compat_start:end], r"^Aqua = .*\n"m => ""; count=1)
+            @test !haskey(TOML.parse(test_without)["compat"], "Aqua")
+            @test haskey(TOML.parse(test_without)["deps"], "Aqua")
+            _with_text(test_project_path, test_without) do
+                @test _failed_with(run_gate(), "Missing compat entries in test/Project.toml: Aqua")
             end
             @test isnothing(run_gate().failure)
         end
