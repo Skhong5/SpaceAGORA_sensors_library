@@ -85,6 +85,14 @@ const GUIDANCE_FORBIDDEN_PATTERNS = (
     r"\.\s*thrust\s*\[" => "guidance must not mutate thruster thrust state directly",
 )
 
+# Comparison execution owns the concrete six-axis actuator used by its plant.
+# Permit that one binding only; every other thruster dependency/state access and
+# the GNC-wide checks below still apply to this file.
+function _guidance_scan_source(rel::String, src::String)
+    rel == joinpath("src", "interfaces", "analysis", "planning", "rpo_comparison_tracking.jl") || return src
+    return replace(src, r"(?m)^using \.\.ThrusterModels: SixAxisThrusterModel$" => ""; count=1)
+end
+
 violations = String[]
 
 for root in GNC_ROOTS
@@ -104,8 +112,9 @@ for root in GNC_ROOTS
             end
 
             if root in GUIDANCE_ROOTS
+                guidance_src = _guidance_scan_source(rel, src)
                 for (rx, message) in GUIDANCE_FORBIDDEN_PATTERNS
-                    occursin(rx, src) || continue
+                    occursin(rx, guidance_src) || continue
                     push!(violations, "$rel: $message")
                 end
             end
