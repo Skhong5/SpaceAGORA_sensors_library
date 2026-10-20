@@ -148,9 +148,18 @@ struct ScaledAero <: SM.AbstractForceTorqueModel
 end
 @inline SM.environment_requirements(::ScaledAero) =
     SM.EffectorEnvironmentRequirements(planet_frame=true, atmosphere=true)
-function SM.calcForceTorque(m::ScaledAero, x::AbstractVector, param::SM.ODEParams, i::Int64)
-    f, τ = SM.calcForceTorque(m.model, x, param, i)
-    c = m.scales[min(i, length(m.scales))]
+_drag_scale(m::ScaledAero, i::Int) = m.scales[clamp(i, 1, length(m.scales))]
+function SM.wrench(m::ScaledAero, x::SM.StateSample, env::SM.EnvironmentSample, t::Float64)
+    f, τ = SM.wrench(m.model, x, env, t)
+    c = _drag_scale(m, x.spacecraft_index)
+    return c .* f, c .* τ
+end
+# The dynamics evaluate the wrapped model through its caching hook, which writes
+# its drag diagnostics, unscaled.
+function SM.wrench_caching!(m::ScaledAero, x::SM.StateSample, env::SM.EnvironmentSample, t::Float64,
+        param::SM.ODEParams, i::Int)
+    f, τ = SM.wrench_caching!(m.model, x, env, t, param, i)
+    c = _drag_scale(m, i)
     return c .* f, c .* τ
 end
 

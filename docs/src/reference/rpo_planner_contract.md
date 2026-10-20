@@ -255,10 +255,8 @@ and need the optional HYPR companion, as the comparison does.
 The comparison harness, `RPOPlannerComparisonConfig`, takes these objects in
 `planners`; by default it compares all seven, built from its own settings
 fields. Selecting a mode by name (`:rrt_star`, `"rrt-star"` and the other
-aliases) still works but is deprecated: the harness resolves the name to the same
-object and warns once per planner type before planning, and
-`julia --depwarn=error` refuses the name. A name and its object give
-bit-identical plans.
+aliases) was removed in SpaceAGORA 0.5.0: pass the object. The names remain the
+identifiers and labels of the comparison's report rows.
 
 ## Adapter planning headroom
 

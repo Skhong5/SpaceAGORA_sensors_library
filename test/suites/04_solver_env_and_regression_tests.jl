@@ -904,7 +904,8 @@
     @test SimulationEngine._nbody_ephemeris_reuse_key("earth", ["moon", "sun"], 0.0, 10.0, 1.0) isa SimulationEngine.NBodyEphemerisReuseKey
     @test SimulationEngine._planet_frame_ephemeris_reuse_key(EARTH, SpiceEphemeridesModel(), 0.0, 10.0, 1.0) isa SimulationEngine.PlanetFrameEphemerisReuseKey
     @test _wrench_method_available(WrenchOnlyForceModel(SVector{3, Float64}(1.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0)))
-    @test !_wrench_method_available(ConstantForceModel(SVector{3, Float64}(1.0, 0.0, 0.0)))
+    @test _wrench_method_available(ConstantForceModel(SVector{3, Float64}(1.0, 0.0, 0.0)))
+    @test !_wrench_method_available(NoWrenchForceModel())
     @test SimulationModel.solver_partition(AerodynamicCoefficientConstant()) == :implicit
     @test SimulationModel.solver_partition(AerodynamicCoefficientfM()) == :implicit
     @test SimulationModel.solver_partition(AerodynamicCoefficientNoBallisticFlight()) == :implicit
@@ -927,7 +928,7 @@
         orientation_state=(q0_wrench, ω0_wrench)
     )
     sc_wrench.inertia_tensor = SMatrix{3, 3, Float64}(2.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 4.0)
-    legacy_force = SVector{3, Float64}(1.0, 2.0, 3.0)
+    constant_force = SVector{3, Float64}(1.0, 2.0, 3.0)
     typed_force = SVector{3, Float64}(4.0, 5.0, 6.0)
     typed_torque = SVector{3, Float64}(0.2, -0.1, 0.3)
     args_wrench_mix = build_config(
@@ -937,7 +938,7 @@
         mission_time=30.0,
         EI_km=120.0,
         dynamic_effectors=(
-            ConstantForceModel(legacy_force),
+            ConstantForceModel(constant_force),
             WrenchOnlyForceModel(typed_force, typed_torque),
         ),
         keplerian=true
@@ -947,7 +948,7 @@
     du0_wrench_mix .= 0.0
     p_wrench_mix = ODEParams(n_sats=1, args=args_wrench_mix)
     spacecraft_dynamics!(du0_wrench_mix, u0_wrench_mix, p_wrench_mix, 0.0)
-    expected_force_mix = legacy_force + typed_force
+    expected_force_mix = constant_force + typed_force
     @test isapprox(SVector{3, Float64}(du0_wrench_mix.sc[1].vel), expected_force_mix / u0_wrench_mix.sc[1].mass; atol=1e-12, rtol=1e-10)
     @test isapprox(
         SVector{3, Float64}(du0_wrench_mix.sc[1].ω),

@@ -12,11 +12,13 @@
 # overwrites the state and reports how far the propagated state was from the
 # anchor, which is the open-loop drift of the segment just ended.
 
+using ..HookDeprecation: _renamed_field_warning, _renamed_keyword, _NOT_PASSED
+
 """
-    StateAnchor(elapsed_s, sat_idx, state; orbit_count=nothing)
+    StateAnchor(elapsed_s, spacecraft_index, state; orbit_count=nothing)
 
 A scheduled state anchor: at `elapsed_s` seconds after the initial time,
-satellite `sat_idx`'s inertial position and velocity are replaced by `state`
+spacecraft `spacecraft_index`'s inertial position and velocity are replaced by `state`
 (six components: position in m, velocity in m/s, in the run's planet-centred
 inertial axes). With `orbit_count` given, the satellite's orbit counter is set
 to it as well: the value the counter holds between the apoapsis the anchored
@@ -25,29 +27,35 @@ increments at every apoapsis). That keeps orbit-keyed logic such as the
 campaign burn replay aligned with the anchored trajectory when the propagated
 one had drifted across an apoapsis crossing. Build the callback with
 [`get_state_anchor_callback`](@ref).
+
+`sat_idx`, the old name of the `spacecraft_index` property, still works with a
+deprecation warning until SpaceAGORA 1.0.
 """
 struct StateAnchor
     elapsed_s::Float64
-    sat_idx::Int
+    spacecraft_index::Int
     pos_ii_m::SVector{3, Float64}
     vel_ii_mps::SVector{3, Float64}
     orbit_count::Union{Nothing, Int}
 end
 
-function StateAnchor(elapsed_s::Real, sat_idx::Integer, state::AbstractVector{<:Real}; orbit_count::Union{Nothing, Integer}=nothing)
+function StateAnchor(elapsed_s::Real, spacecraft_index::Integer, state::AbstractVector{<:Real}; orbit_count::Union{Nothing, Integer}=nothing)
     length(state) == 6 || throw(ArgumentError("StateAnchor state must have six components (position m, velocity m/s); got $(length(state))."))
     isfinite(elapsed_s) || throw(ArgumentError("StateAnchor elapsed_s must be finite; got $elapsed_s."))
     all(isfinite, state) || throw(ArgumentError("StateAnchor state must be finite."))
-    sat_idx >= 1 || throw(ArgumentError("StateAnchor sat_idx must be >= 1; got $sat_idx."))
+    spacecraft_index >= 1 || throw(ArgumentError("StateAnchor spacecraft_index must be >= 1; got $spacecraft_index."))
     orbit_count === nothing || orbit_count >= 1 || throw(ArgumentError("StateAnchor orbit_count must be >= 1; got $orbit_count."))
     return StateAnchor(
         Float64(elapsed_s),
-        Int(sat_idx),
+        Int(spacecraft_index),
         SVector{3, Float64}(state[1], state[2], state[3]),
         SVector{3, Float64}(state[4], state[5], state[6]),
         orbit_count === nothing ? nothing : Int(orbit_count),
     )
 end
+# The deprecated name forwards as a property.
+@inline Base.getproperty(a::StateAnchor, name::Symbol) =
+    getfield(a, name === :sat_idx ? _renamed_field_warning(StateAnchor, :sat_idx, :spacecraft_index) : name)
 
 const _STATE_ANCHOR_TIME_TOL_S = 1.0e-6
 
@@ -103,19 +111,19 @@ function get_state_anchor_callback(anchors::AbstractVector{StateAnchor}; verbose
         k = next[]
         @inbounds while k <= length(times) && abs(t - times[k]) <= _STATE_ANCHOR_TIME_TOL_S
             anchor = sorted[k]
-            r_before = engine._state_position_ii(u, anchor.sat_idx)
-            v_before = engine._state_velocity_ii(u, anchor.sat_idx)
-            engine._set_state_position_velocity_ii!(u, anchor.sat_idx, anchor.pos_ii_m, anchor.vel_ii_mps)
-            _invalidate_environment_samples!(p, anchor.sat_idx)
-            count_before = anchor.sat_idx <= length(p.orbit_counter) ? p.orbit_counter[anchor.sat_idx] : 0
-            if anchor.orbit_count !== nothing && anchor.sat_idx <= length(p.orbit_counter)
-                p.orbit_counter[anchor.sat_idx] = anchor.orbit_count
+            r_before = engine._state_position_ii(u, anchor.spacecraft_index)
+            v_before = engine._state_velocity_ii(u, anchor.spacecraft_index)
+            engine._set_state_position_velocity_ii!(u, anchor.spacecraft_index, anchor.pos_ii_m, anchor.vel_ii_mps)
+            _invalidate_environment_samples!(p, anchor.spacecraft_index)
+            count_before = anchor.spacecraft_index <= length(p.orbit_counter) ? p.orbit_counter[anchor.spacecraft_index] : 0
+            if anchor.orbit_count !== nothing && anchor.spacecraft_index <= length(p.orbit_counter)
+                p.orbit_counter[anchor.spacecraft_index] = anchor.orbit_count
             end
             if verbose
                 dr = norm(r_before - anchor.pos_ii_m)
                 dv = norm(v_before - anchor.vel_ii_mps)
                 count_note = anchor.orbit_count === nothing ? "" : " orbit_count=$(anchor.orbit_count) was=$(count_before)"
-                println("state_anchor sat=$(anchor.sat_idx) index=$k t_s=$t drift_pos_m=$(round(dr, digits=3)) drift_vel_mps=$(round(dv, digits=6))$(count_note)")
+                println("state_anchor sat=$(anchor.spacecraft_index) index=$k t_s=$t drift_pos_m=$(round(dr, digits=3)) drift_vel_mps=$(round(dv, digits=6))$(count_note)")
             end
             k += 1
         end
@@ -165,24 +173,28 @@ function periapsis_pulse_osculating(pos::SVector{3, Float64}, vel::SVector{3, Fl
     return 2.0 * pi * sqrt(abs(a)^3 / mu), h2 / mu / (1.0 + ecc)
 end
 
+const _PULSE_RDOTV_OFFSET = 1.0   # m^2/s; see the condition in get_periapsis_pulse_callback
+
 """
-    get_periapsis_pulse_callback(delta_v_mps, passes; counter_pass_offset=0, sat_idx=1, verbose=true)
+    get_periapsis_pulse_callback(delta_v_mps, passes; counter_pass_offset=0, spacecraft_index=1, verbose=true)
 
 Continuous callback that, at every periapsis (radial velocity crossing from
-negative to positive) of satellite `sat_idx` whose pass number
+negative to positive) of spacecraft `spacecraft_index` whose pass number
 `orbit_counter + counter_pass_offset` is in `passes`, subtracts `delta_v_mps`
 from the velocity along the unit vector of the velocity relative to the
 rotating atmosphere (no wind). With `verbose` on, one `periapsis_pulse` line per
 pulse reports the pass, the time, the altitude and the two-body change in period
-and periapsis radius the pulse makes.
+and periapsis radius the pulse makes. `sat_idx`, the keyword's old name, still
+works with a deprecation warning until SpaceAGORA 1.0.
 """
-const _PULSE_RDOTV_OFFSET = 1.0   # m^2/s; see the condition in get_periapsis_pulse_callback
-
-function get_periapsis_pulse_callback(delta_v_mps::Real, passes; counter_pass_offset::Integer=0, sat_idx::Integer=1, verbose::Bool=true)
+function get_periapsis_pulse_callback(delta_v_mps::Real, passes; counter_pass_offset::Integer=0,
+        spacecraft_index=_NOT_PASSED, sat_idx=_NOT_PASSED, verbose::Bool=true)
+    index = _renamed_keyword(get_periapsis_pulse_callback, :sat_idx, sat_idx, :spacecraft_index, spacecraft_index, 1)
+    index isa Integer || throw(TypeError(:get_periapsis_pulse_callback, "spacecraft_index", Integer, index))
     isfinite(delta_v_mps) && delta_v_mps >= 0 || throw(ArgumentError("periapsis pulse delta_v_mps must be finite and >= 0; got $delta_v_mps."))
     pass_set = Set{Int}(Int.(collect(passes)))
     dv = Float64(delta_v_mps)
-    sat = Int(sat_idx)
+    sat = Int(index)
     last_pulsed = Ref(typemin(Int))   # pass already pulsed: the root can be reported more than once at one time
 
     # The orbit counter's apsis callback also locates the r.v root at periapsis (as an ignored

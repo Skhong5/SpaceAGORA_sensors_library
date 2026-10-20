@@ -1,19 +1,19 @@
-"""Shared pre-run warnings, including renamed or retired extension hooks."""
+"""Shared once-per-key warnings: deprecated names and pre-run configuration checks."""
 module HookDeprecation
 
 """
     _hook_deprecation(key::Tuple, msg::String)
 
-Warn once per process about a deprecated extension hook, with `key` naming the
-model type and the hook, for example `(MyEffector, :calcForceTorque)`. Under
+Warn once per process about a deprecated name, with `key` naming its owner and
+the old name, for example `(StateAnchor, :sat_idx)`. Under
 `julia --depwarn=error` it throws an `ErrorException` with `msg` instead, so a
-test run can refuse deprecated hooks.
+test run can refuse deprecated names.
 
-The run calls this before integration, for each configured model type that
-implements a deprecated hook. `Base.depwarn` is not used: its once-only filter
-is keyed on the call site, so one check over several model types would warn
-about the first type only, and it is silent unless Julia runs with
-`--depwarn=yes`.
+Its callers are deprecated names in use: an old keyword passed, or an old
+property read or written (the renamed index names below, for example).
+`Base.depwarn` is not used: its once-only filter is keyed on the call site, so
+one call site shared by several owners would warn about the first owner only,
+and it is silent unless Julia runs with `--depwarn=yes`.
 """
 function _hook_deprecation(key::Tuple, msg::String)
     return _preflight_warning(key, msg; group=:depwarn)
@@ -32,35 +32,38 @@ function _preflight_warning(key::Tuple, msg::String; group::Symbol=:preflight)
     return nothing
 end
 
-# Renamed index fields (spacecraft_index, chaser_index, target_index): a model
-# type's old keyword and property both warn through `_hook_deprecation`, keyed by
-# `(type, old name)`, so the warning shows once per type and name.
-@noinline function _renamed_field_warning(::Type{T}, old::Symbol, new::Symbol) where {T}
-    _hook_deprecation((T, old),
-        "$(nameof(T)).$(old) is deprecated and will be removed in SpaceAGORA 0.5.0; use $(new) instead: " *
+# Old-style index names deprecated in 0.5.0 (`SchedulingPolicyModel.target_idx`
+# and `target_idxs`, `StateAnchor.sat_idx`, the `sat_idx` keyword of
+# `get_periapsis_pulse_callback`): an old keyword or property warns through
+# `_hook_deprecation`, keyed by `(owner, old name)`, so the warning shows once per
+# owner and name. The owner is the type or the function that had the name.
+_renamed_name(owner::Type, old::Symbol) = "$(nameof(owner)).$(old)"
+_renamed_name(owner::Function, old::Symbol) = "The $(old) keyword of $(nameof(owner))"
+@noinline function _renamed_field_warning(owner, old::Symbol, new::Symbol)
+    _hook_deprecation((owner, old),
+        "$(_renamed_name(owner, old)) is deprecated and will be removed in SpaceAGORA 1.0; use $(new) instead: " *
         "only the name changes.")
     return new
 end
 
 # The default of a renamed keyword and of its old name: "not passed". It is not
-# `nothing`, so an explicit `nothing` reaches the field and is refused there.
+# `nothing`, so an explicit `nothing` reaches the field.
 struct _NotPassed end
 const _NOT_PASSED = _NotPassed()
 
 """
-    _renamed_keyword(T, old, old_value, new, new_value, default)
+    _renamed_keyword(owner, old, old_value, new, new_value, default)
 
-The value of a constructor keyword that was renamed from `old` to `new`, where
-`_NOT_PASSED` means "not passed" (any other value, `nothing` included, counts as
-passed). Passing `old` warns once per type and name (see
-`_renamed_field_warning`); passing both names throws an `ArgumentError`; passing
-neither gives `default`.
+The value of a keyword that was renamed from `old` to `new`, where `_NOT_PASSED`
+means "not passed" (any other value, `nothing` included, counts as passed).
+Passing `old` warns once per owner and name (see `_renamed_field_warning`);
+passing both names throws an `ArgumentError`; passing neither gives `default`.
 """
-function _renamed_keyword(::Type{T}, old::Symbol, old_value, new::Symbol, new_value, default) where {T}
+function _renamed_keyword(owner, old::Symbol, old_value, new::Symbol, new_value, default)
     old_value === _NOT_PASSED && return new_value === _NOT_PASSED ? default : new_value
     new_value === _NOT_PASSED || throw(ArgumentError(
-        "$(nameof(T)): pass $(new) only; $(old) is its deprecated name."))
-    _renamed_field_warning(T, old, new)
+        "$(nameof(owner)): pass $(new) only; $(old) is its deprecated name."))
+    _renamed_field_warning(owner, old, new)
     return old_value
 end
 

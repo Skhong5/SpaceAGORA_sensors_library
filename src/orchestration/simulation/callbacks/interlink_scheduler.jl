@@ -1,17 +1,21 @@
 # Accepted-step scheduling and history recording belong to simulation orchestration.
-using ..InterLinkModels: InterLinkHistory
+using ..InterLinkModels: InterLinkHistory, LinkContext
 using ..SchedulingPolicies: schedule_interlinks!
 
 export interlink_scheduler_callback
 
 # Update the matching and its recorded history at initialization and accepted steps.
-function interlink_scheduler_callback(; candidate_force)
+# The links score by their own `link_force`; `candidate_force` overrides it for
+# callers that pass one (`candidate_force(target, partner, link)`).
+function interlink_scheduler_callback(; candidate_force=nothing)
 	function affect!(integrator)
 		args = integrator.p.args
 		model = args.interlink_model
+		planet = args.environment_model.planet
 		selected = schedule_interlinks!(model, args.scheduling_policy_model,
-			args.dynamics_model.spacecraft, integrator.u, args.environment_model.planet.μ;
-			candidate_force, is_active=integrator.p.is_active)
+			args.dynamics_model.spacecraft, integrator.u, planet.μ;
+			candidate_force, is_active=integrator.p.is_active,
+			context=LinkContext(time_s=Float64(integrator.t), planet=planet))
 		sample = InterLinkHistory(Float64(integrator.t), selected)
 		if !isempty(model.history) && model.history[end].time == sample.time
 			model.history[end] = sample

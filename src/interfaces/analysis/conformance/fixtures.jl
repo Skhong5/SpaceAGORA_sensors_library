@@ -13,14 +13,14 @@ to the hooks. Build it with [`conformance_fixture`](@ref).
 - `arguments`: the configuration the engine's pre-run hook check reads, after the
   same per-spacecraft GNC flattening and density epoch alignment `run_simulation`
   applies first.
-- `call`: the run's state, spacecraft-view and parameter types, as the pre-run
-  check derives them from `build_initial_conditions` and `ODEParams`.
+- `call`: the run's state and parameter types, as the pre-run check derives them
+  from `build_initial_conditions` and `ODEParams`.
 - `solver_mode`: the solver mode of the run.
 """
 struct ConformanceFixture{C, A}
     configuration::C
     arguments::A
-    call::NamedTuple{(:state, :spacecraft, :params)}
+    call::NamedTuple{(:state, :params)}
     solver_mode::Symbol
 end
 

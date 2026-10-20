@@ -4,7 +4,7 @@ module SimConfig
     export SolverConfig
     using ..AbstractTypes: AbstractPlanet, AbstractDensityModel, AbstractThermalModel, AbstractEphemeridesModel
     using ..SpacecraftModels: DynamicsModel, GuidanceModel, ControlModel, NavigationModel
-    using ..InterLinkModels: ConstellationInterLinkModel
+    using ..InterLinkModels: InterlinkModel
     using ..SchedulingPolicies: SchedulingPolicyModel
     using ..EphemeridesModels: SpiceEphemeridesModel
     using ..Planets: Earth

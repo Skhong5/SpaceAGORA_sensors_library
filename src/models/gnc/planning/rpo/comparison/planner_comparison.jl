@@ -43,12 +43,10 @@ Configuration for running and exporting RPO planner comparison batches.
 `RRTStarPlanner`, `CHOMPPlanner` and `STOMPPlanner`. The default is all seven,
 built from this configuration's `pso_config`, `rrt_connect`, `rrt_star`, `chomp`,
 `stomp` and `optimizer`. An object carries its own settings, so a configuration
-rebuilt from these fields with other settings keeps the objects' settings. Symbol
-selections (`:hypr`, `:rrt_star`, ...) are deprecated: the harness resolves each to
-the object built from these fields and warns once per planner before it plans.
+rebuilt from these fields with other settings keeps the objects' settings.
 """
 struct RPOPlannerComparisonConfig
-    planners::Vector{Union{Symbol, AbstractRPOComparisonPlanner}}
+    planners::Vector{AbstractRPOComparisonPlanner}
     pso_config::RPOPSOConfig
     rrt_connect::RPORRTConnectSettings
     rrt_star::RPORRTStarSettings
@@ -86,9 +84,6 @@ function RPOPlannerComparisonConfig(;
 end
 
 const _RPO_COMPARISON_PLANNER_IDS = (:hypr, :pso_unrefined, :rrt_connect, :rrt_connect_bezier, :rrt_star, :chomp, :stomp)
-const _RPO_COMPARISON_PLANNER_TYPE_NAMES = (hypr="HYPRComparisonPlanner", pso_unrefined="UnrefinedPSOPlanner",
-    rrt_connect="RRTConnectPlanner", rrt_connect_bezier="RRTConnectBezierPlanner", rrt_star="RRTStarPlanner",
-    chomp="CHOMPPlanner", stomp="STOMPPlanner")
 
 # The object a canonical identifier selects, built from configuration settings fields.
 function _rpo_comparison_planner(id::Symbol, pso_config, rrt_connect, rrt_star, chomp, stomp, optimizer)
@@ -104,31 +99,6 @@ end
 _rpo_comparison_planners(pso_config, rrt_connect, rrt_star, chomp, stomp, optimizer) =
     AbstractRPOComparisonPlanner[_rpo_comparison_planner(id, pso_config, rrt_connect, rrt_star, chomp, stomp, optimizer)
         for id in _RPO_COMPARISON_PLANNER_IDS]
-
-"""
-    _rpo_comparison_planner(selection, cfg) -> AbstractRPOComparisonPlanner
-
-Resolve one planner selection of the comparison configuration `cfg`. An object is
-returned as it is. A Symbol or string is the deprecated selection: its canonical
-identifier selects the object built from `cfg`'s settings fields, after a pre-run
-deprecation warning, once per planner type, through `_hook_deprecation`; under
-`--depwarn=error` the selection throws instead. Unknown names are refused first.
-"""
-_rpo_comparison_planner(planner::AbstractRPOComparisonPlanner, cfg::RPOPlannerComparisonConfig) = planner
-function _rpo_comparison_planner(selection, cfg::RPOPlannerComparisonConfig)
-    id = normalize_rpo_comparison_planner_type(selection)
-    planner = _rpo_comparison_planner(id, cfg.pso_config, cfg.rrt_connect, cfg.rrt_star, cfg.chomp, cfg.stomp,
-        cfg.optimizer)
-    _rpo_comparison_selection_deprecation(typeof(planner), id)
-    return planner
-end
-@noinline function _rpo_comparison_selection_deprecation(::Type{T}, id::Symbol) where {T}
-    _hook_deprecation((T, :symbol_planner_selection),
-        "Selecting the RPO comparison planner $(repr(id)) by name is deprecated; pass " *
-        "$(_RPO_COMPARISON_PLANNER_TYPE_NAMES[id])(...) instead. RPOPlannerComparisonConfig() builds all " *
-        "seven planner objects from its settings fields. Name selection will be removed in a later release.")
-    return nothing
-end
 
 """Return the comparison config with planner cost safety pinned to the published 0.5 m value."""
 function _rpo_comparison_config_with_fixed_safe_distance(cfg::RPOPlannerComparisonConfig)
@@ -281,13 +251,11 @@ end
 Run one planner on one RPO comparison case and collect comparable metrics. The
 required `rng` is the only random stream the planner draws from.
 
-`planner_type` is one of the seven comparison planner objects, which runs with its
-own settings and this comparison's fixed safety distance. A Symbol or string
-selects the object built from `cfg`'s settings fields; that selection is deprecated
-and warns once per planner, before HYPR is required or any planning starts.
+`planner` is one of the seven comparison planner objects, which runs with its own
+settings and this comparison's fixed safety distance.
 """
 function rpo_plan_comparison_path(
-    planner_type,
+    planner::AbstractRPOComparisonPlanner,
     start_rtn,
     goal_rtn,
     geometry,
@@ -297,7 +265,6 @@ function rpo_plan_comparison_path(
     warmstart_path=nothing,
 )
     cfg = _rpo_comparison_config_with_fixed_safe_distance(cfg)
-    planner = _rpo_comparison_planner(planner_type, cfg)
     HYPRSupport.require_hypr()
     id = normalize_rpo_comparison_planner_type(planner)
     base_cfg = rpo_pso_config(planner.config; safe_distance_m=cfg.safe_distance_m)
@@ -430,8 +397,7 @@ end
 """Run all configured RPO planners across all comparison cases."""
 function rpo_run_planner_comparison_batch(cases, geometry, cfg::RPOPlannerComparisonConfig=RPOPlannerComparisonConfig())
     cfg = _rpo_comparison_config_with_fixed_safe_distance(cfg)
-    # Deprecated name selections resolve, and warn, here, before any case runs.
-    planners = AbstractRPOComparisonPlanner[_rpo_comparison_planner(p, cfg) for p in cfg.planners]
+    planners = copy(cfg.planners)
     HYPRSupport.require_hypr()
     comparison_cases = collect(cases)
     planner_types = [normalize_rpo_comparison_planner_type(p) for p in planners]

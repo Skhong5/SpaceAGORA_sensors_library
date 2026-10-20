@@ -131,20 +131,20 @@ A public name that is renamed or retired keeps working for a deprecation window
 of at least one tagged release:
 
 - The old name is still exported, and its docstring opens with "Deprecated,
-  use ...". The deprecated hooks are listed together on the
-  [Deprecated Hooks API](generated/deprecated_hooks_api.md) page.
+  use ...". The [Extension Hook Reference](generated/extension_hook_reference.md)
+  gives a deprecated hook's replacement.
 - A model that implements a deprecated hook still runs. The pre-run check warns
   once per model type and old name before integration, never during the solve.
 - `julia --depwarn=error` turns these warnings into errors, so a test run can
   refuse deprecated hooks.
-- Deprecated hook names are removed in SpaceAGORA 0.5.0, or 1.0 if that comes
-  first. They are not removed before a tagged release has carried the warnings
-  and the companion packages have moved.
+- A deprecated name is removed in a later release, not before a tagged release
+  has carried the warnings and the companion packages have moved. SpaceAGORA
+  0.5.0 removed the hook names 0.3.0 deprecated.
 - Release numbers follow `version` in `Project.toml`.
 
 The [deprecation rules](reference/extension_conventions.md#Deprecations) give
 the details, and [Migrating Extension Hooks](reference/migrating_extension_hooks.md)
-maps every deprecated name to its replacement, with the schedule.
+maps every old hook name to its replacement, with the schedule.
 
 Internal modules are not covered: they may change without a deprecation window,
 as long as the root exported API stays stable.

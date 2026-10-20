@@ -8,8 +8,8 @@ The public opt-in [RPO pilot](../src/user/rpo_planner_pilot.md) connects neutral
 references and results to simulation initialization and accepted guidance updates.
 The contract and direct baseline load with standard libraries without HYPR source.
 This contract-level separation does not yet make the installed package independent
-of HYPR. Existing `RPOGuidanceModel`, buffer layouts and controller mathematics
-retain their compatibility route.
+of HYPR. Buffer layouts and controller mathematics retain their compatibility
+route.
 
 The internal modules, described in their source header comments:
 
@@ -246,11 +246,9 @@ top-level `RPOComparisonPlanning` module, after `SimulationModel`, as the HYPR
 adapter's do. One function per mode, `_rpo_comparison_planner_path`, runs the
 kernels for both the harness (with the fixed 0.5 m safety distance) and
 `plan_rpo!` (with the request's mapped settings), so the two routes share kernels,
-settings and draw order. The deprecated name selection resolves a name to the
-object built from the configuration's settings fields, at the batch entry and the
-direct entry, before the HYPR check; the warning goes through `_hook_deprecation`
-with the key `(planner type, :symbol_planner_selection)`. The identifier and label
-helpers stay pure. Report rows, keys and labels keep the canonical identifiers.
+settings and draw order. Both entries take planner objects only (selection by
+name was removed in 0.5.0). The identifier and label helpers stay pure. Report
+rows, keys and labels keep the canonical identifiers.
 
 ## Lifecycle source ownership
 

@@ -243,7 +243,7 @@ model's torque. Mounted torque rods act in this field.
 function rod_field_body(model::MagneticTorqueRodModel, pos_ii::SVector{3, Float64}, q_ib::SVector{4, Float64}, param::ODEParams)::SVector{3, Float64}
     et = param.shared_buffers.et_start[] + param.shared_buffers.current_time[]
     planet = param.args.environment_model.planet
-    l_pi = _ephemerides_frame_lpi(param.args.environment_model.ephemerides_model, planet, et)
+    l_pi = ephemerides_frame_lpi(param.args.environment_model.ephemerides_model, planet, et)
     pos_pp = l_pi * pos_ii
     if model.field_model === :igrf
         alt_m, lat_rad, lon_rad = rtolatlong(pos_pp, planet)

@@ -122,11 +122,10 @@ function _build_block_diagonal_jac_prototype(
 end
 
 # Satellite-index fields an effector uses to name a satellite other than the one
-# it is being evaluated for (`chaser_idx` and `target_idx` are the older names,
-# kept by `RPOGuidanceModel` and contributor models). An effector carrying two of
-# these with different values reads across satellites, so its contribution to the
-# Jacobian lands off-block.
-const _CROSS_SATELLITE_INDEX_FIELDS = (:chaser_index, :target_index, :chaser_idx, :target_idx)
+# it is being evaluated for. An effector carrying two of these with different
+# values reads across satellites, so its contribution to the Jacobian lands
+# off-block.
+const _CROSS_SATELLITE_INDEX_FIELDS = (:chaser_index, :target_index)
 
 """Return whether `effector` reads state belonging to more than one satellite."""
 @inline function _effector_couples_satellites(effector)::Bool
@@ -414,7 +413,7 @@ _without_gnc(sc::SimulationModel.SpacecraftModel) = SimulationModel.SpacecraftMo
     sc.initial_condition, sc.id,
     SimulationModel.GuidanceModel((), Float64[]), SimulationModel.NavigationModel((), Float64[]),
     SimulationModel.ControlModel((), Float64[]), sc.attachments,
-    sc.n_terminal, sc.battery_energy_index, sc.tempurature_index)
+    sc.n_terminal, sc.battery_energy_index, sc.tempurature_index, sc.constellation_slot)
 
 """
 Fold per-spacecraft GNC declarations (`SpacecraftModel` `guidance`/`navigation`/`control`) into the
@@ -610,6 +609,7 @@ function run_simulation(
     _validate_attachments!(args, solver_mode)
     _validate_external_propagators!(args, solver_mode)
     _validate_interlinks!(args, solver_mode)
+    _warn_repeated_spacecraft_ids(args)
     _validate_orientation_inertia!(args)
     _validate_thermal_model_support!(args)
     _validate_ephemerides_support!(args)
@@ -689,13 +689,12 @@ function run_simulation(
         record_saved_values=return_results
     ) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
     if args.interlink_model !== nothing
-        callbacks = CallbackSet(callbacks, SimulationModel.interlink_scheduler_callback(
-            candidate_force=SimulationModel.force_on_endpoint))
+        callbacks = CallbackSet(callbacks, SimulationModel.interlink_scheduler_callback())
     end
     ephemerides_model = args.environment_model.ephemerides_model
-    et_start = SimulationModel.EphemeridesModels._ephemerides_epoch_seconds(ephemerides_model, args.initial_time)
+    et_start = SimulationModel.EphemeridesModels.ephemerides_epoch_seconds(ephemerides_model, args.initial_time)
     p.shared_buffers.et_start[] = et_start
-    args.environment_model.planet.L_PI .= SimulationModel.EphemeridesModels._ephemerides_frame_lpi(ephemerides_model, args.environment_model.planet, et_start)
+    args.environment_model.planet.L_PI .= SimulationModel.EphemeridesModels.ephemerides_frame_lpi(ephemerides_model, args.environment_model.planet, et_start)
     if SimulationModel.ephemerides_requires_spice(ephemerides_model)
         Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.planet_pxform_runtime_calls, 1)
     end
@@ -710,7 +709,7 @@ function run_simulation(
 
     t_start = 0.0
     u_start = initial_conditions
-    resumed, model_snapshot, pending_ticks_s = false, nothing, NaN
+    resumed, model_snapshot, pending_ticks = false, nothing, (at_s=NaN, from_s=-Inf, clocks=nothing)
     if args.simulation_settings.resume_from_checkpoint
         ckpt = _load_checkpoint(args)
         if ckpt === nothing
@@ -735,7 +734,7 @@ function run_simulation(
             _restore_interlink_checkpoint_state!(args, ckpt, p.is_active)
             _restore_callback_checkpoint_state!(args, ckpt, p)
             model_snapshot = _check_model_checkpoint_state(args, ckpt)
-            pending_ticks_s = _pending_periodic_ticks_s(ckpt)
+            pending_ticks = _pending_periodic_ticks(ckpt)
             resumed = true
             t_start = ckpt.t
             u_start = ckpt.u
@@ -760,7 +759,9 @@ function run_simulation(
     run_clock = checkpoint_active || resumed
     p.shared_buffers.periodic_clock_origin_s[] = run_clock ? 0.0 : NaN
     p.shared_buffers.periodic_clock_horizon_s[] = run_clock ? Float64(mission_end) : NaN
-    p.shared_buffers.periodic_clock_pending_s[] = pending_ticks_s
+    p.shared_buffers.periodic_clock_pending_s[] = pending_ticks.at_s
+    p.shared_buffers.periodic_clock_pending_from_s[] = pending_ticks.from_s
+    p.shared_buffers.periodic_clock_pending_clocks[] = pending_ticks.clocks
     # The links first (each initialized once), then the control clocks, then
     # navigation, guidance and control: each stage may read what the previous one
     # set up.
@@ -992,7 +993,7 @@ function run_simulation(
         u_cursor = deepcopy(u_start)
 
         while t_cursor < mission_end
-            t_next = min(t_cursor + interval, mission_end)
+            t_next = _checkpoint_segment_end(t_cursor, interval, mission_end)
             empty!(saved_values.t)
             empty!(saved_values.saveval)
             p.shared_buffers.solve_segment_end_time[] = t_next
@@ -1064,7 +1065,7 @@ function run_simulation(
             u_cursor = deepcopy(seg_sol.u[end])
             _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode); is_active=p.is_active,
                 callback_state=_callback_checkpoint_state(args), model_state=_model_checkpoint_state(args),
-                periodic_ticks=_periodic_tick_checkpoint_state(t_cursor, mission_end))
+                periodic_ticks=_periodic_tick_checkpoint_state(p, t_cursor))
             checkpoint_written = true
             if string(seg_sol.retcode) != "Success" || !_gravity_backbone_time_reached(t_cursor, t_next)
                 break

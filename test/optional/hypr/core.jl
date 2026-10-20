@@ -19,8 +19,6 @@ const P = SpaceAGORA.RPOPlannerInterfaces
     @test_throws HYPRUnavailableError robot_arm_hypr_path_cost_components(zeros(3,2),nothing,nothing,RobotArmSphereObstacle[],RobotArmHYPRConfig())
     error_text = try P.initialize_planner(planner,nothing); "" catch e; sprint(showerror,e) end
     @test occursin("using SpaceAGORAHYPR",error_text)
-    @test_throws HYPRUnavailableError SpaceAGORA.SimulationLifecycle.preflight_guidance(
-        S.RPOGuidanceModel(), nothing; isolate_state=true)
     mktempdir() do folder
         destination=joinpath(folder,"refused-run")
         args=make_rpo_configuration(planner=DirectRPOPlanner(),mission_time_s=.2,
@@ -48,9 +46,8 @@ end
         @test_throws HYPRUnavailableError P.initialize_planner(planner,nothing)
         @test_throws HYPRUnavailableError P.plan_rpo!(nothing,planner,request,rng)
     end
-    # The deprecated name selection warns at the pre-run check, before the HYPR boundary.
-    @test_logs (:warn,r"by name is deprecated") @test_throws HYPRUnavailableError G.rpo_plan_comparison_path(
-        :rrt_star,a,b,nothing,comparison;rng)
+    # A planner name is not a planner (name selection was removed in 0.5.0).
+    @test_throws MethodError G.rpo_plan_comparison_path(:rrt_star,a,b,nothing,comparison;rng)
     @test_throws HYPRUnavailableError make_rpo_configuration(planner=RRTStarPlanner())
     @test rand(rng,4)==rand(untouched,4)
     # Guard before collecting cases, consuming an iterator, or creating a controller.

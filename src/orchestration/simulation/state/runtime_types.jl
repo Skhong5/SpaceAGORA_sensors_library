@@ -829,6 +829,11 @@ export RhsEffectorDecision, RhsExecutionPlan
     end
     SpinBarrierTuner() = SpinBarrierTuner(false, false, false, true, 1, 1, Int64[], Inf, 0, 0, 0, 0, UInt64(0))
 
+    # One periodic GNC clock of a run (SimulationCallbacks._run_clock_periodic_callback):
+    # its callback's key, its period, and its grid origin and next tick index.
+    const PeriodicClockEntry = NamedTuple{(:key, :period_s, :origin, :index),
+        Tuple{Symbol, Float64, Base.RefValue{Float64}, Base.RefValue{Int}}}
+
     # A struct to hold the data shared between the callback and the integrator.
     # n_sats is a plain runtime field (not a type parameter): none of these
     # buffers are StaticArrays sized by it, so making it part of the type
@@ -874,9 +879,18 @@ export RhsEffectorDecision, RhsExecutionPlan
         # NaN leaves each solve its own grid.
         periodic_clock_origin_s::Base.RefValue{Float64} = Ref(NaN)
         periodic_clock_horizon_s::Base.RefValue{Float64} = Ref(NaN)
-        # A resumed run's start when the ticks due there are pending: its
-        # checkpoint was written at the end of the run that wrote it.
+        # The run's periodic clocks, in the order they first initialize (the
+        # order of their callbacks), so a checkpoint can record which of them had
+        # not taken the tick due at its time.
+        periodic_clocks::Vector{PeriodicClockEntry} = PeriodicClockEntry[]
+        # A resumed run's start when ticks due there are pending, and which: the
+        # clocks its checkpoint lists, as (position, period) pairs, or, for a
+        # checkpoint written before that list, every clock's tick at that start
+        # (up to `_same_run_time`) from the earliest pending tick time on.
         periodic_clock_pending_s::Base.RefValue{Float64} = Ref(NaN)
+        periodic_clock_pending_from_s::Base.RefValue{Float64} = Ref(-Inf)
+        periodic_clock_pending_clocks::Base.RefValue{Union{Nothing, Vector{Tuple{Int, Float64}}}} =
+            Ref{Union{Nothing, Vector{Tuple{Int, Float64}}}}(nothing)
         debug_control::Base.RefValue{Bool} = Ref(false)
         debug_initial_derivative::Base.RefValue{Bool} = Ref(false)
         effector_cost_ns_per_item::Base.RefValue{Float64} = Ref(NaN)

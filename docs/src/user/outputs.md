@@ -290,7 +290,11 @@ SM.SimulationSettings(
 A checkpointed run is solved in segments of `checkpoint_interval_s`. Its
 navigation, guidance and control effectors tick at the same times as in a run
 solved in one piece, including a tick that falls on a segment boundary, which
-comes before the checkpoint written there.
+comes before the checkpoint written there. A tick and a boundary that differ only
+by floating-point rounding, within 100 units in the last place (`3 * 0.1` is
+0.30000000000000004, and a 0.3 s interval ends the first segment at 0.3), count
+as one time: the tick is taken at the boundary, once. Likewise, a segment that
+would end that close to the run's end ends at the run's end.
 
 A crashed or interrupted run can be resumed by setting
 `resume_from_checkpoint = true` in `SimulationSettings`. The resumed run's
@@ -298,14 +302,23 @@ effectors keep the same tick times, from the run's start. A run resumed from a
 checkpoint written at a segment boundary starts with the first tick after it;
 one resumed from the checkpoint written at the end of a run, to extend that
 run, first takes the ticks due at that time, which the ended run did not take.
+Each checkpoint records which periodic models had not yet taken the tick due at
+its time, also when the run stopped early there, and a run resumed from it takes
+those models' ticks first, once. A checkpoint written by SpaceAGORA 0.4.0 or
+earlier holds no such record; it is read as that version left it, which also
+means a tick an ulp or so after its time, which 0.4.0 left to the next segment, is
+taken when the resumed run starts.
 The checkpoint directory defaults to `results_directory/checkpoints` when left
 empty. Besides
 the state, the checkpoint holds the run state the callbacks keep on the
 spacecraft: the batteries' empty and full flags and shedding tier, the
 actuator faults' activity and held levels, the sensors' random streams,
-latest measurements and gyro biases, and the hinges' and gimbals' angles. A
-run with batteries, faults or sensors refuses a checkpoint written without
-them, or for a different configuration of them. A guidance, navigation or
+latest measurements and gyro biases, the hinges' and gimbals' angles, and the
+ramp factor and held thrust of thrusters with firing dynamics. A run with
+batteries, faults, sensors or thrusters with firing dynamics refuses a
+checkpoint written without them, or for a different configuration of them; a
+run with firing dynamics therefore refuses a checkpoint written by SpaceAGORA
+0.4 or earlier. A guidance, navigation or
 control model, or a sensor kind, that keeps run state of its own adds it to
 the file through `checkpoint_state` (see
 [Run state in checkpoint files](../extensibility.md#Run-state-in-checkpoint-files));

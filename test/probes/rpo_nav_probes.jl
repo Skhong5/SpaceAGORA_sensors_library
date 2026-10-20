@@ -466,8 +466,10 @@ end
         f2, τ2 = SM.control_wrench(eff, x_at(2), P1, 0.0)
         @test f2 == SVector{3, Float64}(0.0, 0.0, 0.0)
         @test τ2 == SVector{3, Float64}(0.0, 0.0, 0.0)
-        # The arm uses no propellant: it has no rate hook, so the dynamics take zero.
-        @test !hasmethod(SM.control_propellant_rate, Tuple{typeof(eff), SM.StateSample, typeof(P1), Float64})
+        # The arm uses no propellant: it has no rate method of its own, so the default gives zero.
+        rate_args = Tuple{typeof(eff), SM.StateSample, typeof(P1), Float64}
+        @test which(SM.control_propellant_rate, rate_args) === which(SM.control_propellant_rate, Tuple{Any, Any, Any, Any})
+        @test SM.control_propellant_rate(eff, x_at(1), P1, 0.0) === 0.0
     end
 
     # ---------------------------------------------------------------

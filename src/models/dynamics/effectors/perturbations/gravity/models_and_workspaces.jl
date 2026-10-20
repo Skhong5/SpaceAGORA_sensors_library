@@ -690,7 +690,7 @@ function _harmonics_lpi_at!(
             if ephemerides_requires_spice(ephemerides_model)
                 Base.Threads.atomic_add!(shared.spice_runtime_counters.planet_pxform_runtime_calls, 1)
             end
-            shared.harmonics_lpi[] = _ephemerides_frame_lpi(ephemerides_model, model.planet, et)
+            shared.harmonics_lpi[] = ephemerides_frame_lpi(ephemerides_model, model.planet, et)
             shared.harmonics_lpi_key[] = key
         end
         shared.harmonics_lpi[]

@@ -25,8 +25,8 @@ Completed planner-comparison CSVs and plots are implemented in
 their methods. No second report implementation or forwarding method is installed.
 
 The planner-neutral `RPOPlannerLifecycle` validates results before updating the
-shared controller reference. The existing `RPOGuidanceModel` remains a separate
-HYPR-specific entry path used by existing studies. For typed EDG,
+shared controller reference; it is the only RPO guidance path (the HYPR-specific
+`RPOGuidanceModel` was removed in 0.5.0). For typed EDG,
 `guidance/aerobraking/typed_edg/` owns core model types, services and compatibility
 dispatch; the optional SpaceAGORAEDG package owns the numerical kernels. Core
 retains lifecycle and panel actuation, and its shared typed calculations forward to

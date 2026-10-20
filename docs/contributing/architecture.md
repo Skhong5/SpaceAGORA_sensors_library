@@ -216,8 +216,7 @@ the file that performs each step.
    The fixed-grid path needs the wrapper and a grid file, not native GRAM binaries.
    See [Atmosphere Models](../src/user/atmosphere_models.md) for choosing one.
 5. **Forces and torques.** The engine obtains the state and environment required by
-   each effector and calls its `wrench` (or the compatibility
-   `calcForceTorque`). The wrapper module and its models are under
+   each effector and calls its `wrench`. The wrapper module and its models are under
    `src/models/dynamics/effectors/force_torque_models.jl`
    and the `force_torque_models/`
    folder (gravity, aerodynamics, perturbations, thrusters, plume, reaction
@@ -255,9 +254,8 @@ the file that performs each step.
    Navigation and guidance hooks run as periodic callbacks between integrator
    steps; control commands are refreshed on periodic or event-driven schedules, and the
    resulting control force and torque are evaluated inside the right-hand side
-   through `control_wrench`. The planner-neutral `RPOPlannerLifecycle`
-   and existing HYPR-specific `RPOGuidanceModel` remain separate integration
-   paths. See [GNC and planning ownership](gnc_ownership.md).
+   through `control_wrench`. RPO guidance runs through the planner-neutral
+   `RPOPlannerLifecycle`. See [GNC and planning ownership](gnc_ownership.md).
 7. **Callbacks.** Save fields, density updates, thermal and plume updates, GNC
    dispatch, state anchors and stop conditions are registered from
    `src/orchestration/simulation/callbacks/callbacks.jl`;
@@ -388,7 +386,7 @@ own package, with its simulator-specific adapter kept distinct from standalone
 search. HYPR now follows that split: its `src/` owns standalone search and swarm
 policy, while its `ext/HYPRSpaceAGORAExt.jl`, `ext/rpo/` and `ext/robot/` provide
 configured SpaceAGORA execution. These paths are in
-[HYPR.jl at the pinned revision](https://github.com/Space-FALCON-Lab/HYPR.jl/tree/2e0cb6ba6b210d767f51101f3fd2b3aee1b2de4e),
+[HYPR.jl at the pinned revision](https://github.com/Space-FALCON-Lab/HYPR.jl/tree/c434404dd3e4ac3ba351b2a5e0bb77d9be95fb94),
 which has its own tests, examples and documentation.
 
 SpaceAGORA retains shared planner interfaces, the direct baseline, configuration
@@ -397,7 +395,7 @@ entry points. `SpaceAGORA.HYPRServices` exposes the adapter contract without
 changing the original owners of those bindings. Only the explicitly listed
 services and extension points are supported; arbitrary internal-module access is
 not the integration API. The current supported pair is SpaceAGORA 0.4.0 with
-HYPR 0.3.0, service contract 2.0.0 and compatibility package 0.2.0. Install the
+HYPR 0.4.0, service contract 2.0.0 and compatibility package 0.2.0. Install the
 pinned pair and explicitly load `SpaceAGORAHYPR` using the
 [RPO planner guide](../src/user/rpo_planner_pilot.md#installing-optional-hypr).
 The optimizer can run independently; configured RPO and robot-arm execution

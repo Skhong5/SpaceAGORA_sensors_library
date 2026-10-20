@@ -8,9 +8,8 @@
 The opt-in RPO pilot connects a planner to the existing simulation and LQ-MPC
 controller. It supports truth observations, a passive target on a circular Earth
 orbit, and a static station point cloud aligned with the target's rotating RTN
-frame. The existing research examples remain available; they still use the
-deprecated `RPOGuidanceModel` (see
-[Moving from RPOGuidanceModel](#Moving-from-RPOGuidanceModel)).
+frame. The RPO research examples run on this path; for the guidance model they
+used before, see [Moving from RPOGuidanceModel](#Moving-from-RPOGuidanceModel).
 
 ```julia
 using SpaceAGORA
@@ -190,6 +189,20 @@ declares `restart` in `planner_capabilities`; the built-in planners keep none.
 A core-only installation can run the direct planner without HYPR; see the optional
 installation instructions below.
 
+### Checkpoints
+
+The table lists what a checkpoint covers in any run, the pilot's included.
+[Checkpointing](outputs.md#Checkpointing) describes the settings and the run
+state a checkpoint file holds, and
+[Run state in checkpoint files](../extensibility.md#Run-state-in-checkpoint-files)
+how a model adds its own.
+
+| | What |
+|---|---|
+| Supported: a resumed run continues as the uninterrupted run would | the integrated state; which spacecraft are active; the run state the engine keeps on the spacecraft (batteries, actuator faults, sensors, hinges and gimbals, and the ramp factor and held thrust of mounted thrusters with firing dynamics); the times of the periodic guidance, navigation and control ticks: a tick and a checkpoint boundary that differ only by rounding count as one time (a 0.1 s tick period with 0.3 s checkpoints, for example), a checkpoint records the ticks due at its time that were not yet taken, also when the run stopped early there, and the resumed run takes them first, once, and a checkpoint written by SpaceAGORA 0.4.0 just before a tick resumes with that tick taken at the resumed run's start; the joint state of articulated and compliant vehicles; interlinks, with their topology, link kinds and parameters; guidance, navigation and control models that save their run state with `checkpoint_state`: the RPO planner binding with its plan buffer, the RPO MPC controller, the burn scheduler, the momentum manager, the Apollo descent guidance and control, the periapsis-raise guidance, the robot-arm controller, and models of your own that implement the two methods |
+| Refused before the run, with an `ArgumentError` | energy-depletion guidance and control; `AlgorithmGuidance`; an RPO planner that keeps state of its own and does not declare `restart`; `run_mission`; externally propagated spacecraft; resuming with a GRAM density perturbation mode on; a model whose `checkpoint_state` returns data and that has no `restore_checkpoint_state!` method; resuming from a checkpoint whose recorded configuration differs from the run's: the type name and position of each sensor and, when a model or sensor saves state with `checkpoint_state`, of each guidance, navigation and control model (the short type name, without its module or type parameters: a same-named type from another module, or another parametrization of the same type, is not told apart), the batteries, faults, hinges and gimbals, the mounting place of each thruster with firing dynamics (its position in the mounting order, its link's position and its position among that link's actuators) and its `max_thrust`, `cutoff_frequency`, `min_firing_time`, `level_on` and `level_off`, and the interlinks (a change to a field the checkpoint does not record is not detected); resuming a run with firing-dynamics thrusters from a checkpoint without their firing state, such as one written by SpaceAGORA 0.4 or earlier |
+| Outside the guarantee: not refused, but a resumed run may differ | the orbit counter, which the checkpoint does not hold, so `MissionOrbits` and guidance that counts orbits count again from the resumed run's start; a spacecraft already inactive when the run resumes, for which a model other than the burn scheduler starts from its restored command: with `skip_inactive` `true` and a `release_command!` that clears the command, a nonzero restored command can stay visible until the model's first tick releases it; the default `release_command!` does nothing, so it does not clear it, and a model with `skip_inactive` `false` keeps ticking as for an active spacecraft (the trajectory does not change, since an inactive spacecraft is not propagated); callbacks a model returns from `gnc_callbacks`, beyond the state the model saves (see [Writing a GNC Algorithm](gnc_algorithm.md#Declarations)); the mutable state of actuator kinds of your own, which have no checkpoint hook; the periodic ticks of the `:multirate` solver mode, which repeat because its sub-solves revisit intervals, with or without checkpoints; solver modes other than `:tsit5`, `:dp8` and `:gravity_backbone_split`, the three the resume tests run with (the `:gravity_backbone_split` tests resume translational runs, since that mode integrates no attitude and runs no guidance, navigation or control models) |
+
 ## Add your own planner or force
 
 Subtype `AbstractRPOPlanner`. Implement `planner_capabilities`, optionally
@@ -235,7 +248,7 @@ julia --startup-file=no scripts/optional_packages.jl setup hypr /path/to/my-rpo-
 The helper checks out `packages/robotics/HYPR.jl` at the parent repository's
 recorded revision, verifies its identity and clean state, and delegates to the
 existing HYPR installer with that path. The pin agrees with
-`packages/SpaceAGORAHYPR/HYPRSource.toml`. It selects HYPR 0.3.0 alongside
+`packages/SpaceAGORAHYPR/HYPRSource.toml`. It selects HYPR 0.4.0 alongside
 SpaceAGORA 0.4.0 and compatibility shim 0.2.0. The shim keeps its existing location;
 HYPR remains optional for the simulator core.
 
@@ -267,9 +280,7 @@ When the planning configuration carries an acceleration limit, also set
 
 Either package may be loaded first. Without the companion, HYPR selection raises
 `HYPRUnavailableError` with installation instructions. Public RPO assembly and
-simulation preflight perform this check before creating run outputs. A legacy
-`RPOGuidanceModel` needs the companion when it must plan or replan; tracking an
-already supplied reference with replanning disabled remains available in core.
+simulation preflight perform this check before creating run outputs.
 Robot-arm `planner=:hypr` also requires explicit loading; `:cloth_quintic` does not.
 
 Comparison planners that request HYPR-configured objectives, refinement, sampling
@@ -277,7 +288,7 @@ or retiming need the companion even when their search algorithm is RRT, CHOMP or
 STOMP. The seven comparison modes are also planner objects, such as
 `RRTStarPlanner(...)`, which can be the `planner` of `make_rpo_configuration`; see
 [Comparison planners](../reference/rpo_planner_contract.md#Comparison-planners).
-Selecting a comparison mode by name is deprecated. Shared RRT with explicit policies and shared scalar APIs remain independent.
+Selecting a comparison mode by name was removed in SpaceAGORA 0.5.0. Shared RRT with explicit policies and shared scalar APIs remain independent.
 The baseline LQ-MPC controller still needs OSQP; optional HYPR does not remove that
 controller dependency. Package separation changes installation, not the validated
 physical limits, planning reserve or numerical policies.
@@ -291,23 +302,21 @@ dependency of SpaceAGORA itself.
 
 ## Moving from RPOGuidanceModel
 
-`RPOGuidanceModel`, the HYPR guidance model of the older RPO examples, is
-deprecated. A run that configures it warns once before it starts; the run itself
-is unchanged. Build new RPO runs with `make_rpo_configuration` and a planner. For
-HYPR planning, pass `planner=HYPRRPOPlanner(RPOPSOConfig(...))`; the configuration
-then uses a `PlannerGuidance`, which validates each reference before installing
-it.
+`RPOGuidanceModel`, the HYPR guidance model of the older RPO examples, was
+removed in SpaceAGORA 0.5.0; 0.4.0 is the last release that has it. Build RPO
+runs with `make_rpo_configuration` and a planner. For HYPR planning, pass
+`planner=HYPRRPOPlanner(RPOPSOConfig(...))`; the configuration then uses a
+`PlannerGuidance`, which validates each reference before installing it.
 
 The RPO examples run on this path: the main example plans inside the run, and
 the reconstruction example flies each comparison planner's plan with
 `RetainedPathRPOPlanner`, which times a given path for the run's request so that
-the run can validate it. The replanning study
-(`examples/Earth_RPO_HyPR_FinalISpaRo_Replanning.jl`) stays on the model until
-the model is removed: it is the recorded reproduction of the reconstructed
-disturbance families, including a goal change and the model's brake-then-replan
-policy. [Run the HyPR paper algorithm](hypr_paper.md) names the commit to
-reproduce it from afterwards. `examples/Earth_RPO_Planner_Disturbances.jl` shows
-disturbances on the planner path.
+the run can validate it. The replanning study of the reconstructed disturbance
+families, including a goal change and the model's brake-then-replan policy, ran on
+the model and was removed with it; [Run the HyPR paper algorithm](hypr_paper.md)
+says how to reproduce it with SpaceAGORA 0.4.0.
+`examples/Earth_RPO_Planner_Disturbances.jl` shows disturbances on the planner
+path.
 
 The planner path covers the model's replanning features:
 
@@ -323,5 +332,4 @@ The two differ in policy. The model brakes to a hold before every replan and
 retimes when clearance falls below a margin; the planner path replans at once and
 holds only when a request is rejected. A run on the planner path also draws from a
 different random stream, and its validation can refuse a reference the model would
-install, so its trajectories are not identical to the model's. The model will be
-removed in a later release.
+install, so its trajectories are not identical to the model's.

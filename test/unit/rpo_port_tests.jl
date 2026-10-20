@@ -547,11 +547,11 @@ end
         @test SM.normalize_rpo_comparison_planner_type(:rrt_connect_bezier) == :rrt_connect_bezier
         @test SM.normalize_rpo_comparison_planner_type(:unrefined_pso) == :pso_unrefined
         @test SM.normalize_rpo_comparison_planner_type(:rrtstar) == :rrt_star
-        @test_throws ArgumentError SM.rpo_plan_comparison_path(:stopm, cases[1].start_rtn, cases[1].goal_rtn, geom, cfg;
+        # A name is not a planner (name selection was removed in 0.5.0).
+        @test_throws MethodError SM.rpo_plan_comparison_path(:stopm, cases[1].start_rtn, cases[1].goal_rtn, geom, cfg;
             rng=MersenneTwister(cfg.rng_seed))
-        typo_cfg = SM.RPOPlannerComparisonConfig(planners=[:hypr, :stopm], pso_config=cfg.pso_config,
+        @test_throws MethodError SM.RPOPlannerComparisonConfig(planners=[:hypr, :stopm], pso_config=cfg.pso_config,
             output_dir=output_dir, write_plotly_outputs=false, show_progress=false)
-        @test_throws ArgumentError SM.rpo_run_planner_comparison_batch(cases, geom, typo_cfg)
         @test Set([row.planner for row in rows]) == Set([:hypr, :pso_unrefined, :rrt_connect, :rrt_connect_bezier, :rrt_star, :chomp, :stomp])
         @test all(isfinite(row.fuel_used) && row.fuel_used > 0.0 for row in rows)
         @test all(isfinite(row.fuel_used_pct) && row.fuel_used_pct > 0.0 for row in rows)

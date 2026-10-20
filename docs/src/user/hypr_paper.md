@@ -44,16 +44,19 @@ are optional and are not needed to try or verify the implementation.
 
 ## CI smoke scope
 
-The example suite launches both paper entry points in the dedicated HYPR
-example environment. With `SPACEAGORA_EXAMPLE_SMOKE=1`, they load the actual
-packages and configuration, and the dynamic entry point checks the structure of its saved baseline,
-without running a numerical experiment or writing scientific results. Neither
-configures the deprecated `RPOGuidanceModel` in this mode. Missing files, malformed JSON and structurally invalid saved baseline inputs fail. The optional HYPR integration job separately exercises
-the planner, replanning contracts and failed-run evidence handling. A smoke pass
-does not establish maneuver success or paper-table reproduction. Leave the smoke
-flag unset for the scientific runs above and below.
+The example suite launches the paper entry point in the dedicated HYPR example
+environment. With `SPACEAGORA_EXAMPLE_SMOKE=1`, it loads the actual packages and
+configuration without running a numerical experiment or writing scientific
+results. The optional HYPR integration job separately exercises the planner,
+replanning contracts and failed-run evidence handling. The unit test
+`test/unit/gnc/rpo_examples_planner_contract_tests.jl` replays the saved case-4
+baseline below through `RetainedPathRPOPlanner` when the SPICE kernels in
+`data/GRAMSuite.jl/GRAM Suite 2.0/SPICE` are present, and skips the replay without
+them. A smoke pass does not establish maneuver success or paper-table
+reproduction. Leave the smoke flag unset
+for the scientific runs above and below.
 
-## Run the original reconstructed dynamic case
+## The original reconstructed dynamic case
 
 The repository includes the saved baseline used for the reconstructed case 4:
 `examples/support/hypr_final_isparo_case4.json`. It was generated during the
@@ -64,6 +67,26 @@ It contains the endpoints, fitted path, reference, effective configuration and
 search history. Geometry sampling uses seed 740; the initial case uses seed 744.
 Replacement planning uses seed 1744.
 
+!!! note "Reproduce with SpaceAGORA 0.4.0"
+    The dynamic results below were produced with `RPOGuidanceModel`, the HYPR
+    guidance model that SpaceAGORA 0.5.0 removed, through the replanning study
+    `examples/Earth_RPO_HyPR_FinalISpaRo_Replanning.jl`, which was removed with it.
+    Reproduce them from SpaceAGORA v0.4.0, the last release that has the model and
+    the study: use that release's `Manifest.toml` and the HYPR revision pinned in
+    its `packages/SpaceAGORAHYPR/HYPRSource.toml`. The study was delivered with
+    these results at commit `b165c0528b782316db65142f19def374c181b47f`. For
+    disturbances on the planner contract, see
+    `examples/Earth_RPO_Planner_Disturbances.jl`
+    ([Run an RPO case with interchangeable planners](rpo_planner_pilot.md)).
+
+!!! warning "TODO: rerun from v0.4.0 pending"
+    The rerun of these results from SpaceAGORA v0.4.0 has not been done yet. It
+    follows the v0.4.0 tag; until then, that they are reproducible from v0.4.0 is
+    unchecked.
+
+In a checkout of the v0.4.0 tag, with the HYPR environment set up as in
+[Install and run](#Install-and-run), the case runs with:
+
 ```sh
 JULIA_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 \
   HYPR_OUTPUT_ROOT="$HOME/AgentScratch/hypr-paper-dynamic" \
@@ -71,15 +94,6 @@ JULIA_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 \
   julia --startup-file=no --project="$HOME/AgentScratch/hypr-paper-env" \
   examples/Earth_RPO_HyPR_FinalISpaRo_Replanning.jl
 ```
-
-!!! note "Legacy reproduction"
-    This study runs on the deprecated `RPOGuidanceModel` and stays as the recorded
-    reproduction of the results below until that model is removed. After the
-    removal, reproduce them from SpaceAGORA commit
-    `b165c0528b782316db65142f19def374c181b47f`, where the study was delivered with
-    these results, with the HYPR revision pinned there. For disturbances on the
-    planner contract, see `examples/Earth_RPO_Planner_Disturbances.jl`
-    ([Run an RPO case with interchangeable planners](rpo_planner_pilot.md)).
 
 This retains the original reconstructed obstacle placement and appearance.
 The longer observation ceiling lets the replacement route continue; it changes
@@ -102,7 +116,7 @@ another saved baseline; changing it creates a different experiment.
 | RRT-Connect warm start, Bezier particle search and manuscript adaptation | HYPR `ext/rpo/pso_path_planning.jl`, `hypr_mode=:manuscript` |
 | Absolute coefficient endpoints `(0.455, 1.05, 1.75)`, first-half cubic schedule, ten-iteration culling and evaluated final updates | HYPR manuscript swarm; `test/final_isparo_swarm.jl` |
 | Clearance/curvature retiming and zero departure/arrival reference speed | HYPR `ext/rpo/rpo_reference_trajectory.jl` |
-| Algorithm 1: continue, retime or brake/hold and replan | SpaceAGORA `rpo_replanning_decision`, `maybe_update_rpo_replanning!` |
+| Algorithm 1: continue, retime or brake/hold and replan | SpaceAGORA `rpo_replanning_decision`; the brake/hold lifecycle was `RPOGuidanceModel`'s (`maybe_update_rpo_replanning!`, through v0.4.0) |
 | Algorithm 1 remaining route and measured-state splice | `rpo_retime_existing_plan`, retained geometric polyline and timed connector |
 | Track the reference in the nonlinear plant and record delivered force | Full SpaceAGORA demo, LQ-MPC and thruster command log |
 

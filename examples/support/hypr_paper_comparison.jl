@@ -66,6 +66,19 @@ function paper_planners(env=ENV)
     end
     return methods
 end
+# The comparison planner a paper planner name stands for, built from the comparison
+# configuration's settings fields, as RPOPlannerComparisonConfig builds its defaults.
+function paper_planner_object(name::Symbol, cfg)
+    name === :hypr && return HYPRComparisonPlanner(cfg.pso_config)
+    name === :pso_unrefined && return UnrefinedPSOPlanner(cfg.pso_config)
+    name === :rrt_connect && return RRTConnectPlanner(cfg.rrt_connect; config=cfg.pso_config, optimizer=cfg.optimizer)
+    name === :rrt_connect_bezier &&
+        return RRTConnectBezierPlanner(cfg.rrt_connect; config=cfg.pso_config, optimizer=cfg.optimizer)
+    name === :rrt_star && return RRTStarPlanner(cfg.rrt_star; config=cfg.pso_config, optimizer=cfg.optimizer)
+    name === :chomp && return CHOMPPlanner(cfg.chomp; config=cfg.pso_config, optimizer=cfg.optimizer, seed=cfg.rrt_connect)
+    name === :stomp && return STOMPPlanner(cfg.stomp; config=cfg.pso_config, optimizer=cfg.optimizer, seed=cfg.rrt_connect)
+    throw(ArgumentError("Unsupported paper planner $(name)."))
+end
 function paper_dynamic_budget(initial_duration, env=ENV)
     seconds = parse(Float64, get(env, "HYPR_DYNAMIC_MAX_TIME_S", string(max(600., 4initial_duration))))
     isfinite(seconds) && seconds > 0 || throw(ArgumentError("HYPR_DYNAMIC_MAX_TIME_S must be finite and positive."))

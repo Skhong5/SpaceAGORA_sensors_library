@@ -23,7 +23,7 @@ along_velocity(x, newtons) = (newtons * x.vel_ii / sqrt(sum(abs2, x.vel_ii)), Z3
 struct NcClean <: ForceModel end
 SpaceAGORA.wrench(::NcClean, x::Sample, env::Env, t::Float64) = along_velocity(x, -1.0e-3)
 
-# hooks_present: neither wrench nor the deprecated calcForceTorque.
+# hooks_present: no wrench.
 struct NcNoHook <: ForceModel end
 
 # supported_sample_signature: a method on a concrete StateSample{Nothing}, which
@@ -79,6 +79,32 @@ mutable struct NcBreaksAliasing <: ForceModel
 end
 NcBreaksAliasing() = (v = [1.0e-3]; NcBreaksAliasing(v, v))
 SpaceAGORA.wrench(m::NcBreaksAliasing, x::Sample, env::Env, t::Float64) = (m.b = copy(m.b); along_velocity(x, -m.a[1]))
+
+# State with a dictionary whose key is also held by another field, for the state
+# comparison's key pairing; keys hashed by identity, and keys whose hashes all collide.
+mutable struct NcKeyedState
+    dict::Any
+    key::Any
+end
+mutable struct NcIdentityKey
+    x::Float64
+end
+struct NcCollidingKey
+    x::Int
+end
+Base.hash(::NcCollidingKey, h::UInt) = h
+# Keys compared by identity whose hashes all collide: a `Dict` iterates them in the
+# order they were inserted, so a test can set the order of look-alike entries.
+mutable struct NcInsertionKey
+    x::Float64
+end
+Base.hash(::NcInsertionKey, h::UInt) = h
+# A command that depends on the type of a stored key, as a model iterating its schedule
+# would see it.
+nc_key_command(::Int) = 1.0
+nc_key_command(::Float64) = -1.0
+# The command a controller reads from its schedule: the entry it looks up for key 1.
+nc_next_command(schedule) = 0.1 * schedule[1]
 
 # concurrent_equals_sequential: the first call after the token is set sleeps, so one
 # of two concurrent runs stalls while the other waits for it at the rendezvous.
@@ -281,11 +307,6 @@ const SENSOR_RUN_LEVEL = (:repeatable_run, :deepcopy_equivalent, :global_rng_ind
     :seed_repeatable, :custom_state_reset, :checkpoint_round_trip)
 sensor_except(ids...) = filter(id -> !(id in ids), CHECK_IDS.sensor)
 
-# no_deprecated_hooks (force/torque): a calcForceTorque method of its own beside wrench.
-struct NcDeprecatedForce <: ForceModel end
-SpaceAGORA.wrench(::NcDeprecatedForce, x::Sample, env::Env, t::Float64) = along_velocity(x, -1.0e-3)
-SpaceAGORA.calcForceTorque(::NcDeprecatedForce, x, p, i) = (Z3, Z3)
-
 # Guidance and navigation models: one record shape and one behaviour per control.
 # `acc` is the model's own state, which the run-level checks compare at the end of a
 # run; `ticked` marks a run's first tick; `buffer` is what bind_spacecraft shares. All
@@ -345,25 +366,26 @@ mutable struct NcCtl{V} <: SpaceAGORA.AbstractControlEffectorModel
 end
 NcCtl{V}() where {V} = NcCtl{V}(0.0, false, [0.0], 0)
 const NC_CTL_STEPS = (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoReset)
-for variant in (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoReset, :NoWrench, :Deprecated, :Narrow,
-        :Impure, :Negative, :NoCheckpoint)
+for variant in (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoReset, :NoWrench, :Narrow,
+        :Impure, :Negative, :NoCheckpoint, :WrenchOnly, :Mounted)
     step = variant in NC_CTL_STEPS ? variant : :Clean
     @eval SpaceAGORA.update_control!(m::NcCtl{$(QuoteNode(variant))}, u, p, t::Float64, i::Int) =
         (m.acc += gnc_step(Val($(QuoteNode(step))), m, u, i); nothing)
-    variant === :NoWrench && continue
+    variant in (:NoWrench, :Mounted) && continue
     @eval SpaceAGORA.control_wrench(m::NcCtl{$(QuoteNode(variant))}, x::Sample, p, t::Float64) =
         (SVector(1.0e-4 * m.acc / (1 + abs(m.acc)), 0.0, 0.0), Z3)
-    variant === :Negative || @eval SpaceAGORA.control_propellant_rate(m::NcCtl{$(QuoteNode(variant))}, x::Sample, p, t::Float64) =
+    variant in (:Negative, :WrenchOnly) || @eval SpaceAGORA.control_propellant_rate(m::NcCtl{$(QuoteNode(variant))}, x::Sample, p, t::Float64) =
         1.0e-6 * abs(m.acc) / (1 + abs(m.acc))
 end
 # The models reset their own state at a run's start, except NoReset.
 SpaceAGORA.SimulationLifecycle.initialize_control!(m::NcCtl, u, p, t) = (m.acc = 0.0; m.ticked = false; m.calls = 0; nothing)
 SpaceAGORA.SimulationLifecycle.initialize_control!(m::NcCtl{:NoReset}, u, p, t) = nothing
 SpaceAGORA.bind_spacecraft(m::NcCtl{:SharedBind}, i::Int) = NcCtl{:SharedBind}(m.acc, m.ticked, m.buffer, m.calls)
-SpaceAGORA.calcControlForceTorque(::NcCtl{:Deprecated}, u, p, i, t) = (Z3, Z3)
 SpaceAGORA.control_wrench(m::NcCtl{:Narrow}, x::Sample{Nothing}, p, t::Float64) = (Z3, Z3)
 SpaceAGORA.control_wrench(m::NcCtl{:Impure}, x::Sample, p, t::Float64) = (m.calls += 1; (Z3, Z3))
 SpaceAGORA.control_propellant_rate(m::NcCtl{:Negative}, x::Sample, p, t::Float64) = -1.0e-5
+# No output hook of its own: the mounted actuators carry its command.
+SpaceAGORA.actuation_mode(::NcCtl{:Mounted}) = :mounted
 SpaceAGORA.checkpoint_state(m::NcCtl) = merge(nc_checkpoint_state(m), (calls=m.calls,))
 SpaceAGORA.restore_checkpoint_state!(m::NcCtl, data) = (nc_restore!(m, data); m.calls = data.calls; nothing)
 SpaceAGORA.checkpoint_state(m::NcCtl{:NoCheckpoint}) = nothing
@@ -406,21 +428,18 @@ function gnc_controls()
     kind = :control_model
     push!(controls,
         (kind=kind, id=:hooks_present, broken="a tick but no control_wrench", expect="has no method",
-            report=() -> check_control_model(ctl(:NoWrench)), passing=(:no_deprecated_hooks, :supported_sample_signature)),
-        (kind=kind, id=:no_deprecated_hooks, broken="a calcControlForceTorque method beside control_wrench",
-            expect="implements both control_wrench and calcControlForceTorque",
-            report=() -> check_control_model(ctl(:Deprecated)), passing=(:hooks_present, :supported_sample_signature)),
+            report=() -> check_control_model(ctl(:NoWrench)), passing=(:supported_sample_signature,)),
         (kind=kind, id=:supported_sample_signature, broken="a control_wrench method on StateSample{Nothing}",
             expect="StateSample{Nothing}, narrower than StateSample",
             report=() -> check_control_model(ctl(:Narrow)), passing=gnc_except(kind, :supported_sample_signature)),
         (kind=kind, id=:repeatable_run, broken="state outside the model advanced at every run start",
             expect="two runs of the fixture with isolate_state=true differ: ",
-            report=() -> check_control_model(ctl(:RunEpoch)), passing=(:hooks_present, :no_deprecated_hooks)),
+            report=() -> check_control_model(ctl(:RunEpoch)), passing=(:hooks_present,)),
         (kind=kind, id=:deepcopy_equivalent, broken="a gain keyed by the model's identity",
             expect="and a run of its deep copy (isolate_state=true) differ: ",
             report=() -> check_control_model(registered(ctl(:Identity))), passing=gnc_except(kind, :deepcopy_equivalent)),
         (kind=kind, id=:global_rng_independent, broken="rand() in the tick", expect="seeded 1 and 2 differ: ",
-            report=() -> check_control_model(ctl(:Rand)), passing=(:hooks_present, :no_deprecated_hooks)),
+            report=() -> check_control_model(ctl(:Rand)), passing=(:hooks_present,)),
         (kind=kind, id=:concurrent_equals_sequential, broken="scratch shared by every instance", expect="and sequential run ",
             report=() -> check_control_model(ctl(:Shared)),
             passing=gnc_except(kind, :concurrent_equals_sequential, :checkpoint_round_trip)),
@@ -439,10 +458,7 @@ function gnc_controls()
             passing=gnc_except(kind, :bind_fresh_state, :initialize_resets)),
         (kind=kind, id=:checkpoint_round_trip, broken="its own state not in a checkpoint_state",
             expect="a run resumed from its checkpoint at 30.0 s and an uninterrupted run differ after it: ",
-            report=() -> check_control_model(ctl(:NoCheckpoint)), passing=gnc_except(kind, :checkpoint_round_trip)),
-        (kind=:force_torque_model, id=:no_deprecated_hooks, broken="a calcForceTorque method beside wrench",
-            expect="implements both wrench and calcForceTorque",
-            report=() -> check_force_torque_model(NcDeprecatedForce()), passing=(:hooks_present, :supported_sample_signature)))
+            report=() -> check_control_model(ctl(:NoCheckpoint)), passing=gnc_except(kind, :checkpoint_round_trip)))
     return controls
 end
 
@@ -642,7 +658,7 @@ except(ids...) = filter(id -> !(id in ids), ALL_FORCE)
 const RUN_LEVEL = (:repeatable_run, :deepcopy_equivalent, :global_rng_independent, :concurrent_equals_sequential)
 
 controls() = [
-    (kind=:force_torque_model, id=:hooks_present, broken="no wrench and no calcForceTorque", expect="has no method wrench(",
+    (kind=:force_torque_model, id=:hooks_present, broken="no wrench", expect="has no method wrench(",
         report=() -> check_force_torque_model(NcNoHook()), passing=(:supported_sample_signature,)),
     (kind=:force_torque_model, id=:supported_sample_signature, broken="a method on StateSample{Nothing}", expect="StateSample{Nothing}, narrower than StateSample",
         report=() -> check_force_torque_model(NcConcreteSample()), passing=except(:supported_sample_signature)),
@@ -773,14 +789,18 @@ const MAY_SKIP = (:concurrent_equals_sequential, :bind_fresh_state, :stream_unto
             @test all(check -> check.status in (:pass, :skip), report.checks)
             @test passed(report)
         end
-        # A clean model is not answerable for another model of its fixture that uses a
-        # deprecated hook.
-        target = NcClean()
-        mixed = check_force_torque_model(target; fixture=conformance_fixture(effectors=(target, NcDeprecatedForce())))
-        @test status_of(mixed, :no_deprecated_hooks) === :pass
-        controller = NcCtl{:Clean}()
-        mixed = check_control_model(controller; fixture=conformance_fixture(control=(controller, NcCtl{:Deprecated}())))
-        @test status_of(mixed, :no_deprecated_hooks) === :pass
+        # control_propellant_rate and control_wheel_torque have untyped defaults for
+        # every model; they are not a model's own output hooks, so a model without its
+        # own methods skips the checks of them as before the defaults existed.
+        wrench_only = check_control_model(NcCtl{:WrenchOnly}())
+        @test status_of(wrench_only, :output_hook_pure) === :pass
+        @test status_of(wrench_only, :positive_consumption) === :skip
+        @test passed(wrench_only)
+        mounted = check_control_model(NcCtl{:Mounted}())
+        @test status_of(mounted, :hooks_present) === :pass
+        @test status_of(mounted, :output_hook_pure) === :skip
+        @test status_of(mounted, :positive_consumption) === :skip
+        @test passed(mounted)
         # The two-spacecraft bind check keeps the fixture's sensor, which the model reads.
         reader = check_navigation_model(NcNSensorReader(0.0); sensors=(NcCleanSensor(),))
         @test status_of(reader, :bind_fresh_state) === :pass
@@ -933,6 +953,139 @@ const MAY_SKIP = (:concurrent_equals_sequential, :bind_fresh_state, :stream_unto
         @test C._same_state(separate, deepcopy(separate))
         @test !C._same_state(aliased, separate)
         @test !C._same_state(separate, aliased)
+    end
+    @testset "the state comparison pairs dictionary keys one to one" begin
+        for D in (Dict, IdDict)
+            @testset let dictionary = D
+                # A key shared with another field, restored as two equal objects, is a
+                # different state, whichever of the two the comparison meets first.
+                k = [1.0]
+                original = NcKeyedState(D(k => 3.0), k)
+                broken = NcKeyedState(D([1.0] => 3.0), [1.0])
+                @test !C._same_state(original, broken)
+                @test !C._same_state(broken, original)
+                @test !C._same_state((key=original.key, dict=original.dict), (key=broken.key, dict=broken.dict))
+                # A correct copy keeps the sharing; an identity dictionary's copied key
+                # is another object, found through the pairing, not by lookup.
+                @test C._same_state(original, deepcopy(original))
+                state = (dict=D(k => 3), key=k)
+                @test C._same_state(state, deepcopy(state))
+            end
+        end
+        # A plain dictionary: equal entries, a changed value, another key (also one the
+        # dictionary finds by lookup, `1.0` for `1`), value aliasing.
+        plain = Dict(:a => [1.0], :b => [2.0])
+        @test C._same_state(plain, deepcopy(plain))
+        @test !C._same_state(plain, Dict(:a => [1.0], :b => [2.5]))
+        @test !C._same_state(plain, Dict(:a => [1.0], :c => [2.0]))
+        @test !C._same_state(Dict{Any, Int}(1 => 1), Dict{Any, Int}(1.0 => 1))
+        v = [1.0]
+        @test C._same_state(Dict(:a => v, :b => v), deepcopy(Dict(:a => v, :b => v)))
+        @test !C._same_state(Dict(:a => v, :b => v), Dict(:a => [1.0], :b => [1.0]))
+        # Equal keys hashed by identity, and keys whose hashes all collide, pair by
+        # their entries, so the result does not depend on the order of iteration.
+        twins = Dict(NcIdentityKey(1.0) => 1, NcIdentityKey(1.0) => 2)
+        @test C._same_state(twins, deepcopy(twins))
+        @test !C._same_state(twins, Dict(NcIdentityKey(1.0) => 1, NcIdentityKey(1.0) => 3))
+        colliding = Dict(NcCollidingKey(1) => [1.0], NcCollidingKey(2) => [2.0])
+        @test C._same_state(colliding, deepcopy(colliding))
+        @test !C._same_state(colliding, Dict(NcCollidingKey(1) => [2.0], NcCollidingKey(2) => [1.0]))
+        vector_keys = Dict([1.0] => 1, [2.0] => 2)
+        @test C._same_state(vector_keys, deepcopy(vector_keys))
+        @test !C._same_state(vector_keys, Dict([1.0] => 2, [2.0] => 1))
+        # A dictionary that does not say which key it holds has all its entries paired,
+        # so a stored `1.0` is not hidden behind a lookup with `1`. Lookup cannot tell the
+        # two apart; a command that depends on the stored key can.
+        stored_int, stored_float = Base.ImmutableDict{Any, Int}(1, 7), Base.ImmutableDict{Any, Int}(1.0, 7)
+        @test stored_int[1] == stored_float[1] == 7
+        @test nc_key_command(only(keys(stored_int))) != nc_key_command(only(keys(stored_float)))
+        @test !C._same_state(stored_int, stored_float)
+        @test !C._same_state(stored_float, stored_int)
+        @test C._same_state(stored_int, deepcopy(stored_int))
+        shadowed = Base.ImmutableDict(Base.ImmutableDict{Any, Int}(1, 7), 1 => 8)
+        @test C._same_state(shadowed, deepcopy(shadowed))
+        # An `ImmutableDict` keeps every entry, newest first, and looks up the newest of
+        # equal keys: the same entries with the other precedence are another state, whose
+        # next command differs. Equal chains built apart are the same state.
+        reversed = Base.ImmutableDict(Base.ImmutableDict{Any, Int}(1, 8), 1 => 7)
+        @test collect(shadowed) == [1 => 8, 1 => 7] && collect(reversed) == [1 => 7, 1 => 8]
+        @test nc_next_command(shadowed) != nc_next_command(reversed)
+        @test !C._same_state(shadowed, reversed)
+        @test !C._same_state(reversed, shadowed)
+        @test C._same_state(shadowed, Base.ImmutableDict(Base.ImmutableDict{Any, Int}(1, 7), 1 => 8))
+    end
+    @testset "the state comparison tries other pairings of look-alike entries" begin
+        K = NcInsertionKey
+        # Equal keys and equal values, one value (or key) also held by a later field; the
+        # copy holds its entries in the opposite order, so the first pairing is wrong.
+        k1, k2, v1, v2 = K(1.0), K(1.0), [5.0], [5.0]
+        original = NcKeyedState(Dict(k1 => v1, k2 => v2), v2)
+        c1, c2, w1, w2 = K(1.0), K(1.0), [5.0], [5.0]
+        reversed = Dict(c2 => w2, c1 => w1)
+        @test first(first(reversed)) === c2
+        @test C._same_state(original, NcKeyedState(reversed, w2))
+        @test C._same_state(NcKeyedState(reversed, w2), original)
+        @test C._same_state(NcKeyedState(Dict(k1 => v1, k2 => v2), k2), NcKeyedState(reversed, c2))
+        # Wrong states of the same shape are still refused: the later field holds another
+        # equal object, the copy's two values are one object, or it holds a key instead.
+        @test !C._same_state(original, NcKeyedState(reversed, [5.0]))
+        w = [5.0]
+        @test !C._same_state(original, NcKeyedState(Dict(c2 => w, c1 => w), w))
+        @test !C._same_state(original, NcKeyedState(reversed, c2))
+        # Look-alike entries inside look-alike entries, settled only by a field after
+        # both dictionaries.
+        function nested(outer_reversed)
+            vs = [[9.0] for _ in 1:4]
+            inner = [Dict(K(2.0) => vs[1], K(2.0) => vs[2]), Dict(K(2.0) => vs[3], K(2.0) => vs[4])]
+            outer = outer_reversed ? Dict(K(3.0) => inner[2], K(3.0) => inner[1]) : Dict(K(3.0) => inner[1], K(3.0) => inner[2])
+            return outer, vs
+        end
+        outer, vs = nested(false)
+        deep = NcKeyedState(outer, (vs[2], vs[3]))
+        outer_copy, vs_copy = nested(true)
+        @test C._same_state(deep, NcKeyedState(outer_copy, (vs_copy[2], vs_copy[3])))
+        @test C._same_state(deep, deepcopy(deep))
+        @test !C._same_state(deep, NcKeyedState(outer_copy, (vs_copy[2], vs_copy[1])))
+        # An identity dictionary of look-alike entries, two of them also held elsewhere.
+        keys_, values_ = [NcIdentityKey(1.0) for _ in 1:6], [[2.0] for _ in 1:6]
+        identity_state = NcKeyedState(IdDict(zip(keys_, values_)), (values_[2], keys_[5]))
+        @test C._same_state(identity_state, deepcopy(identity_state))
+        broken = deepcopy(identity_state)
+        broken.key = ([2.0], broken.key[2])
+        @test !C._same_state(identity_state, broken)
+        # A cache keyed by two look-alike nodes and the node that is active, held by a
+        # field after the dictionary, by one before it, or by a later entry; the order of
+        # the entries is set by addresses, so each case is made many times. Broken
+        # aliases are refused.
+        for D in (Dict, IdDict)
+            @testset let dictionary = D
+                after, before, later, refused = true, true, true, true
+                for _ in 1:64
+                    n1, n2 = NcIdentityKey(1.0), NcIdentityKey(1.0)
+                    cache = NcKeyedState(D(n1 => 3.0, n2 => 3.0), n1)
+                    copied = deepcopy(cache)
+                    after &= C._same_state(cache, copied)
+                    before &= C._same_state((key=cache.key, dict=cache.dict), (key=copied.key, dict=copied.dict))
+                    refused &= !C._same_state(cache, NcKeyedState(copied.dict, NcIdentityKey(1.0)))
+                    within = D{Any, Any}(n1 => 0.0, n2 => 0.0, NcIdentityKey(3.0) => n1)
+                    within_copy = deepcopy(within)
+                    later &= C._same_state(within, within_copy)
+                    within_copy[only(k for k in keys(within_copy) if k.x == 3.0)] = NcIdentityKey(1.0)
+                    refused &= !C._same_state(within, within_copy)
+                end
+                @test after
+                @test before
+                @test later
+                @test refused
+            end
+        end
+        # The search is bounded: with many look-alike entries and a difference after
+        # them, it gives up with a warning and reports the states as different.
+        many = NcKeyedState(Dict(K(1.0) => [1.0] for _ in 1:8), 1.0)
+        @test C._same_state(many, deepcopy(many))
+        other = deepcopy(many)
+        other.key = 2.0
+        @test !(@test_logs (:warn, r"stopped after") C._same_state(many, other))
     end
     # The checks run copies; only the deepcopy_equivalent run mutates the model given.
     counter = NcCountsCalls(0)

@@ -59,7 +59,7 @@ version is listed here with what changed.
 | Facade | Contract | Change |
 |---|---|---|
 | `ExternalPropagationServices` | 2.0.0 | `external_state` and `external_acceleration` take `(rt, t, slot)`, time before the owner-local position, instead of `(rt, k, t)`. The attitude quaternion is defined by formula. No numerical change. SpaceAGORAMuJoCo implements it from version 0.2.0. |
-| `HYPRServices` | 2.0.0 | The planners HYPR supplies require an explicit `rng::AbstractRNG` keyword instead of defaulting to the global stream. HYPR implements it from version 0.2.0; this source accepts HYPR 0.3.0. No binding changes. |
+| `HYPRServices` | 2.0.0 | The planners HYPR supplies require an explicit `rng::AbstractRNG` keyword instead of defaulting to the global stream. HYPR implements it from version 0.2.0; this source accepts HYPR 0.4.0. No binding changes. |
 | `EDGServices` | 2.0.0 | `guidance_decision!` and `control_decision!` take the EDG state before the configuration; `_edg_environment_state(p, u, t, spacecraft_index)` takes the context first; `_edg_targeting_control_clock(p)` returns the clock the engine reported to the call's EDG state instead of searching the configuration. No numerical change. The EDG guidance family of the GNC algorithm contract is served by this contract. SpaceAGORAEDG implements it from version 0.2.0. |
 | `HYPRServices`, `ExternalPropagationServices`, `EDGServices` | 1.0.0 | First reviewed contracts. |
 
