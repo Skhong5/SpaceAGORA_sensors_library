@@ -8,7 +8,7 @@ What to read next:
 
 - [Configuring a Simulation](simulation_configuration.md)
 - [Parallel Execution](parallel_execution.md)
-- [Laser Interlinks](laser_interlinks.md)
+- [Interlinks](interlinks.md)
 
 ## Constellations and interlinks
 
