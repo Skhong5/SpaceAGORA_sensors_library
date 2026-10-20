@@ -303,9 +303,12 @@ empty. Besides
 the state, the checkpoint holds the run state the callbacks keep on the
 spacecraft: the batteries' empty and full flags and shedding tier, the
 actuator faults' activity and held levels, the sensors' random streams,
-latest measurements and gyro biases, and the hinges' and gimbals' angles. A
-run with batteries, faults or sensors refuses a checkpoint written without
-them, or for a different configuration of them. A guidance, navigation or
+latest measurements and gyro biases, the hinges' and gimbals' angles, and the
+ramp factor and held thrust of thrusters with firing dynamics. A run with
+batteries, faults, sensors or thrusters with firing dynamics refuses a
+checkpoint written without them, or for a different configuration of them; a
+run with firing dynamics therefore refuses a checkpoint written by SpaceAGORA
+0.4 or earlier. A guidance, navigation or
 control model, or a sensor kind, that keeps run state of its own adds it to
 the file through `checkpoint_state` (see
 [Run state in checkpoint files](../extensibility.md#Run-state-in-checkpoint-files));
