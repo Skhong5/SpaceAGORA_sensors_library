@@ -178,11 +178,12 @@ function run_constellation_ensemble(
     isempty(spacecraft) && throw(ArgumentError(
         "run_constellation_ensemble requires at least one spacecraft in args.dynamics_model.spacecraft."
     ))
+    # Scoped effectors are resolved against the whole constellation first, so the
+    # checks below see the effectors themselves; each member then keeps the
+    # effectors whose scope holds its position, unscoped.
+    args = SimulationEngine._resolve_effector_scopes(args)
     _validate_ensemble_uncoupled(args, allow_gnc_effectors)
     SimulationEngine._warn_repeated_spacecraft_ids(args)
-    # Scoped effectors are resolved against the whole constellation; each member
-    # then keeps the effectors whose scope holds its position, unscoped.
-    args = SimulationEngine._resolve_effector_scopes(args)
 
     member_configs = [
         _ensemble_member_configuration(args, sc, idx, length(spacecraft))
