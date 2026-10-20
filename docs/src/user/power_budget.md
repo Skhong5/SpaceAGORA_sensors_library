@@ -25,7 +25,9 @@ spacecraft's `battery_energy_index` (a percentage).
   or, with `SimpleEphemeridesModel`, a low-precision model for Earth (other
   bodies need SPICE). The solar flux uses the central body's mean distance
   from the Sun (1 AU for Earth and the Moon); the eclipse model is the one of
-  solar radiation pressure.
+  solar radiation pressure. A `PowerReceiver` adds the power its incoming power
+  beams deliver (see [Interlinks](interlinks.md#Power-links)); a receiver alone
+  counts as a power part.
 - **Charging.** A surplus charges the battery at `charge_efficiency`, up to
   `max_charge_w`; a full battery curtails the rest.
 - **Discharging.** A shortfall discharges it over `discharge_efficiency`, up

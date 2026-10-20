@@ -260,8 +260,8 @@ integrated state:
 ### Power budget
 
 These columns are written with the default save-field list when a spacecraft
-of the run carries power-system parts (solar arrays, a battery or constant
-loads; see [Powering a Spacecraft](power_budget.md)). They are NaN for a
+of the run carries power-system parts (solar arrays, a battery, constant loads
+or a `PowerReceiver`; see [Powering a Spacecraft](power_budget.md)). They are NaN for a
 spacecraft without such parts, and the battery columns are NaN for one without
 a battery:
 
@@ -269,10 +269,12 @@ a battery:
 |---|---|---|
 | `sc1_battery_wh` | Wh | Energy stored in the battery (an integrated state) |
 | `sc1_battery_soc` | — | State of charge, the stored energy over the capacity |
-| `sc1_power_generated_w` | W | Power the solar arrays generate: lit cells facing the Sun, through the eclipse model |
+| `sc1_power_generated_w` | W | Power the solar arrays generate (lit cells facing the Sun, through the eclipse model), plus any power received from power beams |
 | `sc1_power_load_w` | W | Load on the bus: constant loads plus the mounted actuators, with any shedding applied. With more than one control effector in `:mounted` actuation, the actuators each one commands, as the dynamics apply each one's |
 | `sc1_power_shed_w` | W | Actuator power shed because the battery is empty |
 | `sc1_power_net_w` | W | Generation minus load; negative while the battery is discharging, or while it is empty and the load exceeds the generation |
+| `sc1_power_received_w` | W | Electrical power the spacecraft's incoming power beams deliver (part of the generation); only in a run with a `PowerBeamLink` |
+| `sc1_power_beamed_w` | W | Optical power the spacecraft's outgoing power beams carry; only in a run with a `PowerBeamLink` |
 
 ### Actuator faults
 
