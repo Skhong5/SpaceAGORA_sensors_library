@@ -85,12 +85,14 @@ using .SimulationModel: AbstractInterlink, LinkContext, LaserMomentumLink, link_
 using .SimulationModel: InterlinkModel, InterLinkGraph, InterLinkKey, InterLinkHistory, register_link!, interlink_force_on_spacecraft
 using .SimulationModel: link_directed, link_terminal_levels, link_terminal, terminal_supports, terminal_count
 using .SimulationModel: register_links!, all_pairs, mounted_link_terminals, terminal_number
+using .SimulationModel: same_plane_pairs, ring_pairs, grid_pairs
 using .SimulationModel: SchedulingPolicyModel, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
 using .SimulationModel: ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
 export AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
 export InterlinkModel, InterLinkGraph, InterLinkKey, InterLinkHistory, register_link!, interlink_force_on_spacecraft
 export link_directed, link_terminal_levels, link_terminal, terminal_supports, terminal_count
 export register_links!, all_pairs, mounted_link_terminals, terminal_number
+export same_plane_pairs, ring_pairs, grid_pairs
 export SchedulingPolicyModel, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
 export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
 @doc (@doc SimulationModel.InterLinkModels.AbstractInterlink) AbstractInterlink
@@ -113,6 +115,9 @@ export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!,
 @doc (@doc SimulationModel.InterLinkModels.terminal_count) terminal_count
 @doc (@doc SimulationModel.InterLinkModels.register_links!) register_links!
 @doc (@doc SimulationModel.InterLinkModels.all_pairs) all_pairs
+@doc (@doc SimulationModel.InterLinkModels.same_plane_pairs) same_plane_pairs
+@doc (@doc SimulationModel.InterLinkModels.ring_pairs) ring_pairs
+@doc (@doc SimulationModel.InterLinkModels.grid_pairs) grid_pairs
 @doc (@doc SimulationModel.InterlinkTerminals.mounted_link_terminals) mounted_link_terminals
 @doc (@doc SimulationModel.InterlinkTerminals.terminal_number) terminal_number
 @doc """Indexed terminal vertices, candidate edges, the link of each edge (`edge_properties`) and availability/selection flags. Register candidates with `register_link!`.""" InterLinkGraph

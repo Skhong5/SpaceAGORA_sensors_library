@@ -9,7 +9,7 @@ module InterLinkModels
 
 	export AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
 	export link_directed, link_terminal_levels, link_terminal, terminal_supports, terminal_count
-	export register_links!, all_pairs
+	export register_links!, all_pairs, same_plane_pairs, ring_pairs, grid_pairs
 	export InterlinkModel, InterLinkGraph, register_link!, update_availability!, interlink_force_on_spacecraft
 	export vertex, InterLinkKey, InterLinkHistory
 	export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!
@@ -227,12 +227,85 @@ module InterLinkModels
 	"""
 	all_pairs(spacecraft) = [(i, j) for i in eachindex(spacecraft) for j in eachindex(spacecraft) if i < j]
 
+	# The spacecraft with a constellation slot, by plane: plane => [(slot, vector index)], by slot.
+	function _slots_by_plane(spacecraft)
+		planes = Dict{Int, Vector{Tuple{Int, Int}}}()
+		for (index, sc) in enumerate(spacecraft)
+			slot = hasproperty(sc, :constellation_slot) ? sc.constellation_slot : nothing
+			slot === nothing && continue
+			push!(get!(Vector{Tuple{Int, Int}}, planes, slot.plane), (slot.slot, index))
+		end
+		foreach(sort!, values(planes))
+		return planes
+	end
+
+	"""
+	    same_plane_pairs(spacecraft) -> Vector{Tuple{Int, Int}}
+
+	Every pair `(i, j)`, `i < j`, of spacecraft in the same orbital plane, by their
+	`constellation_slot` (set by `build_constellation`), for `register_links!`.
+	Spacecraft without a slot take part in no pair.
+	"""
+	function same_plane_pairs(spacecraft)
+		pairs = Tuple{Int, Int}[]
+		for members in values(_slots_by_plane(spacecraft)), a in eachindex(members), b in a+1:length(members)
+			push!(pairs, minmax(members[a][2], members[b][2]))
+		end
+		return sort!(unique!(pairs))
+	end
+
+	"""
+	    ring_pairs(spacecraft) -> Vector{Tuple{Int, Int}}
+
+	Each spacecraft with the next slot in its plane, and the last slot with the
+	first: the in-plane rings of a constellation, by `constellation_slot`. A plane
+	of two gives one pair, a plane of one none. Pairs are `(i, j)` with `i < j`.
+	"""
+	function ring_pairs(spacecraft)
+		pairs = Tuple{Int, Int}[]
+		for members in values(_slots_by_plane(spacecraft))
+			n = length(members)
+			n < 2 && continue
+			for k in 1:n
+				push!(pairs, minmax(members[k][2], members[mod1(k + 1, n)][2]))
+			end
+		end
+		return sort!(unique!(pairs))
+	end
+
+	"""
+	    grid_pairs(spacecraft; wrap_planes=true) -> Vector{Tuple{Int, Int}}
+
+	The "+grid" of a constellation, by `constellation_slot`: the in-plane rings
+	(`ring_pairs`) and each slot with the same slot of the next plane, planes taken
+	in plane-number order. With `wrap_planes`, the last plane links to the first;
+	pass `false` for a Walker star, whose first and last planes counter-rotate. A
+	slot missing from the next plane links nothing across. Pairs are `(i, j)` with
+	`i < j`.
+	"""
+	function grid_pairs(spacecraft; wrap_planes::Bool=true)
+		planes = _slots_by_plane(spacecraft)
+		pairs = ring_pairs(spacecraft)
+		order = sort!(collect(keys(planes)))
+		for (k, plane) in enumerate(order)
+			k == length(order) && !wrap_planes && break
+			next = order[mod1(k + 1, length(order))]
+			next == plane && continue
+			across = Dict(planes[next])
+			for (slot, index) in planes[plane]
+				haskey(across, slot) && push!(pairs, minmax(index, across[slot]))
+			end
+		end
+		return sort!(unique!(pairs))
+	end
+
 	"""
 	    register_links!(model::InterlinkModel, spacecraft, pairs, link; terminals=nothing) -> Vector{InterLinkKey}
 
-	Register one candidate link per spacecraft pair `(i, j)` in `pairs` (for
-	example `all_pairs(spacecraft)`, or any vector of index pairs) and return
-	their keys in order. `link` is a link kind value, or a function
+	Register one candidate link per spacecraft pair `(i, j)` in `pairs` and return
+	their keys in order. The pairs come from `all_pairs(spacecraft)`, from a
+	constellation's planes and slots (`same_plane_pairs`, `ring_pairs`,
+	`grid_pairs`), or from any vector of index pairs. `link` is a link kind value, or a function
 	`(i, j) -> link` that builds each pair's link.
 
 	Each spacecraft's links take the terminals that can carry them in turn,

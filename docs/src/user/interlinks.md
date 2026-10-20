@@ -114,7 +114,17 @@ are undirected.
 
 `register_links!(model, spacecraft, pairs, link)` registers one link per
 spacecraft pair. `all_pairs(spacecraft)` gives every pair, or you can pass any
-vector of `(i, j)` index pairs. `link` is a kind value, or a function
+vector of `(i, j)` index pairs. For a constellation laid out by
+`build_constellation` or `walker_constellation` (see
+[Constellations](constellations.md)), its planes and slots give the usual
+topologies:
+
+- `same_plane_pairs(spacecraft)`: every pair within each plane.
+- `ring_pairs(spacecraft)`: each slot with the next in its plane, closing the
+  ring.
+- `grid_pairs(spacecraft; wrap_planes=true)`: the "+grid", the rings plus each
+  slot with the same slot of the next plane. Pass `wrap_planes=false` for a
+  Walker star, whose first and last planes counter-rotate. `link` is a kind value, or a function
 `(i, j) -> link`. Each spacecraft's links take its terminals that can carry them
 in turn, starting again from the first when they run out; links that share a
 terminal compete for it when the scheduler selects. Pass
@@ -122,6 +132,8 @@ terminal compete for it when the scheduler selects. Pass
 
 ```julia
 register_links!(model, spacecraft, all_pairs(spacecraft), LaserMomentumLink(power_w=40.0))
+# or, for a constellation's +grid:
+register_links!(model, spacecraft, grid_pairs(spacecraft), LaserMomentumLink(power_w=40.0))
 ```
 
 ### Terminal hardware and power

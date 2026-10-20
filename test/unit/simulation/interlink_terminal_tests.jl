@@ -140,6 +140,38 @@ end
         @test_throws ArgumentError register_links!(InterlinkModel(), spacecraft, [(1, 2)], (i, j) -> 1.0)
     end
 
+    @testset "pairs by plane and slot" begin
+        factory(plane, slot, index) = (bus = Link(root=true, m=100.0);
+            SpacecraftModel(root=bus, links=[bus], inertia_tensor=bus.inertia, n_terminal=4))
+        walker = walker_constellation(factory; total=12, planes=3, phasing=1, a=RADIUS, i=53)
+        plane_of(index) = walker[index].constellation_slot.plane
+        slot_of(index) = walker[index].constellation_slot.slot
+        same = same_plane_pairs(walker)
+        @test length(same) == 18 && all(((i, j),) -> i < j && plane_of(i) == plane_of(j), same)
+        ring = ring_pairs(walker)
+        @test length(ring) == 12 && all(index -> count(pair -> index in pair, ring) == 2, eachindex(walker))
+        @test all(((i, j),) -> plane_of(i) == plane_of(j) && mod(slot_of(j) - slot_of(i), 4) in (1, 3), ring)
+        grid = grid_pairs(walker)
+        across = setdiff(grid, ring)
+        @test length(grid) == 24 && length(across) == 12
+        @test all(((i, j),) -> slot_of(i) == slot_of(j) && plane_of(i) != plane_of(j), across)
+        @test all(index -> count(pair -> index in pair, grid) == 4, eachindex(walker))
+        open_grid = grid_pairs(walker; wrap_planes=false)
+        @test length(open_grid) == 20 && !any(((i, j),) -> Set((plane_of(i), plane_of(j))) == Set((1, 3)), setdiff(open_grid, ring))
+        # Spacecraft without a slot take part in no pair; small planes.
+        plain = [walker; SpacecraftModel()]
+        @test same_plane_pairs(plain) == same && ring_pairs(plain) == ring && grid_pairs(plain) == grid
+        two = build_constellation(factory, [OrbitalPlane(a=RADIUS, i=10, Ω=0, M=[0, 180]), OrbitalPlane(a=RADIUS, i=10, Ω=90, M=[0])])
+        @test ring_pairs(two) == [(1, 2)] && same_plane_pairs(two) == [(1, 2)]
+        @test grid_pairs(two) == [(1, 2), (1, 3)]
+        @test isempty(ring_pairs([(n_terminal=1,), (n_terminal=1,)]))
+        # The +grid on four terminals each: every spacecraft's four links take its four terminals.
+        model = InterlinkModel()
+        keys = register_links!(model, walker, grid, LaserMomentumLink())
+        @test length(keys) == 24
+        @test all(index -> sort([e[2] for key in keys for e in key if e[1] == index]) == [1, 2, 3, 4], eachindex(walker))
+    end
+
     @testset "a hardware link draws its power" begin
         spacecraft, model = linked_pair()
         solution = run_simulation(run_args(spacecraft, model); return_solution=true)
