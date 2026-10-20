@@ -1,12 +1,17 @@
 # EDG package boundary
 
-`SpaceAGORAEDG.jl` is the optional, experimental implementation of the typed
-energy-depletion guidance used by SpaceAGORA. The core facade is
-`SpaceAGORA.EDGServices`, contract `v"2.0.0"`. This separation follows the
-[optional adapter standard](adapter_contract.md). It changes where numerical
-kernels live; it does not establish manuscript equivalence or make the
-controller flight-qualified. The [user guide](../user/edg_guidance.md) explains
-the scientific policy and its current limits.
+`SpaceAGORAEDG.jl` is the optional, experimental package that computes
+SpaceAGORA's typed energy-depletion guidance (EDG). SpaceAGORA reaches it through
+the service module `SpaceAGORA.EDGServices`, contract `v"2.0.0"`: a module inside
+SpaceAGORA that lists the two decisions the companion implements and the types
+and queries SpaceAGORA supplies to it. The split follows the
+[optional adapter standard](adapter_contract.md).
+
+Moving the numerical kernels into their own package changed where the code
+lives. Treat EDG as experimental: exact reproduction of the published results has
+not been shown, and EDG is not approved for flight use. The
+[user guide](../user/edg_guidance.md) explains the scientific policy and its
+current limits.
 
 ## Ownership
 
@@ -14,38 +19,33 @@ the scientific policy and its current limits.
 |---|---|
 | Public configuration, state, guidance/control model and angle-command types | SpaceAGORA; existing type identities and constructors are retained. |
 | Heat-rate and heat-load decisions, structural restriction, targeting, candidate planning, passage heat, guidance and control decisions | SpaceAGORAEDG numerical implementation. |
-| Observation copies, atmosphere, epoch, frames, gravity and vehicle queries | SpaceAGORA, behind the versioned facade. |
+| Observation copies, atmosphere, epoch, frames, gravity and vehicle queries | SpaceAGORA, through the versioned service module. |
 | Integrator, heat integrals, event roots, solver masks, callback order, output and panel actuation | SpaceAGORA. |
-| Fresh-run initialization, per-passage bookkeeping and shared guidance/control state | Core lifecycle hooks, operating on the run's own EDG state. |
+| Fresh-run initialization, per-passage bookkeeping and shared guidance/control state | SpaceAGORA's lifecycle hooks, working on the run's own EDG state. |
 | Older E-EDG/T-EDG strategy routes | Removed from core; SpaceAGORAEDG is the only EDG implementation. |
 
-## Callers and private forwarding
+## Callers
 
-The public facade inventory in `src/models/gnc/companions/edg/services.jl`
-separates two provider decisions from core-supplied types and queries. Core's
-`ext/SpaceAGORAEDGExt.jl` delegates calls to the companion by allowed name;
-this differs from an external propagator adding methods to the same core generic.
+Calls cross this boundary in two directions:
 
-| Consumer | Access | Maintenance boundary |
-|---|---|---|
-| Companion decision implementations | Explicit `EDGServices` imports in `src/SpaceAGORAEDG.jl` | Supported facade calls; prediction contexts are supplied by core during a decision. |
-| Core guidance and control | Delegation through the extension and core-owned lifecycle | Core retains callbacks, pairing, panel application and per-run state. |
-| Core targeting control | `_edg_recompute_switches!`, `_edg_base_alpha` and `_edg_command_alpha!` through the compatibility bridge | Existing private coupling, outside the public decision/query inventory. |
-| Companion `test/runtests.jl` | Private context/kernel fixtures and compatibility-binding checks, alongside public analytic-run tests | Preserve lease-expiry, observation-copy and real dispatch-path assertions when migrating fixtures. |
-| Companion `benchmarks/native_reference/refresh_comparison.jl` and `observer_comparison_cases.jl` | Private model/engine/control aliases, `ODEParams` construction and integrator access | Research callers need an explicit replacement and correctness check before their private paths can be removed. |
+- **SpaceAGORA calls the companion.** SpaceAGORA's EDG guidance and control call
+  the two decisions through `ext/SpaceAGORAEDGExt.jl`, which forwards each call
+  by an allowed name. SpaceAGORA keeps the callbacks, the pairing of guidance and
+  control, the panel commands and the per-run state.
+- **The companion calls SpaceAGORA.** The companion's decisions import the names
+  they use from `EDGServices`, one by one, in `src/SpaceAGORAEDG.jl`. During a
+  decision, SpaceAGORA lends them a prediction context (see
+  [below](#Prediction-capability-and-state-lifetime)).
 
-The private allowlist lives in
-`src/models/gnc/guidance/aerobraking/typed_edg/algorithms.jl`. Its retained helpers
-are not extra public hooks. It includes the two decisions as well as helpers
-used by core, regression fixtures and research. Shrinking the formal facade
-would not remove this separate coupling. Keep the bridge until each maintained
-caller has migrated or has been explicitly retired.
+The names are listed in `src/models/gnc/companions/edg/services.jl`. EDG forwards
+calls by name; an external propagator, by contrast, adds methods to SpaceAGORA's
+own functions.
 
-For changes here, use the companion's facade/signature, context-lease, copy and
-analytic-run checks in `test/runtests.jl`, together with core EDG callback/control
-tests. Exercise the real core-to-extension-to-provider path, including expiry
-after exceptions. Public simulation tests and private fixture tests answer
-different questions; interface conformance does not establish scientific validity.
+SpaceAGORA's targeting control, and some of the companion's tests and research
+scripts, still use private SpaceAGORA paths. These paths are not supported;
+maintainers find them listed, with the checks for a boundary change, in
+`docs/contributing/companion_boundaries.md` in the
+[contributor documentation](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/main/docs/contributing).
 
 ## Supported calls and values
 
@@ -60,22 +60,23 @@ companion updates, then the immutable configuration, the controlled panel links
 (control only), a copied observation `u`, a borrowed prediction context `p`, the
 elapsed time `t` in seconds and the spacecraft's position in the run,
 `spacecraft_index`, from 1. `CONSUMED_SERVICES` lists the exact types and query
-operations supplied to the companion by this contract. The retained helper inventory supports
-compatibility routes and regression fixtures; it is not a general-purpose
+operations supplied to the companion by this contract. The retained helper list
+serves older routes and regression fixtures; do not use it as a general
 simulation API.
 
 `control_decision!` returns the core-owned `EDGControlDecision`: an angle command
 in radians, an `apply` flag, a switch/cache action and diagnostics. The flag
-distinguishes an invalid-index no-op from a valid zero-angle command. A cache
-hit or a returned command does not certify scientific feasibility. Core applies
-the command to the configured non-root panel links.
+distinguishes an invalid-index no-op from a valid zero-angle command. A returned
+command, or a cache hit, says only that the decision ran; judge its feasibility
+from the run's results. SpaceAGORA applies the command to the configured non-root
+panel links.
 
 Observations contain inertial position in metres, inertial velocity in m/s,
 mass in kg and copied cumulative per-link heat in J/cm². Spacecraft indices and
 controlled-link indices are 1-based. Position and velocity are immutable
 `SVector` values; heat and link collections are tuples. Geometry queries return
 only the masses, dimensions, reference areas, reflection coefficients and angles
-consumed by the kernels. Mutable physical geometry is never passed to the provider.
+consumed by the kernels. Mutable physical geometry is never passed to the companion.
 
 | Service | Meaning |
 |---|---|
@@ -91,7 +92,7 @@ consumed by the kernels. Mutable physical geometry is never passed to the provid
 Every query takes the prediction context first. The control clock is the one the
 engine reports to the EDG state (`gnc_clock_started!`) when the run starts,
 before the models' initializers, and again at each solve's start: the context of a
-provider call carries the clock of the EDG state passed to that call, and core no
+companion call carries the clock of the EDG state passed to that call, and core no
 longer searches the run's configuration for the EDG controller. A call without an
 EDG state, or in a run without the EDG control model, has no clock, and the query
 raises an `ArgumentError`.
@@ -105,15 +106,17 @@ rotation transport term.
 
 ## Prediction capability and state lifetime
 
-`AbstractPredictionContext` is an opaque, synchronous, call-scoped capability.
-Only the facade query functions are supported. Ordinary property access is
-refused, and the query closure checks expiry before accessing the core. Core
-revokes each lease in a `finally` block, including when a kernel throws. Retaining
-a handle does not extend its lifetime. Julia reflection into private fields or
-modules is outside this interface; the facade is an ownership boundary, not a
+During a decision, SpaceAGORA lends the companion a prediction context, an
+`AbstractPredictionContext`. Use it only with the service module's query
+functions: it is opaque, and ordinary property access is refused. The context is
+a lease, valid only during that one synchronous call. SpaceAGORA revokes it in a
+`finally` block when the call ends, also when a kernel throws, and each query
+checks that the lease is still valid before it reads SpaceAGORA's data. Keeping a
+handle does not extend its life. Julia reflection can still reach private fields
+or modules; that is outside this interface, which marks ownership and is not a
 security sandbox.
 
-The capability does not expose `ODEParams`, `shared_buffers`, the live state,
+The context does not expose `ODEParams`, `shared_buffers`, the live state,
 mutable geometry, an atmosphere reseeding operation or solver controls. Existing
 atmosphere caches and RNG behavior remain core-owned and use the configured
 query path. Packaging introduces no new prediction instance, seed or cache
@@ -137,11 +140,11 @@ integral, callback ordering, root settings, limits or 3 Hz scientific cases.
 The [installation guide](../user/installation_environment.md) describes the
 optional `edg` target and the exact pair recorded in package metadata. Load
 `SpaceAGORAEDG` before running EDG. Non-EDG simulations can still load and run
-with core alone. Selecting an EDG model without its provider raises
+with SpaceAGORA alone. Selecting an EDG model without the companion raises
 `EDGUnavailableError` during preflight, before output or stepping; it never
 silently selects another guidance law.
 
-The companion checks that the facade exists and requires exactly contract
+The companion checks that the service module exists and requires exactly contract
 `v"2.0.0"` before including its algorithms. The extension repeats the version
 check during initialization and dispatch. An incompatible contract raises
 `CompatibilityError`; install a supported pair and start a fresh process.
@@ -167,12 +170,12 @@ control = AerobrakingEnergyDepletionControlModel(config, state)
 | Part | The EDG guidance family (`EDGGuidanceFamily`) |
 |---|---|
 | Algorithm | `EDGGuidanceAlgorithm()`: the companion's `guidance_decision!`. Capabilities (`EDGGuidanceCapabilities`): the `:max_energy_depletion` and `:targeting` guidance modes. It draws no random numbers (`consumes_rng` is `false`) and needs the companion to be loaded. |
-| Request | `EDGGuidanceRequest`: copies of the observation, the configuration and the EDG state (with its control clock), and an opaque handle from which each provider call borrows its prediction context. |
-| Product | `EDGGuidanceDecision`: the spacecraft's guidance fields of the EDG state. The provider decides on a copy of the state; a proposal fails if it changes anything else. |
+| Request | `EDGGuidanceRequest`: copies of the observation, the configuration and the EDG state (with its control clock), and an opaque handle from which each companion call borrows its prediction context. |
+| Product | `EDGGuidanceDecision`: the spacecraft's guidance fields of the EDG state. The companion decides on a copy of the state; a proposal fails if it changes anything else. |
 | Validation | `validate_edg_guidance_decision`: the request's identity and spacecraft, a known mode that the configuration allows (`:inactive` and `:safe_low_drag` always), and a bracketing count that has not decreased. |
 | Install target | The EDG state of the settings, which the EDG control model reads. |
-| On rejection | `:fail`, as when the provider raises. |
-| Contract version | `family_contract_version` is this facade's contract version. |
+| On rejection | `:fail`, as when the companion raises. |
+| Contract version | `family_contract_version` is this service module's contract version. |
 
 Requests come at the binding's guidance ticks (`replan_interval_s`, with one at
 the run's start), and the binding ticks before the same tick's control. The
@@ -202,10 +205,12 @@ SpaceAGORAEDG implements contract 2.0.0 from version 0.2.0. A companion built fo
 
 ## Evidence and limits
 
-Interface conformance and installation checks do not qualify native reference
-campaigns or their scientific settings.
+Treat this package as experimental. Its interface and installation checks show
+that the package loads, answers calls and refuses a wrong contract version. To use
+a native reference campaign or its scientific settings, run that campaign itself.
 
-The initial package is experimental. Exact journal reproduction, continuous-family
-optimality, flight use, new checkpoint support and new concurrency guarantees
-are not established by this extraction. Existing observed violations remain
-violations; no threshold or scientific setting is relaxed to pass packaging tests.
+Moving the code into a package did not test exact reproduction of the journal
+results, optimality over the continuous family, flight use, new checkpoint support
+or new concurrency guarantees; do not claim them on the strength of the move.
+Observed violations remain violations, and no threshold or scientific setting was
+relaxed to make the packaging tests pass.
