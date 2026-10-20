@@ -46,7 +46,6 @@ const FULL_PACKAGES = [
     :Roots,
     :SPICE,
     :SatelliteToolboxGeomagneticField,
-    :SatelliteToolboxGravityModels,
     :SpecialFunctions,
     :StaticArrays,
 ]
@@ -70,7 +69,6 @@ const CI_PACKAGES = [
     :Roots,
     :SPICE,
     :SatelliteToolboxGeomagneticField,
-    :SatelliteToolboxGravityModels,
     :SpecialFunctions,
     :StaticArrays,
 ]
