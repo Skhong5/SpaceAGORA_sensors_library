@@ -95,15 +95,18 @@ Clone SpaceAGORA beside your repository at the pinned commit, then build a
 separate environment that develops that checkout by path:
 
 ```bash
-git clone -c lfs.fetchexclude='*' https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../SpaceAGORA.jl
+git clone --filter=blob:none -c lfs.fetchexclude="*" https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../SpaceAGORA.jl
 git -C ../SpaceAGORA.jl checkout <the rev in SpaceAGORASource.toml>
 julia --startup-file=no ../SpaceAGORA.jl/scripts/contributor_environment.jl package . ../MyPlanner-env --manifest core
 ```
 
-`-c lfs.fetchexclude='*'` keeps this clone, its checkouts and later pulls from
-downloading SpaceAGORA's large data files (Git LFS), which a contributor
-repository does not use. Without Git LFS installed the setting does nothing,
-and nothing is downloaded either. The first argument is the starter's kind.
+`--filter=blob:none` skips the contents of old file versions: Git downloads the
+files of a commit when you check it out. `-c lfs.fetchexclude="*"` keeps this
+clone, its checkouts and later pulls from downloading SpaceAGORA's large data
+files (Git LFS), which a contributor repository does not use. Without Git LFS
+installed the setting does nothing, and nothing is downloaded either. The
+commands on this page run as written in bash or zsh, PowerShell and Command
+Prompt. The first argument is the starter's kind.
 `--manifest core` seeds the environment from the core's Manifest and keeps its
 versions; a project uses `--manifest committed`, its own Manifest. The script
 refuses a pin file whose `rev` is not the checked-out commit, so the commit you

@@ -21,17 +21,22 @@ reviewed there, then this starter pointed at it.
 Once:
 
 ```bash
-git clone -c lfs.fetchexclude='*' https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../SpaceAGORA.jl
+git clone --filter=blob:none -c lfs.fetchexclude="*" https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../SpaceAGORA.jl
 git -C ../SpaceAGORA.jl checkout <the rev in SpaceAGORASource.toml>
 julia --startup-file=no ../SpaceAGORA.jl/scripts/contributor_environment.jl companion . ../StarterName-env --manifest core
 ```
 
-`-c lfs.fetchexclude='*'` keeps this clone, its checkouts and later pulls from
-downloading SpaceAGORA's large data files (Git LFS), which a contributor
-repository does not use. Without Git LFS installed the setting does nothing,
-and nothing is downloaded either.
+`--filter=blob:none` skips the contents of old file versions: Git downloads the
+files of a commit when you check it out. `-c lfs.fetchexclude="*"` keeps this
+clone, its checkouts and later pulls from downloading SpaceAGORA's large data
+files (Git LFS), which a contributor repository does not use. Without Git LFS
+installed the setting does nothing, and nothing is downloaded either.
 
 Then `julia --project=../StarterName-env -e 'using Pkg; Pkg.test("StarterName")'`.
+That line is quoted for bash or zsh (on Windows, Git Bash). In PowerShell or
+Command Prompt, start `julia --project=../StarterName-env` and enter
+`using Pkg; Pkg.test("StarterName")` at the `julia>` prompt; the three commands
+above run there as written.
 The tests check the facade's shape at the companion's contract version, a short run
 with the example owner, and that a SpaceAGORA-only session loads none of the
 companion. `test/incompatible_core.jl` (an incompatible contract is refused) and

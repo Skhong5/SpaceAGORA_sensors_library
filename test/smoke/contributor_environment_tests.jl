@@ -502,3 +502,30 @@ end
     @test_throws ArgumentError options(["project", "r", "e", "--companions", "mujoco"])
     @test_throws ArgumentError options(["project", "--manifest"])
 end
+
+# Run as a command, a refusal prints one line and exits with code 1, without a stack
+# trace. The fixture core carries a copy of the scripts, so the command checks that
+# clean checkout at the pinned commit and refuses only the non-empty environment.
+@testset "A refusal on the command line is one line" begin
+    contributor_fixture() do fixture
+        scripts = mkpath(joinpath(fixture.core, "scripts"))
+        for name in ("contributor_environment.jl", "optional_packages.jl")
+            cp(joinpath(@__DIR__, "..", "..", "scripts", name), joinpath(scripts, name))
+        end
+        fixture_run("-C", fixture.core, "add", "scripts")
+        fixture_run("-C", fixture.core, "commit", "--quiet", "-m", "Fixture core scripts")
+        rev = fixture_read("-C", fixture.core, "rev-parse", "HEAD")
+        environment = mkpath(env(fixture))
+        write(joinpath(environment, "keep.txt"), "")
+        with_pin(fixture, d -> d["rev"] = rev) do
+            command = `$(Base.julia_cmd()) --startup-file=no $(joinpath(scripts, "contributor_environment.jl"))
+                       project $(fixture.repo) $environment --manifest core`
+            out, err = IOBuffer(), IOBuffer()
+            process = run(pipeline(ignorestatus(command); stdout=out, stderr=err))
+            @test process.exitcode == 1
+            @test String(take!(out)) == ""
+            @test String(take!(err)) == "ERROR: Choose a new or empty environment directory: $environment\n"
+            @test readdir(environment) == ["keep.txt"]
+        end
+    end
+end
