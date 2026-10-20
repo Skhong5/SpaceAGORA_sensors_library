@@ -3,7 +3,6 @@ __precompile__(true)
 module SpaceAGORA
 
 ## 1. Include package modules
-# Internal contract only; runtime guidance still uses its existing path.
 include(joinpath(@__DIR__, "models", "gnc", "contracts", "gnc_algorithms.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "planning", "rpo", "contract", "rpo_planner.jl"))
 include(joinpath(@__DIR__, "models", "gnc", "contracts", "gnc_runtime.jl"))
@@ -154,7 +153,7 @@ the coefficients are converted twice. The other keywords are `j2_source`,
 `reference_radius_m`, `gm_m3s2` and `include_central`. A degree beyond the
 file's contents is refused.
 """ GravitationalHarmonicsModel
-@doc "Output and checkpoint settings for a simulation. The opt-in RPO pilot refuses checkpoint writing and resume." SimulationSettings
+@doc "Output and checkpoint settings for a simulation. The RPO pilot runs with checkpoints. What a checkpoint supports, what it refuses and what lies outside its guarantee is listed in the checkpoint table of the RPO planner guide, \"Run an RPO case with interchangeable planners\"." SimulationSettings
 @doc """
     RPOPSOConfig(; kwargs...)
 
