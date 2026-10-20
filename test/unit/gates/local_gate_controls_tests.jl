@@ -93,6 +93,7 @@ end
     mktempdir() do fixture
         _copy_into!(fixture, repo, "src")
         _copy_into!(fixture, repo, "Project.toml")
+        _copy_into!(fixture, repo, joinpath("docs", "Project.toml"))
         _copy_into!(fixture, repo, joinpath("build", "build_sysimage.jl"))
         _copy_into!(fixture, repo, joinpath("packages", "SpaceAGORAHYPR", "src"))
 
@@ -123,6 +124,17 @@ end
             end
             _with_text(project_path, without("Base64")) do
                 @test isnothing(run_gate().failure)
+            end
+            @test isnothing(run_gate().failure)
+
+            # The docs environment's own dependencies need compat entries too.
+            docs_project_path = joinpath(fixture, "docs", "Project.toml")
+            docs_original = read(docs_project_path, String)
+            @test haskey(TOML.parsefile(docs_project_path)["compat"], "Documenter")
+            docs_without = replace(docs_original, r"^Documenter = \"1\"\n"m => ""; count=1)
+            @test docs_without != docs_original
+            _with_text(docs_project_path, docs_without) do
+                @test _failed_with(run_gate(), "Missing compat entries in docs/Project.toml: Documenter")
             end
             @test isnothing(run_gate().failure)
         end
