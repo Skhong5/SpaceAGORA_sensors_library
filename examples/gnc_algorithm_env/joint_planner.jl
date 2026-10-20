@@ -1,4 +1,4 @@
-# Worked example E of "Writing a GNC Algorithm" (docs/src/user/gnc_algorithm.md):
+# Worked example E of "Writing a GNC Algorithm" (docs/src/user/gnc_planning.md):
 # a planner of the joint-reference family, run through the generic binding
 # `AlgorithmGuidance` with a robot arm's controller. Each region between a
 # `# snippet:` line and `# end snippet` appears on that page as it is here; the HPC

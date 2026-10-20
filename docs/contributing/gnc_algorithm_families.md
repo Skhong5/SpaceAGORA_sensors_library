@@ -86,8 +86,8 @@ Give the family an abstract algorithm type that declares `algorithm_family`
    module can see.
 3. **The hook registry.** Add rows to `docs/extension_hooks.jl` for each
    function an algorithm or the family implements that is not already a row,
-   with `page = "user/gnc_algorithm.md"`, and add the section title to
-   `HOOK_SECTIONS` when it holds hooks.
+   with `page` naming the handwritten user guide that explains the hook.
+   Add the section title to `HOOK_SECTIONS` when it holds hooks.
 4. **The conformance kit.** Add the family's representative requests (a
    `<family>_conformance_requests()` builder, including one request the family
    refuses), its `conformance_link`, and when it runs in a simulation a
@@ -99,7 +99,7 @@ Give the family an abstract algorithm type that declares `algorithm_family`
    reason), installation, currency and the rejection policy, and a run through
    the binding with no family-specific orchestration.
 6. **The docs.** A row in the families table of
-   [Writing a GNC Algorithm](../src/user/gnc_algorithm.md#The-planning-profile),
+   [Planning Algorithms](../src/user/gnc_planning.md#The-planning-profile),
    and how its algorithms run.
 7. **Review.** A review record under `test/ai_reviews/` (the CI artifact gate).
    For a family a companion serves, qualify the pair as

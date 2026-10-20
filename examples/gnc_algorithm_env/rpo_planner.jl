@@ -1,4 +1,4 @@
-# Worked example C of "Writing a GNC Algorithm" (docs/src/user/gnc_algorithm.md):
+# Worked example C of "Writing a GNC Algorithm" (docs/src/user/gnc_planning.md):
 # a planner of the RPO reference family, run in the RPO pilot. Each region between
 # a `# snippet:` line and `# end snippet` appears on that page as it is here; the
 # HPC and extensibility docs gate compares them.
