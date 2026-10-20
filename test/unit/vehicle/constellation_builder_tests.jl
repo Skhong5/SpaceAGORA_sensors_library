@@ -51,10 +51,11 @@ function deprecation_messages(f)
     return [string(entry.message) for entry in logger.logs]
 end
 
-function walker_configuration(spacecraft; duration=60.0)
+function walker_configuration(spacecraft; duration=60.0,
+                              settings=SimulationSettings(results=false, generate_plots=false))
     planet = make_no_gram_planet(:earth)
     return SimulationConfiguration(
-        simulation_settings=SimulationSettings(results=false, generate_plots=false),
+        simulation_settings=settings,
         mission_configuration=MissionConfiguration(mission_type=MissionTime,
             mission_time=duration, orientation_sim=false, data_rate=10.0),
         environment_model=make_no_gram_environment(planet=planet),
@@ -218,6 +219,27 @@ end
         @test tag(12, 12, 40) == "sat_12_id_40"
         @test tag(5, 2048, 5) == "sat_0005_id_5"
         @test issorted([tag(index, 12, index) for index in 1:12])
+    end
+
+    @testset "a resumed ensemble finds checkpoints in unpadded folders" begin
+        mktempdir() do directory
+            spacecraft = walker_constellation(bus_factory; total=12, planes=3, phasing=0, a=7e6, i=53)
+            settings(resume) = SimulationSettings(results=false, generate_plots=false, checkpoint_enabled=true,
+                checkpoint_directory=directory, resume_from_checkpoint=resume)
+            member(args, index) = SpaceAGORA.SimulationCampaigns._ensemble_member_configuration(
+                args, args.dynamics_model.spacecraft[index], index, 12).simulation_settings.checkpoint_directory
+            touch_checkpoint(folder) = (mkpath(joinpath(directory, folder));
+                touch(SE._checkpoint_paths((simulation_settings=(checkpoint_directory=joinpath(directory, folder),),)).data))
+            resumed = walker_configuration(spacecraft; settings=settings(true))
+            @test member(resumed, 3) == joinpath(directory, "sat_03_id_3")       # no checkpoint anywhere
+            touch_checkpoint("sat_3_id_3")                                       # written before the padding
+            @test member(resumed, 3) == joinpath(directory, "sat_3_id_3")
+            @test member(resumed, 4) == joinpath(directory, "sat_04_id_4")
+            fresh = walker_configuration(spacecraft; settings=settings(false))
+            @test member(fresh, 3) == joinpath(directory, "sat_03_id_3")         # a new run writes the padded name
+            touch_checkpoint("sat_03_id_3")
+            @test member(resumed, 3) == joinpath(directory, "sat_03_id_3")       # the padded folder wins
+        end
     end
 end
 

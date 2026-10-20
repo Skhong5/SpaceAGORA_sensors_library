@@ -107,8 +107,11 @@ A spacecraft's `id` names it in the visualization scene and viewer, seeds its
 sensors' noise, and names its folder in an ensemble. Spacecraft that share an id
 are confused there: two identical sensors with one id give the same noise. A run
 whose spacecraft repeat an id warns once per process, and throws under
-`julia --depwarn=error`. SpaceAGORA 1.0 will refuse it. `build_constellation`
-and `walker_constellation` give every spacecraft its own id.
+`julia --depwarn=error`. SpaceAGORA 1.0 will refuse it. A test suite run with
+`--depwarn=error`, as the contributor CI workflow does by default, therefore fails
+on repeated ids: give test spacecraft their own ids as well.
+`build_constellation` and `walker_constellation` give every spacecraft its own
+id.
 
 `spacecraft.constellation_slot` holds the plane and slot of a built spacecraft,
 and is `nothing` for any other. It travels with the spacecraft, including into
@@ -129,5 +132,9 @@ When the spacecraft do not interact, `run_constellation_ensemble(args)` runs one
 simulation per spacecraft instead, each with its own step. When results or
 checkpoints are saved, each member gets its own folder, `sat_<index>_id_<id>`.
 The index is zero-padded to the digits of the member count (`sat_01` to `sat_12`
-for twelve members), so the folders sort in member order. See
-[Parallel Execution](parallel_execution.md).
+for twelve members), so the folders sort in member order. Ensembles of up to
+nine members keep the names SpaceAGORA 0.4 gave them; for ten or more, scripts
+that read member folders by name need the padded names. A resumed ensemble whose
+checkpoints were written before the padding finds them: a member with a
+checkpoint only under its unpadded folder (`sat_1_id_1`) resumes from that folder
+and keeps writing to it. See [Parallel Execution](parallel_execution.md).

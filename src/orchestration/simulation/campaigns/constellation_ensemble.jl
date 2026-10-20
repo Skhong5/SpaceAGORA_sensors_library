@@ -48,6 +48,22 @@ function _ensemble_member_configuration(
     )
 end
 
+# The configuration of ensemble member `index` of `count`. Checkpoints of an
+# ensemble of ten or more members written before the folders were zero-padded
+# (SpaceAGORA 0.4 and earlier) are under the unpadded name, `sat_1_id_1`: on
+# resume, a member whose padded folder has no checkpoint and whose unpadded one
+# has resumes there, and goes on writing there.
+function _ensemble_member_configuration(args::SimulationConfiguration, spacecraft::SpacecraftModel,
+                                        index::Integer, count::Integer)::SimulationConfiguration
+    tag = _ensemble_member_tag(index, count, spacecraft.id)
+    config = _ensemble_member_configuration(args, spacecraft, tag)
+    unpadded = "sat_$(index)_id_$(spacecraft.id)"
+    (args.simulation_settings.resume_from_checkpoint && unpadded != tag) || return config
+    isfile(SimulationEngine._checkpoint_paths(config).data) && return config
+    earlier = _ensemble_member_configuration(args, spacecraft, unpadded)
+    return isfile(SimulationEngine._checkpoint_paths(earlier).data) ? earlier : config
+end
+
 function _validate_ensemble_uncoupled(args::SimulationConfiguration, allow_gnc_effectors::Bool)
     args.interlink_model === nothing || throw(ArgumentError(
         "run_constellation_ensemble cannot split an interlinked constellation into independent spacecraft. Use run_simulation instead."))
@@ -86,7 +102,9 @@ value for spacecraft `i` (in `args.dynamics_model.spacecraft` order) in `value`.
 result saving, checkpointing, or checkpoint resume is enabled, each member uses
 per-satellite `sat_<index>_id_<spacecraft id>` subdirectories so members do not read or
 clobber each other's files. The index is zero-padded to the digits of the member count
-(`sat_01` to `sat_12` for twelve members), so the folders sort in member order.
+(`sat_01` to `sat_12` for twelve members), so the folders sort in member order. On resume,
+a member with a checkpoint only under its unpadded folder (written by SpaceAGORA 0.4 or
+earlier, `sat_1_id_1`) resumes from that folder and keeps writing to it.
 
 # Parallel execution
 
@@ -149,7 +167,7 @@ function run_constellation_ensemble(
     SimulationEngine._warn_repeated_spacecraft_ids(args)
 
     member_configs = [
-        _ensemble_member_configuration(args, sc, _ensemble_member_tag(idx, length(spacecraft), sc.id))
+        _ensemble_member_configuration(args, sc, idx, length(spacecraft))
         for (idx, sc) in enumerate(spacecraft)
     ]
 
