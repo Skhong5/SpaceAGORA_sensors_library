@@ -273,13 +273,25 @@ function _restore_model_checkpoint_state!(args, snapshot)
     return nothing
 end
 
+# A checkpointed run's segment from `t` ends one interval later, or at the run's
+# end when that comes first or is the same time to the periodic tick clock
+# (`_same_run_time`): accumulated decimal intervals stop short of the end by an
+# ulp (ten 0.1 s intervals reach 0.9999999999999999), and a last segment that
+# short is a step the solver can reject and then abort as unstable.
+function _checkpoint_segment_end(t::Float64, interval::Float64, mission_end::Float64)
+    t_next = t + interval
+    t_next >= mission_end && return mission_end
+    return SimulationModel.SimulationCallbacks._same_run_time(t_next, mission_end) ? mission_end : t_next
+end
+
 # A checkpoint written at its run's end: the run did not take the periodic
 # navigation, guidance and control ticks due then, so a run resumed from it takes
 # them at its start. One written at a segment boundary holds no entry: the ticks
 # due there came before it. So does one written where a solve stopped early, at an
 # event's `terminate!` (impact, touchdown, orbit or entry count): the solver applies
 # every discrete callback of that step after the event's, so a tick due then ran
-# before the checkpoint, as in a run in one piece.
+# before the checkpoint, as in a run in one piece. "Due then" is up to the clock's
+# rounding tolerance (`_same_run_time`) on both sides of the checkpoint.
 _periodic_tick_checkpoint_state(t::Float64, mission_end) = t >= mission_end ? (version=1, pending_s=t) : nothing
 
 # The resumed run's start when the ticks due there are pending, NaN otherwise.

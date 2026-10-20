@@ -992,7 +992,7 @@ function run_simulation(
         u_cursor = deepcopy(u_start)
 
         while t_cursor < mission_end
-            t_next = min(t_cursor + interval, mission_end)
+            t_next = _checkpoint_segment_end(t_cursor, interval, mission_end)
             empty!(saved_values.t)
             empty!(saved_values.saveval)
             p.shared_buffers.solve_segment_end_time[] = t_next

@@ -290,7 +290,11 @@ SM.SimulationSettings(
 A checkpointed run is solved in segments of `checkpoint_interval_s`. Its
 navigation, guidance and control effectors tick at the same times as in a run
 solved in one piece, including a tick that falls on a segment boundary, which
-comes before the checkpoint written there.
+comes before the checkpoint written there. A tick and a boundary that differ only
+by floating-point rounding, within 100 units in the last place (`3 * 0.1` is
+0.30000000000000004, and a 0.3 s interval ends the first segment at 0.3), count
+as one time: the tick is taken at the boundary, once. Likewise, a segment that
+would end that close to the run's end ends at the run's end.
 
 A crashed or interrupted run can be resumed by setting
 `resume_from_checkpoint = true` in `SimulationSettings`. The resumed run's

@@ -93,10 +93,33 @@ end
 
 const TICKS = (:control, :second, :guidance, :navigation)
 
+# The segment boundaries of a checkpointed run from `start`, its end included.
+function checkpoint_boundaries(interval, mission_time; start=0.0)
+    boundaries = Float64[]
+    t = start
+    while t < mission_time
+        t = SE._checkpoint_segment_end(t, interval, mission_time)
+        push!(boundaries, t)
+    end
+    return boundaries
+end
+
+# The ticks of a run in one piece as a checkpointed run takes them: a tick that
+# differs from a segment boundary only by rounding (`_same_run_time`) at the boundary.
+function at_boundaries(ticks, boundaries)
+    return map(ticks) do t
+        i = findfirst(b -> SC._same_run_time(t, b), boundaries)
+        i === nothing ? t : boundaries[i]
+    end
+end
+
 function same_ticks_and_state(split, unsplit)
+    settings = split.args.simulation_settings
+    boundaries = settings.checkpoint_enabled ?
+        checkpoint_boundaries(settings.checkpoint_interval_s, split.args.mission_configuration.mission_time) : Float64[]
     @test all(field -> !isempty(getfield(unsplit, field)), TICKS)
     for field in TICKS
-        @test getfield(split, field) == getfield(unsplit, field)
+        @test getfield(split, field) == at_boundaries(getfield(unsplit, field), boundaries)
     end
     @test split.final.h_wheels[1] ≈ unsplit.final.h_wheels[1] rtol=1e-12
     @test split.final.ω ≈ unsplit.final.ω rtol=1e-12
@@ -126,9 +149,13 @@ runtime_state(args) = get(SE._load_checkpoint(args), :runtime_state, nothing)
     @testset "the reported 0.1 s control period with 1 s segments" begin
         unsplit = ramp_run(period=0.1)
         split = ramp_run(period=0.1, interval=1.0)
-        # 30 * 0.1 is 3.0000000000000004, so that tick falls just after a boundary.
-        @test count(t -> t in (1.0, 2.0, 4.0), split.control) == 3
+        # 10, 20, 30 and 40 times 0.1 are exactly 1.0 to 4.0, so each boundary has
+        # its tick (boundaries off by an ulp are tested below).
+        @test count(t -> t in (1.0, 2.0, 3.0, 4.0), split.control) == 4
         same_ticks_and_state(split, unsplit)
+        # Within a segment tick times stay exact: 3 * 0.1 is 0.30000000000000004,
+        # an ulp after the second controller's tick at 0.3, and keeps its own time.
+        @test 3 * 0.1 in split.control && 0.3 in split.second
     end
 
     @testset "segment boundaries off the tick grid do not shift it" begin
@@ -216,6 +243,72 @@ runtime_state(args) = get(SE._load_checkpoint(args), :runtime_state, nothing)
         @test_throws ArgumentError SE._pending_periodic_ticks_s(bad)
         @test isnan(SE._pending_periodic_ticks_s((t=2.0, u=nothing)))
     end
+
+    @testset "decimal boundaries take the tick they round away from, once" begin
+        # 3 * 0.1 is 0.30000000000000004, and a 0.3 s interval ends the first segment
+        # at 0.3. The next segment started an ulp before that tick, and the solver
+        # aborted the step to it as unstable after two navigation ticks.
+        rates = (period=0.125, navigation_period=0.1, mission_time=1.5)
+        unsplit = ramp_run(; rates...)
+        split = ramp_run(; rates..., interval=0.3)
+        @test checkpoint_boundaries(0.3, 1.5) == [0.3, 0.6, 3 * 0.3, 1.2, 1.5]
+        @test length(split.navigation) == length(unsplit.navigation) == 14
+        @test all(b -> count(==(b), split.navigation) == 1, (0.3, 0.6, 3 * 0.3, 1.2))
+        @test 3 * 0.1 in unsplit.navigation && 3 * 0.1 ∉ split.navigation
+        same_ticks_and_state(split, unsplit)
+        @test runtime_state(split.args).periodic_ticks == (version=1, pending_s=1.5)
+
+        # Boundaries an ulp before ticks of the 0.25 s grid; the third falls an ulp
+        # before the run's end, which ends that segment instead.
+        rates = (period=0.125, navigation_period=0.25, mission_time=1.5)
+        unsplit = ramp_run(; rates...)
+        split = ramp_run(; rates..., interval=prevfloat(0.5))
+        @test checkpoint_boundaries(prevfloat(0.5), 1.5) == [prevfloat(0.5), prevfloat(1.0), 1.5]
+        @test split.navigation == [0.25, prevfloat(0.5), 0.75, prevfloat(1.0), 1.25]
+        same_ticks_and_state(split, unsplit)
+
+        # Ten 0.1 s intervals reach 0.9999999999999999, an ulp before the run's end;
+        # a last segment that short aborted as unstable as well.
+        rates = (period=0.125, navigation_period=0.1, mission_time=1.0)
+        unsplit = ramp_run(; rates...)
+        split = ramp_run(; rates..., interval=0.1)
+        @test length(checkpoint_boundaries(0.1, 1.0)) == 10 && last(checkpoint_boundaries(0.1, 1.0)) == 1.0
+        same_ticks_and_state(split, unsplit)
+        @test SE._load_checkpoint(split.args).t == 1.0
+
+        # A run resumed after an interruption at the 0.6 s boundary: the tick at
+        # 6 * 0.1 came before that checkpoint, at 0.6, and does not come again.
+        rates = (period=0.125, navigation_period=0.1, mission_time=1.5)
+        split = ramp_run(; rates..., interval=0.3)
+        dir = mktempdir()
+        interrupted = ramp_setup(; rates..., interval=0.3, dir=dir, fail_after=0.65)
+        err = try
+            run_simulation(interrupted.args; isolate_state=false)
+            nothing
+        catch e
+            e
+        end
+        @test err !== nothing && occursin("interrupted at", sprint(showerror, err))
+        @test SE._load_checkpoint(interrupted.args).t == 0.6 && count(==(0.6), interrupted.navigation.ticks) == 1
+        resumed = ramp_run(; rates..., interval=0.3, dir=dir, resume=true, fail_after=Inf)
+        @test resumed.navigation[1] == 7 * 0.1
+        for field in TICKS
+            @test getfield(resumed, field) == filter(>(0.6), getfield(split, field))
+        end
+        @test resumed.final.h_wheels[1] ≈ split.final.h_wheels[1] rtol=1e-12
+
+        # A run ending an ulp before a tick leaves it pending; the run extended from
+        # its end takes it there, once.
+        unsplit = ramp_run(; rates..., mission_time=0.6)
+        dir = mktempdir()
+        first_leg = ramp_run(; rates..., interval=0.3, dir=dir, mission_time=0.3)
+        @test first_leg.navigation == [0.1, 0.2]
+        @test runtime_state(first_leg.args).periodic_ticks == (version=1, pending_s=0.3)
+        extended = ramp_run(; rates..., interval=0.3, dir=dir, resume=true, mission_time=0.6)
+        @test extended.navigation == [0.3, 0.4, 0.5]
+        @test vcat(first_leg.navigation, extended.navigation) == at_boundaries(unsplit.navigation, [0.3, 0.6])
+        @test extended.final.h_wheels[1] ≈ unsplit.final.h_wheels[1] rtol=1e-12
+    end
 end
 
 @testset "periodic GNC callback outside a checkpointed run is PeriodicCallback" begin
@@ -264,6 +357,50 @@ end
         ticks, times = direct_ticks(recorded, (2.0, 3.0); before=(terminator,), clock...)
         @test ticks == 2.125:0.125:2.5 && last(times) == 2.5
     end
+
+    # Run times that differ only by rounding are one time to the run clock: within
+    # 100 ulps of the larger, OrdinaryDiffEqCore's tolerance for reaching a stop.
+    @test SC._same_run_time(0.3, 3 * 0.1) && SC._same_run_time(3 * 0.1, 0.3)
+    @test SC._same_run_time(1.0e7, 1.0e7 + 100 * eps(1.0e7)) && !SC._same_run_time(1.0e7, 1.0e7 + 101 * eps(1.0e7))
+    @test SE._checkpoint_segment_end(0.0, 0.3, 1.5) == 0.3 && SE._checkpoint_segment_end(1.2, 0.3, 1.5) == 1.5
+    @test SE._checkpoint_segment_end(0.8999999999999999, 0.1, 1.0) == 1.0
+    @test SE._checkpoint_segment_end(0.0, 1.0 - 1e-9, 1.0) == 1.0 - 1e-9
+    # Segments ending near 3 * 0.1, which is 0.30000000000000004. Within that
+    # tolerance of the boundary, before or after it, the tick fires at the boundary,
+    # at the first segment's end, and the second segment starts after it; farther,
+    # it fires at its own time. It fires once either way, and no solve has a step
+    # shorter than the tolerance.
+    tick = 3 * 0.1
+    tolerance = 100 * eps(tick)
+    clock = (origin=0.0, horizon=5.0)
+    every_tenth(f) = SC._run_clock_periodic_callback(f, 0.1)
+    for (boundary, at_boundary) in ((tick - 1e-9, false), (tick - 101 * eps(tick), false), (tick - tolerance, true),
+                                    (prevfloat(tick), true), (tick, true), (nextfloat(tick), true),
+                                    (tick + tolerance, true), (tick + 101 * eps(tick), false), (tick + 1e-9, false))
+        before, before_times = direct_ticks(every_tenth, (0.0, boundary); clock...)
+        after, after_times = direct_ticks(every_tenth, (boundary, 0.55); clock...)
+        @test vcat(before, after) == [0.1, 0.2, at_boundary ? boundary : tick, 0.4, 0.5]
+        @test minimum(diff(unique(before_times))) > tolerance && minimum(diff(unique(after_times))) > tolerance
+    end
+    # A run ending that close to a tick, before or after it, leaves the tick pending,
+    # and a run resumed there takes it at its start, once.
+    for run_end in (prevfloat(tick), tick + tolerance)
+        ticks, _ = direct_ticks(every_tenth, (0.0, run_end); origin=0.0, horizon=run_end)
+        @test ticks == [0.1, 0.2]
+        ticks, _ = direct_ticks(every_tenth, (run_end, 0.55); clock..., pending=run_end)
+        @test ticks == [run_end, 0.4, 0.5]
+    end
+    # A solve stopped by `terminate!` that close to a tick takes it where it stopped,
+    # so a run resumed there starts after it. Without the run clock it does not, as
+    # PeriodicCallback does not.
+    stop_s = tick - 50 * eps(tick)
+    near_stop = SC.DiscreteCallback((u, t, integrator) -> t == stop_s, integrator -> SC.terminate!(integrator);
+        initialize=(c, u, t, integrator) -> SC.add_tstop!(integrator, stop_s))
+    ticks, times = direct_ticks(every_tenth, (0.0, 1.0); before=(near_stop,), clock...)
+    @test ticks == [0.1, 0.2, stop_s] && last(times) == stop_s
+    @test first(direct_ticks(every_tenth, (stop_s, 0.55); clock...)) == [0.4, 0.5]
+    reference = first(direct_ticks(f -> SC.PeriodicCallback(f, 0.1), (0.0, 1.0); before=(near_stop,)))
+    @test first(direct_ticks(every_tenth, (0.0, 1.0); before=(near_stop,))) == reference == [0.1, 0.2]
 end
 
 end
