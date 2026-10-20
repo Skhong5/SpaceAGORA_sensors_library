@@ -128,6 +128,14 @@ end
 # The run state of a checkpoint (`nothing` when it has none).
 runtime_state(args) = get(SE._load_checkpoint(args), :runtime_state, nothing)
 
+# The periods of the clocks a checkpoint lists as not having taken the tick due at
+# its time (version 2 entry, at that time).
+function pending_periods(args)
+    entry = runtime_state(args).periodic_ticks
+    @test entry.version == 2 && entry.time_s == SE._load_checkpoint(args).t
+    return sort([clock.period_s for clock in entry.pending])
+end
+
 @testset "checkpointed runs tick as runs in one piece" begin
     @testset "segment boundaries on the tick grid keep their ticks" begin
         # Exact binary times: every boundary and saved row lands on a tick.
@@ -175,7 +183,7 @@ runtime_state(args) = get(SE._load_checkpoint(args), :runtime_state, nothing)
         unsplit = ramp_run(period=0.125)
         dir = mktempdir()
         # Interrupted after its checkpoint at 2 s, which it wrote after that
-        # time's ticks: a checkpoint at a segment boundary records them as taken.
+        # time's ticks: a checkpoint at a segment boundary lists no pending clock.
         interrupted = ramp_setup(period=0.125, interval=1.0, dir=dir, fail_after=2.5)
         err = try
             run_simulation(interrupted.args; isolate_state=false)
@@ -185,7 +193,7 @@ runtime_state(args) = get(SE._load_checkpoint(args), :runtime_state, nothing)
         end
         @test err !== nothing && occursin("interrupted at", sprint(showerror, err))
         @test 2.0 in interrupted.control.ticks && SE._load_checkpoint(interrupted.args).t == 2.0
-        @test runtime_state(interrupted.args).periodic_ticks == (version=2, time_s=2.0, pending=false)
+        @test isempty(pending_periods(interrupted.args))
         resumed = ramp_run(period=0.125, interval=1.0, dir=dir, resume=true, fail_after=Inf)
         @test resumed.control[1] == 2.125
         for field in TICKS
@@ -200,14 +208,14 @@ runtime_state(args) = get(SE._load_checkpoint(args), :runtime_state, nothing)
         # An event at 2.5 s, on the control and guidance grids, ends the checkpointed
         # solve with terminate!, as an impact or an orbit count does. The solver applies
         # the step's discrete callbacks after the event's, so the ticks due then run and
-        # the checkpoint written there records them as taken.
+        # the checkpoint written there lists no pending clock.
         unsplit = ramp_run(period=0.125)
         dir = mktempdir()
         stop = configuration -> SC.ContinuousCallback((u, t, integrator) -> t - 2.5, integrator -> SC.terminate!(integrator))
         stopped = ramp_run(period=0.125, interval=1.0, dir=dir, factories=(stop,))
         @test last(stopped.control) == 2.5 && last(stopped.guidance) == 2.5 && last(stopped.navigation) < 2.5
         checkpoint = SE._load_checkpoint(stopped.args)
-        @test checkpoint.t == 2.5 && checkpoint.runtime_state.periodic_ticks == (version=2, time_s=2.5, pending=false)
+        @test checkpoint.t == 2.5 && isempty(pending_periods(stopped.args))
         resumed = ramp_run(period=0.125, interval=1.0, dir=dir, resume=true)
         @test resumed.control[1] == 2.625
         for field in TICKS
@@ -221,7 +229,7 @@ runtime_state(args) = get(SE._load_checkpoint(args), :runtime_state, nothing)
         dir, again_dir = mktempdir(), mktempdir()
         first_leg = ramp_run(period=0.125, interval=1.0, dir=dir, mission_time=2.0)
         @test last(first_leg.control) == 1.875                               # no tick at the run's end
-        @test runtime_state(first_leg.args).periodic_ticks == (version=2, time_s=2.0, pending=true)
+        @test pending_periods(first_leg.args) == [0.125, 0.25]                # the grids that meet 2 s
         cp(joinpath(dir, "checkpoints"), joinpath(again_dir, "checkpoints"))
         resumed = ramp_run(period=0.125, interval=1.0, dir=dir, resume=true)
         # Only the rates whose grid meets 2 s tick there.
@@ -238,21 +246,25 @@ runtime_state(args) = get(SE._load_checkpoint(args), :runtime_state, nothing)
         again = ramp_run(period=0.125, dir=again_dir, resume=true)
         @test again.control == resumed.control && again.guidance == resumed.guidance
         @test again.final.h_wheels[1] ≈ unsplit.final.h_wheels[1] rtol=1e-12
-        # The ticks a resumed run takes at its start, by entry: version 2 says;
-        # 0.4.0's version 1 entry (at the run's end) and its checkpoints without an
-        # entry (at a boundary or an early stop) leave pending what 0.4.0 did not
-        # take: the ticks at the run's end, and those just after the time. An entry
-        # that does not belong to the checkpoint's time is refused.
+        # The ticks a resumed run takes at its start, by entry: a version 2 entry
+        # lists the clocks; 0.4.0's version 1 entry (at the run's end) and its
+        # checkpoints without an entry (at a boundary or an early stop) leave pending,
+        # for every clock, what 0.4.0 did not take: the ticks at the run's end, and
+        # those just after the time. An entry that does not belong to the checkpoint's
+        # time, or of another shape, is refused.
         written = SE._load_checkpoint(first_leg.args)                        # the extended run's end
-        @test SE._pending_periodic_ticks(written) == (at_s=written.t, from_s=-Inf)
+        listed = SE._pending_periodic_ticks(written)
+        @test listed.at_s == written.t && sort(last.(listed.clocks)) == [0.125, 0.25]
         with_entry(entry) = merge(written, (t=2.0, runtime_state=(periodic_ticks=entry,),))
-        @test SE._pending_periodic_ticks(with_entry((version=2, time_s=2.0, pending=true))) == (at_s=2.0, from_s=-Inf)
-        taken = SE._pending_periodic_ticks(with_entry((version=2, time_s=2.0, pending=false)))
-        @test isnan(taken.at_s)
-        @test SE._pending_periodic_ticks(with_entry((version=1, pending_s=2.0))) == (at_s=2.0, from_s=2.0)
-        @test SE._pending_periodic_ticks((t=2.0, u=nothing)) == (at_s=2.0, from_s=nextfloat(2.0))
-        for bad in ((version=2, time_s=1.0, pending=true), (version=2, time_s=2.0, pending=1),
-                    (version=1, pending_s=1.0), (version=3, time_s=2.0, pending=true), (pending_s=2.0,))
+        @test SE._pending_periodic_ticks(with_entry((version=2, time_s=2.0, pending=[(clock=2, period_s=0.125)]))) ==
+            (at_s=2.0, from_s=-Inf, clocks=[(2, 0.125)])
+        @test SE._pending_periodic_ticks(with_entry((version=2, time_s=2.0, pending=[]))).clocks == Tuple{Int, Float64}[]
+        @test SE._pending_periodic_ticks(with_entry((version=1, pending_s=2.0))) == (at_s=2.0, from_s=2.0, clocks=nothing)
+        @test SE._pending_periodic_ticks((t=2.0, u=nothing)) == (at_s=2.0, from_s=nextfloat(2.0), clocks=nothing)
+        for bad in ((version=2, time_s=1.0, pending=[]), (version=2, time_s=2.0, pending=true),
+                    (version=2, time_s=2.0, pending=[(clock=1.0, period_s=0.1)]),
+                    (version=2, time_s=2.0, pending=[(position=1, period_s=0.1)]),
+                    (version=1, pending_s=1.0), (version=3, time_s=2.0, pending=[]), (pending_s=2.0,))
             @test_throws ArgumentError SE._pending_periodic_ticks(with_entry(bad))
         end
     end
@@ -269,7 +281,7 @@ runtime_state(args) = get(SE._load_checkpoint(args), :runtime_state, nothing)
         @test all(b -> count(==(b), split.navigation) == 1, (0.3, 0.6, 3 * 0.3, 1.2))
         @test 3 * 0.1 in unsplit.navigation && 3 * 0.1 ∉ split.navigation
         same_ticks_and_state(split, unsplit)
-        @test runtime_state(split.args).periodic_ticks == (version=2, time_s=1.5, pending=true)
+        @test pending_periods(split.args) == [0.1, 0.125, 0.25, 0.3]          # every grid meets 1.5 s
 
         # Boundaries an ulp before ticks of the 0.25 s grid; the third falls an ulp
         # before the run's end, which ends that segment instead.
@@ -316,7 +328,7 @@ runtime_state(args) = get(SE._load_checkpoint(args), :runtime_state, nothing)
         dir = mktempdir()
         first_leg = ramp_run(; rates..., interval=0.3, dir=dir, mission_time=0.3)
         @test first_leg.navigation == [0.1, 0.2]
-        @test runtime_state(first_leg.args).periodic_ticks == (version=2, time_s=0.3, pending=true)
+        @test pending_periods(first_leg.args) == [0.1, 0.3]                    # 3 * 0.1 and 0.3
         extended = ramp_run(; rates..., interval=0.3, dir=dir, resume=true, mission_time=0.6)
         @test extended.navigation == [0.3, 0.4, 0.5]
         @test vcat(first_leg.navigation, extended.navigation) == at_boundaries(unsplit.navigation, [0.3, 0.6])
@@ -364,7 +376,7 @@ runtime_state(args) = get(SE._load_checkpoint(args), :runtime_state, nothing)
             e
         end
         @test err !== nothing && occursin("interrupted at", sprint(showerror, err))
-        @test runtime_state(interrupted.args).periodic_ticks == (version=2, time_s=0.3, pending=false)
+        @test isempty(pending_periods(interrupted.args))
         before = filter(<=(0.3), interrupted.navigation.ticks)
         @test count(==(0.3), before) == 1
         resumed = ramp_run(; rates..., interval=0.3, dir=dir, resume=true, fail_after=Inf)
@@ -372,15 +384,57 @@ runtime_state(args) = get(SE._load_checkpoint(args), :runtime_state, nothing)
         @test vcat(before, resumed.navigation) == at_boundaries(unsplit.navigation, boundaries)
         @test resumed.final.h_wheels[1] ≈ unsplit.final.h_wheels[1] rtol=1e-12
     end
+
+    @testset "an early stop records which clocks had not taken the tick due then" begin
+        # An extra callback, which runs after the periodic ones, stops the solve.
+        stop_at(stop_s) = configuration -> SC.DiscreteCallback((u, t, integrator) -> t == stop_s,
+            integrator -> SC.terminate!(integrator); initialize=(c, u, t, integrator) -> SC.add_tstop!(integrator, stop_s))
+        unsplit = ramp_run(period=0.1, mission_time=1.5)
+
+        # Stopped at 0.3 s: the 0.3 s navigation and second control ticks ran there,
+        # before the stop, but the 0.1 s control tick at 3 * 0.1, an ulp later, did
+        # not. The checkpoint lists that clock alone. The resumed run takes its tick
+        # at its start, once, repeats no other clock's, and the two runs tick and end
+        # as the run in one piece.
+        dir = mktempdir()
+        stopped = ramp_run(period=0.1, interval=1.0, mission_time=1.5, dir=dir, factories=(stop_at(0.3),))
+        @test SE._load_checkpoint(stopped.args).t == 0.3 && pending_periods(stopped.args) == [0.1]
+        @test last(stopped.navigation) == 0.3 && last(stopped.second) == 0.3 && last(stopped.control) == 0.2
+        resumed = ramp_run(period=0.1, interval=1.0, mission_time=1.5, dir=dir, resume=true)
+        @test resumed.control[1] == 0.3 && resumed.navigation[1] == 0.6 && resumed.second[1] == 0.6
+        for field in TICKS
+            @test vcat(getfield(stopped, field), getfield(resumed, field)) ==
+                at_boundaries(getfield(unsplit, field), vcat(0.3, checkpoint_boundaries(1.0, 1.5; start=0.3)))
+        end
+        @test resumed.final.h_wheels[1] ≈ unsplit.final.h_wheels[1] rtol=1e-12
+
+        # Stopped an ulp before the run's 1 s end: the ticks at 1 s belong to the run's
+        # end, which the run does not take. The checkpoint lists the clocks whose grids
+        # meet 1 s, and the run extended to 1.5 s takes their ticks at its start.
+        dir = mktempdir()
+        stopped = ramp_run(period=0.1, interval=1.0, mission_time=1.0, dir=dir, factories=(stop_at(prevfloat(1.0)),))
+        @test SE._load_checkpoint(stopped.args).t == prevfloat(1.0) && pending_periods(stopped.args) == [0.1, 0.25]
+        @test last(stopped.control) == 0.9 && last(stopped.guidance) == 0.75
+        resumed = ramp_run(period=0.1, interval=1.0, mission_time=1.5, dir=dir, resume=true)
+        @test resumed.control[1] == prevfloat(1.0) && resumed.guidance[1] == prevfloat(1.0)
+        @test resumed.navigation[1] == 4 * 0.3 && resumed.second[1] == 4 * 0.3
+        for field in TICKS
+            @test vcat(getfield(stopped, field), getfield(resumed, field)) ==
+                at_boundaries(getfield(unsplit, field), [prevfloat(1.0)])
+        end
+        @test resumed.final.h_wheels[1] ≈ unsplit.final.h_wheels[1] rtol=1e-12
+    end
 end
 
 @testset "periodic GNC callback outside a checkpointed run is PeriodicCallback" begin
-    function direct_ticks(make_callback, tspan; origin=NaN, horizon=NaN, pending=NaN, pending_from=-Inf, before=())
+    function direct_ticks(make_callback, tspan; origin=NaN, horizon=NaN, pending=NaN, pending_from=-Inf,
+                          pending_clocks=nothing, before=())
         p = SM.ODEParams(n_sats=1, args=wheel_config(5.0))
         p.shared_buffers.periodic_clock_origin_s[] = origin
         p.shared_buffers.periodic_clock_horizon_s[] = horizon
         p.shared_buffers.periodic_clock_pending_s[] = pending
         p.shared_buffers.periodic_clock_pending_from_s[] = pending_from
+        p.shared_buffers.periodic_clock_pending_clocks[] = pending_clocks
         ticks = Float64[]
         cb = make_callback(integrator -> push!(ticks, integrator.t))
         prob = SC.ODEProblem((du, u, p, t) -> fill!(du, 0.0), [1.0], tspan, p)
@@ -465,6 +519,15 @@ end
         due = read(start)
         ticks, _ = direct_ticks(every_tenth, (start, 0.55); clock..., pending=due.at_s, pending_from=due.from_s)
         @test ticks == (pending ? [start, 0.4, 0.5] : [0.4, 0.5])
+    end
+    # A checkpoint that lists its clocks: only a listed clock, at its position and
+    # with its period, takes the tick at the start; the callback here is the run's
+    # first clock.
+    for (listed, pending) in (([(1, 0.1)], true), ([(1, 0.2)], false), ([(2, 0.1)], false),
+                              (Tuple{Int, Float64}[], false))
+        ticks, _ = direct_ticks(every_tenth, (prevfloat(tick), 0.55); clock..., pending=prevfloat(tick),
+            pending_clocks=listed)
+        @test ticks == (pending ? [prevfloat(tick), 0.4, 0.5] : [0.4, 0.5])
     end
     # A solve stopped by `terminate!` that close to a tick takes it where it stopped,
     # so a run resumed there starts after it. Without the run clock it does not, as

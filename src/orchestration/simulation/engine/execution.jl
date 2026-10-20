@@ -710,7 +710,7 @@ function run_simulation(
 
     t_start = 0.0
     u_start = initial_conditions
-    resumed, model_snapshot, pending_ticks = false, nothing, (at_s=NaN, from_s=-Inf)
+    resumed, model_snapshot, pending_ticks = false, nothing, (at_s=NaN, from_s=-Inf, clocks=nothing)
     if args.simulation_settings.resume_from_checkpoint
         ckpt = _load_checkpoint(args)
         if ckpt === nothing
@@ -762,6 +762,7 @@ function run_simulation(
     p.shared_buffers.periodic_clock_horizon_s[] = run_clock ? Float64(mission_end) : NaN
     p.shared_buffers.periodic_clock_pending_s[] = pending_ticks.at_s
     p.shared_buffers.periodic_clock_pending_from_s[] = pending_ticks.from_s
+    p.shared_buffers.periodic_clock_pending_clocks[] = pending_ticks.clocks
     # The links first (each initialized once), then the control clocks, then
     # navigation, guidance and control: each stage may read what the previous one
     # set up.
@@ -1065,7 +1066,7 @@ function run_simulation(
             u_cursor = deepcopy(seg_sol.u[end])
             _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode); is_active=p.is_active,
                 callback_state=_callback_checkpoint_state(args), model_state=_model_checkpoint_state(args),
-                periodic_ticks=_periodic_tick_checkpoint_state(t_cursor, mission_end))
+                periodic_ticks=_periodic_tick_checkpoint_state(p, t_cursor))
             checkpoint_written = true
             if string(seg_sol.retcode) != "Success" || !_gravity_backbone_time_reached(t_cursor, t_next)
                 break

@@ -284,24 +284,36 @@ function _checkpoint_segment_end(t::Float64, interval::Float64, mission_end::Flo
     return SimulationModel.SimulationCallbacks._same_run_time(t_next, mission_end) ? mission_end : t_next
 end
 
-# Every checkpoint a run writes records whether the periodic navigation, guidance
-# and control ticks due at its time, up to the clock's rounding tolerance
-# (`_same_run_time`, on both sides of that time), are pending or were taken. At the
-# run's end they are pending: the run did not take them, so a run resumed from it
-# takes them at its start. At a segment boundary they were taken, before the
-# checkpoint. So were they where a solve stopped early, at an event's `terminate!`
-# (impact, touchdown, orbit or entry count): the solver applies every discrete
-# callback of that step after the event's, so a tick due then ran before the
-# checkpoint, as in a run in one piece.
-_periodic_tick_checkpoint_state(t::Float64, mission_end) = (version=2, time_s=t, pending=t >= mission_end)
+# Every checkpoint a run writes records, for each of the run's periodic
+# navigation, guidance and control clocks (in the order of their callbacks), whether
+# it had not yet taken the tick due at the checkpoint's time, up to the clock's
+# rounding tolerance (`_same_run_time`, on both sides of that time). That is what
+# each clock did, not a rule about the time: at a segment boundary the ticks due
+# there ran before the checkpoint, and at the run's end they did not. Where a solve
+# stopped early, at an event's `terminate!` (impact, touchdown, orbit or entry
+# count) or a discrete callback's, a tick exactly then ran; one an ulp or so off ran
+# only if its callback came after the termination (the solver applies the step's
+# discrete callbacks after its events, in order), and none ran when the stop came
+# just before the run's end, whose ticks the run leaves.
+function _periodic_tick_checkpoint_state(p, t::Float64)
+    pending = NamedTuple{(:clock, :period_s), Tuple{Int, Float64}}[]
+    for (position, clock) in pairs(p.shared_buffers.periodic_clocks)
+        next_tick = clock.origin[] + clock.index[] * clock.period_s
+        SimulationModel.SimulationCallbacks._same_run_time(next_tick, t) &&
+            push!(pending, (clock=position, period_s=clock.period_s))
+    end
+    return (version=2, time_s=t, pending=pending)
+end
 
-# The ticks a run resumed from `checkpoint` takes at its start: those at `at_s`,
-# the checkpoint's time, up to `_same_run_time`, from `from_s` on; `at_s` is NaN
-# when there are none. A version 2 entry says whether they are pending.
-# Checkpoints written before it (SpaceAGORA 0.4.0 and earlier) are read as that
-# version left them: it compared tick times exactly, so it took a tick just before
-# its checkpoint's time at that tick's own time and left one just after it (3 * 0.1
-# after a boundary at 0.3) to the next segment, where the solver could not reach it.
+# The ticks a run resumed from `checkpoint` takes at its start, at `at_s` (the
+# checkpoint's time; NaN when there are none), up to `_same_run_time`: those of the
+# clocks the checkpoint lists, as (position, period) pairs, matched to the resumed
+# run's clocks, or, when it lists none, every clock's tick from `from_s` on.
+# Checkpoints written before the list (SpaceAGORA 0.4.0 and earlier) are read as
+# that version left them: it compared tick times exactly, so it took a tick just
+# before its checkpoint's time at that tick's own time and left one just after it
+# (3 * 0.1 after a boundary at 0.3) to the next segment, where the solver could not
+# reach it.
 # - A version 1 entry (0.4.0, at the run's end): the ticks at the end and just after
 #   it are pending.
 # - No entry (at a segment boundary or an early stop): the ticks at that time ran
@@ -310,13 +322,15 @@ function _pending_periodic_ticks(checkpoint)
     t = Float64(checkpoint.t)
     runtime = get(checkpoint, :runtime_state, nothing)
     entry = runtime !== nothing && hasproperty(runtime, :periodic_ticks) ? runtime.periodic_ticks : nothing
-    entry === nothing && return (at_s=t, from_s=nextfloat(t))
+    entry === nothing && return (at_s=t, from_s=nextfloat(t), clocks=nothing)
     version = hasproperty(entry, :version) ? entry.version : nothing
     if version === 2 && hasproperty(entry, :time_s) && hasproperty(entry, :pending) &&
-            entry.time_s == t && entry.pending isa Bool
-        return entry.pending ? (at_s=t, from_s=-Inf) : (at_s=NaN, from_s=-Inf)
+            entry.time_s == t && entry.pending isa AbstractVector &&
+            all(c -> hasproperty(c, :clock) && hasproperty(c, :period_s) && c.clock isa Int &&
+                c.period_s isa Float64, entry.pending)
+        return (at_s=t, from_s=-Inf, clocks=Tuple{Int, Float64}[(c.clock, c.period_s) for c in entry.pending])
     elseif version === 1 && hasproperty(entry, :pending_s) && entry.pending_s == t
-        return (at_s=t, from_s=t)
+        return (at_s=t, from_s=t, clocks=nothing)
     end
     throw(ArgumentError("Periodic tick checkpoint state version 1 or 2, at the checkpoint's time, is required to resume this run."))
 end

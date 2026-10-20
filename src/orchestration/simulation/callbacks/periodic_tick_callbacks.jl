@@ -32,11 +32,16 @@
 # at a solve's start it is the tick taken at the previous solve's end, or the
 # pending one. At the run's end it is pending, as a tick exactly there. Elsewhere
 # in a solve, and without the run clock, tick times are compared exactly, as
-# PeriodicCallback compares them. Which ticks at a resumed run's start are
-# pending comes from its checkpoint (`SimulationEngine._pending_periodic_ticks`):
-# the pending start and the earliest pending tick time, since a checkpoint
-# written before this rule took the ticks just before its time but not those just
-# after it.
+# PeriodicCallback compares them.
+#
+# What each clock did is what the checkpoint records: the run lists its clocks in
+# the shared buffers, and a checkpoint names those whose next tick, not yet taken,
+# is due at its time (`SimulationEngine._periodic_tick_checkpoint_state`). That
+# covers a tick at the run's end, one just before a horizon where the run stopped,
+# and one a later callback's `terminate!` cut off. A run resumed from it takes those
+# clocks' ticks at its start, once, and no other clock's. A checkpoint written
+# before that list is read as SpaceAGORA 0.4.0 left it
+# (`SimulationEngine._pending_periodic_ticks`).
 
 const _PeriodicTickClock = NamedTuple{(:origin, :index, :horizon),
     Tuple{Base.RefValue{Float64}, Base.RefValue{Int}, Base.RefValue{Float64}}}
@@ -68,10 +73,37 @@ end
 end
 
 @inline function _periodic_run_clock(p)
-    hasproperty(p, :shared_buffers) || return (NaN, NaN, NaN, -Inf)
+    hasproperty(p, :shared_buffers) || return (NaN, NaN, NaN)
     buffers = p.shared_buffers
     return (buffers.periodic_clock_origin_s[], buffers.periodic_clock_horizon_s[],
-            buffers.periodic_clock_pending_s[], buffers.periodic_clock_pending_from_s[])
+            buffers.periodic_clock_pending_s[])
+end
+
+# The clock's position in the run's list of clocks, adding it at its first
+# initialization (0 outside the engine's parameters).
+function _register_periodic_clock!(p, key::Symbol, Δt::Float64, clock::_PeriodicTickClock)
+    hasproperty(p, :shared_buffers) || return 0
+    clocks = p.shared_buffers.periodic_clocks
+    entry = (key=key, period_s=Δt, origin=clock.origin, index=clock.index)
+    for i in eachindex(clocks)
+        clocks[i].key === key || continue
+        clocks[i] = entry
+        return i
+    end
+    push!(clocks, entry)
+    return length(clocks)
+end
+
+# The tick at a resumed run's start that the run which wrote its checkpoint did
+# not take: for the clock at `position` with period `Δt`, when the checkpoint lists
+# its clocks; otherwise any clock's tick at the start from the earliest pending
+# tick time on.
+function _start_tick_pending(p, position::Int, Δt::Float64, tick::Float64)
+    hasproperty(p, :shared_buffers) || return false
+    buffers = p.shared_buffers
+    clocks = buffers.periodic_clock_pending_clocks[]
+    clocks === nothing && return tick >= buffers.periodic_clock_pending_from_s[]
+    return (position, Δt) in clocks
 end
 
 # Stop at the next tick unless the solve ends first, as PeriodicCallback does. A
@@ -135,9 +167,10 @@ function _run_clock_periodic_callback(f, Δt::Float64; on_clock=(origin, integra
             storage[key] = clock
         end
         clock = clock::_PeriodicTickClock
-        run_origin, run_horizon, pending, pending_from = _periodic_run_clock(integrator.p)
+        run_origin, run_horizon, pending = _periodic_run_clock(integrator.p)
         clock.origin[] = isnan(run_origin) ? Float64(t) : run_origin
         clock.horizon[] = run_horizon
+        position = _register_periodic_clock!(integrator.p, key, Δt, clock)
         # The first tick after the solve's start. A tick at the start itself
         # fired before the checkpoint the solve starts from, unless it is pending.
         k = max(1, floor(Int, (t - clock.origin[]) / Δt))
@@ -150,7 +183,7 @@ function _run_clock_periodic_callback(f, Δt::Float64; on_clock=(origin, integra
         clock.index[] = k - 1
         on_clock(clock.origin[], integrator)
         if k > 1 && t == pending && _periodic_tick_at(clock, Δt, k - 1, t) &&
-                _periodic_tick_time(clock, Δt, k - 1) >= pending_from
+                _start_tick_pending(integrator.p, position, Δt, _periodic_tick_time(clock, Δt, k - 1))
             # The tick at the start, which the run that wrote the checkpoint
             # did not take. It changes the derivative.
             DiffEqBase.derivative_discontinuity!(integrator, true)
