@@ -402,27 +402,45 @@ end
 @inline _saved_cmg_angles(u, i::Int) =
     (hasproperty(u, :sc) && hasproperty(u.sc[i], :cmg_angles)) ? u.sc[i].cmg_angles : nothing
 
+# Terminal hardware an interlink drives: `applied` (spacecraft `i`'s applied
+# levels, or `nothing`) with each link-driven terminal at the level its active
+# link sets, zero while the battery sheds it.
+@inline function _with_link_driven_levels(applied, spacecraft, interlinks, i::Int, n::Int)
+    link_driven(interlinks, i) || return applied
+    linked = shed_levels(spacecraft, link_driven_levels!(zeros(Float64, n), interlinks, i))
+    out = applied === nothing ? zeros(Float64, n) : copy(applied)
+    for (_, _, position) in interlinks.terminal_endpoints[i]
+        out[position] = linked[position]
+    end
+    return out
+end
+
 function _save_actuator_levels(num_sats::Int, counts::Vector{Int}, u, t, integrator)
     effectors = integrator.p.args.control_model.control_effectors
+    interlinks = integrator.p.args.interlink_model
     spacecraft = integrator.p.args.dynamics_model.spacecraft
     out = Vector{Vector{Float64}}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        levels = counts[i] == 0 ? nothing : _mounted_effector_levels(effectors, i, counts[i])
-        out[i] = levels === nothing ? zeros(Float64, counts[i]) :
+        levels = counts[i] == 0 ? nothing : without_link_driven(_mounted_effector_levels(effectors, i, counts[i]), interlinks, i)
+        applied = levels === nothing ? nothing :
             applied_actuator_levels(spacecraft[i], shed_levels(spacecraft[i], faulted_levels(spacecraft[i], levels));
                 wheel_momentum=_saved_wheel_momentum(u, i), cmg_angles=_saved_cmg_angles(u, i))
+        applied = counts[i] == 0 ? applied : _with_link_driven_levels(applied, spacecraft[i], interlinks, i, counts[i])
+        out[i] = applied === nothing ? zeros(Float64, counts[i]) : applied
     end
     return out
 end
 
 function _save_actuator_power(num_sats::Int, counts::Vector{Int}, u, t, integrator)
     effectors = integrator.p.args.control_model.control_effectors
+    interlinks = integrator.p.args.interlink_model
     spacecraft = integrator.p.args.dynamics_model.spacecraft
     out = Vector{Float64}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        levels = counts[i] == 0 ? nothing : _mounted_effector_levels(effectors, i, counts[i])
+        levels = counts[i] == 0 ? nothing : without_link_driven(_mounted_effector_levels(effectors, i, counts[i]), interlinks, i)
         out[i] = levels === nothing ? 0.0 :
             mounted_power(spacecraft[i], shed_levels(spacecraft[i], faulted_levels(spacecraft[i], levels)); wheel_momentum=_saved_wheel_momentum(u, i))
+        link_driven(interlinks, i) && (out[i] += last(link_terminal_power(interlinks, i, spacecraft[i])))
     end
     return out
 end
@@ -447,14 +465,17 @@ end
     actuator_level_counts(args) -> Vector{Int}
 
 Number of mounted actuators per spacecraft, in mounting order, when a control
-effector of the run is in `:mounted` actuation; all zeros otherwise. The
-`actuator_level` field has one column per mounted actuator.
+effector of the run is in `:mounted` actuation or an interlink drives terminal
+hardware; all zeros otherwise. The `actuator_level` field has one column per
+mounted actuator.
 """
 function actuator_level_counts(args::SimulationConfiguration)::Vector{Int}
     spacecraft = args.dynamics_model.spacecraft
     effectors = hasproperty(args, :control_model) && hasproperty(args.control_model, :control_effectors) ?
         args.control_model.control_effectors : ()
-    any(effector -> actuation_mode(effector) === :mounted, effectors) || return zeros(Int, length(spacecraft))
+    interlinks = hasproperty(args, :interlink_model) ? args.interlink_model : nothing
+    linked = interlinks !== nothing && any(!isempty, interlinks.terminal_endpoints)
+    (linked || any(effector -> actuation_mode(effector) === :mounted, effectors)) || return zeros(Int, length(spacecraft))
     return Int[mounted_actuator_count(model) for model in spacecraft]
 end
 
@@ -465,8 +486,10 @@ The fields of a run in `:mounted` actuation: `actuator_level`, the level each
 mounted actuator applies (its command within its limits, written to
 `sc{i}_actuator_level_{k}` in mounting order), and `actuator_power`, the
 electrical power the mounted actuators of each spacecraft draw (W, written to
-`sc{i}_actuator_power`). Empty when no control effector is in `:mounted`
-actuation or no spacecraft carries mounted actuators.
+`sc{i}_actuator_power`). A terminal an interlink drives shows the level its
+link sets. Empty when no control effector is in `:mounted` actuation and no
+interlink drives terminal hardware, or when no spacecraft carries mounted
+actuators.
 """
 function actuator_save_fields(args::SimulationConfiguration)
     counts = actuator_level_counts(args)

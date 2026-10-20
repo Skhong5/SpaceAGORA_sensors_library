@@ -3,10 +3,13 @@ module InterLinkModels
 	using LinearAlgebra
 	using StaticArrays
 	using ..Components: LaserTerminal, _SPEED_OF_LIGHT_MPS
+	using ..AbstractTypes: AbstractActuator
 	using ..EffectorSampling: StateSample
 	using ..HookDeprecation: _hook_deprecation, _NOT_PASSED
 
 	export AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
+	export link_directed, link_terminal_levels, link_terminal, terminal_supports, terminal_count
+	export register_links!, all_pairs, same_plane_pairs, ring_pairs, grid_pairs
 	export InterlinkModel, InterLinkGraph, register_link!, update_availability!, interlink_force_on_spacecraft
 	export vertex, InterLinkKey, InterLinkHistory
 	export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!
@@ -65,7 +68,9 @@ module InterLinkModels
 	link, and the accepted-step history of the links the scheduler selected. Attach
 	it with `SimulationConfiguration(interlink_model=model, ...)`. Endpoints are
 	`(spacecraft vector index, terminal number)` pairs: the position of the
-	spacecraft in `dynamics_model.spacecraft`, not its `id`.
+	spacecraft in `dynamics_model.spacecraft`, not its `id`. Terminals
+	`1:n_terminal` are virtual; mounted terminal hardware (see `link_terminal`)
+	follows.
 	"""
 	mutable struct InterlinkModel
 		# i) Core model parameters
@@ -74,6 +79,10 @@ module InterLinkModels
 
 		# ii) Scheduling history (independent of the selection algorithm)
 		history::Vector{InterLinkHistory}
+
+		# iii) The run's hardware link endpoints, set at run setup: for each spacecraft,
+		# `(edge, side, mounted actuator position)` of each terminal hardware endpoint.
+		terminal_endpoints::Vector{Vector{NTuple{3, Int}}}
 
 		function InterlinkModel(; forbidden_pairs=Tuple{Int, Int}[], constellation_link_type=_NOT_PASSED)
 			if constellation_link_type !== _NOT_PASSED
@@ -85,7 +94,7 @@ module InterLinkModels
 					"links (LaserMomentumLink) are implemented."))
 			end
 			pairs = Set{Tuple{Int, Int}}(minmax(pair...) for pair in forbidden_pairs)
-			new(pairs, InterLinkGraph(), InterLinkHistory[])
+			new(pairs, InterLinkGraph(), InterLinkHistory[], Vector{NTuple{3, Int}}[])
 		end
 	end
 
@@ -116,27 +125,39 @@ module InterLinkModels
 	"""
 	    register_link!(model::InterlinkModel, spacecraft, first_endpoint, second_endpoint, link::AbstractInterlink) -> InterLinkKey
 
-	Register a candidate link of kind `link` between two terminals, each a
-	`(spacecraft vector index, terminal number)` pair, and return its canonical
-	key. The terminals must be on different spacecraft and within each
-	spacecraft's `n_terminal`; a pair registers once. The link is available only
-	when `link_available` allows it, and active only when the scheduler selects it.
+	Register a candidate link of kind `link` between two terminals and return its
+	key. Each endpoint is `(spacecraft vector index, terminal)`, where the terminal
+	is a terminal number or a terminal mounted on that `SpacecraftModel`. The
+	terminals must be on different spacecraft, numbered within each spacecraft's
+	`terminal_count`, and able to carry the link (`terminal_supports`). A link
+	registers once. Its key lists the lower `(spacecraft, terminal)` first, or,
+	for a directed link (`link_directed`), the endpoints in the order given. The
+	link is available only when `link_available` allows it, and active only when
+	the scheduler selects it.
 	"""
 	function register_link!(model::InterlinkModel, spacecraft,
-		first_endpoint::vertex, second_endpoint::vertex, link::AbstractInterlink)
+		first_endpoint::Tuple{Integer, Any}, second_endpoint::Tuple{Integer, Any}, link::AbstractInterlink)
 
 		# 2.1. Validate the terminals before changing the graph.
 		# i) Rule 1: The interlink must join different spacecraft.
 		first_endpoint[1] != second_endpoint[1] || throw(ArgumentError("An interlink must join different spacecraft."))
 
-		# ii) Rule 2: Both terminal numbers must be valid for their spacecraft.
-		for (satellite, terminal) in (first_endpoint, second_endpoint)
+		# ii) Rule 2: Both terminals must be valid for their spacecraft and able to carry the link.
+		endpoints = map((first_endpoint, second_endpoint)) do (satellite, terminal)
 			1 <= satellite <= length(spacecraft) || throw(ArgumentError("Invalid spacecraft vector index $satellite."))
-			1 <= terminal <= spacecraft[satellite].n_terminal || throw(ArgumentError("Invalid terminal $terminal on spacecraft $satellite."))
+			number = _terminal_number(spacecraft[satellite], terminal)
+			1 <= number <= terminal_count(spacecraft[satellite]) ||
+				throw(ArgumentError("Invalid terminal $number on spacecraft $satellite."))
+			device = _terminal_device(spacecraft[satellite], number)
+			device === nothing || terminal_supports(device, link) || throw(ArgumentError(
+				"Terminal $number of spacecraft $satellite, a $(nameof(typeof(device))), cannot carry a " *
+				"$(nameof(typeof(link))) (terminal_supports)."))
+			(Int(satellite), number)
 		end
 
-		# iii) Rule 3: Sort endpoints so reversing a pair produces the same key.
-		key = minmax(first_endpoint, second_endpoint)
+		# iii) Rule 3: An undirected link is keyed lower endpoint first, so reversing a pair gives
+		# the same key; a directed one keeps its transmitter first.
+		key = link_directed(link) ? endpoints : minmax(endpoints...)
 
 		# iv) Rule 4: The candidate must not already be registered.
 		graph = model.graph
@@ -197,6 +218,137 @@ module InterLinkModels
 		return register_link!(model, spacecraft, first_endpoint, second_endpoint, parameters)
 	end
 
+	"""
+	    all_pairs(spacecraft) -> Vector{Tuple{Int, Int}}
+
+	Every pair `(i, j)` of distinct spacecraft vector indices with `i < j`, in
+	order: the candidate pairs of a fully connected interlink graph, for
+	`register_links!`.
+	"""
+	all_pairs(spacecraft) = [(i, j) for i in eachindex(spacecraft) for j in eachindex(spacecraft) if i < j]
+
+	# The spacecraft with a constellation slot, by plane: plane => [(slot, vector index)], by slot.
+	# Two spacecraft in one slot have no single neighbour, so they are refused.
+	function _slots_by_plane(spacecraft)
+		planes = Dict{Int, Vector{Tuple{Int, Int}}}()
+		holder = Dict{Tuple{Int, Int}, Int}()
+		for (index, sc) in enumerate(spacecraft)
+			slot = hasproperty(sc, :constellation_slot) ? sc.constellation_slot : nothing
+			slot === nothing && continue
+			other = get!(holder, (slot.plane, slot.slot), index)
+			other == index || throw(ArgumentError(
+				"Spacecraft $other and $index share plane $(slot.plane), slot $(slot.slot); " *
+				"pairs by plane and slot need each slot held once (build_constellation gives each its own)."))
+			push!(get!(Vector{Tuple{Int, Int}}, planes, slot.plane), (slot.slot, index))
+		end
+		foreach(sort!, values(planes))
+		return planes
+	end
+
+	"""
+	    same_plane_pairs(spacecraft) -> Vector{Tuple{Int, Int}}
+
+	Every pair `(i, j)`, `i < j`, of spacecraft in the same orbital plane, by their
+	`constellation_slot` (set by `build_constellation`), for `register_links!`.
+	Spacecraft without a slot take part in no pair; two spacecraft in one slot are
+	refused.
+	"""
+	function same_plane_pairs(spacecraft)
+		pairs = Tuple{Int, Int}[]
+		for members in values(_slots_by_plane(spacecraft)), a in eachindex(members), b in a+1:length(members)
+			push!(pairs, minmax(members[a][2], members[b][2]))
+		end
+		return sort!(unique!(pairs))
+	end
+
+	"""
+	    ring_pairs(spacecraft) -> Vector{Tuple{Int, Int}}
+
+	Each spacecraft with the next slot in its plane, and the last slot with the
+	first: the in-plane rings of a constellation, by `constellation_slot`. A plane
+	of two gives one pair, a plane of one none. Pairs are `(i, j)` with `i < j`.
+	"""
+	function ring_pairs(spacecraft)
+		pairs = Tuple{Int, Int}[]
+		for members in values(_slots_by_plane(spacecraft))
+			n = length(members)
+			n < 2 && continue
+			for k in 1:n
+				push!(pairs, minmax(members[k][2], members[mod1(k + 1, n)][2]))
+			end
+		end
+		return sort!(unique!(pairs))
+	end
+
+	"""
+	    grid_pairs(spacecraft; wrap_planes=true) -> Vector{Tuple{Int, Int}}
+
+	The "+grid" of a constellation, by `constellation_slot`: the in-plane rings
+	(`ring_pairs`) and each slot with the same slot of the next plane, planes taken
+	in plane-number order. With `wrap_planes`, the last plane links to the first;
+	pass `false` for a Walker star, whose first and last planes counter-rotate. A
+	slot missing from the next plane links nothing across. Pairs are `(i, j)` with
+	`i < j`.
+	"""
+	function grid_pairs(spacecraft; wrap_planes::Bool=true)
+		planes = _slots_by_plane(spacecraft)
+		pairs = ring_pairs(spacecraft)
+		order = sort!(collect(keys(planes)))
+		for (k, plane) in enumerate(order)
+			k == length(order) && !wrap_planes && break
+			next = order[mod1(k + 1, length(order))]
+			next == plane && continue
+			across = Dict(planes[next])
+			for (slot, index) in planes[plane]
+				haskey(across, slot) && push!(pairs, minmax(index, across[slot]))
+			end
+		end
+		return sort!(unique!(pairs))
+	end
+
+	"""
+	    register_links!(model::InterlinkModel, spacecraft, pairs, link; terminals=nothing) -> Vector{InterLinkKey}
+
+	Register one candidate link per spacecraft pair `(i, j)` in `pairs` and return
+	their keys in order. The pairs come from `all_pairs(spacecraft)`, from a
+	constellation's planes and slots (`same_plane_pairs`, `ring_pairs`,
+	`grid_pairs`), or from any vector of index pairs. `link` is a link kind value, or a function
+	`(i, j) -> link` that builds each pair's link.
+
+	Each spacecraft's links take the terminals that can carry them in turn,
+	starting again from the first when they run out; links that share a terminal
+	compete for it when the scheduler selects. Pass
+	`terminals=(i, j) -> (terminal_i, terminal_j)` to choose them instead. For a
+	directed link, `i` is the transmitter.
+	"""
+	function register_links!(model::InterlinkModel, spacecraft, pairs, link; terminals=nothing)
+		turn = zeros(Int, length(spacecraft))
+		keys = InterLinkKey[]
+		for (i, j) in pairs
+			pair_link = link isa AbstractInterlink ? link : link(i, j)
+			pair_link isa AbstractInterlink || throw(ArgumentError(
+				"register_links!: the link for pair ($i, $j) is a $(typeof(pair_link)), not a link kind (AbstractInterlink)."))
+			ends = terminals === nothing ?
+				(_next_terminal!(turn, spacecraft, i, pair_link), _next_terminal!(turn, spacecraft, j, pair_link)) :
+				terminals(i, j)
+			push!(keys, register_link!(model, spacecraft, (i, ends[1]), (j, ends[2]), pair_link))
+		end
+		return keys
+	end
+
+	# The next terminal of spacecraft `satellite` that can carry `link`, in turn.
+	function _next_terminal!(turn::Vector{Int}, spacecraft, satellite::Integer, link)
+		1 <= satellite <= length(spacecraft) || throw(ArgumentError("Invalid spacecraft vector index $satellite."))
+		usable = filter(1:terminal_count(spacecraft[satellite])) do number
+			device = _terminal_device(spacecraft[satellite], number)
+			device === nothing || terminal_supports(device, link)
+		end
+		isempty(usable) && throw(ArgumentError(
+			"Spacecraft $satellite has no terminal that can carry a $(nameof(typeof(link)))."))
+		turn[satellite] += 1
+		return usable[mod1(turn[satellite], length(usable))]
+	end
+
 	# The model of spacecraft `index`, when the run's models are known.
 	_spacecraft_at(spacecraft, index::Int) = spacecraft === nothing ? nothing : spacecraft[index]
 
@@ -211,26 +363,33 @@ module InterLinkModels
 
 	# 3. Update link availability
 	"""
-		update_availability!(model::InterlinkModel, spacecraft, state; is_active=nothing, context=LinkContext())
+		update_availability!(model::InterlinkModel, spacecraft, state; is_active=nothing, context=LinkContext(),
+		                     terminal_available=nothing)
 
 	Mark each candidate link available when its spacecraft pair is not forbidden,
-	both spacecraft are active (when activity flags are supplied) and its link's
+	both spacecraft are active (when activity flags are supplied), both terminals
+	are available (when `terminal_available` gives a flag per graph vertex: in a
+	run, terminal hardware the power budget sheds is not), and its link's
 	`link_available` allows it (by default, the endpoints are apart and within
-	`link_range_m`). Battery and temperature do not gate availability. Return a
-	fresh `Vector{Bool}` in registration order.
+	`link_range_m`). Return a fresh `Vector{Bool}` in registration order.
 	"""
-	function update_availability!(model::InterlinkModel, spacecraft, state; is_active=nothing, context=LinkContext())
+	function update_availability!(model::InterlinkModel, spacecraft, state; is_active=nothing, context=LinkContext(),
+		terminal_available=nothing)
 		graph = model.graph
 		for edge in eachindex(graph.edges)
 			first, second = map(v -> graph.vertices[v], graph.edges[edge])
 
 			# i) Rule 1: The spacecraft pair must not be forbidden.
-			allowed = !((first[1], second[1]) in model.forbidden_pairs) &&
+			allowed = !(minmax(first[1], second[1]) in model.forbidden_pairs) &&
 
 				# ii) Rule 2: Both spacecraft must be active when activity flags are supplied.
-				(is_active === nothing || (is_active[first[1]] && is_active[second[1]]))
+				(is_active === nothing || (is_active[first[1]] && is_active[second[1]])) &&
 
-			# iii) Rule 3: The link itself must be able to close (by default, within its range).
+				# iii) Rule 3: Both terminals must be available when terminal flags are supplied.
+				(terminal_available === nothing ||
+					(terminal_available[graph.edges[edge][1]] && terminal_available[graph.edges[edge][2]]))
+
+			# iv) Rule 4: The link itself must be able to close (by default, within its range).
 			graph.available[edge] = allowed && link_available(graph.edge_properties[edge],
 				link_endpoint(state.sc[first[1]], _spacecraft_at(spacecraft, first[1]), first[1]),
 				link_endpoint(state.sc[second[1]], _spacecraft_at(spacecraft, second[1]), second[1]), context)

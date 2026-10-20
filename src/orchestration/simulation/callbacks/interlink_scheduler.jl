@@ -1,6 +1,7 @@
 # Accepted-step scheduling and history recording belong to simulation orchestration.
 using ..InterLinkModels: InterLinkHistory, LinkContext
 using ..SchedulingPolicies: schedule_interlinks!
+using ..InterlinkTerminals: terminal_availability
 
 export interlink_scheduler_callback
 
@@ -12,10 +13,13 @@ function interlink_scheduler_callback(; candidate_force=nothing)
 		args = integrator.p.args
 		model = args.interlink_model
 		planet = args.environment_model.planet
+		# Terminal hardware the power budget sheds closes its links; the battery's
+		# step-end update runs before this callback.
 		selected = schedule_interlinks!(model, args.scheduling_policy_model,
 			args.dynamics_model.spacecraft, integrator.u, planet.μ;
 			candidate_force, is_active=integrator.p.is_active,
-			context=LinkContext(time_s=Float64(integrator.t), planet=planet))
+			context=LinkContext(time_s=Float64(integrator.t), planet=planet),
+			terminal_available=terminal_availability(model, args.dynamics_model.spacecraft))
 		sample = InterLinkHistory(Float64(integrator.t), selected)
 		if !isempty(model.history) && model.history[end].time == sample.time
 			model.history[end] = sample
@@ -28,4 +32,14 @@ function interlink_scheduler_callback(; candidate_force=nothing)
 	initialize = (callback, state, time, integrator) -> affect!(integrator) # update link graph when the simulation is initialized
 	return DiffEqBase.DiscreteCallback((state, time, integrator) -> true, affect!; # update link graph at each accepted simulation step
 		initialize=initialize, save_positions=(false, false))
+end
+
+# The same scheduling, at initialization only: placed ahead of the run's other
+# callbacks, the first selection is in place before they initialize, so the
+# first saved row already shows what the links draw. The scheduler callback,
+# after the others, repeats it (the same selection) and runs at every step.
+function interlink_scheduler_initialization(; candidate_force=nothing)
+	scheduler = interlink_scheduler_callback(; candidate_force)
+	return DiffEqBase.DiscreteCallback((state, time, integrator) -> false, integrator -> nothing;
+		initialize=scheduler.initialize, save_positions=(false, false))
 end
