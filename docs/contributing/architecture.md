@@ -454,7 +454,7 @@ calls them at the top of `src/models/gnc/contracts/simulation_lifecycle.jl`.
 | Interlink selection and history | the `InterlinkModel` | `run_simulation` empties the history and clears the graph's flags and the matching | `interlinks`: the configuration's identity and the activity flags | the identity is checked; the scheduler's initialization rebuilds the selection | phase 1; the scheduler at the solve's start |
 | Battery flags, fault activity | the batteries and the actuator faults | the power and fault callbacks' first initialization | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume` so that those initializations keep it | phase 1 |
 | Sensor streams, latest measurements, biases, sample times | the mounted sensors and the sensor callbacks | `reset_sensors!` at the first solve's start | `callbacks`, and the sensor's own `checkpoint_state` in `models` | the records in phase 1; the sensor's own state in phase 3. A resumed run does not call `initialize_sensor!` | phases 1 and 3 |
-| Hinge and gimbal angles, mounted thrusters' firing state (`κ`, `thrust`) | the link hardware | none: see below | `callbacks` | `_restore_callback_checkpoint_state!` | phase 1 |
+| Hinge and gimbal angles, mounted thrusters' firing state (`κ`, `thrust`) | the link hardware: `PanelHinge`, `ThrusterGimbal` and `Thruster`, which keep the state a run starts from (`run_start`, first the configured one) and the last tick's write (`run_written`) | the run-state callback's first initialization (`get_run_state_callbacks`): a value still equal to the last mounted tick's write returns to the previous run's start; a value a user changed between runs is kept | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume`: the run-state callback's initialization then keeps the restored state and records it as the latest write | phase 1 |
 | Periodic tick clocks | each run-clock callback, and the run clock in the shared buffers | each solve's start; the run clock in phase 2 | `periodic_ticks` | `_pending_periodic_ticks`, taken at the first solve's start | phases 1 and 2 |
 | GNC links | the shared object | `link_initialize!`, once per run | none of their own: the models save what they need | — | phase 3 |
 | The models' own run state | each guidance, navigation and control model | `initialize_navigation!`, `initialize_guidance!`, `initialize_control!`; a value a user changed between runs is kept | `models` (`checkpoint_state`) | `restore_checkpoint_state!`, after the initializers. `model_resume` tells an initializer that the state will come back: the RPO planner then makes no initial request | phase 3 |
@@ -465,14 +465,6 @@ calls them at the top of `src/models/gnc/contracts/simulation_lifecycle.jl`.
 
 Current behaviour to know:
 
-- **Hardware with no reset.** Hinge and gimbal angles and the mounted thrusters'
-  firing state are not reset when a run starts.
-  - With `isolate_state=true` (the default), each run starts from the
-    configured values in its own copy.
-  - With `isolate_state=false`, a repeated run continues from where the
-    previous run left the hardware.
-
-  Batteries, faults and sensors are reset.
 - **Runs that cannot resume.** EDG, `AlgorithmGuidance`, the GRAM density
   perturbation and externally propagated spacecraft refuse checkpoints or a
   resume, because the checkpoint does not hold their run state.
