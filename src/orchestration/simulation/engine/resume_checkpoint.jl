@@ -3,18 +3,46 @@
 
 # Keep feature identity and lifecycle knowledge in the simulation engine. The
 # file layer stores this plain-data snapshot without importing interlink models.
+# A link's identity is its kind and its fields. The kind is named by the full
+# path of the module that defines it and its name, so same-named kinds of two
+# packages, or of two modules of one package, differ; a kind moved to another
+# module needs its old checkpoints migrated. Its concrete type parameters are
+# part of it, since they can select different hooks (`ModeLink{1}` and
+# `ModeLink{-1}`).
+function _interlink_link_identity(link)
+    kind = typeof(link)
+    names = fieldnames(kind)
+    return (kind=_interlink_kind_identity(kind),
+        fields=NamedTuple{names}(map(name -> getfield(link, name), names)))
+end
+
+# A type as plain data that the checkpoint file serializes: the full path of
+# its module, its name and its parameters. A parameter that is a type is
+# described the same way, and a tuple parameter element by element. A value
+# parameter (a number, symbol or other bits value, the only values a type
+# parameter can hold) is recorded with its own type, since `1`, `1.0`, `true`
+# and `Int32(1)` select different methods yet compare equal as numbers. A
+# floating-point value also keeps its bits, so that -0.0 and 0.0, and NaNs with
+# different payloads, stay apart as they do in types.
+_interlink_kind_identity(kind::DataType) = (module_path=fullname(parentmodule(kind)), name=nameof(kind),
+    parameters=map(_interlink_kind_parameter, Tuple(kind.parameters)))
+_interlink_kind_parameter(parameter::DataType) = _interlink_kind_identity(parameter)
+_interlink_kind_parameter(parameter::Union) = (union=map(_interlink_kind_parameter, Tuple(Base.uniontypes(parameter))),)
+_interlink_kind_parameter(parameter::Type) = string(parameter)   # a UnionAll parameter: its printed form
+_interlink_kind_parameter(parameter::Tuple) = map(_interlink_kind_parameter, parameter)
+_interlink_kind_parameter(parameter) = (type=_interlink_kind_identity(typeof(parameter)), value=parameter)
+_interlink_kind_parameter(parameter::Base.IEEEFloat) = (type=_interlink_kind_identity(typeof(parameter)),
+    value=parameter, bits=reinterpret(Base.uinttype(typeof(parameter)), parameter))
+
 function _interlink_checkpoint_configuration(args)
     model = args.interlink_model
     graph = model.graph
     policy = args.scheduling_policy_model
     return (
-        link_type=model.constellation_link_type,
         vertices=copy(graph.vertices),
         candidates=[(
             endpoints=map(vertex -> graph.vertices[vertex], edge),
-            P=graph.edge_properties[index].P,
-            B=graph.edge_properties[index].B,
-            range=graph.edge_properties[index].range,
+            link=_interlink_link_identity(graph.edge_properties[index]),
         ) for (index, edge) in enumerate(graph.edges)],
         forbidden_pairs=sort!(collect(model.forbidden_pairs)),
         policy=policy.policy,
@@ -30,10 +58,24 @@ function _interlink_checkpoint_runtime_state(args, is_active)
     is_active isa AbstractVector{Bool} && length(is_active) == count ||
         throw(ArgumentError("Writing an interlink checkpoint requires one activity flag per spacecraft."))
     return (interlinks=(
-        version=1,
+        version=2,
         configuration=_interlink_checkpoint_configuration(args),
         is_active=Vector{Bool}(is_active),
     ),)
+end
+
+# A snapshot's configuration in the current form. Version 1 (before link kinds)
+# held one laser link type for the run and P, B and range per candidate.
+function _interlink_snapshot_configuration(snapshot)
+    configuration = snapshot.configuration
+    snapshot.version === 2 && return configuration
+    hasproperty(configuration, :link_type) && configuration.link_type === :laser || return nothing
+    candidates = [(endpoints=candidate.endpoints,
+        link=_interlink_link_identity(SimulationModel.LaserMomentumLink(candidate.P, candidate.B, candidate.range)))
+        for candidate in configuration.candidates]
+    rest = (name => getproperty(configuration, name) for name in keys(configuration)
+        if !(name in (:link_type, :vertices, :candidates)))
+    return (; vertices=configuration.vertices, candidates=candidates, rest...)
 end
 
 function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
@@ -44,13 +86,13 @@ function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
             "An interlink checkpoint cannot resume with interlink_model=nothing."))
         return nothing
     end
-    snapshot !== nothing && hasproperty(snapshot, :version) && snapshot.version === 1 ||
-        throw(ArgumentError("Interlink checkpoint runtime metadata version 1 is required; " *
+    snapshot !== nothing && hasproperty(snapshot, :version) && snapshot.version in (1, 2) ||
+        throw(ArgumentError("Interlink checkpoint runtime metadata version 1 or 2 is required; " *
             "older checkpoints without this metadata cannot safely resume an interlinked run."))
     hasproperty(snapshot, :configuration) &&
-        isequal(snapshot.configuration, _interlink_checkpoint_configuration(args)) ||
+        isequal(_interlink_snapshot_configuration(snapshot), _interlink_checkpoint_configuration(args)) ||
         throw(ArgumentError("Interlink configuration differs from the checkpoint. Resume with the same " *
-            "candidate topology, laser parameters, forbidden pairs, policy targets and terminal counts."))
+            "candidate topology, link kinds and parameters, forbidden pairs, policy targets and terminal counts."))
     count = length(args.dynamics_model.spacecraft)
     hasproperty(snapshot, :is_active) && snapshot.is_active isa AbstractVector{Bool} &&
         length(snapshot.is_active) == count && is_active isa AbstractVector{Bool} &&

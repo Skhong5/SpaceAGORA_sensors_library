@@ -92,7 +92,7 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "spacecraft", 
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "spacecraft", "model.jl"))
 @reexport using .SpacecraftModels
 
-include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "spacecraft", "interlink_graph.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "interlinks", "interlink_graph.jl"))
 @reexport using .InterLinkModels
 include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "control", "interlinks", "interlink_scheduling.jl"))
 @reexport using .SchedulingPolicies

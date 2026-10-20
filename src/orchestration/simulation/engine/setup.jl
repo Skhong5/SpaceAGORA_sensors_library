@@ -2558,7 +2558,11 @@ end
 function _validate_interlinks!(args, solver_mode::Symbol)
     model = args.interlink_model
     model === nothing && return nothing
-    model.constellation_link_type === :laser || throw(ArgumentError("Radio force physics is not implemented."))
+    for link in model.graph.edge_properties
+        hasmethod(SimulationModel.link_range_m, Tuple{typeof(link)}) || throw(ArgumentError(
+            "The interlink kind $(nameof(typeof(link))) has no link_range_m method; implement " *
+            "SpaceAGORA.link_range_m(::$(nameof(typeof(link)))), the maximum range in metres."))
+    end
     solver_mode in (:gravity_backbone_split, :split_imex, :multirate) &&
         throw(ArgumentError("Interlinks require a full-state solver such as :tsit5; $solver_mode is not supported."))
     spacecraft = args.dynamics_model.spacecraft
@@ -2570,10 +2574,10 @@ function _validate_interlinks!(args, solver_mode::Symbol)
         1 <= terminal <= sc.n_terminal ||
             throw(ArgumentError("Invalid interlink terminal $terminal on spacecraft $satellite."))
         satellite in external_owned && throw(ArgumentError(
-            "Laser interlinks cannot act on externally propagated spacecraft $satellite; force exchange with the external propagator is not implemented."))
+            "Interlinks cannot act on externally propagated spacecraft $satellite; force exchange with the external propagator is not implemented."))
         (_spacecraft_articulated(sc) || _spacecraft_has_attachments(sc) ||
             _robot_arm_coupling(args, satellite, 0.0) !== nothing) && throw(ArgumentError(
-            "Laser interlinks currently apply a net translational force to rigid spacecraft; articulated or compliant spacecraft $satellite is not supported."))
+            "Interlinks currently apply a net translational force to rigid spacecraft; articulated or compliant spacecraft $satellite is not supported."))
     end
     return nothing
 end

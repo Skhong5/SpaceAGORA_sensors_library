@@ -40,9 +40,9 @@ The table lists the same components with the section that describes each.
 | `make_example_config` | a complete configuration from a planet, a spacecraft, a duration and an epoch | [Using `make_example_config`](#Using-make_example_config) |
 
 Panel angles have their own section further down this page. Articulated and
-compliant vehicles and laser interlinks have their own pages:
+compliant vehicles and interlinks have their own pages:
 [Articulated and Compliant Vehicles](articulated_compliant.md) and
-[Laser Interlinks](laser_interlinks.md).
+[Interlinks](interlinks.md).
 
 ## The top-level struct
 
