@@ -203,6 +203,9 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :walker_planes, rendered = "SpaceAGORA.walker_planes"),
             (owner = :SpaceAGORA, symbol = :walker_constellation, rendered = "SpaceAGORA.walker_constellation"),
             (owner = :SpaceAGORA, symbol = :ConstellationSlot, rendered = "SpaceAGORA.ConstellationSlot"),
+            (owner = :SpaceAGORA, symbol = :scoped, rendered = "SpaceAGORA.scoped"),
+            (owner = :SpaceAGORA, symbol = :ScopedEffector, rendered = "SpaceAGORA.ScopedEffector"),
+            (owner = :SpaceAGORA, symbol = :SpacecraftSelection, rendered = "SpaceAGORA.SpacecraftSelection"),
         ]
     ),
     (

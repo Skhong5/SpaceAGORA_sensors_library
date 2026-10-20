@@ -311,6 +311,7 @@ using .SimulationModel: CompliantJointActuator, CompliantJointLoad, CompliantAtt
 using .SimulationModel: rectangular_prism_inertia, thin_panel_inertia
 using .SimulationModel: build_compliant_topology, build_rectangular_compliant_grid
 using .SimulationModel: ConstellationSlot, OrbitalPlane, build_constellation, walker_planes, walker_constellation
+using .SimulationModel: ScopedEffector, scoped, SpacecraftSelection
 using .SimulationModel: compliant_state_vector, compliant_state_parts, compliant_multibody_dynamics
 using .SimulationModel: compliant_joint_loads
 using .SimulationModel: step_compliant_multibody_rk4, step_compliant_multibody_implicit_midpoint
@@ -554,6 +555,9 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.build_constellation) build_constellation
 @doc (@doc SimulationModel.walker_planes) walker_planes
 @doc (@doc SimulationModel.walker_constellation) walker_constellation
+@doc (@doc SimulationModel.scoped) scoped
+@doc (@doc SimulationModel.ScopedEffector) ScopedEffector
+@doc (@doc SimulationModel.SpacecraftSelection) SpacecraftSelection
 @doc (@doc SimulationModel.compliant_state_vector) compliant_state_vector
 @doc (@doc SimulationModel.compliant_state_parts) compliant_state_parts
 @doc (@doc SimulationModel.compliant_multibody_dynamics) compliant_multibody_dynamics
@@ -749,6 +753,7 @@ export CompliantJointActuator, CompliantJointLoad, CompliantAttachment
 export rectangular_prism_inertia, thin_panel_inertia
 export build_compliant_topology, build_rectangular_compliant_grid
 export ConstellationSlot, OrbitalPlane, build_constellation, walker_planes, walker_constellation
+export ScopedEffector, scoped, SpacecraftSelection
 export compliant_state_vector, compliant_state_parts, compliant_multibody_dynamics, compliant_joint_loads
 export step_compliant_multibody_rk4, step_compliant_multibody_implicit_midpoint, simulate_compliant_multibody
 export coupled_cloth_robot_arm_state_shape, initialize_coupled_cloth_robot_arm_state!

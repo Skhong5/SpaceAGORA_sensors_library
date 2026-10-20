@@ -1,3 +1,4 @@
+import ..SimulationModel
 using ..SimulationModel: SimulationConfiguration, SimulationSettings, DynamicsModel, SpacecraftModel
 import ..SimulationEngine
 using ..SimulationModel.SimConfig: _with_configuration
@@ -40,12 +41,25 @@ _ensemble_member_tag(index::Integer, count::Integer, id::Integer) =
 function _ensemble_member_configuration(
     args::SimulationConfiguration,
     spacecraft::SpacecraftModel,
-    member_tag::String
+    member_tag::String;
+    effectors::Tuple=args.dynamics_model.dynamic_effectors,
 )::SimulationConfiguration
     return _with_configuration(args;
         simulation_settings=_ensemble_member_settings(args.simulation_settings, member_tag),
-        dynamics_model=DynamicsModel([spacecraft], args.dynamics_model.dynamic_effectors),
+        dynamics_model=DynamicsModel([spacecraft], effectors),
     )
+end
+
+# The dynamic effectors of ensemble member `index`, from a configuration whose
+# effector scopes are resolved (SimulationEngine._resolve_effector_scopes): every
+# effector without a table, otherwise the effectors whose scope holds the member's
+# position in the constellation. The member runs them unscoped.
+function _ensemble_member_effectors(args::SimulationConfiguration, index::Integer)::Tuple
+    scopes = args.dynamics_model.effector_scopes
+    effectors = args.dynamics_model.dynamic_effectors
+    scopes === nothing && return effectors
+    applies = SimulationModel.SpacecraftModels._effector_applies
+    return Tuple(e for (j, e) in enumerate(effectors) if applies(scopes, j, Int(index)))
 end
 
 # The configuration of ensemble member `index` of `count`. Checkpoints of an
@@ -56,11 +70,12 @@ end
 function _ensemble_member_configuration(args::SimulationConfiguration, spacecraft::SpacecraftModel,
                                         index::Integer, count::Integer)::SimulationConfiguration
     tag = _ensemble_member_tag(index, count, spacecraft.id)
-    config = _ensemble_member_configuration(args, spacecraft, tag)
+    effectors = _ensemble_member_effectors(args, index)
+    config = _ensemble_member_configuration(args, spacecraft, tag; effectors=effectors)
     unpadded = "sat_$(index)_id_$(spacecraft.id)"
     (args.simulation_settings.resume_from_checkpoint && unpadded != tag) || return config
     isfile(SimulationEngine._checkpoint_paths(config).data) && return config
-    earlier = _ensemble_member_configuration(args, spacecraft, unpadded)
+    earlier = _ensemble_member_configuration(args, spacecraft, unpadded; effectors=effectors)
     return isfile(SimulationEngine._checkpoint_paths(earlier).data) ? earlier : config
 end
 
@@ -165,6 +180,9 @@ function run_constellation_ensemble(
     ))
     _validate_ensemble_uncoupled(args, allow_gnc_effectors)
     SimulationEngine._warn_repeated_spacecraft_ids(args)
+    # Scoped effectors are resolved against the whole constellation; each member
+    # then keeps the effectors whose scope holds its position, unscoped.
+    args = SimulationEngine._resolve_effector_scopes(args)
 
     member_configs = [
         _ensemble_member_configuration(args, sc, idx, length(spacecraft))

@@ -76,7 +76,9 @@ SpaceAGORA.wrench(model, x::SpaceAGORA.StateSample, env::SpaceAGORA.EnvironmentS
 
 Implement `wrench`. The engine owns stage-consistent sampling and passes typed
 state/environment data into the effector; `x.spacecraft_index` is the
-spacecraft's position in the run. Type the sample `x::SpaceAGORA.StateSample`,
+spacecraft's position in the run. To have an effector act on some spacecraft
+only, give its entry as `scoped(effector, scope)`
+([Effectors on part of a constellation](user/constellations.md#Effectors-on-part-of-a-constellation)). Type the sample `x::SpaceAGORA.StateSample`,
 or leave it untyped
 ([the supported sample argument](reference/extension_conventions.md#The-supported-sample-argument)).
 Override `solver_partition` only if the effector should move to the implicit

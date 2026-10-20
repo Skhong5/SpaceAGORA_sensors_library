@@ -122,6 +122,62 @@ their position in `dynamics_model.spacecraft`, not by id. The builder's order is
 plane by plane and slot by slot, so position `index` is the spacecraft the
 factory built for that `index`.
 
+## Effectors on part of a constellation
+
+A dynamic effector acts on every spacecraft unless its entry in the effector
+tuple is `scoped(effector, scope)`:
+
+```julia
+dynamics = DynamicsModel(spacecraft, (
+    InverseSquaredJ2GravityModel(),                                          # every spacecraft
+    scoped(AerodynamicCoefficientConstant(), SpacecraftSelection(planes=1)), # plane 1 only
+    scoped(MyThruster(2.0e-3), BoundSpacecraft((3, 7))),                     # run positions 3 and 7
+))
+```
+
+- **Scopes.**
+  - `BoundSpacecraft(positions)` names run positions, as for GNC models.
+  - `SpacecraftSelection(; positions, ids, planes, slots, where)` selects the
+    spacecraft that meet every criterion given: run positions, ids,
+    constellation planes, slots (`ConstellationSlot`s or `(plane, slot)` pairs),
+    or a function `where(position, spacecraft) -> Bool`.
+  - `AllSpacecraft()` is the same as no scope.
+  - An effector type can declare its own scope with
+    `SpaceAGORA.spacecraft_scope(model)`.
+- **Resolved once.** The run resolves each scope to run positions when it
+  starts, against the spacecraft that run. It refuses a scope that:
+  - names a position outside the run;
+  - names an id no spacecraft or two spacecraft hold;
+  - names a plane or slot no spacecraft holds;
+  - selects no spacecraft.
+- **Outside its scope an effector does not exist for that spacecraft.**
+  - It is not evaluated and samples no environment.
+  - It adds no force or torque, on every solver route.
+  - Its diagnostic columns (aerodynamic drag, lift and cross) stay zero.
+  - An accelerometer subtracts only the gravity applied to its spacecraft.
+  - The density and temperature columns still come from the run's per-step
+    density refresh.
+- **The same bits as the workaround.** A scoped run gives the bits of the same
+  run with an effector that returns zero outside the scope. A scope that names
+  every spacecraft is the same as none.
+- **Refused:**
+  - a `CoupledSpacecraft` scope;
+  - scoping `RobotArmReactionEffector`, `ReactionWheelMomentumModel` or
+    `PlumeSurfaceInteractionModel`, which pick their spacecraft themselves;
+  - scoped effectors in a run with articulated spacecraft (moving joints),
+    compliant attachments or a robot arm;
+  - a scoped gravity model that EDG's prediction reads, in a run with EDG
+    guidance;
+  - a scope that names an externally propagated spacecraft;
+  - scoped gravity that leaves some spacecraft without any gravity while
+    others have it.
+- **The configuration that ran.** In `res.configuration.dynamics_model`, the
+  effectors are the bare effectors and `effector_scopes` holds the positions.
+  Keep your tuple of `scoped` entries to build another run.
+- **Ensembles.** In `run_constellation_ensemble`, each member keeps the
+  effectors whose scope holds its position in the constellation, and runs them
+  unscoped.
+
 ## Running a constellation
 
 Pass the spacecraft to `DynamicsModel(spacecraft, effectors)`. One run

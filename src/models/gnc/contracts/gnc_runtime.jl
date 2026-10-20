@@ -74,7 +74,9 @@ the model only for the spacecraft its scope names (every one, the `BoundSpacecra
 indices, or the `CoupledSpacecraft` primary), reading the scope at each tick.
 Before the run it refuses a scope that names a run position the run does not have.
 The output hooks are still called for
-every spacecraft, so they keep their own index checks. Default: `AllSpacecraft()`.
+every spacecraft, so they keep their own index checks. A dynamic effector's scope,
+read once when the run starts, decides which spacecraft it acts on (see `scoped`);
+a dynamic effector also takes a `SpacecraftSelection`. Default: `AllSpacecraft()`.
 """
 spacecraft_scope(model) = AllSpacecraft()
 

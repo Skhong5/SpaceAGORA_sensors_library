@@ -442,7 +442,7 @@ function _flatten_spacecraft_gnc(args::SimulationConfiguration)
         control_model=SimulationModel.ControlModel(Tuple(c), cr),
         dynamics_model=SimulationModel.DynamicsModel(
             SimulationModel.SpacecraftModel[_declares_gnc(sc) ? _without_gnc(sc) : sc for sc in spacecraft],
-            args.dynamics_model.dynamic_effectors))
+            args.dynamics_model.dynamic_effectors, args.dynamics_model.effector_scopes))
 end
 
 # Opt-in factories own fresh callback state and capture the configuration that
@@ -563,6 +563,9 @@ function run_simulation(
     return_results && return_solver_metadata &&
         throw(ArgumentError("return_results=true and return_solver_metadata=true cannot be combined."))
     args = _flatten_spacecraft_gnc(args)
+    # Scoped dynamic effectors become bare effectors and a table of run positions,
+    # before any check reads the effectors by type (see effector_scopes.jl).
+    args = _resolve_effector_scopes(args)
     for guidance in args.guidance_model.guidance_effectors
         SimulationLifecycle.preflight_guidance(guidance, args; isolate_state=isolate_state)
     end

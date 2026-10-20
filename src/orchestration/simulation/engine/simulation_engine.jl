@@ -28,6 +28,7 @@ include(joinpath(@__DIR__, "config", "simulation_engine_config.jl"))
 include(joinpath(@__DIR__, "adapters", "from_env.jl"))
 
 include(joinpath(@__DIR__, "effector_sampling.jl"))
+include(joinpath(@__DIR__, "effector_scopes.jl"))
 include(joinpath(@__DIR__, "state_access.jl"))
 include(joinpath(@__DIR__, "setup.jl"))
 include(joinpath(@__DIR__, "external_propagation.jl"))
