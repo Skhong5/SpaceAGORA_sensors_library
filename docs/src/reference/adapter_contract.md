@@ -75,13 +75,13 @@ A SpaceAGORA checkout selects companion source revisions through its git
 submodule pins (gitlinks) and `packages/VisualizerSource.toml`. A companion's
 default branch or release tag can point somewhere else. So record both commits
 you tested. A new package version, or an updated pin in the documentation, is not
-a new test run. If you only reviewed a newer companion's source, say so, and run
-its native code before you call the pair tested.
+a new test run, and neither is reading a newer companion's source.
 
-Name the tests you ran with each result, and record whether an actual native run
-was exercised: a real MuJoCo scene, a GRAM atmosphere or an EDG reference
-campaign. A check without one tests the interface and the configuration; report
-it as that.
+Name the checks you ran with each result, and how each one ran. Pure-Julia HYPR
+tests and analytic EDG runs test behavior, such as numerical results and run
+isolation, without native code. A native or scientific claim needs the case that
+exercises it: a real MuJoCo scene, a GRAM atmosphere or an EDG reference
+campaign.
 
 Some companion tests and research scripts still use private SpaceAGORA paths.
 These paths are not supported, so do not use them in new code; maintainers find
@@ -135,9 +135,9 @@ contract version is listed here with what changed.
 ## Package and installation rules
 
 An adapter is either a standalone package that depends on SpaceAGORA, or a Julia
-extension that loads when a weak dependency is present. SpaceAGORA never depends
-on an optional adapter. Keep one implementation: a compatibility package only
-forwards to it and checks that it is available.
+extension that loads when a weak dependency is present. SpaceAGORA must not have
+a mandatory dependency on an optional adapter. Keep one implementation: a
+compatibility package only forwards to it and checks that it is available.
 
 HYPR and SpaceAGORAMuJoCo are pinned at exact revisions as Git submodules under
 `packages/robotics/`, and SpaceAGORAEDG under `packages/gnc/`. These are source
