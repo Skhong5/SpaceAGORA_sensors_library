@@ -1,60 +1,129 @@
 # Optional adapter standard
 
-Optional integrations use a versioned SpaceAGORA service facade. The adapter owns
-its implementation and dependencies; SpaceAGORA owns shared configuration and
-result types, simulation lifecycle, validation and the services listed by the
-facade. Loading SpaceAGORA alone must not load an optional provider or its native
-library.
+Use this page when you write or change a companion package: a separate package
+that adds an optional feature to SpaceAGORA, such as HYPR planning, MuJoCo
+propagation or EDG guidance. It tells you which boundary to use, what each
+boundary promises, and what to record about your tests.
 
-This standard applies to new adapters and changes to existing adapters. Domains
-retain their own protocol: a dynamics owner advances state, a planner produces a
-validated reference, and a guidance adapter computes its domain's outputs. They
-share the rules below, not a universal callback or provider registry.
+A companion reaches SpaceAGORA through a service module, which these pages also
+call a facade. A service module is a module inside SpaceAGORA, such as
+`SpaceAGORA.HYPRServices`, that names the SpaceAGORA types and functions a
+companion may use and the functions it may add methods to. The companion owns
+its implementation and its dependencies. SpaceAGORA owns the shared
+configuration and result types, the simulation lifecycle, validation, and the
+services the module lists. Loading SpaceAGORA alone never loads a companion or
+its native library.
+
+These rules apply to new adapters and to changes in existing ones. Each domain
+keeps its own protocol: an external propagator advances spacecraft state, a
+planner returns a reference that SpaceAGORA checks, and a guidance package
+computes its decisions. The domains share the rules on this page; there is no
+single callback or registry that all companions use.
 
 ## Supported boundaries
 
-| Integration | Implementation owner | Supported core boundary | Lifecycle |
+| Integration | Who owns the implementation | Supported SpaceAGORA boundary | Lifecycle |
 |---|---|---|---|
-| HYPR planning | `HYPR.jl` extension; `SpaceAGORAHYPR` is a compatibility shim | [`SpaceAGORA.HYPRServices`](hypr_services.md) | Explicit provider activation; per-request planner state |
-| External propagation, including MuJoCo | Independent [SpaceAGORAMuJoCo.jl companion](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl) for MuJoCo scenes; each other adapter owns its domain implementation | [`SpaceAGORA.ExternalPropagationServices`](external_propagation_services.md) | Configured owners; separate mutable runtime for every simulation |
-| Experimental EDG guidance | Independent `SpaceAGORAEDG.jl` companion | [`SpaceAGORA.EDGServices`](edg_adapter_boundary.md), contract `v"2.0.0"` | Core-owned callbacks and per-run state; copied observations and call-scoped prediction queries |
+| HYPR planning | The `HYPR.jl` extension; `SpaceAGORAHYPR` is a compatibility package that forwards to it | [`SpaceAGORA.HYPRServices`](hypr_services.md) | HYPR is activated explicitly; planner state is created for each request |
+| External propagation, including MuJoCo | The independent [SpaceAGORAMuJoCo.jl companion](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl) for MuJoCo scenes; each other adapter owns its own domain implementation | [`SpaceAGORA.ExternalPropagationServices`](external_propagation_services.md) | Propagators are set in the configuration; each simulation gets its own mutable runtime |
+| Experimental EDG guidance | The independent `SpaceAGORAEDG.jl` companion | [`SpaceAGORA.EDGServices`](edg_adapter_boundary.md), contract `v"2.0.0"` | SpaceAGORA owns the callbacks and the per-run state; the companion gets copied observations and prediction queries that are valid for one call |
 
-EDG remains experimental; interface conformance does not establish scientific
-qualification. The HYPR compatibility shim stays at `packages/SpaceAGORAHYPR/`;
-the implementation remains owned by the external HYPR repository.
+EDG is experimental: review its scientific results separately from its
+interface checks. `SpaceAGORAHYPR`, HYPR's compatibility package, stays at
+`packages/SpaceAGORAHYPR/`. It forwards older code to HYPR; the planner itself
+lives in the external HYPR repository.
+
+## Choose a boundary
+
+Start here to find the page that applies to your work.
+
+If you are writing a new algorithm, navigation model or controller, you do not
+need a service module. Use the public GNC hooks, starting with the
+[GNC student guide](../user/gnc_algorithm.md) and the
+[package, project and companion choices](../extensibility.md). The `companion`
+starter that SpaceAGORA generates is an external-propagation package.
+SpaceAGORAKitDemo is an ordinary GNC package that uses the public hooks.
+
+| Boundary | Who is on each side | Where to read more |
+|---|---|---|
+| Planning methods and shared geometry | The HYPR extension; SpaceAGORA's planner adapters and comparison workflows | [HYPR domains and callers](hypr_services.md#Domains-and-callers) |
+| EDG decisions and prediction queries | The EDG companion; SpaceAGORA's EDG guidance and control | [EDG callers](edg_adapter_boundary.md#Callers) |
+| External state advancement | MuJoCo, other external propagators, the `companion` starter and telemetry callbacks | [External propagation owners and users](external_propagation_services.md#Owners-and-users) |
+| Saved JSON and HTML | SpaceAGORA's output writers and the separate Visualizer package | [Saved-output boundary](#Saved-output-consumers) and [visualization guide](../user/visualization.md) |
+| Atmosphere queries and native resources | GRAMSuite and SpaceAGORA's GRAM extension | [Atmosphere models](../user/atmosphere_models.md) and [GRAMSuite setup](../user/gramsuite_setup.md) |
+| Optional interlink matching | The PythonCall extension and the NetworkX backend | [Interlinks](../user/interlinks.md) |
+
+The last three rows use no service module. SpaceAGORA owns the atmosphere
+wrapper types. Its GRAM extension connects them to GRAMSuite, adds hooks in both
+directions, and rebuilds saved native wrappers with new locks. PythonCall with
+NetworkX is an optional matching backend, not a separately versioned
+SpaceAGORA companion. WamIPEDensity is a standalone density package with no
+SpaceAGORA adapter yet; adding one needs its own integration design.
+
+## Versions, source pins and evidence
+
+When you record a SpaceAGORA and companion pair that works, write down three
+identifiers. Keep them separate, because each answers a different question:
+
+- **Package version**, in `Project.toml`: what Julia's package resolver uses to
+  choose compatible releases.
+- **Contract or format version**: the version of the service module's rules, or
+  of a file format, that the code checks when it loads.
+- **Source revision**: the exact SpaceAGORA and companion commits your check ran on.
+
+A SpaceAGORA checkout selects companion source revisions through its git
+submodule pins (gitlinks) and `packages/VisualizerSource.toml`. A companion's
+default branch or release tag can point somewhere else. So record both commits
+you tested. A new package version, or an updated pin in the documentation, is not
+a new test run, and neither is reading a newer companion's source.
+
+Name the checks you ran with each result, and how each one ran. Pure-Julia HYPR
+tests and analytic EDG runs test behavior, such as numerical results and run
+isolation, without native code. A native or scientific claim needs the case that
+exercises it: a real MuJoCo scene, a GRAM atmosphere or an EDG reference
+campaign.
+
+Some companion tests and research scripts still use private SpaceAGORA paths.
+These paths are not supported, so do not use them in new code; maintainers find
+them, with the tests to run for each boundary, in
+`docs/contributing/companion_boundaries.md` in the
+[contributor documentation](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/main/docs/contributing).
 
 ## Facade shape and compatibility
 
-Every facade provides:
+Every service module provides:
 
-- `CONTRACT_VERSION::VersionNumber`, independent of package release versions.
-- `require_version(expected)` returning `nothing` for the exact supported version
-  and throwing the facade's `CompatibilityError` otherwise.
-- `IMPLEMENTED_FUNCTIONS`, the explicit methods the adapter is allowed to supply.
-- `CONSUMED_SERVICES`, the explicit core types and operations it may consume.
+- `CONTRACT_VERSION::VersionNumber`, the contract version, which is independent of
+  package release versions;
+- `require_version(expected)`, which returns `nothing` for the one supported
+  version and throws the module's `CompatibilityError` for any other;
+- `IMPLEMENTED_FUNCTIONS`, the functions the adapter may add methods to;
+- `CONSUMED_SERVICES`, the SpaceAGORA types and operations the adapter may use.
 
-Inventory entries are a `Symbol` for a direct binding or a tuple of symbols for
-a path through facade namespaces. Supplemental inventories must be named and
-documented; HYPR's `CLOTH_SERVICES` is relative to its `Cloth` namespace. Aliases
-preserve the original type and function identities. Adapter-specific core access
-uses explicit facade bindings; the documented root public API remains available
-for ordinary configuration and simulation operations. Whole internal modules and
-raw engine storage are outside the contract.
+Each entry in these lists is a `Symbol` for a name in the module, or a tuple of
+symbols for a path through nested namespaces. Any extra list must be named and
+documented: HYPR's `CLOTH_SERVICES`, for example, is relative to its `Cloth`
+namespace. The names are aliases, so each type and function keeps its original
+identity. Reach adapter-specific SpaceAGORA code only through the listed names;
+for ordinary configuration and simulation, use the documented root public API.
+Whole internal modules and the engine's raw storage are not part of the contract.
 
-Check compatibility before defining adapter methods or loading native libraries,
-then again in runtime initialization. A rejected version must leave the adapter
-unavailable. Start a fresh Julia process after a failed package load; method
-definitions already evaluated by Julia cannot be assumed to roll back.
+Check the contract version before you define adapter methods or load a native
+library, and check it again when the adapter initializes. If the version is
+refused, leave the adapter unavailable. After a failed package load, start a new
+Julia process: Julia may already have defined some of the package's methods, and
+they are not undone.
 
-Contract versions are matched exactly, including additive changes. Changes to
-signatures, units, frames, result fields, mutability, ownership or failure
-semantics require a new reviewed contract version. A package compatibility range is an outer resolver
-constraint, not evidence that every release in the range has been tested.
+Contract versions must match exactly, even when a change only adds a name. A
+change to signatures, units, frames, result fields, mutability, ownership or
+failure behavior needs a new reviewed contract version. A package compatibility
+range only limits what the resolver may install; record which releases in the
+range you actually tested.
 
 ## Contract history
 
-Each facade's reference page describes its current contract. A new contract
-version is listed here with what changed.
+Each service module's reference page describes its current contract. A new
+contract version is listed here with what changed.
 
 | Facade | Contract | Change |
 |---|---|---|
@@ -65,62 +134,65 @@ version is listed here with what changed.
 
 ## Package and installation rules
 
-An adapter may be a standalone package depending on SpaceAGORA, or a Julia
-extension activated by a weak dependency. SpaceAGORA must not acquire a mandatory
-dependency on an optional adapter. Keep one authoritative implementation; a
-compatibility shim only forwards to it and checks availability.
+An adapter is either a standalone package that depends on SpaceAGORA, or a Julia
+extension that loads when a weak dependency is present. SpaceAGORA must not have
+a mandatory dependency on an optional adapter. Keep one implementation: a
+compatibility package only forwards to it and checks that it is available.
 
-The domain layout uses exact Git submodule revisions under `packages/robotics/`
-for HYPR and SpaceAGORAMuJoCo, and under `packages/gnc/` for SpaceAGORAEDG.
-These are source checkouts, not copies of their implementations or new required
-dependencies. The shared
+HYPR and SpaceAGORAMuJoCo are pinned at exact revisions as Git submodules under
+`packages/robotics/`, and SpaceAGORAEDG under `packages/gnc/`. These are source
+checkouts: they are not copies of the implementations, and they add no required
+dependency. The shared
 [optional-package helper](../user/installation_environment.md#Optional-package-commands)
-verifies the selected gitlink revision, package UUID/version and clean checkout
-before passing its path to the existing installer. It initializes only the
-selected repository. Keep this orchestration separate from provider activation,
-runtime compatibility checks and scientific acceptance. A successful source
-check is not evidence that a native simulation has passed.
+checks the pinned revision, the package UUID and version, and that the checkout is
+clean, before it passes the path to the existing installer. It sets up only the
+repository you select. Keep this setup step separate from activating the
+companion, from the runtime version checks and from scientific acceptance. A
+passing source check means the right source is installed; run a native
+simulation before you report one as passing.
 
 Each repository declares its own runtime and test dependencies, owns its native
-artifacts and supplies an installation path that works outside a SpaceAGORA
-checkout. Do not rely on a parent `Manifest.toml`, sibling source paths or an
-unrelated adapter's setup script. For unregistered or unreleased integrations,
-record exact source revisions for the qualified pair and explicitly install the
-core revision before the adapter. Package `[sources]` entries do not propagate
-into arbitrary consumer environments.
+artifacts, and provides an installation path that works outside a SpaceAGORA
+checkout. Do not rely on a parent `Manifest.toml`, sibling source paths or another
+adapter's setup script. For an unregistered or unreleased integration, record the
+exact source revisions of the pair you tested, and install the SpaceAGORA revision
+before the adapter. A package's `[sources]` entries do not carry over into other
+environments that use the package.
 
 ## Ownership and scientific semantics
 
-Document who owns configuration, mutable runtime, state, random-number streams,
-native resources and cleanup. State reused as a template must not become shared
-mutable state between runs or workers. Specify units, coordinate frames,
-quaternion convention, index mapping, callback ordering and time synchronization
-where relevant. Use core services for shared calculations rather than copying
-them into the adapter.
+Document who owns the configuration, the mutable runtime, the state, the
+random-number streams, the native resources and the cleanup. Never let state that
+serves as a template become mutable state shared between runs or workers. Where
+they apply, state the units, coordinate frames, quaternion convention, index
+mapping, callback order and time synchronization. Use SpaceAGORA's services for
+shared calculations instead of copying them into the adapter.
 
-Refuse unsupported modes explicitly. Do not silently substitute an integrator,
-drop a configured feature, relax an accuracy threshold or treat a failed native
-test as a successful skip. Core validation and adapter validation complement each
-other; a configuration-only preflight does not certify every execution mode.
+Refuse unsupported modes with an explicit error. Do not quietly switch the
+integrator, drop a configured feature, relax an accuracy threshold, or report a
+failed native test as a skip. Run both SpaceAGORA's validation and your adapter's,
+since each checks different things, and test each execution mode you support: a
+configuration preflight checks the configuration only.
 
 ## Saved-output consumers
 
-The independent SpaceAGORAVisualizer package consumes a versioned data format,
-not simulation services. SpaceAGORA owns scene metadata and saved-row conversion;
-the companion owns HTML assembly, browser code and third-party assets. Their
-renderer protocol and portable payload schema are both version 1. The extension
-checks the renderer protocol before delegation, and the companion checks the
-payload schema before rendering. These integer format versions are separate from
-the VersionNumber service-facade contracts above.
+SpaceAGORAVisualizer, a separate package, reads SpaceAGORA's saved files in a
+versioned format; it uses no simulation services. SpaceAGORA owns the scene
+metadata and the conversion of saved rows; the companion owns the HTML assembly,
+the browser code and third-party assets. Their renderer protocol and portable
+payload schema are both version 1. The extension checks the renderer protocol
+before it hands over the work, and the companion checks the payload schema before
+it renders. These integer format versions are separate from the `VersionNumber`
+contracts of the service modules above.
 
 The integration uses `ext/SpaceAGORAVisualizerExt.jl` and a weak dependency.
-Loading core alone leaves the renderer absent; loading both packages in either
-order enables HTML export. A missing renderer fails before a requested run or
-campaign creates outputs. Scene and JSON export remain available without it.
-The companion also opens saved JSON independently of SpaceAGORA.
+Loading SpaceAGORA alone leaves the renderer absent; loading both packages, in
+either order, enables HTML export. A missing renderer fails before a requested run
+or campaign creates outputs. Scene and JSON export work without it. The companion
+also opens saved JSON without SpaceAGORA.
 
 `scripts/setup_visualizer.jl` installs the revision pinned in
 `packages/VisualizerSource.toml` into a separate environment. Installation and
-both load orders are supported. The companion does not read raw
-engine state, install a dynamics provider or change propagation settings.
-See the [user guide](../user/visualization.md) for supported commands.
+both load orders are supported. The companion does not read the engine's raw
+state, add dynamics of its own or change propagation settings. See the
+[user guide](../user/visualization.md) for the supported commands.
