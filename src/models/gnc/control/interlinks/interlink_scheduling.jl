@@ -401,9 +401,10 @@ end
 
 # 4. Overall scheduling function to schedule interlinks based on the current state and scoring policy
 function schedule_interlinks!(model::InterlinkModel, policy::SchedulingPolicyModel,
-	spacecraft, state, mu::Real; candidate_force=nothing, is_active=nothing, context=LinkContext())
+	spacecraft, state, mu::Real; candidate_force=nothing, is_active=nothing, context=LinkContext(),
+	terminal_available=nothing)
 	# step 1. update the availability of each interlink based on the current state
-	update_availability!(model, spacecraft, state; is_active, context)
+	update_availability!(model, spacecraft, state; is_active, context, terminal_available)
 
 	# step 2. compute the score of each interlink based on the scheduling policy / scoring policy
 	score_candidates!(model, policy, state, mu; candidate_force, spacecraft, context)

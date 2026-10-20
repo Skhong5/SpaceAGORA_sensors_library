@@ -31,7 +31,7 @@ function _interlink_checkpoint_configuration(args)
     model = args.interlink_model
     graph = model.graph
     policy = args.scheduling_policy_model
-    return (
+    configuration = (
         vertices=copy(graph.vertices),
         candidates=[(
             endpoints=map(vertex -> graph.vertices[vertex], edge),
@@ -43,7 +43,17 @@ function _interlink_checkpoint_configuration(args)
         target_idxs=policy.target_idxs === nothing ? nothing : copy(policy.target_idxs),
         terminal_counts=[spacecraft.n_terminal for spacecraft in args.dynamics_model.spacecraft],
     )
+    # Terminal numbers past `n_terminal` name mounted terminal hardware, so a run
+    # with any records each spacecraft's terminal kinds, in order; a run without
+    # keeps the configuration it had before hardware terminals.
+    hardware = [_mounted_terminal_kinds(spacecraft) for spacecraft in args.dynamics_model.spacecraft]
+    all(isempty, hardware) && return configuration
+    return merge(configuration, (hardware_terminals=hardware,))
 end
+
+_mounted_terminal_kinds(spacecraft::SimulationModel.SpacecraftModel) =
+    [nameof(typeof(entry.terminal)) for entry in SimulationModel.mounted_link_terminals(spacecraft)]
+_mounted_terminal_kinds(spacecraft) = Symbol[]
 
 function _interlink_checkpoint_runtime_state(args, is_active)
     args.interlink_model === nothing && return nothing

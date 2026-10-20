@@ -32,7 +32,8 @@ to its two endpoints:
 
 `a` and `b` are the endpoints' state samples (`StateSample`: position,
 velocity, mass, attitude and `spacecraft_index`), in the order of the link's
-key, the lower `(spacecraft, terminal)` pair first. `ctx` is a `LinkContext`
+key: the lower `(spacecraft, terminal)` pair first, or, for a directed link, the
+transmitter first. `ctx` is a `LinkContext`
 holding the time (s into the run) and the run's planet.
 
 The built-in kind is `LaserMomentumLink(; power_w, magnification, range_m)`: an
@@ -72,11 +73,90 @@ solution = run_simulation(args; return_solution=true)
 history = solution.prob.p.args.interlink_model.history
 ```
 
+## Terminals
+
+A spacecraft's terminals are its `n_terminal` virtual terminals, numbered
+`1:n_terminal`, followed by the terminal hardware mounted on it, in mounting
+order. A `LaserTerminal` mounted with `add_actuator!` is terminal hardware; a
+kind of your own opts in with `SpaceAGORA.link_terminal(::MyTerminal) = true`.
+`terminal_count(spacecraft)` gives the total, and
+`mounted_link_terminals(spacecraft)` lists the hardware with its numbers. A
+spacecraft with only hardware sets `n_terminal=0`. Virtual terminals stay for
+idealized studies, which run as before.
+
+An endpoint's terminal is a number, or the mounted terminal itself:
+
+```julia
+bus = Link(root=true, m=100.0)
+sc = SpacecraftModel(root=bus, links=[bus], inertia_tensor=bus.inertia, n_terminal=0)
+terminal = LaserTerminal(boresight=[0.0, 1.0, 0.0], max_power_w=50.0, magnification=100.0, range_m=200e3)
+add_actuator!(sc, bus, terminal)
+# ... a second spacecraft, `other`, likewise
+spacecraft = [sc, other]
+register_link!(model, spacecraft, (1, terminal), (2, 1), LaserMomentumLink(terminal))
+```
+
+A terminal must be able to carry its link (`terminal_supports(terminal, link)`).
+A `LaserTerminal` carries `LaserMomentumLink`, and a virtual terminal carries
+any kind. `terminal_number(spacecraft, terminal)` gives a mounted terminal's
+number. Two mounted terminals with equal fields cannot be told apart, so for
+those give the number.
+
+### Directed links
+
+A kind with `link_directed(link) = true` runs one way: from the first endpoint
+given to `register_link!` (the transmitter) to the second (the receiver). Its
+key keeps that order, so its hooks receive the transmitter as `a`. The opposite
+direction between the same terminals is a separate link. Laser momentum links
+are undirected.
+
+### Registering many links
+
+`register_links!(model, spacecraft, pairs, link)` registers one link per
+spacecraft pair. `all_pairs(spacecraft)` gives every pair, or you can pass any
+vector of `(i, j)` index pairs. `link` is a kind value, or a function
+`(i, j) -> link`. Each spacecraft's links take its terminals that can carry them
+in turn, starting again from the first when they run out; links that share a
+terminal compete for it when the scheduler selects. Pass
+`terminals=(i, j) -> (terminal_i, terminal_j)` to choose the terminals yourself.
+
+```julia
+register_links!(model, spacecraft, all_pairs(spacecraft), LaserMomentumLink(power_w=40.0))
+```
+
+### Terminal hardware and power
+
+A hardware terminal that is a link endpoint is driven by its links for the
+whole run:
+
+- **Its level.** While one of its links is active, it runs at the level the
+  link sets, `link_terminal_levels(link)`. For a `LaserMomentumLink`, that is
+  the link's `power_w` at both ends. Otherwise its level is 0.
+- **Its power.** It draws `actuator_consumption(terminal, level)` from its
+  spacecraft's power budget: `power_w / efficiency` for a `LaserTerminal`. The
+  draw shows in the power columns, and in the `actuator_level` and
+  `actuator_power` columns.
+- **Its force.** Only the link's force applies while the link is active. The
+  terminal's own recoil applies only when a controller drives a terminal that
+  is no link's endpoint.
+- **Controllers.** A mounted-actuation controller's levels for a link-driven
+  terminal apply nothing, and setup says so once.
+- **Limits.** A link that would drive its terminal past its limits (above a
+  `LaserTerminal`'s `max_power_w`) is refused at setup. Build the link from the
+  terminal, `LaserMomentumLink(terminal)`, to match them.
+
+When the battery sheds tier 1 (see [Powering a Spacecraft](power_budget.md)), it
+sheds laser terminals. Links through shed hardware terminals then become
+unavailable, and stay so until the tier clears: a shed terminal keeps asking
+for its link's power, so the tier clears when the battery can supply it again.
+Virtual terminals draw nothing and are never shed.
+
 ## Scheduling
 
 At the start of the run and after every accepted solver step, the engine marks
 a candidate available when its spacecraft pair is not forbidden, both
-spacecraft are active, and its link's `link_available` allows it. The scheduling
+spacecraft are active, neither terminal is shed, and its link's
+`link_available` allows it. The scheduling
 policy then scores the available links by the forces their `link_force` gives,
 and selects the terminal matching with the largest total score. Only links with
 a positive score can be selected. The selected schedule is held during trial
@@ -141,8 +221,11 @@ different kinds can be registered in one model.
 
 Interlinks currently apply a translational force to rigid spacecraft. The laser
 momentum link does not model terminal pointing, occultation, beam losses,
-torques, battery depletion or thermal dynamics. The spacecraft's battery and
-temperature index fields are metadata, not availability constraints. The cavity
+torques or thermal dynamics. Links through hardware terminals draw battery
+power and close when it is shed; links between virtual terminals draw none.
+Actuator faults on a link-driven terminal do not yet act on its link. The
+spacecraft's `battery_energy_index` and `tempurature_index` fields are
+metadata, not availability constraints. The cavity
 magnification and force law are modeling assumptions; passing implementation
 tests does not validate a physical laser system.
 

@@ -112,6 +112,10 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "actuators", "
 # Mounting sensors and reading their measurements (needs ActuatorMounting).
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "sensors", "mounting.jl"))
 @reexport using .SensorMounting
+# Interlink terminal hardware: mounted terminals as link endpoints, their link-set
+# levels and power, and shedding that closes their links (needs PowerSystems).
+include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "interlinks", "terminals.jl"))
+@reexport using .InterlinkTerminals
 
 # Articulated-body dynamics library (needs only the spacecraft model types; the runtime
 # types below hold its per-spacecraft run data).

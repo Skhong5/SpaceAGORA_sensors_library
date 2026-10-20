@@ -415,7 +415,10 @@ end
     zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
     levels = SimulationModel.actuator_levels(effector, sat_idx)
     levels === nothing && return (zero3, zero3, 0.0, zero3)
-    # Active faults change the levels, then actuators an empty battery sheds act at level zero.
+    # Terminal hardware an interlink drives applies only the link's force, so the
+    # controller's levels for it apply nothing. Active faults change the levels,
+    # then actuators an empty battery sheds act at level zero.
+    levels = SimulationModel.InterlinkTerminals.without_link_driven(levels, p.args.interlink_model, sat_idx)
     levels = SimulationModel.shed_levels(p.args.dynamics_model.spacecraft[sat_idx],
         SimulationModel.faulted_levels(p.args.dynamics_model.spacecraft[sat_idx], levels))
     hasproperty(sc_view, :q) || throw(ArgumentError(

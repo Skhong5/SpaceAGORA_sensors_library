@@ -30,7 +30,8 @@ function _power_snapshot(sc_view, spacecraft, p, sat_idx::Int, t::Float64)
         end
     end
     wheel_momentum = hasproperty(sc_view, :h_wheels) ? sc_view.h_wheels : nothing
-    balance = _mounted_power_balance(spacecraft, args.control_model.control_effectors, sat_idx, generation, wheel_momentum)
+    balance = _mounted_power_balance(spacecraft, args.control_model.control_effectors, sat_idx, generation, wheel_momentum;
+        interlinks=args.interlink_model)
     return (generation_w = generation, load_w = balance.load_w, unshed_load_w = balance.unshed_load_w,
             by_tier = balance.by_tier, net_w = balance.net_w)
 end
@@ -39,18 +40,25 @@ end
 # levels) with the mounted actuators of every control effector in `:mounted`
 # actuation that holds levels for spacecraft `sat_idx`, at the levels its faults
 # leave them: the dynamics apply each one's actuators, so each one's draw is a
-# load.
-function _mounted_power_balance(spacecraft, effectors, sat_idx::Int, generation_w::Float64, wheel_momentum)
+# load. Terminal hardware an interlink drives draws what its active link sets
+# instead (`interlinks`, the run's InterlinkModel).
+function _mounted_power_balance(spacecraft, effectors, sat_idx::Int, generation_w::Float64, wheel_momentum;
+                                interlinks=nothing)
     n = mounted_actuator_count(spacecraft)
     bus = bus_load_w(spacecraft)
     unshed = (0.0, 0.0, 0.0, 0.0)
     shed = 0.0
     if n > 0
+        if link_driven(interlinks, sat_idx)
+            by_link, link_load = link_terminal_power(interlinks, sat_idx, spacecraft)
+            unshed = unshed .+ by_link
+            shed += link_load
+        end
         for effector in effectors
             actuation_mode(effector) === :mounted || continue
             levels = actuator_levels(effector, sat_idx)
             (levels === nothing || length(levels) != n) && continue
-            levels = faulted_levels(spacecraft, levels)
+            levels = faulted_levels(spacecraft, without_link_driven(levels, interlinks, sat_idx))
             by_tier = actuator_power_by_tier(spacecraft, levels; wheel_momentum=wheel_momentum)
             applied = shed_levels(spacecraft, levels)
             unshed = unshed .+ by_tier
