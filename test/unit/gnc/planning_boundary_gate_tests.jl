@@ -110,6 +110,74 @@ using Test
                 end
                 @test isnothing(run_gate().failure)
             end
+            if gate == "ci_gnc_typed_command_boundary_gate.jl"
+                @testset "Comparison tracking permits only its six-axis type import" begin
+                    rel = joinpath("src", "interfaces", "analysis", "planning", "rpo_comparison_tracking.jl")
+                    tracking = joinpath(fixture, rel)
+                    original = read(joinpath(repo, rel), String)
+                    allowed_import = "using ..ThrusterModels: SixAxisThrusterModel"
+                    @test count(allowed_import, original) == 1
+                    write(tracking, original)
+                    try
+                        @test isnothing(run_gate().failure)
+                        thruster_dependency = "guidance must not depend on ThrusterModels directly"
+                        base_dependency = "guidance must not depend on BaseThrusterModel directly"
+                        abstract_dependency = "guidance must not depend on AbstractThrusterModel directly"
+                        # Exercise the actual gate on actual source, not a second
+                        # implementation of its allowlist or forbidden patterns.
+                        cases = [
+                            ("duplicate import", original * "\n" * allowed_import * "\n", [thruster_dependency]),
+                            ("semicolon suffix", replace(original, allowed_import => allowed_import * "; nothing"; count=1), [thruster_dependency]),
+                            ("combined import", replace(original, allowed_import => allowed_import * ", BaseThrusterModel"; count=1), [thruster_dependency, base_dependency]),
+                            ("other imported type", replace(original, allowed_import => "using ..ThrusterModels: OtherThrusterModel"; count=1), [thruster_dependency]),
+                            ("abstract imported type", replace(original, allowed_import => "using ..ThrusterModels: AbstractThrusterModel"; count=1), [thruster_dependency, abstract_dependency]),
+                            ("qualified access", original * "\nprobe = ThrusterModels.SixAxisThrusterModel\n", [thruster_dependency]),
+                            ("base type access", original * "\nprobe = BaseThrusterModel\n", [base_dependency]),
+                            ("legacy effector access", original * "\nusing DynamicEffectors\n", ["GNC source still depends on DynamicEffectors directly"]),
+                            ("command buffer access", original * "\nprobe = p.shared_buffers.maneuver_commands\n", ["maneuver_commands ownership is restricted to typed guidance writer/control consumer files"]),
+                        ]
+                        for (field, message) in (
+                            ("Δv", "guidance must not mutate thruster delta-v state directly"),
+                            ("direction", "guidance must not mutate thruster direction state directly"),
+                            ("start_burn_time", "guidance must not mutate thruster burn scheduling directly"),
+                            ("stop_burn_time", "guidance must not mutate thruster burn scheduling directly"),
+                            ("thrust", "guidance must not mutate thruster thrust state directly"),
+                        )
+                            push!(cases, ("direct $field mutation", original * "\ncontrol.$field[1] = 0.0\n", [message]))
+                        end
+                        for (label, changed, messages) in cases
+                            @testset "$label" begin
+                                @test changed != original
+                                write(tracking, changed)
+                                rejected = run_gate()
+                                @test rejected.failure isa LoadError &&
+                                    rejected.failure.error isa ErrorException &&
+                                    rejected.failure.error.msg == failure_message
+                                @test sort(unique(rejected.violations)) == sort(["$rel: $message" for message in messages])
+                                write(tracking, original)
+                                @test isnothing(run_gate().failure)
+                            end
+                        end
+                        # Identical source in another file is not allowlisted.
+                        rm(tracking)
+                        wrong_rel = joinpath("src", "interfaces", "analysis", "planning", "tracking_import_probe.jl")
+                        wrong_path = joinpath(fixture, wrong_rel)
+                        write(wrong_path, original)
+                        try
+                            rejected = run_gate()
+                            @test rejected.failure isa LoadError &&
+                                rejected.failure.error isa ErrorException &&
+                                rejected.failure.error.msg == failure_message
+                            @test rejected.violations == ["$wrong_rel: $thruster_dependency"]
+                        finally
+                            rm(wrong_path)
+                        end
+                    finally
+                        isfile(tracking) && rm(tracking)
+                    end
+                    @test isnothing(run_gate().failure)
+                end
+            end
             if gate == "ci_src_completeness_contract_gate.jl"
                 dispatcher = joinpath(fixture, "src", "models", "gnc", "guidance",
                     "aerobraking", "typed_edg", "algorithms.jl")

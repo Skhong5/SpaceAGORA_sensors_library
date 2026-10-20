@@ -292,107 +292,13 @@ function rpo_plan_comparison_path(
 end
 
 """Build a finite-horizon RPO reference preview for LQ-MPC tracking."""
-function rpo_lqmpc_reference_preview(r_ref, v_ref, start_idx::Integer, horizon::Integer)
-    out = zeros(6, horizon + 1)
-    n_ref = size(r_ref, 2)
-    for j in 0:horizon
-        idx = min(start_idx + j, n_ref)
-        out[1:3, j + 1] .= r_ref[:, idx]
-        out[4:6, j + 1] .= v_ref[:, idx]
-    end
-    return out
-end
+function rpo_lqmpc_reference_preview end
 
 """Convert consumed propellant mass into a percent of configured initial mass."""
-function rpo_lqmpc_tracking_fuel_used_pct(fuel_used_kg::Real, tracking::RPOLQMPCTrackingSettings)::Float64
-    propellant_mass = Float64(tracking.propellant_mass_kg)
-    return isfinite(propellant_mass) && propellant_mass > 0.0 ?
-        100.0 * Float64(fuel_used_kg) / propellant_mass :
-        NaN
-end
+function rpo_lqmpc_tracking_fuel_used_pct end
 
 """Track a retimed RPO path with LQ-MPC and report tracking/fuel metrics."""
-function rpo_track_retimed_path_lqmpc(path_rtn, goal_rtn, geometry, pso_cfg::RPOPSOConfig, tracking::RPOLQMPCTrackingSettings; safe_distance_m::Real=0.0)
-    HYPRSupport.require_hypr()
-    tracking.plant === :two_body && return rpo_track_two_body_path(path_rtn, goal_rtn, geometry, pso_cfg, tracking; safe_distance_m=safe_distance_m)
-    tracking.plant === :hcw || throw(ArgumentError("Unknown RPO comparison plant."))
-    retime_cfg = rpo_pso_config(
-        pso_cfg;
-        retime_dt_s=tracking.dt_s,
-        mass_kg=tracking.mass_kg,
-        isp_s=tracking.isp_s,
-        g0_mps2=tracking.g0_mps2,
-    )
-    t_ref, r_ref, v_ref = rpo_reference_from_path(path_rtn, geometry, retime_cfg; safe_distance_m=safe_distance_m)
-    Q = Diagonal(vcat(fill(tracking.q_pos, 3), fill(tracking.q_vel, 3)))
-    R = Diagonal(fill(tracking.r_accel, 3))
-    Qf = Diagonal(vcat(fill(tracking.qf_pos, 3), fill(tracking.qf_vel, 3)))
-    u_max = Vector{Float64}(tracking.u_max_mps2)
-    u_min = -u_max
-    ctrl = _control_module().init_rpo_lqmpc(
-        tracking.mean_motion_radps,
-        tracking.dt_s,
-        Q,
-        R,
-        Qf,
-        tracking.horizon;
-        u_min=u_min,
-        u_max=u_max,
-    )
-    x = zeros(6)
-    x[1:3] .= r_ref[:, 1]
-    n_plan_steps = max(size(r_ref, 2) - 1, 0)
-    settle_steps = max(0, Int(ceil(tracking.settle_time_s / tracking.dt_s)))
-    total_steps = n_plan_steps + settle_steps
-    x_hist = zeros(6, total_steps + 1)
-    u_hist = zeros(3, total_steps)
-    x_hist[:, 1] .= x
-
-    fuel_used = 0.0
-    control_effort = 0.0
-    saturated = 0
-    min_clearance = Inf
-    keepout_violations = 0
-
-    for k in 1:total_steps
-        ref_idx = min(k, size(r_ref, 2))
-        x_ref = rpo_lqmpc_reference_preview(r_ref, v_ref, ref_idx, tracking.horizon)
-        u = _control_module().rpo_lqmpc_control(ctrl, x, x_ref)
-        u_vec = Vector{Float64}(u)
-        u_norm = norm(u_vec)
-        fuel_used += tracking.mass_kg * sum(abs, u_vec) * tracking.dt_s / max(tracking.isp_s * tracking.g0_mps2, 1.0e-9)
-        control_effort += u_norm * tracking.dt_s
-        saturated += any(abs.(u_vec) .>= (0.999 .* u_max)) ? 1 : 0
-        x .= ctrl.Ad * x .+ ctrl.Bd * u_vec
-        x_hist[:, k + 1] .= x
-        u_hist[:, k] .= u_vec
-
-        clearance = rpo_clearance_distance_to_station(x[1:3], geometry)
-        min_clearance = min(min_clearance, clearance)
-        keepout_violations += clearance < 0.0 ? 1 : 0
-    end
-
-    final_error = norm(x[1:3] - Vector{Float64}(goal_rtn))
-    success = final_error <= tracking.final_position_tol_m && min_clearance + 1.0e-9 >= 0.0
-    return (
-        success=success,
-        fuel_used=fuel_used,
-        fuel_used_pct=rpo_lqmpc_tracking_fuel_used_pct(fuel_used, tracking),
-        control_effort_total=control_effort,
-        translational_control_effort=control_effort,
-        thrust_saturation_fraction=total_steps > 0 ? saturated / total_steps : 0.0,
-        min_clearance=min_clearance,
-        keepout_violations=keepout_violations,
-        final_pos_error=final_error,
-        planned_travel_duration=isempty(t_ref) ? 0.0 : t_ref[end],
-        actual_travel_duration=tracking.dt_s * total_steps,
-        t_ref=t_ref,
-        r_ref_rtn=r_ref,
-        v_ref_rtn=v_ref,
-        x_hist=x_hist,
-        u_hist=u_hist,
-    )
-end
+function rpo_track_retimed_path_lqmpc end
 
 """Run all configured RPO planners across all comparison cases."""
 function rpo_run_planner_comparison_batch(cases, geometry, cfg::RPOPlannerComparisonConfig=RPOPlannerComparisonConfig())

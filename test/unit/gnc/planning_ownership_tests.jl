@@ -42,6 +42,142 @@ const REPORT_FUNCTIONS = (
     @test parentmodule(SM.RPOReferenceGeometry) === SM.NavigationHooks
 end
 
+# These function objects stay in GuidanceHooks for existing qualified callers and
+# serialized references; only their implementations move to the sibling owner.
+const TRACKING_FUNCTIONS = (
+    :rpo_lqmpc_reference_preview, :rpo_lqmpc_tracking_fuel_used_pct,
+    :rpo_track_retimed_path_lqmpc, :rpo_comparison_segment_clearance,
+    :rpo_track_two_body_path, :rpo_execute_two_body_reference,
+)
+
+@testset "Historical tracking identities, explicit implementation owner" begin
+    tracking_owner = SM.RPOComparisonTracking
+    @test parentmodule(tracking_owner) === SM
+    @test !isdefined(G, :RPOComparisonTracking)
+    @test !isdefined(SpaceAGORA, :RPOComparisonTracking)
+    for name in TRACKING_FUNCTIONS
+        f = getproperty(G, name)
+        @test getproperty(tracking_owner, name) === f
+        @test parentmodule(f) === G
+        @test length(methods(f)) == 1
+        @test all(m -> m.module === tracking_owner, methods(f))
+        io = IOBuffer()
+        serialize(io, f)
+        seekstart(io)
+        @test deserialize(io) === f
+        # Only the existing exported tracker is bound in SimulationModel. The
+        # helper generics were not root API and must not become new root names.
+        if name === :rpo_track_retimed_path_lqmpc
+            @test getproperty(SM, name) === f
+            @test Base.isexported(G, name)
+            @test Base.isexported(SM, name)
+        else
+            @test !isdefined(SM, name)
+            @test !Base.isexported(G, name)
+        end
+        @test !isdefined(SpaceAGORA, name)
+    end
+
+    # Types remain defined by their original owners, not aliases to relocated
+    # types. Do not construct or serialize the controller's native solver state.
+    for name in (:RPOLQMPCTrackingSettings, :RPOPlannerComparisonCase,
+                 :RPOPlannerComparisonConfig, :RPOTwoBodyPlant)
+        T = getproperty(G, name)
+        @test parentmodule(T) === G
+        if name === :RPOTwoBodyPlant
+            @test !isdefined(SM, name)
+        else
+            @test getproperty(SM, name) === T
+        end
+        @test !isdefined(SpaceAGORA, name)
+        io = IOBuffer()
+        serialize(io, T)
+        seekstart(io)
+        @test deserialize(io) === T
+    end
+    # Each dependency must resolve in this module world. A binding accidentally
+    # imported from the package's other composition would preserve its spelling
+    # while using the wrong function/type identity.
+    for (source, names) in (
+        (SM.ControlHooks, (:init_rpo_lqmpc, :rpo_lqmpc_control,
+            :rpo_allocate_six_axis_thrusters, :rpo_thruster_wrench_body)),
+        (G, (:RPOPSOConfig, :RPOLQMPCTrackingSettings, :rpo_pso_config,
+            :rpo_reference_from_path, :rpo_init_two_body_plant, :rpo_step_two_body!)),
+        (SM.NavigationHooks, (:rpo_clearance_distance_to_station,)),
+        (SM.FrameTransforms, (:rtn_dcm_from_inertial,)),
+    )
+        for name in names
+            @test getproperty(tracking_owner, name) === getproperty(source, name)
+        end
+    end
+    @test tracking_owner.HYPRSupport === SM.HYPRSupport
+    @test tracking_owner.RPOLQMPCTrackingSettings === G.RPOLQMPCTrackingSettings
+    @test parentmodule(SM.RpoLQMPCController) === SM.ControlHooks
+    @test SM.RpoLQMPCController === SM.ControlHooks.RpoLQMPCController
+    @test parentmodule(SM.SixAxisThrusterModel) === SM.ThrusterModels
+    @test SM.ControlHooks.SixAxisThrusterModel === SM.ThrusterModels.SixAxisThrusterModel
+    @test tracking_owner.SixAxisThrusterModel === SM.ThrusterModels.SixAxisThrusterModel
+    @test !isdefined(SpaceAGORA, :RpoLQMPCController)
+    @test !isdefined(SpaceAGORA, :SixAxisThrusterModel)
+end
+
+_call_name(x::Symbol) = x
+_call_name(x::Expr) = x.head === :. ? _call_name(last(x.args)) : nothing
+_call_name(x::QuoteNode) = _call_name(x.value)
+_call_name(x) = nothing
+
+_mentions_control_module(x) = x === :ControlHooks || x == "ControlHooks"
+_mentions_control_module(x::QuoteNode) = _mentions_control_module(x.value)
+_mentions_control_module(x::Expr) = any(_mentions_control_module, x.args)
+
+function _has_reflective_control_lookup(x)
+    x === :_control_module && return true
+    x isa QuoteNode && return _has_reflective_control_lookup(x.value)
+    x isa Expr || return false
+    if x.head === :call && !isempty(x.args) &&
+       _call_name(first(x.args)) in (:getfield, :getproperty, :eval) &&
+       any(_mentions_control_module, x.args[2:end])
+        return true
+    end
+    return any(_has_reflective_control_lookup, x.args)
+end
+
+@testset "Comparison tracking does not discover ControlHooks at runtime" begin
+    root = normpath(joinpath(@__DIR__, "..", "..", ".."))
+    comparison_dir = joinpath(root, "src", "models", "gnc", "planning", "rpo", "comparison")
+    paths = String[]
+    for (dir, _, files) in walkdir(comparison_dir)
+        append!(paths, [joinpath(dir, name) for name in files if endswith(name, ".jl")])
+    end
+    push!(paths, joinpath(root, "src", "interfaces", "analysis", "planning", "rpo_comparison_tracking.jl"))
+    for path in sort(paths)
+        @testset "$(relpath(path, root))" begin
+            @test !_has_reflective_control_lookup(Meta.parseall(read(path, String)))
+        end
+    end
+    # Put the previous dependency pattern back into an actual controller call
+    # in memory. Exactly the altered comparison source must be rejected; no
+    # repository source is changed and the legitimate imports still pass.
+    tracking_path = joinpath(root, "src", "interfaces", "analysis", "planning", "rpo_comparison_tracking.jl")
+    original = read(tracking_path, String)
+    original_call = "ctrl = init_rpo_lqmpc("
+    @test occursin(original_call, original)
+    for lookup in ("_control_module()",
+                   "getfield(parentmodule(@__MODULE__), :ControlHooks)",
+                   "Base.getproperty(parentmodule(@__MODULE__), Symbol(\"ControlHooks\"))")
+        changed = replace(original, original_call => "ctrl = ($lookup).init_rpo_lqmpc("; count=1)
+        @test changed != original
+        violations = filter(paths) do path
+            source = path == tracking_path ? changed : read(path, String)
+            _has_reflective_control_lookup(Meta.parseall(source))
+        end
+        @test violations == [tracking_path]
+    end
+    @test !_has_reflective_control_lookup(Meta.parseall("import ..ControlHooks: init_rpo_lqmpc"))
+    # The independent EDG pairing lookup is outside this C3a boundary. Do not
+    # forbid its helper in GuidanceHooks before the separate C3b migration.
+end
+
 @testset "Reporting preserves result selection and file content" begin
     success = (planner=:rrt_connect, case_label="one,two", success=true,
         planner_compute_time=0.5, fuel_used_pct=1.0, control_effort_total=2.0,
