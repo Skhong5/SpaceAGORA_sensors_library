@@ -138,6 +138,14 @@ sample(pos) = SM.InterLinkModels.link_endpoint((pos=pos,), nothing, 1)
         @test all(==(80.0), t.sc1_power_beamed_w) && all(==(0.0), t.sc2_power_beamed_w)
         @test all(==(0.0), t.sc1_power_received_w)
         @test all(≈(160.0), t.sc1_power_load_w)
+        # The battery integrates the net power the columns report (received power
+        # less the loads), at both ends: the snapshot behind the battery's rate and
+        # the one behind the columns both see the transmitter's state.
+        integral(x, y) = sum((x[k + 1] - x[k]) * (y[k] + y[k + 1]) / 2 for k in 1:length(x) - 1)
+        @test t.sc2_power_net_w ≈ t.sc2_power_received_w - t.sc2_power_load_w
+        for (stored, net) in ((t.sc1_battery_wh, t.sc1_power_net_w), (t.sc2_battery_wh, t.sc2_power_net_w))
+            @test stored[end] - stored[1] ≈ integral(t.time, net) / 3600.0 rtol=1e-8
+        end
     end
 
     @testset "a full receiver curtails, and the sender still pays" begin
