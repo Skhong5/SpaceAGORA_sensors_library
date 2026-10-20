@@ -18,7 +18,7 @@ const SPEED = sqrt(PLANET.μ / RADIUS)
 # A 100 kg bus `arc_m` along a circular orbit, with a laser transmitter or a
 # power receiver and a battery.
 function beam_sat(index, arc_m; sender, capacity_wh=10.0, soc=0.5, receiver_radius=0.25,
-                  receiver_efficiency=0.4, max_power_w=Inf, battery=true)
+                  receiver_efficiency=0.4, max_power_w=Inf, battery=true, laser_efficiency=0.5)
     bus = Link(root=true, m=100.0)
     θ = arc_m / RADIUS
     ic = CartesianInitialCondition(SVector(RADIUS * cos(θ), RADIUS * sin(θ), 0.0),
@@ -26,7 +26,7 @@ function beam_sat(index, arc_m; sender, capacity_wh=10.0, soc=0.5, receiver_radi
     sc = SpacecraftModel(root=bus, links=[bus], inertia_tensor=bus.inertia, initial_condition=ic, id=index,
         n_terminal=0)
     if sender
-        add_actuator!(sc, bus, LaserTerminal(boresight=[0.0, 1.0, 0.0], max_power_w=100.0, efficiency=0.5))
+        add_actuator!(sc, bus, LaserTerminal(boresight=[0.0, 1.0, 0.0], max_power_w=100.0, efficiency=laser_efficiency))
     else
         add_actuator!(sc, bus, PowerReceiver(normal=[0.0, -1.0, 0.0], radius_m=receiver_radius,
             efficiency=receiver_efficiency, max_power_w=max_power_w))
@@ -222,8 +222,42 @@ sample(pos) = SM.InterLinkModels.link_endpoint((pos=pos,), nothing, 1)
             add_actuator!(more[2], more[2].root, PowerReceiver(normal=[0.0, 1.0, 0.0], radius_m=0.1, efficiency=0.3))
             @test_throws ArgumentError SE._restore_interlink_checkpoint_state!(run_args(more, more_model; settings),
                 checkpoint, trues(2))
-            @test SE._interlink_checkpoint_configuration(args).hardware_terminals[2] ==
-                [(module_path=(:SpaceAGORA, :SimulationModel, :Components), name=:PowerReceiver, parameters=())]
+            identity = only(SE._interlink_checkpoint_configuration(args).hardware_terminals[2])
+            @test identity.kind == (module_path=(:SpaceAGORA, :SimulationModel, :Components), name=:PowerReceiver,
+                parameters=())
+            @test keys(identity.fields) == fieldnames(PowerReceiver)
+            @test identity.fields.radius_m.value == 0.25 && identity.fields.efficiency.value == 0.4
+            @test identity.fields.max_power_w.value == Inf && identity.fields.max_power_w.bits == reinterpret(UInt64, Inf)
+        end
+    end
+
+    @testset "checkpoints record each terminal's fields" begin
+        # The receiver's aperture, efficiency and limit set the power it delivers,
+        # and the transmitter's efficiency its draw. Through the checkpoint file, a
+        # rebuilt terminal with any of them changed is refused before the run state
+        # is restored, and the file still resumes the unchanged run.
+        straight = run_simulation(run_args(beam_pair()...); return_results=true).table
+        mktempdir() do directory
+            segments(resume) = SimulationSettings(results=false, generate_plots=false, checkpoint_enabled=true,
+                checkpoint_interval_s=10.0, checkpoint_directory=directory, resume_from_checkpoint=resume)
+            run_simulation(run_args(beam_pair()...; duration=30.0, settings=segments(false)); return_results=true)
+            changed = (
+                "receiver radius" => (receiver=(receiver_radius=0.3,),),
+                "receiver efficiency" => (receiver=(receiver_efficiency=0.5,),),
+                "receiver limit" => (receiver=(max_power_w=50.0,),),
+                "transmitter efficiency" => (sender=(laser_efficiency=0.6,),),
+            )
+            for (name, change) in changed
+                args = run_args(beam_pair(; change...)...; settings=segments(true))
+                flags = falses(2)
+                @test_throws ArgumentError SE._restore_interlink_checkpoint_state!(args, SE._load_checkpoint(args), flags)
+                @test !any(flags)                                                  # the activity flags not restored
+                @test_throws ArgumentError run_simulation(args; return_results=true)
+            end
+            resumed = run_simulation(run_args(beam_pair()...; settings=segments(true)); return_results=true).table
+            @test resumed.time[1] >= 30.0 - 1e-9
+            @test resumed.sc2_battery_wh[end] ≈ straight.sc2_battery_wh[end] rtol=1e-9
+            @test resumed.sc1_battery_wh[end] ≈ straight.sc1_battery_wh[end] rtol=1e-9
         end
     end
 end

@@ -261,7 +261,13 @@ end
         spacecraft, model = linked_pair()
         args = run_args(spacecraft, model)
         laser = (module_path=(:SpaceAGORA, :SimulationModel, :Components), name=:LaserTerminal, parameters=())
-        @test SE._interlink_checkpoint_configuration(args).hardware_terminals == [[laser], [laser]]
+        hardware = SE._interlink_checkpoint_configuration(args).hardware_terminals
+        @test [[terminal.kind for terminal in terminals] for terminals in hardware] == [[laser], [laser]]
+        # Every field, floats with their bits: the efficiency sets the link-driven draw.
+        fields = only(hardware[1]).fields
+        @test keys(fields) == fieldnames(LaserTerminal)
+        @test fields.efficiency == (type=(module_path=(:Core,), name=:Float64, parameters=()), value=0.5,
+            bits=reinterpret(UInt64, 0.5))
         virtual = [terminal_sat(1; terminals=0, n_terminal=1), terminal_sat(2; terminals=0, n_terminal=1)]
         plain = InterlinkModel()
         register_link!(plain, virtual, (1, 1), (2, 1), LaserMomentumLink())
