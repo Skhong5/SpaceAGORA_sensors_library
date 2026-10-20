@@ -93,6 +93,12 @@ struct NcCollidingKey
     x::Int
 end
 Base.hash(::NcCollidingKey, h::UInt) = h
+# Keys compared by identity whose hashes all collide: a `Dict` iterates them in the
+# order they were inserted, so a test can set the order of look-alike entries.
+mutable struct NcInsertionKey
+    x::Float64
+end
+Base.hash(::NcInsertionKey, h::UInt) = h
 
 # concurrent_equals_sequential: the first call after the token is set sleeps, so one
 # of two concurrent runs stalls while the other waits for it at the rendezvous.
@@ -987,6 +993,53 @@ const MAY_SKIP = (:concurrent_equals_sequential, :bind_fresh_state, :stream_unto
         vector_keys = Dict([1.0] => 1, [2.0] => 2)
         @test C._same_state(vector_keys, deepcopy(vector_keys))
         @test !C._same_state(vector_keys, Dict([1.0] => 2, [2.0] => 1))
+    end
+    @testset "the state comparison tries other pairings of look-alike entries" begin
+        K = NcInsertionKey
+        # Equal keys and equal values, one value (or key) also held by a later field; the
+        # copy holds its entries in the opposite order, so the first pairing is wrong.
+        k1, k2, v1, v2 = K(1.0), K(1.0), [5.0], [5.0]
+        original = NcKeyedState(Dict(k1 => v1, k2 => v2), v2)
+        c1, c2, w1, w2 = K(1.0), K(1.0), [5.0], [5.0]
+        reversed = Dict(c2 => w2, c1 => w1)
+        @test first(first(reversed)) === c2
+        @test C._same_state(original, NcKeyedState(reversed, w2))
+        @test C._same_state(NcKeyedState(reversed, w2), original)
+        @test C._same_state(NcKeyedState(Dict(k1 => v1, k2 => v2), k2), NcKeyedState(reversed, c2))
+        # Wrong states of the same shape are still refused: the later field holds another
+        # equal object, the copy's two values are one object, or it holds a key instead.
+        @test !C._same_state(original, NcKeyedState(reversed, [5.0]))
+        w = [5.0]
+        @test !C._same_state(original, NcKeyedState(Dict(c2 => w, c1 => w), w))
+        @test !C._same_state(original, NcKeyedState(reversed, c2))
+        # Look-alike entries inside look-alike entries, settled only by a field after
+        # both dictionaries.
+        function nested(outer_reversed)
+            vs = [[9.0] for _ in 1:4]
+            inner = [Dict(K(2.0) => vs[1], K(2.0) => vs[2]), Dict(K(2.0) => vs[3], K(2.0) => vs[4])]
+            outer = outer_reversed ? Dict(K(3.0) => inner[2], K(3.0) => inner[1]) : Dict(K(3.0) => inner[1], K(3.0) => inner[2])
+            return outer, vs
+        end
+        outer, vs = nested(false)
+        deep = NcKeyedState(outer, (vs[2], vs[3]))
+        outer_copy, vs_copy = nested(true)
+        @test C._same_state(deep, NcKeyedState(outer_copy, (vs_copy[2], vs_copy[3])))
+        @test C._same_state(deep, deepcopy(deep))
+        @test !C._same_state(deep, NcKeyedState(outer_copy, (vs_copy[2], vs_copy[1])))
+        # An identity dictionary of look-alike entries, two of them also held elsewhere.
+        keys_, values_ = [NcIdentityKey(1.0) for _ in 1:6], [[2.0] for _ in 1:6]
+        identity_state = NcKeyedState(IdDict(zip(keys_, values_)), (values_[2], keys_[5]))
+        @test C._same_state(identity_state, deepcopy(identity_state))
+        broken = deepcopy(identity_state)
+        broken.key = ([2.0], broken.key[2])
+        @test !C._same_state(identity_state, broken)
+        # The search is bounded: with many look-alike entries and a difference after
+        # them, it gives up with a warning and reports the states as different.
+        many = NcKeyedState(Dict(K(1.0) => [1.0] for _ in 1:8), 1.0)
+        @test C._same_state(many, deepcopy(many))
+        other = deepcopy(many)
+        other.key = 2.0
+        @test !(@test_logs (:warn, r"stopped after") C._same_state(many, other))
     end
     # The checks run copies; only the deepcopy_equivalent run mutates the model given.
     counter = NcCountsCalls(0)

@@ -38,9 +38,27 @@ end
 # objects are matched one to one in both directions, so aliasing is part of the
 # state: two objects of `a` cannot both correspond to one object of `b`, nor the
 # reverse. Tasks, locks and IO streams are not model state and are not compared.
-_same_state(a, b) = _same_state(a, b, IdDict{Any, Any}(), IdDict{Any, Any}())
+#
+# Dictionary entries that look alike can be paired more than one way, and an alias met
+# later in the state can rule out the pairing first chosen. The comparison therefore
+# searches: when it fails, it starts again from the beginning with the next pairing at
+# the last entry that had another candidate (`_Pairings`), and the states are the same
+# when one complete pass succeeds. A pass costs one comparison, and states without
+# look-alike entries need one pass. After `_MAX_REPAIRINGS` further passes it gives up,
+# warns, and reports the states as different.
+function _same_state(a, b)
+    pairings = _Pairings()
+    for _ in 0:_MAX_REPAIRINGS
+        _same_state(a, b, IdDict{Any, Any}(), IdDict{Any, Any}(), pairings) && return true
+        _next_pairings!(pairings) || return false
+    end
+    @warn "The state comparison stopped after $(_MAX_REPAIRINGS) alternative pairings of dictionary " *
+        "entries that look alike, and reports the states as different. Dictionaries with many keys and " *
+        "values of equal content need more; keys of numbers, symbols or strings need none."
+    return false
+end
 
-function _same_state(a, b, seen::IdDict{Any, Any}, back::IdDict{Any, Any})
+function _same_state(a, b, seen::IdDict{Any, Any}, back::IdDict{Any, Any}, pairings)
     typeof(a) === typeof(b) || return false
     T = typeof(a)
     isbitstype(T) && return a === b
@@ -54,23 +72,53 @@ function _same_state(a, b, seen::IdDict{Any, Any}, back::IdDict{Any, Any})
         seen[a] = b
         back[b] = a
     end
-    a isa AbstractDict && return _same_entries(a, b, seen, back)
+    a isa AbstractDict && return _same_entries(a, b, seen, back, pairings)
     if a isa Array
         size(a) == size(b) || return false
         for i in eachindex(a)
             isassigned(a, i) == isassigned(b, i) || return false
-            isassigned(a, i) && !_same_state(a[i], b[i], seen, back) && return false
+            isassigned(a, i) && !_same_state(a[i], b[i], seen, back, pairings) && return false
         end
         return true
     end
     for i in 1:fieldcount(T)
         isdefined(a, i) == isdefined(b, i) || return false
-        isdefined(a, i) && !_same_state(getfield(a, i), getfield(b, i), seen, back) && return false
+        isdefined(a, i) && !_same_state(getfield(a, i), getfield(b, i), seen, back, pairings) && return false
     end
     return true
 end
 
 _has_captures(f::Function) = fieldcount(typeof(f)) > 0
+
+# How many further passes a comparison may make before it gives up (see `_same_state`).
+const _MAX_REPAIRINGS = 1000
+
+# The search of one comparison. A choice point is an entry with two or more candidates,
+# numbered in the order a pass meets it, which is the same in every pass until the
+# point whose choice changed. `forced[p]` is the candidate the next pass starts from at
+# point `p`; `taken[p]` and `more[p]` are the candidate this pass took there and
+# whether a later candidate could also match. Inside a trial (`trial`), choices are
+# guesses, neither forced nor recorded, and `guessed` notes that one was made.
+mutable struct _Pairings
+    forced::Vector{Int}
+    taken::Vector{Int}
+    more::Vector{Bool}
+    trial::Bool
+    guessed::Bool
+end
+_Pairings() = _Pairings(Int[], Int[], Bool[], false, false)
+
+# Prepares the next pass after a failed one: the last point with another candidate
+# moves on to it, the points before it keep their choices, and later points start
+# afresh. False when no point has another candidate.
+function _next_pairings!(pairings::_Pairings)
+    p = findlast(pairings.more)
+    p === nothing && return false
+    pairings.forced = push!(pairings.taken[1:(p - 1)], pairings.taken[p] + 1)
+    empty!(pairings.taken)
+    empty!(pairings.more)
+    return true
+end
 
 # Keys whose identity carries no state (bits values, symbols, strings): such a key is
 # found by lookup and then compared with the key it finds.
@@ -83,56 +131,137 @@ struct _NoKey end
 _looked_up_key(b::Dict, k) = getkey(b, k, _NoKey())
 _looked_up_key(b::AbstractDict, k) = haskey(b, k) ? k : _NoKey()
 
+# A hash of the state of `x` that does not depend on identity: states `_same_state`
+# finds the same hash alike. It follows at most `nodes[]` values, in a fixed order, and
+# hashes a dictionary by its type and length only, since the order of its entries can
+# differ between equal dictionaries.
+function _shape(x, h::UInt, nodes::Base.RefValue{Int})
+    T = typeof(x)
+    h = hash(objectid(T), h)
+    nodes[] > 0 || return h
+    nodes[] -= 1
+    (isbitstype(T) || x isa Module || x isa Function && !_has_captures(x) || x isa Type || x isa Symbol) &&
+        return hash(objectid(x), h)
+    x isa Union{AbstractString, BigInt, BigFloat} && return hash(x, h)
+    (x isa Task || x isa Base.AbstractLock || x isa IO || x isa Threads.Condition) && return h
+    x isa AbstractDict && return hash(length(x), h)
+    if x isa Array
+        h = hash(size(x), h)
+        for i in eachindex(x)
+            nodes[] > 0 || break
+            h = isassigned(x, i) ? _shape(x[i], h, nodes) : hash(:unassigned, h)
+        end
+        return h
+    end
+    for i in 1:fieldcount(T)
+        nodes[] > 0 || break
+        h = isdefined(x, i) ? _shape(getfield(x, i), h, nodes) : hash(:undefined, h)
+    end
+    return h
+end
+
+_entry_shape(k, v) = _shape(v, _shape(k, zero(UInt), Ref(32)), Ref(32))
+
 # Whether two dictionaries hold the same entries. Keys are paired one to one and
 # compared like any other state, through the same alias maps as the values, so a key
 # that is shared with another part of the state must stay shared, and a copied
 # identity dictionary (an `IdDict`, whose keys are found by identity) still matches.
-# Plain keys are paired by lookup. Every other key of `a` is paired with the key of `b`
-# the alias maps already give it, or else with the first unpaired key of `b` (the one
-# it looks up to, first) whose key and value both compare equal; each trial runs on
-# copies of the alias maps, which only a match commits.
-function _same_entries(a::AbstractDict, b::AbstractDict, seen::IdDict{Any, Any}, back::IdDict{Any, Any})
+# Plain keys are paired by lookup. Every other entry of `a` is paired with an entry of
+# `b` of the same shape (`_entry_shape`): the one the alias maps already give its key,
+# or else one chosen by `_paired_entry`.
+function _same_entries(a::AbstractDict, b::AbstractDict, seen::IdDict{Any, Any}, back::IdDict{Any, Any},
+        pairings::_Pairings)
     length(a) == length(b) || return false
     others = Pair[]
     for (k, v) in a
         if _plain_key(k)
-            _same_state(k, _looked_up_key(b, k), seen, back) || return false
-            _same_state(v, b[k], seen, back) || return false
+            _same_state(k, _looked_up_key(b, k), seen, back, pairings) || return false
+            _same_state(v, b[k], seen, back, pairings) || return false
         else
             push!(others, k => v)
         end
     end
-    unpaired = Pair[k => v for (k, v) in b if !_plain_key(k)]
-    length(unpaired) == length(others) || return false
+    entries = Pair[k => v for (k, v) in b if !_plain_key(k)]
+    length(entries) == length(others) || return false
+    groups = Dict{UInt, Vector{Int}}()
+    for (j, (k, v)) in enumerate(entries)
+        push!(get!(Vector{Int}, groups, _entry_shape(k, v)), j)
+    end
     for (k, v) in others
+        group = get(groups, _entry_shape(k, v), Int[])
         if ismutable(k) && haskey(seen, k)
             # The key is already matched elsewhere in the state: only its partner will do.
-            j = findfirst(entry -> first(entry) === seen[k], unpaired)
-            j === nothing && return false
-            _same_state(v, last(unpaired[j]), seen, back) || return false
+            i = findfirst(j -> first(entries[j]) === seen[k], group)
+            i === nothing && return false
+            _same_state(v, last(entries[group[i]]), seen, back, pairings) || return false
         else
-            j = _paired_entry(k, v, b, unpaired, seen, back)
-            j === nothing && return false
+            i = _paired_entry(k, v, b, entries, group, seen, back, pairings)
+            i === nothing && return false
         end
-        deleteat!(unpaired, j)
+        deleteat!(group, i)
     end
     return true
 end
 
-function _paired_entry(k, v, b::AbstractDict, unpaired::Vector{Pair}, seen::IdDict{Any, Any}, back::IdDict{Any, Any})
-    order = collect(eachindex(unpaired))
+# Pairs the entry `k => v` of `a` with one of the unpaired entries `group` of `b` of
+# the same shape, the one `k` looks up to first, and returns its place in `group`, or
+# `nothing`. With one candidate, it is compared. With more, this is a choice point:
+# candidates are tried on copies of the alias maps (`_try_entry`), from the one the
+# search forces, and the first that can match is taken. A sure match commits its
+# copies; a candidate whose trial had to guess is compared again on the maps, with
+# its own choices recorded.
+function _paired_entry(k, v, b::AbstractDict, entries::Vector{Pair}, group::Vector{Int},
+        seen::IdDict{Any, Any}, back::IdDict{Any, Any}, pairings::_Pairings)
+    isempty(group) && return nothing
+    order = collect(eachindex(group))
     looked_up = _looked_up_key(b, k)
-    i = findfirst(entry -> first(entry) === looked_up, unpaired)
+    i = findfirst(j -> first(entries[j]) === looked_up, group)
     i === nothing || (deleteat!(order, i); pushfirst!(order, i))
-    for j in order
-        trial_seen, trial_back = copy(seen), copy(back)
-        _same_state(k, first(unpaired[j]), trial_seen, trial_back) &&
-            _same_state(v, last(unpaired[j]), trial_seen, trial_back) || continue
+    compare(i) = _same_state(k, first(entries[group[i]]), seen, back, pairings) &&
+        _same_state(v, last(entries[group[i]]), seen, back, pairings)
+    length(order) == 1 && return compare(only(order)) ? only(order) : nothing
+    if pairings.trial
+        pairings.guessed = true
+        return compare(first(order)) ? first(order) : nothing
+    end
+    point = length(pairings.taken) + 1
+    start = point <= length(pairings.forced) ? pairings.forced[point] : 1
+    trial(t) = _try_entry(k, v, entries[group[order[t]]], seen, back, pairings)
+    t = start
+    outcome = nothing
+    while t <= length(order)
+        outcome = trial(t)
+        first(outcome) === :mismatch || break
+        t += 1
+    end
+    if t > length(order)
+        push!(pairings.taken, t)
+        push!(pairings.more, false)
+        return nothing
+    end
+    push!(pairings.taken, t)
+    push!(pairings.more, any(u -> first(trial(u)) !== :mismatch, (t + 1):length(order)))
+    status, trial_seen, trial_back = outcome
+    if status === :match
         merge!(empty!(seen), trial_seen)
         merge!(empty!(back), trial_back)
-        return j
+    else
+        compare(order[t]) || return nothing
     end
-    return nothing
+    return order[t]
+end
+
+# Compares `k => v` with `entry` on copies of the alias maps, guessing at any choice
+# inside: `:match` or `:mismatch` when no guess was needed, `:unsure` otherwise, with
+# the copies.
+function _try_entry(k, v, entry::Pair, seen::IdDict{Any, Any}, back::IdDict{Any, Any}, pairings::_Pairings)
+    trial_seen, trial_back = copy(seen), copy(back)
+    pairings.trial, pairings.guessed = true, false
+    same = _same_state(k, first(entry), trial_seen, trial_back, pairings) &&
+        _same_state(v, last(entry), trial_seen, trial_back, pairings)
+    status = pairings.guessed ? :unsure : same ? :match : :mismatch
+    pairings.trial, pairings.guessed = false, false
+    return (status, trial_seen, trial_back)
 end
 
 # Every mutable object reachable from `x` (arrays, dictionaries, mutable structs),
