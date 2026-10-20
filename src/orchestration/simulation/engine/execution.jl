@@ -613,6 +613,13 @@ function run_simulation(
     _validate_orientation_inertia!(args)
     _validate_thermal_model_support!(args)
     _validate_ephemerides_support!(args)
+    # Before any callback, model or density setup, and before a resumed run that
+    # is already at its end skips the solve. `_solve_with_solver_policy` checks
+    # again for problems solved directly.
+    if solver_mode === :gravity_backbone_split
+        reject_reason = _gravity_backbone_reject_reason(args)
+        isnothing(reject_reason) || throw(ArgumentError(reject_reason))
+    end
     _warn_density_without_atmospheric_effector(args)
     if args.interlink_model !== nothing
         empty!(args.interlink_model.history)
