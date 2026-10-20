@@ -316,8 +316,26 @@ integral(x, y) = sum((x[k + 1] - x[k]) * (y[k] + y[k + 1]) / 2 for k in 1:length
             add_actuator!(more[2], more[2].root, radio())
             @test_throws ArgumentError SE._restore_interlink_checkpoint_state!(run_args(more, more_model; settings),
                 checkpoint, trues(2))
-            @test SE._interlink_checkpoint_configuration(args).hardware_terminals[1] ==
-                [(module_path=(:SpaceAGORA, :SimulationModel, :Components), name=:RadioTerminal, parameters=())]
+            identity = only(SE._interlink_checkpoint_configuration(args).hardware_terminals[1])
+            @test identity.kind == (module_path=(:SpaceAGORA, :SimulationModel, :Components), name=:RadioTerminal,
+                parameters=())
+            @test keys(identity.fields) == fieldnames(RadioTerminal)
+            @test identity.fields.gain_dbi.value == 6.0 && identity.fields.max_rate_bps.bits == reinterpret(UInt64, Inf)
+            # A rebuilt radio with any field that sets the rate or the draw changed is refused.
+            radios = (
+                "transmitter gain" => (sender=(terminal=radio(gain_dbi=7.0),),),
+                "transmitter efficiency" => (sender=(terminal=radio(efficiency=0.6),),),
+                "transmitter limit" => (sender=(terminal=radio(max_power_w=4.0),),),
+                "receiver noise temperature" => (receiver=(terminal=radio(noise_temperature_k=400.0),),),
+                "receiver rate limit" => (receiver=(terminal=radio(max_rate_bps=1e6),),),
+            )
+            for (name, change) in radios
+                other, other_model = data_pair(; change...)
+                flags = falses(2)
+                @test_throws ArgumentError SE._restore_interlink_checkpoint_state!(run_args(other, other_model; settings),
+                    checkpoint, flags)
+                @test !any(flags)
+            end
         end
         # A resumed run continues the counters.
         straight_pair = data_pair()
