@@ -168,9 +168,19 @@ end
 
         # A kind's module and its concrete type parameters are part of its identity:
         # a checkpoint, read back from its file, resumes the same kind and refuses
-        # another (value, type, nested type, Union and tuple parameters, same-named
-        # link kinds of two modules of one package, and such types in a parameter).
+        # another. The cases are value, type, nested type, Union and tuple
+        # parameters; same-named link kinds of two modules of one package, and such
+        # types in a parameter; and value parameters equal as numbers but of
+        # different types or bits, alone and in a tuple.
+        nan_payload = reinterpret(Float64, 0x7ff8000000000001)
         for (written, same, changed) in (
+                (TypedLink{1}(100.0), TypedLink{1}(100.0), TypedLink{1.0}(100.0)),
+                (TypedLink{1}(100.0), TypedLink{1}(100.0), TypedLink{true}(100.0)),
+                (TypedLink{Int64(1)}(100.0), TypedLink{Int64(1)}(100.0), TypedLink{Int32(1)}(100.0)),
+                (TypedLink{(1, :a)}(100.0), TypedLink{(1, :a)}(100.0), TypedLink{(1.0, :a)}(100.0)),
+                (TypedLink{(1, :a)}(100.0), TypedLink{(1, :a)}(100.0), TypedLink{(Int32(1), :a)}(100.0)),
+                (TypedLink{0.0}(100.0), TypedLink{0.0}(100.0), TypedLink{-0.0}(100.0)),
+                (TypedLink{NaN}(100.0), TypedLink{NaN}(100.0), TypedLink{nan_payload}(100.0)),
                 (Left.SameLink(100.0), Left.SameLink(100.0), Right.SameLink(100.0)),
                 (TypedLink{Left.Mode}(100.0), TypedLink{Left.Mode}(100.0), TypedLink{Right.Mode}(100.0)),
                 (TypedLink{Vector{Left.Mode}}(100.0), TypedLink{Vector{Left.Mode}}(100.0), TypedLink{Vector{Right.Mode}}(100.0)),
@@ -194,10 +204,13 @@ end
             @test_throws ArgumentError SE._restore_interlink_checkpoint_state!(negative, from_file, untouched)
             @test all(untouched)
         end
+        int64 = (module_path=(:Core,), name=:Int64, parameters=())
         @test SE._interlink_link_identity(ModeLink{-1}(1.0)).kind ==
-            (module_path=fullname(@__MODULE__), name=:ModeLink, parameters=(-1,))
+            (module_path=fullname(@__MODULE__), name=:ModeLink, parameters=((type=int64, value=-1),))
         @test SE._interlink_link_identity(TypedLink{Vector{Int}}(1.0)).kind.parameters ==
-            ((module_path=(:Core,), name=:Array, parameters=((module_path=(:Core,), name=:Int64, parameters=()), 1)),)
+            ((module_path=(:Core,), name=:Array, parameters=(int64, (type=int64, value=1))),)
+        @test SE._interlink_link_identity(TypedLink{-0.0}(1.0)).kind.parameters ==
+            ((type=(module_path=(:Core,), name=:Float64, parameters=()), value=-0.0, bits=0x8000000000000000),)
         @test SE._interlink_link_identity(TypedLink{Left.Mode}(1.0)).kind.parameters ==
             ((module_path=(fullname(@__MODULE__)..., :Left), name=:Mode, parameters=()),)
         SE._write_checkpoint!(args, 12.5, state, "tsit5"; is_active=snapshot.interlinks.is_active)
