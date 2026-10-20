@@ -34,17 +34,22 @@ Convenience wrappers:
 
 ## What each command needs
 
-The CLI normally starts child processes (`run`, `telemetry`, `benchmark`)
-under the repository project, the same environment as `julia --project=.`,
-so the script can load `SpaceAGORA` whether or not it activates the project
-itself. A `run --visualize` request instead uses the prepared visualizer project
-described below. `--print-only` prints the selected project on its `project=`
-line and the full command on its `cmd=` line without running anything.
+The CLI normally starts child processes (`run`, `telemetry`, `benchmark`) in
+the examples environment (`examples/Project.toml`), which provides this
+checkout's `SpaceAGORA` and the packages the examples and studies use beyond it,
+such as Plots. Prepare it once with `julia --startup-file=no examples/setup.jl`
+([Installation & Environment](user/installation_environment.md#Examples-environment));
+until then those commands stop and print that command. A `run --visualize`
+request instead uses the prepared visualizer project described below, and an
+example started there continues in the examples environment through
+`examples/common.jl`. `--print-only` prints the selected project on its
+`project=` line and the full command on its `cmd=` line without running
+anything.
 
-What a command needs beyond `Pkg.instantiate()` depends on the script it
-starts, not on the CLI:
+What a command needs beyond `Pkg.instantiate()` and the examples setup depends
+on the script it starts, not on the CLI:
 
-| Command | Needs on top of the instantiated repository |
+| Command | Needs on top of the instantiated repository and the examples environment |
 |---|---|
 | `assets check`, `assets manifest`, `assets setup-open` | nothing |
 | `run --example=<no-GRAM example>` (`AGORA_Basic_Quickstart.jl`, `AGORA_Earth_NoGRAM.jl`, `AGORA_Earth_MonteCarlo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl`) | nothing |
@@ -54,7 +59,7 @@ starts, not on the CLI:
 | `benchmark ...` | the `data/GRAMSuite.jl` submodule, and for the GRAM-backed cases the native GRAM library |
 
 The CLI does not automatically select the HYPR companion environment. An
-ordinary `run` launches the repository project, even if the CLI itself was
+ordinary `run` launches the examples environment, even if the CLI itself was
 started with `--project=examples/rpo_planner_env`. Run HYPR examples directly
 with that companion project as shown in the catalog.
 
@@ -82,7 +87,7 @@ Supported options:
 Use `--smoke` for long examples that support
 `SPACEAGORA_EXAMPLE_SMOKE=1`.
 
-Without `--visualize`, the child runs under the repository project.
+Without `--visualize`, the child runs in the examples environment.
 `--print-only` shows the selected project and the exact command.
 
 ### View saved results or export a page after a run

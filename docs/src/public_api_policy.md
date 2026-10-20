@@ -145,6 +145,7 @@ of at least one tagged release:
 The [deprecation rules](reference/extension_conventions.md#Deprecations) give
 the details, and [Migrating Extension Hooks](reference/migrating_extension_hooks.md)
 maps every old hook name to its replacement, with the schedule.
+[Upgrading](user/upgrading.md) lists what each release asks you to change.
 
 Internal modules are not covered: they may change without a deprecation window,
 as long as the root exported API stays stable.

@@ -278,7 +278,7 @@ Once the folder copy and native-library setup are complete, try the basic
 GRAM-backed example:
 
 ```text
-julia --project=. examples/AGORA_Basic_GRAMEarth.jl
+julia --project=examples examples/AGORA_Basic_GRAMEarth.jl
 ```
 
 That example is the smallest SpaceAGORA path that exercises:

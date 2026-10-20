@@ -33,7 +33,7 @@
 # plan, never from a new one. With fixed iteration budgets and no wall-clock
 # limits, seeded planning is reproducible across thread counts. Otherwise the
 # run is fresh. Nothing is deleted.
-# Load the optional renderer before example helpers activate the core project.
+# Load the optional renderer before the example helpers continue in the examples environment.
 if abspath(PROGRAM_FILE) == @__FILE__
     using SpaceAGORAVisualizer
 end

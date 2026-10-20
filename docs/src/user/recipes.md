@@ -23,7 +23,7 @@ What to read next:
 ## Run the first no-GRAM example
 
 ```text
-julia --project=. examples/AGORA_Basic_Quickstart.jl
+julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
 ## Run an example through the CLI
@@ -44,7 +44,7 @@ julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Earth_Aerobraki
 ## Run a Monte Carlo example script with threads
 
 ```text
-julia --project=. --threads=8 examples/AGORA_Earth_MonteCarlo.jl
+julia --project=examples --threads=8 examples/AGORA_Earth_MonteCarlo.jl
 ```
 
 Inside the script:
@@ -66,8 +66,8 @@ Prepare the optional HYPR companion environment once from the repository root:
 julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
 ```
 
-These HYPR examples load `SpaceAGORAHYPR` before their common helper activates
-the root project. Baseline examples continue to use `--project=.`.
+These HYPR examples load `SpaceAGORAHYPR` before their common helper continues
+in the examples environment. Baseline examples use `--project=examples`.
 
 ```text
 SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl --runs 1

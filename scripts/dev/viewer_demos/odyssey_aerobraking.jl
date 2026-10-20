@@ -25,7 +25,7 @@
 # not an established atmospheric bias or out-of-sample validation claim.
 #
 #   julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/odyssey_aerobraking.jl
-# Load the optional renderer before example helpers activate the core project.
+# Load the optional renderer before the example helpers continue in the examples environment.
 if abspath(PROGRAM_FILE) == @__FILE__
     using SpaceAGORAVisualizer
 end

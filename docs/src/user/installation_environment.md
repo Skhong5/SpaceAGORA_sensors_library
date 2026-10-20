@@ -84,22 +84,42 @@ found in current path`. See
 
 ## The repository environments
 
-![Which Julia environment to start: the root project for examples, tests and the command-line tool; the Odyssey example environment for the frozen-atmosphere tutorial; the viewer environment for the 3D viewer; one environment per optional companion for HYPR, MuJoCo and EDG; and your own project for scenarios kept outside the checkout. Each row shows how to start Julia and the one-time setup command.](../assets/figures/environments_map.svg)
+![Which Julia environment to start: the root project for SpaceAGORA itself and the command-line tool; the examples environment for the examples and plotting scripts; the Odyssey example environment for the frozen-atmosphere tutorial; the viewer environment for the 3D viewer; one environment per optional companion for HYPR, MuJoCo and EDG; and your own project for scenarios kept outside the checkout. Each row shows how to start Julia and the one-time setup command.](../assets/figures/environments_map.svg)
 
 The sections below describe each environment.
 
 ### Root project (`--project=.`)
 
-The root project at the repository root is the canonical execution environment
-used by examples, tests, benchmarks, and most local commands in this
-repository.
+The root project at the repository root is the canonical execution environment:
+it installs SpaceAGORA, and its committed manifest pins the version of every
+package SpaceAGORA uses. The docs, test and examples environments start from
+that manifest.
 
 Use it for:
 
-- example scripts
-- local verification runs
-- benchmark launchers
-- CLI commands
+- loading SpaceAGORA in the Julia REPL or in your own scripts
+- CLI commands; the CLI runs its examples in the examples environment
+- the setup check above and the scripts under `scripts/` that need only SpaceAGORA
+
+### Examples environment
+
+The examples, the plotting scripts and the benchmark studies run in the
+examples environment, `examples/Project.toml`. It takes SpaceAGORA from this
+checkout and adds the packages the examples use beyond SpaceAGORA itself, such
+as Plots and Roots. Prepare it once after the root instantiate, and again after
+a pull that changes the root manifest. Terminal, from the repository root:
+
+```text
+julia --startup-file=no examples/setup.jl
+julia --project=examples examples/AGORA_Basic_Quickstart.jl
+```
+
+The setup copies the root manifest into the ignored `examples/Manifest.toml`
+and adds the example packages to it, so the examples load the same package
+versions as SpaceAGORA. An example started with `--project=.` continues in the
+examples environment once it is prepared, and otherwise stops with the setup
+command. Plotting packages are no longer dependencies of SpaceAGORA itself; a
+project of your own that plots adds them itself.
 
 ### `examples/odyssey_surrogate_env/`
 
@@ -260,11 +280,13 @@ isolated development environment, terminal, from the repository root:
 ```sh
 julia --startup-file=no scripts/setup_edg.jl /path/to/edg-test-env
 julia --startup-file=no test/setup.jl
+julia --startup-file=no examples/setup.jl
 SPACEAGORA_EDG_TEST_ENV=/path/to/edg-test-env julia --startup-file=no --project=test test/runtests.jl
 ```
 
-The tests run in the repository's test environment, which holds the test tools;
-the EDG environment is added as the provider. Both setups retain the core's
+The tests run in the repository's test environment, which holds the test tools,
+and start their example and CLI children in the examples environment; the EDG
+environment is added as the provider. Both setups retain the core's
 dependency versions and leave its tracked project files unchanged.
 `SPACEAGORA_EDG_PATH=/absolute/path/to/SpaceAGORAEDG.jl`
 is an explicit development override for this test helper; it is not a release

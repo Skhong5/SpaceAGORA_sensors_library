@@ -27,7 +27,7 @@
 # guidance, control, terrain-contact and plume models on one documented case.
 # It is not a reconstruction of the flown Apollo 11 trajectory and does not
 # establish flight accuracy; see docs/src/user/lunar_landing.md.
-# Load the optional renderer before example helpers activate the core project.
+# Load the optional renderer before the example helpers continue in the examples environment.
 if abspath(PROGRAM_FILE) == @__FILE__
     using SpaceAGORAVisualizer
 end

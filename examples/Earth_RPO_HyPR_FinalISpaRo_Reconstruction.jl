@@ -3,7 +3,7 @@
 # Default: one HyPR case in the full nonlinear SpaceAGORA simulator.
 # HYPR_CASE_IDS selects explicit generated cases; comparisons are optional.
 # HYPR_OUTPUT_ROOT must be outside cloud-synced research folders.
-# Load the optional packages before common.jl activates core and its dependencies.
+# Load the optional packages before common.jl continues in the examples environment.
 using SpaceAGORAHYPR, HYPR
 const ROOT = normpath(joinpath(@__DIR__,".."))
 include(joinpath(ROOT,"examples","Earth_RPO_CubeSat_MPC_Batch.jl"))

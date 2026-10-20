@@ -7,7 +7,7 @@
 # points). SpaceAGORA.ParallelProcess's real OS-process backend (this session's other
 # new work) sidesteps that lock entirely: separate OS processes don't share it.
 #
-#   julia --project=. benchmarks/studies/gram_mars_fix_and_constellation_scaling/leo_ensemble_outer_backend_scaling.jl
+#   julia --project=examples benchmarks/studies/gram_mars_fix_and_constellation_scaling/leo_ensemble_outer_backend_scaling.jl
 #
 # Override constellation size / outer-worker ladder:
 #   SPACEAGORA_EOB_N_SATS=32 SPACEAGORA_EOB_WORKERS=1,2,4,8 julia --project=. \

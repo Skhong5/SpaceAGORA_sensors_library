@@ -6,7 +6,7 @@ constellation ensemble to use more than one core.
 Shortest successful command:
 
 ```text
-julia --project=. --threads=auto examples/AGORA_Earth_MonteCarlo.jl
+julia --project=examples --threads=auto examples/AGORA_Earth_MonteCarlo.jl
 ```
 
 What to read next:
@@ -107,7 +107,7 @@ planner choose; this section describes a fixed worker count instead.
 Start Julia with the number of threads you want available:
 
 ```bash
-julia --project=. --threads=8 examples/AGORA_Earth_MonteCarlo.jl
+julia --project=examples --threads=8 examples/AGORA_Earth_MonteCarlo.jl
 ```
 
 Then cap the campaign runner to that same thread count, or a smaller count:

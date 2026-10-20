@@ -7,15 +7,14 @@ using ..SimulationModel.EnvironmentModels: available_surrogate_presets, resolve_
 export AssetCheckItem, AssetCheckReport, check_assets, render_asset_report, run_cli
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
-# Nonvisual child processes run under the repository project, the environment whose
-# Project.toml is SpaceAGORA itself and the one `julia --project=.` selects.
-# The children used to be launched with `--project=<repo>/.AGORA`, an
-# untracked, machine-local directory that no setup step creates any more; a
-# child started with a missing project directory gets an empty project and
-# cannot load SpaceAGORA. Examples that include examples/common.jl hid the
-# defect by re-activating the repository project themselves; the telemetry and
-# benchmark launchers, and any example that loads the package directly, did not.
-const CHILD_PROJECT = REPO_ROOT
+# Nonvisual child processes run in the examples environment (examples/Project.toml).
+# It takes SpaceAGORA from this checkout and provides the packages the examples and
+# the study launchers use beyond the package itself, such as Plots and Roots; the
+# root project provides only the package. `julia --startup-file=no examples/setup.jl`
+# prepares it, and a child starts only once it is prepared. (The children were once
+# launched with `--project=<repo>/.AGORA`, a directory no setup step creates, and
+# could not load SpaceAGORA; examples that re-activated a project hid the defect.)
+const CHILD_PROJECT = joinpath(REPO_ROOT, "examples")
 const EXAMPLES_DIR = joinpath(REPO_ROOT, "examples")
 const TELEMETRY_LAUNCHER = joinpath(REPO_ROOT, "benchmarks", "studies", "telemetry_orbit_accuracy_study.jl")
 const PERF_RUNTIME_LAUNCHER = joinpath(REPO_ROOT, "benchmarks", "studies", "performance_runtime_analysis.jl")
@@ -138,6 +137,8 @@ function _run_subprocess(script::String, script_args::Vector{String}; env_pairs:
         println(io, "cmd=$(full)")
         return 0
     end
+    project == CHILD_PROJECT && !isfile(joinpath(CHILD_PROJECT, "Manifest.toml")) && throw(ArgumentError(
+        "The examples environment is not prepared. Run `julia --startup-file=no examples/setup.jl` first."))
     visualize || mkpath(joinpath(REPO_ROOT, "output"))
     cmd_env = isempty(env_pairs) ? full : addenv(full, env_pairs...)
     process = run(pipeline(ignorestatus(cmd_env); stdout=io, stderr=errio), wait=true)

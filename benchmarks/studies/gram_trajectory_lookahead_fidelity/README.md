@@ -17,13 +17,13 @@ evaluation, and averages the error over those samples.
 Run the default study:
 
 ```bash
-julia --project=. benchmarks/studies/gram_trajectory_lookahead_fidelity/main.jl
+julia --project=examples benchmarks/studies/gram_trajectory_lookahead_fidelity/main.jl
 ```
 
 Useful options:
 
 ```bash
-julia --project=. benchmarks/studies/gram_trajectory_lookahead_fidelity/main.jl \
+julia --project=examples benchmarks/studies/gram_trajectory_lookahead_fidelity/main.jl \
   --planets mars,earth,venus,titan \
   --points 3,4,5,6,8,12,16,24,32,48,64 \
   --methods linear,pchip,cubic,akima \
@@ -61,7 +61,7 @@ Run a separate wind-focused stress test with broader altitude, latitude,
 longitude, and elapsed-time trajectories:
 
 ```bash
-julia --project=. benchmarks/studies/gram_trajectory_lookahead_fidelity/wind_interpolation_stress.jl
+julia --project=examples benchmarks/studies/gram_trajectory_lookahead_fidelity/wind_interpolation_stress.jl
 ```
 
 This writes `output/gram_wind_interpolation_stress/` by default:

@@ -25,8 +25,9 @@ julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC.jl
 ```
 
 Those research examples require the assets described in the examples catalog and
-load the companion before activating the root environment for their other imports.
-Baseline examples still use the root project without loading the companion.
+load the companion before continuing in the examples environment for their other
+imports. Baseline examples use the examples environment without loading the
+companion.
 
 `smoke.jl` explicitly loads `SpaceAGORAHYPR`, then uses the public SpaceAGORA planner surface and its declared dependencies.
 It runs the same two-second Earth corridor case with `DirectRPOPlanner` and

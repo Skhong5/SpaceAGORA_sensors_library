@@ -300,8 +300,13 @@ ln -s "$REMOTE_BASE/policy_state" "$release_dir/output/parallel_policy_state"
 echo "POLICY_STATE=$REMOTE_BASE/policy_state" >> "$job_dir/job.meta"
 julia --project=. -e 'using Pkg; Pkg.instantiate()' > "$job_dir/instantiate.log" 2>&1
 INSTANTIATE_EXIT=\$?
+# The studies that plot run in the examples environment (--project=examples).
+if [ \$INSTANTIATE_EXIT -eq 0 ] && [ -f examples/setup.jl ]; then
+  julia --startup-file=no examples/setup.jl >> "$job_dir/instantiate.log" 2>&1
+  INSTANTIATE_EXIT=\$?
+fi
 if [ \$INSTANTIATE_EXIT -ne 0 ]; then
-  { echo "Pkg.instantiate() failed (exit \$INSTANTIATE_EXIT) -- see instantiate.log"; cat "$job_dir/instantiate.log"; } > "$job_dir/job.log"
+  { echo "Pkg.instantiate() or the examples setup failed (exit \$INSTANTIATE_EXIT) -- see instantiate.log"; cat "$job_dir/instantiate.log"; } > "$job_dir/job.log"
   echo "END=\$(date -Iseconds)" >> "$job_dir/job.meta"
   echo "EXIT_CODE=\$INSTANTIATE_EXIT" >> "$job_dir/job.meta"
   exit \$INSTANTIATE_EXIT

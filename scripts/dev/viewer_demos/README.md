@@ -80,8 +80,8 @@ julia --startup-file=no scripts/setup_hypr.jl /path/to/visualizer-env
 ```
 
 These HYPR examples load `SpaceAGORAHYPR` and the renderer before their common
-helper activates the core project. Baseline examples without HTML export can
-continue to use `--project=.`.
+helper continues in the examples environment. Baseline examples without HTML
+export use `--project=examples`.
 
 ```sh
 SPACEAGORA_DEMO_SMOKE=1 julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/iss_hypr.jl

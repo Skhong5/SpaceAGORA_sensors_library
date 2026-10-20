@@ -212,10 +212,10 @@ norm in J/cm² of the per-panel differences between the two runs' accumulated
 heat loads (one entry per panel). To
 see which run is ahead or hotter, compare the signed columns of the two
 `trajectory.csv` files, for example by plotting them. The example's own environment does not include
-Plots, so use the repository's root environment, instantiated as in
-[Installation & Environment](../user/installation_environment.md). Julia REPL
-started with `julia --project=.` from the repository root, after the default
-comparison:
+Plots, so use the repository's examples environment, prepared as in
+[Installation & Environment](../user/installation_environment.md#Examples-environment).
+Julia REPL started with `julia --project=examples` from the repository root,
+after the default comparison:
 
 ```julia
 using CSV, DataFrames, Plots
