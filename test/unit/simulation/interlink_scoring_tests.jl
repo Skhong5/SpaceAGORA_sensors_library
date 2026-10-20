@@ -35,8 +35,8 @@ end
     @test second_force == -first_force
     @test norm(2first_force) + norm(2second_force) == 4.0
     @test iszero(first_force + second_force)
-    for target_idx in (1, nothing)
-        policy = SchedulingPolicyModel(:gve_eccentricity; target_idx)
+    for target_index in (1, nothing)
+        policy = SchedulingPolicyModel(:gve_eccentricity; target_index)
         @test_throws ArgumentError score_candidates!(model, policy, state, 1.0;
             candidate_force=force_on_endpoint)
     end

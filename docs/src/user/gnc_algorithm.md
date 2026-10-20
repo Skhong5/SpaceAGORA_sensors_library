@@ -870,12 +870,11 @@ SpaceAGORA commit, start from a contributor starter: see
 
 ## Deprecated paths
 
-- **`RPOGuidanceModel`** warns before the run and is removed in a later release.
+- **`RPOGuidanceModel`** was removed in SpaceAGORA 0.5.0.
   Use `make_rpo_configuration(planner=HYPRRPOPlanner(...))`; see
   [Moving from RPOGuidanceModel](rpo_planner_pilot.md#Moving-from-RPOGuidanceModel).
-- **Selecting an RPO planner by a `Symbol`**, such as `:rrt_star`, warns before
-  the run and is removed in SpaceAGORA 0.5.0. Pass a planner object, such as
-  `RRTStarPlanner()`.
+- **Selecting an RPO planner by a `Symbol`**, such as `:rrt_star`, was removed in
+  SpaceAGORA 0.5.0. Pass a planner object, such as `RRTStarPlanner()`.
 - **The old hook names** (`calcControlEffect!`, `calcControlForceTorque`,
   `calcControlMassFlowRate`, `calcGuidanceEffect!`, `calcNavigationEffect!` and
   the rest) were removed in SpaceAGORA 0.5.0; see

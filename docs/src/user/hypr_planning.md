@@ -195,25 +195,31 @@ average-throttle commands; it does not establish resolved PWM valve behavior.
 The reduced two-body evaluator remains diagnostic until its fuel agreement with
 the full simulator is established for the experiment being reported.
 
-The legacy RPO guidance model now brakes and holds before replanning. It consumes
-measured planner time in simulation time, checks the current map before release,
-and leaves failed replacements in hold. Its position/speed release tolerances
-(0.02 m and 0.002 m/s) are explicit reconstruction settings recovered from the
-later source, not numerical tolerances specified by the final paper. Retiming
-retains the remaining geometric route. `RPOReplanningConfig.observation_window_s` optionally
-retains detections after their last observation; a reconstruction can set it to
-0.02 times the original reference duration. The separate public `PlannerGuidance`
-lifecycle is not upgraded to this dynamic policy by this patch.
+Through SpaceAGORA 0.4.0, the HYPR guidance model `RPOGuidanceModel` braked and
+held before replanning. It consumed measured planner time in simulation time,
+checked the current map before release, and left failed replacements in hold. Its
+position/speed release tolerances (0.02 m and 0.002 m/s) were explicit
+reconstruction settings recovered from the later source, not numerical tolerances
+specified by the final paper. SpaceAGORA 0.5.0 removed the model: on the planner
+path a rejected request installs a hold (`on_rejection=:install_fallback`, with
+the same default tolerances), with the policy differences listed in
+[Moving from RPOGuidanceModel](rpo_planner_pilot.md#Moving-from-RPOGuidanceModel).
+Retiming retains the remaining geometric route.
+`RPOReplanningConfig.observation_window_s` optionally retains detections after
+their last observation; a reconstruction can set it to 0.02 times the original
+reference duration.
 
-The companion `Earth_RPO_HyPR_FinalISpaRo_Replanning.jl` consumes a saved case
-record via `HYPR_BASELINE_RECORD`. It exercises a baseline plus the eight
-reconstructed disturbance families in the full simulator, and keeps a separate
-obstructed-goal negative control. It uses existing callback ordering: the
-scenario input arrives before control; control runs before guidance. Fixed
-endpoints that already violate clearance are rejected before search, and the
-vehicle remains in hold. A failed hold is not a claim that an already unsafe
-position has become safe. The original obstacle placements and disturbance draws
-are missing, so these generated cases cannot be attributed to the final table.
+The replanning study `Earth_RPO_HyPR_FinalISpaRo_Replanning.jl`, removed with the
+model, consumed a saved case record via `HYPR_BASELINE_RECORD`. It exercised a
+baseline plus the eight reconstructed disturbance families in the full simulator,
+and kept a separate obstructed-goal negative control. It used the callback
+ordering of its release: the scenario input arrived before control; control ran
+before guidance. Fixed endpoints that already violated clearance were rejected
+before search, and the vehicle remained in hold. A failed hold is not a claim that
+an already unsafe position has become safe. The original obstacle placements and
+disturbance draws are missing, so these generated cases cannot be attributed to
+the final table. [Run the HyPR paper algorithm](hypr_paper.md) says how to run the
+study with SpaceAGORA 0.4.0.
 
 Remaining-route resampling subdivides each original segment so that a coarse
 sampling interval cannot remove a corner and create a new shortcut. Replacement

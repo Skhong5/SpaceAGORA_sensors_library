@@ -86,103 +86,49 @@ const CASES = [G.RPOPlannerComparisonCase(start_rtn=SVector(-3.0, 0.0, 0.0), goa
     @test RRTStarPlanner().max_reference_samples == 100_000
     @test_throws ArgumentError RRTConnectPlanner(; max_reference_samples=1)
     @test_throws ArgumentError HYPRComparisonPlanner(pso_cfg; max_reference_samples=typemax(Int))
-    @test G.RPOPlannerComparisonConfig(planners=[:rrt_star, RRTStarPlanner()]).planners[1] === :rrt_star
 end
 
-@testset "Name selection: keyed pre-run warnings, strict refusal and unknown names" begin
+@testset "Name selection was removed" begin
     cfg = comparison_config()
-    for (selection, id) in (map(id -> id => id, IDS)..., ALIASES...)
-        planner = quietly(() -> G._rpo_comparison_planner(selection, cfg))
-        @test same_fields(planner, object_for(id, cfg))
-    end
-    # One visible warning per planner type with one logger; aliases share the key.
-    logs, _ = Test.collect_test_logs() do
-        for selection in (:rrt_star, :rrtstar, "rrt-star", :rrt_star, :chomp, :chomp)
-            G._rpo_comparison_planner(selection, cfg)
-        end
-    end
-    @test length(logs) == 2
-    @test all(l -> l.level == Logging.Warn && l.group === :depwarn, logs)
-    @test [l.id for l in logs] == [(RRTStarPlanner, :symbol_planner_selection), (CHOMPPlanner, :symbol_planner_selection)]
-    @test occursin("RRTStarPlanner(...)", logs[1].message) && occursin(":rrt_star", logs[1].message)
-    # Objects, defaults and the pure label/identifier helpers stay quiet.
-    quiet, _ = Test.collect_test_logs() do
-        c = comparison_config()
-        foreach(p -> G._rpo_comparison_planner(p, c), c.planners)
-        foreach(G.rpo_comparison_planner_label, (IDS..., c.planners...))
-        foreach(G.normalize_rpo_comparison_planner_type, (IDS..., c.planners...))
-    end
-    @test isempty(quiet)
-    # Unknown names are refused with the valid names, before any warning.
-    unknown, _ = Test.collect_test_logs() do
-        @test_throws ArgumentError G._rpo_comparison_planner(:stopm, cfg)
-        @test_throws ArgumentError G.rpo_plan_comparison_path(:stopm, CASES[1].start_rtn, CASES[1].goal_rtn,
+    # A Symbol or string is not a planner: the configuration and a direct plan refuse
+    # it before HYPR is required or any planning starts.
+    for selection in (:rrt_star, "rrt-star", :stopm)
+        @test_throws MethodError comparison_config(planners=[selection])
+        @test_throws MethodError G.rpo_plan_comparison_path(selection, CASES[1].start_rtn, CASES[1].goal_rtn,
             geometry(), cfg; rng=MersenneTwister(1))
     end
-    @test isempty(unknown)
-    # Under --depwarn=error the name entries throw before HYPR or planning; objects do not.
-    script = """
-        using SpaceAGORA, Random
-        const G = SpaceAGORA.SimulationModel.GuidanceHooks
-        @assert Base.JLOptions().depwarn == 2 && !hypr_available()
-        cfg = G.RPOPlannerComparisonConfig(show_progress=false)
-        outcome(f) = try f(); :returned catch e; e isa ErrorException && occursin("deprecated", e.msg) ? :deprecated :
-            e isa HYPRUnavailableError ? :needs_hypr : (showerror(stderr, e); :other) end
-        direct(p) = () -> G.rpo_plan_comparison_path(p, zeros(3), ones(3), nothing, cfg; rng=MersenneTwister(1))
-        batch(planners) = () -> G.rpo_run_planner_comparison_batch([], nothing,
-            G.RPOPlannerComparisonConfig(planners=planners, show_progress=false))
-        println("STRICT ", join(map(outcome, (direct(:rrt_star), direct(:rrt_star), direct(RRTStarPlanner()),
-            batch([:hypr]), batch([HYPRComparisonPlanner()]), () -> G.rpo_run_planner_comparison_batch([], nothing, cfg))), ","))
-        """
-    output = read(pipeline(`$(Base.julia_cmd()) --startup-file=no --compiled-modules=existing --depwarn=error
-        --project=$(Base.active_project()) -e $script`; stderr=devnull), String)
-    @test occursin("STRICT deprecated,deprecated,needs_hypr,deprecated,needs_hypr,needs_hypr", output)
+    @test_throws MethodError G.RPOPlannerComparisonConfig(planners=[:rrt_star, RRTStarPlanner()])
+    # The identifiers and labels the reports use still accept names and objects, quietly.
+    quiet, _ = Test.collect_test_logs() do
+        for (name, id) in (map(id -> id => id, IDS)..., ALIASES...)
+            @test G.normalize_rpo_comparison_planner_type(name) === id
+        end
+        foreach(G.rpo_comparison_planner_label, (IDS..., cfg.planners...))
+        foreach(G.normalize_rpo_comparison_planner_type, cfg.planners)
+    end
+    @test isempty(quiet)
 end
 
-@testset "Name and object selections give bit-identical comparison results" begin
+@testset "Object selections in batches" begin
     cfg = comparison_config()
     finite = comparison_config(optimizer=G.RPOTrajectoryOptimizerSettings(match_hypr_runtime=false,
         runtime_limit_s=1.0e6, runtime_max_iters=40, force_full_iters=true))
-    warm = [-3.0 -1.0 1.0 3.0; 0.0 1.2 1.2 0.0; 0.0 0.0 0.0 0.0]
-    plan_with(selection, c, case, seed; kwargs...) = begin
-        rng = MersenneTwister(seed)
-        plan = quietly(() -> G.rpo_plan_comparison_path(selection, case.start_rtn, case.goal_rtn, geometry(), c;
-            rng=rng, kwargs...))
-        (plan, rand(rng, UInt64, 4))
-    end
-    for (selection, id) in (map(id -> id => id, IDS)..., ALIASES...), (ci, case) in enumerate(CASES)
-        for (c, kwargs) in ((cfg, ()), (finite, (runtime_limit_s=1.0e6,)))
-            by_name, after_name = plan_with(selection, c, case, 10ci; kwargs...)
-            by_object, after_object = plan_with(object_for(id, c), c, case, 10ci; kwargs...)
-            @test same_bits(by_name, by_object)
-            @test after_name == after_object
-            @test by_object.planner_type === id && by_object.planner_label == G.rpo_comparison_planner_label(id)
-            @test by_object.config.safe_distance_m == 0.5 # the comparison's pinned distance
-        end
-    end
-    for id in (:chomp, :stomp), (ci, case) in enumerate(CASES)
-        by_name, after_name = plan_with(id, cfg, case, 30ci; warmstart_path=warm)
-        by_object, after_object = plan_with(object_for(id, cfg), cfg, case, 30ci; warmstart_path=warm)
-        @test same_bits(by_name, by_object) && after_name == after_object
-    end
-    # Batches: default objects against names, and aliases/repeats against their objects.
+    # Batches: the default objects against the same objects listed, and repeats.
     batch(c) = quietly(() -> G.rpo_run_planner_comparison_batch(CASES, geometry(), c))
     # Every result and plan field but the measured planner times, the LQ-MPC closed
     # loop included.
     science(b) = (b.planner_types, b.results_by_planner, b.plans_by_planner)
     finite_kwargs = (optimizer=finite.optimizer,)
     defaults = batch(comparison_config(; finite_kwargs...))
-    named = batch(comparison_config(; planners=collect(IDS), finite_kwargs...))
+    listed = batch(comparison_config(; planners=[object_for(id, finite) for id in IDS], finite_kwargs...))
     @test defaults.planner_types == collect(IDS)
-    @test same_bits(science(defaults), science(named))
-    mixed = [:rrt_star, :pso, :rrtconnect, :chomp, :rrt_star, :stomp]
-    objects = [object_for(G.normalize_rpo_comparison_planner_type(p), finite) for p in mixed]
-    by_names = batch(comparison_config(; planners=mixed, finite_kwargs...))
-    by_objects = batch(comparison_config(; planners=objects, finite_kwargs...))
-    @test by_names.planner_types == [:rrt_star, :hypr, :rrt_connect, :chomp, :rrt_star, :stomp]
-    @test same_bits(science(by_names), science(by_objects))
+    @test same_bits(science(defaults), science(listed))
+    mixed = [:rrt_star, :hypr, :rrt_connect, :chomp, :rrt_star, :stomp]
+    repeated = batch(comparison_config(; planners=[object_for(id, finite) for id in mixed], finite_kwargs...))
+    @test repeated.planner_types == mixed
     # Runtime matching still moves the first HYPR selection to the front.
-    matched = comparison_config(planners=[object_for(:rrt_connect, cfg), :hypr, object_for(:stomp, cfg), object_for(:hypr, cfg)],
+    matched = comparison_config(planners=[object_for(:rrt_connect, cfg), object_for(:hypr, cfg), object_for(:stomp, cfg),
+            object_for(:hypr, cfg)],
         optimizer=G.RPOTrajectoryOptimizerSettings(match_hypr_runtime=true, runtime_max_iters=40))
     order = quietly(() -> G.rpo_run_planner_comparison_batch(CASES[1:1], geometry(), matched)).planner_types
     @test order == [:hypr, :rrt_connect, :stomp]

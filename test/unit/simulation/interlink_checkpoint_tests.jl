@@ -59,7 +59,7 @@ function checkpoint_fixture(directory)
     model = InterlinkModel(forbidden_pairs=[(3, 2)])
     register_link!(model, spacecraft, (1, 1), (2, 1),
         LaserMomentumLink(power_w=12.0, magnification=3.0, range_m=100.0))
-    policy = SchedulingPolicyModel(:gve_sma; target_idxs=[1, 2])
+    policy = SchedulingPolicyModel(:gve_sma; target_indices=[1, 2])
     args = (interlink_model=model, scheduling_policy_model=policy,
         dynamics_model=(spacecraft=spacecraft,),
         simulation_settings=(checkpoint_directory=directory, results_directory=directory))
@@ -128,7 +128,7 @@ end
                 a
             end,
             "policy" => a -> merge(a, (scheduling_policy_model=SchedulingPolicyModel(:gve_sma_first_index),)),
-            "targets" => a -> merge(a, (scheduling_policy_model=SchedulingPolicyModel(:gve_sma; target_idxs=[1, 3]),)),
+            "targets" => a -> merge(a, (scheduling_policy_model=SchedulingPolicyModel(:gve_sma; target_indices=[1, 3]),)),
             "terminal counts" => a -> begin
                 a.dynamics_model.spacecraft[3] = (n_terminal=3,)
                 a

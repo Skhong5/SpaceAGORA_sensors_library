@@ -137,7 +137,7 @@ function main()
             paper_planning_failed(warm_rrt) && error("Warmup RRT-Connect failed")
             paired_bezier_shape(warm_rrt,geometry,G.rpo_pso_config(cfg;refinement_enable=false))
         else
-            G.rpo_plan_comparison_path(planner,warmstart,warmgoal,geometry,cc;rng=MersenneTwister(100),runtime_limit_s=.1)
+            G.rpo_plan_comparison_path(paper_planner_object(planner,cc),warmstart,warmgoal,geometry,cc;rng=MersenneTwister(100),runtime_limit_s=.1)
         end
         planner == :rrt_connect && (warm_rrt=p)
         if planner==:hypr
@@ -169,7 +169,7 @@ function main()
                     merge(shape,(planner_plan_time=rrt_base.planner_plan_time+fitting_s,
                         planner_iteration_count=rrt_base.planner_iteration_count,paired_search_path=rrt_base.path))
                 else
-                    G.rpo_plan_comparison_path(planner,case.start_rtn,case.goal_rtn,geometry,pcfg;rng=MersenneTwister(case.seed),
+                    G.rpo_plan_comparison_path(paper_planner_object(planner,pcfg),case.start_rtn,case.goal_rtn,geometry,pcfg;rng=MersenneTwister(case.seed),
                         runtime_limit_s=allowance,warmstart_path=warm)
                 end
                 planner == :rrt_connect && (rrt_base=plan)

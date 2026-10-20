@@ -20,8 +20,7 @@ end
 
 """
 Control effector that tracks a robot-arm plan and emits joint torque commands for
-the spacecraft at run position `spacecraft_index`. `spacecraft_idx`, its old name,
-still works with a deprecation warning until SpaceAGORA 0.5.0.
+the spacecraft at run position `spacecraft_index`.
 
 The plan is `plan`, with its time axis starting at `updated_at_s` (s into the
 run), or, when `plan_buffer` is set, the plan of that `RobotArmPlanBuffer` from its
@@ -51,22 +50,14 @@ mutable struct RobotArmControlEffector <: AbstractControlEffectorModel
     run_start::Union{Nothing, RobotArmHeldActuation}     # the held command the previous run started from
     run_written::Union{Nothing, RobotArmHeldActuation}   # a copy of the controller's last write of it in that run
 end
-# The deprecated name forwards, as a keyword and as a property.
-function RobotArmControlEffector(; spacecraft_index=_NOT_PASSED, spacecraft_idx=_NOT_PASSED, plan=nothing, controller=nothing,
+# `run_start` and `run_written` start empty; they are not keywords.
+function RobotArmControlEffector(; spacecraft_index=1, plan=nothing, controller=nothing,
         updated_at_s=0.0, joint_kp=0.0, joint_kd=0.0, control_dt_s=0.1, k_translation_n_m=5.0e3,
         c_translation_n_s_m=30.0, k_rotation_n_m_rad=15.0, c_rotation_n_m_s_rad=0.5, held=RobotArmHeldActuation(),
         plan_buffer=nothing)
-    T = RobotArmControlEffector
-    return T(_renamed_keyword(T, :spacecraft_idx, spacecraft_idx, :spacecraft_index, spacecraft_index, 1),
-        plan, controller, updated_at_s, joint_kp, joint_kd, control_dt_s, k_translation_n_m, c_translation_n_s_m,
-        k_rotation_n_m_rad, c_rotation_n_m_s_rad, held, plan_buffer, nothing, nothing)
-end
-@inline _robot_arm_field(name::Symbol) = name === :spacecraft_idx ?
-    _renamed_field_warning(RobotArmControlEffector, :spacecraft_idx, :spacecraft_index) : name
-@inline Base.getproperty(m::RobotArmControlEffector, name::Symbol) = getfield(m, _robot_arm_field(name))
-@inline function Base.setproperty!(m::RobotArmControlEffector, name::Symbol, x)
-    field = _robot_arm_field(name)
-    return setfield!(m, field, convert(fieldtype(RobotArmControlEffector, field), x))
+    return RobotArmControlEffector(spacecraft_index, plan, controller, updated_at_s, joint_kp, joint_kd,
+        control_dt_s, k_translation_n_m, c_translation_n_s_m, k_rotation_n_m_rad, c_rotation_n_m_s_rad, held,
+        plan_buffer, nothing, nothing)
 end
 
 """Estimate default joint inertias from link masses and lengths."""

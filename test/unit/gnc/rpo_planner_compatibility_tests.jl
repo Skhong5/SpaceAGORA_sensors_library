@@ -1,7 +1,7 @@
 # Prospective compatibility fixtures for the later HYPR adapter. This packet
 # does not install that adapter or modify the legacy runtime route.
 module RPOPlannerCompatibilityTests
-using Test, SpaceAGORA, Random, StaticArrays, SHA, JSON, Logging
+using Test, SpaceAGORA, Random, StaticArrays, SHA, JSON
 const S = SpaceAGORA.SimulationModel
 const G = S.GuidanceHooks
 const P = SpaceAGORA.RPOPlannerInterfaces
@@ -34,7 +34,6 @@ snapshots=[]
     @test P !== G
     @test :AbstractRPOPlanner in names(SpaceAGORA) # Packet 3 makes the accepted contract public.
     @test SpaceAGORA.AbstractRPOPlanner === SpaceAGORA.RPOPlannerInterfaces.AbstractRPOPlanner
-    @test !hasfield(S.RPOGuidanceModel,:planner)
     @test fieldnames(S.RPOPlanBuffer)==(:valid,:plan,:updated_at_s)
     for (mode,accel,seed) in ((:legacy,false,741),(:legacy,true,742),(:manuscript,true,743))
         first=fixture(mode,accel,seed);second=fixture(mode,accel,seed)
@@ -81,35 +80,4 @@ end
 snapshot_path=get(ENV,"SPACEAGORA_RPO_CONTRACT_SNAPSHOT","")
 isempty(snapshot_path) || write(snapshot_path,JSON.json(snapshots))
 
-deprecation_logs(logger)=filter(l->occursin("RPOGuidanceModel is deprecated",string(l.message)),logger.logs)
-@testset "RPOGuidanceModel warns once before a run" begin
-    # A direct-planner run installs its first reference at initialization; the
-    # legacy model then only tracks it, which needs no HYPR.
-    args=make_rpo_configuration(planner=DirectRPOPlanner(
-        segment_clearance_at=SpaceAGORA.RPOPlannerLifecycle.station_segment_clearance),
-        goal_rtn_m=(3.,0.,0.),mission_time_s=.2)
-    owned=deepcopy(args)
-    u=SpaceAGORA.SimulationEngine.build_initial_conditions(owned)
-    p=S.ODEParams(n_sats=length(owned.dynamics_model.spacecraft),args=owned)
-    SpaceAGORA.SimulationModel.SimulationCallbacks.initialize_gnc_links!(owned,u,p,0.)
-    for g in owned.guidance_model.guidance_effectors
-        SpaceAGORA.SimulationLifecycle.initialize_guidance!(g,u,p,0.)
-    end
-    buffer=only(owned.control_model.control_effectors).plan_buffer
-    @test buffer.valid
-    legacy(n)=S.SimConfig._with_configuration(owned;guidance_model=S.GuidanceModel(
-        guidance_effectors=ntuple(_->S.RPOGuidanceModel(chaser_idx=1,target_idx=2,plan_buffer=buffer),n),
-        guidance_rates=fill(.1,n)))
-    logger=Test.TestLogger(min_level=Logging.Warn)
-    with_logger(()->run_simulation(legacy(2)),logger)       # two models, one run
-    warned=deprecation_logs(logger)
-    @test length(warned)==1 && only(warned).level==Logging.Warn
-    @test all(name->occursin(name,string(only(warned).message)),
-        ("make_rpo_configuration","HYPRRPOPlanner","PlannerGuidance"))
-    with_logger(()->run_simulation(legacy(1)),logger)       # not repeated in the session
-    @test length(deprecation_logs(logger))==1
-    clean=Test.TestLogger(min_level=Logging.Warn)
-    with_logger(()->run_simulation(args),clean)             # the planner path never warns
-    @test isempty(deprecation_logs(clean))
-end
 end

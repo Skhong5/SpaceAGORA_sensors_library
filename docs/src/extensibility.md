@@ -498,8 +498,8 @@ implement both methods for the command they hold.
 The built-in models that keep run state implement them: the momentum manager,
 the Apollo descent guidance and control, the periapsis-raise guidance, the burn
 scheduler (`BaseThrusterModel`), the RPO planner binding with the plan buffer it
-writes, the deprecated `RPOGuidanceModel`, the RPO MPC controller (its held
-command, warm start and solver iterate) and the robot-arm controller. The
+writes, the RPO MPC controller (its held command, warm start and solver iterate)
+and the robot-arm controller. The
 energy-depletion guidance and the GNC algorithm adapter (`AlgorithmGuidance`)
 refuse checkpointed runs.
 

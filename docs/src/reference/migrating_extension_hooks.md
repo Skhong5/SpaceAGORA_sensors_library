@@ -58,10 +58,47 @@ replacements.
 
 | Item | Replacement | Status | Removed in |
 |---|---|---|---|
-| `RPOGuidanceModel` | `make_rpo_configuration` with a planner, for example `planner=HYPRRPOPlanner(RPOPSOConfig(...))`, which configures a `PlannerGuidance` | warns before the run, once per session; the warning does not stop a run under `--depwarn=error` | a later release |
-| index fields and keywords `sat_idx`, `spacecraft_idx`, `chaser_idx`, `target_idx`, and `RobotArmReactionEffector.spacecraft_idx` | `spacecraft_index`, `chaser_index`, `target_index` | warn from 0.3.0; `RobotArmReactionEffector`'s from 0.3.1 | 0.5.0 |
-| selecting an RPO planner by a Symbol, such as `:rrt_star` | a planner object | warns from 0.3.0 | 0.5.0 |
+| `RPOGuidanceModel` | `make_rpo_configuration` with a planner, for example `planner=HYPRRPOPlanner(RPOPSOConfig(...))`, which configures a `PlannerGuidance` | warned before the run from 0.3.0; 0.4.0 is the last release that has it | 0.5.0 |
+| the index fields and keywords `MagneticMomentumManagerModel.sat_idx`, `RobotArmControlEffector.spacecraft_idx`, `RobotArmReactionEffector.spacecraft_idx`, and `chaser_idx` and `target_idx` of `RPOMPCControlModel` and `PlannerGuidance` | `spacecraft_index`, `chaser_index`, `target_index` | warned from 0.3.0, `RobotArmReactionEffector`'s from 0.3.1; on these five types an old keyword is now a `MethodError` and an old property a `FieldError` (for the older names that still work on other types, see [Deprecated in 0.5.0](#Deprecated-in-0.5.0)) | 0.5.0 |
+| selecting an RPO planner by a Symbol, such as `:rrt_star` | a planner object | warned from 0.3.0; a name is now a `MethodError` | 0.5.0 |
 | a default random stream in the GNC planning functions | an explicit `rng` keyword | required now, without a window | |
+
+A model of your own that names its spacecraft by a field must use the new names
+too: from 0.5.0 the engine reads only `chaser_index`, `target_index` and
+`spacecraft_index`. A model whose only index fields are older names no longer
+gets these behaviours:
+
+- with `chaser_idx` and `target_idx`, it is no longer seen as coupling two
+  spacecraft, so the stiff solvers' Jacobian sparsity pattern leaves out the
+  entries between them;
+- with `chaser_idx`, `spacecraft_idx` or `sat_idx`, a control effector is no
+  longer bound to its spacecraft by the external-propagation checks: it counts as
+  acting on every spacecraft, and a run with an external propagator refuses it;
+- with `spacecraft_idx`, a control effector is no longer bound to its spacecraft
+  by the robot-arm and articulated-panel checks: the run does not couple an arm to
+  the effector's plan, the panel-link check applies the effector to every
+  spacecraft, and the viewer shows no arm plan for it.
+
+Rename the fields; nothing else changes.
+
+## Deprecated in 0.5.0
+
+Three older index names that were never deprecated follow the same convention.
+Each keeps working as a keyword or property until SpaceAGORA 1.0, with one warning
+per type and name. An old keyword warns where it is passed, which is before the
+run; an old property warns where it is read, which can be inside a callback
+during the run. Under `julia --depwarn=error` either is an error at that point.
+
+| Item | Replacement | Status | Removed in |
+|---|---|---|---|
+| `SchedulingPolicyModel`'s keywords and properties `target_idx` and `target_idxs` | `target_index` and `target_indices` | warn from 0.5.0 | 1.0 |
+| the `StateAnchor` property `sat_idx` | `spacecraft_index` | warns from 0.5.0 | 1.0 |
+| the `sat_idx` keyword of `get_periapsis_pulse_callback` | `spacecraft_index` | warns from 0.5.0 | 1.0 |
+
+An interlink checkpoint keeps its stored keys, so a checkpoint written before
+0.5.0 resumes unchanged. The interlink names that 0.5.0 deprecates, from when every
+link was a laser link, are listed on the
+[Interlinks page](../user/interlinks.md#Deprecated-names).
 
 ## Schedule
 

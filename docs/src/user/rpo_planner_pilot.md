@@ -8,9 +8,8 @@
 The opt-in RPO pilot connects a planner to the existing simulation and LQ-MPC
 controller. It supports truth observations, a passive target on a circular Earth
 orbit, and a static station point cloud aligned with the target's rotating RTN
-frame. The existing research examples remain available; they still use the
-deprecated `RPOGuidanceModel` (see
-[Moving from RPOGuidanceModel](#Moving-from-RPOGuidanceModel)).
+frame. The RPO research examples run on this path; for the guidance model they
+used before, see [Moving from RPOGuidanceModel](#Moving-from-RPOGuidanceModel).
 
 ```julia
 using SpaceAGORA
@@ -281,9 +280,7 @@ When the planning configuration carries an acceleration limit, also set
 
 Either package may be loaded first. Without the companion, HYPR selection raises
 `HYPRUnavailableError` with installation instructions. Public RPO assembly and
-simulation preflight perform this check before creating run outputs. A legacy
-`RPOGuidanceModel` needs the companion when it must plan or replan; tracking an
-already supplied reference with replanning disabled remains available in core.
+simulation preflight perform this check before creating run outputs.
 Robot-arm `planner=:hypr` also requires explicit loading; `:cloth_quintic` does not.
 
 Comparison planners that request HYPR-configured objectives, refinement, sampling
@@ -291,7 +288,7 @@ or retiming need the companion even when their search algorithm is RRT, CHOMP or
 STOMP. The seven comparison modes are also planner objects, such as
 `RRTStarPlanner(...)`, which can be the `planner` of `make_rpo_configuration`; see
 [Comparison planners](../reference/rpo_planner_contract.md#Comparison-planners).
-Selecting a comparison mode by name is deprecated. Shared RRT with explicit policies and shared scalar APIs remain independent.
+Selecting a comparison mode by name was removed in SpaceAGORA 0.5.0. Shared RRT with explicit policies and shared scalar APIs remain independent.
 The baseline LQ-MPC controller still needs OSQP; optional HYPR does not remove that
 controller dependency. Package separation changes installation, not the validated
 physical limits, planning reserve or numerical policies.
@@ -305,23 +302,21 @@ dependency of SpaceAGORA itself.
 
 ## Moving from RPOGuidanceModel
 
-`RPOGuidanceModel`, the HYPR guidance model of the older RPO examples, is
-deprecated. A run that configures it warns once before it starts; the run itself
-is unchanged. Build new RPO runs with `make_rpo_configuration` and a planner. For
-HYPR planning, pass `planner=HYPRRPOPlanner(RPOPSOConfig(...))`; the configuration
-then uses a `PlannerGuidance`, which validates each reference before installing
-it.
+`RPOGuidanceModel`, the HYPR guidance model of the older RPO examples, was
+removed in SpaceAGORA 0.5.0; 0.4.0 is the last release that has it. Build RPO
+runs with `make_rpo_configuration` and a planner. For HYPR planning, pass
+`planner=HYPRRPOPlanner(RPOPSOConfig(...))`; the configuration then uses a
+`PlannerGuidance`, which validates each reference before installing it.
 
 The RPO examples run on this path: the main example plans inside the run, and
 the reconstruction example flies each comparison planner's plan with
 `RetainedPathRPOPlanner`, which times a given path for the run's request so that
-the run can validate it. The replanning study
-(`examples/Earth_RPO_HyPR_FinalISpaRo_Replanning.jl`) stays on the model until
-the model is removed: it is the recorded reproduction of the reconstructed
-disturbance families, including a goal change and the model's brake-then-replan
-policy. [Run the HyPR paper algorithm](hypr_paper.md) names the commit to
-reproduce it from afterwards. `examples/Earth_RPO_Planner_Disturbances.jl` shows
-disturbances on the planner path.
+the run can validate it. The replanning study of the reconstructed disturbance
+families, including a goal change and the model's brake-then-replan policy, ran on
+the model and was removed with it; [Run the HyPR paper algorithm](hypr_paper.md)
+says how to reproduce it with SpaceAGORA 0.4.0.
+`examples/Earth_RPO_Planner_Disturbances.jl` shows disturbances on the planner
+path.
 
 The planner path covers the model's replanning features:
 
@@ -337,5 +332,4 @@ The two differ in policy. The model brakes to a hold before every replan and
 retimes when clearance falls below a margin; the planner path replans at once and
 holds only when a request is rejected. A run on the planner path also draws from a
 different random stream, and its validation can refuse a reference the model would
-install, so its trajectories are not identical to the model's. The model will be
-removed in a later release.
+install, so its trajectories are not identical to the model's.

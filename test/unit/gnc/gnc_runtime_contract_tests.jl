@@ -52,7 +52,6 @@ function contract_models()
             spacecraft_indices=(1,)), bind=:indexed, shared=m -> (m.state, m.actuators)),
         (model=SM.AerobrakingEnergyDepletionGuidanceModel(edg, edg_state), bind=:refused, shared=nothing),
         (model=SM.AerobrakingEnergyDepletionControlModel(edg, edg_state), bind=:refused, shared=nothing),
-        (model=SM.GuidanceModels.RPOGuidanceModel(), bind=:refused, shared=nothing),
         (model=only(rpo.guidance_model.guidance_effectors), bind=:refused, shared=nothing),
         (model=only(rpo.control_model.control_effectors), bind=:refused, shared=nothing),
         (model=SM.SolarPanelAngleOfAttackControlModel(), bind=:refused, shared=nothing),
@@ -276,18 +275,6 @@ end
         link!(state)
         @test C._same_state(state, first_start)
     end
-    @testset "The deprecated RPO guidance: goal, plan buffer and replanning record" begin
-        model = SM.GuidanceModels.RPOGuidanceModel(goal_rtn=SVector(5.0, 0.0, 0.0))
-        buffer = model.plan_buffer
-        @test starts_equal(model, m -> begin
-            m.goal_rtn = SVector(1.0, 2.0, 3.0)
-            SM.update_rpo_plan_buffer!(m.plan_buffer, SM.RPOPlan(valid=true, t_ref_s=[0.0]), 4.0)
-            push!(m.replanning_events, (time_s=4.0, action=:brake))
-            m.replan_count, m.safe_hold_count, m.replanning_phase, m.force_replan = 2, 1, :braking, true
-            SM.GuidanceHooks._note_rpo_guidance_writes!(m)   # as a tick records its writes
-        end)
-        @test model.plan_buffer === buffer && !buffer.valid   # the controller's link, restored in place
-    end
     @testset "The RPO MPC controller: held command, warm start, solver workspace, log" begin
         controller = only(rpo_configuration().control_model.control_effectors)
         controller.command_log = SM.RPOControlCommandLog()
@@ -461,24 +448,6 @@ end
         model.held_torque_body = SVector(0.0, 0.5, 0.0)   # the user's change
         initialize!(model)
         @test model.held_torque_body == SVector(0.0, 0.5, 0.0) && model.ticks == 0 && !model.initialized
-    end
-    @testset "The deprecated RPO guidance" begin
-        model = SM.GuidanceModels.RPOGuidanceModel(goal_rtn=SVector(5.0, 0.0, 0.0))
-        buffer = model.plan_buffer
-        initialize!(model)
-        plan = SM.RPOPlan(valid=true, t_ref_s=[0.0])
-        SM.update_rpo_plan_buffer!(buffer, plan, 4.0)
-        model.goal_rtn, model.replan_count = SVector(1.0, 2.0, 3.0), 2
-        push!(model.replanning_events, (time_s=4.0, action=:brake))
-        SM.GuidanceHooks._note_rpo_guidance_writes!(model)
-        # The user's changes: the goal, and the plan's time grid in place.
-        model.goal_rtn = SVector(0.0, 7.0, 0.0)
-        plan.t_ref_s[1] = 1.0
-        initialize!(model)
-        @test model.goal_rtn == SVector(0.0, 7.0, 0.0)
-        @test buffer.plan === plan && buffer.plan.t_ref_s == [1.0] && buffer.valid && buffer.updated_at_s == 4.0
-        @test model.replan_count == 0 && isempty(model.replanning_events)
-        @test model.plan_buffer === buffer
     end
 end
 

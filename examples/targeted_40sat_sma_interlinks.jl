@@ -31,7 +31,7 @@ function targeted_40sat_configuration(; save_results::Bool=true, orbits::Float64
     for helper in helper_indices, target in target_indices
         register_link!(interlinks, spacecraft, (helper, 1), (target, 1), link)
     end
-    policy = SchedulingPolicyModel(:gve_sma; target_idxs=collect(target_indices))
+    policy = SchedulingPolicyModel(:gve_sma; target_indices=collect(target_indices))
 
     target_period = 2pi * sqrt((planet.Rp_e + target_altitude)^3 / planet.μ)
     duration = orbits * target_period
@@ -75,7 +75,7 @@ function interlink_animation_frames(solution; frame_count::Int=600)
         [minmax(model.graph.vertices[edge[1]], model.graph.vertices[edge[2]]) in active ?
             2 : Int(available[k]) for (k, edge) in enumerate(model.graph.edges)]
     end
-    target = first(args.scheduling_policy_model.target_idxs)
+    target = first(args.scheduling_policy_model.target_indices)
     period = 2pi * sqrt(args.dynamics_model.spacecraft[target].initial_condition.a^3 /
         args.environment_model.planet.μ)
     return (; times, status, endpoints, period)
@@ -84,7 +84,7 @@ end
 function save_interlink_animation(solution; output::String, frame_count::Int=600, fps::Int=20)
     fps > 0 || throw(ArgumentError("fps must be positive."))
     frames = interlink_animation_frames(solution; frame_count)
-    targets = solution.prob.p.args.scheduling_policy_model.target_idxs
+    targets = solution.prob.p.args.scheduling_policy_model.target_indices
     helpers = setdiff(eachindex(solution.prob.p.args.dynamics_model.spacecraft), targets)
     x, y = zeros(40), zeros(40)
     for (ring, row) in ((helpers, 350.0), (targets, 190.0))
@@ -150,7 +150,7 @@ function run_targeted_40sat_example(; save_results::Bool=true, orbits::Float64=2
     model = solution.prob.p.args.interlink_model
     mu = args.environment_model.planet.μ
     initial_sma = [vehicle.initial_condition.a for vehicle in args.dynamics_model.spacecraft]
-    targets = args.scheduling_policy_model.target_idxs
+    targets = args.scheduling_policy_model.target_indices
     target_delta_sma = [
         inv(2 / norm(solution.u[end].sc[index].pos) -
             dot(solution.u[end].sc[index].vel, solution.u[end].sc[index].vel) / mu) -

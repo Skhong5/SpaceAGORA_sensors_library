@@ -54,8 +54,9 @@ function _interlink_checkpoint_configuration(args)
         ) for (index, edge) in enumerate(graph.edges)],
         forbidden_pairs=sort!(collect(model.forbidden_pairs)),
         policy=policy.policy,
-        target_idx=policy.target_idx,
-        target_idxs=policy.target_idxs === nothing ? nothing : copy(policy.target_idxs),
+        # The keys keep the names checkpoints were written with, so those resume.
+        target_idx=policy.target_index,
+        target_idxs=policy.target_indices === nothing ? nothing : copy(policy.target_indices),
         terminal_counts=[spacecraft.n_terminal for spacecraft in args.dynamics_model.spacecraft],
     )
 end

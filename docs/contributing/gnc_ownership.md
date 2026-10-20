@@ -24,12 +24,12 @@ Existing module and type identities are retained, including historical
 `GuidanceHooks`, `RobotArmPlanning`, `HYPRUtils` and `NavigationHooks` bindings.
 The [HYPR contract](../src/reference/hypr_services.md) governs the external boundary.
 
-RPO has two integration paths. The public planner interface connects a planner
+RPO has one integration path. The public planner interface connects a planner
 to `RPOPlannerLifecycle`, which validates returned references before installing
-them in the buffer shared with one controller. The existing `RPOGuidanceModel`
-uses its HYPR configuration directly and remains available for existing studies.
-Their configuration and lifecycle assumptions must not be interchanged merely
-because both produce an `RPOPlan`. See the [public planner guide](../src/user/rpo_planner_pilot.md).
+them in the buffer shared with one controller. HYPR plans through it as
+`HYPRRPOPlanner`; the HYPR-specific `RPOGuidanceModel`, which used its HYPR
+configuration directly, was removed in 0.5.0. See the
+[public planner guide](../src/user/rpo_planner_pilot.md).
 
 The `navigation/` directory now contains the navigation extension hook. RPO
 reference and collision geometry lives in `planning/rpo/geometry/`; its defining

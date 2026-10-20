@@ -2872,12 +2872,10 @@ end
     return nothing
 end
 
-# The run position an effector is bound to: its `spacecraft_index`, or the older
-# `spacecraft_idx` that contributor models may still have; `nothing` when it has
-# neither.
+# The run position an effector is bound to: its `spacecraft_index`, or `nothing`
+# when it has none.
 @inline _effector_spacecraft_index(effector) =
-    hasproperty(effector, :spacecraft_index) ? getproperty(effector, :spacecraft_index) :
-    hasproperty(effector, :spacecraft_idx) ? getproperty(effector, :spacecraft_idx) : nothing
+    hasproperty(effector, :spacecraft_index) ? getproperty(effector, :spacecraft_index) : nothing
 
 # The plan an effector's arm tracks and the time (s into the run) its axis starts
 # from: the plan buffer's for an effector that reads one (`plan_buffer`, the
