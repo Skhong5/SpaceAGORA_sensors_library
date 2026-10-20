@@ -103,3 +103,10 @@ remain under dynamics. MuJoCo uses the engine's
 [external-propagation contract](../src/reference/external_propagation_services.md), which governs
 propagation ownership rather than planning. A Robotics grouping for companion
 checkouts does not transfer these core responsibilities to either companion.
+
+## Companion boundaries
+
+[Companion boundaries](companion_boundaries.md) lists, for HYPR, SpaceAGORAEDG and
+SpaceAGORAMuJoCo, the private SpaceAGORA paths that their tests and research
+scripts still use, the rules for moving them to supported calls, and the checks to
+run when you change a boundary.

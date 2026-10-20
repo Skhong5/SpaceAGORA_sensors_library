@@ -85,14 +85,21 @@ link_terminal(::LaserTerminal) = true
 
 """
     terminal_supports(terminal, link) -> Bool
+    terminal_supports(terminal, link, side) -> Bool
 
 Whether the terminal hardware `terminal` (a mounted actuator with
-`link_terminal`) can carry `link`; `register_link!` refuses a link that either
+`link_terminal`) can carry `link`. `register_link!` refuses a link that either
 endpoint's terminal cannot carry. A virtual terminal carries every kind.
-Default: true; a `LaserTerminal` carries `LaserMomentumLink`, and other kinds
-only when they add a method.
+
+- `side` is the end the terminal would take: `:transmitter` or `:receiver` for a
+  directed link, `:either` for an undirected one. A kind whose terminals work
+  one way implements the three-argument form.
+- Default: the two-argument form, which is true. A `LaserTerminal` carries
+  `LaserMomentumLink` and transmits a `PowerBeamLink`; a `PowerReceiver`
+  receives a `PowerBeamLink`. Other kinds need a method of their own.
 """
 terminal_supports(terminal, link) = true
+terminal_supports(terminal, link, side::Symbol) = terminal_supports(terminal, link)
 terminal_supports(::LaserTerminal, link) = false
 
 """

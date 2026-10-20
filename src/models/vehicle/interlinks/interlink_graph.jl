@@ -2,7 +2,7 @@ module InterLinkModels
 
 	using LinearAlgebra
 	using StaticArrays
-	using ..Components: LaserTerminal, _SPEED_OF_LIGHT_MPS
+	using ..Components: LaserTerminal, PowerReceiver, _SPEED_OF_LIGHT_MPS
 	using ..AbstractTypes: AbstractActuator
 	using ..EffectorSampling: StateSample
 	using ..HookDeprecation: _hook_deprecation, _NOT_PASSED
@@ -10,11 +10,13 @@ module InterLinkModels
 	export AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
 	export link_directed, link_terminal_levels, link_terminal, terminal_supports, terminal_count
 	export register_links!, all_pairs, same_plane_pairs, ring_pairs, grid_pairs
+	export PowerBeamLink, link_received_power_w, beam_spot_radius_m, beam_capture_fraction
 	export InterlinkModel, InterLinkGraph, register_link!, update_availability!, interlink_force_on_spacecraft
 	export vertex, InterLinkKey, InterLinkHistory
 	export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!
 
 	include(joinpath(@__DIR__, "links.jl"))
+	include(joinpath(@__DIR__, "power_links.jl"))
 
 	const vertex = Tuple{Int, Int} # (spacecraft vector index, terminal number)
 	const InterLinkKey = Tuple{vertex, vertex} # Canonically ordered pair of terminal endpoints
@@ -143,15 +145,16 @@ module InterLinkModels
 		first_endpoint[1] != second_endpoint[1] || throw(ArgumentError("An interlink must join different spacecraft."))
 
 		# ii) Rule 2: Both terminals must be valid for their spacecraft and able to carry the link.
-		endpoints = map((first_endpoint, second_endpoint)) do (satellite, terminal)
+		sides = link_directed(link) ? (:transmitter, :receiver) : (:either, :either)
+		endpoints = map((first_endpoint, second_endpoint), sides) do (satellite, terminal), side
 			1 <= satellite <= length(spacecraft) || throw(ArgumentError("Invalid spacecraft vector index $satellite."))
 			number = _terminal_number(spacecraft[satellite], terminal)
 			1 <= number <= terminal_count(spacecraft[satellite]) ||
 				throw(ArgumentError("Invalid terminal $number on spacecraft $satellite."))
 			device = _terminal_device(spacecraft[satellite], number)
-			device === nothing || terminal_supports(device, link) || throw(ArgumentError(
+			device === nothing || terminal_supports(device, link, side) || throw(ArgumentError(
 				"Terminal $number of spacecraft $satellite, a $(nameof(typeof(device))), cannot carry a " *
-				"$(nameof(typeof(link))) (terminal_supports)."))
+				"$(nameof(typeof(link)))$(side === :either ? "" : " as its $(side)") (terminal_supports)."))
 			(Int(satellite), number)
 		end
 

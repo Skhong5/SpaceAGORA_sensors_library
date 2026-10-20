@@ -3626,7 +3626,7 @@ function _apply_power_rhs!(du, u, p, t::Float64)
             du.sc[i].battery_wh = 0.0
             continue
         end
-        snap = SimulationModel.SimulationCallbacks._power_snapshot(u.sc[i], sc, p, i, t)
+        snap = SimulationModel.SimulationCallbacks._power_snapshot(u.sc[i], sc, p, i, t; state=u)
         du.sc[i].battery_wh = SimulationModel.battery_rate_wh_s(SimulationModel.battery(sc), snap.net_w)
     end
     return nothing

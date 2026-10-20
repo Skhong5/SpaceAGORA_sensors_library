@@ -327,6 +327,31 @@ env(fixture, name="env") = joinpath(fixture.temporary, name)
     end
 end
 
+@testset "The core's own test project stays out of a contributor environment" begin
+    # The core tests itself from test/Project.toml, with tools such as Aqua that a
+    # contributor repository does not declare. The environment takes the
+    # repository's dependencies only, and develops the core and the repository once.
+    contributor_fixture() do fixture
+        core_tests = Dict("deps" => Dict("SpaceAGORA" => CORE_UUID, "Test" => TEST_UUID,
+                                         "Aqua" => "4c88cf16-eb10-579e-8560-4a9242c79595"),
+                          "sources" => Dict("SpaceAGORA" => Dict("path" => "..")),
+                          "compat" => Dict("Aqua" => "0.8.14"))
+        write_toml(joinpath(fixture.core, "test", "Project.toml"), core_tests)
+        fixture_run("-C", fixture.core, "add", joinpath("test", "Project.toml"))
+        fixture_run("-C", fixture.core, "commit", "--quiet", "-m", "Fixture core test project")
+        rev = fixture_read("-C", fixture.core, "rev-parse", "HEAD")
+        with_pin(fixture, d -> d["rev"] = rev) do
+            for kind in ("project", "package")
+                p = plan(kind, fixture.repo, env(fixture); root=fixture.core, rev)
+                @test p.project["deps"] == Dict("SpaceAGORA" => CORE_UUID, "Test" => TEST_UUID, "MyStudy" => fixture.project["uuid"])
+                @test p.project["sources"] == Dict("SpaceAGORA" => Dict("path" => fixture.core), "MyStudy" => Dict("path" => fixture.repo))
+                @test p.project["compat"] == Dict("julia" => "~1.12", "SpaceAGORA" => "0.2")
+                @test p.developed == [fixture.core, fixture.repo]
+            end
+        end
+    end
+end
+
 @testset "Internal-name scan" begin
     internal = [
         ("SpaceAGORA.SimulationModel.Planets", 1, "SpaceAGORA.SimulationModel"),

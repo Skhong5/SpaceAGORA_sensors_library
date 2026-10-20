@@ -259,11 +259,14 @@ isolated development environment, terminal, from the repository root:
 
 ```sh
 julia --startup-file=no scripts/setup_edg.jl /path/to/edg-test-env
-julia --startup-file=no --project=/path/to/edg-test-env test/runtests.jl
+julia --startup-file=no test/setup.jl
+SPACEAGORA_EDG_TEST_ENV=/path/to/edg-test-env julia --startup-file=no --project=test test/runtests.jl
 ```
 
-The test setup retains the core's dependency versions and leaves its tracked
-project files unchanged. `SPACEAGORA_EDG_PATH=/absolute/path/to/SpaceAGORAEDG.jl`
+The tests run in the repository's test environment, which holds the test tools;
+the EDG environment is added as the provider. Both setups retain the core's
+dependency versions and leave its tracked project files unchanged.
+`SPACEAGORA_EDG_PATH=/absolute/path/to/SpaceAGORAEDG.jl`
 is an explicit development override for this test helper; it is not a release
 pin. Full suites may require the other documented optional packages and assets.
 

@@ -104,17 +104,29 @@ function _interlink_checkpoint_configuration(args)
         terminal_counts=[spacecraft.n_terminal for spacecraft in args.dynamics_model.spacecraft],
     )
     # Terminal numbers past `n_terminal` name mounted terminal hardware, so a run
-    # with any records each spacecraft's terminal kinds, in order and named as
-    # link kinds are; a run without keeps the configuration it had before
-    # hardware terminals.
-    hardware = [_mounted_terminal_kinds(spacecraft) for spacecraft in args.dynamics_model.spacecraft]
+    # with any records each spacecraft's terminals, in order; a run without keeps
+    # the configuration it had before hardware terminals.
+    hardware = [_mounted_terminal_identities(spacecraft) for spacecraft in args.dynamics_model.spacecraft]
     all(isempty, hardware) && return configuration
     return merge(configuration, (hardware_terminals=hardware,))
 end
 
-_mounted_terminal_kinds(spacecraft::SimulationModel.SpacecraftModel) =
-    Any[_interlink_kind_identity(typeof(entry.terminal)) for entry in SimulationModel.mounted_link_terminals(spacecraft)]
-_mounted_terminal_kinds(spacecraft) = Any[]
+_mounted_terminal_identities(spacecraft::SimulationModel.SpacecraftModel) =
+    Any[_interlink_terminal_identity(entry.terminal) for entry in SimulationModel.mounted_link_terminals(spacecraft)]
+_mounted_terminal_identities(spacecraft) = Any[]
+
+# A terminal's identity is its kind, named as link kinds are, and every one of
+# its fields, encoded as type parameters are: a float with its bits, a composite
+# bits value (an `SVector`) field by field. Its fields set what its links do (a
+# receiver's aperture, efficiency and limit, a transmitter's efficiency and
+# limits), and the pointing models to come will read the rest, so a rebuilt
+# terminal with any other value refuses the checkpoint.
+function _interlink_terminal_identity(terminal)
+    kind = typeof(terminal)
+    names = fieldnames(kind)
+    return (kind=_interlink_kind_identity(kind),
+        fields=NamedTuple{names}(map(name -> _interlink_kind_parameter(getfield(terminal, name)), names)))
+end
 
 function _interlink_checkpoint_runtime_state(args, is_active)
     args.interlink_model === nothing && return nothing

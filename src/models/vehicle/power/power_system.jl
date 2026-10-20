@@ -11,7 +11,7 @@ module PowerSystems
 
 using LinearAlgebra
 using StaticArrays
-using ..Components: SolarArray, Battery, PowerLoad, ReactionWheel, Magnetorquer, LaserTerminal
+using ..Components: SolarArray, Battery, PowerLoad, ReactionWheel, Magnetorquer, LaserTerminal, PowerReceiver
 using ..SpacecraftModels: Link, SpacecraftModel
 using ..ActuatorMounting: actuator_context, applied_actuator_levels, mounted_actuators, mounted_thruster_count,
     mounted_wheel_count, mounted_magnetorquer_count, mounted_laser_count
@@ -63,9 +63,10 @@ end
 """Whether `model` carries a battery, whose stored energy the engine integrates."""
 has_battery(model::SpacecraftModel)::Bool = !isempty(model.root.batteries)
 
-"""Whether `model` carries any power-system part."""
+"""Whether `model` carries any power-system part: a battery, a solar array, a load, or a `PowerReceiver`."""
 has_power_parts(model::SpacecraftModel)::Bool = has_battery(model) ||
-    any(link -> !isempty(link.solar_arrays) || !isempty(link.power_loads), model.links)
+    any(link -> !isempty(link.solar_arrays) || !isempty(link.power_loads) ||
+        any(actuator -> actuator isa PowerReceiver, link.custom_actuators), model.links)
 
 """The spacecraft's battery, or `nothing`."""
 battery(model::SpacecraftModel) = has_battery(model) ? model.root.batteries[1] : nothing

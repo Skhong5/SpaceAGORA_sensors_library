@@ -86,6 +86,7 @@ using .SimulationModel: InterlinkModel, InterLinkGraph, InterLinkKey, InterLinkH
 using .SimulationModel: link_directed, link_terminal_levels, link_terminal, terminal_supports, terminal_count
 using .SimulationModel: register_links!, all_pairs, mounted_link_terminals, terminal_number
 using .SimulationModel: same_plane_pairs, ring_pairs, grid_pairs
+using .SimulationModel: PowerBeamLink, link_received_power_w, beam_spot_radius_m, beam_capture_fraction
 using .SimulationModel: SchedulingPolicyModel, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
 using .SimulationModel: ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
 export AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
@@ -93,6 +94,7 @@ export InterlinkModel, InterLinkGraph, InterLinkKey, InterLinkHistory, register_
 export link_directed, link_terminal_levels, link_terminal, terminal_supports, terminal_count
 export register_links!, all_pairs, mounted_link_terminals, terminal_number
 export same_plane_pairs, ring_pairs, grid_pairs
+export PowerBeamLink, link_received_power_w, beam_spot_radius_m, beam_capture_fraction
 export SchedulingPolicyModel, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
 export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
 @doc (@doc SimulationModel.InterLinkModels.AbstractInterlink) AbstractInterlink
@@ -116,6 +118,10 @@ export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!,
 @doc (@doc SimulationModel.InterLinkModels.register_links!) register_links!
 @doc (@doc SimulationModel.InterLinkModels.all_pairs) all_pairs
 @doc (@doc SimulationModel.InterLinkModels.same_plane_pairs) same_plane_pairs
+@doc (@doc SimulationModel.InterLinkModels.PowerBeamLink) PowerBeamLink
+@doc (@doc SimulationModel.InterLinkModels.link_received_power_w) link_received_power_w
+@doc (@doc SimulationModel.InterLinkModels.beam_spot_radius_m) beam_spot_radius_m
+@doc (@doc SimulationModel.InterLinkModels.beam_capture_fraction) beam_capture_fraction
 @doc (@doc SimulationModel.InterLinkModels.ring_pairs) ring_pairs
 @doc (@doc SimulationModel.InterLinkModels.grid_pairs) grid_pairs
 @doc (@doc SimulationModel.InterlinkTerminals.mounted_link_terminals) mounted_link_terminals
@@ -347,7 +353,7 @@ using .SimulationModel: control_thruster_levels, touchdown_spec
 using .SimulationModel: getHeatRate
 using .SimulationModel: update_control!, update_guidance!, update_navigation!
 # Actuators: the contract (Actuators), the thruster kind (Components) and mounting (ActuatorMounting).
-using .SimulationModel: Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
+using .SimulationModel: Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PowerReceiver, PanelHinge, ActuatorContext
 using .SimulationModel: ThrusterGimbal, thrust_direction
 using .SimulationModel: ControlMomentGyro, cmg_momentum, cmg_torque_axis, cmg_angle_saturate, cmg_steering
 using .SimulationModel: CMGInnerGimbal, cmg_torque_axes
@@ -447,6 +453,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.ReactionWheel) ReactionWheel
 @doc (@doc SimulationModel.Magnetorquer) Magnetorquer
 @doc (@doc SimulationModel.LaserTerminal) LaserTerminal
+@doc (@doc SimulationModel.PowerReceiver) PowerReceiver
 @doc (@doc SimulationModel.PanelHinge) PanelHinge
 @doc (@doc SimulationModel.ThrusterGimbal) ThrusterGimbal
 @doc (@doc SimulationModel.thrust_direction) thrust_direction
@@ -782,7 +789,7 @@ export control_wrench, control_propellant_rate, control_wheel_torque
 export control_thruster_levels, touchdown_spec, bind_spacecraft
 export getHeatRate
 export update_control!, update_guidance!, update_navigation!
-export AbstractActuator, Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
+export AbstractActuator, Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PowerReceiver, PanelHinge, ActuatorContext
 export ThrusterGimbal, thrust_direction
 export ControlMomentGyro, cmg_momentum, cmg_torque_axis, cmg_angle_saturate, cmg_steering
 export CMGInnerGimbal, cmg_torque_axes
