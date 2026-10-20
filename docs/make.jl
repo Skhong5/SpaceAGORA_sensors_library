@@ -31,6 +31,7 @@ const API_REFERENCE_PAGES = (
     (section="Model Extension Hooks", title="Extension Hooks API", file="extension_hooks_api.md"),
     (section="Deprecated hooks", title="Deprecated Hooks API", file="deprecated_hooks_api.md"),
     (section="Contributor conformance", title="Contributor Conformance API", file="contributor_conformance_api.md"),
+    (section="Interlinks", title="Interlinks API", file="interlinks_api.md"),
 )
 const BUILD_DIR = joinpath(@__DIR__, "build")
 const PUBLIC_API_REPORT = joinpath(BUILD_DIR, "undocumented_public_exports.txt")
@@ -331,6 +332,7 @@ makedocs(
             "Extension Hooks API" => "generated/extension_hooks_api.md",
             "Deprecated Hooks API" => "generated/deprecated_hooks_api.md",
             "Contributor Conformance API" => "generated/contributor_conformance_api.md",
+            "Interlinks API" => "generated/interlinks_api.md",
         ],
     ],
     doctest = true,
