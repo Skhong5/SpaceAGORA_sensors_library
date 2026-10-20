@@ -488,7 +488,9 @@ a resumed run starts a guidance, navigation or control model's own state from
 its reset, and a sensor's from what the sensor object holds. The conformance
 check `checkpoint_round_trip` (added in 0.4.0) compares a run resumed from a
 checkpoint with an uninterrupted one, so it finds run state the two methods
-leave out.
+leave out; it is required from 0.5.0. The control and actuator templates
+(`templates/control_hook_template.jl`, `templates/actuator_template.jl`)
+implement both methods for the command they hold.
 
 The built-in models that keep run state implement them: the momentum manager,
 the Apollo descent guidance and control, the periapsis-raise guidance, the burn

@@ -48,6 +48,16 @@ function SpaceAGORA.update_control!(c::ExampleNozzleController, u, p, t::Float64
     return nothing
 end
 
+# The held levels are run state: saved at a checkpoint as plain data and put back
+# when a run resumes from the checkpoint file, so the resumed run holds the same
+# levels until its next tick. The conformance check `checkpoint_round_trip` tests
+# this; it is required from SpaceAGORA 0.5.0.
+SpaceAGORA.checkpoint_state(c::ExampleNozzleController) = (levels=copy(c.levels),)
+function SpaceAGORA.restore_checkpoint_state!(c::ExampleNozzleController, data)
+    copy!(c.levels, data.levels)
+    return nothing
+end
+
 # Mounting, for a spacecraft `sc` and one of its links:
 #     add_actuator!(sc, sc.root, ExampleColdGasNozzle(SVector(1.0, 0.0, 0.0), SVector(0.0, 0.0, 0.0), 0.5, 60.0))
 # and the controller goes in ControlModel(control_effectors=(ExampleNozzleController(1, [0.1]),), ...).
