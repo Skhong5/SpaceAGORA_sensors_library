@@ -216,6 +216,9 @@ function get_callbacks(
     end
     # First among the discrete callbacks that follow: later ones read the synced shadow entries.
     owned_mask === nothing || (callbacks = _append_callback(callbacks, get_external_propagation_callback(num_sats)))
+    # Before every callback that ticks or reads the hinges, gimbals and firing
+    # thrusters: their run state starts the run.
+    callbacks = _append_callbacks(callbacks, get_run_state_callbacks(num_sats, args))
 
     callbacks = _append_callbacks(callbacks, priority_callbacks)
 

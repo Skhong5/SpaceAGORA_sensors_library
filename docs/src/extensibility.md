@@ -334,6 +334,13 @@ The built-in kinds:
   double-gimbal CMG's two torque axes and `cmg_steering` solves for every
   gimbal.
 
+The hinges' and gimbals' angles and the firing state of thrusters with firing
+dynamics are run state the control ticks change. Like a battery's flags and
+the actuators' faults, they start each run as configured, so two runs of one
+configuration with `isolate_state=false` start equal. A value changed between
+two runs, after the last control tick, is kept, and later runs start from it.
+A run resumed from a checkpoint continues the checkpoint's values.
+
 The actuators' power feeds the spacecraft's power budget when it carries one:
 solar arrays, a battery and constant loads mounted with `add_power!`. See
 [Powering a Spacecraft](user/power_budget.md).
