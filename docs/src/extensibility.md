@@ -33,7 +33,7 @@ receives, frames, units, signs and names. The
 [Extension Hook Reference](generated/extension_hook_reference.md) lists each
 hook with its shape, signature and fallback, and
 [Migrating Extension Hooks](reference/migrating_extension_hooks.md) maps the
-deprecated names to their replacements. Each section below names its hooks'
+old names to their replacements. Each section below names its hooks'
 shape and links its rows in the reference.
 
 Do not build new extensions by importing internal modules directly unless you
@@ -79,8 +79,6 @@ state/environment data into the effector; `x.spacecraft_index` is the
 spacecraft's position in the run. Type the sample `x::SpaceAGORA.StateSample`,
 or leave it untyped
 ([the supported sample argument](reference/extension_conventions.md#The-supported-sample-argument)).
-The deprecated `calcForceTorque(model, x, p, i)` still runs, with a warning
-before the run; see [Migrating Extension Hooks](reference/migrating_extension_hooks.md#Force-and-torque-models).
 Override `solver_partition` only if the effector should move to the implicit
 side of `split_imex`; the default is `:explicit`.
 Override the gravity-backbone hooks only if the effector should participate in
@@ -170,12 +168,8 @@ The three output hooks return the held command at every right-hand-side
 evaluation, and `x.spacecraft_index` is the spacecraft's position in the run.
 `control_propellant_rate` returns the propellant used, **positive**. An effector
 that uses no propellant, or drives no wheel, leaves out
-`control_propellant_rate` or `control_wheel_torque`.
-
-The deprecated `calcControlEffect!`, `calcControlForceTorque`,
-`calcControlMassFlowRate` and `calcReactionWheelTorque` still run, with a
-warning before the run. The mass-rate hook's sign changes with its name; see
-[Migrating Extension Hooks](reference/migrating_extension_hooks.md#Control-outputs).
+`control_propellant_rate` or `control_wheel_torque`: their defaults return
+`0.0` and `nothing`.
 
 A controller also declares what it acts on and what it assumes
 (`spacecraft_scope`, `gnc_period_s`, `skip_inactive`, `held_command`), can
@@ -237,9 +231,7 @@ its measurements or updates its estimate; a guidance effector updates a plan,
 a target or a mode; each keeps the result in its own state for the control
 effectors to read. When ticks coincide, navigation runs first, then control,
 then guidance; energy depletion guidance with targeting runs before control
-instead. The deprecated `calcGuidanceEffect!` and
-`calcNavigationEffect!` still run, with a warning before the run; see
-[Migrating Extension Hooks](reference/migrating_extension_hooks.md#GNC-ticks).
+instead.
 
 Registration:
 
@@ -496,7 +488,9 @@ a resumed run starts a guidance, navigation or control model's own state from
 its reset, and a sensor's from what the sensor object holds. The conformance
 check `checkpoint_round_trip` (added in 0.4.0) compares a run resumed from a
 checkpoint with an uninterrupted one, so it finds run state the two methods
-leave out.
+leave out; it is required from 0.5.0. The control and actuator templates
+(`templates/control_hook_template.jl`, `templates/actuator_template.jl`)
+implement both methods for the command they hold.
 
 The built-in models that keep run state implement them: the momentum manager,
 the Apollo descent guidance and control, the periapsis-raise guidance, the burn

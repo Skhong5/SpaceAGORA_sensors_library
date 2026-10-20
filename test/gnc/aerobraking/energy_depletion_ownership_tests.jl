@@ -302,8 +302,8 @@ end
     @test refused(EDGOwnershipChecks.OWNER*"targeting.jl","const reverse = ControlHooks")
     @test refused(EDGOwnershipChecks.OWNER*"targeting.jl","rotate_link(link, axis, angle)")
     @test refused(EDGOwnershipChecks.OWNER*"targeting.jl","link.α = 0.0")
-    # A tick call is refused under the new name and under the deprecated one.
-    for tick in ("update_control!", "update_guidance!", "calcControlEffect!", "calcGuidanceEffect!")
+    # A tick call is refused.
+    for tick in ("update_control!", "update_guidance!")
         @test refused(EDGOwnershipChecks.OWNER*"targeting.jl", "$(tick)(model, u, p, t, i)")
     end
     @test refused("src/models/gnc/guidance/aerobraking/typed_edg/guidance_models.jl","_control_module()._edg_prediction_time_grid(1.0)")

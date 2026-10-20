@@ -690,13 +690,12 @@ function run_simulation(
         record_saved_values=return_results
     ) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
     if args.interlink_model !== nothing
-        callbacks = CallbackSet(callbacks, SimulationModel.interlink_scheduler_callback(
-            candidate_force=SimulationModel.force_on_endpoint))
+        callbacks = CallbackSet(callbacks, SimulationModel.interlink_scheduler_callback())
     end
     ephemerides_model = args.environment_model.ephemerides_model
-    et_start = SimulationModel.EphemeridesModels._ephemerides_epoch_seconds(ephemerides_model, args.initial_time)
+    et_start = SimulationModel.EphemeridesModels.ephemerides_epoch_seconds(ephemerides_model, args.initial_time)
     p.shared_buffers.et_start[] = et_start
-    args.environment_model.planet.L_PI .= SimulationModel.EphemeridesModels._ephemerides_frame_lpi(ephemerides_model, args.environment_model.planet, et_start)
+    args.environment_model.planet.L_PI .= SimulationModel.EphemeridesModels.ephemerides_frame_lpi(ephemerides_model, args.environment_model.planet, et_start)
     if SimulationModel.ephemerides_requires_spice(ephemerides_model)
         Base.Threads.atomic_add!(p.shared_buffers.spice_runtime_counters.planet_pxform_runtime_calls, 1)
     end

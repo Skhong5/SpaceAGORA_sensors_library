@@ -2,6 +2,7 @@ module SchedulingPolicies
 
 using LinearAlgebra
 using ..InterLinkModels
+using ..InterLinkModels: link_endpoint_forces
 
 export SchedulingPolicyModel, score_candidates!
 export select_interlinks!, schedule_interlinks!
@@ -61,7 +62,7 @@ mutable struct SchedulingPolicyModel
 end
 
 # 1.2. Create and maintain the dynamic-programming workspace.
-function matching_workspace!(model::ConstellationInterLinkModel, policy::SchedulingPolicyModel)
+function matching_workspace!(model::InterlinkModel, policy::SchedulingPolicyModel)
 	graph = model.graph
 	vertices, edges = length(graph.vertices), length(graph.edges)
 	work = policy.matching
@@ -81,9 +82,19 @@ function matching_workspace!(model::ConstellationInterLinkModel, policy::Schedul
 	return policy.matching
 end
 
+# The force candidate link `edge` puts on spacecraft `target_idx`: from the link's
+# `link_force`, or from a caller's `candidate_force(target, partner, link)`.
+function _candidate_force(candidate_force, model, edge::Int, target_idx::Int, partner_idx::Int, state, spacecraft, context)
+	candidate_force === nothing ||
+		return candidate_force(state.sc[target_idx], state.sc[partner_idx], model.graph.edge_properties[edge])
+	first_force, second_force = link_endpoint_forces(model, edge, state; spacecraft, context)
+	first_satellite = model.graph.vertices[model.graph.edges[edge][1]][1]
+	return target_idx == first_satellite ? first_force : second_force
+end
+
 # POLICY 1. Increase Target Satellite Semimajor Axis Rate
-function score_gve_sma!(model::ConstellationInterLinkModel, policy::SchedulingPolicyModel, state, mu::Real;
-	candidate_force)
+function score_gve_sma!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real;
+	candidate_force=nothing, spacecraft=nothing, context=LinkContext())
 	function semimajor_axis_rate(target, force, mu::Real)
 		semimajor_axis = inv(2 / norm(target.pos) - dot(target.vel, target.vel) / mu)
 		return 2 * semimajor_axis^2 / mu * dot(target.vel, force) / target.mass
@@ -108,7 +119,7 @@ function score_gve_sma!(model::ConstellationInterLinkModel, policy::SchedulingPo
 				end
 				target = state.sc[target_idx]
 				partner = state.sc[partner_idx]
-				force = candidate_force(target, partner, model.graph.edge_properties[index])
+				force = _candidate_force(candidate_force, model, index, target_idx, partner_idx, state, spacecraft, context)
 				score += semimajor_axis_rate(target, force, mu)
 			end
 		end
@@ -151,8 +162,8 @@ links to the same such target, because summing those norms is not the rate of
 the combined force. The scalar projected rate remains additive away from this
 near-circular branch. This restriction does not apply to the SMA policies.
 """
-function score_gve_eccentricity!(model::ConstellationInterLinkModel, policy::SchedulingPolicyModel, state, mu::Real;
-	candidate_force)
+function score_gve_eccentricity!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real;
+	candidate_force=nothing, spacecraft=nothing, context=LinkContext())
 	function eccentricity_rate(target, force, mu::Real)
 		position = target.pos
 		velocity = target.vel
@@ -183,7 +194,7 @@ function score_gve_eccentricity!(model::ConstellationInterLinkModel, policy::Sch
 				policy.target_idx === nothing || policy.target_idx == target_idx || continue
 				target = state.sc[target_idx]
 				partner = state.sc[partner_idx]
-				force = candidate_force(target, partner, model.graph.edge_properties[index])
+				force = _candidate_force(candidate_force, model, index, target_idx, partner_idx, state, spacecraft, context)
 				rate, near_circular = eccentricity_rate(target, force, mu)
 				score += rate
 				if near_circular && rate > 0
@@ -204,8 +215,8 @@ Score each available link by the SMA rate of its lower spacecraft vector index,
 regardless of altitude or registration order. The target is chosen per pair,
 so `policy.target_idx` is ignored. Nonpositive scores are excluded by the matcher.
 """
-function score_gve_sma_first_index!(model::ConstellationInterLinkModel, policy::SchedulingPolicyModel, state, mu::Real;
-	candidate_force)
+function score_gve_sma_first_index!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real;
+	candidate_force=nothing, spacecraft=nothing, context=LinkContext())
 	isfinite(mu) && mu > 0 || throw(ArgumentError("The gravitational parameter must be finite and positive."))
 	work = matching_workspace!(model, policy)
 	for index in eachindex(model.graph.edges)
@@ -215,7 +226,7 @@ function score_gve_sma_first_index!(model::ConstellationInterLinkModel, policy::
 			target_idx, partner_idx = minmax(key[1][1], key[2][1])
 			target = state.sc[target_idx]
 			partner = state.sc[partner_idx]
-			force = candidate_force(target, partner, model.graph.edge_properties[index])
+			force = _candidate_force(candidate_force, model, index, target_idx, partner_idx, state, spacecraft, context)
 			semimajor_axis = inv(2 / norm(target.pos) - dot(target.vel, target.vel) / mu)
 			score = 2 * semimajor_axis^2 / mu * dot(target.vel, force) / target.mass
 		end
@@ -226,16 +237,18 @@ function score_gve_sma_first_index!(model::ConstellationInterLinkModel, policy::
 end
 
 # 2.2. Define the function to score candidate interlinks based on the scheduling policy
-function score_candidates!(model::ConstellationInterLinkModel, policy::SchedulingPolicyModel, state, mu::Real;
+# The scores follow each link's `link_force` (`candidate_force=nothing`), or a
+# caller's `candidate_force(target, partner, link)` giving the force on `target`.
+function score_candidates!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real;
 	# compute the score of each interlink based on the scheduling policy / scoring policy
 	# resulting scores will be stored in the policy's workspace
-	candidate_force)
+	candidate_force=nothing, spacecraft=nothing, context=LinkContext())
 	if policy.policy === :gve_sma
-		return score_gve_sma!(model, policy, state, mu; candidate_force)
+		return score_gve_sma!(model, policy, state, mu; candidate_force, spacecraft, context)
 	elseif policy.policy === :gve_eccentricity
-		return score_gve_eccentricity!(model, policy, state, mu; candidate_force)
+		return score_gve_eccentricity!(model, policy, state, mu; candidate_force, spacecraft, context)
 	elseif policy.policy === :gve_sma_first_index
-		return score_gve_sma_first_index!(model, policy, state, mu; candidate_force)
+		return score_gve_sma_first_index!(model, policy, state, mu; candidate_force, spacecraft, context)
 	end
 	throw(ArgumentError("Unsupported scheduling policy: $(policy.policy)."))
 end
@@ -292,7 +305,7 @@ end
 
 
 """
-	select_interlinks!(model::ConstellationInterLinkModel, policy::SchedulingPolicyModel)
+	select_interlinks!(model::InterlinkModel, policy::SchedulingPolicyModel)
 
 Activate a maximum-total-score matching of available, positive-score links,
 with at most one link per terminal. Topology belongs to `model.graph`; `policy.matching`
@@ -316,7 +329,7 @@ Tree components work without Python. Cyclic components require the optional
 PythonCall package loaded with `using PythonCall`, and NetworkX installed in the
 Python environment used by PythonCall. Core loading does not install either backend.
 """
-function select_interlinks!(model::ConstellationInterLinkModel, policy::SchedulingPolicyModel)
+function select_interlinks!(model::InterlinkModel, policy::SchedulingPolicyModel)
 	# Step 1. Collect available, positive-score edges in canonical endpoint order.
 	work = matching_workspace!(model, policy)
 	empty!(work.candidates)
@@ -387,13 +400,13 @@ function select_interlinks!(model::ConstellationInterLinkModel, policy::Scheduli
 end
 
 # 4. Overall scheduling function to schedule interlinks based on the current state and scoring policy
-function schedule_interlinks!(model::ConstellationInterLinkModel, policy::SchedulingPolicyModel,
-	spacecraft, state, mu::Real; candidate_force, is_active=nothing)
+function schedule_interlinks!(model::InterlinkModel, policy::SchedulingPolicyModel,
+	spacecraft, state, mu::Real; candidate_force=nothing, is_active=nothing, context=LinkContext())
 	# step 1. update the availability of each interlink based on the current state
-	update_availability!(model, spacecraft, state; is_active)
+	update_availability!(model, spacecraft, state; is_active, context)
 
 	# step 2. compute the score of each interlink based on the scheduling policy / scoring policy
-	score_candidates!(model, policy, state, mu; candidate_force)
+	score_candidates!(model, policy, state, mu; candidate_force, spacecraft, context)
 
 	# step 3. select the best set of interlinks based on the current scores
 	return select_interlinks!(model, policy)

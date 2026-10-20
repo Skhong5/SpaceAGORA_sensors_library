@@ -96,13 +96,30 @@ mutable struct BurnFor <: SpaceAGORA.AbstractControlEffectorModel
     thrust_n::Float64           # commanded thrust while burning, N
     burn_s::Float64             # burn duration, s
     levels::Vector{Float64}     # one level per mounted actuator, held between ticks
+    initial_levels::Vector{Float64}  # the levels each run starts from
 end
+
+# Built with one vector of levels: each run starts from a copy of it.
+BurnFor(thrust_n, burn_s, levels) = BurnFor(thrust_n, burn_s, collect(Float64, levels), collect(Float64, levels))
 
 SpaceAGORA.actuation_mode(::BurnFor) = :mounted
 SpaceAGORA.actuator_levels(c::BurnFor, spacecraft_index::Int) = c.levels
 
 function SpaceAGORA.update_control!(c::BurnFor, u, p, t::Float64, spacecraft_index::Int)
     c.levels[1] = t < c.burn_s ? c.thrust_n : 0.0
+    return nothing
+end
+
+# At each run's start, the levels the controller was built with.
+function SpaceAGORA.initialize_control!(c::BurnFor, u, p, t)
+    copy!(c.levels, c.initial_levels)
+    return nothing
+end
+
+# The held levels through a checkpoint: saved with it, put back on a resumed run.
+SpaceAGORA.checkpoint_state(c::BurnFor) = (levels=copy(c.levels),)
+function SpaceAGORA.restore_checkpoint_state!(c::BurnFor, data)
+    copy!(c.levels, data.levels)
     return nothing
 end
 
@@ -169,8 +186,15 @@ derive those from the actuators mounted on the spacecraft, at the levels
 (thrusters, wheels, torque rods, laser terminals, hinges, thruster gimbals and
 control moment gyros come first, then kinds of your own). The engine calls `actuator_levels` at every evaluation of
 the equations of motion, so `update_control!` computes the levels at each
-control tick and the method returns stored values. The initial levels are
-held until the first tick, one control period after the start.
+control tick and the method returns stored values. Each run starts from
+`initial_levels`, the levels the controller was built with:
+`initialize_control!` copies them into `levels`, so a second run on the same
+controller starts as the first did. They are held until the first tick, one
+control period after the start. `checkpoint_state` and
+`restore_checkpoint_state!` carry the held levels through a checkpoint, so a run
+resumed from a checkpoint file holds the levels the uninterrupted run held until
+its next tick (see
+[Run state in checkpoint files](../extensibility.md#Run-state-in-checkpoint-files)).
 
 **Force in the body frame, applied in inertial space.** The nozzle pushes along
 body +x. The engine rotates the force with the current attitude at every

@@ -3,7 +3,7 @@
 module EDGServices
 using ..ConfigTypes: ODEParams
 using ..EnvironmentModels: getDensity, _environment_wind
-using ..EphemeridesModels: _ephemerides_frame_lpi
+using ..EphemeridesModels: ephemerides_frame_lpi
 using ..FrameTransforms: r_intor_p!, rtolatlong, latlongtoNED, rvtoorbitalelement
 using LinearAlgebra, StaticArrays
 
@@ -66,7 +66,7 @@ end
 function _edg_planet_frame_lpi(p::ODEParams, t_abs::Float64)
     planet = p.args.environment_model.planet
     ephemerides_model = p.args.environment_model.ephemerides_model
-    return _ephemerides_frame_lpi(ephemerides_model, planet, _edg_ephemeris_time(p, t_abs))
+    return ephemerides_frame_lpi(ephemerides_model, planet, _edg_ephemeris_time(p, t_abs))
 end
 
 function _edg_targeting_prediction_environment(p::ODEParams, r::SVector{3, Float64}, v::SVector{3, Float64}, t_abs::Float64)

@@ -327,8 +327,8 @@ end
             @test SimulationModel.environment_requirements(model).planet_frame
             @test SimulationModel.environment_requirements(model).atmosphere
             wrapped = dispatch_aero(model)
-            # Before the fix, real engine dispatch enters calcForceTorque for
-            # this wrapper and returns exactly zero torque. Calling only the
+            # Before the fix, real engine dispatch took the retired force hook
+            # for this wrapper and returned exactly zero torque. Calling only the
             # underlying pure wrench would miss that dispatch defect.
             @test norm(wrapped.torque) > 1e-12
             @test wrapped.f ≈ scale * reference.f atol=1e-16 rtol=1e-12
@@ -356,25 +356,6 @@ end
         @test reference.state.q_ib === nothing
         @test reference.torque == no_cop.torque == zero3
         @test reference.f == no_cop.f
-        # A direct call of the deprecated calcForceTorque warns and gives the
-        # force the dynamics apply. Under --depwarn=error, the probe drivers'
-        # setting, it throws instead (the pre-run check's unit tests check its
-        # value in a normal process).
-        if Base.JLOptions().depwarn == 2
-            err = try
-                SimulationModel.calcForceTorque(fm, reference.u.sc[1], reference.p, 1)
-                nothing
-            catch e
-                e
-            end
-            @test err isa ErrorException
-            @test err isa ErrorException && occursin("calcForceTorque(model, x, p, i) is deprecated", err.msg)
-        else
-            legacy_f, legacy_torque = @test_logs (:warn, r"is deprecated") match_mode=:any SimulationModel.calcForceTorque(
-                fm, reference.u.sc[1], reference.p, 1)
-            @test reference.f ≈ legacy_f atol=1e-16 rtol=1e-12
-            @test legacy_torque == zero3
-        end
 
         # Wrapped/unwrapped agreement holds, because orientation-off scenarios
         # already use the wrapper.

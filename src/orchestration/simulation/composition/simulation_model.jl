@@ -92,7 +92,7 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "spacecraft", 
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "spacecraft", "model.jl"))
 @reexport using .SpacecraftModels
 
-include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "spacecraft", "interlink_graph.jl"))
+include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "interlinks", "interlink_graph.jl"))
 @reexport using .InterLinkModels
 include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "control", "interlinks", "interlink_scheduling.jl"))
 @reexport using .SchedulingPolicies
@@ -130,7 +130,7 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "dynamics", "external_pro
 module FrameTransforms
 using ..Geodesy
 using ..OrbitalGeometry
-using ..EphemeridesModels: ephemerides_requires_spice, _ephemerides_frame_lpi
+using ..EphemeridesModels: ephemerides_requires_spice, ephemerides_frame_lpi
 include(joinpath(@__DIR__, "..", "..", "..", "foundation", "core", "interfaces", "reference_system.jl"))
 export _EARTH_HIGH_PREC_BODY_FIXED_FRAME, _EARTH_FALLBACK_BODY_FIXED_FRAME
 export _spice_lock, _spice_frame_lock, r_intor_p!, r_pintor_i

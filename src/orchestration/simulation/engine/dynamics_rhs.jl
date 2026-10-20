@@ -18,20 +18,20 @@
     return _force_torque_without_wrench(effector, sc_view, p, sat_idx)
 end
 
-# Models without `wrench`: a user model's own method of the deprecated
-# calcForceTorque, which the pre-run check warns about. The harmonics model has
-# `wrench` but is evaluated here, through its kernel with preallocated
-# workspaces (see `_wrench_method_available`).
-@inline _force_torque_without_wrench(effector, sc_view, p, sat_idx::Int) =
-    SimulationModel.calcForceTorque(effector, sc_view, p, sat_idx)
+# Models evaluated without `wrench`: the harmonics model, which has `wrench` but
+# is evaluated here, through its kernel with preallocated workspaces (see
+# `_wrench_method_available`). The pre-run check refuses any other model without
+# `wrench`, except a per-link model in a run that applies live-pose loads to
+# articulated spacecraft, which reaches it only through `link_wrench`.
+_force_torque_without_wrench(effector, sc_view, p, sat_idx::Int) = throw(ArgumentError(
+    "$(nameof(typeof(effector))) has no method wrench(model, x::StateSample, env::EnvironmentSample, t::Float64)."))
 @inline _force_torque_without_wrench(effector::SimulationModel.GravitationalHarmonicsModel, sc_view, p, sat_idx::Int) =
     SimulationModel.DynamicEffectors.PerturbationEffectors._harmonics_force_torque(effector, sc_view, p, sat_idx)
 
 # One effector's force on spacecraft `sat_idx` in the inertial frame, by the
-# route `_evaluate_dynamic_effector` takes (`wrench`, or the model's own
-# deprecated calcForceTorque, or the harmonics kernel), for callbacks that read
-# it, such as the accelerometer. Neither the right-hand side's environment
-# buffers nor the effector's caches are written.
+# route `_evaluate_dynamic_effector` takes (`wrench`, or the harmonics kernel),
+# for callbacks that read it, such as the accelerometer. Neither the right-hand
+# side's environment buffers nor the effector's caches are written.
 function _effector_force_ii(effector, sc_view, state_sample, p, sat_idx::Int, t::Float64)::SVector{3, Float64}
     if _wrench_method_available(effector)
         env = sample_environment(SimulationModel.environment_requirements(effector), effector, sc_view, p, sat_idx, t;
@@ -378,13 +378,20 @@ function _accumulate_control_effectors_from_tuple!(
     _clear_mounted_rates!(wheels)
     @inbounds for control_effector in control_effectors
         mounted = SimulationModel.actuation_mode(control_effector) === :mounted
+        # Each hook is called through a call-site `@noinline`, so it is compiled
+        # on its own, as a run-time-dispatched hook is, and LLVM fuses its
+        # StaticArrays arithmetic the same way in every caller (see
+        # `_evaluate_dynamic_effector`). A mounted effector's own checks of the
+        # state run before the sample is built.
         if mounted
             control_force, control_torque, control_mass_rate, _ = _mounted_control_effect(control_effector, sc_view, p, sat_idx, t)
+            x = _control_state_sample(sc_view, p, sat_idx)
         else
-            control_force, control_torque = _control_wrench(control_effector, sc_view, p, sat_idx, t)
-            control_mass_rate = _control_propellant_rate(control_effector, sc_view, p, sat_idx, t)
+            x = _control_state_sample(sc_view, p, sat_idx)
+            control_force, control_torque = @noinline SimulationModel.control_wrench(control_effector, x, p, t)
+            control_mass_rate = @noinline SimulationModel.control_propellant_rate(control_effector, x, p, t)
         end
-        rw_torque = _control_wheel_torque(control_effector, sc_view, p, sat_idx, t)
+        rw_torque = @noinline SimulationModel.control_wheel_torque(control_effector, x, p, t)
         # A mounted wrench holds only the mounted actuators; a wheel torque the
         # effector reports is still applied to the body, as in ideal actuation.
         (mounted && rw_torque !== nothing) && (control_torque = control_torque + SVector{3, Float64}(rw_torque))
@@ -3356,15 +3363,21 @@ end
     return nothing
 end
 
-function _apply_interlink_rhs!(derivative, state, parameters)
+# The forces of the selected interlinks, each from its link's `link_force`.
+_apply_interlink_rhs!(derivative, state, parameters) = _apply_interlink_rhs!(derivative, state, parameters, NaN)
+function _apply_interlink_rhs!(derivative, state, parameters, t)
     model = parameters.args.interlink_model
     model === nothing && return nothing
-    mu = parameters.args.environment_model.planet.μ
+    planet = parameters.args.environment_model.planet
+    mu = planet.μ
+    spacecraft = parameters.args.dynamics_model.spacecraft
+    context = SimulationModel.LinkContext(time_s=Float64(t), planet=planet)
     for satellite in eachindex(state.sc)
         parameters.is_active[satellite] || continue
         current = state.sc[satellite]
         current_derivative = derivative.sc[satellite]
-        force = SimulationModel.laser_force_on_spacecraft(model, state, satellite; is_active=parameters.is_active)
+        force = SimulationModel.interlink_force_on_spacecraft(model, state, satellite;
+            is_active=parameters.is_active, spacecraft, context)
         acceleration = force / current.mass
         current_derivative.vel .+= acceleration
         current_derivative.laser_dv .= acceleration
@@ -3436,7 +3449,7 @@ function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector,
     plan = _rhs_execution_plan(p.args, p, dynamic_effectors, length(spacecraft))
     if plan.mode == :flat_constellation_effector_queue
         _spacecraft_dynamics_flat_constellation_effector_queue!(du, u, p, t, plan; rhs_kind=:full)
-        return _apply_interlink_rhs!(du, u, p)
+        return _apply_interlink_rhs!(du, u, p, t)
     end
     effector_decision = plan.effector_decision
     use_rhs_batch = plan.mode != :serial && _rhs_batch_parallel_enabled(p, length(spacecraft))
@@ -3563,7 +3576,7 @@ function _spacecraft_dynamics_dispatch!(du::ComponentVector, u::ComponentVector,
             end
         end
     end
-    _apply_interlink_rhs!(du, u, p)
+    _apply_interlink_rhs!(du, u, p, t)
 end # function spacecraft_dynamics!
 
 function spacecraft_dynamics_slow!(du::ComponentVector, u::ComponentVector, p, t::Float64)

@@ -131,9 +131,8 @@ end
 
     @testset "wrench path: the live engine route, both field sources, guards" begin
         # Real simulations reach this effector through wrench(model, StateSample,
-        # EnvironmentSample, t) — _wrench_method_available short-circuits
-        # calcForceTorque — so the translational no-op guard that matters is the
-        # one in wrench, pinned here directly and end-to-end below.
+        # EnvironmentSample, t), so the translational no-op guard that matters is
+        # the one in wrench, pinned here directly and end-to-end below.
         ES = parentmodule(PE.StateSample)
         earth = PE.Earth()
         l_pi = SMatrix{3, 3, Float64, 9}(I)

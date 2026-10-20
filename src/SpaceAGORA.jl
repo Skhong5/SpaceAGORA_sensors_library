@@ -82,26 +82,37 @@ export AerodynamicCoefficientfM
 @doc (@doc SimulationModel.DynamicEffectors.AerodynamicEffectors.AerodynamicCoefficientfM) AerodynamicCoefficientfM
 using .SimulationModel: SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, GravitationalHarmonicsModel, make_example_config, make_three_body_spacecraft
 export SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, GravitationalHarmonicsModel, make_example_config, make_three_body_spacecraft
-using .SimulationModel: ConstellationInterLinkModel, InterLinkGraph, InterLinkParameters, InterLinkKey, InterLinkHistory
-using .SimulationModel: SchedulingPolicyModel, register_allowed_link!, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
-using .SimulationModel: force_on_endpoint, laser_force_on_spacecraft
-export ConstellationInterLinkModel, InterLinkGraph, InterLinkParameters, InterLinkKey, InterLinkHistory
-export SchedulingPolicyModel, register_allowed_link!, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
-export force_on_endpoint, laser_force_on_spacecraft
-@doc """Opt-in constellation terminal graph, forbidden spacecraft pairs, and accepted-step scheduling history. Attach it with `SimulationConfiguration(interlink_model=model, ...)`.""" ConstellationInterLinkModel
-@doc """Indexed terminal vertices, candidate edges, per-edge parameters and availability/selection flags. Register topology with `register_allowed_link!`.""" InterLinkGraph
-@doc """Per-link power `P` (W), laser magnification `B`, and maximum `range` (m); defaults are 10,000 W, 100, and 200,000 m.""" InterLinkParameters
+using .SimulationModel: AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
+using .SimulationModel: InterlinkModel, InterLinkGraph, InterLinkKey, InterLinkHistory, register_link!, interlink_force_on_spacecraft
+using .SimulationModel: SchedulingPolicyModel, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
+using .SimulationModel: ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
+export AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
+export InterlinkModel, InterLinkGraph, InterLinkKey, InterLinkHistory, register_link!, interlink_force_on_spacecraft
+export SchedulingPolicyModel, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
+export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
+@doc (@doc SimulationModel.InterLinkModels.AbstractInterlink) AbstractInterlink
+@doc (@doc SimulationModel.InterLinkModels.LinkContext) LinkContext
+@doc (@doc SimulationModel.InterLinkModels.LaserMomentumLink) LaserMomentumLink
+@doc (@doc SimulationModel.InterLinkModels.link_range_m) link_range_m
+@doc (@doc SimulationModel.InterLinkModels.link_available) link_available
+@doc (@doc SimulationModel.InterLinkModels.link_force) link_force
+@doc (@doc SimulationModel.InterLinkModels.InterlinkModel) InterlinkModel
+@doc (@doc SimulationModel.InterLinkModels.register_link!) register_link!
+@doc (@doc SimulationModel.InterLinkModels.interlink_force_on_spacecraft) interlink_force_on_spacecraft
+@doc (@doc SimulationModel.InterLinkModels.update_availability!) update_availability!
+@doc (@doc SimulationModel.InterLinkModels.ConstellationInterLinkModel) ConstellationInterLinkModel
+@doc (@doc SimulationModel.InterLinkModels.InterLinkParameters) InterLinkParameters
+@doc (@doc SimulationModel.InterLinkModels.register_allowed_link!) register_allowed_link!
+@doc """Indexed terminal vertices, candidate edges, the link of each edge (`edge_properties`) and availability/selection flags. Register candidates with `register_link!`.""" InterLinkGraph
 @doc """Canonically ordered pair of `(spacecraft array index, terminal number)` endpoints.""" InterLinkKey
 @doc """One accepted-step schedule sample: time in seconds and selected `InterLinkKey` values.""" InterLinkHistory
 @doc (@doc SimulationModel.SchedulingPolicies.SchedulingPolicyModel) SchedulingPolicyModel
-@doc """Register one allowed inter-spacecraft terminal pair and its `InterLinkParameters`; return its canonical key. Endpoints use array indices, not spacecraft ids.""" register_allowed_link!
-@doc (@doc SimulationModel.InterLinkModels.update_availability!) update_availability!
-@doc """Score available links using a `SchedulingPolicyModel`, current spacecraft state, gravitational parameter and `candidate_force` function.""" score_candidates!
+@doc """Score available links using a `SchedulingPolicyModel`, the current spacecraft state and the gravitational parameter, from each link's `link_force` (or a caller's `candidate_force(target, partner, link)`).""" score_candidates!
 @doc (@doc SimulationModel.SchedulingPolicies.select_interlinks!) select_interlinks!
 @doc """Refresh link availability, score candidates, and select the maximum-total-score terminal matching.""" schedule_interlinks!
 @doc """Create the accepted-step scheduler callback used automatically by `run_simulation` when interlinks are enabled.""" interlink_scheduler_callback
-@doc """Return the repulsive inertial laser force on one endpoint, with magnitude `B * P / c` and direction away from the other endpoint.""" force_on_endpoint
-@doc """Sum selected idealized laser-link forces on a spacecraft; optional `is_active` flags mask both endpoints.""" laser_force_on_spacecraft
+@doc (@doc SimulationModel.DynamicEffectors.LaserForceEffectors.force_on_endpoint) force_on_endpoint
+@doc (@doc SimulationModel.DynamicEffectors.LaserForceEffectors.laser_force_on_spacecraft) laser_force_on_spacecraft
 @doc (@doc SimulationModel.ExampleConfiguration.make_example_config) make_example_config
 @doc (@doc SimulationModel.ExampleConfiguration.make_three_body_spacecraft) make_three_body_spacecraft
 @doc """Dynamics model of a run: the spacecraft list and the tuple of force/torque effectors, `DynamicsModel([spacecraft], effectors)`.""" DynamicsModel
@@ -304,20 +315,18 @@ using .SimulationModel: SimpleEphemeridesModel
 using .SimulationModel.TerrainModels: AbstractTerrainModel, NoTerrainModel, DEMGrid, DEMTerrainModel
 using .SimulationModel.TerrainModels: terrain_height, terrain_radius, load_dem_grid, load_site_terrain, dem_grid_covers
 using .SimulationModel: make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
-using .SimulationModel: calcForceTorque, wrench, environment_requirements, solver_partition
+using .SimulationModel: wrench, environment_requirements, solver_partition
 using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleration_ii
 using .SimulationModel: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 using .SimulationModel: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState, plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
 using .SimulationModel: getDensity, getDensityBatch!, with_density_model_epoch
 using .SimulationModel: ephemerides_frame_lpi, ephemerides_sun_ii, ephemerides_epoch_seconds
 using .SimulationModel: ephemerides_requires_spice, ephemerides_cache_key
-using .SimulationModel: planet_frame_lpi, ephemerides_sun_direction_ii, ephemerides_time_seconds
 using .SimulationModel: DescentPhaseTargets, apollo11_descent_targets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel
 using .SimulationModel: ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
-using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate, calcReactionWheelTorque
 using .SimulationModel: control_wrench, control_propellant_rate, control_wheel_torque
 using .SimulationModel: control_thruster_levels, touchdown_spec
-using .SimulationModel: calcGuidanceEffect!, calcNavigationEffect!, getHeatRate
+using .SimulationModel: getHeatRate
 using .SimulationModel: update_control!, update_guidance!, update_navigation!
 # Actuators: the contract (Actuators), the thruster kind (Components) and mounting (ActuatorMounting).
 using .SimulationModel: Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
@@ -583,8 +592,6 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.make_no_gram_planet) make_no_gram_planet
 @doc (@doc SimulationModel.make_no_gram_density_model) make_no_gram_density_model
 @doc (@doc SimulationModel.make_no_gram_environment) make_no_gram_environment
-# Copy canonical hook text into fresh documentation metadata for the root binding.
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.DynamicEffectors.calcForceTorque)).text) calcForceTorque
 @doc (@doc SimulationModel.wrench) wrench
 @doc (@doc SimulationModel.environment_requirements) environment_requirements
 @doc (@doc SimulationModel.solver_partition) solver_partition
@@ -592,6 +599,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.gravity_backbone_acceleration_ii) gravity_backbone_acceleration_ii
 @doc (@doc SimulationModel.gravity_backbone_kick_structure) gravity_backbone_kick_structure
 @doc (@doc SimulationModel.gravity_backbone_kick_acceleration_ii) gravity_backbone_kick_acceleration_ii
+# Copy canonical hook text into fresh documentation metadata for the root binding.
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.DynamicEffectors.PlumeSurfaceInteraction.PlumeSurfaceConfig)).text) PlumeSurfaceConfig
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.DynamicEffectors.PlumeSurfaceInteraction.PlumeSurfaceInteractionModel)).text) PlumeSurfaceInteractionModel
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.DynamicEffectors.PlumeSurfaceInteraction.PlumeSurfaceState)).text) PlumeSurfaceState
@@ -609,23 +617,14 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.ephemerides_epoch_seconds)).text) ephemerides_epoch_seconds
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.ephemerides_requires_spice)).text) ephemerides_requires_spice
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.ephemerides_cache_key)).text) ephemerides_cache_key
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.planet_frame_lpi)).text) planet_frame_lpi
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.ephemerides_sun_direction_ii)).text) ephemerides_sun_direction_ii
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.ephemerides_time_seconds)).text) ephemerides_time_seconds
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.update_control!)).text) update_control!
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlEffect!)).text) calcControlEffect!
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_wrench)).text) control_wrench
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_propellant_rate)).text) control_propellant_rate
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_wheel_torque)).text) control_wheel_torque
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlForceTorque)).text) calcControlForceTorque
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlMassFlowRate)).text) calcControlMassFlowRate
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_thruster_levels(::Any, ::Int))).text) control_thruster_levels
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcReactionWheelTorque)).text) calcReactionWheelTorque
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.touchdown_spec(::Any, ::Int))).text) touchdown_spec
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.GuidanceHooks.update_guidance!)).text) update_guidance!
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.GuidanceHooks.calcGuidanceEffect!)).text) calcGuidanceEffect!
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.NavigationHooks.update_navigation!)).text) update_navigation!
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.NavigationHooks.calcNavigationEffect!)).text) calcNavigationEffect!
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.VehicleThermalModels.getHeatRate)).text) getHeatRate
 
 # 3.4. RPO Station Assets
@@ -748,7 +747,7 @@ export SurrogatePresetResolution, available_surrogate_presets, resolve_surrogate
 export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 export SimpleEphemeridesModel
 export make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
-export calcForceTorque, wrench, environment_requirements, solver_partition
+export wrench, environment_requirements, solver_partition
 export gravity_backbone_structure, gravity_backbone_acceleration_ii
 export gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState, plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
@@ -757,11 +756,9 @@ export ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_c
 export getDensity, getDensityBatch!, with_density_model_epoch
 export ephemerides_frame_lpi, ephemerides_sun_ii, ephemerides_epoch_seconds
 export ephemerides_requires_spice, ephemerides_cache_key
-export planet_frame_lpi, ephemerides_sun_direction_ii, ephemerides_time_seconds
-export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate, calcReactionWheelTorque
 export control_wrench, control_propellant_rate, control_wheel_torque
 export control_thruster_levels, touchdown_spec, bind_spacecraft
-export calcGuidanceEffect!, calcNavigationEffect!, getHeatRate
+export getHeatRate
 export update_control!, update_guidance!, update_navigation!
 export AbstractActuator, Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
 export ThrusterGimbal, thrust_direction

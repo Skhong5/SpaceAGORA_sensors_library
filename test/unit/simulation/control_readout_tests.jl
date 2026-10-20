@@ -115,7 +115,8 @@ include(joinpath(@__DIR__, "..", "..", "..", "templates", "control_hook_template
 end
 
 # Hook methods typed on the effector alone, as the template's could be: the
-# new hooks have no catch-all method, so nothing can be ambiguous with them.
+# defaults are untyped, so a method typed on the effector is more specific and
+# nothing is ambiguous.
 struct LooseHooks <: SM.AbstractControlEffectorModel end
 SpaceAGORA.control_wrench(::LooseHooks, x, p, t) = (SVector(1.0, 0.0, 0.0), ZERO3)
 SpaceAGORA.control_propellant_rate(::LooseHooks, x, p, t) = 0.25
@@ -127,14 +128,14 @@ SpaceAGORA.control_wheel_torque(::LooseHooks, x, p, t) = SVector(0.0, 0.0, 0.5)
     @test readout(p, 1) == (SVector(1.0, 0.0, 0.0), ZERO3, SVector(0.0, 0.0, 0.5), -0.25)
     # Any effector, a control effector or not, uses no propellant and drives no
     # wheels unless it implements those hooks.
+    x = SE._control_state_sample(state, p, 1)
     for effector in (GlobalForceOnly(Tuple{Symbol,Symbol,Int}[]), SM.MagneticMomentumManagerModel(spacecraft_index=1), nothing)
-        @test SE._control_propellant_rate(effector, state, p, 1, 0.0) == 0.0
-        @test SE._control_wheel_torque(effector, state, p, 1, 0.0) === nothing
+        @test SpaceAGORA.control_propellant_rate(effector, x, p, 0.0) === 0.0
+        @test SpaceAGORA.control_wheel_torque(effector, x, p, 0.0) === nothing
     end
     # No two methods of a control hook are ambiguous, the package's or the tests'.
     for f in (SpaceAGORA.control_wrench, SpaceAGORA.control_propellant_rate, SpaceAGORA.control_wheel_torque,
-              SpaceAGORA.calcControlForceTorque, SpaceAGORA.calcControlMassFlowRate,
-              SpaceAGORA.calcReactionWheelTorque, SpaceAGORA.control_thruster_levels)
+              SpaceAGORA.control_thruster_levels)
         ms = collect(methods(f))
         @test !any(Base.isambiguous(a, b) for a in ms, b in ms if a !== b)
     end

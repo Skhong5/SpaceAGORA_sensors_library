@@ -49,7 +49,7 @@ function ppbl_code_addresses(ptype::Type)
     E = SpaceAGORA.SimulationEngine
     PE = SpaceAGORA.SimulationModel.DynamicEffectors.PerturbationEffectors
     fns = [E.spacecraft_dynamics!, E._spacecraft_dynamics_dispatch!, E._evaluate_dynamic_effector,
-           SpaceAGORA.SimulationModel.calcForceTorque, PE._harmonics_scalar_force_ii]
+           PE._harmonics_scalar_force_ii]
     rows = NamedTuple[]
     for fn in fns, m in methods(fn), mi in Base.specializations(m)
         (mi === nothing || !relevant(mi)) && continue

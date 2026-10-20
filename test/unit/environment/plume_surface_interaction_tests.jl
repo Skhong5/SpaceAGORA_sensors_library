@@ -355,26 +355,16 @@ end
     @test wrench(one, x, env, 0.0) === PSI._plume_wrench(one, x, env, 0.0, 1)
 end
 
-@testset "the five-argument plume wrench is deprecated" begin
+@testset "the plume wrench takes the spacecraft index from the sample only" begin
     two = PlumeSurfaceInteractionModel(control([1000.0, 2000.0]); config=PlumeSurfaceConfig(nozzle_offset_m=1.0))
     x, env = state_environment(2.0)
-    # It warns once, however often it is called, and returns the indexed result.
-    deprecated = (:warn, r"^wrench\(model::PlumeSurfaceInteractionModel, x, env, t, i\), with the spacecraft index as a fifth argument, is deprecated")
-    results = @test_logs deprecated begin
-        [wrench(two, x, env, 0.0, i) for i in (1, 2, 2)]
-    end
-    @test results == [PSI._plume_wrench(two, x, env, 0.0, i) for i in (1, 2, 2)]
-    # The four-argument form and the engine's wrench_caching! do not warn.
+    # The five-argument form, with the index as an argument, was removed in 0.5.0.
+    @test_throws MethodError wrench(two, x, env, 0.0, 2)
     xi = SM.StateSample(x.pos_ii, x.vel_ii, x.mass_kg; spacecraft_index=2)
+    @test wrench(two, xi, env, 0.0) === PSI._plume_wrench(two, x, env, 0.0, 2)
+    # Neither the hook nor the engine's wrench_caching! logs anything.
     @test_logs wrench(two, xi, env, 0.0)
     @test_logs SM.DynamicEffectors.wrench_caching!(two, xi, env, 0.0, nothing, 2)
-    # Under --depwarn=error it throws.
-    strict = "using SpaceAGORA, StaticArrays; const SM = SpaceAGORA.SimulationModel; " *
-             "m = SM.PlumeSurfaceInteractionModel((; actuators=(; thrust_n=[1000.0]))); " *
-             "x = SM.StateSample(SVector(7.0e6, 0.0, 0.0), SVector(0.0, 0.0, 0.0), 500.0); " *
-             "try SM.wrench(m, x, SM.EnvironmentSample(nothing), 0.0, 1); print(\"no error\") " *
-             "catch err; print(err isa ErrorException && occursin(\"is deprecated\", err.msg)) end"
-    @test read(`$(Base.julia_cmd()) --startup-file=no --depwarn=error --project=$(pkgdir(SpaceAGORA)) -e $strict`, String) == "true"
 end
 
 end # module PlumeInteractionTests
