@@ -2221,6 +2221,85 @@ end
     @test SimulationCampaigns._ensemble_member_settings(settings_plain, "sat_3_id_33") === settings_plain
 end
 
+# A user effector bound to a spacecraft by the engine's cross-satellite index
+# field. It has no wrench: the ensemble must refuse it before any member runs.
+struct _EnsembleTargetBoundEffector <: SimulationModel.AbstractForceTorqueModel
+    target_index::Int
+end
+
+@testset "Constellation Ensemble Index-Bound Effectors" begin
+    # Each member runs its spacecraft alone at run position 1 with the whole
+    # dynamic effector tuple, so an effector bound to a run position cannot be
+    # split. Before the refusal, an effector bound to spacecraft k > 1 never
+    # acted in member k, one bound to spacecraft 1 acted on every member, and a
+    # plume failed every member at its own setup.
+    planet_ng = SimulationModel.make_no_gram_planet(:earth)
+    trio() = [
+        _no_gram_ring_sat(planet_ng, 11, 0.0),
+        _no_gram_ring_sat(planet_ng, 22, 40.0),
+        _no_gram_ring_sat(planet_ng, 33, 80.0),
+    ]
+    ensemble_cfg(spacecraft, extra...) = build_config_multi(
+        spacecraft=spacecraft,
+        density_model=SimulationModel.NoAtmosphereModel(),
+        orientation_sim=false,
+        mission_time=60.0,
+        EI_km=120.0,
+        dynamic_effectors=(SimulationModel.InverseSquaredJ2GravityModel(), extra...),
+        keplerian=true,
+        simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+        ephemerides_model=SimulationModel.SimpleEphemeridesModel(),
+        planet=planet_ng
+    )
+    refusal(cfg; kwargs...) = try
+        SimulationCampaigns.run_constellation_ensemble(cfg; kwargs...)
+        nothing
+    catch err
+        err
+    end
+    message(cfg; kwargs...) = (err = refusal(cfg; kwargs...); err isa ArgumentError ? sprint(showerror, err) : "")
+    knots = collect(0.0:10.0:60.0)
+    wheel(index) = SimulationModel.ReactionWheelMomentumModel(knots, fill(100.0, length(knots), 1),
+        reshape([0.0, 0.0, 1.0], 3, 1), 0.01; spacecraft_index=index, num_spacecraft=max(index, 3))
+    plume(n) = SimulationModel.PlumeSurfaceInteractionModel((; actuators=(; thrust_n=fill(1000.0, n))))
+    arm(index) = SimulationModel.RobotArmReactionEffector(spacecraft_index=index)
+
+    # Bound to spacecraft 2, it would never act in member 2.
+    msg = message(ensemble_cfg(trio(), arm(2)))
+    @test occursin("dynamic_effectors[2] (RobotArmReactionEffector)", msg)
+    @test occursin("spacecraft_index=2 binds it to member 2 (spacecraft id 22)", msg)
+    @test occursin("never act", msg)
+    # allow_gnc_effectors opts GNC effectors in; it does not cover these.
+    @test occursin("member 2 (spacecraft id 22)", message(ensemble_cfg(trio(), arm(2)); allow_gnc_effectors=true))
+
+    # Bound to spacecraft 1, it would act on every member.
+    msg = message(ensemble_cfg(trio(), wheel(1)))
+    @test occursin("dynamic_effectors[2] (ReactionWheelMomentumModel)", msg)
+    @test occursin("would also act on member 2 (spacecraft id 22)", msg)
+    @test occursin("spacecraft_index=5 names no member of this 3-member ensemble", message(ensemble_cfg(trio(), wheel(5))))
+    # The engine's cross-satellite index fields bind an effector too.
+    @test occursin("target_index=3 binds it to member 3 (spacecraft id 33)",
+        message(ensemble_cfg(trio(), _EnsembleTargetBoundEffector(3))))
+
+    # A plume's per-spacecraft thrust and state cannot be split, and one
+    # spacecraft's plume would act on every member.
+    msg = message(ensemble_cfg(trio(), plume(3)))
+    @test occursin("dynamic_effectors[2] (PlumeSurfaceInteractionModel)", msg)
+    @test occursin("thrust and state for 3 spacecraft", msg)
+    @test occursin("member 1 (spacecraft id 11)", msg)
+    @test occursin("would also act on member 2 (spacecraft id 22)", message(ensemble_cfg(trio(), plume(1))))
+
+    # One member bound to position 1 keeps its binding.
+    solo = [_no_gram_ring_sat(planet_ng, 11, 0.0)]
+    for effector in (arm(1), wheel(1), plume(1), _EnsembleTargetBoundEffector(1))
+        @test SimulationCampaigns._validate_ensemble_uncoupled(ensemble_cfg(solo, effector), false) === nothing
+    end
+    @test occursin("spacecraft_index=2 names no member of this 1-member ensemble", message(ensemble_cfg(solo, arm(2))))
+    res = SimulationCampaigns.run_constellation_ensemble(ensemble_cfg(solo, arm(1)))
+    @test isempty(res.failed)
+    @test SimulationCampaigns._validate_ensemble_uncoupled(ensemble_cfg(trio()), false) === nothing
+end
+
 @testset "GRAM Lock Scope" begin
     EMt = SimulationModel.EnvironmentModels
 
