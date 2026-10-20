@@ -3,12 +3,15 @@ module EffectorScopeTests
 # Dynamic effectors acting on some spacecraft only (`scoped`): resolution and its
 # refusals, the evaluation on every right-hand-side route, the bits against the
 # workaround of a model that returns zero outside its spacecraft, the
-# accelerometer, the aerodynamic diagnostics and the constellation ensemble.
+# accelerometer, the aerodynamic diagnostics, the constellation ensemble and
+# the checkpoint entry.
 
 using Test
 using LinearAlgebra
 using StaticArrays
 using RecursiveArrayTools: ArrayPartition
+using Logging
+using OrdinaryDiffEq: DiscreteCallback
 using SpaceAGORA
 
 const SM = SpaceAGORA.SimulationModel
@@ -367,6 +370,54 @@ end
                     solve(configuration((InverseSquaredJ2GravityModel(), Push(1e-3)); spacecraft=[walker4()[2]])))
     @test SpaceAGORA.SimulationCampaigns._ensemble_member_effectors(SE._resolve_effector_scopes(args), 2) ==
         (InverseSquaredJ2GravityModel(),)
+end
+
+@testset "a checkpoint keeps the scopes, and a resume needs the same" begin
+    struct Interrupted <: Exception end
+    armed = Ref(false)
+    interrupter = DiscreteCallback((u, t, integrator) -> armed[] && t > 150.0, integrator -> throw(Interrupted());
+        save_positions=(false, false))
+    function checkpointed(effs, directory; resume=false)
+        base = configuration(effs)
+        settings = SM.SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false,
+            save_csv=false, checkpoint_enabled=true, checkpoint_interval_s=150.0,
+            checkpoint_directory=String(directory), resume_from_checkpoint=resume)
+        return SM.SimConfig._with_configuration(base; simulation_settings=settings)
+    end
+    run!(args) = with_logger(() -> solve(args; extra_callbacks=(interrupter,)), ConsoleLogger(stderr, Logging.Error))
+    function interrupted(effs)
+        directory = mktempdir()
+        armed[] = true
+        try
+            run!(checkpointed(effs, directory))
+        catch
+        finally
+            armed[] = false
+        end
+        return directory
+    end
+    entries = (InverseSquaredJ2GravityModel(), scoped(Push(1e-3), BoundSpacecraft((1, 3))))
+    straight = run!(checkpointed(entries, mktempdir()))
+    directory = interrupted(entries)
+    checkpoint = SE._load_checkpoint(checkpointed(entries, directory))
+    @test checkpoint.t == 150.0
+    entry = checkpoint.runtime_state.effector_scopes
+    @test entry.version == 1 && [e.positions for e in entry.effectors] == [nothing, [1, 3]]
+    @test entry.effectors[2].kind.name === :Push
+    resumed = run!(checkpointed(entries, directory; resume=true))
+    @test same_run(resumed, straight)                                   # the second half, bit for bit
+    # The same scope written another way resumes too (from a checkpoint not yet resumed to the end).
+    again = interrupted(entries)
+    @test same_run(run!(checkpointed((InverseSquaredJ2GravityModel(), scoped(Push(1e-3), SpacecraftSelection(ids=[1, 3]))),
+        again; resume=true)), straight)
+    directory = interrupted(entries)
+    @test_throws "acts on run positions 1, 2 here and on run positions 1, 3" run!(checkpointed(
+        (InverseSquaredJ2GravityModel(), scoped(Push(1e-3), BoundSpacecraft((1, 2)))), directory; resume=true))
+    @test_throws "but this run has none" run!(checkpointed((InverseSquaredJ2GravityModel(), Push(1e-3)), directory; resume=true))
+    plain = (InverseSquaredJ2GravityModel(), Push(1e-3))
+    plain_directory = interrupted(plain)
+    @test !hasproperty(SE._load_checkpoint(checkpointed(plain, plain_directory)).runtime_state, :effector_scopes)
+    @test_throws "records no effector scopes" run!(checkpointed(entries, plain_directory; resume=true))
 end
 
 end # module EffectorScopeTests

@@ -212,3 +212,47 @@ function _check_scoped_run(args, effectors::Tuple, table)
     end
     return nothing
 end
+
+# The checkpoint entry of a run with scoped effectors, `effector_scopes`: each
+# effector's kind (as the interlink entry names kinds) and the run positions it
+# acts on (`nothing` for every spacecraft). A run without scoped effectors writes
+# no entry, so its checkpoint files keep the runtime keys they had.
+function _effector_scope_checkpoint_state(args)
+    scopes = _effector_scopes_of(args)
+    scopes === nothing && return nothing
+    return (version=1, effectors=[(kind=_interlink_kind_identity(typeof(effector)),
+        positions=scopes.positions[j] === nothing ? nothing : copy(scopes.positions[j]))
+        for (j, effector) in enumerate(args.dynamics_model.dynamic_effectors)])
+end
+
+# Before a resume restores anything: the checkpoint and the run must agree on the
+# effectors' scopes, both having none, or both the same kinds acting on the same
+# positions.
+function _check_effector_scope_checkpoint_state(args, checkpoint)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    entry = runtime !== nothing && hasproperty(runtime, :effector_scopes) ? runtime.effector_scopes : nothing
+    current = _effector_scope_checkpoint_state(args)
+    entry === nothing && current === nothing && return nothing
+    entry === nothing && throw(ArgumentError(
+        "This run has scoped dynamic effectors, but the checkpoint records no effector scopes: it was written by a " *
+        "run without them, or by a SpaceAGORA that did not record them. Start the run again rather than resume it."))
+    current === nothing && throw(ArgumentError(
+        "The checkpoint was written by a run with scoped dynamic effectors, but this run has none; resume it with " *
+        "the same scoped effectors."))
+    hasproperty(entry, :version) && entry.version === 1 && hasproperty(entry, :effectors) || throw(ArgumentError(
+        "Effector scope checkpoint state version 1 is required to resume this run."))
+    if !isequal(entry.effectors, current.effectors)
+        length(entry.effectors) == length(current.effectors) || throw(ArgumentError(
+            "The dynamic effectors' spacecraft scopes differ from the checkpoint's: the checkpoint has " *
+            "$(length(entry.effectors)) dynamic effectors and this run $(length(current.effectors))."))
+        j = findfirst(k -> !isequal(entry.effectors[k], current.effectors[k]), eachindex(current.effectors))
+        describe(positions) = positions === nothing ? "every spacecraft" : "run positions $(join(positions, ", "))"
+        throw(ArgumentError(
+            "The dynamic effectors' spacecraft scopes differ from the checkpoint's: effector $j " *
+            (isequal(entry.effectors[j].kind, current.effectors[j].kind) ?
+                "acts on $(describe(current.effectors[j].positions)) here and on " *
+                "$(describe(entry.effectors[j].positions)) in the checkpoint." :
+                "is a $(current.effectors[j].kind.name) here and a $(entry.effectors[j].kind.name) in the checkpoint.")))
+    end
+    return nothing
+end

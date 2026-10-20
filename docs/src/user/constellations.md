@@ -177,6 +177,9 @@ dynamics = DynamicsModel(spacecraft, (
 - **Ensembles.** In `run_constellation_ensemble`, each member keeps the
   effectors whose scope holds its position in the constellation, and runs them
   unscoped.
+- **Checkpoints.** A checkpoint records the scopes. A resume refuses
+  different scopes, and refuses a checkpoint written without them (see
+  [Checkpointing](outputs.md#Checkpointing)).
 
 ## Running a constellation
 
