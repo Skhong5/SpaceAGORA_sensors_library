@@ -193,6 +193,29 @@ struct HalfKept <: AbstractNavigationModel end
 SpaceAGORA.update_navigation!(::HalfKept, u, p, t::Float64, i::Int) = nothing
 L.checkpoint_state(::HalfKept) = (ticks=0,)
 
+# What a resumed run's start shows, in order: a navigation model records what its
+# initializer sees (the callbacks' and the models' resume flags) and when its own
+# run state comes back, and a callback records what the callbacks see when they
+# initialize (the model's ticks and the sensor's latest sample time).
+const RESUME_LOG = Any[]
+mutable struct ResumeProbe <: AbstractNavigationModel
+    ticks::Int
+end
+SpaceAGORA.update_navigation!(m::ResumeProbe, u, p, t::Float64, i::Int) = (m.ticks += 1; nothing)
+function L.initialize_navigation!(m::ResumeProbe, u, p, t)
+    m.ticks = 0
+    push!(RESUME_LOG, (:initialize, p.shared_buffers.callback_resume[], p.shared_buffers.model_resume[]))
+    return nothing
+end
+L.checkpoint_state(m::ResumeProbe) = (ticks=m.ticks,)
+L.restore_checkpoint_state!(m::ResumeProbe, data) = (m.ticks = data.ticks; push!(RESUME_LOG, (:restore, data.ticks)); nothing)
+resume_probe_callback(args) = DiscreteCallback((u, t, integrator) -> false, integrator -> nothing;
+    initialize=(cb, u, t, integrator) -> begin
+        a = integrator.p.args
+        sensor = only(SM.mounted_sensors(only(a.dynamics_model.spacecraft))).sensor
+        push!(RESUME_LOG, (:callbacks, only(a.navigation_model.navigation_effectors).ticks, sensor.latest_time_s))
+    end, save_positions=(false, false))
+
 refusal(f) = try
     f()
     nothing
@@ -532,6 +555,28 @@ hinge_seer(hinge) = DiscreteCallback((u, t, integrator) -> false, integrator -> 
         msg = refusal(() -> run!(counted(3.0, checkpointed(mktempdir()); navigation=HalfKept())))
         @test msg !== nothing && occursin("has no restore_checkpoint_state!", msg)
         @test refusal(() -> run!(counted(3.0, (;); navigation=HalfKept()))) === nothing
+    end
+
+    @testset "a resumed run restores the engine's state before the models start, and theirs after their initializers" begin
+        checkpointed(dir; kw...) = (checkpoint_enabled=true, checkpoint_interval_s=1.0, checkpoint_directory=dir, kw...)
+        # Navigation every 0.4 s has no tick at the 3 s checkpoint, so none is
+        # pending there for the resumed run to take before its callbacks initialize.
+        probed(mission_time, settings) = runtime_args((); sensor=KeptCountSensor(), navigation=(ResumeProbe(0),),
+            navigation_period=0.4, mission_time=mission_time, settings=settings)
+        dir = mktempdir()
+        early = probed(3.0, checkpointed(dir))
+        run_simulation(early; isolate_state=false)
+        saved = SM.IOSerialization._load_checkpoint(early).runtime_state
+        ticks = only(saved.models.navigation).ticks
+        latest = only(only(saved.callbacks.spacecraft).sensors).latest_time_s
+        @test ticks > 0 && latest == 3.0
+        empty!(RESUME_LOG)
+        run_simulation(probed(6.0, checkpointed(dir; resume_from_checkpoint=true)); isolate_state=false,
+            extra_callback_factories=(resume_probe_callback,))
+        # The initializer already sees both resume flags: the engine's and the
+        # callbacks' state came back first. The model's own state comes back after
+        # its initializer, and the callbacks then initialize with both.
+        @test RESUME_LOG[1:3] == [(:initialize, true, true), (:restore, ticks), (:callbacks, ticks, latest)]
     end
 
     @testset "a resumed run ticks as a run in one piece, at checkpoint boundaries too" begin

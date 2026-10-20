@@ -196,6 +196,8 @@ the file that performs each step.
    (`dynamics_rhs.jl`,
    `build_initial_conditions`), and allocates the shared buffers held in
    `ODEParams` (`src/orchestration/simulation/state/runtime_types.jl`).
+   The run's start, a resumed run's included, is described under
+   [Run state: owners, resets and restores](#run-state-owners-resets-and-restores).
 3. **Frames and geometry.** Inertial-to-planet-fixed conversions and their
    time-dependent SPICE variants are in
    `src/foundation/core/interfaces/reference_system.jl`
@@ -411,6 +413,69 @@ interlinks.
 The engine has no scheduler of its own: each model's callback keeps its own
 period and tick grid, and the order above decides which runs first when they
 coincide.
+
+## Run state: owners, resets and restores
+
+A run's start has three phases, which `run_simulation`
+(`src/orchestration/simulation/engine/execution.jl`) calls in this order after
+building the run's buffers and callbacks:
+
+1. `_resume_engine_state!`. On a run resumed from a checkpoint file, it checks
+   the checkpoint against the run and restores the engine's and the callbacks'
+   run state: the `activity`, `interlinks` and `callbacks` entries, and the
+   periodic ticks still pending. It also sets the resume flags
+   (`callback_resume`, `model_resume`). The models' own state is only checked
+   here.
+2. `_start_run_clock!`: the run clock of the periodic ticks, for a checkpointed
+   or resumed run (`callbacks/periodic_tick_callbacks.jl`).
+3. `_start_run_models!`:
+   - each link's `link_initialize!`, once;
+   - the control clocks (`gnc_clock_started!`);
+   - the models' initializers;
+   - on a resumed run, the models' own state (`restore_checkpoint_state!`),
+     which replaces their reset;
+   - the EDG heat accounting.
+
+The callbacks initialize after these phases, when the solve starts. So there
+are two restores at two different times:
+
+- the engine's and the callbacks' state comes back before the models start and
+  before the callbacks initialize;
+- the models' state comes back after their initializers.
+
+`test/unit/gnc/gnc_runtime_declarations_tests.jl` checks that order on a resumed
+run. The checkpoint side lives in `engine/resume_checkpoint.jl`, whose sections
+follow the same order. The lifecycle hooks are listed in the order the engine
+calls them at the top of `src/models/gnc/contracts/simulation_lifecycle.jl`.
+
+| State | Owner | Reset at a run's start | Checkpoint entry | Restored on a resume | When |
+| --- | --- | --- | --- | --- | --- |
+| Which spacecraft are active | `ODEParams.is_active` | a new `ODEParams`, all active | `activity` (also in `interlinks`) | `_restore_activity_checkpoint_state!` | phase 1 |
+| Interlink selection and history | the `InterlinkModel` | `run_simulation` empties the history and clears the graph's flags and the matching | `interlinks`: the configuration's identity and the activity flags | the identity is checked; the scheduler's initialization rebuilds the selection | phase 1; the scheduler at the solve's start |
+| Battery flags, fault activity | the batteries and the actuator faults | the power and fault callbacks' first initialization | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume` so that those initializations keep it | phase 1 |
+| Sensor streams, latest measurements, biases, sample times | the mounted sensors and the sensor callbacks | `reset_sensors!` at the first solve's start | `callbacks`, and the sensor's own `checkpoint_state` in `models` | the records in phase 1; the sensor's own state in phase 3. A resumed run does not call `initialize_sensor!` | phases 1 and 3 |
+| Hinge and gimbal angles, mounted thrusters' firing state (`κ`, `thrust`) | the link hardware | none: see below | `callbacks` | `_restore_callback_checkpoint_state!` | phase 1 |
+| Periodic tick clocks | each run-clock callback, and the run clock in the shared buffers | each solve's start; the run clock in phase 2 | `periodic_ticks` | `_pending_periodic_ticks`, taken at the first solve's start | phases 1 and 2 |
+| GNC links | the shared object | `link_initialize!`, once per run | none of their own: the models save what they need | — | phase 3 |
+| The models' own run state | each guidance, navigation and control model | `initialize_navigation!`, `initialize_guidance!`, `initialize_control!`; a value a user changed between runs is kept | `models` (`checkpoint_state`) | `restore_checkpoint_state!`, after the initializers. `model_resume` tells an initializer that the state will come back: the RPO planner then makes no initial request | phase 3 |
+| EDG heat accounting | the EDG state | `_edg_initialize_heat_accounting!` | none: EDG refuses checkpoints | — | phase 3 |
+| Plume interaction integral | the plume model's state | the plume callback's first initialization | none: a resumed run starts a new integral | — | the solve's start |
+| GRAM density perturbation walk | the perturbation callback | its initialization | none: a resume is refused | — | the solve's start |
+| Density model histories | the density models | `_reset_density_model_histories!`, after the pre-solve probes | none | — | before the solve |
+
+Current behaviour to know:
+
+- **Hardware with no reset.** Hinge and gimbal angles and the mounted thrusters'
+  firing state are not reset when a run starts.
+  - With `isolate_state=true` (the default), each run starts from the
+    configured values in its own copy.
+  - With `isolate_state=false`, a repeated run continues from where the
+    previous run left the hardware.
+
+  Batteries, faults and sensors are reset.
+- **Runs that cannot resume.** EDG, `AlgorithmGuidance`, the GRAM density
+  perturbation and externally propagated spacecraft refuse checkpoints or a
+  resume, because the checkpoint does not hold their run state.
 
 ## Map of the repository
 
