@@ -10,3 +10,6 @@ function SimulationLifecycle.atmosphere_transition!(c::AerobrakingEnergyDepletio
 end
 
 SimulationLifecycle.requires_atmosphere_events(::AerobrakingEnergyDepletionControlModel) = true
+
+# The EDG control is the control model the EDG guidance pairs with (`_edg_preflight`).
+GuidanceHooks._is_edg_control(::AerobrakingEnergyDepletionControlModel) = true

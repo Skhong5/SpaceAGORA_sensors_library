@@ -58,6 +58,11 @@ end
 _edg_guidance_pairing(::Any) = nothing
 _edg_guidance_pairing(g::AerobrakingEnergyDepletionGuidanceModel) = (state=g.state, config=g.config)
 
+# Whether a control model is the EDG control, which pairs with the EDG guidance.
+# ControlHooks, which defines that control type and loads after GuidanceHooks, adds
+# the method that returns `true` (control/aerobraking/energy_depletion_lifecycle.jl).
+_is_edg_control(::Any) = false
+
 function _edg_preflight(model, args)
     EDGServices.require_provider()
     n = length(args.dynamics_model.spacecraft)
@@ -70,8 +75,7 @@ function _edg_preflight(model, args)
     (ss.checkpoint_enabled || ss.resume_from_checkpoint) && throw(ArgumentError(
         "EDG does not support checkpoint writing or resume: checkpoints do not contain its pass state."))
     guidance = [x for x in map(_edg_guidance_pairing, args.guidance_model.guidance_effectors) if x !== nothing]
-    controls = filter(c -> c isa _control_module().AerobrakingEnergyDepletionControlModel,
-        args.control_model.control_effectors)
+    controls = filter(_is_edg_control, args.control_model.control_effectors)
     length(guidance) <= 1 && length(controls) <= 1 || throw(ArgumentError(
         "EDG requires at most one guidance model and one control model, with per-spacecraft state."))
     if !isempty(guidance) && !isempty(controls)
