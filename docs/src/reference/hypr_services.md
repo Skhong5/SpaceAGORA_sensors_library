@@ -6,7 +6,7 @@ SpaceAGORA.HYPRServices
 
 `SpaceAGORA.HYPRServices` is the supported boundary for HYPR's optional extension.
 It follows the shared [optional adapter standard](adapter_contract.md).
-This SpaceAGORA source provides contract **2.0.0**, supporting HYPR **0.3.0** and
+This SpaceAGORA source provides contract **2.0.0**, supporting HYPR **0.4.0** and
 the `SpaceAGORAHYPR` **0.2.0** compatibility package. The setup helper pins the
 exact HYPR source revision.
 
@@ -62,8 +62,8 @@ removed or renamed, and SpaceAGORA's own calls are unchanged.
   drawing from the task-local global stream. SpaceAGORA's GNC planning kernels
   already require it, and every SpaceAGORA caller passes one.
 - **Providers.** HYPR 0.2.0 was the first provider to implement the rule above.
-  This source accepts HYPR 0.3.0, which changes only its SpaceAGORA compatibility to
-  0.3 or 0.4; 0.1.0, 0.1.1 and 0.2.0 are refused before their methods are defined.
+  This source accepts HYPR 0.4.0, which changes only its SpaceAGORA compatibility to
+  0.4 or 0.5; 0.1.0, 0.1.1, 0.2.0 and 0.3.0 are refused before their methods are defined.
 - **Argument order.** `_plan_hypr_rpo!(state, planner, request, rng)` already puts
   the mutated state first and the stream last, and is unchanged. The inventory
   names, underscores included, are unchanged.

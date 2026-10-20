@@ -10,8 +10,8 @@ only through this versioned boundary, not through arbitrary internal modules.
 module HYPRServices
 import ..SimulationModel.HYPRSupport
 const CONTRACT_VERSION = v"2.0.0"
-const HYPR_VERSION = v"0.3.0"
-const SUPPORTED_HYPR_VERSIONS = (HYPR_VERSION, v"0.4.0")
+const HYPR_VERSION = v"0.4.0"
+const SUPPORTED_HYPR_VERSIONS = (HYPR_VERSION,)
 """Compatibility error type, preserving its existing owner."""
 const CompatibilityError = HYPRSupport.HYPRCompatibilityError
 

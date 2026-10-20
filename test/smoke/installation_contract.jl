@@ -4,7 +4,7 @@ include(joinpath(@__DIR__, "..", "..", "scripts", "setup_hypr.jl"))
     mktempdir() do root
         folder=joinpath(root,"packages","SpaceAGORAHYPR");mkpath(folder)
         pin=joinpath(folder,"HYPRSource.toml")
-        write(pin,"url = \"https://github.com/Space-FALCON-Lab/HYPR.jl.git\"\nrev = \"$(repeat("a",40))\"\nuuid = \"$(HYPRInstallation.HYPR_UUID)\"\nversion = \"0.3.0\"\n")
+        write(pin,"url = \"https://github.com/Space-FALCON-Lab/HYPR.jl.git\"\nrev = \"$(repeat("a",40))\"\nuuid = \"$(HYPRInstallation.HYPR_UUID)\"\nversion = \"0.4.0\"\n")
         spec=HYPRInstallation.source_spec(root;local_path="")
         @test spec.rev == repeat("a",40)
         @test spec.url == "https://github.com/Space-FALCON-Lab/HYPR.jl.git"
@@ -14,22 +14,18 @@ include(joinpath(@__DIR__, "..", "..", "scripts", "setup_hypr.jl"))
             write(pin,text)
         end
         # HYPRServices 2.0.0 refuses the 0.1 providers and any version it does not list
-        for unsupported in ("0.1.0", "0.1.1", "0.2.0", "0.9.0")
-            old=read(pin,String);write(pin,replace(old,"0.3.0"=>unsupported))
+        for unsupported in ("0.1.0", "0.1.1", "0.2.0", "0.3.0", "0.9.0")
+            old=read(pin,String);write(pin,replace(old,"0.4.0"=>unsupported))
             @test_throws ErrorException HYPRInstallation.source_spec(root;local_path="")
             write(pin,old)
         end
-        # HYPR 0.4.0 changes only its SpaceAGORA compatibility and is accepted too
-        old=read(pin,String);write(pin,replace(old,"0.3.0"=>"0.4.0"))
-        @test HYPRInstallation.source_spec(root;local_path="").rev == repeat("a",40)
-        write(pin,old)
         dev=joinpath(root,"dev");mkpath(dev)
-        write(joinpath(dev,"Project.toml"),"uuid = \"$(HYPRInstallation.HYPR_UUID)\"\nversion = \"0.3.0\"\n")
+        write(joinpath(dev,"Project.toml"),"uuid = \"$(HYPRInstallation.HYPR_UUID)\"\nversion = \"0.4.0\"\n")
         @test HYPRInstallation.source_spec(root;local_path=dev).path == dev
         dev_project=joinpath(dev,"Project.toml")
-        write(dev_project,replace(read(dev_project,String),"0.3.0"=>"0.4.0"))
-        @test HYPRInstallation.source_spec(root;local_path=dev).path == dev
-        write(dev_project,replace(read(dev_project,String),"0.4.0"=>"0.2.0"))
+        write(dev_project,replace(read(dev_project,String),"0.4.0"=>"0.3.0"))
+        @test_throws ErrorException HYPRInstallation.source_spec(root;local_path=dev)
+        write(dev_project,replace(read(dev_project,String),"0.3.0"=>"0.2.0"))
         @test_throws ErrorException HYPRInstallation.source_spec(root;local_path=dev)
         write(dev_project,replace(read(dev_project,String),"0.2.0"=>"0.1.1"))
         @test_throws ErrorException HYPRInstallation.source_spec(root;local_path=dev)

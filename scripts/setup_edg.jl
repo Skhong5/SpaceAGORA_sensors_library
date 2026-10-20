@@ -9,8 +9,8 @@ function provider_path(root; local_path=get(ENV, "SPACEAGORA_EDG_PATH", ""))
     path = isempty(local_path) ? OptionalPackages.check("edg"; root) : realpath(local_path)
     project = TOML.parsefile(joinpath(path, "Project.toml"))
     get(project, "name", "") == "SpaceAGORAEDG" &&
-        get(project, "uuid", "") == UUID && get(project, "version", "") in ("0.3.0", "0.4.0") ||
-        throw(ArgumentError("Explicit EDG source must be SpaceAGORAEDG 0.3.0 or 0.4.0 with its declared UUID."))
+        get(project, "uuid", "") == UUID && get(project, "version", "") == "0.4.0" ||
+        throw(ArgumentError("Explicit EDG source must be SpaceAGORAEDG 0.4.0 with its declared UUID."))
     return path
 end
 
