@@ -7,17 +7,16 @@ module InterlinkTerminals
 # which comes before the mounted-actuator and power models this module needs;
 # its terminal methods for a SpacecraftModel are added here.
 
-using ..Components: LaserTerminal
 using ..AbstractTypes: AbstractActuator
 using ..SpacecraftModels: SpacecraftModel
 using ..InterLinkModels: InterlinkModel, LinkContext, link_terminal, link_terminal_levels, terminal_supports,
-    link_directed, link_received_power_w, link_endpoint, PowerBeamLink
+    link_directed, link_received_power_w, link_endpoint, PowerBeamLink, terminal_shed_tier, link_data_rate_bps
 import ..InterLinkModels: terminal_count, _terminal_device, _terminal_number
 using ..ActuatorMounting: mounted_actuators, actuator_context
 using ..Actuators: actuator_consumption, actuator_limits
 using ..PowerSystems: battery
 
-export mounted_link_terminals, terminal_number
+export mounted_link_terminals, terminal_number, data_link_rates_bps
 
 """
     mounted_link_terminals(spacecraft::SpacecraftModel) -> Vector
@@ -95,6 +94,10 @@ function prepare_terminal_endpoints!(model::InterlinkModel, spacecraft)::Bool
         terminal_supports(entry.terminal, link, role) || throw(ArgumentError(
             "Interlinks: terminal $number of spacecraft $satellite, a $(nameof(typeof(entry.terminal))), cannot " *
             "carry a $(nameof(typeof(link)))$(role === :either ? "" : " as its $(role)") (terminal_supports)."))
+        tier = terminal_shed_tier(entry.terminal)
+        tier isa Integer && 0 <= tier <= 3 || throw(ArgumentError(
+            "Interlinks: terminal $number of spacecraft $satellite, a $(nameof(typeof(entry.terminal))), has shedding " *
+            "tier $(repr(tier)); terminal_shed_tier must be 0, 1, 2 or 3."))
         level = Float64(link_terminal_levels(link)[side])
         low, high = actuator_limits(entry.terminal)
         low <= level <= high || throw(ArgumentError(
@@ -156,12 +159,14 @@ The power (W) the link-driven terminals of spacecraft `satellite` (model
 `spacecraft`) ask for and draw.
 
 - `by_tier` is the demand, split as `actuator_power_by_tier` does: laser
-  terminals, torque rods, reaction wheels, every other kind. A terminal with an
-  active link asks for its link's level. A terminal the battery's shedding has
-  closed keeps asking for the highest level of its links, so the tier clears
-  only when the battery can supply it again, not because its link closed.
+  terminals, torque rods, reaction wheels, every other kind. Each terminal's
+  demand counts in its `terminal_shed_tier` (a tier-0 terminal with every other
+  kind). A terminal with an active link asks for its link's level. A terminal
+  the battery's shedding has closed keeps asking for the highest level of its
+  links, so the tier clears only when the battery can supply it again, not
+  because its link closed.
 - `load_w` is what is drawn: the active links' levels, less what the shedding
-  sheds (tier 1 sheds laser terminals).
+  sheds (tier 1 sheds laser and radio terminals).
 """
 function link_terminal_power(model, satellite::Int, spacecraft::SpacecraftModel)
     link_driven(model, satellite) || return ((0.0, 0.0, 0.0, 0.0), 0.0)
@@ -170,7 +175,7 @@ function link_terminal_power(model, satellite::Int, spacecraft::SpacecraftModel)
     b = battery(spacecraft)
     tier = b === nothing ? 0 : b.shed_tier
     entries = mounted_actuators(spacecraft)
-    lasers = other = load = 0.0
+    first_tier = second_tier = third_tier = never = load = 0.0
     for position in unique(last(endpoint) for endpoint in endpoints)
         active = false
         level = wanted = 0.0
@@ -181,15 +186,15 @@ function link_terminal_power(model, satellite::Int, spacecraft::SpacecraftModel)
             graph.active[edge] && (active = true; level = this)
         end
         entry = entries[position]
-        laser = entry.actuator isa LaserTerminal
-        shed = laser && tier >= 1
+        own = terminal_shed_tier(entry.actuator)
+        shed = own > 0 && tier >= own
         demand = active ? level : (shed ? wanted : 0.0)
         demand == 0.0 && continue
         w = Float64(actuator_consumption(entry.actuator, demand, actuator_context(entry.link)).power_w)
-        laser ? (lasers += w) : (other += w)
+        own == 1 ? (first_tier += w) : own == 2 ? (second_tier += w) : own == 3 ? (third_tier += w) : (never += w)
         active && !shed && (load += w)
     end
-    return ((lasers, 0.0, 0.0, other), load)
+    return ((first_tier, second_tier, third_tier, never), load)
 end
 
 # ---- Received and beamed power ------------------------------------------------
@@ -243,11 +248,72 @@ function beamed_link_power_w(model, satellite::Int)::Float64
     return total
 end
 
+# ---- Data rates ------------------------------------------------------------------
+
+# The terminal hardware at end `side` of `edge` on spacecraft `satellite` (model
+# `spacecraft`), from the run's hardware endpoints, or `nothing` for a virtual
+# terminal.
+function _endpoint_terminal(model, satellite::Int, edge::Int, side::Int, spacecraft)
+    link_driven(model, satellite) || return nothing
+    for (at_edge, at_side, position) in model.terminal_endpoints[satellite]
+        at_edge == edge && at_side == side && return mounted_actuators(spacecraft)[position].actuator
+    end
+    return nothing
+end
+
+"""
+    data_link_rates_bps(model, spacecraft, state; is_active=nothing, context=LinkContext()) -> (sent, received)
+
+Per spacecraft, the data rates (bits per second) that the run's active links
+carry out of it (`sent`) and into it (`received`), each link's
+`link_data_rate_bps` at `state`, the run state with every spacecraft.
+`spacecraft` is the run's spacecraft. Optional `is_active` flags drop links with
+an inactive end. Undirected links carry none.
+"""
+function data_link_rates_bps(model, spacecraft, state; is_active=nothing, context=LinkContext())
+    sent = zeros(Float64, length(spacecraft))
+    received = zeros(Float64, length(spacecraft))
+    model === nothing && return (sent, received)
+    graph = model.graph
+    for edge in eachindex(graph.edges)
+        graph.active[edge] || continue
+        link = graph.edge_properties[edge]
+        link_directed(link) || continue
+        first, second = map(vertex -> graph.vertices[vertex], graph.edges[edge])
+        is_active === nothing || (is_active[first[1]] && is_active[second[1]]) || continue
+        transmitter = _endpoint_terminal(model, first[1], edge, 1, spacecraft[first[1]])
+        receiver = _endpoint_terminal(model, second[1], edge, 2, spacecraft[second[1]])
+        a = link_endpoint(state.sc[first[1]], spacecraft[first[1]], first[1])
+        b = link_endpoint(state.sc[second[1]], spacecraft[second[1]], second[1])
+        rate = Float64(link_data_rate_bps(link, transmitter, receiver, a, b, context))
+        sent[first[1]] += rate
+        received[second[1]] += rate
+    end
+    return (sent, received)
+end
+
+"""
+    shed_link_driven_levels!(levels, model, satellite, spacecraft::SpacecraftModel) -> levels
+
+Set to zero, in `levels` (one per mounted actuator), the link-driven terminals
+of spacecraft `satellite` that its battery's shedding sheds (see
+`terminal_shed_tier`). Other entries are left as they are.
+"""
+function shed_link_driven_levels!(levels, model, satellite::Int, spacecraft::SpacecraftModel)
+    link_driven(model, satellite) || return levels
+    entries = mounted_actuators(spacecraft)
+    for (_, _, position) in model.terminal_endpoints[satellite]
+        _terminal_shed(spacecraft, entries[position].actuator) && (levels[position] = 0.0)
+    end
+    return levels
+end
+
 """
     terminal_availability(model, spacecraft) -> Union{Nothing, Vector{Bool}}
 
 One flag per graph vertex, false for terminal hardware that its spacecraft's
-power budget sheds: a laser terminal while the battery sheds tier 1 or more.
+power budget sheds: a terminal while the battery sheds its
+`terminal_shed_tier` or more (tier 1 for laser and radio terminals).
 Links through such a terminal are unavailable until the tier clears. Virtual
 terminals are always available. Returns `nothing` when the run has no hardware
 endpoints.
@@ -264,7 +330,11 @@ function terminal_availability(model, spacecraft)
     return flags
 end
 
-_terminal_shed(spacecraft::SpacecraftModel, terminal) =
-    terminal isa LaserTerminal && (b = battery(spacecraft); b !== nothing && b.shed_tier >= 1)
+function _terminal_shed(spacecraft::SpacecraftModel, terminal)
+    own = terminal_shed_tier(terminal)
+    own > 0 || return false
+    b = battery(spacecraft)
+    return b !== nothing && b.shed_tier >= own
+end
 
 end # module InterlinkTerminals

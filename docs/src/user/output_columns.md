@@ -276,6 +276,18 @@ a battery:
 | `sc1_power_received_w` | W | Electrical power the spacecraft's incoming power beams deliver (part of the generation); only in a run with a `PowerBeamLink` |
 | `sc1_power_beamed_w` | W | Optical power the spacecraft's outgoing power beams carry; only in a run with a `PowerBeamLink` |
 
+### Data links
+
+These columns are written with the default save-field list in a run with a
+`DataLink` (see [Interlinks](interlinks.md#Data-links)):
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_data_rate_tx_bps` | bit/s | Data rate the spacecraft's active outgoing links carry |
+| `sc1_data_rate_rx_bps` | bit/s | Data rate its active incoming links carry |
+| `sc1_data_sent_bits` | bit | Bits sent since the run started (an integrated state) |
+| `sc1_data_received_bits` | bit | Bits received since the run started (an integrated state) |
+
 ### Actuator faults
 
 Written with the default save-field list when a spacecraft carries actuator

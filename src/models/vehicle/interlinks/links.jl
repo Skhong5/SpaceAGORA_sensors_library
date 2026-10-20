@@ -75,7 +75,7 @@ link_terminal_levels(link) = (0.0, 0.0)
     link_terminal(actuator) -> Bool
 
 Whether a mounted actuator is interlink terminal hardware, which can be a link
-endpoint. True for `LaserTerminal`; a terminal kind of your own opts in with
+endpoint. True for `LaserTerminal`, `PowerReceiver` and `RadioTerminal`; a terminal kind of your own opts in with
 `SpaceAGORA.link_terminal(::MyTerminal) = true`. A spacecraft's terminals are
 its `n_terminal` virtual terminals, numbered `1:n_terminal`, followed by its
 mounted terminals in mounting order. Default: false.
@@ -89,18 +89,37 @@ link_terminal(::LaserTerminal) = true
 
 Whether the terminal hardware `terminal` (a mounted actuator with
 `link_terminal`) can carry `link`. `register_link!` refuses a link that either
-endpoint's terminal cannot carry. A virtual terminal carries every kind.
+endpoint's terminal cannot carry. A virtual terminal carries every kind, except
+a `DataLink` whose `ShannonBudget` reads the radios at both ends.
 
 - `side` is the end the terminal would take: `:transmitter` or `:receiver` for a
   directed link, `:either` for an undirected one. A kind whose terminals work
   one way implements the three-argument form.
 - Default: the two-argument form, which is true. A `LaserTerminal` carries
   `LaserMomentumLink` and transmits a `PowerBeamLink`; a `PowerReceiver`
-  receives a `PowerBeamLink`. Other kinds need a method of their own.
+  receives a `PowerBeamLink`; a `RadioTerminal` transmits or receives a
+  `DataLink`. Other kinds need a method of their own.
 """
 terminal_supports(terminal, link) = true
 terminal_supports(terminal, link, side::Symbol) = terminal_supports(terminal, link)
 terminal_supports(::LaserTerminal, link) = false
+
+"""
+    terminal_shed_tier(actuator) -> Int
+
+The battery shedding tier that closes the links of the terminal hardware
+`actuator` (a mounted actuator with `link_terminal`) while a link drives it: 1 sheds it with the laser terminals, 2 with
+the torque rods, 3 with the reaction wheels, 0 never. A shed terminal draws
+nothing, and its links are unavailable until the tier clears. Its demand counts
+in that tier of the power budget (0: with the kinds never shed). 1 for
+`LaserTerminal` and `RadioTerminal`. Default: 0.
+"""
+terminal_shed_tier(actuator) = 0
+terminal_shed_tier(::LaserTerminal) = 1
+
+# Whether `link` reads the terminal hardware at both its ends, so that a virtual
+# terminal cannot carry it (a `DataLink` with a `ShannonBudget`).
+_link_needs_terminals(link) = false
 
 """
     terminal_count(spacecraft) -> Int

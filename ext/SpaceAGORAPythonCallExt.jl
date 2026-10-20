@@ -16,9 +16,14 @@ function select_cyclic!(model, work, selected)
 			"used by PythonCall, then retry. Python reported: " * sprint(showerror, err)))
 	end
 	graph = networkx.Graph()
+	# The candidates have at most one edge between two vertices (the core drops
+	# parallel ones), so each matched pair names one edge, whose key (transmitter
+	# first for a directed link) is what is selected.
+	between = Dict{Tuple{Int, Int}, Int}()
 	for edge in work.candidates
 		first_vertex, second_vertex = model.graph.edges[edge][1], model.graph.edges[edge][2]
 		work.cyclic[first_vertex] || continue
+		between[minmax(first_vertex, second_vertex)] = edge
 		graph.add_edge(first_vertex, second_vertex;
 			weight=PythonCall.pybuiltins.int(string(work.weights[edge])))
 	end
@@ -28,7 +33,8 @@ function select_cyclic!(model, work, selected)
 	for pair in matching
 		first_index = PythonCall.pyconvert(Int, pair[0])
 		second_index = PythonCall.pyconvert(Int, pair[1])
-		push!(selected, minmax(model.graph.vertices[first_index], model.graph.vertices[second_index]))
+		edge = between[minmax(first_index, second_index)]
+		push!(selected, map(vertex -> model.graph.vertices[vertex], model.graph.edges[edge]))
 	end
 	return nothing
 end
