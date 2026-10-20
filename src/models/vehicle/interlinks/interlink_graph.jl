@@ -228,11 +228,17 @@ module InterLinkModels
 	all_pairs(spacecraft) = [(i, j) for i in eachindex(spacecraft) for j in eachindex(spacecraft) if i < j]
 
 	# The spacecraft with a constellation slot, by plane: plane => [(slot, vector index)], by slot.
+	# Two spacecraft in one slot have no single neighbour, so they are refused.
 	function _slots_by_plane(spacecraft)
 		planes = Dict{Int, Vector{Tuple{Int, Int}}}()
+		holder = Dict{Tuple{Int, Int}, Int}()
 		for (index, sc) in enumerate(spacecraft)
 			slot = hasproperty(sc, :constellation_slot) ? sc.constellation_slot : nothing
 			slot === nothing && continue
+			other = get!(holder, (slot.plane, slot.slot), index)
+			other == index || throw(ArgumentError(
+				"Spacecraft $other and $index share plane $(slot.plane), slot $(slot.slot); " *
+				"pairs by plane and slot need each slot held once (build_constellation gives each its own)."))
 			push!(get!(Vector{Tuple{Int, Int}}, planes, slot.plane), (slot.slot, index))
 		end
 		foreach(sort!, values(planes))
@@ -244,7 +250,8 @@ module InterLinkModels
 
 	Every pair `(i, j)`, `i < j`, of spacecraft in the same orbital plane, by their
 	`constellation_slot` (set by `build_constellation`), for `register_links!`.
-	Spacecraft without a slot take part in no pair.
+	Spacecraft without a slot take part in no pair; two spacecraft in one slot are
+	refused.
 	"""
 	function same_plane_pairs(spacecraft)
 		pairs = Tuple{Int, Int}[]

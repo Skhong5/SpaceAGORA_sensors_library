@@ -165,6 +165,12 @@ end
         @test ring_pairs(two) == [(1, 2)] && same_plane_pairs(two) == [(1, 2)]
         @test grid_pairs(two) == [(1, 2), (1, 3)]
         @test isempty(ring_pairs([(n_terminal=1,), (n_terminal=1,)]))
+        # Two spacecraft in one slot have no single neighbour: refused.
+        twin = [walker[1], factory(1, 1, 13)]
+        twin[2].constellation_slot = walker[1].constellation_slot
+        for rule in (same_plane_pairs, ring_pairs, grid_pairs)
+            @test_throws ArgumentError rule(twin)
+        end
         # The +grid on four terminals each: every spacecraft's four links take its four terminals.
         model = InterlinkModel()
         keys = register_links!(model, walker, grid, LaserMomentumLink())
