@@ -69,11 +69,11 @@ end
 # belong to no region), must appear on the script's page as one Julia code block,
 # character for character, so the page shows the code CI runs.
 const SNIPPET_SCRIPTS = (
-    joinpath("examples", "gnc_algorithm_env", "feedback_controller.jl") => joinpath("docs", "src", "user", "gnc_algorithm.md"),
-    joinpath("examples", "gnc_algorithm_env", "estimator.jl") => joinpath("docs", "src", "user", "gnc_algorithm.md"),
-    joinpath("examples", "gnc_algorithm_env", "rpo_planner.jl") => joinpath("docs", "src", "user", "gnc_algorithm.md"),
-    joinpath("examples", "gnc_algorithm_env", "burn_planner.jl") => joinpath("docs", "src", "user", "gnc_algorithm.md"),
-    joinpath("examples", "gnc_algorithm_env", "joint_planner.jl") => joinpath("docs", "src", "user", "gnc_algorithm.md"),
+    joinpath("examples", "gnc_algorithm_env", "feedback_controller.jl") => joinpath("docs", "src", "user", "gnc_feedback.md"),
+    joinpath("examples", "gnc_algorithm_env", "estimator.jl") => joinpath("docs", "src", "user", "gnc_feedback.md"),
+    joinpath("examples", "gnc_algorithm_env", "rpo_planner.jl") => joinpath("docs", "src", "user", "gnc_planning.md"),
+    joinpath("examples", "gnc_algorithm_env", "burn_planner.jl") => joinpath("docs", "src", "user", "gnc_planning.md"),
+    joinpath("examples", "gnc_algorithm_env", "joint_planner.jl") => joinpath("docs", "src", "user", "gnc_planning.md"),
     joinpath("examples", "walkthrough_env", "my_effector.jl") => joinpath("docs", "src", "user", "custom_effector.md"),
     joinpath("examples", "walkthrough_env", "my_actuator.jl") => joinpath("docs", "src", "user", "custom_actuator.md"),
 )

@@ -1,4 +1,4 @@
-# Worked example B of "Writing a GNC Algorithm" (docs/src/user/gnc_algorithm.md):
+# Worked example B of "Writing a GNC Algorithm" (docs/src/user/gnc_feedback.md):
 # an estimator that holds a rate estimate from a gyro, and a controller that reads
 # it through a declared link. Each region between a `# snippet:` line and
 # `# end snippet` appears on that page as it is here; the HPC and extensibility
@@ -41,6 +41,15 @@ function SpaceAGORA.update_navigation!(n::GyroRateEstimator, u, p, t, spacecraft
     n.estimate.time_s = sensor_measurement_time(spacecraft, n.gyro)
     return nothing
 end
+
+# The producer saves the estimate. Restore its values into the existing link so
+# every consumer still reads the same shared object.
+SpaceAGORA.checkpoint_state(n::GyroRateEstimator) =
+    (ω_body=n.estimate.ω_body, time_s=n.estimate.time_s)
+function SpaceAGORA.restore_checkpoint_state!(n::GyroRateEstimator, data)
+    n.estimate.ω_body, n.estimate.time_s = data.ω_body, data.time_s
+    return nothing
+end
 # end snippet
 
 # snippet: consumer
@@ -59,6 +68,10 @@ SpaceAGORA.gnc_period_s(c::EstimatedRateDamper) = c.period_s
 SpaceAGORA.gnc_links(c::EstimatedRateDamper) = (Consumes(c.estimate),)
 SpaceAGORA.held_command(c::EstimatedRateDamper, spacecraft_index) = c.torque_body
 SpaceAGORA.held_command_time(c::EstimatedRateDamper, spacecraft_index) = c.tick_s
+function SpaceAGORA.release_command!(c::EstimatedRateDamper, t, spacecraft_index)
+    c.torque_body, c.tick_s = zero(SVector{3, Float64}), t
+    return nothing
+end
 function SpaceAGORA.initialize_control!(c::EstimatedRateDamper, u, p, t)
     c.torque_body, c.tick_s = zero(SVector{3, Float64}), NaN
     return nothing
@@ -75,6 +88,14 @@ function SpaceAGORA.control_wrench(c::EstimatedRateDamper, x::StateSample, p, t)
     x.spacecraft_index == c.spacecraft_index || return zero3, zero3
     return zero3, c.torque_body
 end
+
+# The controller saves its held command; the producer owns the shared estimate.
+SpaceAGORA.checkpoint_state(c::EstimatedRateDamper) =
+    (torque_body=c.torque_body, tick_s=c.tick_s)
+function SpaceAGORA.restore_checkpoint_state!(c::EstimatedRateDamper, data)
+    c.torque_body, c.tick_s = data.torque_body, data.tick_s
+    return nothing
+end
 # end snippet
 
 # snippet: run
@@ -88,7 +109,7 @@ add_sensor!(spacecraft, root, RateGyro(period_s=1.0))      # no noise and no bia
 estimate = RateEstimate()
 estimator = GyroRateEstimator(1, 1, estimate)
 damper = EstimatedRateDamper(estimate=estimate)
-mission_s = 120.0
+mission_s = 13.0  # conformance checkpoints halfway, at 6.5 s between the 1 s ticks
 planet = make_no_gram_planet(:earth)
 config = SimulationConfiguration(
     simulation_settings=SimulationSettings(
@@ -122,13 +143,14 @@ println("body rate after $(mission_s) s with the estimate: $(final) rad/s, by ha
 
 # snippet: conformance
 @testset "Estimator and controller conformance" begin
-    # The estimator alone, with a gyro mounted for it.
-    test_navigation_model(GyroRateEstimator(1, 1, RateEstimate()); sensors=(RateGyro(period_s=1.0),))
-    # The controller needs its producer: check it on a fixture that holds the pair.
-    shared = RateEstimate()
-    controller = EstimatedRateDamper(estimate=shared)
-    fixture = conformance_fixture(navigation=(GyroRateEstimator(1, 1, shared),), control=(controller,),
-                                  sensors=(RateGyro(period_s=1.0),), navigation_rate_s=1.0)
-    test_control_model(controller; fixture=fixture)
+    # Check the exact pair in the spinning case above. A zero-rate fixture could
+    # hide lost state; the checkpoint between ticks needs both held values.
+    fixture = conformance_fixture(configuration=config)
+    reports = (test_navigation_model(estimator; fixture=fixture),
+               test_control_model(damper; fixture=fixture))
+    for report in reports
+        @test only(filter(check -> check.id === :checkpoint_round_trip,
+                          report.checks)).status === :pass
+    end
 end
 # end snippet
