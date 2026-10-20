@@ -32,12 +32,19 @@ SpaceAGORA.actuator_consumption(n::ExampleColdGasNozzle, level, ctx) =
     (mass_rate_kg_s = level / (n.isp_s * 9.80665), power_w = 0.0)
 
 # 4. A controller in `:mounted` actuation: it keeps one level per mounted
-#    actuator of its spacecraft, updated at each control tick. It writes no
-#    force, mass-flow or firing-level hook; the engine derives them.
+#    actuator of its spacecraft, updated at each control tick, and starts each
+#    run from `initial_levels`. It writes no force, mass-flow or firing-level
+#    hook; the engine derives them.
 mutable struct ExampleNozzleController <: SpaceAGORA.AbstractControlEffectorModel
     sat_idx::Int
     levels::Vector{Float64}
+    initial_levels::Vector{Float64}     # the levels each run starts from
 end
+
+# Configured with one vector: the levels each run starts from, copied into both
+# fields, so the levels a run writes never change the configured start.
+ExampleNozzleController(spacecraft_index::Integer, levels::AbstractVector) =
+    ExampleNozzleController(spacecraft_index, collect(Float64, levels), collect(Float64, levels))
 
 SpaceAGORA.actuation_mode(::ExampleNozzleController) = :mounted
 SpaceAGORA.actuator_levels(c::ExampleNozzleController, spacecraft_index::Int) =
@@ -45,6 +52,14 @@ SpaceAGORA.actuator_levels(c::ExampleNozzleController, spacecraft_index::Int) =
 
 function SpaceAGORA.update_control!(c::ExampleNozzleController, u, p, t::Float64, spacecraft_index::Int)
     # Compute and store the levels here (they are held until the next tick).
+    return nothing
+end
+
+# At each run's start: the levels go back to `initial_levels`, so two runs of one
+# configuration with `isolate_state=false` start equal (the conformance check
+# `initialize_resets`).
+function SpaceAGORA.initialize_control!(c::ExampleNozzleController, u, p, t)
+    copy!(c.levels, c.initial_levels)
     return nothing
 end
 
@@ -60,6 +75,7 @@ end
 
 # Mounting, for a spacecraft `sc` and one of its links:
 #     add_actuator!(sc, sc.root, ExampleColdGasNozzle(SVector(1.0, 0.0, 0.0), SVector(0.0, 0.0, 0.0), 0.5, 60.0))
-# and the controller goes in ControlModel(control_effectors=(ExampleNozzleController(1, [0.1]),), ...).
+# and the controller goes in ControlModel(control_effectors=(ExampleNozzleController(1, [0.1]),), ...);
+# every run starts at level 0.1 until the controller's first tick.
 
 end # module ExampleActuatorTemplate
