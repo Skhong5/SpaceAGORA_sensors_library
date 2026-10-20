@@ -21,6 +21,38 @@ still checks routing, the flat-RHS guard and other runtime restrictions. This
 facade does not add checkpoint/resume, ensemble/process-pool support, actuator
 coupling or a higher-order native step.
 
+## Owners and users
+
+The source inventory in
+`src/orchestration/simulation/external_propagation_services.jl` defines the
+boundary. The same function and type identities are exposed through the facade.
+
+| User | Responsibility | Supported access |
+|---|---|---|
+| MuJoCo `src/engine_coupling.jl` and other adapter implementations | Declare owned spacecraft; prepare a fresh runtime; synchronize and report state | Methods on the eight inventoried external-owner hooks. |
+| Configuration builders and the generated `companion` starter | Attach owners and perform configuration preflight | `with_external_propagators` and `validate_external_propagators`. |
+| Adapter preparation | Read each spacecraft's initial state | `external_initial_state` returns copied samples using the run index. |
+| Telemetry callbacks | Observe owner runtimes without changing them | `external_runtimes` returns borrowed runtimes; callbacks must not step them. |
+| MuJoCo `src/proximity_scene.jl` | Obtain common frame and gravity quantities | Facade frame/gravity services and documented root API, including `StateSample` and `EnvironmentSample`. |
+
+Configuration updates through `with_external_propagators` are shallow. They do
+not clone arbitrary adapter-owned objects. Per-run preparation must establish
+separate mutable runtimes. Preflight is a configuration check; runtime routing
+and unsupported-mode refusals remain necessary.
+
+MuJoCo's `test/common.jl`, `test/engine_tests.jl` and
+`benchmarks/basilisk_mujoco_xval/sagora_driver.jl` also use private core paths for
+fixtures or research. Those are maintenance dependencies, not supported adapter
+APIs. Migrate them only when a public replacement preserves their synchronization,
+frame, spacecraft-index and isolation assertions; document any remaining private
+access rather than exposing raw engine storage for convenience.
+
+Use core `test/unit/external_propagation_tests.jl` and the companion's
+`test/load_order.jl`, `test/incompatible_core.jl` and `test/engine_tests.jl` for
+boundary changes. Preserve both load orders and compatibility refusal before
+native loading or method installation. Record whether an actual native run was
+exercised; facade checks and configuration preflight alone do not certify it.
+
 ## Conventions
 
 - **Argument order.** `external_state(rt, t, slot)` and

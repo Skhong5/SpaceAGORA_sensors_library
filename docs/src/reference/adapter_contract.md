@@ -23,6 +23,62 @@ EDG remains experimental; interface conformance does not establish scientific
 qualification. The HYPR compatibility shim stays at `packages/SpaceAGORAHYPR/`;
 the implementation remains owned by the external HYPR repository.
 
+## Choose a boundary
+
+For a new algorithm, navigation model or controller, start with the
+[GNC student guide](../user/gnc_algorithm.md) and the
+[package, project and companion choices](../extensibility.md). An ordinary
+GNC package uses the public GNC hooks; it need not implement an optional-provider
+facade. The generated `companion` starter is specifically an external-propagation
+owner. SpaceAGORAKitDemo is a public GNC package, not such an owner.
+
+| Boundary | Provider or consumer | Where to find ownership and checks |
+|---|---|---|
+| Planning methods and shared geometry | HYPR extension, core planner adapters and comparison workflows | [HYPR domains and callers](hypr_services.md#Domains-and-callers) |
+| EDG decisions and prediction queries | EDG companion, core guidance/control, provider tests and research | [EDG callers and private forwarding](edg_adapter_boundary.md#Callers-and-private-forwarding) |
+| External state advancement | MuJoCo, other external owners, the `companion` starter and telemetry callbacks | [External-owner users](external_propagation_services.md#Owners-and-users) |
+| Saved JSON and HTML | Core output producers and the independent Visualizer | [Saved-output boundary](#Saved-output-consumers) and [visualization guide](../user/visualization.md) |
+| Atmosphere queries and native resources | GRAMSuite and the core GRAM extension | [Atmosphere models](../user/atmosphere_models.md) and [GRAMSuite setup](../user/gramsuite_setup.md) |
+| Optional interlink matching | PythonCall extension and NetworkX backend | [Interlinks](../user/interlinks.md) |
+
+SpaceAGORA owns the atmosphere wrapper types. Its GRAM extension connects them
+to GRAMSuite, installs hooks in both directions, and reconstructs serialized
+native wrappers with fresh locks. It is not one of the three service facades above. PythonCall/NetworkX is an
+optional matching backend, not a separately versioned SpaceAGORA companion.
+WamIPEDensity is currently a standalone density package without a SpaceAGORA
+adapter; adding one would require a new integration design.
+
+## Versions, source pins and evidence
+
+Keep three identifiers separate when recording a supported pair:
+
+- **Package version:** the resolver's compatibility input in `Project.toml`.
+- **Contract or format version:** the protocol checked by the facade or renderer.
+- **Source revision:** the exact core and companion commits exercised by a check.
+
+The checked-out core's gitlinks and `packages/VisualizerSource.toml` select
+optional source revisions. A companion's default branch or release tag may point
+elsewhere. Record both tested commits rather than treating a package version or
+an updated documentation pin as new execution evidence. In particular, a
+source-level review of a newer companion does not qualify its native runtime.
+
+Use the domain pages below to choose behavioral checks. The generic checks in
+`test/unit/adapter_contract_tests.jl` establish version refusal, inventory shape
+and binding resolution; they do not establish every method signature, unit,
+state lifetime or numerical result. For the other integrations:
+
+| Integration | Existing validation route | Limit to retain in the result |
+|---|---|---|
+| Visualizer | `test/optional/visualizer/optional.jl`, both load orders in `julia-ci.yml`, companion payload/schema and CLI tests | File-format and renderer behavior do not certify propagation. |
+| GRAMSuite | `test/smoke/gram_package_readiness.jl` and `test/smoke/gram_dependency_integration_tests.jl` | The readiness matrix checks loading, identity and injected hooks; the dependency suite exercises a real native-free boundary. Neither alone certifies a native atmosphere run. |
+| PythonCall | `test/integration/interlink_python.jl` and both load orders in `julia-ci.yml` | Keep the missing-backend refusal and edge/weight semantics, as well as successful matching. |
+| Generated packages and companions | Starter smoke tests, contributor-environment checks and the generated package's own tests | Validate the selected core revision; an older demonstration package pin is not evidence for the current release. |
+
+Some provider tests and research scripts intentionally still use private core
+paths. The domain pages name these maintenance dependencies separately from
+supported adapter calls. Keep them working until their users have migrated; do
+not promote a private path into the public contract simply because a test uses it.
+
 ## Facade shape and compatibility
 
 Every facade provides:

@@ -71,6 +71,52 @@ removed or renamed, and SpaceAGORA's own calls are unchanged.
 This boundary covers configured RPO and robot-arm planning. It does not make
 SpaceAGORA geometry or dynamics independent of the simulator.
 
+## Domains and callers
+
+The source inventories in `src/models/gnc/companions/hypr/services.jl` are the
+authority for names. The inventory below preserves their literal spellings;
+this table explains why each group exists rather than adding another symbol list.
+
+| Domain | HYPR supplies | Core supplies and consumes |
+|---|---|---|
+| `Planner` | The HYPR RPO planner implementation used by the GNC adapter | Request/result types, validation and budgets; the configured core planner calls the implementation. |
+| `RPO` | Configured planning, sampling, refinement and retiming methods | Geometry, shared numerical methods and configuration; core planner and comparison workflows consume the resulting references. |
+| `RobotArm` | HYPR arm planning, refinement and retiming methods | Arm types, geometry and shared kernels; arm planning examples and comparison workflows consume plans. |
+| `SwarmPolicy` | Swarm iteration, learning and particle-selection policy | Existing generic bindings shared with the domain namespaces. |
+| `Cloth` | Calls into the supplied compliant-arm services during retiming | Three narrowly exposed dynamics/multibody services in `CLOTH_SERVICES`. |
+
+“HYPR supplies methods” classifies extension points, not every method of the
+generic function. For example, the extension's metric and sampling adapters
+convert HYPR settings and delegate to core kernels. Moving or replacing the
+shared generic would change both sides. `SpaceAGORAHYPR` preserves compatibility
+module aliases; it does not own another planner implementation.
+
+In HYPR, `ext/HYPRSpaceAGORAExt.jl` imports the groups, then includes the domain
+implementations. `ext/rpo_planner_execution.jl` consumes planner requests and
+results, while `ext/robot/swarm_and_retiming.jl` also uses the Cloth services.
+Core's RPO planner adapter, comparison planners and examples are callers too.
+A name unused by one extension file can therefore remain required by the
+contract or by another consumer.
+
+HYPR also has private test dependencies that need a separate migration:
+
+| Companion caller | Existing dependency | Treatment |
+|---|---|---|
+| `test/custom_objective.jl` and `test/extension_coverage.jl` | Private core model/control or extension bindings used by test fixtures | Preserve the tested objective and coverage behavior when replacing the fixture access. |
+| `test/precompiled_conflicts.jl` | Private provider-activation machinery | Keep conflict refusal covered in a fresh process. |
+| `test/jakob_comparison.jl` | Private comparison-fixture access | Qualify the replacement against the pinned fixture before removing access. |
+
+The shim's `RPO` and `RobotArm` aliases refer to HYPR extension namespaces.
+Even an unused import can therefore be observable through those aliases. A
+companion-only import cleanup must check this compatibility surface as well as
+in-repository callers; it must preserve all core contract entries.
+
+For a boundary change, reuse core `test/unit/gnc/hypr_services_tests.jl` and
+HYPR's `test/source_boundaries.jl`, `test/integration.jl` and
+`test/precompiled_loading.jl`, plus the affected domain tests. Keep both package
+load orders, explicit-RNG refusal and shared binding identities covered. An
+import search alone does not establish that removing an interface name is safe.
+
 ## Explicit binding inventory
 
 The groups below are namespaces within `HYPRServices`, not copies of the source

@@ -19,6 +19,34 @@ the scientific policy and its current limits.
 | Fresh-run initialization, per-passage bookkeeping and shared guidance/control state | Core lifecycle hooks, operating on the run's own EDG state. |
 | Older E-EDG/T-EDG strategy routes | Removed from core; SpaceAGORAEDG is the only EDG implementation. |
 
+## Callers and private forwarding
+
+The public facade inventory in `src/models/gnc/companions/edg/services.jl`
+separates two provider decisions from core-supplied types and queries. Core's
+`ext/SpaceAGORAEDGExt.jl` delegates calls to the companion by allowed name;
+this differs from an external propagator adding methods to the same core generic.
+
+| Consumer | Access | Maintenance boundary |
+|---|---|---|
+| Companion decision implementations | Explicit `EDGServices` imports in `src/SpaceAGORAEDG.jl` | Supported facade calls; prediction contexts are supplied by core during a decision. |
+| Core guidance and control | Delegation through the extension and core-owned lifecycle | Core retains callbacks, pairing, panel application and per-run state. |
+| Core targeting control | `_edg_recompute_switches!`, `_edg_base_alpha` and `_edg_command_alpha!` through the compatibility bridge | Existing private coupling, outside the public decision/query inventory. |
+| Companion `test/runtests.jl` | Private context/kernel fixtures and compatibility-binding checks, alongside public analytic-run tests | Preserve lease-expiry, observation-copy and real dispatch-path assertions when migrating fixtures. |
+| Companion `benchmarks/native_reference/refresh_comparison.jl` and `observer_comparison_cases.jl` | Private model/engine/control aliases, `ODEParams` construction and integrator access | Research callers need an explicit replacement and correctness check before their private paths can be removed. |
+
+The private allowlist lives in
+`src/models/gnc/guidance/aerobraking/typed_edg/algorithms.jl`. Its retained helpers
+are not extra public hooks. It includes the two decisions as well as helpers
+used by core, regression fixtures and research. Shrinking the formal facade
+would not remove this separate coupling. Keep the bridge until each maintained
+caller has migrated or has been explicitly retired.
+
+For changes here, use the companion's facade/signature, context-lease, copy and
+analytic-run checks in `test/runtests.jl`, together with core EDG callback/control
+tests. Exercise the real core-to-extension-to-provider path, including expiry
+after exceptions. Public simulation tests and private fixture tests answer
+different questions; interface conformance does not establish scientific validity.
+
 ## Supported calls and values
 
 `IMPLEMENTED_FUNCTIONS` names the two decision services the companion
@@ -32,7 +60,7 @@ companion updates, then the immutable configuration, the controlled panel links
 (control only), a copied observation `u`, a borrowed prediction context `p`, the
 elapsed time `t` in seconds and the spacecraft's position in the run,
 `spacecraft_index`, from 1. `CONSUMED_SERVICES` lists the exact types and query
-operations used by the companion. The retained helper inventory supports
+operations supplied to the companion by this contract. The retained helper inventory supports
 compatibility routes and regression fixtures; it is not a general-purpose
 simulation API.
 
