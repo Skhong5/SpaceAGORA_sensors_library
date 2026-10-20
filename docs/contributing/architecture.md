@@ -328,33 +328,42 @@ and keeps each kind in the order below.
 3. The planet-frame update.
 4. The external-propagation sync, when a spacecraft is propagated externally.
    The discrete callbacks after it read the synced entries.
-5. The callbacks built by `run_simulation`'s `priority_callback_factories`,
+5. The hardware's run-state start (`get_run_state_callbacks` in
+   `callbacks/control_callbacks.jl`), when a spacecraft carries a hinge, a
+   thruster gimbal or a thruster with firing dynamics. Its initialization
+   starts their angles and firing state for the run, as the battery's and the
+   faults' initializations start theirs, and a resumed run's initialization
+   records the restored state instead. It does nothing after initialization.
+   It initializes before every callback that reads or moves that hardware: the
+   priority callbacks, the sensors' first sample (taken at initialization) and
+   the control ticks.
+6. The callbacks built by `run_simulation`'s `priority_callback_factories`,
    such as a mission's operational segments.
-6. Touchdown (continuous).
-7. The opt-in GRAM density perturbation, before every callback that stages or
+7. Touchdown (continuous).
+8. The opt-in GRAM density perturbation, before every callback that stages or
    reads density, so that they see the factor updated at the same step.
-8. The staged density, the thermal update, orbit end (continuous), entry end
+9. The staged density, the thermal update, orbit end (continuous), entry end
    (continuous) and the drag-state phase crossings (continuous), each only when
    the run needs it.
-9. The GNC phase (`_gnc_phase_callbacks`):
-   1. sensors sample;
-   2. navigation ticks;
-   3. guidance that must publish before the same tick's control: energy
-      depletion guidance with targeting;
-   4. control, in configuration order: a periodic model's tick, or an
-      event-driven model's own `gnc_callbacks`, added as they are;
-   5. actuator faults switch;
-   6. the power budget: the battery boundary (continuous) and the step-end
-      update, which sheds by the load the switched faults leave;
-   7. CMG gimbals stop at their limits (continuous);
-   8. the remaining guidance ticks.
-10. The quaternion projection, when attitude is integrated.
-11. Plume interaction.
-12. The initial force output.
-13. Result saving.
-14. `run_simulation`'s `extra_callbacks`, then the callbacks built by its
+10. The GNC phase (`_gnc_phase_callbacks`):
+    1. sensors sample;
+    2. navigation ticks;
+    3. guidance that must publish before the same tick's control: energy
+       depletion guidance with targeting;
+    4. control, in configuration order: a periodic model's tick, or an
+       event-driven model's own `gnc_callbacks`, added as they are;
+    5. actuator faults switch;
+    6. the power budget: the battery boundary (continuous) and the step-end
+       update, which sheds by the load the switched faults leave;
+    7. CMG gimbals stop at their limits (continuous);
+    8. the remaining guidance ticks.
+11. The quaternion projection, when attitude is integrated.
+12. Plume interaction.
+13. The initial force output.
+14. Result saving.
+15. `run_simulation`'s `extra_callbacks`, then the callbacks built by its
     `extra_callback_factories`.
-15. With interlinks, the interlink scheduler, at initialization (the same
+16. With interlinks, the interlink scheduler, at initialization (the same
     selection again) and after every accepted step.
 
 When the run has EDG passage heat to observe, `_edg_observe_heat_callbacks`
@@ -362,7 +371,7 @@ wraps every callback above except the two interlink scheduler callbacks, and
 adds one observer. The observer runs first among the assembly's discrete
 callbacks; only the scheduler's initialization-only copy comes before it. Under
 `solver_mode=:gravity_backbone_split` only impact, the external-propagation
-sync, the priority callbacks, touchdown, orbit end, plume interaction, the
+sync, the hardware's run-state start, the priority callbacks, touchdown, orbit end, plume interaction, the
 initial force output and the extra callbacks are installed; that mode refuses
 interlinks.
 
@@ -373,6 +382,11 @@ interlinks.
   control ticks after control, faults, power and CMGs; energy depletion
   guidance with targeting ticks before control, so the panel command uses the
   plan made at the same tick.
+- **The hardware starts the run before anything reads it.** Hinge and gimbal
+  angles and the firing state of thrusters with firing dynamics start each run
+  as configured, unless changed between two runs with `isolate_state=false`.
+  The callbacks that read them at initialization, such as a sensor mounted on
+  a hinged link, see the run's start.
 - **Linked producers prepare their consumer once per tick.** A periodic control
   tick (`_periodic_control_tick!` in `callbacks/control_callbacks.jl`) first
   calls `before_reference_control!` for each model that produces a link the
