@@ -302,6 +302,10 @@ effectors keep the same tick times, from the run's start. A run resumed from a
 checkpoint written at a segment boundary starts with the first tick after it;
 one resumed from the checkpoint written at the end of a run, to extend that
 run, first takes the ticks due at that time, which the ended run did not take.
+Each checkpoint records which of the two it is. A checkpoint written by
+SpaceAGORA 0.4.0 or earlier does not; it is read as that version left it, which
+also means a tick an ulp or so after its time, which 0.4.0 left to the next
+segment, is taken when the resumed run starts.
 The checkpoint directory defaults to `results_directory/checkpoints` when left
 empty. Besides
 the state, the checkpoint holds the run state the callbacks keep on the

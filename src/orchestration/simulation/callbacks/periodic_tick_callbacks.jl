@@ -32,7 +32,11 @@
 # at a solve's start it is the tick taken at the previous solve's end, or the
 # pending one. At the run's end it is pending, as a tick exactly there. Elsewhere
 # in a solve, and without the run clock, tick times are compared exactly, as
-# PeriodicCallback compares them.
+# PeriodicCallback compares them. Which ticks at a resumed run's start are
+# pending comes from its checkpoint (`SimulationEngine._pending_periodic_ticks`):
+# the pending start and the earliest pending tick time, since a checkpoint
+# written before this rule took the ticks just before its time but not those just
+# after it.
 
 const _PeriodicTickClock = NamedTuple{(:origin, :index, :horizon),
     Tuple{Base.RefValue{Float64}, Base.RefValue{Int}, Base.RefValue{Float64}}}
@@ -64,10 +68,10 @@ end
 end
 
 @inline function _periodic_run_clock(p)
-    hasproperty(p, :shared_buffers) || return (NaN, NaN, NaN)
+    hasproperty(p, :shared_buffers) || return (NaN, NaN, NaN, -Inf)
     buffers = p.shared_buffers
     return (buffers.periodic_clock_origin_s[], buffers.periodic_clock_horizon_s[],
-            buffers.periodic_clock_pending_s[])
+            buffers.periodic_clock_pending_s[], buffers.periodic_clock_pending_from_s[])
 end
 
 # Stop at the next tick unless the solve ends first, as PeriodicCallback does. A
@@ -131,11 +135,11 @@ function _run_clock_periodic_callback(f, Δt::Float64; on_clock=(origin, integra
             storage[key] = clock
         end
         clock = clock::_PeriodicTickClock
-        run_origin, run_horizon, pending = _periodic_run_clock(integrator.p)
+        run_origin, run_horizon, pending, pending_from = _periodic_run_clock(integrator.p)
         clock.origin[] = isnan(run_origin) ? Float64(t) : run_origin
         clock.horizon[] = run_horizon
         # The first tick after the solve's start. A tick at the start itself
-        # fired at the end of the previous segment, unless it is pending.
+        # fired before the checkpoint the solve starts from, unless it is pending.
         k = max(1, floor(Int, (t - clock.origin[]) / Δt))
         while _periodic_tick_time(clock, Δt, k) <= t || _periodic_tick_at(clock, Δt, k, t)
             k += 1
@@ -145,9 +149,10 @@ function _run_clock_periodic_callback(f, Δt::Float64; on_clock=(origin, integra
         end
         clock.index[] = k - 1
         on_clock(clock.origin[], integrator)
-        if k > 1 && t == pending && _periodic_tick_at(clock, Δt, k - 1, t)
+        if k > 1 && t == pending && _periodic_tick_at(clock, Δt, k - 1, t) &&
+                _periodic_tick_time(clock, Δt, k - 1) >= pending_from
             # The tick at the start, which the run that wrote the checkpoint
-            # ended before taking. It changes the derivative.
+            # did not take. It changes the derivative.
             DiffEqBase.derivative_discontinuity!(integrator, true)
             affect!(integrator)
             return nothing

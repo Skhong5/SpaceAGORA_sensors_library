@@ -710,7 +710,7 @@ function run_simulation(
 
     t_start = 0.0
     u_start = initial_conditions
-    resumed, model_snapshot, pending_ticks_s = false, nothing, NaN
+    resumed, model_snapshot, pending_ticks = false, nothing, (at_s=NaN, from_s=-Inf)
     if args.simulation_settings.resume_from_checkpoint
         ckpt = _load_checkpoint(args)
         if ckpt === nothing
@@ -735,7 +735,7 @@ function run_simulation(
             _restore_interlink_checkpoint_state!(args, ckpt, p.is_active)
             _restore_callback_checkpoint_state!(args, ckpt, p)
             model_snapshot = _check_model_checkpoint_state(args, ckpt)
-            pending_ticks_s = _pending_periodic_ticks_s(ckpt)
+            pending_ticks = _pending_periodic_ticks(ckpt)
             resumed = true
             t_start = ckpt.t
             u_start = ckpt.u
@@ -760,7 +760,8 @@ function run_simulation(
     run_clock = checkpoint_active || resumed
     p.shared_buffers.periodic_clock_origin_s[] = run_clock ? 0.0 : NaN
     p.shared_buffers.periodic_clock_horizon_s[] = run_clock ? Float64(mission_end) : NaN
-    p.shared_buffers.periodic_clock_pending_s[] = pending_ticks_s
+    p.shared_buffers.periodic_clock_pending_s[] = pending_ticks.at_s
+    p.shared_buffers.periodic_clock_pending_from_s[] = pending_ticks.from_s
     # The links first (each initialized once), then the control clocks, then
     # navigation, guidance and control: each stage may read what the previous one
     # set up.

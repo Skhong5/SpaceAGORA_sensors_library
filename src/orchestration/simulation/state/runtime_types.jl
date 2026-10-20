@@ -874,9 +874,11 @@ export RhsEffectorDecision, RhsExecutionPlan
         # NaN leaves each solve its own grid.
         periodic_clock_origin_s::Base.RefValue{Float64} = Ref(NaN)
         periodic_clock_horizon_s::Base.RefValue{Float64} = Ref(NaN)
-        # A resumed run's start when the ticks due there are pending: its
-        # checkpoint was written at the end of the run that wrote it.
+        # A resumed run's start when ticks due there are pending, and the
+        # earliest pending tick time: the ticks at that start (up to
+        # `_same_run_time`) from that time on run when the resumed run starts.
         periodic_clock_pending_s::Base.RefValue{Float64} = Ref(NaN)
+        periodic_clock_pending_from_s::Base.RefValue{Float64} = Ref(-Inf)
         debug_control::Base.RefValue{Bool} = Ref(false)
         debug_initial_derivative::Base.RefValue{Bool} = Ref(false)
         effector_cost_ns_per_item::Base.RefValue{Float64} = Ref(NaN)
