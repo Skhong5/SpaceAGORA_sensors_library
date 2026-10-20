@@ -144,6 +144,14 @@ end
             ν = OG._true_anomaly_from_mean(mirrored, e)
             @test abs(ν - (2 * big(pi) - bigfloat_true_anomaly(2pi - mirrored, e))) <= 2 * eps(2pi)
         end
+        # The bracketed solve on its own, at inputs where plain Newton's iterates cycle
+        # a few ulps around the root, or where a step lands on 0: the bracket settles them.
+        for (M, e) in ((0.37491748451944507, 0.23594472361809046), (0.07641192965098051, 0.6475929648241207),
+                       (1e-300, 0.0))
+            ν = OG._true_anomaly_from_eccentric(OG._eccentric_anomaly_safeguarded(M, e), e)
+            reference = bigfloat_true_anomaly(M, e)
+            @test abs(ν - reference) <= 8 * eps(reference)
+        end
         # Where the Newton loop converged and 1 - e cos E stays >= 0.05, which holds
         # for every e <= 0.95, the result is the loop's, bit for bit. That includes the
         # cases above, except the apsis M = 0, which the loop missed by a few 1e-37 rad
