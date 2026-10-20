@@ -23,14 +23,22 @@ end
 # parameter can hold) is recorded with its own type, since `1`, `1.0`, `true`
 # and `Int32(1)` select different methods yet compare equal as numbers. A
 # floating-point value also keeps its bits, so that -0.0 and 0.0, and NaNs with
-# different payloads, stay apart as they do in types.
+# different payloads, stay apart as they do in types. A composite bits value (a
+# `ComplexF64`, a struct of numbers) is recorded field by field, the same way:
+# its own `isequal` can merge values that are distinct types (two NaN payloads
+# in one `Complex`), and its padding bytes carry no meaning.
 _interlink_kind_identity(kind::DataType) = (module_path=fullname(parentmodule(kind)), name=nameof(kind),
     parameters=map(_interlink_kind_parameter, Tuple(kind.parameters)))
 _interlink_kind_parameter(parameter::DataType) = _interlink_kind_identity(parameter)
 _interlink_kind_parameter(parameter::Union) = (union=map(_interlink_kind_parameter, Tuple(Base.uniontypes(parameter))),)
 _interlink_kind_parameter(parameter::Type) = string(parameter)   # a UnionAll parameter: its printed form
 _interlink_kind_parameter(parameter::Tuple) = map(_interlink_kind_parameter, parameter)
-_interlink_kind_parameter(parameter) = (type=_interlink_kind_identity(typeof(parameter)), value=parameter)
+function _interlink_kind_parameter(parameter)
+    kind = typeof(parameter)
+    isbitstype(kind) && !isprimitivetype(kind) && return (type=_interlink_kind_identity(kind),
+        fields=ntuple(index -> _interlink_kind_parameter(getfield(parameter, index)), fieldcount(kind)))
+    return (type=_interlink_kind_identity(kind), value=parameter)
+end
 _interlink_kind_parameter(parameter::Base.IEEEFloat) = (type=_interlink_kind_identity(typeof(parameter)),
     value=parameter, bits=reinterpret(Base.uinttype(typeof(parameter)), parameter))
 
