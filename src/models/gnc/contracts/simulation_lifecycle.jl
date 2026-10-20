@@ -3,6 +3,20 @@
 # events and the call before a linked consumer's tick. Each default does nothing;
 # restore_checkpoint_state! has none.
 # The bind_spacecraft fallback names the effector's scope, a GNCRuntime declaration.
+#
+# The engine calls them in this order in a run (see "Run state: owners, resets
+# and restores" in docs/contributing/architecture.md):
+# 1. `bind_spacecraft` for each effector a spacecraft declares, then
+#    `preflight_guidance` and `preflight_control`, on the caller's objects, before
+#    the run copies them;
+# 2. at the run's start, each link's `link_initialize!` (GNCRuntime), then
+#    `initialize_navigation!`, `initialize_guidance!` and `initialize_control!`;
+# 3. on a resumed run, `restore_checkpoint_state!`, after those initializers;
+# 4. during the solve, the models' ticks, with `before_reference_control!` before
+#    a linked consumer's periodic tick and `atmosphere_transition!` at atmosphere
+#    crossings;
+# 5. `checkpoint_state` at every checkpoint, and at the start of a checkpointed or
+#    resumed run, to check that a model keeping run state can restore it.
 isdefined(@__MODULE__, :GNCRuntime) || Base.include(@__MODULE__, joinpath(@__DIR__, "gnc_runtime.jl"))
 module SimulationLifecycle
 using ..GNCRuntime: spacecraft_scope, BoundSpacecraft, CoupledSpacecraft

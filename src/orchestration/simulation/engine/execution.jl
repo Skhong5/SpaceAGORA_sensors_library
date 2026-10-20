@@ -485,6 +485,97 @@ function _print_initial_conditions(io::IO, u0::ComponentVector)
     return nothing
 end
 
+# The start of a run, in three phases that `run_simulation` calls in this order
+# (see "Run state: owners, resets and restores" in
+# docs/contributing/architecture.md). The engine's and the callbacks' run state
+# comes back from a checkpoint before the models start, and the models' own run
+# state after their initializers: two restores at two different times.
+
+# Phase 1, a resumed run's engine and callback state: read the checkpoint, check
+# that it fits the run, restore the spacecraft's activity, the interlinks' and the
+# callbacks' run state, and the pending periodic ticks, and set the resume flags
+# the callbacks (`callback_resume`) and the models' initializers (`model_resume`)
+# read. The models' own state is only checked here (`model_snapshot`). Without a
+# checkpoint to resume from, the run starts at 0 from `initial_conditions`.
+function _resume_engine_state!(args, p, solver_mode, initial_conditions)
+    t_start = 0.0
+    u_start = initial_conditions
+    resumed, model_snapshot, pending_ticks = false, nothing, (at_s=NaN, from_s=-Inf, clocks=nothing)
+    if args.simulation_settings.resume_from_checkpoint
+        ckpt = _load_checkpoint(args)
+        if ckpt === nothing
+            @warn "resume_from_checkpoint=true but no checkpoint file was found; starting from initial conditions."
+        else
+            if solver_mode == :gravity_backbone_split
+                ckpt.solver_mode == "gravity_backbone_split" || throw(ArgumentError(
+                    "gravity_backbone_split can only resume from checkpoints written by SPACEAGORA_SOLVER_MODE=gravity_backbone_split."
+                ))
+            elseif ckpt.solver_mode == "gravity_backbone_split"
+                throw(ArgumentError(
+                    "Checkpoint was written by gravity_backbone_split and cannot be resumed with solver mode $(solver_mode)."
+                ))
+            end
+            if solver_mode != :gravity_backbone_split
+                has_interlinks = args.interlink_model !== nothing
+                all(sc -> hasproperty(sc, :laser_dv) == has_interlinks &&
+                    hasproperty(sc, :laser_delta_sma) == has_interlinks, ckpt.u.sc) ||
+                    throw(ArgumentError("Checkpoint interlink state does not match the configured interlink_model; resume with the same interlink setting."))
+            end
+            _restore_activity_checkpoint_state!(args, ckpt, p.is_active)
+            _restore_interlink_checkpoint_state!(args, ckpt, p.is_active)
+            _restore_callback_checkpoint_state!(args, ckpt, p)
+            model_snapshot = _check_model_checkpoint_state(args, ckpt)
+            pending_ticks = _pending_periodic_ticks(ckpt)
+            resumed = true
+            t_start = ckpt.t
+            u_start = ckpt.u
+            _initialize_in_atmosphere_flags!(p, u_start)
+            p.shared_buffers.model_resume[] = model_snapshot !== nothing
+            if args.simulation_settings.verbose
+                println("Resuming simulation from checkpoint at t=$(round(t_start, digits=6)) s")
+            end
+        end
+    end
+    return (; resumed, model_snapshot, pending_ticks, t_start, u_start)
+end
+
+# Phase 2, the run clock of the periodic navigation, guidance and control ticks
+# (see callbacks/periodic_tick_callbacks.jl), and the ticks a resumed run takes at
+# its start.
+function _start_run_clock!(p, run_clock, mission_end, pending_ticks)
+    p.shared_buffers.periodic_clock_origin_s[] = run_clock ? 0.0 : NaN
+    p.shared_buffers.periodic_clock_horizon_s[] = run_clock ? Float64(mission_end) : NaN
+    p.shared_buffers.periodic_clock_pending_s[] = pending_ticks.at_s
+    p.shared_buffers.periodic_clock_pending_from_s[] = pending_ticks.from_s
+    p.shared_buffers.periodic_clock_pending_clocks[] = pending_ticks.clocks
+    return nothing
+end
+
+# Phase 3, the models: the links, the control clocks, the models' initializers,
+# then, on a resumed run, the models' own run state from the checkpoint, which
+# replaces their reset.
+function _start_run_models!(args, p, u_start, t_start, run_clock, resumed, model_snapshot, checkpoint_active)
+    # The links first (each initialized once), then the control clocks, then
+    # navigation, guidance and control: each stage may read what the previous one
+    # set up.
+    SimulationModel.SimulationCallbacks.initialize_gnc_links!(args, u_start, p, t_start)
+    SimulationModel.SimulationCallbacks._report_gnc_clocks!(args, run_clock ? 0.0 : t_start)
+    for navigation in args.navigation_model.navigation_effectors
+        SimulationLifecycle.initialize_navigation!(navigation, u_start, p, t_start)
+    end
+    for guidance in args.guidance_model.guidance_effectors
+        SimulationLifecycle.initialize_guidance!(guidance, u_start, p, t_start)
+    end
+    for control in args.control_model.control_effectors
+        SimulationLifecycle.initialize_control!(control, u_start, p, t_start)
+    end
+    # The models' own run state replaces their reset on a resumed run.
+    resumed && _restore_model_checkpoint_state!(args, model_snapshot)
+    checkpoint_active && _check_model_checkpoint_hooks(args)
+    SimulationModel.ControlHooks._edg_initialize_heat_accounting!(args, u_start, Float64(t_start))
+    return nothing
+end
+
 """
     run_simulation(args...; isolate_state=true, kwargs...)
 
@@ -708,44 +799,10 @@ function run_simulation(
         throw(ArgumentError("SimulationSettings.checkpoint_interval_s must be > 0 when checkpointing is enabled."))
     end
 
-    t_start = 0.0
-    u_start = initial_conditions
-    resumed, model_snapshot, pending_ticks = false, nothing, (at_s=NaN, from_s=-Inf, clocks=nothing)
-    if args.simulation_settings.resume_from_checkpoint
-        ckpt = _load_checkpoint(args)
-        if ckpt === nothing
-            @warn "resume_from_checkpoint=true but no checkpoint file was found; starting from initial conditions."
-        else
-            if solver_mode == :gravity_backbone_split
-                ckpt.solver_mode == "gravity_backbone_split" || throw(ArgumentError(
-                    "gravity_backbone_split can only resume from checkpoints written by SPACEAGORA_SOLVER_MODE=gravity_backbone_split."
-                ))
-            elseif ckpt.solver_mode == "gravity_backbone_split"
-                throw(ArgumentError(
-                    "Checkpoint was written by gravity_backbone_split and cannot be resumed with solver mode $(solver_mode)."
-                ))
-            end
-            if solver_mode != :gravity_backbone_split
-                has_interlinks = args.interlink_model !== nothing
-                all(sc -> hasproperty(sc, :laser_dv) == has_interlinks &&
-                    hasproperty(sc, :laser_delta_sma) == has_interlinks, ckpt.u.sc) ||
-                    throw(ArgumentError("Checkpoint interlink state does not match the configured interlink_model; resume with the same interlink setting."))
-            end
-            _restore_activity_checkpoint_state!(args, ckpt, p.is_active)
-            _restore_interlink_checkpoint_state!(args, ckpt, p.is_active)
-            _restore_callback_checkpoint_state!(args, ckpt, p)
-            model_snapshot = _check_model_checkpoint_state(args, ckpt)
-            pending_ticks = _pending_periodic_ticks(ckpt)
-            resumed = true
-            t_start = ckpt.t
-            u_start = ckpt.u
-            _initialize_in_atmosphere_flags!(p, u_start)
-            p.shared_buffers.model_resume[] = model_snapshot !== nothing
-            if args.simulation_settings.verbose
-                println("Resuming simulation from checkpoint at t=$(round(t_start, digits=6)) s")
-            end
-        end
-    end
+    # The run's start, in three phases (defined above): a resumed run's engine and
+    # callback state, the run clock, then the models.
+    (; resumed, model_snapshot, pending_ticks, t_start, u_start) =
+        _resume_engine_state!(args, p, solver_mode, initial_conditions)
 
 
     # println("Initial conditions:")
@@ -758,29 +815,8 @@ function run_simulation(
     # ticks at segment boundaries on it; a resumed run takes the ticks pending
     # at its start.
     run_clock = checkpoint_active || resumed
-    p.shared_buffers.periodic_clock_origin_s[] = run_clock ? 0.0 : NaN
-    p.shared_buffers.periodic_clock_horizon_s[] = run_clock ? Float64(mission_end) : NaN
-    p.shared_buffers.periodic_clock_pending_s[] = pending_ticks.at_s
-    p.shared_buffers.periodic_clock_pending_from_s[] = pending_ticks.from_s
-    p.shared_buffers.periodic_clock_pending_clocks[] = pending_ticks.clocks
-    # The links first (each initialized once), then the control clocks, then
-    # navigation, guidance and control: each stage may read what the previous one
-    # set up.
-    SimulationModel.SimulationCallbacks.initialize_gnc_links!(args, u_start, p, t_start)
-    SimulationModel.SimulationCallbacks._report_gnc_clocks!(args, run_clock ? 0.0 : t_start)
-    for navigation in args.navigation_model.navigation_effectors
-        SimulationLifecycle.initialize_navigation!(navigation, u_start, p, t_start)
-    end
-    for guidance in args.guidance_model.guidance_effectors
-        SimulationLifecycle.initialize_guidance!(guidance, u_start, p, t_start)
-    end
-    for control in args.control_model.control_effectors
-        SimulationLifecycle.initialize_control!(control, u_start, p, t_start)
-    end
-    # The models' own run state replaces their reset on a resumed run.
-    resumed && _restore_model_checkpoint_state!(args, model_snapshot)
-    checkpoint_active && _check_model_checkpoint_hooks(args)
-    SimulationModel.ControlHooks._edg_initialize_heat_accounting!(args, u_start, Float64(t_start))
+    _start_run_clock!(p, run_clock, mission_end, pending_ticks)
+    _start_run_models!(args, p, u_start, t_start, run_clock, resumed, model_snapshot, checkpoint_active)
     p.shared_buffers.solve_segment_end_time[] = mission_end
     # prob_debug exists only to feed the NaN-probe below, which itself only
     # runs when SPACEAGORA_DEBUG_INITIAL_DERIVATIVE is set. Building it
