@@ -263,7 +263,8 @@ the file that performs each step.
    operations declared in `src/orchestration/simulation/callback_services.jl`;
    the engine supplies their implementations in `engine/callback_services.jl`.
    This replaces dynamic engine lookup while retaining the existing state
-   access and mutation rules. See [Stopping on a Condition](../src/user/stop_conditions.md).
+   access and mutation rules. The order the callbacks run in is explained under
+   [Callback order](#callback-order). See [Stopping on a Condition](../src/user/stop_conditions.md).
 8. **Propagation.** `spacecraft_dynamics!` in
    `dynamics_rhs.jl`
    assembles translational and rotational derivatives for every spacecraft;
@@ -287,6 +288,115 @@ the file that performs each step.
    module supplies methods for the historical GNC function objects, preserving
    existing access without duplicating the report implementation. See
    [Simulation Outputs](../src/user/outputs.md).
+
+## Callback order
+
+This section is the one place that states the order of a run's callbacks and
+why it holds. `get_callbacks` in
+`src/orchestration/simulation/callbacks/density_callbacks/assembly.jl` builds
+them in this order, and `run_simulation` in
+`src/orchestration/simulation/engine/execution.jl` adds the interlink scheduler
+around them: an initialization-only copy before them and the scheduler after
+them. Change the order and this section together.
+
+### How the solver applies them
+
+The solver keeps the continuous callbacks (events located at a root inside a
+step) apart from the discrete ones (checked at the end of each accepted step),
+and keeps each kind in the order below.
+
+- At the start of each solve, every callback's `initialize` runs: the
+  continuous callbacks first, then the discrete ones, in order.
+- After each accepted step, the solver applies the earliest root among the
+  continuous callbacks (the first in order when roots coincide), then every
+  discrete callback whose condition holds, in order. A discrete callback that
+  terminates the solve does not stop the later ones in that step.
+- A checkpointed run solves one segment after another with the same callbacks.
+  Periodic navigation, guidance and control ticks keep one tick grid for the
+  whole run (`callbacks/periodic_tick_callbacks.jl`), so a tick at a segment
+  boundary fires once, before the checkpoint written there.
+
+### The order
+
+1. With interlinks, the interlink scheduler's initialization-only copy
+   (`interlink_scheduler_initialization`). It is the first discrete callback,
+   so the first link selection is in place before the other discrete callbacks
+   initialize, and the first saved row shows what the links draw. It does
+   nothing after initialization.
+2. Impact (continuous), for every spacecraft except touchdown spacecraft and
+   externally propagated ones.
+3. The planet-frame update.
+4. The external-propagation sync, when a spacecraft is propagated externally.
+   The discrete callbacks after it read the synced entries.
+5. The callbacks built by `run_simulation`'s `priority_callback_factories`,
+   such as a mission's operational segments.
+6. Touchdown (continuous).
+7. The opt-in GRAM density perturbation, before every callback that stages or
+   reads density, so that they see the factor updated at the same step.
+8. The staged density, the thermal update, orbit end (continuous), entry end
+   (continuous) and the drag-state phase crossings (continuous), each only when
+   the run needs it.
+9. The GNC phase (`_gnc_phase_callbacks`):
+   1. sensors sample;
+   2. navigation ticks;
+   3. guidance that must publish before the same tick's control: energy
+      depletion guidance with targeting;
+   4. control, in configuration order: a periodic model's tick, or an
+      event-driven model's own `gnc_callbacks`, added as they are;
+   5. actuator faults switch;
+   6. the power budget: the battery boundary (continuous) and the step-end
+      update, which sheds by the load the switched faults leave;
+   7. CMG gimbals stop at their limits (continuous);
+   8. the remaining guidance ticks.
+10. The quaternion projection, when attitude is integrated.
+11. Plume interaction.
+12. The initial force output.
+13. Result saving.
+14. `run_simulation`'s `extra_callbacks`, then the callbacks built by its
+    `extra_callback_factories`.
+15. With interlinks, the interlink scheduler, at initialization (the same
+    selection again) and after every accepted step.
+
+When the run has EDG passage heat to observe, `_edg_observe_heat_callbacks`
+wraps every callback above except the two interlink scheduler callbacks, and
+adds one observer. The observer runs first among the assembly's discrete
+callbacks; only the scheduler's initialization-only copy comes before it. Under
+`solver_mode=:gravity_backbone_split` only impact, the external-propagation
+sync, the priority callbacks, touchdown, orbit end, plume interaction, the
+initial force output and the extra callbacks are installed; that mode refuses
+interlinks.
+
+### What the order guarantees
+
+- **At one time: sensors, navigation, control, guidance.** Sensors sample
+  before navigation reads them. Guidance that does not feed the same tick's
+  control ticks after control, faults, power and CMGs; energy depletion
+  guidance with targeting ticks before control, so the panel command uses the
+  plan made at the same tick.
+- **Linked producers prepare their consumer once per tick.** A periodic control
+  tick (`_periodic_control_tick!` in `callbacks/control_callbacks.jl`) first
+  calls `before_reference_control!` for each model that produces a link the
+  controller consumes: each once, in configuration order, on the callback's
+  thread, and only when the tick acts on some spacecraft.
+- **Scope and inactive spacecraft.** Each spacecraft's tick goes through
+  `_gnc_tick!` (`callbacks/gnc_scope.jl`): a model ticks only for the
+  spacecraft its `spacecraft_scope` names, and when it declares
+  `skip_inactive`, an inactive spacecraft gets `release_command!` instead. The
+  mounted actuators then apply the levels the model holds. An event-driven
+  model's own callbacks do this themselves; the burn scheduler keeps a released
+  command released at its scheduling passes and burn edges.
+- **Stops after the ticks, one spacecraft at a time.** The ticks of one control
+  model may run on several threads. The solver's stop list belongs to the
+  integrator they share, so `register_tstops!` runs afterwards, on the
+  callback's thread.
+- **Planner policy stays in the planner.** An RPO planner's holds, revisions,
+  retries and interval replans happen in its guidance tick;
+  `before_reference_control!` only refuses a reference that is missing or no
+  longer current. None of them is an engine callback.
+
+The engine has no scheduler of its own: each model's callback keeps its own
+period and tick grid, and the order above decides which runs first when they
+coincide.
 
 ## Map of the repository
 

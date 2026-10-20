@@ -186,6 +186,37 @@ end
         :targeting in model.config.guidance_modes
 end
 
+# The guidance callbacks that tick before control (`before_control=true`) or after
+# it, each keeping its own period and tick grid, in configuration order.
+function _guidance_callbacks_in_phase(guidance_callbacks, guidance_models, before_control::Bool)
+    return [guidance_callbacks[i] for i in eachindex(guidance_callbacks)
+            if _guidance_precedes_control(guidance_models[i]) == before_control]
+end
+
+# The GNC phase of the run's callbacks, in the order they apply at one time.
+function _gnc_phase_callbacks(num_sats::Int, args::SimulationConfiguration)
+    # Sensors sample before navigation reads them at the same time.
+    callbacks = _append_callbacks((), get_sensor_callbacks(num_sats, args))
+    callbacks = _append_callbacks(callbacks, get_navigation_callbacks(num_sats, args))
+    # EDG targeting must publish its plan before the same tick's panel
+    # command. Each callback keeps its own period and tick grid.
+    guidance_callbacks = get_guidance_callbacks(num_sats, args)
+    guidance_models = args.guidance_model.guidance_effectors
+    callbacks = _append_callbacks(callbacks, _guidance_callbacks_in_phase(guidance_callbacks, guidance_models, true))
+    callbacks = _append_callbacks(callbacks, get_control_callbacks(num_sats, args))
+    # Faults switch before the power budget's step-end update, which then
+    # sheds by the load the switched faults leave.
+    callbacks = _append_callbacks(callbacks, get_fault_callbacks(num_sats, args))
+    callbacks = _append_callbacks(callbacks, get_power_callbacks(num_sats, args))
+    callbacks = _append_callbacks(callbacks, get_cmg_callbacks(num_sats, args))
+    return _append_callbacks(callbacks, _guidance_callbacks_in_phase(guidance_callbacks, guidance_models, false))
+end
+
+# The run's callbacks, in the order the solver applies them at one time; the
+# engine adds the interlink scheduler around them (an initialization-only copy
+# first, the scheduler last). "Callback order" in
+# docs/contributing/architecture.md explains this order and what it guarantees;
+# change the two together.
 function get_callbacks(
     num_sats::Int,
     effectors::Tuple,
@@ -255,29 +286,7 @@ function get_callbacks(
     end
 
     if !backbone_mode
-        # Sensors sample before navigation reads them at the same time.
-        callbacks = _append_callbacks(callbacks, get_sensor_callbacks(num_sats, args))
-        callbacks = _append_callbacks(callbacks, get_navigation_callbacks(num_sats, args))
-        guidance_callbacks = get_guidance_callbacks(num_sats, args)
-        guidance_models = args.guidance_model.guidance_effectors
-        # EDG targeting must publish its plan before the same tick's panel
-        # command. Each callback keeps its own period and tick grid.
-        for i in eachindex(guidance_callbacks)
-            if _guidance_precedes_control(guidance_models[i])
-                callbacks = _append_callback(callbacks, guidance_callbacks[i])
-            end
-        end
-        callbacks = _append_callbacks(callbacks, get_control_callbacks(num_sats, args))
-        # Faults switch before the power budget's step-end update, which then
-        # sheds by the load the switched faults leave.
-        callbacks = _append_callbacks(callbacks, get_fault_callbacks(num_sats, args))
-        callbacks = _append_callbacks(callbacks, get_power_callbacks(num_sats, args))
-        callbacks = _append_callbacks(callbacks, get_cmg_callbacks(num_sats, args))
-        for i in eachindex(guidance_callbacks)
-            if !_guidance_precedes_control(guidance_models[i])
-                callbacks = _append_callback(callbacks, guidance_callbacks[i])
-            end
-        end
+        callbacks = _append_callbacks(callbacks, _gnc_phase_callbacks(num_sats, args))
     end
     if !backbone_mode && _requires_quaternion_projection_callback(args)
         callbacks = _append_callback(callbacks, get_quaternion_projection_callback(num_sats, args))
