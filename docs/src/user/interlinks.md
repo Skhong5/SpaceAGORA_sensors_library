@@ -238,11 +238,11 @@ The semimajor-axis policies do not have that restriction.
 
 Scheduling follows accepted steps, so changes of range or preferred link are
 resolved at that cadence. Check timestep convergence for a new case. A checkpoint
-resume must retain the interlink topology, link kinds (with their concrete type
-parameters) and parameters and scoring policy; a new run is required when those
-change. Checkpoints written by SpaceAGORA 0.4 and earlier still resume. The
-resumed history covers the resumed interval, while integrated diagnostic states
-continue from the checkpoint.
+resume must retain the interlink topology, link kinds (each named by its module
+and type, with its concrete type parameters) and parameters and scoring policy;
+a new run is required when those change. Checkpoints written by SpaceAGORA 0.4
+and earlier still resume. The resumed history covers the resumed interval, while
+integrated diagnostic states continue from the checkpoint.
 
 ## Deprecated names
 

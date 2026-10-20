@@ -23,6 +23,25 @@ struct TypedLink{T} <: AbstractInterlink
 end
 SpaceAGORA.link_range_m(link::TypedLink) = link.range_m
 
+# Same-named types in two modules of one package (here the tests): a link kind
+# in each, and a type in each to parameterize a link with.
+module Left
+import SpaceAGORA
+struct Mode end
+struct SameLink <: SpaceAGORA.AbstractInterlink
+    range_m::Float64
+end
+SpaceAGORA.link_range_m(link::SameLink) = link.range_m
+end
+module Right
+import SpaceAGORA
+struct Mode end
+struct SameLink <: SpaceAGORA.AbstractInterlink
+    range_m::Float64
+end
+SpaceAGORA.link_range_m(link::SameLink) = link.range_m
+end
+
 # A kind with the laser link's name and fields, from another package (here the
 # tests): its checkpoint identity differs from the built-in kind's.
 module ForeignKinds
@@ -57,10 +76,12 @@ end
         @test snapshot.interlinks.is_active == [true, false, true]
         @test snapshot.interlinks.version === 2
         @test snapshot.interlinks.configuration.candidates == [(endpoints=((1, 1), (2, 1)),
-            link=(kind=(package=:SpaceAGORA, name=:LaserMomentumLink, parameters=()),
+            link=(kind=(module_path=(:SpaceAGORA, :SimulationModel, :InterLinkModels), name=:LaserMomentumLink,
+                parameters=()),
                 fields=(power_w=12.0, magnification=3.0, range_m=100.0)))]
         foreign = SE._interlink_link_identity(ForeignKinds.LaserMomentumLink(12.0, 3.0, 100.0))
-        @test foreign.kind.name === :LaserMomentumLink && foreign.kind.package !== :SpaceAGORA
+        @test foreign.kind.name === :LaserMomentumLink &&
+            foreign.kind.module_path == (fullname(@__MODULE__)..., :ForeignKinds)
         @test foreign.fields == snapshot.interlinks.configuration.candidates[1].link.fields
         @test snapshot.interlinks.configuration.forbidden_pairs == [(2, 3)]
         @test snapshot.interlinks.configuration.terminal_counts == [2, 2, 2]
@@ -145,10 +166,14 @@ end
             configuration=merge(v1_configuration, (link_type=:radio,)), is_active=[true, false, true]),),))
         @test_throws ArgumentError SE._restore_interlink_checkpoint_state!(args, radio, trues(3))
 
-        # A kind's concrete type parameters are part of its identity: a checkpoint,
-        # read back from its file, resumes the same parameters and refuses others
-        # (value, type, nested type and tuple parameters).
+        # A kind's module and its concrete type parameters are part of its identity:
+        # a checkpoint, read back from its file, resumes the same kind and refuses
+        # another (value, type, nested type, Union and tuple parameters, same-named
+        # link kinds of two modules of one package, and such types in a parameter).
         for (written, same, changed) in (
+                (Left.SameLink(100.0), Left.SameLink(100.0), Right.SameLink(100.0)),
+                (TypedLink{Left.Mode}(100.0), TypedLink{Left.Mode}(100.0), TypedLink{Right.Mode}(100.0)),
+                (TypedLink{Vector{Left.Mode}}(100.0), TypedLink{Vector{Left.Mode}}(100.0), TypedLink{Vector{Right.Mode}}(100.0)),
                 (ModeLink{1}(100.0), ModeLink{1}(100.0), ModeLink{-1}(100.0)),
                 (TypedLink{Float64}(100.0), TypedLink{Float64}(100.0), TypedLink{Float32}(100.0)),
                 (TypedLink{Vector{Int}}(100.0), TypedLink{Vector{Int}}(100.0), TypedLink{Vector{Int32}}(100.0)),
@@ -170,9 +195,11 @@ end
             @test all(untouched)
         end
         @test SE._interlink_link_identity(ModeLink{-1}(1.0)).kind ==
-            (package=nameof(Base.moduleroot(@__MODULE__)), name=:ModeLink, parameters=(-1,))
+            (module_path=fullname(@__MODULE__), name=:ModeLink, parameters=(-1,))
         @test SE._interlink_link_identity(TypedLink{Vector{Int}}(1.0)).kind.parameters ==
-            ((package=:Core, name=:Array, parameters=((package=:Core, name=:Int64, parameters=()), 1)),)
+            ((module_path=(:Core,), name=:Array, parameters=((module_path=(:Core,), name=:Int64, parameters=()), 1)),)
+        @test SE._interlink_link_identity(TypedLink{Left.Mode}(1.0)).kind.parameters ==
+            ((module_path=(fullname(@__MODULE__)..., :Left), name=:Mode, parameters=()),)
         SE._write_checkpoint!(args, 12.5, state, "tsit5"; is_active=snapshot.interlinks.is_active)
 
         legacy_args = merge(args, (interlink_model=nothing,))
