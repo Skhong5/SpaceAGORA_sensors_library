@@ -356,6 +356,9 @@ SpaceAGORA.update_navigation!(m::NcNSensorReader, u, p, t::Float64, i::Int) =
     (m.acc += length(SpaceAGORA.sensor_measurement(p.args.dynamics_model.spacecraft[i], 1)); nothing)
 SpaceAGORA.SimulationLifecycle.initialize_navigation!(m::NcNSensorReader, u, p, t) = (m.acc = 0.0; nothing)
 SpaceAGORA.bind_spacecraft(m::NcNSensorReader, i::Int) = NcNSensorReader(m.acc)
+# Its run state goes into a checkpoint and back, as a clean model's does.
+SpaceAGORA.checkpoint_state(m::NcNSensorReader) = (acc=m.acc,)
+SpaceAGORA.restore_checkpoint_state!(m::NcNSensorReader, data) = (m.acc = data.acc; nothing)
 
 # Control models: the tick sets `cmd`, and the output hooks read it.
 mutable struct NcCtl{V} <: SpaceAGORA.AbstractControlEffectorModel

@@ -489,6 +489,9 @@ function SpaceAGORA.update_navigation!(m::AveragingEstimator, u, p, t::Float64, 
     return nothing
 end
 SpaceAGORA.initialize_navigation!(m::AveragingEstimator{true}, u, p, t) = (m.sum = Z3; m.count = 0; nothing)
+# Its run state goes into a checkpoint and back, so a resumed run continues the average.
+SpaceAGORA.checkpoint_state(m::AveragingEstimator) = (sum=m.sum, count=m.count)
+SpaceAGORA.restore_checkpoint_state!(m::AveragingEstimator, data) = (m.sum = data.sum; m.count = data.count; nothing)
 
 # Two runs with isolate_state=false on one configuration: the estimator and the
 # sensor as each run ended them, and the runs' saved times and states.
