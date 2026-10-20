@@ -327,9 +327,8 @@ lists when the engine calls them.
 
 Before SpaceAGORA 0.3.0 three of the hooks took the model last:
 `planet_frame_lpi(planet, et, model)`, `ephemerides_sun_direction_ii(planet, et, model)`
-and `ephemerides_time_seconds(initial_time, model)`. A model that implements
-those names keeps working until 0.5.0, with a warning before each run; move
-the model to the front when you rename them.
+and `ephemerides_time_seconds(initial_time, model)`. SpaceAGORA 0.5.0 removed
+those names: move the model to the front when you rename them.
 
 ## DynamicsModel
 

@@ -862,5 +862,5 @@ SpaceAGORA commit, start from a contributor starter: see
   `RRTStarPlanner()`.
 - **The old hook names** (`calcControlEffect!`, `calcControlForceTorque`,
   `calcControlMassFlowRate`, `calcGuidanceEffect!`, `calcNavigationEffect!` and
-  the rest) still run with a warning; see
+  the rest) were removed in SpaceAGORA 0.5.0; see
   [Migrating Extension Hooks](../reference/migrating_extension_hooks.md).

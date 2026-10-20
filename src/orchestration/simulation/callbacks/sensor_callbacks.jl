@@ -15,7 +15,7 @@ end
 # them; NaN when the run's ephemerides cannot place the Sun.
 function _sensor_sun(p, pos::SVector{3, Float64}, q::SVector{4, Float64}, t::Float64)
     planet = p.args.environment_model.planet
-    sun_dir = _ephemerides_sun_ii(p.args.environment_model.ephemerides_model, planet, p.shared_buffers.et_start[] + t)
+    sun_dir = ephemerides_sun_ii(p.args.environment_model.ephemerides_model, planet, p.shared_buffers.et_start[] + t)
     sun_dir === nothing && return (SVector{3, Float64}(NaN, NaN, NaN), NaN)
     sun_ii = SVector{3, Float64}(sun_dir) * mean_solar_distance_m(planet)
     lit = Float64(eclipse_area_calc(pos, sun_ii, Float64(planet.Rp_e)))
@@ -26,8 +26,7 @@ end
 # The specific force on spacecraft `i` in the body frame: its acceleration at
 # the accepted step (the solver's derivative, no new evaluation) less the
 # acceleration of the run's gravitational effectors, each evaluated by the
-# route the dynamics take (a model with only the deprecated calcForceTorque
-# included).
+# route the dynamics take.
 function _sensor_specific_force(integrator, i::Int, q::SVector{4, Float64})
     p = integrator.p
     t = Float64(integrator.t)

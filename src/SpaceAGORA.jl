@@ -303,20 +303,18 @@ using .SimulationModel: SimpleEphemeridesModel
 using .SimulationModel.TerrainModels: AbstractTerrainModel, NoTerrainModel, DEMGrid, DEMTerrainModel
 using .SimulationModel.TerrainModels: terrain_height, terrain_radius, load_dem_grid, load_site_terrain, dem_grid_covers
 using .SimulationModel: make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
-using .SimulationModel: calcForceTorque, wrench, environment_requirements, solver_partition
+using .SimulationModel: wrench, environment_requirements, solver_partition
 using .SimulationModel: gravity_backbone_structure, gravity_backbone_acceleration_ii
 using .SimulationModel: gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 using .SimulationModel: PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState, plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
 using .SimulationModel: getDensity, getDensityBatch!, with_density_model_epoch
 using .SimulationModel: ephemerides_frame_lpi, ephemerides_sun_ii, ephemerides_epoch_seconds
 using .SimulationModel: ephemerides_requires_spice, ephemerides_cache_key
-using .SimulationModel: planet_frame_lpi, ephemerides_sun_direction_ii, ephemerides_time_seconds
 using .SimulationModel: DescentPhaseTargets, apollo11_descent_targets, ApolloDescentConfig, ApolloDescentState, ApolloDescentGuidanceModel
 using .SimulationModel: ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_command
-using .SimulationModel: calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate, calcReactionWheelTorque
 using .SimulationModel: control_wrench, control_propellant_rate, control_wheel_torque
 using .SimulationModel: control_thruster_levels, touchdown_spec
-using .SimulationModel: calcGuidanceEffect!, calcNavigationEffect!, getHeatRate
+using .SimulationModel: getHeatRate
 using .SimulationModel: update_control!, update_guidance!, update_navigation!
 # Actuators: the contract (Actuators), the thruster kind (Components) and mounting (ActuatorMounting).
 using .SimulationModel: Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
@@ -577,8 +575,6 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.make_no_gram_planet) make_no_gram_planet
 @doc (@doc SimulationModel.make_no_gram_density_model) make_no_gram_density_model
 @doc (@doc SimulationModel.make_no_gram_environment) make_no_gram_environment
-# Copy canonical hook text into fresh documentation metadata for the root binding.
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.DynamicEffectors.calcForceTorque)).text) calcForceTorque
 @doc (@doc SimulationModel.wrench) wrench
 @doc (@doc SimulationModel.environment_requirements) environment_requirements
 @doc (@doc SimulationModel.solver_partition) solver_partition
@@ -586,6 +582,7 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.gravity_backbone_acceleration_ii) gravity_backbone_acceleration_ii
 @doc (@doc SimulationModel.gravity_backbone_kick_structure) gravity_backbone_kick_structure
 @doc (@doc SimulationModel.gravity_backbone_kick_acceleration_ii) gravity_backbone_kick_acceleration_ii
+# Copy canonical hook text into fresh documentation metadata for the root binding.
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.DynamicEffectors.PlumeSurfaceInteraction.PlumeSurfaceConfig)).text) PlumeSurfaceConfig
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.DynamicEffectors.PlumeSurfaceInteraction.PlumeSurfaceInteractionModel)).text) PlumeSurfaceInteractionModel
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.DynamicEffectors.PlumeSurfaceInteraction.PlumeSurfaceState)).text) PlumeSurfaceState
@@ -603,23 +600,14 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.ephemerides_epoch_seconds)).text) ephemerides_epoch_seconds
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.ephemerides_requires_spice)).text) ephemerides_requires_spice
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.ephemerides_cache_key)).text) ephemerides_cache_key
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.planet_frame_lpi)).text) planet_frame_lpi
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.ephemerides_sun_direction_ii)).text) ephemerides_sun_direction_ii
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.EphemeridesModels.ephemerides_time_seconds)).text) ephemerides_time_seconds
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.update_control!)).text) update_control!
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlEffect!)).text) calcControlEffect!
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_wrench)).text) control_wrench
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_propellant_rate)).text) control_propellant_rate
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_wheel_torque)).text) control_wheel_torque
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlForceTorque)).text) calcControlForceTorque
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcControlMassFlowRate)).text) calcControlMassFlowRate
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.control_thruster_levels(::Any, ::Int))).text) control_thruster_levels
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.calcReactionWheelTorque)).text) calcReactionWheelTorque
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.ControlHooks.touchdown_spec(::Any, ::Int))).text) touchdown_spec
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.GuidanceHooks.update_guidance!)).text) update_guidance!
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.GuidanceHooks.calcGuidanceEffect!)).text) calcGuidanceEffect!
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.NavigationHooks.update_navigation!)).text) update_navigation!
-@doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.NavigationHooks.calcNavigationEffect!)).text) calcNavigationEffect!
 @doc Base.Docs.docstr((Base.Docs.@ref(SimulationModel.VehicleThermalModels.getHeatRate)).text) getHeatRate
 
 # 3.4. RPO Station Assets
@@ -741,7 +729,7 @@ export SurrogatePresetResolution, available_surrogate_presets, resolve_surrogate
 export NRLMSISE00AtmosphereModel, init_nrlmsise_space_indices!
 export SimpleEphemeridesModel
 export make_no_gram_planet, make_no_gram_density_model, make_no_gram_environment
-export calcForceTorque, wrench, environment_requirements, solver_partition
+export wrench, environment_requirements, solver_partition
 export gravity_backbone_structure, gravity_backbone_acceleration_ii
 export gravity_backbone_kick_structure, gravity_backbone_kick_acceleration_ii
 export PlumeSurfaceConfig, PlumeSurfaceInteractionModel, PlumeSurfaceState, plume_surface_footprint, plume_erosion_onset_height, plume_ground_effect_force, plume_quantities
@@ -750,11 +738,9 @@ export ApolloDescentControlConfig, ApolloDescentControlModel, descent_attitude_c
 export getDensity, getDensityBatch!, with_density_model_epoch
 export ephemerides_frame_lpi, ephemerides_sun_ii, ephemerides_epoch_seconds
 export ephemerides_requires_spice, ephemerides_cache_key
-export planet_frame_lpi, ephemerides_sun_direction_ii, ephemerides_time_seconds
-export calcControlEffect!, calcControlForceTorque, calcControlMassFlowRate, calcReactionWheelTorque
 export control_wrench, control_propellant_rate, control_wheel_torque
 export control_thruster_levels, touchdown_spec, bind_spacecraft
-export calcGuidanceEffect!, calcNavigationEffect!, getHeatRate
+export getHeatRate
 export update_control!, update_guidance!, update_navigation!
 export AbstractActuator, Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
 export ThrusterGimbal, thrust_direction

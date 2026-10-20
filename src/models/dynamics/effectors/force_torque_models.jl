@@ -2,26 +2,6 @@
     Wrapper module for all dynamic effector models (all forces/torques)
 """
 module DynamicEffectors
-    """
-        calcForceTorque(model, x, p, i) -> (force_n, torque_n_m)
-
-    Deprecated: implement `wrench(model, x::StateSample, env::EnvironmentSample,
-    t::Float64)` instead. `calcForceTorque` will be removed in SpaceAGORA 0.5.0.
-
-    The older force and torque hook for an [`AbstractForceTorqueModel`](@ref).
-    `x` is the spacecraft's state view (`x.pos`, `x.vel`, `x.mass`, and with
-    attitude propagation `x.q` and `x.ω`), `p` the run's parameters and `i` the
-    spacecraft's position in the run (from 1). It returns the force in the
-    inertial frame in N and the torque in the bus frame in N·m. The dynamics call
-    a model's own `calcForceTorque` method only when the model has no `wrench`
-    method, and the run warns about it before integration.
-
-    Called on a model with `wrench`, as every built-in model is, it warns once
-    per model type and evaluates that `wrench` at the run's current time with
-    the state sample and environment built from `x`, writing spacecraft `i`'s
-    drag diagnostics.
-    """
-    function calcForceTorque end
     using ..EffectorSampling: wrench, wrench_caching!, environment_requirements, solver_partition
 
     include(joinpath(@__DIR__, "force_torque_models", "gravity_effectors.jl"))
@@ -78,7 +58,6 @@ module DynamicEffectors
     export MeshAeroPanels, MeshAeroSurrogate, AerodynamicCoefficientMeshSurrogate, MESH_AERO_MAX_DEGREE
     export mesh_aero_panels, panel_aero_coefficients, panel_aero_coefficients_split, panel_shadow_mask, panel_projected_area
     export fit_mesh_aero_surrogate, mesh_aero_coefficients, write_mesh_aero_surrogate, read_mesh_aero_surrogate
-    export calcForceTorque
     export wrench, wrench_caching!, environment_requirements, solver_partition
     export AerobrakingCampaignPropulsiveManeuverGuidanceModel
     export RobotArmReactionEffector
