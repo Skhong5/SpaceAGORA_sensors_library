@@ -26,6 +26,37 @@ end
 
 angle_gap(x, y) = abs(mod(x - y + 180, 360) - 180)
 
+# The 50-step Newton loop the conversion used alone before, with whether it
+# converged and 1 - e cos E at its end.
+function newton_true_anomaly(M, e)
+    M = mod(M, 2pi)
+    E = e < 0.8 ? M : Float64(pi)
+    converged = false
+    for _ in 1:50
+        step = (E - e * sin(E) - M) / (1.0 - e * cos(E))
+        E -= step
+        abs(step) <= 1e-14 && (converged = true; break)
+    end
+    ν = mod(2.0 * atan(sqrt(1.0 + e) * sin(E / 2.0), sqrt(1.0 - e) * cos(E / 2.0)), 2pi)
+    return ν, converged, 1.0 - e * cos(E)
+end
+
+# The true anomaly (rad) at mean anomaly 0 < M <= π, inverting Kepler's equation
+# by bisection in BigFloat.
+function bigfloat_true_anomaly(M, e)
+    return setprecision(BigFloat, 256) do
+        m, ε = BigFloat(M), BigFloat(e)
+        lo, hi = big(0.0), big(pi)
+        for _ in 1:2000
+            mid = (lo + hi) / 2
+            mid - ε * sin(mid) < m ? (lo = mid) : (hi = mid)
+            hi - lo <= big(2.0)^-240 * hi && break
+        end
+        E = (lo + hi) / 2
+        Float64(2 * atan(sqrt(1 + ε) * sin(E / 2), sqrt(1 - ε) * cos(E / 2)))
+    end
+end
+
 # Inclination, RAAN and argument of latitude (degrees) of an inertial state.
 function plane_angles(r, v)
     h = cross(r, v)
@@ -88,6 +119,45 @@ end
         @test InitialCondition(planet; ra=900e3, hp=400e3, i=30, L_PI=Matrix(1.0I, 3, 3)).ν == deg2rad(180.0)
         @test_throws ArgumentError InitialCondition(a=7e6, ν=10, M=10)
         @test_throws ArgumentError InitialCondition(a=7e6, e=1.2, M=10)
+    end
+
+    @testset "Kepler's equation up to a parabolic orbit" begin
+        OG = SM.OrbitalGeometry
+        # The apsides are exact at any eccentricity. On a near-parabolic orbit the
+        # Newton loop alone ran out of steps at M = 0 and returned about 0.158°.
+        @test InitialCondition(a=1e23, e=prevfloat(1.0), M=0.0).ν == 0.0
+        @test InitialCondition(a=1e23, e=prevfloat(1.0), M=180.0).ν == deg2rad(180.0)
+        for e in (0.0, 0.3, 0.95, 0.999, 1 - 1e-12, prevfloat(1.0))
+            @test OG._true_anomaly_from_mean(0.0, e) == 0.0 && OG._true_anomaly_from_mean(2pi, e) == 0.0
+            @test OG._true_anomaly_from_mean(Float64(pi), e) == Float64(pi)
+        end
+        @test_throws ArgumentError OG._true_anomaly_from_mean(Inf, 0.5)
+        @test_throws ArgumentError OG._true_anomaly_from_mean(NaN, 0.5)
+        # Near-parabolic orbits at small and moderate mean anomalies, and their mirror
+        # images below 2π, against an inversion in BigFloat: within a few ulps.
+        for e in (1 - 1e-12, prevfloat(1.0)), M in (1e-30, 1e-20, 1e-12, 1e-6, 1e-3, 0.1, 1.0, 3.0)
+            ν = OG._true_anomaly_from_mean(M, e)
+            reference = bigfloat_true_anomaly(M, e)
+            @test abs(ν - reference) <= 8 * eps(reference)
+            M >= 1e-12 || continue
+            mirrored = 2pi - M
+            ν = OG._true_anomaly_from_mean(mirrored, e)
+            @test abs(ν - (2 * big(pi) - bigfloat_true_anomaly(2pi - mirrored, e))) <= 2 * eps(2pi)
+        end
+        # Where the Newton loop converged and 1 - e cos E stays >= 0.05, which holds
+        # for every e <= 0.95, the result is the loop's, bit for bit. That includes the
+        # cases above, except the apsis M = 0, which the loop missed by a few 1e-37 rad
+        # at e >= 0.8 (and returned as 2π at e = 0.999).
+        changed = Tuple{Float64, Float64}[]
+        for e in (0.01, 0.3, 0.7, 0.8, 0.9, 0.95, 0.99, 1 - 1e-12),
+                M in vcat(deg2rad.([10.0, 90.0, 179.0, 180.0, 270.0, 359.0, 725.0]), range(-1.0, 7.0; length=321))
+            ν, converged, slope = newton_true_anomaly(M, e)
+            (converged && slope >= 0.05 && mod(M, 2pi) != 0.0) || continue
+            OG._true_anomaly_from_mean(M, e) === ν || push!(changed, (M, e))
+        end
+        @test isempty(changed)
+        @test newton_true_anomaly(0.0, 0.95)[1] > 0.0 && OG._true_anomaly_from_mean(0.0, 0.95) == 0.0
+        @test newton_true_anomaly(0.0, 0.999)[1] == 2pi
     end
 
     @testset "orbital planes" begin
