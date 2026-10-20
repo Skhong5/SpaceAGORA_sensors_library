@@ -315,8 +315,18 @@ and keeps each kind in the order below.
   terminates the solve does not stop the later ones in that step.
 - A checkpointed run solves one segment after another with the same callbacks.
   Periodic navigation, guidance and control ticks keep one tick grid for the
-  whole run (`callbacks/periodic_tick_callbacks.jl`), so a tick at a segment
-  boundary fires once, before the checkpoint written there.
+  whole run (`callbacks/periodic_tick_callbacks.jl`).
+  - **At an internal segment boundary**, before the mission end, a tick fires
+    once, before the checkpoint written there.
+  - **At the final horizon**, the run does not tick. A tick due at the mission
+    end stays pending, the checkpoint written there lists it, and a longer run
+    resumed from that checkpoint takes it once, when its callbacks initialize.
+    For example, with 0.1 s ticks and a run ending at 0.3 s, the 0.3 s tick
+    stays pending; a run resumed from that checkpoint to 0.6 s takes it at its
+    start.
+  - **When a solve ends early**, through an event's or a callback's
+    `terminate!`, its checkpoint lists the clocks that had not yet taken the tick
+    due at that time. A resumed run takes those ticks once.
 
 ### The order
 
@@ -378,8 +388,18 @@ interlinks.
 - **Linked producers prepare their consumer once per tick.** A periodic control
   tick (`_periodic_control_tick!` in `callbacks/control_callbacks.jl`) first
   calls `before_reference_control!` for each model that produces a link the
-  controller consumes: each once, in configuration order, on the callback's
-  thread, and only when the tick acts on some spacecraft.
+  controller consumes: each once, on the callback's thread, and only when the
+  tick acts on some spacecraft.
+  - **The order is that of `_linked_producers`.** It takes the run's links in
+    the order models first declare them (`gnc_link_groups`), and within each
+    link its producers in configuration order. A model already listed for an
+    earlier link is not repeated.
+  - **This is not configuration order.** For example, take guidance A producing
+    links X and Y, B producing Y and C producing X. A controller consuming X and
+    Y is prepared by A and C (link X) and then B (link Y), so in the order A, C,
+    B.
+
+  So a producer must not rely on another producer having prepared first.
 - **Scope and inactive spacecraft.** Each spacecraft's tick goes through
   `_gnc_tick!` (`callbacks/gnc_scope.jl`): a model ticks only for the
   spacecraft its `spacecraft_scope` names, and when it declares
