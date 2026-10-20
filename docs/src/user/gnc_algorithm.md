@@ -74,7 +74,7 @@ The engine reads them before the run and at each tick.
 |---|---|---|
 | `spacecraft_scope(model)` | `AllSpacecraft()`: ticked for every spacecraft | the model acts on some spacecraft only: `BoundSpacecraft(indices)`, or `CoupledSpacecraft(primary, partners)` for a model ticked for `primary` that also reads `partners` |
 | `gnc_period_s(model)` | `nothing` | the law assumes a tick period, such as the step it was discretized with. Before the run the engine refuses the run when the control rate differs |
-| `skip_inactive(model)` | `true`: a spacecraft that is no longer active, after an impact or a touchdown, is not ticked; each tick calls `release_command!(model, t, spacecraft_index)` instead, which sets the off command | the model must keep ticking for an inactive spacecraft: return `false`. Before SpaceAGORA 0.4.0 the default was `false` |
+| `skip_inactive(model)` | `true`: a spacecraft that is no longer active, after an impact or a touchdown, is not ticked; each tick calls `release_command!(model, t, spacecraft_index)` instead. The model supplies its off command, such as zero thrust, by implementing `release_command!`: the fallback does nothing, so a model without its own method keeps the command it last held | the model must keep ticking for an inactive spacecraft: return `false`. Before SpaceAGORA 0.4.0 the default was `false` |
 | `held_command(model, spacecraft_index)`, `held_command_time(model, spacecraft_index)` | `nothing`, `NaN` | the model holds a command: return it, as an immutable value, and the time of the tick that produced it |
 | `gnc_links(model)` | none | the model shares an object with a partner: see [Pairing through a link](#Pairing-through-a-link) |
 
@@ -83,8 +83,24 @@ Output hooks are called for every spacecraft whatever the scope, so they check
 
 A control model that is not ticked periodically declares
 `tick_schedule(model) = :event_driven` and brings its own callbacks with
-`gnc_callbacks(model, num_sats, args, period_s)`, as the burn scheduler does. A
-periodic model can add solver stops after each tick with
+`gnc_callbacks(model, num_sats, args, period_s)`, as the burn scheduler does.
+The engine adds those callbacks to the run as they are, outside the wrapper that
+runs periodic ticks, so each callback does that wrapper's work itself:
+
+- **scope:** act only on the spacecraft `spacecraft_scope` names;
+- **inactive spacecraft:** follow the model's declared `skip_inactive` policy.
+  With `true`, once `p.is_active` says a spacecraft is inactive, leave it alone
+  and release its command as `release_command!` does; with `false`, keep acting
+  as for an active spacecraft;
+- **timing:** keep its times on the run's clock. A checkpointed run is solved in
+  segments and can resume from a file, so a callback timed from the start of a
+  solve shifts;
+- **saved state:** keep any state it needs in the model, where
+  `checkpoint_state` can save it. The engine does not save a callback's own state,
+  and the [checkpoint table](rpo_planner_pilot.md#Checkpoints) leaves custom
+  callbacks outside its guarantee.
+
+A periodic model can add solver stops after each tick with
 `register_tstops!(integrator, model, spacecraft_index)`, and record when its
 clock starts with `gnc_clock_started!(model, period_s, origin_s)`. Most models
 need none of these.

@@ -90,7 +90,9 @@ Release numbers follow `version` in `Project.toml`. The older `v1.0.0` and
 ## Checklist
 
 1. Find each method of an old name with the command above. On 0.4.0, a test
-   run with `julia --depwarn=error` also stops at each one.
+   run with `julia --depwarn=error` also stops at each one. Search for
+   `RPOGuidanceModel` too: its warning on 0.3 and 0.4 was an ordinary warning,
+   which `--depwarn=error` does not turn into an error.
 2. Rename each tick.
 3. Move each output hook to its state-sample form, and flip the sign of the
    propellant rate.
@@ -100,3 +102,16 @@ Release numbers follow `version` in `Project.toml`. The older `v1.0.0` and
 5. Type the sample argument `x::StateSample`, or leave it untyped (see the
    [conventions](extension_conventions.md#The-supported-sample-argument)).
 6. Run the tests again: the pre-run check accepts every model.
+
+## Names that cannot warn
+
+The interlink names deprecated in 0.5.0 are listed under
+[Interlinks](../user/interlinks.md#Deprecated-names). Two of them,
+`ConstellationInterLinkModel` (now `InterlinkModel`) and `InterLinkParameters`
+(now `LaserMomentumLink`), are aliases of the new types and cannot warn: code
+that uses them runs silently, also under `julia --depwarn=error`. Search your
+code for them before SpaceAGORA 1.0 removes them:
+
+```bash
+grep -rnE "ConstellationInterLinkModel|InterLinkParameters" src test
+```
