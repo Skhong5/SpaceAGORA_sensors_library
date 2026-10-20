@@ -1,5 +1,5 @@
 module RPOComparisonReportDataTests
-using Test, SpaceAGORA
+using Test, Logging, SpaceAGORA
 const G = SpaceAGORA.SimulationModel.GuidanceHooks
 const Reports = G.RPOComparisonReports
 const PLANNING = normpath(joinpath(@__DIR__, "..", "..", "..", "src", "interfaces", "analysis", "planning"))
@@ -83,6 +83,50 @@ batch = (planner_types=[:rrt_connect, :chomp],
     mesh = Reports._rpo_comparison_station_mesh(Float64[0 1 0; 0 0 1; 0 0 0])
     @test (mesh.i, mesh.j, mesh.k) == ([0], [1], [2])
     @test Reports._rpo_comparison_has_station_mesh(merge(batch, (station_triangles=mesh.vertices,)))
+end
+
+@testset "The 0.6.0 PlotlyJS notice is told once and never throws" begin
+    notice_id = :spaceagora_plotlyjs_extension_notice
+    notices(logs) = filter(log -> log.id === notice_id, logs)
+    # One notice for a session's plots, whichever function makes them.
+    logs, _ = Test.collect_test_logs() do
+        SpaceAGORA.rpo_tracking_plot([0.0, 1.0], [1.0, 0.5])
+        SpaceAGORA.rpo_path_plot(zeros(3, 2))
+        G.rpo_comparison_metric_summary_plot(batch)
+        G.rpo_comparison_cost_iteration_plot(batch; planner=:chomp)
+    end
+    told = notices(logs)
+    @test length(told) == 1
+    @test only(told).level == Logging.Info
+    @test occursin("SpaceAGORA 0.6.0", only(told).message)
+    # Both steps: a project that depends on SpaceAGORA has PlotlyJS only as
+    # SpaceAGORA's dependency, so it must add PlotlyJS before loading it.
+    @test occursin("`Pkg.add(\"PlotlyJS\")`", only(told).message)
+    @test occursin("`using PlotlyJS`", only(told).message)
+    # CSV-only reporting makes no plot and tells nothing.
+    logs, _ = Test.collect_test_logs() do
+        mktempdir() do dir
+            G.rpo_write_planner_comparison_outputs(batch; output_dir=dir,
+                write_plotly_outputs=false, write_failed_path_outputs=false)
+        end
+    end
+    @test isempty(notices(logs))
+    # A script's first plot under --depwarn=error still runs, and tells once.
+    root = normpath(joinpath(@__DIR__, "..", "..", ".."))
+    code = """
+        using SpaceAGORA
+        SpaceAGORA.rpo_tracking_plot([0.0, 1.0], [1.0, 0.5])
+        SpaceAGORA.rpo_path_plot(zeros(3, 2))
+        println("plots_made")
+        """
+    output = IOBuffer()
+    process = run(pipeline(ignorestatus(`$(Base.julia_cmd()) --startup-file=no --depwarn=error --project=$(root) -e $code`);
+        stdout=output, stderr=output))
+    text = String(take!(output))
+    @test success(process)
+    @test occursin("plots_made", text)
+    @test count("`using PlotlyJS`", text) == 1
+    @test count("`Pkg.add(\"PlotlyJS\")`", text) == 1
 end
 
 end # module RPOComparisonReportDataTests

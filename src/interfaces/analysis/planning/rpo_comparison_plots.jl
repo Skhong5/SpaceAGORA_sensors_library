@@ -3,8 +3,23 @@
 # the preparation functions in rpo_comparison_reports.jl.
 import PlotlyJS
 
+const _PLOTLYJS_EXTENSION_NOTICE = "From SpaceAGORA 0.6.0, the RPO Plotly figures " *
+    "(`rpo_path_plot`, `rpo_tracking_plot` and the planner-comparison plots and reports) " *
+    "come from a PlotlyJS package extension: add PlotlyJS to the environment that runs them " *
+    "(`Pkg.add(\"PlotlyJS\")`) and `using PlotlyJS` to the scripts. " *
+    "SpaceAGORA 0.5 still loads PlotlyJS itself."
+
+# Told once per session for all the figure functions (they share one `_id`), at
+# info level: a deprecation warning would throw under `--depwarn=error`. The RPO
+# path and tracking plots (RPOVisualization) give the same notice.
+function _plotlyjs_extension_notice()
+    @info _PLOTLYJS_EXTENSION_NOTICE maxlog=1 _id=:spaceagora_plotlyjs_extension_notice
+    return nothing
+end
+
 """Create summary bar plots for planner comparison metrics."""
 function rpo_comparison_metric_summary_plot(batch)
+    _plotlyjs_extension_notice()
     traces = PlotlyJS.GenericTrace[]
     rows = 3
     cols = 3
@@ -77,6 +92,7 @@ end
 
 """Build a Plotly mesh trace for the station keepout geometry."""
 function rpo_comparison_station_mesh_trace(triangles)
+    _plotlyjs_extension_notice()
     mesh = _rpo_comparison_station_mesh(triangles)
     return PlotlyJS.mesh3d(
         x=mesh.vertices[1, :],
@@ -95,6 +111,7 @@ end
 
 """Build a downsampled Plotly station point-cloud trace."""
 function rpo_comparison_station_trace(batch; max_points::Integer=2_000)
+    _plotlyjs_extension_notice()
     if _rpo_comparison_has_station_mesh(batch)
         return rpo_comparison_station_mesh_trace(batch.station_triangles)
     end
@@ -113,6 +130,7 @@ end
 
 """Create a 3D Plotly view of planner paths for all comparison cases."""
 function rpo_comparison_path_family_plot(batch; planner=nothing)
+    _plotlyjs_extension_notice()
     traces = PlotlyJS.GenericTrace[rpo_comparison_station_trace(batch)]
     planners = planner === nothing ? batch.planner_types : [normalize_rpo_comparison_planner_type(planner)]
     for planner_type in planners
@@ -174,6 +192,7 @@ end
 
 """Create a 3D Plotly view for one planner/case path."""
 function rpo_comparison_single_path_plot(batch, plan; planner)
+    _plotlyjs_extension_notice()
     planner_type = normalize_rpo_comparison_planner_type(planner)
     label = rpo_comparison_planner_label(planner_type)
     path = _rpo_comparison_case_path(plan)
@@ -241,6 +260,7 @@ end
 
 """Create a 3D Plotly view containing all failed paths for one planner."""
 function rpo_comparison_failed_paths_plot(batch; planner, failed_indices)
+    _plotlyjs_extension_notice()
     planner_type = normalize_rpo_comparison_planner_type(planner)
     label = rpo_comparison_planner_label(planner_type)
     traces = PlotlyJS.GenericTrace[rpo_comparison_station_trace(batch)]
@@ -311,6 +331,7 @@ end
 
 """Create cost-versus-iteration traces for planners that report histories."""
 function rpo_comparison_cost_iteration_plot(batch; planner)
+    _plotlyjs_extension_notice()
     planner_type = normalize_rpo_comparison_planner_type(planner)
     haskey(batch.plans_by_planner, planner_type) ||
         throw(ArgumentError("No planner results found for $(planner_type)."))
