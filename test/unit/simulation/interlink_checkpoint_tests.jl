@@ -12,6 +12,17 @@ struct OtherLink <: AbstractInterlink
 end
 SpaceAGORA.link_range_m(link::OtherLink) = link.range_m
 
+# Kinds whose type parameter can select their physics: same fields, different
+# hooks for different parameters.
+struct ModeLink{M} <: AbstractInterlink
+    range_m::Float64
+end
+SpaceAGORA.link_range_m(link::ModeLink) = link.range_m
+struct TypedLink{T} <: AbstractInterlink
+    range_m::Float64
+end
+SpaceAGORA.link_range_m(link::TypedLink) = link.range_m
+
 # A kind with the laser link's name and fields, from another package (here the
 # tests): its checkpoint identity differs from the built-in kind's.
 module ForeignKinds
@@ -46,7 +57,7 @@ end
         @test snapshot.interlinks.is_active == [true, false, true]
         @test snapshot.interlinks.version === 2
         @test snapshot.interlinks.configuration.candidates == [(endpoints=((1, 1), (2, 1)),
-            link=(kind=(package=:SpaceAGORA, name=:LaserMomentumLink),
+            link=(kind=(package=:SpaceAGORA, name=:LaserMomentumLink, parameters=()),
                 fields=(power_w=12.0, magnification=3.0, range_m=100.0)))]
         foreign = SE._interlink_link_identity(ForeignKinds.LaserMomentumLink(12.0, 3.0, 100.0))
         @test foreign.kind.name === :LaserMomentumLink && foreign.kind.package !== :SpaceAGORA
@@ -133,6 +144,36 @@ end
         radio = merge(checkpoint, (runtime_state=(interlinks=(version=1,
             configuration=merge(v1_configuration, (link_type=:radio,)), is_active=[true, false, true]),),))
         @test_throws ArgumentError SE._restore_interlink_checkpoint_state!(args, radio, trues(3))
+
+        # A kind's concrete type parameters are part of its identity: a checkpoint,
+        # read back from its file, resumes the same parameters and refuses others
+        # (value, type, nested type and tuple parameters).
+        for (written, same, changed) in (
+                (ModeLink{1}(100.0), ModeLink{1}(100.0), ModeLink{-1}(100.0)),
+                (TypedLink{Float64}(100.0), TypedLink{Float64}(100.0), TypedLink{Float32}(100.0)),
+                (TypedLink{Vector{Int}}(100.0), TypedLink{Vector{Int}}(100.0), TypedLink{Vector{Int32}}(100.0)),
+                (TypedLink{Union{Int, Nothing}}(100.0), TypedLink{Union{Int, Nothing}}(100.0), TypedLink{Union{Int, Missing}}(100.0)),
+                (TypedLink{(1, :a)}(100.0), TypedLink{(1, :a)}(100.0), TypedLink{(1, :b)}(100.0)))
+            written_args, written_state = checkpoint_fixture(directory)
+            written_args.interlink_model.graph.edge_properties[1] = written
+            SE._write_checkpoint!(written_args, 12.5, written_state, "tsit5"; is_active=[true, false, true])
+            from_file = SE._load_checkpoint(written_args)
+            positive, _ = checkpoint_fixture(directory)
+            positive.interlink_model.graph.edge_properties[1] = same
+            restored = trues(3)
+            @test isnothing(SE._restore_interlink_checkpoint_state!(positive, from_file, restored))
+            @test restored == [true, false, true]
+            negative, _ = checkpoint_fixture(directory)
+            negative.interlink_model.graph.edge_properties[1] = changed
+            untouched = trues(3)
+            @test_throws ArgumentError SE._restore_interlink_checkpoint_state!(negative, from_file, untouched)
+            @test all(untouched)
+        end
+        @test SE._interlink_link_identity(ModeLink{-1}(1.0)).kind ==
+            (package=nameof(Base.moduleroot(@__MODULE__)), name=:ModeLink, parameters=(-1,))
+        @test SE._interlink_link_identity(TypedLink{Vector{Int}}(1.0)).kind.parameters ==
+            ((package=:Core, name=:Array, parameters=((package=:Core, name=:Int64, parameters=()), 1)),)
+        SE._write_checkpoint!(args, 12.5, state, "tsit5"; is_active=snapshot.interlinks.is_active)
 
         legacy_args = merge(args, (interlink_model=nothing,))
         @test_throws ArgumentError SE._restore_interlink_checkpoint_state!(legacy_args, checkpoint, trues(3))

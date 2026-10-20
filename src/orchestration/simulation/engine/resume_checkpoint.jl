@@ -6,13 +6,26 @@
 # A link's identity is its kind and its fields. The kind is named with the
 # package that defines it, so same-named kinds of two packages differ; the
 # package rather than the full module path, so a kind moved between a
-# package's own modules still resumes.
+# package's own modules still resumes. Its concrete type parameters are part of
+# it, since they can select different hooks (`ModeLink{1}` and `ModeLink{-1}`).
 function _interlink_link_identity(link)
     kind = typeof(link)
     names = fieldnames(kind)
-    return (kind=(package=nameof(Base.moduleroot(parentmodule(kind))), name=nameof(kind)),
+    return (kind=_interlink_kind_identity(kind),
         fields=NamedTuple{names}(map(name -> getfield(link, name), names)))
 end
+
+# A type as plain data that the checkpoint file serializes: its package, name
+# and parameters. A parameter that is a type is described the same way, a tuple
+# parameter element by element, and a value parameter (a number, symbol or other
+# bits value, the only values a type parameter can hold) is kept as it is.
+_interlink_kind_identity(kind::DataType) = (package=nameof(Base.moduleroot(parentmodule(kind))), name=nameof(kind),
+    parameters=map(_interlink_kind_parameter, Tuple(kind.parameters)))
+_interlink_kind_parameter(parameter::DataType) = _interlink_kind_identity(parameter)
+_interlink_kind_parameter(parameter::Union) = (union=map(_interlink_kind_parameter, Tuple(Base.uniontypes(parameter))),)
+_interlink_kind_parameter(parameter::Type) = string(parameter)   # a UnionAll parameter: its printed form
+_interlink_kind_parameter(parameter::Tuple) = map(_interlink_kind_parameter, parameter)
+_interlink_kind_parameter(parameter) = parameter
 
 function _interlink_checkpoint_configuration(args)
     model = args.interlink_model
