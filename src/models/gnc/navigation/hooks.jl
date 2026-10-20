@@ -2,7 +2,7 @@ module NavigationHooks
     using LinearAlgebra
     using StaticArrays
 
-    export update_navigation!, calcNavigationEffect!
+    export update_navigation!
     export RPOStationGeometry, RPOCubeSatGeometry, RPOReferenceGeometry
     export nearest_station_distance_sq, nearest_station_point
     export rpo_clearance_distance_to_station, rpo_clearance_to_station, rpo_path_clearance_stats
@@ -37,27 +37,10 @@ module NavigationHooks
     control effectors.
 
     Before integration starts, `run_simulation` checks that every navigation
-    effector has a method for these arguments (of this function or of the
-    deprecated `calcNavigationEffect!`) and stops with an `ArgumentError` naming
-    the effector otherwise. This hook replaces the deprecated
-    `calcNavigationEffect!`.
+    effector has a method of this function for these arguments and stops with
+    an `ArgumentError` naming the effector otherwise.
     """
     function update_navigation! end
-
-    """
-        calcNavigationEffect!(model, u, p, t, spacecraft_index) -> nothing
-
-    Deprecated, use [`update_navigation!`](@ref); this name will be removed in
-    SpaceAGORA 0.5.0. Only the name changes: the arguments, their order and when
-    the engine calls the hook are those of `update_navigation!`.
-
-    Until then the engine calls an effector's own method of this hook when its
-    type has no `update_navigation!`, and `run_simulation` warns once per type
-    before integration starts. A direct call on an effector that implements
-    `update_navigation!` runs it, and warns once per type that the name is
-    deprecated (under `julia --depwarn=error` it throws instead).
-    """
-    function calcNavigationEffect! end
 
     # Reference/collision geometry is planning data, not an estimator. Retain
     # these historical NavigationHooks identities for existing clients.

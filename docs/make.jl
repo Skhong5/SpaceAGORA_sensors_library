@@ -29,7 +29,6 @@ const API_REFERENCE_PAGES = (
     (section="Actuators", title="Actuators API", file="actuators_api.md"),
     (section="Sensors", title="Sensors API", file="sensors_api.md"),
     (section="Model Extension Hooks", title="Extension Hooks API", file="extension_hooks_api.md"),
-    (section="Deprecated hooks", title="Deprecated Hooks API", file="deprecated_hooks_api.md"),
     (section="Contributor conformance", title="Contributor Conformance API", file="contributor_conformance_api.md"),
 )
 const BUILD_DIR = joinpath(@__DIR__, "build")
@@ -256,7 +255,7 @@ makedocs(
             "Articulated and Compliant Vehicles" => "user/articulated_compliant.md",
             "Mesh Aerodynamics" => "user/mesh_aerodynamics.md",
             "Plume Interaction" => "user/plume_interaction.md",
-            "Laser Interlinks" => "user/laser_interlinks.md",
+            "Interlinks" => "user/interlinks.md",
         ],
         "Atmosphere and Data" => Any[
             "Atmosphere Models" => "user/atmosphere_models.md",
@@ -329,12 +328,16 @@ makedocs(
             "Actuators API" => "generated/actuators_api.md",
             "Sensors API" => "generated/sensors_api.md",
             "Extension Hooks API" => "generated/extension_hooks_api.md",
-            "Deprecated Hooks API" => "generated/deprecated_hooks_api.md",
             "Contributor Conformance API" => "generated/contributor_conformance_api.md",
         ],
     ],
     doctest = true,
     linkcheck = true,
+    # The PDS Geosciences Node often times out from CI runners (curl exit 28), which
+    # failed the required docs checks of unrelated pull requests. Its two links on
+    # docs/src/user/lunar_imagery_sources.md are stable archive addresses: check them
+    # by hand when that page changes.
+    linkcheck_ignore = [r"^https://pds-geosciences\.wustl\.edu/"],
     checkdocs = :exports,
     checkdocs_ignored_modules = Module[
         SpaceAGORA.RuntimeServices,

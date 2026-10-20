@@ -377,5 +377,5 @@ runs in a bare root environment: HYPR and EDG examples use their prepared projec
   The default run spans twenty target orbits; the CI smoke route uses the
   standard shortened mission duration and disables animation.
 
-See [Constellation laser interlinks](laser_interlinks.md#Constellation-laser-interlinks)
+See [Interlinks](interlinks.md#Setting-up-interlinks)
 for interpretation, optional cyclic matching and the model's physical limits.

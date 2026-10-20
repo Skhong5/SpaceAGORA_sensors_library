@@ -1,19 +1,19 @@
-"""Shared pre-run warnings, including renamed or retired extension hooks."""
+"""Shared once-per-key warnings: deprecated names and pre-run configuration checks."""
 module HookDeprecation
 
 """
     _hook_deprecation(key::Tuple, msg::String)
 
-Warn once per process about a deprecated extension hook, with `key` naming the
-model type and the hook, for example `(MyEffector, :calcForceTorque)`. Under
+Warn once per process about a deprecated name, with `key` naming its owner and
+the old name, for example `(StateAnchor, :sat_idx)`. Under
 `julia --depwarn=error` it throws an `ErrorException` with `msg` instead, so a
-test run can refuse deprecated hooks.
+test run can refuse deprecated names.
 
-The run calls this before integration, for each configured model type that
-implements a deprecated hook. `Base.depwarn` is not used: its once-only filter
-is keyed on the call site, so one check over several model types would warn
-about the first type only, and it is silent unless Julia runs with
-`--depwarn=yes`.
+Its callers are deprecated names in use: an old keyword passed, or an old
+property read or written (the renamed index names below, for example).
+`Base.depwarn` is not used: its once-only filter is keyed on the call site, so
+one call site shared by several owners would warn about the first owner only,
+and it is silent unless Julia runs with `--depwarn=yes`.
 """
 function _hook_deprecation(key::Tuple, msg::String)
     return _preflight_warning(key, msg; group=:depwarn)

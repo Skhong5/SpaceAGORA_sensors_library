@@ -24,8 +24,6 @@ in report order:
 
 - `hooks_present`: the engine's own pre-run hook check, on the fixture's concrete
   argument types, reports nothing for the fixture.
-- `no_deprecated_hooks`: the pre-run check has no deprecated hook to warn about (a
-  `calcForceTorque` method of the model's own).
 - `supported_sample_signature`: no method of `wrench`, `wrench_caching!` or a gravity
   backbone hook that applies to the model types a sample argument narrower than
   `StateSample` or `EnvironmentSample` (such as `x::StateSample{MySpacecraft}`); the
@@ -74,7 +72,6 @@ function check_force_torque_model(model; fixture::ConformanceFixture=conformance
     since = FIRST_RELEASE
     configuration = fixture.configuration
     hooks = _hooks_present_check(fixture, since)
-    deprecated = _no_deprecated_hooks_check(fixture, model, since)
     signature = _sample_signature_check(model, since)
     base = _solve(configuration)
     again = _solve(configuration)
@@ -93,7 +90,6 @@ function check_force_torque_model(model; fixture::ConformanceFixture=conformance
     seed_gap = _run_difference(seeded...)
     checks = [
         hooks,
-        deprecated,
         signature,
         _check(:repeatable_run, since, repeat_gap === nothing,
             "two runs of the fixture with isolate_state=true differ: $(repeat_gap)"),
@@ -125,23 +121,12 @@ function _hooks_present_check(fixture::ConformanceFixture, since::VersionNumber)
         "the engine's pre-run hook check reports:\n" * join(("- " * line for line in lines), "\n"))
 end
 
-# The checks that need no run: the pre-run check, the deprecated hooks and the sample
-# signature. Core's tests use them on built-in models that cannot run in the fixture.
+# The checks that need no run: the pre-run check and the sample signature. Core's
+# tests use them on built-in models that cannot run in the fixture.
 function _static_force_report(model; fixture::ConformanceFixture=conformance_fixture(effectors=(model,)))
     since = FIRST_RELEASE
-    checks = [_hooks_present_check(fixture, since), _no_deprecated_hooks_check(fixture, model, since),
-        _sample_signature_check(model, since)]
+    checks = [_hooks_present_check(fixture, since), _sample_signature_check(model, since)]
     return ConformanceReport(string(nameof(typeof(model))), :force_torque_model, checks)
-end
-
-# The deprecated hooks the engine's pre-run check would warn about for the model's own
-# type (`_deprecated_model_hooks`, the list behind its depwarn-group warnings, keyed by
-# type and hook). Other models of a caller's fixture are not the model's to answer for.
-function _no_deprecated_hooks_check(fixture::ConformanceFixture, model, since::VersionNumber)
-    found = [entry for entry in SimulationEngine._deprecated_model_hooks(fixture.arguments, fixture.call)
-        if first(first(entry)) === typeof(model)]
-    return _check(:no_deprecated_hooks, since, isempty(found),
-        "the engine's pre-run check warns:\n" * join(("- " * last(entry) for entry in found), "\n"))
 end
 
 _has_wrench(model) = hasmethod(SimulationModel.wrench,

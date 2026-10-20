@@ -7,7 +7,7 @@ using ..Components
 using ..AbstractTypes: AbstractActuator, AbstractSensor
 using ..Geodesy: geodetic_altitude, ellipsoid_surface_radius, radius_for_geodetic_altitude
 using ..OrbitalGeometry
-using ..EphemeridesModels: SpiceEphemeridesModel, _ephemerides_epoch_seconds, _ephemerides_frame_lpi
+using ..EphemeridesModels: SpiceEphemeridesModel, ephemerides_epoch_seconds, ephemerides_frame_lpi
 
 export Link, Joint, CompliantAttachment, attachment_body_count, SpacecraftModel, DynamicsModel, InitialCondition, CartesianInitialCondition, AbstractInitialCondition, GuidanceModel, NavigationModel, ControlModel
 
@@ -113,7 +113,7 @@ end
 
     if initial_time !== nothing
         model = ephemerides_model === nothing ? SpiceEphemeridesModel() : ephemerides_model
-        return _ephemerides_frame_lpi(model, planet, _ephemerides_epoch_seconds(model, initial_time))
+        return ephemerides_frame_lpi(model, planet, ephemerides_epoch_seconds(model, initial_time))
     end
 
     if hasproperty(planet, :L_PI)

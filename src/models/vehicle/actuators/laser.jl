@@ -18,8 +18,8 @@ force of `level / c` opposite the boresight; the terminal draws
 
 `magnification` and `range_m` describe an inter-satellite link between two
 terminals of this design: the open-cavity magnification factor and the
-maximum range of `InterLinkParameters(terminal)`, which the constellation
-interlink model uses for the force between linked spacecraft.
+maximum range of `LaserMomentumLink(terminal)`, the link kind whose force
+pushes linked spacecraft apart.
 """
 struct LaserTerminal <: AbstractActuator
     boresight::SVector{3, Float64}

@@ -285,7 +285,7 @@ function violations(sources)
         if startswith(path, OWNER) && path != OWNER * "guidance_models.jl"
             for forbidden in (r"\bControlHooks\b", r"\b_control_module\s*\(",
                               r"\b(?:rotate_link|_apply_solar_panel_aoa!)\s*\(",
-                              r"\b(?:update_control!|update_guidance!|calcControlEffect!|calcGuidanceEffect!)\s*\(",
+                              r"\b(?:update_control!|update_guidance!)\s*\(",
                               r"\.\s*(?:α|q|heat_loads)\s*(?:\.=|=(?!=))",
                               r"\b(?:AerobrakingEnergyDepletionControlModel|SolarPanelAngleOfAttackControlModel)\b")
                 occursin(forbidden, code) && push!(errors, "$path: forbidden reverse dependency or mutation: $forbidden")

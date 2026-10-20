@@ -26,10 +26,10 @@ function targeted_40sat_configuration(; save_results::Bool=true, orbits::Float64
             initial_condition=initial_condition, id=index, n_terminal=1)
     end
 
-    interlinks = ConstellationInterLinkModel()
-    parameters = InterLinkParameters(P=10_000.0, B=100.0, range=200e3)
+    interlinks = InterlinkModel()
+    link = LaserMomentumLink(power_w=10_000.0, magnification=100.0, range_m=200e3)
     for helper in helper_indices, target in target_indices
-        register_allowed_link!(interlinks, spacecraft, (helper, 1), (target, 1); parameters)
+        register_link!(interlinks, spacecraft, (helper, 1), (target, 1), link)
     end
     policy = SchedulingPolicyModel(:gve_sma; target_indices=collect(target_indices))
 

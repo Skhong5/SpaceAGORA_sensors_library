@@ -1358,20 +1358,20 @@ struct _ProbeWorkEffector <: SimulationModel.AbstractForceTorqueModel
     iterations::Int
 end
 
-function SimulationModel.calcForceTorque(
-    model::_ProbeWorkEffector, x::AbstractVector{Float64}, param::ODEParams, i::Int64
+function SimulationModel.wrench(
+    model::_ProbeWorkEffector, x::SimulationModel.StateSample, env::SimulationModel.EnvironmentSample, t::Float64
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     acc = 0.0
     @inbounds for j in 1:model.iterations
-        acc = muladd(x[1], 1.0000001, acc)
+        acc = muladd(x.pos_ii[1], 1.0000001, acc)
     end
     return (SVector{3, Float64}(acc * 0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
 end
 
 struct _ProbeThrowingEffector <: SimulationModel.AbstractForceTorqueModel end
 
-function SimulationModel.calcForceTorque(
-    ::_ProbeThrowingEffector, ::AbstractVector{Float64}, ::ODEParams, ::Int64
+function SimulationModel.wrench(
+    ::_ProbeThrowingEffector, ::SimulationModel.StateSample, ::SimulationModel.EnvironmentSample, ::Float64
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     error("deliberate probe failure")
 end
@@ -1387,8 +1387,8 @@ struct _ProbeFlakyEffector <: SimulationModel.AbstractForceTorqueModel
     succeed_for::Int
 end
 
-function SimulationModel.calcForceTorque(
-    model::_ProbeFlakyEffector, ::AbstractVector{Float64}, ::ODEParams, ::Int64
+function SimulationModel.wrench(
+    model::_ProbeFlakyEffector, ::SimulationModel.StateSample, ::SimulationModel.EnvironmentSample, ::Float64
 )::Tuple{SVector{3, Float64}, SVector{3, Float64}}
     _PROBE_FLAKY_CALLS[] += 1
     _PROBE_FLAKY_CALLS[] > model.succeed_for && error("deliberate probe failure")

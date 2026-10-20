@@ -28,7 +28,7 @@ end
 @testset "EDG integration in $(only(ARGS)) order" begin
     ES = SpaceAGORA.EDGServices
     @test Base.PkgId(SpaceAGORAEDG).uuid == Base.UUID("a782e8ee-96d7-4dd6-8231-bb64649e6ad4")
-    @test Pkg.dependencies()[Base.PkgId(SpaceAGORAEDG).uuid].version == v"0.3.0"
+    @test Pkg.dependencies()[Base.PkgId(SpaceAGORAEDG).uuid].version == v"0.4.0"
     @test ES.CONTRACT_VERSION == SpaceAGORAEDG.REQUIRED_CONTRACT_VERSION == v"2.0.0"
     @test ES.available()
     @test ES.require_provider() === Base.get_extension(SpaceAGORA, :SpaceAGORAEDGExt)

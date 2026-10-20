@@ -75,6 +75,17 @@ function SpaceAGORA.initialize_control!(model::ExampleControlHook, u, p, t)
     return nothing
 end
 
+# At a checkpoint: the run state as plain data, put back when a run resumes from
+# the checkpoint file (after the reset above), so the resumed run holds the same
+# command until its next tick as the uninterrupted run. The conformance check
+# `checkpoint_round_trip` tests this; it is required from SpaceAGORA 0.5.0.
+SpaceAGORA.checkpoint_state(model::ExampleControlHook) =
+    (force_ii=model.force_ii, torque_body=model.torque_body, tick_s=model.tick_s)
+function SpaceAGORA.restore_checkpoint_state!(model::ExampleControlHook, data)
+    model.force_ii, model.torque_body, model.tick_s = data.force_ii, data.torque_body, data.tick_s
+    return nothing
+end
+
 # Declared on a spacecraft (`SpacecraftModel(...; control=ControlModel(...))`):
 # a copy for that spacecraft that shares the configuration, with fresh run state.
 SpaceAGORA.bind_spacecraft(model::ExampleControlHook, spacecraft_index::Int) = ExampleControlHook(;

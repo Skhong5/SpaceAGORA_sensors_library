@@ -929,6 +929,50 @@ end
         @test release_command!(ideal, 0.0, 1) === nothing && all(isempty, ideal.mounted_levels)
     end
 
+    @testset "no burn edge or scheduling pass undoes a release" begin
+        # The spacecraft becomes inactive at 0.5 s, before its window opens at 1.5 s,
+        # and active again at 2.5 s; the scheduler ticks every second. The ignition
+        # edge at 1.5 s records the burn but leaves the released engine off, as does
+        # the tick at 2 s. After the reactivation the next tick, at 3 s, fires it.
+        model = SM.BaseThrusterModel(thrust=[1.0], direction=[0.0], Δv=[0.0], start_burn_time=[1.5],
+            stop_burn_time=[4.5], Isp=[300.0], actuation=:mounted)
+        base = make_example_config(planet=SM.Earth(), spacecraft=orbit_spacecraft(id=43), mission_time=4.0,
+            initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0),
+            dynamic_effectors=(SM.InverseSquaredGravityModel(),), ephemerides_model=SM.SimpleEphemeridesModel(),
+            orientation_sim=true, keplerian=false, EI_km=1.0, verbose=false, results=false)
+        args = SM.SimConfig._with_configuration(base;
+            control_model=SM.ControlModel(control_effectors=(model,), control_rates=[1.0]))
+        switch = PresetTimeCallback([0.5, 2.5], integrator -> (integrator.p.is_active[1] = integrator.t >= 2.5);
+            save_positions=(false, false))
+        # After the engine's own callbacks at these times: the commanded levels.
+        levels = Dict{Float64, Vector{Float64}}()
+        record = PresetTimeCallback([1.0, 1.5, 2.0, 2.5, 3.0, 3.5],
+            integrator -> (levels[integrator.t] = copy(model.mounted_levels[1])); save_positions=(false, false))
+        sol = run_simulation(args; isolate_state=false, return_solution=true, extra_callbacks=(switch, record))
+        @test sol.prob.p.is_active == [true] && sol.t[end] == 4.0
+        @test all(t -> all(iszero, levels[t]), (1.0, 1.5, 2.0, 2.5))     # released across the edge and the tick
+        @test levels[3.0][1] == 1.0 && levels[3.5][1] == 1.0                # fires once active again
+        # The engine ran from 3 s to the end of the run, one second of the window.
+        @test 110.0 - sol.u[end].sc[1].mass ≈ 1.0 / (300.0 * G0) rtol=1e-6
+
+        # Each path on its own: scheduling (at the run's start, or when the spacecraft
+        # leaves the atmosphere) and a burn edge keep the schedule, and leave an inactive
+        # spacecraft's engine off and fire an active one's.
+        direct = SM.BaseThrusterModel(thrust=[1.0], direction=[0.0], Δv=[0.0], start_burn_time=[1.5],
+            stop_burn_time=[4.5], Isp=[300.0], actuation=:mounted)
+        p = readout_params(SM.SpacecraftModel[orbit_spacecraft(id=44)], (direct,))
+        u = SE.build_initial_conditions(p.args)
+        edge! = SM.SimulationCallbacks._burn_edge_callback(direct, 1).affect!
+        for active in (false, true)
+            p.is_active[1] = active
+            SM.SimulationCallbacks._schedule_thruster_control!((u=u, p=p, t=1.6), direct, 1)
+            @test direct.burning[1] && direct.mounted_levels[1][1] == (active ? 1.0 : 0.0)
+            fill!(direct.mounted_levels[1], 0.0)
+            edge!((u=u, p=p, t=1.5))
+            @test direct.burning[1] && direct.mounted_levels[1][1] == (active ? 1.0 : 0.0)
+        end
+    end
+
     @testset "two burn runs at once match two in sequence" begin
         # The scheduler keeps its run state in the model, so concurrent runs of
         # one configuration trace and fly exactly as sequential ones do.
