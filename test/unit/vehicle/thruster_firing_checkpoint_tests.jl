@@ -26,12 +26,18 @@ SpaceAGORA.update_control!(::HoldLevels, u, p, t::Float64, i::Int64) = nothing
 # commanded at a constant 0.6 N and 0.3 N every 0.5 s for 4 s. The first (or,
 # with `swap`, the second) has firing dynamics with a ramp of `cutoff` rad/s,
 # slow enough that its ramp factor carries over several control periods.
-# `fault` adds a failure of the second thruster after the run's end.
-function configuration(; firing=true, swap=false, cutoff=2.0, fault=false)
+# `fault` adds a failure of the second thruster after the run's end. With
+# `on=:root` or `on=:panel` the spacecraft also has a rigid panel link 1.5 m off
+# its root, and both thrusters are mounted on the link named: their positions in
+# the mounting order are 1 and 2 either way.
+function configuration(; firing=true, swap=false, cutoff=2.0, fault=false, on=nothing)
     root = SM.Link(root=true, m=100.0, dims=MVector(1.0, 1.0, 1.0))
     ic = SM.CartesianInitialCondition(SVector(4.0e9, 0.0, 0.0), ZERO3; q=SVector(0.0, 0.0, 0.0, 1.0))
     sc = SM.SpacecraftModel(links=[root], root=root, prop_mass=1.0, inertia_tensor=root.inertia, initial_condition=ic, id=1)
-    jets = [add_actuator!(sc, root, Thruster(max_thrust=1.0, direction=MVector(1.0, 0.0, 0.0), Isp=200.0,
+    panel = SM.Link(m=2.0, r=MVector(0.0, 1.5, 0.0), dims=MVector(0.02, 2.0, 1.0))
+    on === nothing || push!(sc.links, panel)
+    link = on === :panel ? panel : root
+    jets = [add_actuator!(sc, link, Thruster(max_thrust=1.0, direction=MVector(1.0, 0.0, 0.0), Isp=200.0,
                 cutoff_frequency=cutoff, firing_dynamics=firing && k == (swap ? 2 : 1))) for k in 1:2]
     fault && add_fault!(sc, ActuatorFault(jets[2]; kind=:failed, start_s=100.0, stop_s=200.0))
     base = make_example_config(planet=SM.Earth(), spacecraft=sc, mission_time=4.0,
@@ -103,9 +109,11 @@ function rewrite_snapshot!(args, f)
     open(io -> serialize(io, merge(payload, (runtime_state=runtime,))), path, "w")
     return nothing
 end
-# A snapshot as SpaceAGORA 0.4 wrote it: version 1, no thrusters.
+# A snapshot as SpaceAGORA 0.4 wrote it: version 1, no thrusters, and a faulted
+# actuator placed by its position in the mounting order alone.
 as_version_1(snapshot) = (version=1,
-    configuration=[Base.structdiff(c, NamedTuple{(:thrusters,)}) for c in snapshot.configuration],
+    configuration=[merge(Base.structdiff(c, NamedTuple{(:thrusters,)}), (faults=[(f[1], first(f[2]), f[3:end]...) for f in c.faults],))
+                   for c in snapshot.configuration],
     spacecraft=[Base.structdiff(s, NamedTuple{(:thrusters,)}) for s in snapshot.spacecraft])
 refusal(f) = (err = outcome(f); err isa ArgumentError ? sprint(showerror, err) : err)
 
@@ -117,7 +125,8 @@ refusal(f) = (err = outcome(f); err isa ArgumentError ? sprint(showerror, err) :
         @test checkpoint.t == 2.0
         snapshot = checkpoint.runtime_state.callbacks
         @test snapshot.version == 2
-        @test only(snapshot.configuration).thrusters == [(1, 1.0, 2.0, 0.0, 0.75, 0.25)]  # mounting position 1, its parameters
+        # Mounting position 1, on link 1 as its first actuator, and its firing parameters.
+        @test only(snapshot.configuration).thrusters == [((1, 1, 1), 1.0, 2.0, 0.0, 0.75, 0.25)]
         saved = only(only(snapshot.spacecraft).thrusters)
         @test 0.0 < saved.κ < 1.0 && saved.thrust > 0.0                                    # a firing history to continue
         @test (saved.κ, saved.thrust) == first(firing_state(pair.interrupted))
@@ -156,6 +165,29 @@ refusal(f) = (err = outcome(f); err isa ArgumentError ? sprint(showerror, err) :
             end
         end
         @test refusal(() -> resume!(pair, configuration())) === nothing                    # the same configuration resumes
+    end
+
+    @testset "an actuator moved to another link is refused" begin
+        # Both thrusters move from the root to the panel: their positions in the
+        # mounting order stay 1 and 2, their links change.
+        on_root, on_panel = configuration(on=:root), configuration(on=:panel)
+        root_jets = only(on_root.dynamics_model.spacecraft).root.thrusters
+        panel_jets = only(on_panel.dynamics_model.spacecraft).links[2].thrusters
+        @test SE._actuator_place(only(on_root.dynamics_model.spacecraft), root_jets[1]) == (1, 1, 1)
+        @test SE._actuator_place(only(on_panel.dynamics_model.spacecraft), panel_jets[1]) == (1, 2, 1)
+        pair = interrupted_pair(() -> configuration(on=:root))
+        msg = refusal(() -> resume!(pair, configuration(on=:panel)))
+        @test msg isa String && occursin("thrusters with firing dynamics differ from the checkpoint's", msg)
+        @test bits(resume!(pair, configuration(on=:root))) == bits(pair.straight_sol)
+        # Restored onto a thruster on the panel, a run continues as well.
+        panel_pair = interrupted_pair(() -> configuration(on=:panel))
+        @test bits(resume!(panel_pair, configuration(on=:panel))) == bits(panel_pair.straight_sol)
+        # A faulted actuator, without firing dynamics, likewise.
+        fault_pair = interrupted_pair(() -> configuration(firing=false, fault=true, on=:root))
+        @test hasproperty(SE._load_checkpoint(fault_pair.interrupted).runtime_state, :callbacks)
+        msg = refusal(() -> resume!(fault_pair, configuration(firing=false, fault=true, on=:panel)))
+        @test msg isa String && occursin("differ from the checkpoint's", msg)
+        @test refusal(() -> resume!(fault_pair, configuration(firing=false, fault=true, on=:root))) === nothing
     end
 
     @testset "a checkpoint without the firing state is refused" begin

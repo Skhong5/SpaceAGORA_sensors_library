@@ -110,43 +110,55 @@ _needs_callback_state(sc) = SimulationModel.battery(sc) !== nothing || !isempty(
     !isempty(SimulationModel.mounted_sensors(sc)) || !isempty(_record_firing(sc))
 _has_callback_state(sc) = _needs_callback_state(sc) || !isempty(_record_hinges(sc)) || !isempty(_record_gimbals(sc))
 
-# Version 2 added the thrusters' firing state. A version 1 snapshot (SpaceAGORA
-# 0.4 and earlier) still resumes a run without firing dynamics; a run with them
-# refuses it, since it cannot restore their firing state.
+# Version 2 added the thrusters' firing state, and the link of a faulted
+# actuator. A version 1 snapshot (SpaceAGORA 0.4 and earlier) still resumes a run
+# without firing dynamics; a run with them refuses it, since it cannot restore
+# their firing state.
 const CALLBACK_CHECKPOINT_STATE_VERSION = 2
 
-# Each record with where it sits: a fault or a thruster with firing dynamics with
-# its actuator's position in the mounting order (as `resolve_faults!` finds it), a
-# sensor, hinge or gimbal with its link's position, a gimbal also with its
-# thruster's on that link, so a record moved to another device of the same kind
-# refuses the snapshot. A thruster also with the parameters of its firing
-# dynamics, which its saved state follows.
+# Each record with where it sits, so a record moved to another device of the same
+# kind refuses the snapshot: a fault or a thruster with firing dynamics with its
+# actuator's place (`_actuator_place`), a sensor, hinge or gimbal with its link's
+# position, a gimbal also with its thruster's on that link. A thruster also with
+# the parameters of its firing dynamics, which its saved state follows.
 _link_position(sc, link) = findfirst(l -> l === link, sc.links)
-_mounting_position(sc, actuator) = findfirst(e -> e.actuator === actuator, SimulationModel.mounted_actuators(sc))
 
-function _callback_checkpoint_configuration(args)
-    return [(
-        battery=(b = SimulationModel.battery(sc); b === nothing ? nothing : (b.capacity_wh, b.recovery_soc)),
-        faults=[(nameof(typeof(f.actuator)), _mounting_position(sc, f.actuator), f.kind, f.start_s, f.stop_s, f.value)
-                for f in _record_faults(sc)],
-        sensors=[(nameof(typeof(e.sensor)), _link_position(sc, e.link), e.sensor.period_s, e.sensor.seed)
-                 for e in SimulationModel.mounted_sensors(sc)],
-        hinges=[_link_position(sc, link) for (link, _) in _record_hinges(sc)],
-        gimbals=[(_link_position(sc, link), findfirst(t -> t === g.thruster, link.thrusters)) for (link, g) in _record_gimbals(sc)],
-        thrusters=[(_mounting_position(sc, t), t.max_thrust, t.cutoff_frequency, t.min_firing_time, t.level_on, t.level_off)
-                   for (_, t) in _record_firing(sc)],
-    ) for sc in args.dynamics_model.spacecraft]
+# Where an actuator is mounted: its position in the mounting order (as
+# `resolve_faults!` finds it), its link's position, and its position among the
+# actuators on that link, in mounting order. The mounting order alone stays the
+# same when an actuator moves to another link with nothing mounted between.
+function _actuator_place(sc, actuator)
+    entries = SimulationModel.mounted_actuators(sc)
+    k = findfirst(e -> e.actuator === actuator, entries)
+    k === nothing && return nothing
+    link = entries[k].link
+    return (k, _link_position(sc, link), count(e -> e.link === link, view(entries, 1:k)))
 end
 
-# The configuration a snapshot of `version` was written with: version 1 had no
-# thrusters, so a run with firing dynamics has none to compare (it is refused).
+# The configuration a snapshot of `version` was written with. Version 1 had no
+# thrusters, so a run with firing dynamics has none to compare (it is refused),
+# and placed a faulted actuator by its position in the mounting order alone.
+function _callback_checkpoint_configuration(args, version=CALLBACK_CHECKPOINT_STATE_VERSION)
+    return [begin
+        configuration = (
+            battery=(b = SimulationModel.battery(sc); b === nothing ? nothing : (b.capacity_wh, b.recovery_soc)),
+            faults=[(nameof(typeof(f.actuator)), (place = _actuator_place(sc, f.actuator); version === 1 ? first(place) : place),
+                     f.kind, f.start_s, f.stop_s, f.value) for f in _record_faults(sc)],
+            sensors=[(nameof(typeof(e.sensor)), _link_position(sc, e.link), e.sensor.period_s, e.sensor.seed)
+                     for e in SimulationModel.mounted_sensors(sc)],
+            hinges=[_link_position(sc, link) for (link, _) in _record_hinges(sc)],
+            gimbals=[(_link_position(sc, link), findfirst(t -> t === g.thruster, link.thrusters)) for (link, g) in _record_gimbals(sc)],
+        )
+        version === 1 ? configuration : merge(configuration, (thrusters=[(_actuator_place(sc, t), t.max_thrust,
+            t.cutoff_frequency, t.min_firing_time, t.level_on, t.level_off) for (_, t) in _record_firing(sc)],))
+    end for sc in args.dynamics_model.spacecraft]
+end
+
 function _callback_snapshot_configuration(args, version)
-    configuration = _callback_checkpoint_configuration(args)
-    version === 1 || return configuration
-    any(c -> !isempty(c.thrusters), configuration) && throw(ArgumentError(
+    version === 1 && any(sc -> !isempty(_record_firing(sc)), args.dynamics_model.spacecraft) && throw(ArgumentError(
         "This run has thrusters with firing dynamics, whose firing state this checkpoint does not hold " *
         "(it was written by SpaceAGORA 0.4 or earlier). Run from the start."))
-    return [Base.structdiff(c, NamedTuple{(:thrusters,)}) for c in configuration]
+    return _callback_checkpoint_configuration(args, version)
 end
 
 function _callback_checkpoint_state(args)
