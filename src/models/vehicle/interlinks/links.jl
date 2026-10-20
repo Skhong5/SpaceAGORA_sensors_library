@@ -48,6 +48,72 @@ function link_available(link, a, b, ctx)
     return 0 < separation <= link_range_m(link)
 end
 
+"""
+    link_directed(link) -> Bool
+
+Whether `link` runs one way, from its first endpoint (the transmitter) to its
+second (the receiver). A directed link is keyed in the order its endpoints were
+registered, so the hooks receive the transmitter as `a`. An undirected link is
+keyed with the lower `(spacecraft, terminal)` first. Default: undirected, as
+for `LaserMomentumLink`.
+"""
+link_directed(link) = false
+
+"""
+    link_terminal_levels(link) -> (level_a, level_b)
+
+The levels at which the hardware terminals at `link`'s two endpoints run while
+it is active, in key order and in their actuators' units (watts of transmitted
+optical power for a `LaserTerminal`). Each such terminal draws
+`actuator_consumption(terminal, level, ctx).power_w` from its spacecraft's power
+budget, and is at level 0 while its link is inactive. A virtual terminal draws
+nothing. Default: zero levels.
+"""
+link_terminal_levels(link) = (0.0, 0.0)
+
+"""
+    link_terminal(actuator) -> Bool
+
+Whether a mounted actuator is interlink terminal hardware, which can be a link
+endpoint. True for `LaserTerminal`; a terminal kind of your own opts in with
+`SpaceAGORA.link_terminal(::MyTerminal) = true`. A spacecraft's terminals are
+its `n_terminal` virtual terminals, numbered `1:n_terminal`, followed by its
+mounted terminals in mounting order. Default: false.
+"""
+link_terminal(actuator) = false
+link_terminal(::LaserTerminal) = true
+
+"""
+    terminal_supports(terminal, link) -> Bool
+
+Whether the terminal hardware `terminal` (a mounted actuator with
+`link_terminal`) can carry `link`; `register_link!` refuses a link that either
+endpoint's terminal cannot carry. A virtual terminal carries every kind.
+Default: true; a `LaserTerminal` carries `LaserMomentumLink`, and other kinds
+only when they add a method.
+"""
+terminal_supports(terminal, link) = true
+terminal_supports(::LaserTerminal, link) = false
+
+"""
+    terminal_count(spacecraft) -> Int
+
+The number of interlink terminals on `spacecraft`: its `n_terminal` virtual
+terminals and, on a `SpacecraftModel`, its mounted terminal hardware (see
+`link_terminal`).
+"""
+terminal_count(spacecraft) = Int(spacecraft.n_terminal)
+
+# The hardware terminal number `number` stands for on `spacecraft`: `nothing` for
+# a virtual terminal. `SpacecraftModel` methods are in InterlinkTerminals.
+_terminal_device(spacecraft, number::Integer) = nothing
+
+# The terminal number of an endpoint's terminal: a number as given, or a mounted
+# terminal object (resolved on a `SpacecraftModel` in InterlinkTerminals).
+_terminal_number(spacecraft, terminal::Integer) = Int(terminal)
+_terminal_number(spacecraft, terminal) = throw(ArgumentError(
+    "A link endpoint's terminal is a terminal number, or a terminal mounted on a SpacecraftModel; got $(typeof(terminal))."))
+
 const _ZERO_FORCE = SVector{3, Float64}(0.0, 0.0, 0.0)
 
 """
@@ -122,6 +188,10 @@ function link_force(link::LaserMomentumLink, a, b, ctx)
     force = (link.magnification * link.power_w / SPEED_OF_LIGHT_MPS) * (separation / distance)
     return (force, -force)
 end
+
+# Between laser terminals, both run at the link's power while it is active.
+link_terminal_levels(link::LaserMomentumLink) = (link.power_w, link.power_w)
+terminal_supports(::LaserTerminal, ::LaserMomentumLink) = true
 
 # The `InterLinkParameters` names of the fields, P, B and range: deprecated.
 const _LASER_OLD_FIELDS = (P=:power_w, B=:magnification, range=:range_m)

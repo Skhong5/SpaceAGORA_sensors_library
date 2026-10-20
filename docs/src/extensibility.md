@@ -482,10 +482,15 @@ SpaceAGORA.restore_checkpoint_state!(m::TickCounter, data) = (m.ticks = data.tic
 
 A checkpointed run refuses at setup a model whose `checkpoint_state` returns
 data and which has no `restore_checkpoint_state!` method for it. A resumed run
-refuses a checkpoint whose models differ from its own in type name or position,
-or that holds no run state for a model that keeps some. The type name is the
-short name, without the module or type parameters, so a same-named type from
-another module, or another parametrization of the same type, is not told apart.
+refuses a checkpoint that holds no run state for a model that keeps some. When
+the checkpoint holds model state, it also refuses one whose guidance, navigation
+or control models or sensors differ from its own in type name or position;
+without model state, those models are not compared. Mounted sensors are checked
+separately as well, with the rest of the run's callback state: each sensor's type
+name, mounting link, period and seed must match, with or without model state.
+A type name is the short name, without the module or type parameters, so a
+same-named type from another module, or another parametrization of the same
+type, is not told apart.
 Without the two methods,
 a resumed run starts a guidance, navigation or control model's own state from
 its reset, and a sensor's from what the sensor object holds. The conformance
