@@ -4,6 +4,7 @@
 module GNCRuntimeDeclarationsTests
 using Test, StaticArrays, LinearAlgebra, Logging, SpaceAGORA
 using DiffEqCallbacks: PresetTimeCallback
+using OrdinaryDiffEq: DiscreteCallback
 import SpaceAGORA.TelemetryVerification: make_example_config
 const SM = SpaceAGORA.SimulationModel
 const L = SpaceAGORA.SimulationLifecycle
@@ -233,6 +234,50 @@ struct BadLinks <: AbstractGuidanceModel end
 SpaceAGORA.update_guidance!(::BadLinks, u, p, t::Float64, i::Int) = nothing
 SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
 
+# What ran, and when: a sensor, navigation, a guidance model that produces the
+# link a controller consumes, plain guidance, periodic controllers, an
+# event-driven controller's own callback, a saved field, and priority and extra
+# callbacks each record themselves, to check the order of callbacks that apply at
+# one time ("Callback order" in docs/contributing/architecture.md).
+const ORDER = Tuple{Symbol, Float64}[]
+mutable struct OrderSensor <: AbstractSensor
+    period_s::Float64
+    seed::Int
+    rng::Any
+    latest::SVector{1, Float64}
+    latest_time_s::Float64
+end
+OrderSensor() = OrderSensor(1.0, 1, nothing, SVector(NaN), NaN)
+SpaceAGORA.sensor_dimension(::OrderSensor) = 1
+SpaceAGORA.sensor_measure(::OrderSensor, truth::SensorTruth, ctx, rng) = (push!(ORDER, (:sensor, truth.t_s)); SVector(0.0))
+SpaceAGORA.initialize_sensor!(::OrderSensor, truth::SensorTruth, ctx, rng) = nothing
+struct OrderNavigation <: AbstractNavigationModel end
+SpaceAGORA.update_navigation!(::OrderNavigation, u, p, t::Float64, i::Int) = (push!(ORDER, (:navigation, t)); nothing)
+mutable struct OrderSlot end
+struct OrderWriter <: AbstractGuidanceModel
+    slot::OrderSlot
+end
+SpaceAGORA.gnc_links(g::OrderWriter) = (Produces(g.slot),)
+SpaceAGORA.update_guidance!(::OrderWriter, u, p, t::Float64, i::Int) = (push!(ORDER, (:writer, t)); nothing)
+struct OrderGuidance <: AbstractGuidanceModel end
+SpaceAGORA.update_guidance!(::OrderGuidance, u, p, t::Float64, i::Int) = (push!(ORDER, (:guidance, t)); nothing)
+struct OrderControl <: SM.AbstractControlEffectorModel
+    name::Symbol
+    slot::Union{Nothing, OrderSlot}
+end
+SpaceAGORA.update_control!(c::OrderControl, u, p, t, i) = (push!(ORDER, (c.name, t)); nothing)
+SpaceAGORA.control_wrench(::OrderControl, x, p, t) = (ZERO3, ZERO3)
+SpaceAGORA.gnc_links(c::OrderControl) = c.slot === nothing ? () : (Consumes(c.slot),)
+L.before_reference_control!(::OrderWriter, c::OrderControl, u, p, t) = (push!(ORDER, (:prepare, t)); nothing)
+# A callback that records `name` at whole seconds, where the 0.5 s and 1 s ticks meet.
+order_callback(name) = DiscreteCallback((u, t, integrator) -> t > 0 && isinteger(t),
+    integrator -> (push!(ORDER, (name, integrator.t)); nothing); save_positions=(false, false))
+struct OrderEvents <: SM.AbstractControlEffectorModel end
+SpaceAGORA.update_control!(::OrderEvents, u, p, t, i) = nothing
+SpaceAGORA.control_wrench(::OrderEvents, x, p, t) = (ZERO3, ZERO3)
+SpaceAGORA.tick_schedule(::OrderEvents) = :event_driven
+SpaceAGORA.gnc_callbacks(::OrderEvents, num_sats, args, period_s) = (order_callback(:event),)
+
 @testset "GNC runtime declarations" begin
     @testset "defaults keep the periodic tick" begin
         @test tick_schedule(:any_model) === :periodic
@@ -368,6 +413,31 @@ SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
                 @test length(parallel_slot.checked) == 1 && parallel_slot.initialized == 1
             end
         end
+    end
+
+    @testset "callbacks that apply at one time run in the documented order" begin
+        empty!(ORDER)
+        slot = OrderSlot()
+        args = runtime_args((OrderControl(:reader, slot), OrderEvents(), OrderControl(:control, nothing));
+            sensor=OrderSensor(), guidance=(OrderWriter(slot), OrderGuidance()), navigation=(OrderNavigation(),))
+        m = args.mission_configuration                       # saved every second
+        args = SM.SimConfig._with_configuration(args; mission_configuration=SM.MissionConfiguration(
+            m.mission_type, m.keplerian, m.number_of_orbits, m.mission_time, m.orientation_sim, m.num_steps_to_save, 1.0))
+        saved = vcat(SM.default_save_fields(args), [SM.SaveField(:order, (u, t, integrator) -> (push!(ORDER, (:save, t)); 0.0))])
+        run_simulation(args; return_results=true, save_fields=saved,
+            priority_callback_factories=(a -> order_callback(:priority),),
+            extra_callbacks=(order_callback(:extra),), extra_callback_factories=(a -> order_callback(:extra_factory),))
+        # At 1, 2 and 3 s (before the run's 4 s end) every recorder applies. The
+        # periodic control models tick in configuration order around the
+        # event-driven model's callback; the reader's linked producer prepares it
+        # first. Guidance that does not publish before control comes after it.
+        expected = [:priority, :sensor, :navigation, :prepare, :reader, :event, :control, :writer, :guidance,
+                    :save, :extra, :extra_factory]
+        for t in (1.0, 2.0, 3.0)
+            @test [name for (name, at) in ORDER if at == t] == expected
+        end
+        # Between them, at 0.5 s steps, only the 0.5 s control ticks apply.
+        @test [name for (name, at) in ORDER if at == 1.5] == [:prepare, :reader, :control]
     end
 
     @testset "a resumed run restores the run state models keep in checkpoint files" begin
