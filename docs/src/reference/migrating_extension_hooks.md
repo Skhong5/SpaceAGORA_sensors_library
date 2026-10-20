@@ -11,9 +11,14 @@ directly. This page lists each name with its replacement.
 
 A method of a removed name no longer runs. One that names the package, such as
 `SpaceAGORA.calcForceTorque(...) = ...`, fails when its file loads, because the
-name is gone. A model left with no method of the replacement is refused by the
-pre-run check, which names the hook it needs. To find the old names in your
-code:
+name is gone. The pre-run check refuses a model left without a method of a
+required replacement, a tick, `control_wrench` (unless the effector's actuation
+is `:mounted`) or `wrench`, and names the hook it needs. `control_propellant_rate`
+and `control_wheel_torque` are optional: without a method of its own, an
+effector gets `0.0` and `nothing`, and the check does not refuse it. An
+ephemerides model without the model-first hooks stops with a `MethodError`
+naming the hook when the run first asks it for its epoch or frame. To find the
+old names in your code:
 
 ```bash
 grep -rnE "calcForceTorque|calcControl(ForceTorque|MassFlowRate|Effect!)|calcReactionWheelTorque|calc(Guidance|Navigation)Effect!|planet_frame_lpi|ephemerides_(sun_direction_ii|time_seconds)" src test

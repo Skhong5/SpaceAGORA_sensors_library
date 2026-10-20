@@ -5,8 +5,10 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 # ext/, templates/ and examples/ and fails on any method of a removed name,
 # qualified or not and including the callable form `(f::typeof(hook))(...)`, and on
 # any other use of one as an identifier: a declaration, a call, an import or export,
-# a quoted symbol. It also fails on a `wrench` method or call with five positional
-# arguments, the removed form that took the spacecraft index as an argument.
+# a quoted symbol. It also fails on the removed `wrench` form that took the
+# spacecraft index as a fifth positional argument: a method that accepts five
+# positional arguments (defaulted and trailing `args...` parameters included) or a
+# call that passes five (keywords, after a comma or a semicolon, are not counted).
 # Comments and strings are not code and are not checked here, so a name built from
 # a string (`Symbol("calcForceTorque")`, `Meta.parse`, `include_string`) is out of
 # its reach.
@@ -36,14 +38,30 @@ function _signature_call(sig)
     return sig isa Expr && sig.head === :call ? sig : nothing
 end
 
-_positional_count(call::Expr) = count(arg -> !(arg isa Expr && arg.head === :parameters), call.args[2:end])
+# Positional arguments. In a call, `f(a, k=1)` and `f(a; k=1)` both pass `k` as a
+# keyword: the comma form is a `:kw` node, the other a `:parameters` block. In a
+# method signature a `:kw` node is a positional parameter with a default value, and
+# only the `:parameters` block holds keywords; a signature with defaults or a
+# trailing `args...` defines a method for each arity in a range.
+_is_keywords(arg) = arg isa Expr && arg.head === :parameters
+_is_default(arg) = arg isa Expr && arg.head === :kw
+_is_varargs(arg) = arg isa Expr && arg.head === :...
+_call_positional_count(call::Expr) = count(arg -> !(_is_keywords(arg) || _is_default(arg)), call.args[2:end])
+function _signature_takes(call::Expr, n::Int)
+    positional = filter(!_is_keywords, call.args[2:end])
+    required = count(arg -> !(_is_default(arg) || _is_varargs(arg)), positional)
+    any(_is_varargs, positional) && return required <= n
+    return required <= n <= length(positional)
+end
 
 # `Meta.parseall` does not throw on a syntax error: it leaves an `:error` or
 # `:incomplete` node in the tree, which would hide the rest of the file.
 _parse_failed(ex) = ex isa Expr && (ex.head in (:error, :incomplete) || any(_parse_failed, ex.args))
 
 # Each use of a removed name in `ex`, as (kind, name), with the line it is on.
-function _removed_uses!(found, ex, line::Ref{Int})
+# `signature` is the call node of the method definition being walked, which is not
+# itself a call.
+function _removed_uses!(found, ex, line::Ref{Int}, signature=nothing)
     if ex isa LineNumberNode
         line[] = ex.line
     elseif ex isa Symbol
@@ -61,7 +79,7 @@ function _removed_uses!(found, ex, line::Ref{Int})
                 push!(found, (line[], "defines a method of", name))
                 foreach(arg -> _removed_uses!(found, arg, line), ex.args[2:end])
                 return found
-            elseif name === :wrench && _positional_count(call) == 5
+            elseif name === :wrench && _signature_takes(call, 5)
                 push!(found, (line[], "defines a five-argument method of", :wrench))
                 foreach(arg -> _removed_uses!(found, arg, line), ex.args[2:end])
                 return found
@@ -69,11 +87,16 @@ function _removed_uses!(found, ex, line::Ref{Int})
                 push!(found, (line[], "declares", _last_name(ex.args[1])))
                 return found
             end
+            if call !== nothing
+                _removed_uses!(found, ex.args[1], line, call)
+                foreach(arg -> _removed_uses!(found, arg, line), ex.args[2:end])
+                return found
+            end
         end
-        if ex.head === :call && _last_name(ex.args[1]) === :wrench && _positional_count(ex) == 5
+        if ex.head === :call && ex !== signature && _last_name(ex.args[1]) === :wrench && _call_positional_count(ex) == 5
             push!(found, (line[], "calls the five-argument form of", :wrench))
         end
-        foreach(arg -> _removed_uses!(found, arg, line), ex.args)
+        foreach(arg -> _removed_uses!(found, arg, line, signature), ex.args)
     end
     return found
 end

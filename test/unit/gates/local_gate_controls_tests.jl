@@ -599,9 +599,13 @@ end
                 end
             end
             # A five-argument wrench is the removed plume form, as a method or a call;
-            # the four-argument hook is not.
+            # the four-argument hook is not. In a signature a defaulted parameter is
+            # positional and makes one method per arity, as a trailing `args...` does.
             for text in ("SpaceAGORA.wrench(model::Probe, x::StateSample, env::EnvironmentSample, t::Float64, i::Int) = (0.0, 0.0)\n",
-                         "function wrench(model::Probe, x, env, t, i; extra=nothing)\n    return 0.0, 0.0\nend\n")
+                         "function wrench(model::Probe, x, env, t, i; extra=nothing)\n    return 0.0, 0.0\nend\n",
+                         "wrench(model::Probe, x, env, t, i=1) = (0.0, 0.0)\n",
+                         "function wrench(model::Probe, x, env, t, i, j=2)\n    return 0.0, 0.0\nend\n",
+                         "wrench(model::Probe, x, env, t, rest...) = (0.0, 0.0)\n")
                 _with_probe(probe, text) do
                     rejected = run_gate()
                     @test _failed_with(rejected, message)
@@ -609,15 +613,21 @@ end
                     @test !_reports(rejected, probe, fixture, "calls the five-argument form")
                 end
             end
+            # In a call a keyword is not positional, after a semicolon or a comma.
             for text in ("f, τ = wrench(model, x, env, t, 2)\n",
-                         "SimulationModel.wrench(model, x, env, t, i; extra=1)\n")
+                         "SimulationModel.wrench(model, x, env, t, i; extra=1)\n",
+                         "SimulationModel.wrench(model, x, env, t, i, extra=1)\n")
                 _with_probe(probe, text) do
                     rejected = run_gate()
                     @test _failed_with(rejected, message)
                     @test _reports(rejected, probe, fixture, "calls the five-argument form of wrench")
                 end
             end
-            _with_probe(probe, "f, τ = wrench(model, x, env, t)\nf, τ = wrench(model, x, env, t; i=2)\nargs = (1, 2, 3, 4, 5)\nwrench(args...)\n") do
+            _with_probe(probe, "f, τ = wrench(model, x, env, t)\nf, τ = wrench(model, x, env, t; i=2)\n" *
+                               "f, τ = wrench(model, x, env, t, option=true)\nargs = (1, 2, 3, 4, 5)\nwrench(args...)\n" *
+                               "wrench(model::Probe, x, env, t; i=1) = (0.0, 0.0)\n" *
+                               "wrench(model::Probe, x, env, t=0.0) = (0.0, 0.0)\n" *
+                               "function wrench(model::Probe, x, env, t, i, j, k=3)\n    return 0.0, 0.0\nend\n") do
                 @test isnothing(run_gate().failure)
             end
             # Shipped extension code under ext/ is scanned too.
