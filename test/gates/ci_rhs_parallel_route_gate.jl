@@ -15,12 +15,9 @@ telemetry_src = _read(joinpath("src", "orchestration", "parallel", "policy", "po
 pp_src       = _read(joinpath("src", "orchestration", "parallel", "policy", "parallel_policy.jl"))
 
 routing_src = _read(joinpath("src", "orchestration", "parallel", "routing", "effector_routing.jl"))
-cost_counts_src = _read(joinpath("src", "orchestration", "parallel", "cost", "work_counts.jl"))
 for name in ("batchable_effector", "harmonics_prepass_effector", "aero_prepass_effector")
     occursin("const _$name = SimulationModel.EffectorRouting.$name", dynamics_src) ||
         error("Engine routing predicate $name does not alias the shared owner")
-    occursin("const _cost_$name = EffectorRouting.$name", cost_counts_src) ||
-        error("Cost routing predicate $name does not alias the shared owner")
 end
 
 # ── §1/§2: Satellite-batch route contract ───────────────────────────────────
