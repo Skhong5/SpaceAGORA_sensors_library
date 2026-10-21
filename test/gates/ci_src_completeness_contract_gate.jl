@@ -3,7 +3,7 @@ if !isdefined(@__MODULE__, :EDGOwnershipChecks)
 end
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const SRC_ROOT = joinpath(REPO_ROOT, "src")
-const SOURCE_ROOTS = (SRC_ROOT, joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"))
+const SOURCE_ROOTS = (SRC_ROOT,)
 
 const CANONICAL_AGGREGATOR_FILES = Set([
     joinpath("src", "models", "gnc", "planning", "rpo", "lifecycle.jl"),

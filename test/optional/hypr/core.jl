@@ -3,6 +3,7 @@ const S = SpaceAGORA.SimulationModel
 const G = S.GuidanceHooks
 const P = SpaceAGORA.RPOPlannerInterfaces
 @testset "Independent core installation has no HYPR execution" begin
+    @test Base.find_package("HYPR") === nothing
     @test Base.find_package("SpaceAGORAHYPR") === nothing
     @test all(p.name != "SpaceAGORAHYPR" for p in values(Pkg.dependencies()))
     @test !hypr_available()
@@ -18,7 +19,7 @@ const P = SpaceAGORA.RPOPlannerInterfaces
     @test_throws HYPRUnavailableError S.rpo_reference_from_path(zeros(3,2),nothing,RPOPSOConfig())
     @test_throws HYPRUnavailableError robot_arm_hypr_path_cost_components(zeros(3,2),nothing,nothing,RobotArmSphereObstacle[],RobotArmHYPRConfig())
     error_text = try P.initialize_planner(planner,nothing); "" catch e; sprint(showerror,e) end
-    @test occursin("using SpaceAGORAHYPR",error_text)
+    @test occursin("using SpaceAGORA, HYPR",error_text)
     mktempdir() do folder
         destination=joinpath(folder,"refused-run")
         args=make_rpo_configuration(planner=DirectRPOPlanner(),mission_time_s=.2,

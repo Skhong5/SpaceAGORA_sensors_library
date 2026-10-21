@@ -13,7 +13,7 @@ function source_spec(root=ROOT; local_path=get(ENV, "SPACEAGORA_HYPR_PATH", ""))
             error("The explicit HYPR development override must be a supported HYPR version: $SUPPORTED_HYPR_VERSIONS.")
         return PackageSpec(path=path)
     end
-    pin = TOML.parsefile(joinpath(root, "packages", "SpaceAGORAHYPR", "HYPRSource.toml"))
+    pin = TOML.parsefile(joinpath(root, "packages", "HYPRSource.toml"))
     pin["uuid"] == string(HYPR_UUID) && pin["version"] in SUPPORTED_HYPR_VERSIONS || error("Unsupported HYPR source pin")
     occursin(r"^[0-9a-f]{40}$", pin["rev"]) || error("HYPR source must pin a full immutable commit")
     return PackageSpec(url=pin["url"], rev=pin["rev"])
@@ -29,15 +29,17 @@ function setup(environment; root=ROOT, with_hypr=true, local_path=get(ENV, "SPAC
     project = isfile(project_path) ? TOML.parsefile(project_path) : Dict{String,Any}()
     dependencies = get!(project, "deps", Dict{String,Any}())
     isfile(project_path) || merge!(dependencies, TOML.parsefile(joinpath(root, "Project.toml"))["deps"])
+    # Reusing an environment must not retain the removed loader or its source path.
+    pop!(dependencies, "SpaceAGORAHYPR", nothing)
+    haskey(project, "compat") && pop!(project["compat"], "SpaceAGORAHYPR", nothing)
     dependencies["SpaceAGORA"] = "afbfb69f-5c0b-4832-b760-43725dff8540"
     if with_hypr
         dependencies["HYPR"] = string(HYPR_UUID)
-        dependencies["SpaceAGORAHYPR"] = "4096c904-79d0-4d9a-9f5d-f1d6c7a2f1b4"
     end
     sources = get!(project, "sources", Dict{String,Any}())
+    pop!(sources, "SpaceAGORAHYPR", nothing)
     sources["SpaceAGORA"] = Dict("path" => abspath(root))
     if with_hypr
-        sources["SpaceAGORAHYPR"] = Dict("path" => joinpath(abspath(root), "packages", "SpaceAGORAHYPR"))
         sources["HYPR"] = isempty(local_path) ? Dict("url" => spec.url, "rev" => spec.rev) : Dict("path" => spec.path)
     end
     open(project_path, "w") do io
@@ -55,7 +57,6 @@ function setup(environment; root=ROOT, with_hypr=true, local_path=get(ENV, "SPAC
             else
                 push!(specs, spec)
             end
-            push!(specs, PackageSpec(path=joinpath(root, "packages", "SpaceAGORAHYPR")))
         end
         Pkg.develop(specs; preserve=Pkg.PRESERVE_ALL)
         Pkg.instantiate()

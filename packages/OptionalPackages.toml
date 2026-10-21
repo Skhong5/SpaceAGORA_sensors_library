@@ -1,5 +1,5 @@
 # Gitlinks in this repository's index pin source revisions.
-# HYPRSource.toml is retained for the standalone compatibility installer;
+# HYPRSource.toml supplies the immutable source to the standalone HYPR installer;
 # optional_packages.jl requires its revision and identity to match the gitlink.
 [hypr]
 name = "HYPR"

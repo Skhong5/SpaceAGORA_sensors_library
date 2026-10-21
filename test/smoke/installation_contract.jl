@@ -2,7 +2,7 @@ using Test, TOML
 include(joinpath(@__DIR__, "..", "..", "scripts", "setup_hypr.jl"))
 @testset "Immutable HYPR installation contract" begin
     mktempdir() do root
-        folder=joinpath(root,"packages","SpaceAGORAHYPR");mkpath(folder)
+        folder=joinpath(root,"packages");mkpath(folder)
         pin=joinpath(folder,"HYPRSource.toml")
         write(pin,"url = \"https://github.com/Space-FALCON-Lab/HYPR.jl.git\"\nrev = \"$(repeat("a",40))\"\nuuid = \"$(HYPRInstallation.HYPR_UUID)\"\nversion = \"0.4.0\"\n")
         spec=HYPRInstallation.source_spec(root;local_path="")
