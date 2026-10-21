@@ -420,7 +420,10 @@ end
 # bound copy declared on another spacecraft. Each group's scopes are compared in
 # configuration order (the configuration's models, then each spacecraft's bound
 # copies, as `_flatten_spacecraft_gnc` orders them). The models' types are
-# compared with their run state (`models`), as before.
+# compared with their run state (`models`), as before. A run without these
+# models writes the entry too, with empty groups, so a checkpoint without it was
+# written by SpaceAGORA 0.5.1 or earlier; a run with any of them refuses such a
+# checkpoint when it is read (`_gnc_scope_checkpoint_entry`).
 #
 # A scope is plain data built afresh, so a selection changed in place later
 # cannot change a baseline already taken:
@@ -451,11 +454,23 @@ function _gnc_scope_baseline(args)
 end
 
 # The checkpoint's entry, checked for its form when the checkpoint is read, before
-# anything is restored; `nothing` for a checkpoint written without one.
-function _gnc_scope_checkpoint_entry(checkpoint)
+# anything is restored. A checkpoint without one cannot show which spacecraft its
+# models acted on, so a run with any guidance, navigation or control model, of
+# any scope, refuses it; a run without them resumes from it (`nothing`), having
+# nothing to compare.
+function _gnc_scope_checkpoint_entry(args, checkpoint)
     runtime = get(checkpoint, :runtime_state, nothing)
     entry = runtime !== nothing && hasproperty(runtime, :gnc_scopes) ? runtime.gnc_scopes : nothing
-    entry === nothing && return nothing
+    if entry === nothing
+        models = [_gnc_scope_owner(group, j, m) for (group, group_models) in pairs(_gnc_groups(args))
+            for (j, m) in enumerate(group_models)]
+        isempty(models) && return nothing
+        named = length(models) <= 3 ? join(models, ", ") : join(models[1:3], ", ") * " and $(length(models) - 3) more"
+        throw(ArgumentError(
+            "The checkpoint records no spacecraft scopes for guidance, navigation and control models: it was written " *
+            "by SpaceAGORA 0.5.1 or earlier, so this run's $named cannot be checked against it. Resume it with " *
+            "SpaceAGORA 0.5.1, or run from the start."))
+    end
     hasproperty(entry, :version) && entry.version === 1 && all(group -> hasproperty(entry, group) &&
         getproperty(entry, group) isa AbstractVector, keys(_GNC_SCOPE_GROUPS)) ||
         throw(ArgumentError("GNC scope checkpoint state version 1 is required to resume this run."))
@@ -470,19 +485,11 @@ function _describe_gnc_scope(scope)
         "$(length(scope.partners) == 1 ? "" : "s") $(join(scope.partners, ", "))"
 end
 
-# A checkpoint written without the entry (by SpaceAGORA 0.5.1 or earlier) resumes
-# as it did then, with no scope compared. A run with a model bound to some
-# spacecraft is warned that its scopes were not checked; the checkpoints it
-# writes record them.
+# `entry` is `nothing` only for a run without guidance, navigation or control
+# models resumed from a checkpoint written before the entry, which has nothing
+# to compare (`_gnc_scope_checkpoint_entry` refuses one with models).
 function _check_gnc_scope_baseline(args, entry, baseline)
-    if entry === nothing
-        unchecked = [_gnc_scope_owner(group, j, m) for (group, models) in pairs(_gnc_groups(args))
-            for (j, m) in enumerate(models) if getproperty(baseline, group)[j].scope !== :all]
-        isempty(unchecked) || @warn "The checkpoint records no GNC spacecraft scopes (it was written by SpaceAGORA " *
-            "0.5.1 or earlier), so the spacecraft of $(join(unchecked, ", ")) were not checked against it. Resume it " *
-            "only with the configuration that wrote it."
-        return nothing
-    end
+    entry === nothing && return nothing
     for (group, models) in pairs(_gnc_groups(args))
         saved, current = getproperty(entry, group), getproperty(baseline, group)
         isequal(saved, current) && continue

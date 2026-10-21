@@ -497,7 +497,8 @@ or control models or sensors differ from its own in type name or position;
 without model state, those models' types are not compared. Every checkpoint also
 records the spacecraft each guidance, navigation and control model acts on, after
 the run-start initializers, and a resumed run refuses models acting on other
-spacecraft before any `restore_checkpoint_state!` (see
+spacecraft before any `restore_checkpoint_state!`, and a checkpoint written by
+SpaceAGORA 0.5.1 or earlier, which holds no such record (see
 [Checkpointing](user/outputs.md#Checkpointing)); a model that acts on some
 spacecraft only should say so with `spacecraft_scope` for that check to cover it.
 Mounted sensors are checked
