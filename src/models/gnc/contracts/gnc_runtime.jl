@@ -28,8 +28,8 @@ tick_schedule(model) = :periodic
     SpacecraftScope
 
 The spacecraft a guidance, navigation or control model acts on, as its
-`spacecraft_scope` declares: `AllSpacecraft()`, `BoundSpacecraft(indices)` or
-`CoupledSpacecraft(primary, partners)`.
+`spacecraft_scope` declares: `AllSpacecraft()`, `BoundSpacecraft(indices)`,
+`CoupledSpacecraft(primary, partners)` or a `SpacecraftSelection`.
 """
 abstract type SpacecraftScope end
 
@@ -69,14 +69,28 @@ CoupledSpacecraft(primary::Integer, partners::Tuple{Vararg{Integer}}) =
 """
     spacecraft_scope(model) -> SpacecraftScope
 
-The spacecraft guidance, navigation or control `model` acts on. The engine ticks
-the model only for the spacecraft its scope names (every one, the `BoundSpacecraft`
-indices, or the `CoupledSpacecraft` primary), reading the scope at each tick.
-Before the run it refuses a scope that names a run position the run does not have.
-The output hooks are still called for
-every spacecraft, so they keep their own index checks. A dynamic effector's scope,
-read once when the run starts, decides which spacecraft it acts on (see `scoped`);
-a dynamic effector also takes a `SpacecraftSelection`. Default: `AllSpacecraft()`.
+The spacecraft guidance, navigation or control `model` acts on: every one, the
+`BoundSpacecraft` indices, the `CoupledSpacecraft` primary, or the spacecraft a
+`SpacecraftSelection` selects. Before the run the engine refuses a scope that names
+a run position the run does not have. When the run starts, after the run-start
+initializers, it takes the scope it reads then as the model's for the whole run; a
+`SpacecraftSelection` is resolved then, its `where` called once per spacecraft.
+
+During the run the engine calls the model only for the spacecraft its scope names:
+its ticks and `release_command!`, its output hooks (`control_wrench`,
+`control_propellant_rate`, `control_wheel_torque`), its levels (`actuator_levels`,
+`control_thruster_levels`), `register_tstops!` and `atmosphere_transition!`.
+SpaceAGORA 0.6 and earlier called the output hooks, the levels and
+`atmosphere_transition!` for every spacecraft. Direct callers, such as the
+conformance kit, may still call them for other spacecraft, so they keep returning
+zeros or `nothing` there. `touchdown_spec` is still asked for every spacecraft
+before the run.
+
+The scope is fixed once the run-start initializers ran. Each tick reads it again
+(an event-driven model's scope is read once per accepted step), and a scope that
+differs from the one the run took stops the run. A dynamic effector's scope, read
+once when the run starts, decides which spacecraft it acts on (see `scoped`).
+Default: `AllSpacecraft()`.
 """
 spacecraft_scope(model) = AllSpacecraft()
 

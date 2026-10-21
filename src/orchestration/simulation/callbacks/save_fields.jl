@@ -331,7 +331,8 @@ end
     @inbounds for i in 1:num_sats
         levels = zeros(Float64, counts[i])
         if counts[i] > 0
-            for effector in effectors
+            for j in _scope_members(integrator.p, :control, effectors, i)
+                effector = effectors[j]
                 reported = _effector_thruster_levels(effector, i, spacecraft[i], t)
                 reported === nothing && continue
                 for k in 1:min(counts[i], length(reported))
@@ -386,9 +387,11 @@ end
 
 # Mounted actuation: the level every mounted actuator applies and the power the
 # mounted actuators draw, per spacecraft. A spacecraft's levels come from the
-# first control effector in `:mounted` actuation that holds levels for it.
-@inline function _mounted_effector_levels(effectors, i::Int, n::Int)
-    for effector in effectors
+# first control effector in `:mounted` actuation that holds levels for it, among
+# `members`, the effectors acting on it (`_scope_members`).
+@inline function _mounted_effector_levels(effectors, members, i::Int, n::Int)
+    for j in members
+        effector = effectors[j]
         actuation_mode(effector) === :mounted || continue
         levels = actuator_levels(effector, i)
         (levels === nothing || length(levels) != n) && continue
@@ -421,7 +424,8 @@ function _save_actuator_levels(num_sats::Int, counts::Vector{Int}, u, t, integra
     spacecraft = integrator.p.args.dynamics_model.spacecraft
     out = Vector{Vector{Float64}}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        levels = counts[i] == 0 ? nothing : without_link_driven(_mounted_effector_levels(effectors, i, counts[i]), interlinks, i)
+        levels = counts[i] == 0 ? nothing : without_link_driven(_mounted_effector_levels(effectors,
+            _scope_members(integrator.p, :control, effectors, i), i, counts[i]), interlinks, i)
         applied = levels === nothing ? nothing :
             applied_actuator_levels(spacecraft[i], shed_levels(spacecraft[i], faulted_levels(spacecraft[i], levels));
                 wheel_momentum=_saved_wheel_momentum(u, i), cmg_angles=_saved_cmg_angles(u, i))
@@ -437,7 +441,8 @@ function _save_actuator_power(num_sats::Int, counts::Vector{Int}, u, t, integrat
     spacecraft = integrator.p.args.dynamics_model.spacecraft
     out = Vector{Float64}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        levels = counts[i] == 0 ? nothing : without_link_driven(_mounted_effector_levels(effectors, i, counts[i]), interlinks, i)
+        levels = counts[i] == 0 ? nothing : without_link_driven(_mounted_effector_levels(effectors,
+            _scope_members(integrator.p, :control, effectors, i), i, counts[i]), interlinks, i)
         out[i] = levels === nothing ? 0.0 :
             mounted_power(spacecraft[i], shed_levels(spacecraft[i], faulted_levels(spacecraft[i], levels)); wheel_momentum=_saved_wheel_momentum(u, i))
         link_driven(interlinks, i) && (out[i] += last(link_terminal_power(interlinks, i, spacecraft[i])))

@@ -601,10 +601,14 @@ function _start_run_models!(args, p, u_start, t_start, run_clock, resumed, model
     for control in args.control_model.control_effectors
         SimulationLifecycle.initialize_control!(control, u_start, p, t_start)
     end
-    # The scopes the initializers resolved, compared with the checkpoint's before
-    # the models' own run state replaces their reset on a resumed run.
-    gnc_scopes = checkpoint_active || resumed ? _gnc_scope_baseline(args) : nothing
+    # The scopes the initializers resolved (the run's GNC scopes, which the ticks,
+    # the right-hand side and the readers follow from here on), compared with the
+    # checkpoint's before the models' own run state replaces their reset on a
+    # resumed run.
+    scopes = _gnc_run_scopes(args)
+    gnc_scopes = checkpoint_active || resumed ? _gnc_scope_record(args, scopes) : nothing
     resumed && _check_gnc_scope_baseline(args, scope_entry, gnc_scopes)
+    p.shared_buffers.gnc_scopes[] = scopes
     resumed && _restore_model_checkpoint_state!(args, model_snapshot)
     checkpoint_active && _check_model_checkpoint_hooks(args)
     SimulationModel.ControlHooks._edg_initialize_heat_accounting!(args, u_start, Float64(t_start))

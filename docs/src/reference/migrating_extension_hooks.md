@@ -113,6 +113,32 @@ A model without a `spacecraft_scope` method of its own has the default
 burn scheduler, the only built-in model with a method, is event-driven and
 registers its stops from its own callbacks.
 
+## Changed in 0.7.0
+
+A guidance, navigation or control model's per-spacecraft hooks follow its
+`spacecraft_scope`, as its ticks already did. The hooks keep their names and
+signatures and are called for fewer spacecraft.
+
+| Hook | 0.6 and earlier | 0.7.0 | What to do |
+|---|---|---|---|
+| `control_wrench`, `control_propellant_rate`, `control_wheel_torque` | called at every evaluation of the equations of motion for every spacecraft | called for each spacecraft the model's scope names | nothing, if the hook returns zeros or `nothing` for other spacecraft, as the docs asked; a model that acts on a spacecraft outside its declared scope declares a scope that names it, or `AllSpacecraft()` |
+| `actuator_levels`, `control_thruster_levels` | read for every spacecraft by the dynamics, the power and fault readers and the result columns | read for each spacecraft the model's scope names | as above |
+| `atmosphere_transition!` | called for every guidance and control model when a spacecraft crosses | called for the models whose scope names that spacecraft | as above |
+
+- **The scope is fixed for the run.** The engine takes each model's scope when the
+  run starts, once the run-start initializers ran, and stops the run when a later
+  read differs: at each tick, and once per accepted step for an event-driven model.
+  A model that changed its scope during a run sets its spacecraft before the run
+  instead: in the model, in `bind_spacecraft` or in an initializer.
+- **A `SpacecraftSelection` scopes GNC models too.** 0.6 refused it; it is
+  resolved when the run starts, its `where` called once per spacecraft.
+- **Direct callers are unchanged.** The conformance kit and a model's own tests
+  may still call the hooks for any spacecraft, so keep the zero and `nothing`
+  returns outside the scope.
+- **Known user models.** The kit demo's `PDPointingController` and
+  `AttitudeFilter` declare a narrower scope and return zero output outside it,
+  so their runs do not change.
+
 ## Schedule
 
 - **0.3.0.** The new names, with warnings for the old ones.

@@ -85,7 +85,12 @@ model's run state, as for guidance); `output_hook_pure` (each output hook the mo
 called twice on the same arguments, returns equal values, leaves the model unchanged
 and logs nothing at `Info` level or above); `positive_consumption`
 (`control_propellant_rate` is finite and not negative); `bind_fresh_state`;
-`checkpoint_round_trip`, as for guidance.
+`checkpoint_round_trip`, as for guidance; `outputs_in_scope` (added in 0.7.0,
+advisory in 0.7): after the model's ticks, its output hooks and levels
+(`actuator_levels`, `control_thruster_levels`) return zeros or `nothing` for a
+fixture spacecraft outside its `spacecraft_scope`. From 0.7.0 the engine calls them
+only inside the scope, but direct callers may ask about any spacecraft. Skipped
+when the scope names every spacecraft of the fixture.
 
 The output hooks are called on the states, parameters and copies of the model the
 engine holds at the start, quarters and end of a fixture run, on spacecraft
@@ -146,6 +151,7 @@ function _check_gnc_model(model, kind::Symbol, fixture::ConformanceFixture, spac
         "state in $(_INITIALIZERS[kind])")
     bound = _bind_fresh_state_check(model, kind, since; configuration, index)
     round_trip = _gnc_checkpoint_round_trip(model, kind, configuration)
+    kind === :control_model && (in_scope = _outputs_in_scope_check(model, configuration, index))
     # Last: this run uses the caller's objects.
     original = run(; isolate_state=false)
 
@@ -165,7 +171,7 @@ function _check_gnc_model(model, kind::Symbol, fixture::ConformanceFixture, spac
     ]
     checks = if kind === :control_model
         [hooks, _sample_signature_check(model, since; hooks=_CONTROL_OUTPUT_HOOKS), runs..., resets, control_checks...,
-            bound, round_trip]
+            bound, round_trip, in_scope]
     else
         [hooks, runs..., resets, bound, round_trip]
     end
@@ -295,6 +301,67 @@ function _positive_consumption_check(model, samples::_Samples, since::VersionNum
             "t = $(t) s; it is the propellant used, kg/s, finite and not negative")
     end
     return _check(:positive_consumption, since, true)
+end
+
+# `outputs_in_scope`: a fixture spacecraft outside the model's scope, sampled as the
+# output hooks see it, after the model's ticks; each output hook and level the
+# model has returns zeros or `nothing` there.
+const _OUTPUTS_IN_SCOPE_SINCE = v"0.7.0"
+
+function _outputs_in_scope_check(model, configuration, index::Int)
+    since = _OUTPUTS_IN_SCOPE_SINCE
+    spacecraft = configuration.dynamics_model.spacecraft
+    named = _scope_positions(GNCRuntime.spacecraft_scope(model), spacecraft)
+    outside = findfirst(i -> !(i in named), eachindex(spacecraft))
+    outside === nothing && return _skip(:outputs_in_scope, since,
+        "the model's spacecraft_scope names every spacecraft of the fixture; a fixture with a spacecraft outside " *
+        "its scope checks this")
+    samples = _capture_control_samples(configuration, index, outside)
+    samples.error === nothing || return _check(:outputs_in_scope, since, false, _sampling_failure(samples))
+    for (subject, x, p, t) in samples.arguments
+        # A scope set by an initializer may name the spacecraft after all.
+        outside in _scope_positions(GNCRuntime.spacecraft_scope(subject), spacecraft) && continue
+        problem = _output_outside_scope(subject, x, p, t, outside)
+        problem === nothing || return _check(:outputs_in_scope, since, false, problem)
+    end
+    return _check(:outputs_in_scope, since, true)
+end
+
+_scope_positions(::GNCRuntime.AllSpacecraft, spacecraft) = collect(eachindex(spacecraft))
+_scope_positions(scope::GNCRuntime.BoundSpacecraft, spacecraft) = collect(scope.indices)
+_scope_positions(scope::GNCRuntime.CoupledSpacecraft, spacecraft) = [scope.primary]
+_scope_positions(scope::SimulationModel.SpacecraftSelection, spacecraft) =
+    SimulationModel.resolve_spacecraft_scope(scope, spacecraft)
+_scope_positions(scope, spacecraft) = collect(eachindex(spacecraft))
+
+# What an output hook or level of `subject` returns for spacecraft `outside` that is
+# not zero or `nothing`, or `nothing` when every one is.
+function _output_outside_scope(subject, x, p, t, outside::Int)
+    where_ = "for spacecraft $(outside), outside its spacecraft_scope, at t = $(t) s"
+    try
+        if _has_output_hook(SimulationModel.control_wrench, subject, p)
+            force, torque = SimulationModel.control_wrench(deepcopy(subject), x, p, t)
+            all(iszero, force) && all(iszero, torque) ||
+                return "control_wrench returned force $(force) and torque $(torque) $(where_); return zeros there"
+        end
+        if _has_output_hook(SimulationModel.control_propellant_rate, subject, p)
+            rate = SimulationModel.control_propellant_rate(deepcopy(subject), x, p, t)
+            iszero(rate) || return "control_propellant_rate returned $(repr(rate)) $(where_); return 0.0 there"
+        end
+        if _has_output_hook(SimulationModel.control_wheel_torque, subject, p)
+            wheel = SimulationModel.control_wheel_torque(deepcopy(subject), x, p, t)
+            wheel === nothing || all(iszero, wheel) ||
+                return "control_wheel_torque returned $(repr(wheel)) $(where_); return nothing there"
+        end
+        levels = SimulationModel.actuator_levels(subject, outside)
+        levels === nothing || return "actuator_levels returned $(repr(levels)) $(where_); return nothing there"
+        thrusters = SimulationModel.control_thruster_levels(subject, outside)
+        thrusters === nothing ||
+            return "control_thruster_levels returned $(repr(thrusters)) $(where_); return nothing there"
+    catch err
+        return "an output hook threw $(where_): " * _summary(err)
+    end
+    return nothing
 end
 
 # The check's own configuration with the model, at `index` of its container, declared

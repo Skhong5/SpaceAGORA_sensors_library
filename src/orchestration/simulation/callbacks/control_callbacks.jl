@@ -104,9 +104,15 @@ function get_run_state_callbacks(num_sats::Int, args::SimulationConfiguration)
         save_positions=(false, false)),)
 end
 
+# The burn scheduler's scheduling pass for spacecraft `sat_idx` first ticks the
+# guidance models that act on it (`_scope_members`, `_acts_on`).
 @inline function _run_guidance_for_thruster_schedule!(integrator, sat_idx::Int)
-    @inbounds for guidance_model in integrator.p.args.guidance_model.guidance_effectors
-        _gnc_tick!(update_guidance!, guidance_model, integrator.u, integrator.p, integrator.t, sat_idx)
+    p = integrator.p
+    guidance_models = p.args.guidance_model.guidance_effectors
+    @inbounds for j in _scope_members(p, :guidance, guidance_models, sat_idx)
+        guidance_model = guidance_models[j]
+        _acts_on(p, :guidance, j, guidance_model, sat_idx) || continue
+        _gnc_tick_in_scope!(update_guidance!, guidance_model, integrator.u, p, integrator.t, sat_idx)
     end
     return nothing
 end
@@ -173,7 +179,9 @@ _reschedule_event_driven!(integrator, control_model::BaseThrusterModel, sat_idx:
     _schedule_thruster_control!(integrator, control_model, sat_idx)
 
 function schedule_event_driven_thruster_controls!(integrator, sat_idx::Int)
-    @inbounds for control_model in integrator.p.args.control_model.control_effectors
+    control_models = integrator.p.args.control_model.control_effectors
+    @inbounds for j in _scope_members(integrator.p, :control, control_models, sat_idx)
+        control_model = control_models[j]
         if tick_schedule(control_model) === :event_driven
             _reschedule_event_driven!(integrator, control_model, sat_idx)
         end
@@ -380,13 +388,17 @@ end
 # The scope is read after step 1, and its positions (`_tick_positions`) serve steps
 # 2 and 3; the thread decision counts them. A model that consumes a link also has
 # its scope read before step 1, to decide whether its producers prepare it
-# (`_ticks_any`). The tick reads it again after they have, so it follows a scope
-# they changed, as it did when it read the scope for each spacecraft. That is two
-# reads per tick for a linked consumer and one for any other model. The parallel
-# policy's observation of the tick covers steps 2 and 3.
-function _periodic_control_tick!(integrator, control_model, producers, num_sats::Int, period::Float64)
-    _prepare_linked_producers!(integrator, control_model, producers, num_sats)
-    positions = _tick_positions(spacecraft_scope(control_model), num_sats)
+# (`_ticks_any`). That is two reads per tick for a linked consumer and one for any
+# other model. Each read is compared with the scope the run took when it started
+# (`slot`, the model's entry in the run's GNC scopes; `_check_run_scope`), so a
+# producer that changes its consumer's scope stops the run at the second read
+# (SpaceAGORA 0.6 followed the change). The parallel policy's observation of the
+# tick covers steps 2 and 3.
+function _periodic_control_tick!(integrator, control_model, producers, num_sats::Int, period::Float64, slot=nothing)
+    _prepare_linked_producers!(integrator, control_model, producers, num_sats, slot)
+    scope = spacecraft_scope(control_model)
+    _check_run_scope(slot, scope, num_sats)
+    positions = _run_tick_positions(slot, scope, num_sats)
     decision = _control_callback_thread_decision(integrator.p, control_model, length(positions))
     started_ns = time_ns()
     _apply_control_ticks!(integrator, control_model, positions, period, decision)
@@ -399,8 +411,8 @@ end
 # each once per tick, in the order `_linked_producers` lists them, on this thread:
 # the RPO planner checks its reference. Not when the tick releases or skips every
 # spacecraft (`_ticks_any`).
-function _prepare_linked_producers!(integrator, control_model, producers, num_sats::Int)
-    (isempty(producers) || !_ticks_any(control_model, integrator.p, num_sats)) && return nothing
+function _prepare_linked_producers!(integrator, control_model, producers, num_sats::Int, slot=nothing)
+    (isempty(producers) || !_ticks_any(control_model, integrator.p, num_sats, slot)) && return nothing
     for producer in producers
         SimulationLifecycle.before_reference_control!(producer, control_model, integrator.u, integrator.p,
             integrator.t)
@@ -460,21 +472,24 @@ end
 # the run's tick grid (`_run_clock_periodic_callback`). At each solve's start the
 # model learns its clock's period and origin: the solve's start, or the run's in
 # a checkpointed or resumed run.
-function _periodic_control_callback(control_model, control_rate, num_sats::Int, args)
+function _periodic_control_callback(control_model, control_rate, num_sats::Int, args, j::Int)
     period = Float64(control_rate)
     producers = _linked_producers(control_model, args)
-    tick! = integrator -> _periodic_control_tick!(integrator, control_model, producers, num_sats, period)
+    tick! = integrator -> _periodic_control_tick!(integrator, control_model, producers, num_sats, period,
+        _run_scope_slot(integrator.p, :control, j))
     start_clock = (origin, integrator) -> gnc_clock_started!(control_model, period, origin)
     return _run_clock_periodic_callback(tick!, period; on_clock=start_clock)
 end
 
 # The control models' callbacks, in configuration order: an event-driven model's
 # own callbacks (`gnc_callbacks`), added as they are, or a periodic model's tick at
-# its rate in `control_rates`.
+# its rate in `control_rates`. With event-driven models, one more callback, last,
+# checks their scopes once per accepted step (`_event_driven_scope_check`).
 function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
     control_models = args.control_model.control_effectors
     control_rates = args.control_model.control_rates
     callbacks = Any[]
+    event_driven = Int[]
     for i in eachindex(control_models)
         control_model = control_models[i]
         control_rate = control_rates[i]
@@ -483,9 +498,36 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
             "tick_schedule($(nameof(typeof(control_model)))) must return :periodic or :event_driven, not $(repr(schedule_kind))."))
         if schedule_kind === :event_driven
             append!(callbacks, gnc_callbacks(control_model, num_sats, args, control_rate))
+            push!(event_driven, i)
         else
-            push!(callbacks, _periodic_control_callback(control_model, control_rate, num_sats, args))
+            push!(callbacks, _periodic_control_callback(control_model, control_rate, num_sats, args, i))
         end
     end
+    isempty(event_driven) || push!(callbacks, _event_driven_scope_check(event_driven, num_sats))
     return callbacks
+end
+
+# An event-driven control model has no periodic tick to compare its scope at, and
+# its own callbacks may read or change the scope at any step. So once per accepted
+# step, after its callbacks (this callback comes after them), each event-driven
+# model's scope is compared with the one the run took when it started
+# (`_check_run_scope`). The condition does the comparison and never fires, so the
+# callback changes neither the state nor the saved points, and its initialization
+# leaves the solver's flags alone.
+function _event_driven_scope_check(models::Vector{Int}, num_sats::Int)
+    condition = (u, t, integrator) -> begin
+        _check_event_driven_scopes(integrator.p, models, num_sats)
+        false
+    end
+    return DiscreteCallback(condition, integrator -> nothing; save_positions=(false, false),
+        initialize=(c, u, t, integrator) -> nothing)
+end
+
+function _check_event_driven_scopes(p, models::Vector{Int}, num_sats::Int)
+    _run_scopes(p) === nothing && return nothing
+    control_models = p.args.control_model.control_effectors
+    for j in models
+        _check_run_scope(_run_scope_slot(p, :control, j), spacecraft_scope(control_models[j]), num_sats)
+    end
+    return nothing
 end

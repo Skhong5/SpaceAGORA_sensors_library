@@ -4,12 +4,14 @@
 
 _fault_spacecraft(args) = [i for i in eachindex(args.dynamics_model.spacecraft) if has_faults(args.dynamics_model.spacecraft[i])]
 
-# The command the first `:mounted` effector holds for spacecraft `i`, or nothing.
+# The command the first `:mounted` effector acting on spacecraft `i` holds for it,
+# or nothing.
 function _fault_command_levels(p, i::Int)
     sc = p.args.dynamics_model.spacecraft[i]
     n = mounted_actuator_count(sc)
     n == 0 && return nothing
-    return _mounted_effector_levels(p.args.control_model.control_effectors, i, n)
+    effectors = p.args.control_model.control_effectors
+    return _mounted_effector_levels(effectors, _scope_members(p, :control, effectors, i), i, n)
 end
 
 """

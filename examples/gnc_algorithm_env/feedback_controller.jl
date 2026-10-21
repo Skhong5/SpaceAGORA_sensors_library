@@ -45,7 +45,8 @@ function SpaceAGORA.update_control!(c::RateDamper, u, p, t, spacecraft_index)
 end
 
 # The output (shape R), at every evaluation of the equations of motion: the held
-# command, never the law. Output hooks are called for every spacecraft.
+# command, never the law. The engine calls it for the spacecraft in the scope
+# only; direct callers may ask about others, so it checks the index.
 function SpaceAGORA.control_wrench(c::RateDamper, x::StateSample, p, t)
     zero3 = zero(SVector{3, Float64})
     x.spacecraft_index == c.spacecraft_index || return zero3, zero3

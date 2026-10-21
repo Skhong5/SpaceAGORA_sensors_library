@@ -144,6 +144,9 @@ dynamics = DynamicsModel(spacecraft, (
   - `AllSpacecraft()` is the same as no scope.
   - An effector type can declare its own scope with
     `SpaceAGORA.spacecraft_scope(model)`.
+  - A guidance, navigation or control model's `spacecraft_scope` takes a
+    `SpacecraftSelection` too, resolved when the run starts, after the
+    run-start initializers (see [Declarations](gnc_feedback.md#Declarations)).
 - **Resolved once.** The run resolves each scope to run positions when it
   starts, against the spacecraft that run. It refuses a scope that:
   - names a position outside the run;
