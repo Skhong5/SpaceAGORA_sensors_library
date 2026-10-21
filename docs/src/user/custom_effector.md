@@ -351,8 +351,8 @@ The rules every hook follows, such as the argument order, the frames, the units
 and the signs, are on [Extension Conventions](../reference/extension_conventions.md),
 and the [Extension Hook Reference](../generated/extension_hook_reference.md) lists
 when the engine calls each hook. A model written for the force hook that
-`wrench` replaced keeps running until SpaceAGORA 0.5.0, with a warning before
-the run; [Migrating Extension Hooks](../reference/migrating_extension_hooks.md)
+`wrench` replaced, `calcForceTorque`, no longer runs: SpaceAGORA 0.5.0 removed
+that hook, and [Migrating Extension Hooks](../reference/migrating_extension_hooks.md)
 shows how to move it.
 
 How the engine uses the result: the forces of all effectors are summed per
