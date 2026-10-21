@@ -267,6 +267,16 @@ SpaceAGORA.spacecraft_scope(m::RebuildsCtl) = (ids = copy(m.ids); SpacecraftSele
 SpaceAGORA.update_control!(m::RebuildsCtl, u, p, t::Float64, i::Int) = nothing
 SpaceAGORA.control_wrench(m::RebuildsCtl, x::StateSample, p, t::Float64) = (Z3, Z3)
 
+# A controller bound to spacecraft 1 until its initializer moves it to 2, and that
+# pushes every spacecraft.
+mutable struct MovesCtl <: SM.AbstractControlEffectorModel
+    spacecraft_index::Int
+end
+SpaceAGORA.spacecraft_scope(m::MovesCtl) = BoundSpacecraft((m.spacecraft_index,))
+SpaceAGORA.update_control!(m::MovesCtl, u, p, t::Float64, i::Int) = nothing
+SpaceAGORA.control_wrench(m::MovesCtl, x::StateSample, p, t::Float64) = (SVector(1.0e-6, 0.0, 0.0), Z3)
+SpaceAGORA.initialize_control!(m::MovesCtl, u, p, t) = (m.spacecraft_index = 2; nothing)
+
 @testset "GNC hooks follow the scope" begin
     @testset "the output hooks are called only for the spacecraft in the scope" begin
         n = 4
@@ -460,6 +470,21 @@ SpaceAGORA.control_wrench(m::RebuildsCtl, x::StateSample, p, t::Float64) = (Z3, 
         shared = PushCtl(2)
         @test status(C.check_control_model(shared; fixture=C.conformance_fixture(control=(shared,), spacecraft_count=2))) ===
             :skip
+        # A one-spacecraft fixture is checked with a copy of its spacecraft as the second.
+        bound = PushCtl(2; index=1)
+        @test status(C.check_control_model(bound)) === :pass
+        shared = PushCtl(2)
+        @test status(C.check_control_model(shared)) === :skip
+        # The spacecraft checked is outside the scope the run took, after the
+        # initializer moved the model to spacecraft 2.
+        moves = MovesCtl(1)
+        report = C.check_control_model(moves; fixture=C.conformance_fixture(control=(moves,), spacecraft_count=2))
+        check = only(c for c in report.checks if c.id === :outputs_in_scope)
+        @test check.status === :advisory_fail && occursin("for spacecraft 1", check.detail)
+        # A selection the fixture cannot resolve: a report, not an exception.
+        planes = TickCtl(1, SpacecraftSelection(planes=2))
+        check = only(c for c in C.check_control_model(planes).checks if c.id === :outputs_in_scope)
+        @test check.status === :skip && occursin("constellation", check.detail)
     end
 end
 
