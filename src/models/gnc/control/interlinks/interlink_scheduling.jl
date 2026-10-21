@@ -364,7 +364,9 @@ end
 	select_interlinks!(model::InterlinkModel, policy::SchedulingPolicyModel)
 
 Activate a maximum-total-score matching of available, positive-score links,
-with at most one link per terminal. Topology belongs to `model.graph`; `policy.matching`
+with at most one link per terminal. Of parallel links (directed links both ways
+between the same two terminals), only the highest-scoring is a candidate, the
+first in endpoint order on a tie. Topology belongs to `model.graph`; `policy.matching`
 contains raw per-edge `score` values and reusable solver scratch arrays. Pass the same
 policy used by `score_candidates!`; selection uses its stored scores, not its scoring
 objective. A fresh workspace starts with zero scores. Appending links preserves existing
@@ -398,6 +400,7 @@ function select_interlinks!(model::InterlinkModel, policy::SchedulingPolicyModel
 			push!(work.exact_scores, Rational{BigInt}(work.score[edge]))
 		end
 	end
+	_drop_parallel_candidates!(model, work)
 	selected = InterLinkKey[]
 	if !isempty(work.candidates)
 		# Step 2. Scale exact Float64 rationals to integer weights without rounding score sums.
@@ -453,6 +456,33 @@ function select_interlinks!(model::InterlinkModel, policy::SchedulingPolicyModel
 		model.graph.active[model.graph.edge_index_lookup[key]] = true
 	end
 	return sort!(selected)
+end
+
+# Parallel candidates (directed links both ways between the same two terminals)
+# share both terminals, so a matching holds at most one: keep the highest-scoring,
+# the first in endpoint order on a tie. The components then stay simple graphs,
+# and a two-way pair alone stays a tree.
+function _drop_parallel_candidates!(model, work)
+	length(work.candidates) < 2 && return nothing
+	edges = model.graph.edges
+	best = Dict{Tuple{Int, Int}, Int}()   # vertex pair => position in the candidates
+	keep = fill(true, length(work.candidates))
+	for (position, edge) in enumerate(work.candidates)
+		pair = minmax(edges[edge]...)
+		other = get(best, pair, 0)
+		if other == 0
+			best[pair] = position
+		elseif work.exact_scores[position] > work.exact_scores[other]
+			keep[other] = false
+			best[pair] = position
+		else
+			keep[position] = false
+		end
+	end
+	all(keep) && return nothing
+	keepat!(work.candidates, keep)
+	keepat!(work.exact_scores, keep)
+	return nothing
 end
 
 # 4. Overall scheduling function to schedule interlinks based on the current state and scoring policy
