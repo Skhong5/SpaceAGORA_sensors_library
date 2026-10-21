@@ -237,6 +237,38 @@ refusal(f) = try f(); nothing catch err err end
         end
     end
 
+    @testset "a candidate carries the hardware at its terminal numbers" begin
+        # Two virtual terminals and two mounted ones on the first spacecraft, one
+        # of each on the second: each end's hardware is the terminal its number names.
+        function hardware_sat(index, arc_m, n_terminal; laser)
+            bus = Link(root=true, m=100.0)
+            θ = arc_m / RADIUS
+            ic = CartesianInitialCondition(SVector(RADIUS * cos(θ), RADIUS * sin(θ), 0.0),
+                SVector(-SPEED * sin(θ), SPEED * cos(θ), 0.0); q=SVector(0.0, 0.0, 0.0, 1.0))
+            sc = SpacecraftModel(root=bus, links=[bus], inertia_tensor=bus.inertia, initial_condition=ic, id=index,
+                n_terminal=n_terminal)
+            laser && add_actuator!(sc, bus, LaserTerminal(boresight=[0.0, 1.0, 0.0], max_power_w=100.0, efficiency=0.5))
+            add_actuator!(sc, bus, PowerReceiver(normal=[0.0, -1.0, 0.0], radius_m=0.25, efficiency=0.4))
+            return sc
+        end
+        spacecraft = [hardware_sat(1, 0.0, 2; laser=true), hardware_sat(2, 5000.0, 1; laser=false)]
+        model = InterlinkModel()
+        register_link!(model, spacecraft, (1, 1), (2, 1), LaserMomentumLink(power_w=40.0, magnification=1.0, range_m=1e4))
+        register_link!(model, spacecraft, (1, 3), (2, 2), PowerBeamLink(power_w=80.0, range_m=1e4))
+        state = (sc=[(pos=collect(sc.initial_condition.pos), vel=collect(sc.initial_condition.vel), mass=100.0)
+            for sc in spacecraft],)
+        update_availability!(model, spacecraft, state)
+        ctx = SchedulingContext(PLANET.μ, LinkContext(), spacecraft, state, nothing)
+        for edge in eachindex(model.graph.edges)
+            candidate = SP._link_candidate(model, edge, ctx)
+            for (endpoint, terminal) in zip(candidate.key, (candidate.terminal_a, candidate.terminal_b))
+                @test terminal === SM.InterLinkModels._terminal_device(spacecraft[endpoint[1]], endpoint[2])
+            end
+        end
+        @test SP._link_candidate(model, 2, ctx).terminal_a isa LaserTerminal
+        @test SP._link_candidate(model, 1, ctx).terminal_a === nothing
+    end
+
     @testset "the symbol forms are refused with their replacement" begin
         for ((symbol, keywords), replacement) in REMOVED
             err = refusal(() -> SchedulingPolicyModel(symbol; keywords...))
