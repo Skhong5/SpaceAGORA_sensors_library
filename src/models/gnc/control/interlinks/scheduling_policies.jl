@@ -330,7 +330,7 @@ end
 # The typed policy a removed symbol form stands for: its type and its targets
 # (`nothing` for a type without targets), from the old `target_index` and
 # `target_indices`. One table for the refusal message and the checkpoint reader.
-function _legacy_policy_spec(policy::Symbol, index, indices)
+function _symbol_policy_spec(policy::Symbol, index, indices)
     targets = indices !== nothing ? indices : index === nothing ? :both : index
     policy === :gve_sma && return (SemimajorAxisRatePolicy, targets)
     policy === :gve_sma_first_index && return (SemimajorAxisRatePolicy, :lower_index)
@@ -342,8 +342,8 @@ end
 
 # The typed policy a checkpoint's recorded symbol and targets stand for, or
 # `nothing` when they stand for none.
-function _legacy_scheduling_policy(policy::Symbol, index, indices)
-    spec = _legacy_policy_spec(policy, index, indices)
+function _symbol_scheduling_policy(policy::Symbol, index, indices)
+    spec = _symbol_policy_spec(policy, index, indices)
     spec === nothing && return nothing
     T, targets = spec
     try
@@ -356,18 +356,18 @@ end
 
 # The symbol, target index and target set that a checkpoint records for a policy
 # that had a symbol form, as 0.5 recorded them; `nothing` for any other policy.
-_legacy_policy_fields(policy) = nothing
-function _legacy_policy_fields(policy::SemimajorAxisRatePolicy)
+_symbol_policy_fields(policy) = nothing
+function _symbol_policy_fields(policy::SemimajorAxisRatePolicy)
     targets = policy.targets
     targets === :lower_index && return (:gve_sma_first_index, 1, nothing)
     targets === :both && return (:gve_sma, nothing, nothing)
     targets isa Int && return (:gve_sma, targets, nothing)
     return (:gve_sma, 1, copy(targets))
 end
-_legacy_policy_fields(policy::EccentricityRatePolicy) =
+_symbol_policy_fields(policy::EccentricityRatePolicy) =
     (:gve_eccentricity, policy.targets === :both ? nothing : policy.targets, nothing)
-_legacy_policy_fields(::PowerDeliveryPolicy) = (:power_delivery, 1, nothing)
-_legacy_policy_fields(::DataThroughputPolicy) = (:data_throughput, 1, nothing)
+_symbol_policy_fields(::PowerDeliveryPolicy) = (:power_delivery, 1, nothing)
+_symbol_policy_fields(::DataThroughputPolicy) = (:data_throughput, 1, nothing)
 
 const _TARGET_KEYWORDS = (:target_index, :target_indices, :target_idx, :target_idxs)
 
@@ -378,7 +378,7 @@ function _removed_symbol_message(policy::Symbol, kwargs)
     indices = given(:target_indices) ? kwargs[:target_indices] : given(:target_idxs) ? kwargs[:target_idxs] : nothing
     call = "SchedulingPolicyModel($(repr(policy))" *
         (isempty(kwargs) ? "" : "; " * join(("$(name)=$(repr(value))" for (name, value) in pairs(kwargs)), ", ")) * ")"
-    spec = _legacy_policy_spec(policy, index, indices)
+    spec = _symbol_policy_spec(policy, index, indices)
     if spec === nothing
         return "$(call): $(repr(policy)) is not a scheduling policy, and policies chosen by a symbol were removed in " *
             "SpaceAGORA 0.6.0. Use a policy type: SemimajorAxisRatePolicy, EccentricityRatePolicy, PowerDeliveryPolicy " *

@@ -204,7 +204,7 @@ refusal(f) = try f(); nothing catch err err end
             @test occursin("Use $(replacement), for example scheduling_policy_model=$(replacement).", err.msg)
             # The named call builds the policy the symbol form stood for.
             policy = Core.eval(@__MODULE__, Meta.parse(replacement))
-            expected = SP._legacy_scheduling_policy(symbol, get(keywords, :target_index, get(keywords, :target_idx, 1)),
+            expected = SP._symbol_scheduling_policy(symbol, get(keywords, :target_index, get(keywords, :target_idx, 1)),
                 get(keywords, :target_indices, get(keywords, :target_idxs, nothing)))
             @test typeof(policy) === typeof(expected) && isequal(getfield.(Ref(policy), fieldnames(typeof(policy))),
                 getfield.(Ref(expected), fieldnames(typeof(expected))))

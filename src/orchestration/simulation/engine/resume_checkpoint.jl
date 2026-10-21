@@ -115,8 +115,8 @@ end
 # policy. Any other policy is recorded by its kind and every one of its fields
 # (`_scheduling_policy_identity`), with no target keys.
 function _scheduling_policy_entry(policy)
-    legacy = SimulationModel.SchedulingPolicies._legacy_policy_fields(policy)
-    legacy === nothing || return (policy=legacy[1], target_idx=legacy[2], target_idxs=legacy[3])
+    recorded = SimulationModel.SchedulingPolicies._symbol_policy_fields(policy)
+    recorded === nothing || return (policy=recorded[1], target_idx=recorded[2], target_idxs=recorded[3])
     return (policy=_scheduling_policy_identity(policy), target_idx=nothing, target_idxs=nothing)
 end
 
@@ -142,7 +142,7 @@ _policy_field_identity(value) = _interlink_kind_parameter(value)
 # policy is left as written, and the comparison refuses it.
 function _canonical_policy_configuration(configuration)
     hasproperty(configuration, :policy) && configuration.policy isa Symbol || return configuration
-    policy = SimulationModel.SchedulingPolicies._legacy_scheduling_policy(configuration.policy,
+    policy = SimulationModel.SchedulingPolicies._symbol_scheduling_policy(configuration.policy,
         get(configuration, :target_idx, 1), get(configuration, :target_idxs, nothing))
     policy === nothing && return configuration
     return merge(configuration, _scheduling_policy_entry(policy))
