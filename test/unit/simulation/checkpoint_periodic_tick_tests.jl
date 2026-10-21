@@ -239,8 +239,17 @@ end
             @test vcat(getfield(first_leg, field), getfield(resumed, field)) == getfield(unsplit, field)
         end
         @test resumed.final.h_wheels[1] ≈ unsplit.final.h_wheels[1] rtol=1e-12
-        # The row saved at the resume time holds the level commanded there.
-        @test resumed.table.time[1] == 2.0 && resumed.table.sc1_actuator_level_1[1] == 0.002
+        # The resumed run's table holds the whole run, as a checkpointed run never
+        # interrupted does. The first leg's last row, saved before the ticks due at
+        # 2 s, is saved again after them and holds the level commanded there.
+        whole = ramp_run(period=0.125, interval=1.0)
+        @test isequal(resumed.table, whole.table)
+        @test first_leg.table.time[end] == 2.0 && first_leg.table.sc1_actuator_level_1[end] == 0.001875
+        row = findfirst(==(2.0), resumed.table.time)
+        @test resumed.table.time[1] == 0.0 && resumed.table.sc1_actuator_level_1[row] == 0.002
+        # The rows were written anew without the first leg's last row: a resume of
+        # the finished run solves nothing and returns the same table.
+        @test isequal(ramp_run(period=0.125, interval=1.0, dir=dir, resume=true).table, whole.table)
         # Resumed with checkpoint writing off (a resume is still checkpointed, here in
         # one segment): the same ticks.
         again = ramp_run(period=0.125, dir=again_dir, resume=true)

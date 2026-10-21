@@ -317,12 +317,22 @@ A checkpointed run that saves results (written or returned with
 `return_results=true`) keeps the rows it has saved beside its checkpoint, in
 `simulation_checkpoint.results.bin`, and adds the new rows at each checkpoint. A
 resumed run takes those rows back first. Its results files, its manifest
-(`steps`, `first_time_s = 0`) and its returned table then match a run that was
-never interrupted, including after a crash, whose partial results the resumed run
-completes. Rows written after the last checkpoint by a run that crashed are
-dropped, since the resumed run computes them again. A resume from a checkpoint at
-the mission's end solves nothing and writes no results files; its returned table
-holds the whole run.
+(`steps`, `first_time_s`) and its returned table then match those of a run
+checkpointed at the same times and never interrupted, including after a crash,
+whose partial results the resumed run completes. Rows written after the last
+checkpoint by a run that crashed are dropped, since the resumed run computes them
+again. A run extended from the end of a finished run takes the ticks due there
+first (see above), and saves the row at that time again after them, as a run never
+interrupted saves it. A resume from a checkpoint at the mission's end solves
+nothing and writes no results files; its returned table holds the whole run.
+
+The rows file stays with the checkpoint files after the run; a later run in the
+same checkpoint directory that is not a resume replaces it. It holds every row the
+run saves, before any thinning, so it grows with the run, to about the size of the
+results CSV. A run that neither writes nor returns results keeps no rows file. The
+checkpoint and its rows file are written with Julia's `Serialization`, whose
+format can change between Julia versions: resume with the Julia version that wrote
+them. A resumed run that cannot read the rows warns, as below.
 
 A resumed run cannot include the earlier rows when its checkpoint holds none (a
 checkpoint written by SpaceAGORA 0.5.1 or earlier, or by a run that did not save

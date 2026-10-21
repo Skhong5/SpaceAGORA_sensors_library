@@ -510,8 +510,15 @@ end
 # after cutting away anything written after the checkpoint. When it cannot, it
 # warns: its rows then start at the resume, and its results are written beside the
 # earlier ones (`_results_destination`).
+#
+# `retake_last_row`: the checkpoint's run ended before the ticks due at its time,
+# so its last row, at the checkpoint's time, does not hold them. The resumed run
+# takes those ticks first and saves that row again, as a run never interrupted
+# saves it after them. The restored row is dropped, and the stream is written anew
+# at the next checkpoint.
 function _start_results_rows!(args, recording::Bool, save_fields, resumed::Bool, t_start::Float64, entry,
-                              times_acc::Vector{Float64}, data_acc::Vector)::_ResultsRowsLog
+                              times_acc::Vector{Float64}, data_acc::Vector;
+                              retake_last_row::Bool=false)::_ResultsRowsLog
     path = _checkpoint_paths(args).rows
     header = _results_rows_header(save_fields, length(args.dynamics_model.spacecraft))
     log = _ResultsRowsLog(path, header, recording, resumed ? t_start : 0.0, 0, 0, true)
@@ -527,6 +534,11 @@ function _start_results_rows!(args, recording::Bool, save_fields, resumed::Bool,
     append!(data_acc, rows.data)
     SimulationModel.IOSerialization._truncate_checkpoint_rows!(path, entry.bytes)
     log.start_s = entry.start_s
+    if retake_last_row
+        pop!(times_acc)
+        pop!(data_acc)
+        return log
+    end
     log.logged = length(times_acc)
     log.bytes = entry.bytes
     log.fresh = false

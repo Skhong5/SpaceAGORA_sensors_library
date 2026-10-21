@@ -1072,8 +1072,12 @@ function run_simulation(
     # one takes back the rows up to its checkpoint first, so its results hold the
     # whole run (see `_start_results_rows!`).
     rows_recorded = solver_mode == :gravity_backbone_split || args.simulation_settings.results || return_results
+    # A resume that takes ticks at its start saves its first row again after them.
+    # The backbone's rows come from the solution, which has no row of its own there.
+    retake_last_row = resumed && t_start < mission_end && solver_mode != :gravity_backbone_split &&
+        pending_ticks.clocks !== nothing && !isempty(pending_ticks.clocks)
     rows_log = checkpoint_active ? _start_results_rows!(args, rows_recorded, save_fields_resolved, resumed, t_start,
-        results_rows, checkpoint_saved_times, checkpoint_saved_data) : nothing
+        results_rows, checkpoint_saved_times, checkpoint_saved_data; retake_last_row) : nothing
     results_args = _results_destination(args, rows_log)
     # The results so far, as both the partial saves after a failed solve and the
     # final save read them: containers changed only in place, never rebound.
