@@ -540,6 +540,8 @@ function _resume_engine_state!(args, p, solver_mode, initial_conditions)
                     "Checkpoint was written by gravity_backbone_split and cannot be resumed with solver mode $(solver_mode)."
                 ))
             end
+            # A gravity_backbone_split run never has interlinks (_validate_interlinks!
+            # refuses them), and its state has no `sc` components to check.
             solver_mode != :gravity_backbone_split && _check_interlink_checkpoint_state(args, ckpt)
             _check_effector_scope_checkpoint_state(args, ckpt)
             _restore_activity_checkpoint_state!(args, ckpt, p.is_active)

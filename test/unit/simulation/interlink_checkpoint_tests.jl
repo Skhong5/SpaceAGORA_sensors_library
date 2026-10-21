@@ -93,6 +93,12 @@ end
         @test checkpoint.u == (sc=[(pos=sc.pos, laser_dv=sc.interlink_dv, laser_delta_sma=sc.interlink_delta_sma)
             for sc in state.sc],)
         @test SE._resumed_checkpoint_state(args, checkpoint.u) == state
+        # A state whose spacecraft name the interlink states differently is refused. A
+        # run's own state cannot be built that way; a state given as named tuples can.
+        uneven = (sc=[i == 1 ? sc : (pos=sc.pos, laser_dv=sc.interlink_dv, laser_delta_sma=sc.interlink_delta_sma)
+            for (i, sc) in enumerate(state.sc)],)
+        @test SE._interlink_state_naming(uneven) === :mixed
+        @test_throws ArgumentError SE._check_interlink_checkpoint_state(args, (u=uneven,))
         # Every checkpoint also records the flags in its activity entry.
         @test checkpoint.runtime_state == merge(snapshot, (activity=(version=1, is_active=[true, false, true]),))
         restored = trues(3)
