@@ -99,6 +99,19 @@ An interlink checkpoint keeps its stored keys, so a checkpoint written before
 link was a laser link, are listed on the
 [Interlinks page](../user/interlinks.md#Deprecated-names).
 
+## Changed after 0.5.1
+
+One hook keeps its name and signature and is called for fewer spacecraft.
+
+| Hook | 0.5.1 and earlier | After 0.5.1 | What to do |
+|---|---|---|---|
+| `register_tstops!(integrator, model, spacecraft_index)` | called after each periodic control tick for every spacecraft index of the run | called for each spacecraft the model's `spacecraft_scope` names, in ascending order, as the tick is | a model that adds solver stops for a spacecraft outside its declared scope declares a scope that names it, or `AllSpacecraft()` |
+
+A model without a `spacecraft_scope` method of its own has the default
+`AllSpacecraft()`, which names every spacecraft, so its calls do not change. The
+burn scheduler, the only built-in model with a method, is event-driven and
+registers its stops from its own callbacks.
+
 ## Removed in 0.6.0
 
 The interlink scheduling policies chosen by a symbol were removed in 0.6.0,
