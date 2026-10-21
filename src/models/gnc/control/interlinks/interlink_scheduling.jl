@@ -2,9 +2,11 @@ module SchedulingPolicies
 
 using LinearAlgebra
 using ..InterLinkModels
-using ..InterLinkModels: link_endpoint_forces, link_endpoint, _terminal_device
-using ..HookDeprecation: _renamed_field_warning, _renamed_keyword, _NOT_PASSED
+using ..InterLinkModels: link_endpoint, _terminal_device, _spacecraft_at
+using ..EffectorSampling: StateSample
 
+export AbstractSchedulingPolicy, LinkCandidate, SchedulingContext, candidate_score
+export SemimajorAxisRatePolicy, EccentricityRatePolicy, PowerDeliveryPolicy, DataThroughputPolicy
 export SchedulingPolicyModel, score_candidates!
 export select_interlinks!, schedule_interlinks!
 
@@ -26,66 +28,33 @@ struct InterLinkMatchingWorkspace
 	cyclic::Vector{Bool}
 end
 
-# 2. Scheduling policy for interlink selection
-# 2.1. Scheduling policy model
+# 2. Scheduling policies (their types and scores are in scheduling_policies.jl) and the scheduler
+include(joinpath(@__DIR__, "scheduling_policies.jl"))
+
+# 2.1. The scheduler
 """
-	SchedulingPolicyModel(policy; target_index=1, target_indices=nothing)
+    SchedulingPolicyModel(policy::AbstractSchedulingPolicy)
 
-Create a scheduling policy. For `:gve_sma` and `:gve_eccentricity`, `target_index`
-selects one target and `target_index=nothing` scores both link endpoints.
-`:power_delivery` scores each link by the power it delivers to its receiver
-(`link_received_power_w`), so it selects power beams, which apply no force.
-`:data_throughput` scores each link by the data rate it carries
-(`link_data_rate_bps`), so it selects data links.
-For `:gve_sma`, `target_indices` optionally selects a set of targets and takes
-precedence over `target_index`; all selected indices must exist in the simulation state.
+The run's interlink scheduler: the scheduling policy whose total score it
+maximizes (`objective`) and the matching workspace it reuses between
+scheduling calls (`matching`). Pass it, or the policy alone, as
+`SimulationConfiguration(scheduling_policy_model=...)`; the default is
+`SchedulingPolicyModel(SemimajorAxisRatePolicy())`.
 
-`target_idx` and `target_idxs`, the old names of `target_index` and
-`target_indices`, still work as keywords and properties with a deprecation warning
-until SpaceAGORA 1.0.
+The policies chosen by a symbol, `SchedulingPolicyModel(:gve_sma)` and the
+others, were removed in SpaceAGORA 0.6.0, with their `target_index` and
+`target_indices` keywords and properties and the older `target_idx` and
+`target_idxs`. A call with a symbol throws an `ArgumentError` that names its
+typed replacement, such as `SemimajorAxisRatePolicy(targets=[31, 32])` for
+`SchedulingPolicyModel(:gve_sma; target_indices=[31, 32])`.
 """
 mutable struct SchedulingPolicyModel
-	const policy::Symbol
-	const target_index::Union{Nothing, Int}
-	const target_indices::Union{Nothing, Vector{Int}}
+	const objective::AbstractSchedulingPolicy
 	matching::Union{Nothing, InterLinkMatchingWorkspace}
 
-	function SchedulingPolicyModel(policy::Symbol; target_index=_NOT_PASSED, target_idx=_NOT_PASSED,
-		target_indices=_NOT_PASSED, target_idxs=_NOT_PASSED)
-		T = SchedulingPolicyModel
-		index = _renamed_keyword(T, :target_idx, target_idx, :target_index, target_index, 1)
-		indices = _renamed_keyword(T, :target_idxs, target_idxs, :target_indices, target_indices, nothing)
-		index isa Union{Nothing, Integer} ||
-			throw(TypeError(:SchedulingPolicyModel, "target_index", Union{Nothing, Integer}, index))
-		indices isa Union{Nothing, AbstractVector{<:Integer}} ||
-			throw(TypeError(:SchedulingPolicyModel, "target_indices", Union{Nothing, AbstractVector{<:Integer}}, indices))
-		policy in (:gve_sma, :gve_eccentricity, :gve_sma_first_index, :power_delivery, :data_throughput) ||
-			throw(ArgumentError("Supported scheduling policies: :gve_sma, :gve_eccentricity, :gve_sma_first_index, " *
-				":power_delivery and :data_throughput."))
-		indices === nothing || policy === :gve_sma ||
-			throw(ArgumentError("target_indices is supported only by the :gve_sma policy."))
-		index === nothing || index > 0 ||
-			throw(ArgumentError("target_index must be nothing or a positive spacecraft vector index."))
-		selected = indices === nothing ? nothing : Int[indices...]
-		if selected !== nothing
-			isempty(selected) && throw(ArgumentError("target_indices must not be empty."))
-			all(>(0), selected) || throw(ArgumentError("target_indices must contain only positive indices."))
-			length(unique(selected)) == length(selected) ||
-				throw(ArgumentError("target_indices must not contain duplicates."))
-			sort!(selected)
-		end
-		new(policy, index === nothing ? nothing : Int(index), selected, nothing)
-	end
+	SchedulingPolicyModel(objective::AbstractSchedulingPolicy) = new(objective, nothing)
 end
-# The deprecated names forward as properties.
-@inline _scheduling_policy_field(name::Symbol) =
-	name === :target_idx ? _renamed_field_warning(SchedulingPolicyModel, :target_idx, :target_index) :
-	name === :target_idxs ? _renamed_field_warning(SchedulingPolicyModel, :target_idxs, :target_indices) : name
-@inline Base.getproperty(m::SchedulingPolicyModel, name::Symbol) = getfield(m, _scheduling_policy_field(name))
-@inline function Base.setproperty!(m::SchedulingPolicyModel, name::Symbol, x)
-	field = _scheduling_policy_field(name)
-	return setfield!(m, field, convert(fieldtype(SchedulingPolicyModel, field), x))
-end
+SchedulingPolicyModel(policy::Symbol; kwargs...) = throw(ArgumentError(_removed_symbol_message(policy, kwargs)))
 
 # 1.2. Create and maintain the dynamic-programming workspace.
 function matching_workspace!(model::InterlinkModel, policy::SchedulingPolicyModel)
@@ -108,241 +77,44 @@ function matching_workspace!(model::InterlinkModel, policy::SchedulingPolicyMode
 	return policy.matching
 end
 
-# The force candidate link `edge` puts on spacecraft `target_idx`: from the link's
-# `link_force`, or from a caller's `candidate_force(target, partner, link)`.
-function _candidate_force(candidate_force, model, edge::Int, target_idx::Int, partner_idx::Int, state, spacecraft, context)
-	candidate_force === nothing ||
-		return candidate_force(state.sc[target_idx], state.sc[partner_idx], model.graph.edge_properties[edge])
-	first_force, second_force = link_endpoint_forces(model, edge, state; spacecraft, context)
-	first_satellite = model.graph.vertices[model.graph.edges[edge][1]][1]
-	return target_idx == first_satellite ? first_force : second_force
-end
-
-# POLICY 1. Increase Target Satellite Semimajor Axis Rate
-function score_gve_sma!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real;
-	candidate_force=nothing, spacecraft=nothing, context=LinkContext())
-	function semimajor_axis_rate(target, force, mu::Real)
-		semimajor_axis = inv(2 / norm(target.pos) - dot(target.vel, target.vel) / mu)
-		return 2 * semimajor_axis^2 / mu * dot(target.vel, force) / target.mass
-	end
-
-	isfinite(mu) && mu > 0 || throw(ArgumentError("The gravitational parameter must be finite and positive."))
-	policy.target_indices === nothing || all(index -> index <= length(state.sc), policy.target_indices) ||
-		throw(ArgumentError("target_indices contains an index outside the spacecraft state vector."))
-	policy.target_indices !== nothing || policy.target_index === nothing || policy.target_index <= length(state.sc) ||
-		throw(ArgumentError("target_index is outside the spacecraft state vector."))
-	work = matching_workspace!(model, policy)
-	for index in eachindex(model.graph.edges)
-		key = map(v -> model.graph.vertices[v], model.graph.edges[index])
-		score = 0.0
-		first_satellite, second_satellite = key[1][1], key[2][1]
-		if model.graph.available[index]
-			for (target_idx, partner_idx) in ((first_satellite, second_satellite), (second_satellite, first_satellite))
-				if policy.target_indices === nothing
-					policy.target_index === nothing || policy.target_index == target_idx || continue
-				else
-					target_idx in policy.target_indices || continue
-				end
-				target = state.sc[target_idx]
-				partner = state.sc[partner_idx]
-				force = _candidate_force(candidate_force, model, index, target_idx, partner_idx, state, spacecraft, context)
-				score += semimajor_axis_rate(target, force, mu)
-			end
-		end
-		isfinite(score) || throw(ArgumentError("Nonfinite $(policy.policy) score for candidate $key."))
-		work.score[index] = score
-	end
-	return nothing
-end
-
-# Near circularity the existing score is the norm of the eccentricity-vector
-# rate. Norms from two simultaneous forces are not additive: opposite forces
-# can receive positive individual scores even though their combined rate is zero.
-# Admit this objective only when a scored near-circular spacecraft cannot receive
-# two positive-score candidate links in the same terminal matching.
-function _validate_eccentricity_matching_objective!(model, work, circular_candidates)
-	for (satellite, edges) in circular_candidates
-		candidates = Tuple{Int, Int}[]
-		for edge in edges
-			model.graph.available[edge] && work.score[edge] > 0 || continue
-			endpoints = model.graph.edges[edge]
-			for previous in candidates
-				if all(vertex -> vertex != endpoints[1] && vertex != endpoints[2], previous)
-					throw(ArgumentError("The :gve_eccentricity objective does not support simultaneous links " *
-						"on near-circular target spacecraft $satellite: per-link eccentricity-rate norms " *
-						"are not additive. Use candidate links that share one terminal on that target."))
-				end
-			end
-			push!(candidates, endpoints)
-		end
-	end
-	return nothing
-end
-
-# POLICY 2. Increase Target Satellite Eccentricity Rate
+# 2.2. Score every candidate link with the scheduler's policy
 """
-Score the selected spacecraft's eccentricity rate. At eccentricity no greater
-than `sqrt(eps(Float64))`, the retained per-link score is an eccentricity-vector
-rate norm. Reject candidate matchings that can apply multiple positive-score
-links to the same such target, because summing those norms is not the rate of
-the combined force. The scalar projected rate remains additive away from this
-near-circular branch. This restriction does not apply to the SMA policies.
-"""
-function score_gve_eccentricity!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real;
-	candidate_force=nothing, spacecraft=nothing, context=LinkContext())
-	function eccentricity_rate(target, force, mu::Real)
-		position = target.pos
-		velocity = target.vel
-		acceleration = force / target.mass
-		angular_momentum = cross(position, velocity)
-		eccentricity_vector = cross(velocity, angular_momentum) / mu - position / norm(position)
-		eccentricity_vector_rate = (
-			cross(acceleration, angular_momentum) + cross(velocity, cross(position, acceleration))
-		) / mu
-		eccentricity = norm(eccentricity_vector)
-		near_circular = eccentricity <= sqrt(eps(Float64))
-		rate = near_circular ? norm(eccentricity_vector_rate) :
-			dot(eccentricity_vector, eccentricity_vector_rate) / eccentricity
-		return rate, near_circular
-	end
+	score_candidates!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real;
+	                  candidate_force=nothing, spacecraft=nothing, context=LinkContext())
 
-	isfinite(mu) && mu > 0 || throw(ArgumentError("The gravitational parameter must be finite and positive."))
-	policy.target_index === nothing || policy.target_index <= length(state.sc) ||
-		throw(ArgumentError("target_index is outside the spacecraft state vector."))
-	work = matching_workspace!(model, policy)
-	circular_candidates = Dict{Int, Vector{Int}}()
-	for index in eachindex(model.graph.edges)
-		key = map(v -> model.graph.vertices[v], model.graph.edges[index])
-		score = 0.0
-		first_satellite, second_satellite = key[1][1], key[2][1]
-		if model.graph.available[index]
-			for (target_idx, partner_idx) in ((first_satellite, second_satellite), (second_satellite, first_satellite))
-				policy.target_index === nothing || policy.target_index == target_idx || continue
-				target = state.sc[target_idx]
-				partner = state.sc[partner_idx]
-				force = _candidate_force(candidate_force, model, index, target_idx, partner_idx, state, spacecraft, context)
-				rate, near_circular = eccentricity_rate(target, force, mu)
-				score += rate
-				if near_circular && rate > 0
-					push!(get!(Vector{Int}, circular_candidates, target_idx), index)
-				end
-			end
-		end
-		isfinite(score) || throw(ArgumentError("Nonfinite $(policy.policy) score for candidate $key."))
-		work.score[index] = score
-	end
-	_validate_eccentricity_matching_objective!(model, work, circular_candidates)
-	return nothing
-end
-
-# POLICY 3: Increase the SMA of the lower-index satellite in each interlink pair.
+Score every candidate link of `model` with the scheduler's policy
+(`policy.objective`) into its matching workspace: `candidate_score` for each
+available candidate, at the run state `state`, and 0 for the others. `mu` is the
+planet's gravitational parameter (m³/s²), `spacecraft` the run's spacecraft
+models (the power and data policies score nothing without them) and `context`
+the link context. The orbital policies take each link's force from its
+`link_force`, or from a caller's `candidate_force(target, partner, link)`.
 """
-Score each available link by the SMA rate of its lower spacecraft vector index,
-regardless of altitude or registration order. The target is chosen per pair,
-so `policy.target_index` is ignored. Nonpositive scores are excluded by the matcher.
-"""
-function score_gve_sma_first_index!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real;
-	candidate_force=nothing, spacecraft=nothing, context=LinkContext())
-	isfinite(mu) && mu > 0 || throw(ArgumentError("The gravitational parameter must be finite and positive."))
-	work = matching_workspace!(model, policy)
-	for index in eachindex(model.graph.edges)
-		key = map(v -> model.graph.vertices[v], model.graph.edges[index])
-		score = 0.0
-		if model.graph.available[index]
-			target_idx, partner_idx = minmax(key[1][1], key[2][1])
-			target = state.sc[target_idx]
-			partner = state.sc[partner_idx]
-			force = _candidate_force(candidate_force, model, index, target_idx, partner_idx, state, spacecraft, context)
-			semimajor_axis = inv(2 / norm(target.pos) - dot(target.vel, target.vel) / mu)
-			score = 2 * semimajor_axis^2 / mu * dot(target.vel, force) / target.mass
-		end
-		isfinite(score) || throw(ArgumentError("Nonfinite $(policy.policy) score for candidate $key."))
-		work.score[index] = score
-	end
-	return nothing
-end
-
-"""
-	score_power_delivery!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real; spacecraft, context)
-
-The `:power_delivery` policy: each available directed candidate whose receiving
-end is terminal hardware scores the electrical power (W) it would deliver,
-`link_received_power_w` at the current state. Other candidates score 0, and
-the matcher never selects a link with no positive score. `mu` is unused, and
-the scores need the run's spacecraft models (`spacecraft`).
-"""
-function score_power_delivery!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real;
-	candidate_force=nothing, spacecraft=nothing, context=LinkContext())
-	work = matching_workspace!(model, policy)
-	graph = model.graph
-	for index in eachindex(graph.edges)
-		score = 0.0
-		link = graph.edge_properties[index]
-		if graph.available[index] && spacecraft !== nothing && link_directed(link)
-			first, second = map(v -> graph.vertices[v], graph.edges[index])
-			receiver = _terminal_device(spacecraft[second[1]], second[2])
-			if receiver !== nothing
-				a = link_endpoint(state.sc[first[1]], spacecraft[first[1]], first[1])
-				b = link_endpoint(state.sc[second[1]], spacecraft[second[1]], second[1])
-				score = Float64(link_received_power_w(link, receiver, a, b, context))
-			end
-		end
-		isfinite(score) || throw(ArgumentError("Nonfinite $(policy.policy) score for candidate $index."))
-		work.score[index] = score
-	end
-	return nothing
-end
-
-"""
-	score_data_throughput!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real; spacecraft, context)
-
-The `:data_throughput` policy: each available directed candidate scores the data
-rate (bits per second) it would carry, `link_data_rate_bps` at the current
-state, with the terminal hardware at its two ends (`nothing` for a virtual
-terminal). Other candidates score 0, and the matcher never selects a link with
-no positive score. `mu` is unused, and the scores need the run's spacecraft
-models (`spacecraft`).
-"""
-function score_data_throughput!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real;
-	candidate_force=nothing, spacecraft=nothing, context=LinkContext())
-	work = matching_workspace!(model, policy)
-	graph = model.graph
-	for index in eachindex(graph.edges)
-		score = 0.0
-		link = graph.edge_properties[index]
-		if graph.available[index] && spacecraft !== nothing && link_directed(link)
-			first, second = map(v -> graph.vertices[v], graph.edges[index])
-			transmitter = _terminal_device(spacecraft[first[1]], first[2])
-			receiver = _terminal_device(spacecraft[second[1]], second[2])
-			a = link_endpoint(state.sc[first[1]], spacecraft[first[1]], first[1])
-			b = link_endpoint(state.sc[second[1]], spacecraft[second[1]], second[1])
-			score = Float64(link_data_rate_bps(link, transmitter, receiver, a, b, context))
-		end
-		isfinite(score) || throw(ArgumentError("Nonfinite $(policy.policy) score for candidate $index."))
-		work.score[index] = score
-	end
-	return nothing
-end
-
-# 2.2. Define the function to score candidate interlinks based on the scheduling policy
-# The scores follow each link's `link_force` (`candidate_force=nothing`), or a
-# caller's `candidate_force(target, partner, link)` giving the force on `target`.
 function score_candidates!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real;
-	# compute the score of each interlink based on the scheduling policy / scoring policy
-	# resulting scores will be stored in the policy's workspace
 	candidate_force=nothing, spacecraft=nothing, context=LinkContext())
-	if policy.policy === :gve_sma
-		return score_gve_sma!(model, policy, state, mu; candidate_force, spacecraft, context)
-	elseif policy.policy === :gve_eccentricity
-		return score_gve_eccentricity!(model, policy, state, mu; candidate_force, spacecraft, context)
-	elseif policy.policy === :gve_sma_first_index
-		return score_gve_sma_first_index!(model, policy, state, mu; candidate_force, spacecraft, context)
-	elseif policy.policy === :power_delivery
-		return score_power_delivery!(model, policy, state, mu; candidate_force, spacecraft, context)
-	elseif policy.policy === :data_throughput
-		return score_data_throughput!(model, policy, state, mu; candidate_force, spacecraft, context)
+	ctx = SchedulingContext(Float64(mu), context, spacecraft, state, candidate_force)
+	objective = policy.objective
+	_prepare_scoring(objective, model, ctx)
+	work = matching_workspace!(model, policy)
+	_score_candidates!(work.score, objective, model, ctx)
+	_check_scores(objective, model, work.score, ctx)
+	return nothing
+end
+
+# The scores of every edge: one loop compiled for each policy type.
+function _score_candidates!(scores, objective::P, model::InterlinkModel, ctx::SchedulingContext) where {P}
+	graph = model.graph
+	t = ctx.link_context.time_s
+	for edge in eachindex(graph.edges)
+		score = 0.0
+		if graph.available[edge]
+			candidate = _link_candidate(model, edge, ctx)
+			score = Float64(candidate_score(objective, candidate, ctx, t))
+			isfinite(score) || throw(ArgumentError("Nonfinite $(nameof(P)) score for candidate $(candidate.key)."))
+		end
+		scores[edge] = score
 	end
-	throw(ArgumentError("Unsupported scheduling policy: $(policy.policy)."))
+	return scores
 end
 
 # 3. Dynamic programming:  Select the best set of interlinks based on the current scores

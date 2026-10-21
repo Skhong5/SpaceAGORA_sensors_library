@@ -61,7 +61,7 @@ function run_args(spacecraft, model; duration=60.0, control=ControlModel((), Flo
         control_model=control, initial_time=InitialTime(),
         integration_tolerances=IntegrationTolerances(reltol_orbit=1e-10, abstol_orbit=1e-8, dt_max_orbit=1.0),
         solver_config=SM.SolverConfig(solver_mode=:tsit5), interlink_model=model,
-        scheduling_policy_model=SchedulingPolicyModel(:gve_sma))
+        scheduling_policy_model=SchedulingPolicyModel(SemimajorAxisRatePolicy()))
 end
 
 # Spacecraft 2 trails spacecraft 1, so a laser link pushes 1 forward and the

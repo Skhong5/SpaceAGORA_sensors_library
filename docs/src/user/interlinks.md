@@ -63,7 +63,7 @@ for partner in 2:3
         LaserMomentumLink(power_w=10_000.0, magnification=100.0, range_m=200e3))
 end
 args = SimulationConfiguration(...; interlink_model=model,
-    scheduling_policy_model=SchedulingPolicyModel(:gve_sma))
+    scheduling_policy_model=SemimajorAxisRatePolicy())
 ```
 
 Start with `examples/gve_sma_interlinks.jl`. It builds a three-spacecraft case,
@@ -183,7 +183,7 @@ add_actuator!(other, other.root, receiver)
 register_link!(model, spacecraft, (1, terminal), (2, receiver),
     PowerBeamLink(power_w=80.0, wavelength_m=1.064e-6, waist_radius_m=0.05, range_m=50e3))
 args = SimulationConfiguration(...; interlink_model=model,
-    scheduling_policy_model=SchedulingPolicyModel(:power_delivery))
+    scheduling_policy_model=PowerDeliveryPolicy())
 ```
 
 - **The beam.** While the link is active, the transmitter runs at `power_w`
@@ -212,9 +212,10 @@ args = SimulationConfiguration(...; interlink_model=model,
 - **Direction.** A `PowerReceiver` can only receive, and a `LaserTerminal` can
   only transmit a power beam (`terminal_supports(terminal, link, side)`).
 - **Scheduling.** Policies that score links by their forces never select a
-  power beam, so use `:power_delivery`, which scores each link by the power it
-  would deliver. A run uses one policy; mixing momentum and power links waits
-  for a later scheduling contract.
+  power beam, so use `PowerDeliveryPolicy()`, which scores each link by the
+  power it would deliver. A run uses one policy; to weigh momentum and power
+  links together, write a policy of your own (see
+  [A custom policy](#A-custom-policy)).
 - **Columns.** A run with a power beam adds `power_received_w` and
   `power_beamed_w` per spacecraft to the [power columns](output_columns.md#Power-budget).
 - **Not yet modelled.** Pointing and jitter, the receiver's incidence angle,
@@ -236,7 +237,7 @@ link = DataLink(transmit_power_w=1.0, range_m=2000e3,
     budget=ShannonBudget(bandwidth_hz=1e6, frequency_hz=2.2e9, implementation_efficiency=0.5))
 register_link!(model, spacecraft, (1, sender), (2, receiver), link)
 args = SimulationConfiguration(...; interlink_model=model,
-    scheduling_policy_model=SchedulingPolicyModel(:data_throughput))
+    scheduling_policy_model=DataThroughputPolicy())
 ```
 
 - **The budget.**
@@ -274,8 +275,8 @@ args = SimulationConfiguration(...; interlink_model=model,
 - **Direction.** Two-way traffic is two links, one each way. A radio carries
   one active link at a time, so the scheduler selects one direction of a
   two-way pair between the same two radios: the one with the higher score.
-- **Scheduling.** Use `:data_throughput`, which scores each link by the rate it
-  would carry. The force and power policies never select a data link.
+- **Scheduling.** Use `DataThroughputPolicy()`, which scores each link by the
+  rate it would carry. The force and power policies never select a data link.
 - **Columns.** A run with a data link adds `data_rate_tx_bps`,
   `data_rate_rx_bps`, `data_sent_bits` and `data_received_bits` per spacecraft
   (see [the data columns](output_columns.md#Data-links)).
@@ -288,10 +289,9 @@ args = SimulationConfiguration(...; interlink_model=model,
 At the start of the run and after every accepted solver step, the engine marks
 a candidate available when its spacecraft pair is not forbidden, both
 spacecraft are active, neither terminal is shed, and its link's
-`link_available` allows it. The scheduling
-policy then scores the available links by the forces their `link_force` gives,
-and selects the terminal matching with the largest total score. Only links with
-a positive score can be selected. The selected schedule is held during trial
+`link_available` allows it. The run's scheduling policy then scores each
+available link, and the scheduler selects the terminal matching with the largest
+total score. Only links with a positive score can be selected. The selected schedule is held during trial
 stages, which avoids changing it during rejected steps. An inactive endpoint
 contributes no force even if an earlier schedule still names its link.
 
@@ -300,6 +300,56 @@ The saved `laser_dv` vector integrates the interlink acceleration.
 semimajor-axis rate; it is not a comparison against a separately propagated
 unforced trajectory. The history belongs to the returned run configuration.
 With the default state isolation, the input configuration is unchanged.
+
+### Policies
+
+A scheduling policy is a value of a policy type. Give the run one with
+`SimulationConfiguration(scheduling_policy_model=policy)`; the default is
+`SemimajorAxisRatePolicy()`. The run keeps it in a `SchedulingPolicyModel`, the
+scheduler, which also holds the matching workspace:
+`args.scheduling_policy_model.objective` is the policy.
+
+| Policy | Scores each available link by | Unit |
+| --- | --- | --- |
+| `SemimajorAxisRatePolicy(; targets=1)` | the rate at which its force raises the osculating semimajor axis of its target spacecraft, `2a²(v·F)/(μm)`, summed over the target ends | m/s |
+| `EccentricityRatePolicy(; targets=1)` | the rate at which its force raises its target's eccentricity, `ê·ė` | 1/s |
+| `PowerDeliveryPolicy()` | the electrical power it would deliver to the receiver's bus, `link_received_power_w` | W |
+| `DataThroughputPolicy()` | the data rate it would carry, `link_data_rate_bps` | bit/s |
+
+The orbital policies take each link's force from its `link_force`. For
+`SemimajorAxisRatePolicy`, `targets` is a spacecraft vector index, a vector or
+range of them, `:both` (both ends of every link) or `:lower_index` (the lower
+spacecraft index of each pair). For `EccentricityRatePolicy` it is an index or
+`:both`. A link that lowers the objective scores negative, so it is never
+selected.
+
+### A custom policy
+
+A policy type subtypes `AbstractSchedulingPolicy` and implements
+`candidate_score`. This one prefers short links:
+
+```julia
+struct ShortLinkPolicy <: SpaceAGORA.AbstractSchedulingPolicy end
+SpaceAGORA.candidate_score(::ShortLinkPolicy, candidate, ctx, t) =
+    1 / sqrt(sum(abs2, candidate.a.pos_ii - candidate.b.pos_ii))
+
+args = SimulationConfiguration(...; interlink_model=model, scheduling_policy_model=ShortLinkPolicy())
+```
+
+- **The candidate** (`LinkCandidate`) has its `key`, its `link`, its endpoints'
+  state samples `a` and `b` (in key order, so a directed link's transmitter is
+  `a`), and the terminal hardware at its ends, `terminal_a` and `terminal_b`
+  (`nothing` for a virtual terminal).
+- **The context** (`SchedulingContext`) has the planet's gravitational parameter
+  `mu`, the `link_context` to pass to the link hooks, and the run's `spacecraft`.
+  `t` is the elapsed time in seconds.
+- **The rules.** The hook is called for available candidates only; the others
+  score 0. A nonfinite score is refused, and only positive scores can be
+  selected. A run refuses at setup a policy type without a `candidate_score`
+  method.
+- **Plain values.** A policy holds no run state: it is a value whose fields say
+  what it scores. A checkpoint records its type and every field, so a resume
+  with another value is refused.
 
 ### Contact windows
 
@@ -389,19 +439,20 @@ tests does not validate a physical laser system.
 
 Use a full-state solver such as `:tsit5`. Split solvers, external propagator
 coupling, articulated/compliant vehicles and independent constellation ensembles
-are rejected for linked spacecraft. Near circularity, `:gve_eccentricity` also
-rejects candidate sets that can simultaneously apply several positive-score
+are rejected for linked spacecraft. Near circularity, `EccentricityRatePolicy`
+also rejects candidate sets that can simultaneously apply several positive-score
 links to one target: individual eccentricity-rate norms are not additive there.
-The semimajor-axis policies do not have that restriction.
+`SemimajorAxisRatePolicy` does not have that restriction.
 
 Scheduling follows accepted steps, so changes of range or preferred link are
 resolved at that cadence. Check timestep convergence for a new case. A checkpoint
 resume must retain the interlink topology, link kinds (each named by its module
-and type, with its concrete type parameters) and parameters, scoring policy,
-and each spacecraft's terminal hardware: its kinds, in mounting order, and every
-field of each, such as a receiver's aperture or a transmitter's efficiency; a
-new run is required when those change. Checkpoints written by SpaceAGORA 0.4
-and earlier still resume. The resumed history covers the resumed interval, while
+and type, with its concrete type parameters) and parameters, scheduling policy
+(its type and every field), and each spacecraft's terminal hardware: its kinds,
+in mounting order, and every field of each, such as a receiver's aperture or a
+transmitter's efficiency; a new run is required when those change. Checkpoints
+written by SpaceAGORA 0.4 and earlier still resume, and so do checkpoints written
+with the symbol policies of 0.5, under the typed policy that schedules the same. The resumed history covers the resumed interval, while
 integrated diagnostic states continue from the checkpoint.
 
 ## Deprecated names
@@ -423,3 +474,27 @@ those names when you move to the new ones.
 | `register_allowed_link!(model, spacecraft, a, b; parameters)` | `register_link!(model, spacecraft, a, b, link)` | yes |
 | `force_on_endpoint(current, other, link)` | `link_force(link, a, b, ctx)` | yes |
 | `laser_force_on_spacecraft(model, state, satellite)` | `interlink_force_on_spacecraft(model, state, satellite)` | yes |
+
+## Removed in 0.6.0
+
+The scheduling policies chosen by a symbol were removed in SpaceAGORA 0.6.0,
+without a deprecation period, with their `target_index` and `target_indices`
+keywords and properties and the older `target_idx` and `target_idxs`. A call
+with a symbol throws an `ArgumentError` that names its typed replacement, also
+under `julia --depwarn=error`, and reading a removed property throws a
+`FieldError`. Checkpoints written with them still resume under the typed policy
+that schedules the same.
+
+| Removed | Use instead |
+| --- | --- |
+| `SchedulingPolicyModel(:gve_sma)` | `SemimajorAxisRatePolicy()` |
+| `SchedulingPolicyModel(:gve_sma; target_index=k)` | `SemimajorAxisRatePolicy(targets=k)` |
+| `SchedulingPolicyModel(:gve_sma; target_index=nothing)` | `SemimajorAxisRatePolicy(targets=:both)` |
+| `SchedulingPolicyModel(:gve_sma; target_indices=v)` | `SemimajorAxisRatePolicy(targets=v)` (a `target_index` beside it was ignored) |
+| `SchedulingPolicyModel(:gve_sma_first_index)` | `SemimajorAxisRatePolicy(targets=:lower_index)` |
+| `SchedulingPolicyModel(:gve_eccentricity; target_index=k)`, or `=nothing` | `EccentricityRatePolicy(targets=k)`, or `targets=:both` |
+| `SchedulingPolicyModel(:power_delivery)` | `PowerDeliveryPolicy()` |
+| `SchedulingPolicyModel(:data_throughput)` | `DataThroughputPolicy()` |
+| the keywords `target_idx`, `target_idxs` | as `target_index`, `target_indices` above |
+| `scheduler.policy` (a symbol) | `scheduler.objective` (a policy value) |
+| `scheduler.target_index`, `scheduler.target_indices`, `scheduler.target_idx`, `scheduler.target_idxs` | `scheduler.objective.targets` |

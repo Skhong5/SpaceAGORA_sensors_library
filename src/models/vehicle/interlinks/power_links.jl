@@ -9,8 +9,8 @@ The electrical power (W) that `receiver`, the terminal hardware at `link`'s
 receiving end `b`, delivers to its spacecraft's bus while `link` is active, with
 `a` the transmitting end. It is generation in that spacecraft's power budget.
 The engine asks for it at every right-hand-side evaluation, for each active
-directed link that ends on terminal hardware, and the `:power_delivery` policy
-scores candidate links by it. Default: 0.
+directed link that ends on terminal hardware, and `PowerDeliveryPolicy` scores
+candidate links by it. Default: 0.
 """
 link_received_power_w(link, receiver, a, b, ctx) = 0.0
 

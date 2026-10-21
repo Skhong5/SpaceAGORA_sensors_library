@@ -89,18 +89,14 @@ _interlink_kind_parameter(parameter::Base.IEEEFloat) = (type=_interlink_kind_ide
 function _interlink_checkpoint_configuration(args)
     model = args.interlink_model
     graph = model.graph
-    policy = args.scheduling_policy_model
-    configuration = (
+    configuration = (;
         vertices=copy(graph.vertices),
         candidates=[(
             endpoints=map(vertex -> graph.vertices[vertex], edge),
             link=_interlink_link_identity(graph.edge_properties[index]),
         ) for (index, edge) in enumerate(graph.edges)],
         forbidden_pairs=sort!(collect(model.forbidden_pairs)),
-        policy=policy.policy,
-        # The keys keep the names checkpoints were written with, so those resume.
-        target_idx=policy.target_index,
-        target_idxs=policy.target_indices === nothing ? nothing : copy(policy.target_indices),
+        _scheduling_policy_entry(args.scheduling_policy_model.objective)...,
         terminal_counts=[spacecraft.n_terminal for spacecraft in args.dynamics_model.spacecraft],
     )
     # Terminal numbers past `n_terminal` name mounted terminal hardware, so a run
@@ -109,6 +105,47 @@ function _interlink_checkpoint_configuration(args)
     hardware = [_mounted_terminal_identities(spacecraft) for spacecraft in args.dynamics_model.spacecraft]
     all(isempty, hardware) && return configuration
     return merge(configuration, (hardware_terminals=hardware,))
+end
+
+# The scheduling policy's entry: `policy`, `target_idx` and `target_idxs`, the keys
+# checkpoints have always been written with. A policy that 0.5 chose by a symbol
+# (`SemimajorAxisRatePolicy`, `EccentricityRatePolicy`, `PowerDeliveryPolicy`,
+# `DataThroughputPolicy`) is recorded as 0.5 recorded it, with its target index and
+# target set, so those checkpoints resume and the entry is unchanged for the same
+# policy. Any other policy is recorded by its kind and every one of its fields
+# (`_scheduling_policy_identity`), with no target keys.
+function _scheduling_policy_entry(policy)
+    legacy = SimulationModel.SchedulingPolicies._legacy_policy_fields(policy)
+    legacy === nothing || return (policy=legacy[1], target_idx=legacy[2], target_idxs=legacy[3])
+    return (policy=_scheduling_policy_identity(policy), target_idx=nothing, target_idxs=nothing)
+end
+
+# A policy's identity: its kind, named as link kinds are, and every one of its
+# fields, encoded as terminal fields are (a float with its bits), with a field that
+# is a policy recorded by its own identity and a vector element by element.
+function _scheduling_policy_identity(policy)
+    kind = typeof(policy)
+    names = fieldnames(kind)
+    return (kind=_interlink_kind_identity(kind),
+        fields=NamedTuple{names}(map(name -> _policy_field_identity(getfield(policy, name)), names)))
+end
+_policy_field_identity(value::SimulationModel.AbstractSchedulingPolicy) = _scheduling_policy_identity(value)
+_policy_field_identity(value::Tuple) = map(_policy_field_identity, value)
+_policy_field_identity(value::AbstractVector) =
+    (type=_interlink_kind_identity(typeof(value)), elements=map(_policy_field_identity, value))
+_policy_field_identity(value) = _interlink_kind_parameter(value)
+
+# A snapshot's policy entry in the current form: a symbol with its targets (all
+# checkpoints written before 0.6, and those of the policies they had) is rebuilt as
+# the typed policy it stands for and recorded as that policy is, so a checkpoint
+# resumes under the typed policy that schedules the same. A symbol that stands for no
+# policy is left as written, and the comparison refuses it.
+function _canonical_policy_configuration(configuration)
+    hasproperty(configuration, :policy) && configuration.policy isa Symbol || return configuration
+    policy = SimulationModel.SchedulingPolicies._legacy_scheduling_policy(configuration.policy,
+        get(configuration, :target_idx, 1), get(configuration, :target_idxs, nothing))
+    policy === nothing && return configuration
+    return merge(configuration, _scheduling_policy_entry(policy))
 end
 
 _mounted_terminal_identities(spacecraft::SimulationModel.SpacecraftModel) =
@@ -141,17 +178,18 @@ function _interlink_checkpoint_runtime_state(args, is_active)
 end
 
 # A snapshot's configuration in the current form. Version 1 (before link kinds)
-# held one laser link type for the run and P, B and range per candidate.
+# held one laser link type for the run and P, B and range per candidate. Both
+# versions' policy entries are rebuilt as typed policies.
 function _interlink_snapshot_configuration(snapshot)
     configuration = snapshot.configuration
-    snapshot.version === 2 && return configuration
+    snapshot.version === 2 && return _canonical_policy_configuration(configuration)
     hasproperty(configuration, :link_type) && configuration.link_type === :laser || return nothing
     candidates = [(endpoints=candidate.endpoints,
         link=_interlink_link_identity(SimulationModel.LaserMomentumLink(candidate.P, candidate.B, candidate.range)))
         for candidate in configuration.candidates]
     rest = (name => getproperty(configuration, name) for name in keys(configuration)
         if !(name in (:link_type, :vertices, :candidates)))
-    return (; vertices=configuration.vertices, candidates=candidates, rest...)
+    return _canonical_policy_configuration((; vertices=configuration.vertices, candidates=candidates, rest...))
 end
 
 function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
@@ -168,7 +206,7 @@ function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
     hasproperty(snapshot, :configuration) &&
         isequal(_interlink_snapshot_configuration(snapshot), _interlink_checkpoint_configuration(args)) ||
         throw(ArgumentError("Interlink configuration differs from the checkpoint. Resume with the same " *
-            "candidate topology, link kinds and parameters, forbidden pairs, policy targets and terminal counts."))
+            "candidate topology, link kinds and parameters, forbidden pairs, scheduling policy and terminal counts."))
     count = length(args.dynamics_model.spacecraft)
     hasproperty(snapshot, :is_active) && snapshot.is_active isa AbstractVector{Bool} &&
         length(snapshot.is_active) == count && is_active isa AbstractVector{Bool} &&

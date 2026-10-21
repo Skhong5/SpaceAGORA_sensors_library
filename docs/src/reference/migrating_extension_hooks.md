@@ -83,7 +83,7 @@ Rename the fields; nothing else changes.
 
 ## Deprecated in 0.5.0
 
-Three older index names that were never deprecated follow the same convention.
+Older index names that were never deprecated follow the same convention.
 Each keeps working as a keyword or property until SpaceAGORA 1.0, with one warning
 per type and name. An old keyword warns where it is passed, which is before the
 run; an old property warns where it is read, which can be inside a callback
@@ -91,7 +91,6 @@ during the run. Under `julia --depwarn=error` either is an error at that point.
 
 | Item | Replacement | Status | Removed in |
 |---|---|---|---|
-| `SchedulingPolicyModel`'s keywords and properties `target_idx` and `target_idxs` | `target_index` and `target_indices` | warn from 0.5.0 | 1.0 |
 | the `StateAnchor` property `sat_idx` | `spacecraft_index` | warns from 0.5.0 | 1.0 |
 | the `sat_idx` keyword of `get_periapsis_pulse_callback` | `spacecraft_index` | warns from 0.5.0 | 1.0 |
 
@@ -99,6 +98,27 @@ An interlink checkpoint keeps its stored keys, so a checkpoint written before
 0.5.0 resumes unchanged. The interlink names that 0.5.0 deprecates, from when every
 link was a laser link, are listed on the
 [Interlinks page](../user/interlinks.md#Deprecated-names).
+
+## Removed in 0.6.0
+
+The interlink scheduling policies chosen by a symbol were removed in 0.6.0,
+without a deprecation period, together with `SchedulingPolicyModel`'s
+`target_index` and `target_indices` and the 0.5.0 names `target_idx` and
+`target_idxs`, which had warned since 0.5.0. Scheduling policies are types now
+(see [Interlinks](../user/interlinks.md#Policies)). A call with a symbol throws
+an `ArgumentError` that names its typed replacement, whether or not Julia runs
+with `--depwarn=error`. Interlink checkpoints written with the symbol policies
+still resume under the typed policy that schedules the same.
+
+| Item | Replacement | Status | Removed in |
+|---|---|---|---|
+| `SchedulingPolicyModel(:gve_sma)`, with `target_index=k`, `target_index=nothing` or `target_indices=v` | `SemimajorAxisRatePolicy()`, `targets=k`, `targets=:both` or `targets=v` | an `ArgumentError` naming the replacement | 0.6.0 |
+| `SchedulingPolicyModel(:gve_sma_first_index)` | `SemimajorAxisRatePolicy(targets=:lower_index)` | an `ArgumentError` naming the replacement | 0.6.0 |
+| `SchedulingPolicyModel(:gve_eccentricity)`, with `target_index=k` or `target_index=nothing` | `EccentricityRatePolicy()`, `targets=k` or `targets=:both` | an `ArgumentError` naming the replacement | 0.6.0 |
+| `SchedulingPolicyModel(:power_delivery)`, `SchedulingPolicyModel(:data_throughput)` | `PowerDeliveryPolicy()`, `DataThroughputPolicy()` | an `ArgumentError` naming the replacement | 0.6.0 |
+| `SchedulingPolicyModel`'s keywords `target_idx` and `target_idxs` | as `target_index` and `target_indices` above | warned from 0.5.0; now an `ArgumentError` naming the replacement | 0.6.0 |
+| `SchedulingPolicyModel`'s property `policy` | `objective`, the policy value | a `FieldError` | 0.6.0 |
+| `SchedulingPolicyModel`'s properties `target_index`, `target_indices`, `target_idx` and `target_idxs` | `objective.targets` | a `FieldError` (the last two warned from 0.5.0) | 0.6.0 |
 
 ## Schedule
 
@@ -120,6 +140,10 @@ link was a laser link, are listed on the
   `control_wheel_torque` gain defaults, `0.0` and `nothing`. The tagged releases
   0.3.0 to 0.4.0 carried the warnings, and the companion packages moved to the
   new names in 0.4.0.
+- **0.6.0.** The interlink scheduling policies chosen by a symbol, and
+  `SchedulingPolicyModel`'s target names, are removed without a deprecation
+  period (see [Removed in 0.6.0](#Removed-in-0.6.0)). A symbol is refused with
+  its typed replacement, and old interlink checkpoints resume.
 
 Release numbers follow `version` in `Project.toml`. The older `v1.0.0` and
 `v2.0.0` git tags predate it.

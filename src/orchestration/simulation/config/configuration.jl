@@ -5,7 +5,7 @@ module SimConfig
     using ..AbstractTypes: AbstractPlanet, AbstractDensityModel, AbstractThermalModel, AbstractEphemeridesModel
     using ..SpacecraftModels: DynamicsModel, GuidanceModel, ControlModel, NavigationModel
     using ..InterLinkModels: InterlinkModel
-    using ..SchedulingPolicies: SchedulingPolicyModel
+    using ..SchedulingPolicies: SchedulingPolicyModel, SemimajorAxisRatePolicy, AbstractSchedulingPolicy
     using ..EphemeridesModels: SpiceEphemeridesModel
     using ..Planets: Earth
 
