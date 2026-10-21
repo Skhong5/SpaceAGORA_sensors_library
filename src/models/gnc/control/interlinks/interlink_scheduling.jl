@@ -91,6 +91,9 @@ struct SchedulingContext{L <: LinkContext, S, X, F, T}
     _candidate_force::F
     _terminals::T
 end
+SchedulingContext(mu::Real, link_context::LinkContext, spacecraft, state, candidate_force) =
+    SchedulingContext(Float64(mu), link_context, spacecraft, state, candidate_force,
+        spacecraft === nothing ? nothing : map(_terminal_devices, spacecraft))
 
 """
     candidate_score(policy, candidate::LinkCandidate, ctx::SchedulingContext, t::Float64) -> Float64
@@ -556,8 +559,7 @@ the link context. The orbital policies take each link's force from its
 """
 function score_candidates!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real;
 	candidate_force=nothing, spacecraft=nothing, context=LinkContext())
-	terminals = spacecraft === nothing ? nothing : map(_terminal_devices, spacecraft)
-	ctx = SchedulingContext(Float64(mu), context, spacecraft, state, candidate_force, terminals)
+	ctx = SchedulingContext(Float64(mu), context, spacecraft, state, candidate_force)
 	objective = policy.objective
 	_prepare_scoring(objective, model, ctx)
 	work = matching_workspace!(model, policy)
