@@ -837,6 +837,9 @@ function run_simulation(
         callbacks = CallbackSet(SimulationModel.SimulationCallbacks.interlink_scheduler_initialization(), callbacks,
             SimulationModel.interlink_scheduler_callback())
     end
+    # Last, after every wrapper: building a CallbackSet from another flattens it
+    # back into tuples.
+    callbacks = _solver_callback_set(callbacks)
     ephemerides_model = args.environment_model.ephemerides_model
     et_start = SimulationModel.EphemeridesModels.ephemerides_epoch_seconds(ephemerides_model, args.initial_time)
     p.shared_buffers.et_start[] = et_start
