@@ -365,9 +365,8 @@ The separate `HYPR` package owns the optimizer; its `HYPRSpaceAGORAExt`
 extension owns configured objectives, refinement, RRT/retiming adapters and
 robot-arm HYPR execution. HYPR's core has no SpaceAGORA dependency. The extension
 uses SpaceAGORA's [versioned service contract](../src/reference/hypr_services.md).
-`packages/SpaceAGORAHYPR` is the compatibility shim that loads both packages,
-checks the extension and preserves historical module aliases. SpaceAGORA's core
-has no required HYPR or shim dependency. OSQP remains a core dependency because
+Load `SpaceAGORA` and `HYPR` directly to activate the extension. The retired
+loader is not installed. SpaceAGORA's core has no required HYPR dependency. OSQP remains a core dependency because
 LQ-MPC uses it independently of HYPR.
 
 Core retains configuration/result types, historical compatibility function
@@ -405,7 +404,7 @@ simulation, shared planners and robot-arm use. `optional.jl core-first` and
 The full-feature test harness opts into the local companion explicitly; this
 bootstrap is never used by the independent installation proof.
 
-Architecture checks cover the core, compatibility shim and service boundary.
+Architecture checks cover the core and service boundary.
 HYPR's coverage checks include the extracted core and extension implementation.
 The required `tests` check also waits for the independent installation job.
 

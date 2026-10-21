@@ -72,9 +72,8 @@ across the physical source boundary.
 
 Julia package extensions remain in the repository-root [`ext/`](../ext/), where
 Julia discovers them. Optional companion repositories such as HYPR and
-SpaceAGORAMuJoCo keep their own source trees outside this directory. The existing
-[`packages/SpaceAGORAHYPR/`](../packages/SpaceAGORAHYPR/) package is a compatibility
-loader for external HYPR. Runnable scenarios remain in [`examples/`](../examples/),
+SpaceAGORAMuJoCo keep their own source trees outside this directory. Loading
+SpaceAGORA and HYPR directly activates HYPR's extension. Runnable scenarios remain in [`examples/`](../examples/),
 operational tools in [`scripts/`](../scripts/) and browser code in
 [SpaceAGORAVisualizer.jl](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl).
 

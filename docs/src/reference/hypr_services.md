@@ -9,10 +9,9 @@ extension plans with SpaceAGORA. It lists the SpaceAGORA types and functions HYP
 may use and the functions HYPR adds methods to. It follows the shared
 [optional adapter standard](adapter_contract.md).
 
-This SpaceAGORA source provides contract **2.0.0**. It works with HYPR **0.4.0**
-and with `SpaceAGORAHYPR` **0.2.0**, a small compatibility package that keeps
-older code that loads it working by forwarding to HYPR. The setup helper pins the
-exact HYPR source revision.
+This SpaceAGORA source provides contract **2.0.0** and works with HYPR **0.4.0**.
+Load `SpaceAGORA` and `HYPR` directly. The setup helper pins the exact HYPR source
+revision; the separate compatibility loader is retired.
 
 ## Loading and failure behavior
 
@@ -30,10 +29,10 @@ fails, and the version check does not remove them. After such a conflict, the
 availability check and the planning preflight report HYPR as unavailable. Do not
 catch the loading error and keep calling planner methods you imported before.
 
-The compatibility package checks that the extension defines the names it needs
-before it creates its aliases. Its `__init__` then checks again that HYPR
-initialized and is available. The service module exposes `CompatibilityError` as
-an alias of the existing error type.
+HYPR's own extension performs these checks and activates the provider.
+`SpaceAGORA.hypr_available()` reports successful activation, and planner
+preflight refuses an unavailable or conflicted provider. The service module
+exposes `CompatibilityError` as an alias of the existing error type.
 
 Availability belongs to one Julia process: each worker loads its own supported
 packages.
@@ -104,8 +103,8 @@ A name in a group's **HYPR supplies methods** list is an extension point: HYPR
 adds methods to that function, but need not write every method of it. For
 example, the extension's metric and sampling methods convert HYPR settings and
 then call SpaceAGORA's own kernels. Because both packages add methods to the same
-function, moving or replacing it changes both. `SpaceAGORAHYPR` keeps the old
-module aliases working and has no planner of its own.
+function, moving or replacing it changes both. Retiring the loader does not
+move those functions or narrow the service contract.
 
 SpaceAGORA's RPO planner adapter, comparison planners and examples call these
 names, and so does HYPR's extension. Some HYPR tests still use private

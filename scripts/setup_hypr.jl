@@ -19,6 +19,30 @@ function source_spec(root=ROOT; local_path=get(ENV, "SPACEAGORA_HYPR_PATH", ""))
     return PackageSpec(url=pin["url"], rev=pin["rev"])
 end
 
+# Pkg preserves path-developed manifest entries during resolution, even after
+# their direct dependency is removed. Retire this one entry before Pkg tries
+# to read the deleted package directory; keep optional weak bindings by UUID.
+function retire_loader_manifest!(path)
+    data = TOML.parsefile(path)
+    entries = get(data, "deps", data)
+    haskey(entries, "SpaceAGORAHYPR") || return nothing
+    for (name, records) in entries, record in records
+        dependencies = get(record, "deps", String[])
+        depends_on_loader = dependencies isa AbstractDict ?
+            haskey(dependencies, "SpaceAGORAHYPR") : "SpaceAGORAHYPR" in dependencies
+        depends_on_loader && error("$name still depends on the retired SpaceAGORAHYPR loader. Migrate that package to direct SpaceAGORA and HYPR imports before rerunning setup.")
+        weak = get(record, "weakdeps", nothing)
+        if weak isa AbstractVector && "SpaceAGORAHYPR" in weak
+            record["weakdeps"] = Dict(dependency => only(entries[dependency])["uuid"] for dependency in weak)
+        end
+    end
+    delete!(entries, "SpaceAGORAHYPR")
+    open(path, "w") do io
+        TOML.print(io, data; sorted=true)
+    end
+    return nothing
+end
+
 function setup(environment; root=ROOT, with_hypr=true, local_path=get(ENV, "SPACEAGORA_HYPR_PATH", ""))
     env = abspath(environment)
     ispath(env) && samefile(env, root) &&
@@ -47,6 +71,7 @@ function setup(environment; root=ROOT, with_hypr=true, local_path=get(ENV, "SPAC
     end
     manifest = joinpath(env, "Manifest.toml")
     isfile(manifest) || cp(joinpath(root, "Manifest.toml"), manifest)
+    retire_loader_manifest!(manifest)
     previous = Base.active_project()
     try
         Pkg.activate(env)

@@ -26,9 +26,6 @@ contracts. Release evidence for an adapter is in
 - **Private path:** any other way a companion reaches SpaceAGORA code, such as an
   internal module, an internal name or the engine's raw storage. Private paths are
   not supported and can change without notice.
-- **Compatibility package (shim):** `SpaceAGORAHYPR`, at
-  `packages/SpaceAGORAHYPR/`. It keeps older code that loads it working by
-  forwarding to HYPR; it holds no planner of its own.
 - **Compatibility bridge:** EDG's private forwarding list, `COMPATIBILITY_FUNCTIONS`
   in `src/models/gnc/guidance/aerobraking/typed_edg/algorithms.jl`. It forwards
   older helper names to the EDG companion.
@@ -64,16 +61,14 @@ the contract or by another caller.
 
 ### Before you remove an import from HYPR
 
-The compatibility package's `RPO` and `RobotArm` aliases point at HYPR's
-extension namespaces. Code that loads the compatibility package can reach every
-name those namespaces import, even a name HYPR itself never uses. So when you
+HYPR's extension namespaces remain implementation details. Removing the old
+loader does not narrow the service contract or move shared bindings. When you
 clean up imports in HYPR:
 
-- check the names reachable through those two aliases, as well as the callers in
-  each repository;
+- check direct extension accesses and callers in each repository;
 - keep every name in SpaceAGORA's contract lists;
-- run the checks below, not only a search: a search finds imports, not the code
-  that reaches names through the aliases.
+- run the checks below, not only a search: a search finds imports, not every
+  method or alias that reaches those bindings.
 
 ### Checks for a HYPR boundary change
 

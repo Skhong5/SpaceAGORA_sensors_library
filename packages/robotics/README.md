@@ -18,9 +18,8 @@ julia --startup-file=no scripts/optional_packages.jl setup hypr /path/to/hypr-en
 julia --startup-file=no --project=/path/to/hypr-env
 ```
 
-Then load `SpaceAGORA` and `SpaceAGORAHYPR`. The existing
-[`packages/SpaceAGORAHYPR`](../SpaceAGORAHYPR/README.md) compatibility shim remains
-in place; it loads the adapter implemented by HYPR. The [HYPR user guide](../../docs/src/user/hypr_planning.md)
+Then load `SpaceAGORA` and `HYPR` directly. Loading both activates the adapter
+implemented by HYPR; no separate loader package is needed. The [HYPR user guide](../../docs/src/user/hypr_planning.md)
 explains the planner and the [RPO guide](../../docs/src/user/rpo_planner_pilot.md)
 shows its supported simulation entry points.
 

@@ -97,7 +97,6 @@ end
         _copy_into!(fixture, repo, joinpath("test", "Project.toml"))
         _copy_into!(fixture, repo, joinpath("examples", "Project.toml"))
         _copy_into!(fixture, repo, joinpath("build", "build_sysimage.jl"))
-        _copy_into!(fixture, repo, joinpath("packages", "SpaceAGORAHYPR", "src"))
 
         @testset "Project compat gate" begin
             run_gate = _gate_runner(repo, fixture, "ci_project_compat_gate.jl")
@@ -719,7 +718,6 @@ end
     repo = normpath(joinpath(@__DIR__, "..", "..", ".."))
     mktempdir() do fixture
         _copy_into!(fixture, repo, joinpath("src", "models", "gnc"))
-        _copy_into!(fixture, repo, joinpath("packages", "SpaceAGORAHYPR", "src"))
         run_gate = _gate_runner(repo, fixture, "ci_gnc_random_stream_gate.jl")
         @test isnothing(run_gate().failure)
         probe = joinpath(fixture, "src", "models", "gnc", "random_stream_probe.jl")
@@ -821,7 +819,7 @@ end
             @test isnothing(run_gate().failure)
         end
         # Both roots remain covered, with the draw's source line in the report.
-        hypr_probe = joinpath(fixture, "packages", "SpaceAGORAHYPR", "src", "random_stream_probe.jl")
+        hypr_probe = joinpath(fixture, "src", "models", "gnc", "companions", "hypr", "random_stream_probe.jl")
         _with_probe(hypr_probe, "rng_buffer = zeros(3)\nrand!(\n    rng_buffer\n)\n") do
             rejected = run_gate()
             @test _failed_with(rejected, failure)
