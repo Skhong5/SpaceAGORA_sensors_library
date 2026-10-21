@@ -1015,6 +1015,9 @@ jobs:
           julia --startup-file=no --compiled-modules=strict --pkgimages=existing --project="$RUNNER_TEMP/hypr-installations/hypr" test/precompiled_conflicts.jl conflict-first
           julia --startup-file=no --compiled-modules=strict --pkgimages=existing --project="$RUNNER_TEMP/hypr-installations/hypr" test/precompiled_conflicts.jl hypr-first
           julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/incompatible_resolution.jl "$GITHUB_WORKSPACE"
+          julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/incompatible_contract.jl
+          julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/service_boundary.jl core-first
+          julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/service_boundary.jl hypr-first
       - name: Retain installation coverage
         if: always()
         run: |
@@ -1091,6 +1094,8 @@ jobs:
         run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" packages/robotics/SpaceAGORAMuJoCo.jl/test/load_order.jl core-first
       - name: Companion-first adapter load and conformance
         run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" packages/robotics/SpaceAGORAMuJoCo.jl/test/load_order.jl companion-first
+      - name: Refuse a scene without the MuJoCo library
+        run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" packages/robotics/SpaceAGORAMuJoCo.jl/test/missing_native.jl
       - name: Mandatory native tests with four threads
         run: julia --startup-file=no --project="$RUNNER_TEMP/mujoco-env" -e '@assert Threads.nthreads() == 4; include("packages/robotics/SpaceAGORAMuJoCo.jl/test/runtests.jl")'
       - name: Verify tracked installation inputs were not changed
@@ -1203,6 +1208,10 @@ jobs:
         run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional/edg/example_smoke.jl
       - name: Companion tests
         run: julia --startup-file=no --project="$RUNNER_TEMP/edg-installations/edg" -e 'using Pkg; Pkg.test("SpaceAGORAEDG")'
+      - name: Companion load orders and the refusal without the companion
+        run: |
+          julia --startup-file=no --project="$RUNNER_TEMP/edg-installations/edg" packages/gnc/SpaceAGORAEDG.jl/test/load_order.jl core-first
+          julia --startup-file=no --project="$RUNNER_TEMP/edg-installations/edg" packages/gnc/SpaceAGORAEDG.jl/test/load_order.jl edg-first
       - name: Retain EDG integration coverage
         if: always()
         run: |
