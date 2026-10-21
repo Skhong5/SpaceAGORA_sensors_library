@@ -401,19 +401,20 @@ end
 end
 
 # The most discrete callbacks a run keeps in a tuple. The solver library applies a
-# tuple of discrete callbacks by recursion over it. Past about two dozen entries
-# that recursion is no longer compiled away, and each accepted step then costs
-# time and allocation that grow with the square of their number, and the solve's
-# type inference grows with them. A vector of them is applied one callback at a
-# time, through one dynamic call each, and compiles once. A run with one periodic
-# GNC model per spacecraft has a discrete callback per model.
+# tuple of discrete callbacks by recursion over it. Up to 32 entries that
+# recursion is compiled away, and the tuple is the cheaper container. Past 32 Base
+# stops specializing on tuples: each accepted step then costs time and allocation
+# that grow with the square of their number, and the solve's type inference grows
+# with them. A vector of them is applied one callback at a time, through one
+# dynamic call each, and compiles once. A run with one periodic GNC model per
+# spacecraft has a discrete callback per model.
 #
 # Only a fully specialized problem keeps the tuple: a run of several spacecraft
 # without cross-spacecraft coupling, whose block-diagonal Jacobian prototype makes
 # it so. The solver library already holds every other run's callbacks in vectors
 # (it erases them for its automatically specialized problems). Tests change the
 # limit to force either container.
-const _DISCRETE_CALLBACK_TUPLE_LIMIT = Ref(24)
+const _DISCRETE_CALLBACK_TUPLE_LIMIT = Ref(32)
 
 # The run's callbacks as the solver receives them: unchanged up to the limit;
 # beyond it, the discrete callbacks in a vector, in the same order, beside the

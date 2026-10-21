@@ -87,7 +87,7 @@ same_solution(a, b) = a.t == b.t && length(a.u) == length(b.u) && all(isequal(co
 
 @testset "Callback container" begin
     @testset "a tuple up to the limit, then the discrete callbacks in a vector" begin
-        @test SE._DISCRETE_CALLBACK_TUPLE_LIMIT[] == 24
+        @test SE._DISCRETE_CALLBACK_TUPLE_LIMIT[] == 32
         continuous = never()
         discrete = [noop() for _ in 1:5]
         set = DiffEqBase.CallbackSet(continuous, discrete...)
