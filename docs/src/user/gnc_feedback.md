@@ -86,9 +86,10 @@ runs periodic ticks, so each callback does that wrapper's work itself:
   callbacks outside its guarantee.
 
 A periodic model can add solver stops after each tick with
-`register_tstops!(integrator, model, spacecraft_index)`, and record when its
-clock starts with `gnc_clock_started!(model, period_s, origin_s)`. Most models
-need none of these.
+`register_tstops!(integrator, model, spacecraft_index)`, called for each
+spacecraft in its scope (for every spacecraft index in SpaceAGORA 0.5.1 and
+earlier), and record when its clock starts with
+`gnc_clock_started!(model, period_s, origin_s)`. Most models need none of these.
 
 ### Worked example A: a rate damper
 

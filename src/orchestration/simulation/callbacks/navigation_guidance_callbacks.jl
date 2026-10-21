@@ -5,11 +5,8 @@ function get_navigation_callbacks(num_sats::Int, args::SimulationConfiguration):
     for i in eachindex(navigation_models)
         navigation_model = navigation_models[i]
         navigation_rate = navigation_rates[i]
-        navigation_func = (integrator) -> begin
-            @inbounds for sat_idx in 1:num_sats
-                _gnc_tick!(update_navigation!, navigation_model, integrator.u, integrator.p, integrator.t, sat_idx)
-            end
-        end
+        navigation_func = integrator ->
+            _gnc_tick_scope!(update_navigation!, navigation_model, integrator.u, integrator.p, integrator.t, num_sats)
         callbacks[i] = _run_clock_periodic_callback(navigation_func, navigation_rate)
     end
     return callbacks
@@ -22,11 +19,8 @@ function get_guidance_callbacks(num_sats::Int, args::SimulationConfiguration)::V
     for i in eachindex(guidance_models)
         guidance_model = guidance_models[i]
         guidance_rate = guidance_rates[i]
-        guidance_func = (integrator) -> begin
-            @inbounds for sat_idx in 1:num_sats
-                _gnc_tick!(update_guidance!, guidance_model, integrator.u, integrator.p, integrator.t, sat_idx)
-            end
-        end
+        guidance_func = integrator ->
+            _gnc_tick_scope!(update_guidance!, guidance_model, integrator.u, integrator.p, integrator.t, num_sats)
         callbacks[i] = _run_clock_periodic_callback(guidance_func, guidance_rate)
     end
     return callbacks

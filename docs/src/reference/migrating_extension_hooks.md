@@ -99,6 +99,19 @@ An interlink checkpoint keeps its stored keys, so a checkpoint written before
 link was a laser link, are listed on the
 [Interlinks page](../user/interlinks.md#Deprecated-names).
 
+## Changed after 0.5.1
+
+One hook keeps its name and signature and is called for fewer spacecraft.
+
+| Hook | 0.5.1 and earlier | After 0.5.1 | What to do |
+|---|---|---|---|
+| `register_tstops!(integrator, model, spacecraft_index)` | called after each periodic control tick for every spacecraft index of the run | called for each spacecraft the model's `spacecraft_scope` names, in ascending order, as the tick is | a model that adds solver stops for a spacecraft outside its declared scope declares a scope that names it, or `AllSpacecraft()` |
+
+A model without a `spacecraft_scope` method of its own has the default
+`AllSpacecraft()`, which names every spacecraft, so its calls do not change. The
+burn scheduler, the only built-in model with a method, is event-driven and
+registers its stops from its own callbacks.
+
 ## Removed in 0.6.0
 
 The interlink scheduling policies chosen by a symbol were removed in 0.6.0,
@@ -106,7 +119,7 @@ without a deprecation period, together with `SchedulingPolicyModel`'s
 `target_index` and `target_indices` and the 0.5.0 names `target_idx` and
 `target_idxs`, which had warned since 0.5.0. Scheduling policies are types now
 (see [Interlinks](../user/interlinks.md#Policies)). A call with a symbol throws
-an `ArgumentError` naming the replacements typed replacement, whether or not Julia runs
+an `ArgumentError` that names its typed replacement, whether or not Julia runs
 with `--depwarn=error`. Interlink checkpoints written with the symbol policies
 still resume under the typed policy that schedules the same.
 
