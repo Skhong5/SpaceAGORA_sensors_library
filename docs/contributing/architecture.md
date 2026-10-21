@@ -414,17 +414,22 @@ interlinks.
     B.
 
   So a producer must not rely on another producer having prepared first.
-- **Scope and inactive spacecraft.** Each spacecraft's tick goes through
-  `_gnc_tick!` (`callbacks/gnc_scope.jl`): a model ticks only for the
-  spacecraft its `spacecraft_scope` names, and when it declares
-  `skip_inactive`, an inactive spacecraft gets `release_command!` instead. The
+- **Scope and inactive spacecraft.** A periodic tick reads the model's
+  `spacecraft_scope` once and visits only the run positions it names, in
+  ascending order (`_tick_positions` in `callbacks/gnc_scope.jl`), so a tick
+  costs the size of the scope, not the number of spacecraft. A control model
+  that consumes a link has its scope read once more, first, to decide whether
+  its producers prepare it (`_ticks_any`). The tick reads the scope after they
+  have, so it follows a scope a producer changed. When the model
+  declares `skip_inactive`, an inactive spacecraft gets `release_command!`
+  instead of the tick (`_gnc_tick_in_scope!`). The
   mounted actuators then apply the levels the model holds. An event-driven
   model's own callbacks do this themselves; the burn scheduler keeps a released
   command released at its scheduling passes and burn edges.
 - **Stops after the ticks, one spacecraft at a time.** The ticks of one control
   model may run on several threads. The solver's stop list belongs to the
   integrator they share, so `register_tstops!` runs afterwards, on the
-  callback's thread.
+  callback's thread, for each spacecraft in the model's scope.
 - **Planner policy stays in the planner.** An RPO planner's holds, revisions,
   retries and interval replans happen in its guidance tick;
   `before_reference_control!` only refuses a reference that is missing or no

@@ -98,8 +98,9 @@ change, so:
   `AGORA_Vex.jl`, `AGORA_Titan.jl`, `AGORA_Magellan.jl`, `AGORA_LOFTID.jl`,
   `AGORA_Mars_NoGRAM.jl` and `Earth_Thruster_Test.jl`;
 - `--output-dir` has no effect on the scripts that choose their own directory:
-  `AGORA_Earth.jl`, `AGORA_Keplerian.jl` and `Earth_Navigation.jl` write to
-  `output/` directly, `AGORA_Earth_Aerobraking.jl` to `output/earth_aerobraking/`,
+  `AGORA_Earth.jl` and `AGORA_Keplerian.jl` write to `output/` directly,
+  `Earth_Navigation.jl` to `output/observer_noDA/`,
+  `AGORA_Earth_Aerobraking.jl` to `output/earth_aerobraking/`,
   `AGORA_Mars_RAAN_Scenario.jl` to `output/mars_raan_scenario/`, and the RPO,
   robot-arm and compliant multibody demos to their own `output/<demo>/` directories; running
   one of them twice overwrites its previous results;
