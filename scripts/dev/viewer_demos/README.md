@@ -219,7 +219,7 @@ leap-second calendar fields to the general `InitialTime` API.
 
 ## CYGNSS research tools
 
-The [CYGNSS reconstruction study](../../../benchmarks/studies/cygnss_reconstruction/README.md)
+The [CYGNSS reconstruction study](https://github.com/Space-FALCON-Lab/SpaceAGORAMissionReconstructions/tree/research-source-import/benchmarks/studies/cygnss_reconstruction)
 owns the data pipeline, research drivers and tested helpers. Its guide separates
 Earthdata inputs from private slew telemetry and explains the interpretation
 limits. The study reuses this family's saved-result export helpers; it does not

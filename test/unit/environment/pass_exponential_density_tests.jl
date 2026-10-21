@@ -87,10 +87,6 @@ end
     @test_throws ArgumentError EM.PassKeyedExponentialAtmosphereModel(_fb(), [1], [NaN], [NaN], [1.0], [3.5]; counter_pass_offset=0, entry_interface_m=250.0e3)
 end
 
-const _MANIFEST_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "benchmarks", "studies", "telemetry_validation", "manifests"))
-_load(n) = only(SpaceAGORA.TelemetryVerification._load_scenarios_from_manifest(joinpath(_MANIFEST_DIR, "$n.toml")))
-const _ORVM = ("vex_orvm_g115", "vex_orvm_gfit", "vex_orvm_f", "vex_orvm_vg", "vex_orvm_vgfit")
-
 @testset "manifest keys" begin
     TV = SpaceAGORA.TelemetryVerification
     t(extra...) = Dict("atmosphere_truth" => Dict("atmosphere_model" => "gram_pass_exponential", "atmosphere_dataset" => "d",
@@ -101,11 +97,14 @@ const _ORVM = ("vex_orvm_g115", "vex_orvm_gfit", "vex_orvm_f", "vex_orvm_vg", "v
     @test_throws ArgumentError TV._parse_atmosphere_truth_config(Dict("atmosphere_truth" => Dict(
         "atmosphere_model" => "GRAM", "atmosphere_dataset" => "d", "space_weather_model" => "s",
         "solar_flux_model" => "f", "pass_exponential_file" => "/x.csv")), "ctx")                     # file without mode
-    # the shipped measured-drag manifest parses and points at an existing profile file
-    sc = _load("vex_orvm_f")
-    @test sc.atmosphere_truth.atmosphere_model == "gram_pass_exponential"
-    @test isfile(sc.atmosphere_truth.pass_exponential_file)
-    @test sc.atmosphere_truth.pass_exponential_counter_offset == 2948
+    # Small attributed profile fixture exercises file-bearing truth configuration.
+    profile = joinpath(@__DIR__, "..", "..", "fixtures", "research_contracts", "pass_exponential_profile.csv")
+    cfg = TV._parse_atmosphere_truth_config(t("pass_exponential_file" => profile,
+        "pass_exponential_counter_offset" => 2948), "fixture")
+    @test cfg.atmosphere_model == "gram_pass_exponential"
+    @test isfile(cfg.pass_exponential_file)
+    @test cfg.pass_exponential_counter_offset == 2948
+
 end
 
 
@@ -127,14 +126,7 @@ end
     @test_throws ArgumentError SC.get_periapsis_pulse_callback(-0.04, 2951:3005)
     @test_throws ArgumentError SC.get_periapsis_pulse_callback(NaN, 2951:3005)
     @test SC.get_periapsis_pulse_callback(0.04, 2951:3005; counter_pass_offset=2949) isa Any
-    # manifests: off unless the block says so; main's record manifests carry none of the new options
-    for n in ("vex_venusgram", "odyssey_tolson", "odyssey_marsgram", "vex_orvm_g115", "vex_orvm_vg")
-        sc = _load(n)
-        @test sc.thruster_pulse_dv_mps == 0.0 && sc.calibration.cd_scale_min == 1.0 && !sc.calibration.fit_cd_scale
-    end
-    f = _load("vex_orvm_f")
-    @test f.thruster_pulse_dv_mps == 0.04
-    @test (f.thruster_pulse_first_pass, f.thruster_pulse_last_pass, f.thruster_pulse_counter_pass_offset) == (2950, 3005, 2948)
+
 end
 
 
@@ -202,7 +194,6 @@ end
     @test_throws ArgumentError TV._parse_atmosphere_truth_config(t("pass_exponential_scale" => 0.0), "ctx")
     @test_throws ArgumentError TV._parse_atmosphere_truth_config(Dict("atmosphere_truth" => Dict("atmosphere_model" => "GRAM",
         "atmosphere_dataset" => "d", "space_weather_model" => "s", "solar_flux_model" => "f", "pass_exponential_scale" => 1.2)), "ctx")
-    @test _load("vex_orvm_f").atmosphere_truth.pass_exponential_scale == 1.0
 end
 
 
@@ -228,11 +219,7 @@ end
     @test TV._parse_comparison_axis(Dict("comparison_axis" => "pass_aligned"), "ctx") === :pass_aligned
     @test_throws ArgumentError TV._parse_comparison_axis(Dict("comparison_axis" => "bogus"), "ctx")
     @test_throws ArgumentError TV._parse_comparison_axis(Dict("comparison_axis" => "pass_aligned", "epoch_orbit_offset" => 19.0), "ctx")
-    # main's record manifests keep the legacy axis and no skipped event
-    for n in ("vex_venusgram", "odyssey_tolson", "odyssey_marsgram")
-        sc = _load(n)
-        @test sc.comparison_axis === :legacy && sc.pass_aligned_skipped_event == 0 && sc.pass_aligned_apoapsis_skipped_event == -1
-    end
+
 end
 
 
@@ -262,27 +249,5 @@ end
 end
 
 
-@testset "Venus Express ORVM-referenced manifests" begin
-    for n in _ORVM
-        sc = _load(n)
-        @test endswith(sc.telemetry_peri_path, "VEx/orvm/vex_orvm_periapsis.feather") && endswith(sc.telemetry_apo_path, "VEx/orvm/vex_orvm_apoapsis.feather")
-        @test sc.comparison_axis === :pass_aligned && sc.pass_aligned_skipped_event == 0 && sc.pass_aligned_apoapsis_skipped_event == -1
-        @test sc.epoch_orbit_offset === nothing
-        orvm_ic = startswith(n, "vex_orvm_v")
-        @test (sc.initial_state_j2000_m !== nothing) == orvm_ic
-        @test sc.maneuver_orbit_numbers == (orvm_ic ? [6, 36, 41, 45] : [6, 37, 42, 46])
-        @test sc.maneuver_delta_v_mps == [0.428, -0.177, -0.07, -0.05]
-        @test sc.atmosphere_truth.atmosphere_model == (n == "vex_orvm_f" ? "gram_pass_exponential" : "GRAM")
-    end
-    cal(sc) = (sc.calibration.cr_min, sc.calibration.cr_max, sc.calibration.cr_steps, sc.calibration.fit_bias, sc.calibration.objective)
-    @test cal(_load("vex_orvm_g115")) == cal(_load("vex_orvm_vg")) == cal(_load("vex_orvm_f")) == (1.15, 1.15, 1, true, "mean_nmae")
-    @test cal(_load("vex_orvm_gfit")) == cal(_load("vex_orvm_vgfit")) == (1.15, 1.45, 3, true, "mean_nmae")
-    # the measured-drag profile: counter c -> key c + 2948; counter 2 -> 2950 (point 0), counter 3 -> 2951 (absent:
-    # VenusGRAM), counter 4 -> 2952, counter 57 -> 3005 (last)
-    TV = SpaceAGORA.TelemetryVerification
-    prof = TV.DataFrame(TV.CSV.File(_load("vex_orvm_f").atmosphere_truth.pass_exponential_file))
-    keys = Set(prof.pass)
-    @test (2 + 2948 in keys) && !(3 + 2948 in keys) && (4 + 2948 in keys) && (57 + 2948 in keys) && !(58 + 2948 in keys)
-end
 
 end # module

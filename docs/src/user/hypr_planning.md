@@ -153,8 +153,9 @@ for developers extending the integration.
 
 ## Final iSpaRo reconstruction candidate
 
-`examples/Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl` records a newly generated
-experiment through the full SpaceAGORA simulator. It uses the final paper's
+The [SpaceAGORARPOStudies project](https://github.com/Space-FALCON-Lab/SpaceAGORARPOStudies/blob/research-source-import/README.md) owns
+`examples/Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl`, which records a newly
+generated experiment through the full SpaceAGORA simulator. It uses the final paper's
 0.5 m clearance, 10 Hz control, 60-step horizon and controller weights, with
 5 kg interpreted as initial wet mass and 0.2 kg of propellant. Exact original
 case coordinates, geometry draws and the paper-producing source revision have
@@ -162,18 +163,23 @@ not been recovered. This example is a reconstruction, not an original-run replay
 
 The example defaults to one HyPR case. Select other methods explicitly with
 `HYPR_PLANNERS`; comparisons are optional, not an installation requirement.
-The [paper implementation walkthrough](hypr_paper.md) gives runnable commands,
+The [paper implementation walkthrough](https://github.com/Space-FALCON-Lab/SpaceAGORARPOStudies/blob/research-source-import/docs/hypr_paper.md) gives runnable commands,
 algorithm mapping and the retained dynamic failure. Write evidence outside the repository and any
 cloud-synced vault, for example:
 
 ```sh
+cd /path/to/SpaceAGORARPOStudies
 HYPR_CASES=1 HYPR_OUTPUT_ROOT="$HOME/AgentScratch/hypr_final_isparo" \
-  JULIA_NUM_THREADS=2 julia --project=/path/to/hypr-env \
+  JULIA_NUM_THREADS=2 julia --startup-file=no --compiled-modules=existing \
+  --project=/path/to/rpo-study-env \
   examples/Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl
 ```
 
-Run this command from the same SpaceAGORA checkout used to prepare
-`/path/to/hypr-env` above, and keep that checkout at the recorded revision.
+Prepare `/path/to/rpo-study-env` using the research project's setup instructions.
+It pins SpaceAGORA to `bfa32f6a44c5f242714b8cf182a451e863119a05` and HYPR to
+`c434404dd3e4ac3ba351b2a5e0bb77d9be95fb94`; keep those dependency checkouts
+at the recorded revisions. The command runs from the research checkout, not
+from the core examples directory.
 The example records cases, each planner's path/reference, successful and failed
 outcomes, and actual delivered-force fuel consumption. Failed cases remain in
 success/runtime accounting and must be excluded from fuel means. Comparisons
@@ -219,7 +225,7 @@ before guidance. Fixed endpoints that already violated clearance were rejected
 before search, and the vehicle remained in hold. A failed hold is not a claim that
 an already unsafe position has become safe. The original obstacle placements and
 disturbance draws are missing, so these generated cases cannot be attributed to
-the final table. [Run the HyPR paper algorithm](hypr_paper.md) says how to run the
+the final table. [Run the HyPR paper algorithm](https://github.com/Space-FALCON-Lab/SpaceAGORARPOStudies/blob/research-source-import/docs/hypr_paper.md) says how to run the
 study with SpaceAGORA 0.4.0.
 
 Remaining-route resampling subdivides each original segment so that a coarse

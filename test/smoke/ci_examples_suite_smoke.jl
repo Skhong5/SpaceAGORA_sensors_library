@@ -9,7 +9,6 @@ const HYPR_EXAMPLES = Set([
     "Earth_RPO_CubeSat_MPC.jl", "Earth_RPO_CubeSat_MPC_Batch.jl",
     "Earth_RPO_CubeSat_MPC_PlannerComparison.jl", "Earth_RPO_CubeSat_MPC_Replanning.jl",
     "Robot_Arm_Planner_Cloth_Demo.jl",
-    "Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl",
 ])
 const EDG_EXAMPLES = Set([
     "AGORA_Odyssey_Energy_Depletion_Control_Test.jl", "odyssey_surrogate.jl",

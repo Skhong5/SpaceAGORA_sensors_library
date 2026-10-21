@@ -135,13 +135,18 @@ julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Earth_Aerobraki
 ```
 
 Related native-GRAM scripts are `AGORA_Earth_Aerobraking.jl`,
-`AGORA_Odyssey.jl`, `AGORA_Vex.jl` and `AGORA_Mars_RAAN_Scenario.jl`.
+`AGORA_Odyssey.jl` and `AGORA_Vex.jl`.
 These also use gravity coefficient files under `data/planets/gravity/`.
 Odyssey and Venus Express need their mission SPICE kernels for initial conditions
 and reference plots. A full Venus Express run additionally reads the local
 `data/Maneuver_plans/vex.csv`; when that file is absent, smoke mode uses a small
 synthetic maneuver schedule. A successful smoke run therefore does not establish
 that the full mission's inputs are installed. See [Assets & Modes](../assets.md).
+
+The Mars RAAN campaign, `AGORA_Mars_RAAN_Scenario.jl`, lives in
+[SpaceAGORAMissionReconstructions](https://github.com/Space-FALCON-Lab/SpaceAGORAMissionReconstructions/blob/research-source-import/README.md).
+Use that project's pinned environment and input instructions; it is no longer a
+core example or a core CLI `--example` target.
 
 ### Energy-depletion guidance with native GRAM
 
@@ -351,7 +356,7 @@ backend or a flight-validation claim.
 | Articulated and compliant bodies | `Articulated_Panels_Demo.jl`, `Solar_Panel_Cloth_Deployment_Demo.jl`, `Cloth_Panel_Attachment_Demo.jl` | Examples; no external data |
 | SPICE orbit and mission scenarios | `Earth_Thruster_Test.jl`, `AGORA_Keplerian.jl`, `AGORA_Earth.jl`, `AGORA_Titan.jl`, `AGORA_Magellan.jl`, `AGORA_LOFTID.jl`, `CYGNSS_test.jl`, `GRIFEX_test.jl` | Examples and SPICE; no native GRAM |
 | Controls, torque and navigation | `AGORA_Earth_GG_Test.jl`, `AGORA_Earth_SRP_Test.jl`, `AGORA_Earth_const_torque.jl`, `Earth_Torque_Free_Test.jl`, `Earth_RW_Test.jl`, `Earth_Momentum_Manager_Test.jl`, `Earth_CubeSat_Mounted_Actuators.jl`, `Earth_CubeSat_Power_Budget.jl`, `Earth_Navigation.jl`, `AGORA_Earth_Control_Test.jl`, `AGORA_Odyssey_Control_Test.jl`, `AGORA_Titan_Control_Test.jl`, `AGORA_Vex_Control_Test.jl` | Examples and SPICE, except the two CubeSat scripts (examples environment only); Earth navigation also needs its gravity coefficients |
-| Native atmosphere missions | `AGORA_Basic_GRAMEarth.jl`, `AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `AGORA_Mars_RAAN_Scenario.jl` | Examples, native GRAM, SPICE and the mission inputs described above |
+| Native atmosphere missions | `AGORA_Basic_GRAMEarth.jl`, `AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl` | Examples, native GRAM, SPICE and the mission inputs described above |
 | Native atmosphere EDG | `AGORA_Odyssey_Energy_Depletion_Control_Test.jl` | Paired EDG environment, native Mars GRAM and SPICE |
 | Frozen-atmosphere EDG | `odyssey_surrogate.jl` | `odyssey_surrogate_env` setup; downloads public scenario assets on first run |
 | RPO planning | `Earth_RPO_CubeSat_MPC.jl`, `Earth_RPO_CubeSat_MPC_Batch.jl`, `Earth_RPO_CubeSat_MPC_PlannerComparison.jl`, `Earth_RPO_CubeSat_MPC_Replanning.jl` | `rpo_planner_env` and examples setup, SPICE and Gateway geometry; no native GRAM |

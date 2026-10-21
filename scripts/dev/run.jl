@@ -1,5 +1,5 @@
 # Keep the package's pinned environment first; add script-only dependencies second.
-# Usage: julia --project=. scripts/dev/run.jl ../../benchmarks/studies/cygnss_reconstruction/build_cygnss_ics.jl
+# Usage: julia --project=. scripts/dev/run.jl test_cygnss_environment.jl
 import Pkg
 isempty(ARGS) && error("Usage: julia --project=. scripts/dev/run.jl <script relative to scripts/dev> [arguments]")
 script = normpath(joinpath(@__DIR__, popfirst!(ARGS)))

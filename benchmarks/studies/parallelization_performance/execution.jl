@@ -1036,7 +1036,7 @@ end
 # Every point is a fresh Julia process, and so is every process-pool worker, so
 # each one pays package loading plus compilation of the solver specializations
 # it is about to run before it can time anything. The paper harness's precompile
-# workload (benchmarks/studies/paper_parallelization_benchmarks/workload, built
+# workload (SpaceAGORAParallelizationStudies, paper_parallelization_benchmarks/workload, built
 # with its build_workload.sh) holds those specializations in a package image;
 # a worker that loads it skips most of that compilation. See the README there
 # for what it covers and the measured effect.
@@ -1108,7 +1108,7 @@ function ppc_workload_env()::Union{Nothing, String}
     end
     fresh && return env
     msg = "Precompile workload image not built or not current for $(env); " *
-          "build it with benchmarks/studies/paper_parallelization_benchmarks/workload/build_workload.sh"
+          "prepare it in the pinned SpaceAGORAParallelizationStudies repository: https://github.com/Space-FALCON-Lab/SpaceAGORAParallelizationStudies"
     required && throw(ErrorException(msg * " (SPACEAGORA_PPB_WORKLOAD=$(setting))."))
     setting == "auto" && isfile(joinpath(env, "Project.toml")) && @warn msg * "; running without it."
     return nothing
