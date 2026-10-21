@@ -9,9 +9,11 @@ julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
 Setup creates a local `Project.toml` from the tracked `Project.template.toml`
 and seeds `Manifest.toml` from the repository dependency manifest. It adds this
 checkout and the `SpaceAGORAHYPR` compatibility shim by path, plus HYPR at the
-immutable revision in `packages/SpaceAGORAHYPR/HYPRSource.toml`, preserving the
-existing external dependency versions. Both generated installation files are
-ignored; the tracked template stays unchanged. Repeating setup reuses the local
+immutable revision in `packages/SpaceAGORAHYPR/HYPRSource.toml`. Resolution
+starts from the seeded manifest: the packages it records keep their versions,
+and the records of the libraries bundled with Julia, such as OpenSSL_jll,
+follow the installed Julia. Both generated installation files are ignored; the
+tracked template stays unchanged. Repeating setup reuses the local
 environment. After setup the run needs neither native assets nor network access:
 
 ```sh
