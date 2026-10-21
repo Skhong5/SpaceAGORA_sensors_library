@@ -634,6 +634,8 @@ results table built in memory (same columns and values as the CSV, even when
 configuration that actually ran (the deep copy under `isolate_state=true`, so
 controller state and logs are reachable), the files the run wrote, and the
 solution when `return_solution=true` is also given (otherwise `nothing`).
+`return_results=true` cannot be combined with `return_solver_metadata=true`. With
+the default `return_results=false` the return value is unchanged.
 
 `extra_callback_factories=()` optionally supplies functions of the isolated
 configuration. Each is called once after epoch alignment, state isolation and
@@ -650,8 +652,11 @@ external-state synchronization retain their ordering. Operational mission
 segments use this hook; continuous events still follow solver event ordering.
 
 Explicitly enabled checkpoint writing remains independent of result-file output.
-It cannot be combined with `return_solver_metadata=true`. With the default
-`return_results=false` the return value is unchanged.
+With `return_solver_metadata=true`, a checkpointed run returns one `solver_trace`
+entry per checkpoint segment, and its final segment's `retcode` (and `solution`,
+with `return_solution=true`). A run resumed from a checkpoint already at the
+mission end solves nothing, so its `retcode` is `nothing`: test the mission rather
+than the field.
 
 # Examples
 ```jldoctest
