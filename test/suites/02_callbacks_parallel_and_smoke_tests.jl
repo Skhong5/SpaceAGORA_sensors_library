@@ -1346,12 +1346,29 @@ end
     end
 end
 
-@testset "Contention probe" begin
-    # The native-lock width cap calls this at run start inside a `try` that
-    # turns any failure into "no constraint", so a solve cannot show whether the
-    # probe still works. It is called directly here.
-    PC = SimulationModel.ParallelCost
-    args_cp = build_config_multi(
+# Contention-probe failure doubles, at file scope because the RHS dispatches on
+# their concrete types. The first throws on every evaluation, so the probe's
+# warm-up pass fails. The second throws only after t = 0.5 s, so a probe that
+# steps its epoch fails in a measured pass after the warm-up succeeded.
+struct _ContentionThrowingEffector <: SimulationModel.AbstractForceTorqueModel end
+
+function SimulationModel.wrench(
+    ::_ContentionThrowingEffector, ::SimulationModel.StateSample, ::SimulationModel.EnvironmentSample, ::Float64
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    error("deliberate contention probe failure")
+end
+
+struct _ContentionLateEffector <: SimulationModel.AbstractForceTorqueModel end
+
+function SimulationModel.wrench(
+    ::_ContentionLateEffector, ::SimulationModel.StateSample, ::SimulationModel.EnvironmentSample, t::Float64
+)::Tuple{SVector{3, Float64}, SVector{3, Float64}}
+    t > 0.5 && error("deliberate contention probe failure")
+    return (SVector{3, Float64}(0.0, 0.0, 0.0), SVector{3, Float64}(0.0, 0.0, 0.0))
+end
+
+function _contention_probe_case(dynamic_effectors::Tuple)
+    args = build_config_multi(
         spacecraft=[
             make_spacecraft(ra_alt_m=500e3 + 10e3 * i, rp_alt_m=480e3 + 5e3 * i, ν_deg=120.0 + 5.0 * i)
             for i in 1:2
@@ -1360,19 +1377,27 @@ end
         orientation_sim=false,
         mission_time=30.0,
         EI_km=120.0,
-        dynamic_effectors=(InverseSquaredJ2GravityModel(),),
+        dynamic_effectors=dynamic_effectors,
         keplerian=true,
         simulation_settings=SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false)
     )
-    p_cp = ODEParams(n_sats=2, args=args_cp)
-    _initialize_heat_rate_buffers!(p_cp)
-    _initialize_harmonics_workspace_buffers!(p_cp)
-    SimulationEngine._initialize_density_model_instances!(p_cp)
-    SimulationEngine._initialize_density_cache_buffers!(p_cp)
-    SimulationEngine._initialize_gram_isolated_pool_buffers!(p_cp)
-    _initialize_aero_workspace_buffers!(p_cp)
-    _initialize_nbody_workspace_buffers!(p_cp)
-    u_cp = build_initial_conditions(args_cp)
+    p = ODEParams(n_sats=2, args=args)
+    _initialize_heat_rate_buffers!(p)
+    _initialize_harmonics_workspace_buffers!(p)
+    SimulationEngine._initialize_density_model_instances!(p)
+    SimulationEngine._initialize_density_cache_buffers!(p)
+    SimulationEngine._initialize_gram_isolated_pool_buffers!(p)
+    _initialize_aero_workspace_buffers!(p)
+    _initialize_nbody_workspace_buffers!(p)
+    return args, p, build_initial_conditions(args)
+end
+
+@testset "Contention probe" begin
+    # The native-lock width cap calls this at run start inside a `try` that
+    # turns any failure into "no constraint", so a solve cannot show whether the
+    # probe still works. It is called directly here.
+    PC = SimulationModel.ParallelCost
+    args_cp, p_cp, u_cp = _contention_probe_case((InverseSquaredJ2GravityModel(),))
 
     ci = SimulationEngine.probe_contention_inputs!(p_cp, u_cp, args_cp; k = 3, t_step = 1.0)
     @test ci isa PC.ContentionInputs
@@ -1383,8 +1408,28 @@ end
     @test 0.0 <= PC.lock_duty_cycle(ci, 1) <= 1.0
 
     # A pass that cannot run reads as "no scaling evidence", never as a
-    # workload that scales perfectly.
+    # workload that scales perfectly: no derivative buffer, a warm-up pass that
+    # throws, and a measured pass that throws after the warm-up succeeded.
     @test !SimulationEngine.probe_contention_inputs!(p_cp, nothing, args_cp).valid
+    args_bad, p_bad, u_bad = _contention_probe_case((InverseSquaredJ2GravityModel(), _ContentionThrowingEffector()))
+    @test !SimulationEngine.probe_contention_inputs!(p_bad, u_bad, args_bad).valid
+    args_late, p_late, u_late = _contention_probe_case((InverseSquaredJ2GravityModel(), _ContentionLateEffector()))
+    @test SimulationEngine.probe_contention_inputs!(p_late, u_late, args_late; k = 2).valid
+    @test !SimulationEngine.probe_contention_inputs!(p_late, u_late, args_late; k = 2, t_step = 1.0).valid
+end
+
+@testset "Contention probe: the width cap reaches it" begin
+    # The cap logs a failed probe at debug level and runs on without a
+    # constraint, so a broken call (a renamed or removed keyword) would leave
+    # every run succeeding. A cap-on solve must not log that failure.
+    args_cap, _, _ = _contention_probe_case((InverseSquaredJ2GravityModel(),))
+    logger = Test.TestLogger(min_level = Logging.Debug)
+    withenv("SPACEAGORA_RHS_LOCK_WIDTH_CAP" => "1") do
+        Logging.with_logger(logger) do
+            run_simulation(args_cap)
+        end
+    end
+    @test !any(r -> occursin("contention probe failed", string(r.message)), logger.logs)
 end
 
 @testset "Successive-halving sweep" begin

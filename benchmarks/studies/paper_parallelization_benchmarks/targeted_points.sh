@@ -32,14 +32,27 @@ export SPACEAGORA_CAMPAIGN_DISPATCH_TRACE=1
 # Every point here starts from a cold store: the planner's online corrections
 # stay off so a cold row measures the constants file alone.
 export SPACEAGORA_CAMPAIGN_CORRECTIONS="${SPACEAGORA_CAMPAIGN_CORRECTIONS:-off}"
-if ! julia --startup-file=no --project=. -e \
-    'using SpaceAGORA; exit(SpaceAGORA.SimulationModel.ParallelCost.load_machine_constants() === nothing ? 1 : 0)' \
-    >/dev/null 2>&1; then
-  echo "[targeted] WARNING: no current machine constants (output/parallel_policy_state/cost_constants_*.toml" \
-       "is missing, unreadable or from an older calibration schema) -- the predictive rows will run" \
-       "without machine calibration. Run" \
-       "'julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl' once on this box first."
-fi
+# The check prints the constants file's path (SPACEAGORA_COST_CONSTANTS_PATH can
+# move it) and exits 3 when the constants there are not current, so a Julia or
+# package failure is reported as itself.
+constants_status=0
+constants_path=$(julia --startup-file=no --project=. -e '
+    using SpaceAGORA
+    PC = SpaceAGORA.SimulationModel.ParallelCost
+    path = PC.machine_constants_path()
+    println(path)
+    exit(PC.load_machine_constants(path) === nothing ? 3 : 0)' 2>/dev/null) || constants_status=$?
+case "$constants_status" in
+  0) ;;
+  3)
+    echo "[targeted] WARNING: no current machine constants in ${constants_path##*$'\n'} (missing," \
+         "unreadable or from an older calibration schema) -- the predictive rows will run without" \
+         "machine calibration. Run" \
+         "'julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl' once on this box first." ;;
+  *)
+    echo "[targeted] WARNING: could not check the machine constants: Julia or SpaceAGORA failed to start" \
+         "(exit $constants_status)." ;;
+esac
 OUT=output/performance/targeted_$(date -u +%Y%m%d_%H%M%S); mkdir -p "$OUT"
 run() { # case mode workers threads mc label
   local c=$1 m=$2 w=$3 t=$4 mc=$5 lbl=$6
