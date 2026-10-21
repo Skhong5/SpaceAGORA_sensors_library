@@ -8,6 +8,9 @@
 #   start and before the callbacks initialize;
 # - `models`: the models' own run state, checked when the checkpoint is read and
 #   restored by `_start_run_models!` after the models' initializers;
+# - `gnc_scopes`: the spacecraft each guidance, navigation and control model acts
+#   on, compared by `_start_run_models!` after the initializers and before the
+#   models' run state is restored;
 # - `periodic_ticks`: the periodic ticks not yet taken at the checkpoint's time,
 #   which a resumed run takes at its start (`_start_run_clock!`).
 #
@@ -406,6 +409,98 @@ function _restore_model_checkpoint_state!(args, snapshot)
     return nothing
 end
 
+# The spacecraft each guidance, navigation and control model acts on, as its
+# `spacecraft_scope` reads once the run-start initializers ran (the RPO planner
+# and controller set their positions there, from the spacecraft ids). A
+# checkpointed or resumed run takes this baseline after its initializers and
+# writes it with every checkpoint (`gnc_scopes`). A resumed run compares its own
+# baseline with the checkpoint's before any model's run state is restored, so
+# saved state never goes back into a model that acts on other spacecraft, such as
+# a momentum manager's held command into a manager of another spacecraft, or a
+# bound copy declared on another spacecraft. Each group's scopes are compared in
+# configuration order (the configuration's models, then each spacecraft's bound
+# copies, as `_flatten_spacecraft_gnc` orders them). The models' types are
+# compared with their run state (`models`), as before.
+#
+# A scope is plain data built afresh, so a selection changed in place later
+# cannot change a baseline already taken:
+# - `AllSpacecraft()`: `(scope=:all,)`;
+# - `BoundSpacecraft`, or a `SpacecraftSelection`: `(scope=:bound, positions)`,
+#   the run positions it resolves to, sorted and without repeats;
+# - `CoupledSpacecraft`: `(scope=:coupled, primary, partners)`, as declared.
+# Before the run, `check_spacecraft_scopes` refuses any other scope.
+_gnc_scope_identity(::GNCRuntime.AllSpacecraft, spacecraft, owner) = (scope=:all,)
+_gnc_scope_identity(scope::Union{GNCRuntime.BoundSpacecraft, SimulationModel.SpacecraftSelection}, spacecraft, owner) =
+    (scope=:bound, positions=SimulationModel.resolve_spacecraft_scope(scope, spacecraft; owner=owner))
+_gnc_scope_identity(scope::GNCRuntime.CoupledSpacecraft, spacecraft, owner) =
+    (scope=:coupled, primary=scope.primary, partners=collect(Int, scope.partners))
+
+const _GNC_SCOPE_GROUPS = (navigation="navigation", guidance="guidance", control="control")
+
+_gnc_groups(args) = (navigation=args.navigation_model.navigation_effectors,
+    guidance=args.guidance_model.guidance_effectors, control=args.control_model.control_effectors)
+
+_gnc_scope_owner(group::Symbol, j::Int, model) = "$(_GNC_SCOPE_GROUPS[group]) model $j ($(nameof(typeof(model))))"
+
+function _gnc_scope_baseline(args)
+    spacecraft = args.dynamics_model.spacecraft
+    groups = _gnc_groups(args)
+    scopes(group) = Any[_gnc_scope_identity(GNCRuntime.spacecraft_scope(m), spacecraft, _gnc_scope_owner(group, j, m))
+        for (j, m) in enumerate(getproperty(groups, group))]
+    return (version=1, navigation=scopes(:navigation), guidance=scopes(:guidance), control=scopes(:control))
+end
+
+# The checkpoint's entry, checked for its form when the checkpoint is read, before
+# anything is restored; `nothing` for a checkpoint written without one.
+function _gnc_scope_checkpoint_entry(checkpoint)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    entry = runtime !== nothing && hasproperty(runtime, :gnc_scopes) ? runtime.gnc_scopes : nothing
+    entry === nothing && return nothing
+    hasproperty(entry, :version) && entry.version === 1 && all(group -> hasproperty(entry, group) &&
+        getproperty(entry, group) isa AbstractVector, keys(_GNC_SCOPE_GROUPS)) ||
+        throw(ArgumentError("GNC scope checkpoint state version 1 is required to resume this run."))
+    return entry
+end
+
+function _describe_gnc_scope(scope)
+    scope.scope === :all && return "every spacecraft"
+    scope.scope === :bound && return isempty(scope.positions) ? "no spacecraft" :
+        "the spacecraft at run position$(length(scope.positions) == 1 ? "" : "s") $(join(scope.positions, ", "))"
+    return "the spacecraft at run position $(scope.primary), coupled with run position" *
+        "$(length(scope.partners) == 1 ? "" : "s") $(join(scope.partners, ", "))"
+end
+
+# A checkpoint written without the entry (by SpaceAGORA 0.5.1 or earlier) resumes
+# as it did then, with no scope compared. A run with a model bound to some
+# spacecraft is warned that its scopes were not checked; the checkpoints it
+# writes record them.
+function _check_gnc_scope_baseline(args, entry, baseline)
+    if entry === nothing
+        unchecked = [_gnc_scope_owner(group, j, m) for (group, models) in pairs(_gnc_groups(args))
+            for (j, m) in enumerate(models) if getproperty(baseline, group)[j].scope !== :all]
+        isempty(unchecked) || @warn "The checkpoint records no GNC spacecraft scopes (it was written by SpaceAGORA " *
+            "0.5.1 or earlier), so the spacecraft of $(join(unchecked, ", ")) were not checked against it. Resume it " *
+            "only with the configuration that wrote it."
+        return nothing
+    end
+    for (group, models) in pairs(_gnc_groups(args))
+        saved, current = getproperty(entry, group), getproperty(baseline, group)
+        isequal(saved, current) && continue
+        name = _GNC_SCOPE_GROUPS[group]
+        length(saved) == length(current) || throw(ArgumentError(
+            "The GNC models' spacecraft scopes differ from the checkpoint's: it has $(length(saved)) $name " *
+            "model$(length(saved) == 1 ? "" : "s") and this run $(length(current)). Resume with the same models, " *
+            "or run from the start."))
+        j = findfirst(k -> !isequal(saved[k], current[k]), eachindex(current))
+        owner = _gnc_scope_owner(group, j, models[j])
+        throw(ArgumentError(
+            "The GNC models' spacecraft scopes differ from the checkpoint's: $owner acts on " *
+            "$(_describe_gnc_scope(current[j])) here and on $(_describe_gnc_scope(saved[j])) in the " *
+            "checkpoint. Resume with the scopes the checkpoint was written with, or run from the start."))
+    end
+    return nothing
+end
+
 # Every checkpoint a run writes records, for each of the run's periodic
 # navigation, guidance and control clocks (in the order of their callbacks), whether
 # it had not yet taken the tick due at the checkpoint's time, up to the clock's
@@ -469,7 +564,7 @@ function _checkpoint_segment_end(t::Float64, interval::Float64, mission_end::Flo
 end
 
 @inline function _write_checkpoint!(args, t::Float64, u_state, solver_mode::String; is_active=nothing, callback_state=nothing,
-                                     model_state=nothing, periodic_ticks=nothing)
+                                     model_state=nothing, periodic_ticks=nothing, gnc_scopes=nothing)
     runtime = _interlink_checkpoint_runtime_state(args, is_active)
     if callback_state !== nothing
         runtime = runtime === nothing ? (callbacks=callback_state,) : merge(runtime, (callbacks=callback_state,))
@@ -483,6 +578,9 @@ end
     end
     if periodic_ticks !== nothing
         runtime = runtime === nothing ? (periodic_ticks=periodic_ticks,) : merge(runtime, (periodic_ticks=periodic_ticks,))
+    end
+    if gnc_scopes !== nothing
+        runtime = runtime === nothing ? (gnc_scopes=gnc_scopes,) : merge(runtime, (gnc_scopes=gnc_scopes,))
     end
     effector_scopes = _effector_scope_checkpoint_state(args)
     if effector_scopes !== nothing
