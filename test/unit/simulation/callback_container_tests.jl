@@ -118,6 +118,22 @@ same_solution(a, b) = a.t == b.t && length(a.u) == length(b.u) && all(isequal(co
         end
     end
 
+    @testset "a cached integrator is reused with the vector" begin
+        cache = SE.SolverIntegratorCache()
+        reused = with_limit(0) do
+            run_simulation(run_args(3); solver_cache=cache, return_solution=true)
+            held = cache.integrator
+            @test held.opts.callback.discrete_callbacks isa Vector{Any}
+            solution = run_simulation(run_args(3); solver_cache=cache, return_solution=true)
+            @test cache.integrator === held
+            solution
+        end
+        fresh = with_limit(typemax(Int)) do
+            run_simulation(run_args(3); return_solution=true)
+        end
+        @test same_solution(reused, fresh)
+    end
+
     @testset "a run gives the same bits with either container" begin
         for (label, args, extra) in (("bound controllers, a spacecraft deactivated", () -> run_args(4),
                                       () -> (deactivate(2, 200.0),)),
