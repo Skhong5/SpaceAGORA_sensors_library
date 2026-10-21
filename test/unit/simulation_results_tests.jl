@@ -3,21 +3,25 @@ module SimulationResultsTests
 using Test
 using CSV
 using DataFrames
+using Logging
+using Serialization
 using StaticArrays
+using TOML
 using SpaceAGORA
 using SpaceAGORA.SimulationModel
 using SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft
 
 # Minimal no-GRAM, no-SPICE run: J2 gravity, no atmosphere, one hour.
-function _results_test_config(; results::Bool, dir::String)
+_test_spacecraft(id::Int; ν::Float64=0.0) = make_three_body_spacecraft(
+    bus_dims=(2.05, 2.05, 2.8), panel_dims=(0.01, 2.85, 1.0), bus_mass=620.0,
+    panel_mass_each=10.0, panel_offset_y=2.05 / 2.0 + 5.7 / 4.0,
+    ic=InitialCondition(ra=7.0e6, rp=7.0e6, i=45.0, ω=0.0, Ω=0.0, ν=ν),
+    prop_mass=200.0, id=id)
+function _results_test_config(; results::Bool, dir::String, mission_time::Float64=3600.0)
     planet = make_no_gram_planet(:earth)
-    sc = make_three_body_spacecraft(
-        bus_dims=(2.05, 2.05, 2.8), panel_dims=(0.01, 2.85, 1.0), bus_mass=620.0,
-        panel_mass_each=10.0, panel_offset_y=2.05 / 2.0 + 5.7 / 4.0,
-        ic=InitialCondition(ra=7.0e6, rp=7.0e6, i=45.0, ω=0.0, Ω=0.0, ν=0.0),
-        prop_mass=200.0, id=1)
+    sc = _test_spacecraft(1)
     return make_example_config(
-        planet=planet, spacecraft=sc, mission_time=3600.0,
+        planet=planet, spacecraft=sc, mission_time=mission_time,
         initial_time=InitialTime(year=2014, month=5, day=27, hour=5, minute=0, second=0.0),
         dynamic_effectors=(InverseSquaredJ2GravityModel(),),
         density_model=NoAtmosphereModel(), ephemerides_model=SimpleEphemeridesModel(),
@@ -77,8 +81,10 @@ end
     @test nrow(ck_b.table) == nrow(ck_a.table)
     @test names(ck_b.table) == names(ck_a.table)
 
-    # A completed checkpoint is input to a resume, not output written by it.
-    @test length(ck_b.files) == 2
+    # A completed checkpoint is input to a resume, not output written by it. The
+    # run wrote the checkpoint, its manifest and the rows kept beside it.
+    @test length(ck_b.files) == 3
+    @test any(endswith("simulation_checkpoint.results.bin"), ck_b.files)
     checkpoint_before = Dict(f => (stat(f).mtime, read(f)) for f in ck_b.files)
     settings = ck_b_args.simulation_settings
     fields = fieldnames(typeof(settings))
@@ -195,6 +201,111 @@ else
         @test ran.command_log !== nothing
         @test !isempty(ran.command_log.t_s)
         @test isempty(dt.control.command_log.t_s)           # caller's object untouched
+    end
+end
+
+# A resumed run's results hold the whole run: the rows kept beside each checkpoint
+# come back first. Against an uninterrupted checkpointed run, for a run extended
+# from 2400 s to 3600 s (A), a run that crashed after its 2400 s checkpoint (B),
+# and a second resume from the finished checkpoint (C).
+function _resumable_config(dir; results::Bool, mission_time::Float64=3600.0, resume::Bool=false)
+    a = _results_test_config(results=results, dir=dir, mission_time=mission_time)
+    s = a.simulation_settings
+    names = fieldnames(typeof(s))
+    vals = NamedTuple{names}(map(n -> getfield(s, n), names))
+    s2 = SimulationSettings(; merge(vals, (checkpoint_enabled=true, checkpoint_interval_s=1200.0,
+        resume_from_checkpoint=resume))...)
+    return SpaceAGORA.SimulationModel.SimConfig._with_configuration(a; simulation_settings=s2)
+end
+_resumed(dir; results, kw...) = run_simulation(_resumable_config(dir; results, resume=true); return_results=true, kw...)
+_quietly(f) = with_logger(f, ConsoleLogger(stderr, Logging.Error))
+_files(dir) = Dict(f => (mtime(f), read(f)) for f in readdir(dir; join=true) if isfile(f))
+_manifest(dir) = TOML.parsefile(joinpath(dir, "simulation_results.manifest.toml"))
+_csv(dir) = read(joinpath(dir, "simulation_results.csv"))
+# A checkpoint as SpaceAGORA 0.5.1 wrote it: no record of rows beside it.
+function _drop_rows_entry!(dir)
+    data = joinpath(dir, "checkpoints", "simulation_checkpoint.bin")
+    payload = deserialize(data)
+    runtime = payload.runtime_state
+    kept = NamedTuple{Tuple(k for k in keys(runtime) if k !== :results_rows)}(runtime)
+    serialize(data, merge(payload, (runtime_state=kept,)))
+end
+
+@testset "A resumed run's results hold the whole run" begin
+    for results in (true, false)
+        reference_dir = mktempdir()
+        reference = run_simulation(_resumable_config(reference_dir; results); return_results=true)
+        @test nrow(reference.table) == 361 && reference.table.time[1] == 0.0
+        whole(res) = isequal(res.table, reference.table)
+        same_files(dir) = !results || (_csv(dir) == _csv(reference_dir) &&
+            _manifest(dir)["steps"] == 361 && _manifest(dir)["first_time_s"] == 0.0)
+
+        # A: extend the run.
+        dir_a = mktempdir()
+        run_simulation(_resumable_config(dir_a; results, mission_time=2400.0); return_results=true)
+        a = _resumed(dir_a; results)
+        @test whole(a) && same_files(dir_a)
+        @test !results || _manifest(dir_a)["resumed_from_s"] == 2400.0
+        @test !haskey(results ? _manifest(reference_dir) : Dict(), "resumed_from_s")
+
+        # B: a crash after the 2400 s checkpoint, then a resume.
+        dir_b = mktempdir()
+        @test_throws Boom _quietly(() -> run_simulation(_resumable_config(dir_b; results);
+            extra_callbacks=(throws_after(2500.0),), return_results=true))
+        b = _resumed(dir_b; results)
+        @test whole(b) && same_files(dir_b)
+
+        # C: a second resume from the finished checkpoint solves nothing, writes
+        # nothing, and returns the whole run.
+        before = _files(dir_a)
+        c = _resumed(dir_a; results)
+        @test whole(c) && isempty(c.files) && _files(dir_a) == before
+
+        # Rows a crash wrote after the last checkpoint are cut away on resume.
+        dir_d = mktempdir()
+        run_simulation(_resumable_config(dir_d; results, mission_time=2400.0); return_results=true)
+        rows_path = joinpath(dir_d, "checkpoints", "simulation_checkpoint.results.bin")
+        SpaceAGORA.SimulationModel.IOSerialization._append_checkpoint_rows!(rows_path, [2410.0],
+            [SpaceAGORA.SimulationModel.SaveData()])
+        @test whole(_resumed(dir_d; results))
+    end
+
+    # A checkpoint without rows (SpaceAGORA 0.5.1 or earlier) still resumes, with a
+    # warning; its results start at the resume and go beside the earlier ones,
+    # which stay as they were.
+    dir = mktempdir()
+    run_simulation(_resumable_config(dir; results=true, mission_time=2400.0))
+    _drop_rows_entry!(dir)
+    before = _files(dir)
+    old = @test_logs (:warn, r"cannot include the rows before its checkpoint at t = 2400\.0 s") match_mode=:any _resumed(dir; results=true)
+    @test _files(dir) == before
+    folder = joinpath(dir, "resumed_at_2400.0s")
+    @test old.table.time[1] == 2400.0 && nrow(old.table) == 121
+    @test isfile(joinpath(folder, "simulation_results.csv")) && joinpath(folder, "simulation_results.csv") in old.files
+    @test _manifest(folder)["first_time_s"] == 2400.0 && _manifest(folder)["resumed_from_s"] == 2400.0
+
+    # Rows saved with other save fields are not mixed in either.
+    dir = mktempdir()
+    run_simulation(_resumable_config(dir; results=true, mission_time=2400.0))
+    before = _files(dir)
+    fields = SpaceAGORA.SimulationModel.default_save_fields(_resumable_config(dir; results=true))[1:2]
+    other = @test_logs (:warn, r"other save fields") match_mode=:any _resumed(dir; results=true, save_fields=fields)
+    @test _files(dir) == before && other.table.time[1] == 2400.0
+
+    # Ensemble members keep their rows beside their own checkpoints.
+    function pair(dir; mission_time, resume=false)
+        a = _resumable_config(dir; results=true, mission_time, resume)
+        second = _test_spacecraft(2; ν=90.0)
+        return SpaceAGORA.SimulationModel.SimConfig._with_configuration(a;
+            dynamics_model=DynamicsModel([a.dynamics_model.spacecraft[1], second], a.dynamics_model.dynamic_effectors))
+    end
+    reference_dir = mktempdir()
+    run_constellation_ensemble(pair(reference_dir; mission_time=3600.0))
+    dir = mktempdir()
+    run_constellation_ensemble(pair(dir; mission_time=2400.0))
+    run_constellation_ensemble(pair(dir; mission_time=3600.0, resume=true))
+    for member in ("sat_1_id_1", "sat_2_id_2")
+        @test _csv(joinpath(dir, member)) == _csv(joinpath(reference_dir, member))
     end
 end
 

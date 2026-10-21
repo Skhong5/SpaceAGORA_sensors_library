@@ -9,7 +9,9 @@
 # - `models`: the models' own run state, checked when the checkpoint is read and
 #   restored by `_start_run_models!` after the models' initializers;
 # - `periodic_ticks`: the periodic ticks not yet taken at the checkpoint's time,
-#   which a resumed run takes at its start (`_start_run_clock!`).
+#   which a resumed run takes at its start (`_start_run_clock!`);
+# - `results_rows`: how much of the results rows kept beside the checkpoint
+#   belongs to it, read before the run's first segment (`_start_results_rows!`).
 #
 # The definitions below follow that order, then the segment ends and the file.
 
@@ -457,6 +459,110 @@ function _pending_periodic_ticks(checkpoint)
     throw(ArgumentError("Periodic tick checkpoint state version 1 or 2, at the checkpoint's time, is required to resume this run."))
 end
 
+# The results rows kept beside the checkpoint, so that a resumed run's results
+# hold the whole run and not only the rows after its resume. A run that records
+# rows (it writes or returns results, or runs the gravity backbone) appends the
+# rows saved since the last checkpoint at each checkpoint
+# (`IOSerialization._append_checkpoint_rows!`). The checkpoint's `results_rows`
+# entry records how much of that stream is its own (`bytes`, `rows`) and when the
+# rows start (`start_s`): 0 for a run started from its initial conditions, the
+# resume time for a resumed run that could not include the rows before it.
+mutable struct _ResultsRowsLog
+    path::String
+    header::NamedTuple
+    recording::Bool
+    start_s::Float64
+    logged::Int  # rows of the run's accumulators already in the stream
+    bytes::Int
+    fresh::Bool  # the next append starts a new stream
+end
+
+# What the rows were saved with: a resumed run can include them only if it saves
+# the same fields for the same number of spacecraft.
+_results_rows_header(save_fields, spacecraft_count::Int) = (kind=:spaceagora_results_rows, version=1,
+    spacecraft_count=spacecraft_count, fields=[(field.name, field.per_satellite, field.column_prefix) for field in save_fields])
+
+# The checkpoint's `results_rows` entry, or `nothing` for a checkpoint written
+# before SpaceAGORA kept the rows.
+function _results_rows_checkpoint_state(checkpoint)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    return runtime !== nothing && hasproperty(runtime, :results_rows) ? runtime.results_rows : nothing
+end
+
+# The rows up to the checkpoint at `t`, or `nothing` and the reason they cannot be used.
+function _checkpoint_results_rows(entry, path::String, header, t::Float64)
+    entry === nothing &&
+        return nothing, "the checkpoint holds no record of them (it was written before SpaceAGORA kept them)"
+    hasproperty(entry, :version) && entry.version === 1 ||
+        return nothing, "the checkpoint's record of them has an unknown version"
+    entry.recording || return nothing, "the run that wrote the checkpoint did not save results rows"
+    rows = SimulationModel.IOSerialization._read_checkpoint_rows(path, entry.bytes)
+    rows === nothing && return nothing, "$(path) is missing, shorter than the checkpoint records, or unreadable"
+    rows.header == header ||
+        return nothing, "they were saved with other save fields or another number of spacecraft"
+    length(rows.times) == entry.rows && !isempty(rows.times) && rows.times[end] == t ||
+        return nothing, "they do not reach the checkpoint's time"
+    return rows, nothing
+end
+
+# Start the run's rows: a resumed run that records rows first takes back the rows
+# up to its checkpoint into `times_acc` and `data_acc`, and continues their stream
+# after cutting away anything written after the checkpoint. When it cannot, it
+# warns: its rows then start at the resume, and its results are written beside the
+# earlier ones (`_results_destination`).
+function _start_results_rows!(args, recording::Bool, save_fields, resumed::Bool, t_start::Float64, entry,
+                              times_acc::Vector{Float64}, data_acc::Vector)::_ResultsRowsLog
+    path = _checkpoint_paths(args).rows
+    header = _results_rows_header(save_fields, length(args.dynamics_model.spacecraft))
+    log = _ResultsRowsLog(path, header, recording, resumed ? t_start : 0.0, 0, 0, true)
+    (resumed && recording) || return log
+    rows, reason = _checkpoint_results_rows(entry, path, header, t_start)
+    if rows === nothing
+        @warn "The resumed run's results cannot include the rows before its checkpoint at t = $(t_start) s: " *
+              "$(reason). They start at the resume, and any results files are written to " *
+              "$(_results_destination(args, log).simulation_settings.results_directory), so the earlier ones are kept."
+        return log
+    end
+    append!(times_acc, rows.times)
+    append!(data_acc, rows.data)
+    SimulationModel.IOSerialization._truncate_checkpoint_rows!(path, entry.bytes)
+    log.start_s = entry.start_s
+    log.logged = length(times_acc)
+    log.bytes = entry.bytes
+    log.fresh = false
+    return log
+end
+
+# At a checkpoint: append the rows saved since the last one, and return the
+# checkpoint's entry. A run that records no rows removes a stream an earlier run
+# left, which is not its own.
+function _append_results_rows!(log::_ResultsRowsLog, times_acc::Vector{Float64}, data_acc::Vector)
+    if log.recording
+        new = (log.logged + 1):length(times_acc)
+        log.bytes = SimulationModel.IOSerialization._append_checkpoint_rows!(log.path, view(times_acc, new),
+            view(data_acc, new); header=log.fresh ? log.header : nothing)
+        log.logged = length(times_acc)
+    elseif log.fresh
+        rm(log.path; force=true)
+    end
+    log.fresh = false
+    return (version=1, recording=log.recording, bytes=log.bytes, rows=log.logged, start_s=log.start_s)
+end
+
+# Where the run writes its results: its results directory when its rows start at
+# the start of the run, otherwise (a resumed run that could not include the rows
+# before its resume) `resumed_at_<start>s` inside it, so the earlier results are
+# not replaced. Every other setting is carried by field name.
+function _results_destination(args, log)
+    (log === nothing || log.start_s == 0.0) && return args
+    settings = args.simulation_settings
+    names = fieldnames(typeof(settings))
+    fields = NamedTuple{names}(map(name -> getfield(settings, name), names))
+    directory = joinpath(settings.results_directory, "resumed_at_$(log.start_s)s")
+    return SimulationModel.SimConfig._with_configuration(args;
+        simulation_settings=SimulationModel.SimulationSettings(; merge(fields, (results_directory=directory,))...))
+end
+
 # A checkpointed run's segment from `t` ends one interval later, or at the run's
 # end when that comes first or is the same time to the periodic tick clock
 # (`_same_run_time`): accumulated decimal intervals stop short of the end by an
@@ -469,7 +575,7 @@ function _checkpoint_segment_end(t::Float64, interval::Float64, mission_end::Flo
 end
 
 @inline function _write_checkpoint!(args, t::Float64, u_state, solver_mode::String; is_active=nothing, callback_state=nothing,
-                                     model_state=nothing, periodic_ticks=nothing)
+                                     model_state=nothing, periodic_ticks=nothing, results_rows=nothing)
     runtime = _interlink_checkpoint_runtime_state(args, is_active)
     if callback_state !== nothing
         runtime = runtime === nothing ? (callbacks=callback_state,) : merge(runtime, (callbacks=callback_state,))
@@ -487,6 +593,9 @@ end
     effector_scopes = _effector_scope_checkpoint_state(args)
     if effector_scopes !== nothing
         runtime = runtime === nothing ? (effector_scopes=effector_scopes,) : merge(runtime, (effector_scopes=effector_scopes,))
+    end
+    if results_rows !== nothing
+        runtime = runtime === nothing ? (results_rows=results_rows,) : merge(runtime, (results_rows=results_rows,))
     end
     return SimulationModel.IOSerialization._write_checkpoint!(
         args,

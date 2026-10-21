@@ -39,7 +39,9 @@ listed in the new manifest or in `SimulationResults.files`.
 Set `simulation_settings.results = false` to disable result-file output.
 The manifest records
 `schema_version`, `created_utc`, `mission_time_s`, `steps`,
-`spacecraft_count`, and SHA-256 hashes for each data file.
+`spacecraft_count`, `first_time_s` (the first row's time), and SHA-256 hashes
+for each data file. A resumed run's manifest also records `resumed_from_s`, the
+checkpoint time it resumed from (see [Checkpointing](#Checkpointing)).
 `created_utc` is the wall-clock time the file was written, not the simulation
 epoch. The epoch is the `InitialTime` you configured; the manifest does not
 store it, so keep it with your script or read it from the returned
@@ -58,7 +60,8 @@ reading files. Its `table` is the same `DataFrame` the CSV would contain
 `simulation_settings.results = false`, in which case result files are not written.
 Explicitly enabled checkpoints can still be written; they are listed in `files`
 only when this call writes them. Resuming an already completed checkpoint does
-not report the old checkpoint files as new output.
+not report the old checkpoint files as new output, and writes no results files:
+its `table` holds the whole run from the rows kept beside the checkpoint.
 `configuration` is the configuration that actually ran: under the default
 `isolate_state=true` that is the deep copy, so controller state and logs, such
 as the RPO command log, are reachable there and not on the object you passed
@@ -308,6 +311,25 @@ those models' ticks first, once. A checkpoint written by SpaceAGORA 0.4.0 or
 earlier holds no such record; it is read as that version left it, which also
 means a tick an ulp or so after its time, which 0.4.0 left to the next segment, is
 taken when the resumed run starts.
+
+A resumed run's results hold the whole run, not only the part after the resume.
+A checkpointed run that saves results (written or returned with
+`return_results=true`) keeps the rows it has saved beside its checkpoint, in
+`simulation_checkpoint.results.bin`, and adds the new rows at each checkpoint. A
+resumed run takes those rows back first. Its results files, its manifest
+(`steps`, `first_time_s = 0`) and its returned table then match a run that was
+never interrupted, including after a crash, whose partial results the resumed run
+completes. Rows written after the last checkpoint by a run that crashed are
+dropped, since the resumed run computes them again. A resume from a checkpoint at
+the mission's end solves nothing and writes no results files; its returned table
+holds the whole run.
+
+A resumed run cannot include the earlier rows when its checkpoint holds none (a
+checkpoint written by SpaceAGORA 0.5.1 or earlier, or by a run that did not save
+results), or when they were saved with other save fields or another number of
+spacecraft. It then warns, and its results start at the resume: they are written
+to `resumed_at_<t>s` inside `results_directory` (for example
+`output/resumed_at_2400.0s/`), so the earlier results files are kept as they were.
 The checkpoint directory defaults to `results_directory/checkpoints` when left
 empty. Besides
 the state, the checkpoint holds the run state the callbacks keep on the

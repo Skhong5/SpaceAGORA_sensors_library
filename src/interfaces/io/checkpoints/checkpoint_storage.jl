@@ -89,6 +89,57 @@ function _clear_checkpoint!(args)
     paths = IOConfig._checkpoint_paths(args)
     isfile(paths.data) && rm(paths.data; force=true)
     isfile(paths.manifest) && rm(paths.manifest; force=true)
+    isfile(paths.rows) && rm(paths.rows; force=true)
+    return nothing
+end
+
+# The results rows a checkpointed run has saved, kept beside its checkpoint so a
+# resumed run can include them: an append-only stream of serialized records, a
+# header first, then one record of rows (`times`, `data`) per checkpoint. Each
+# checkpoint records the stream's length at its time, so a resume reads exactly
+# the rows up to that checkpoint and cuts away any a crash wrote after it.
+
+# Append one record of rows; `header` starts a new stream in place of any old one.
+# Returns the stream's length in bytes.
+function _append_checkpoint_rows!(path::String, times::AbstractVector{Float64}, data::AbstractVector;
+                                  header=nothing)::Int
+    mkpath(dirname(path))
+    open(path, header === nothing ? "a" : "w") do io
+        header === nothing || serialize(io, header)
+        serialize(io, (times=Vector{Float64}(times), data=collect(data)))
+        flush(io)
+    end
+    return filesize(path)
+end
+
+# The header and the rows of the first `length_bytes` bytes of the stream, or
+# `nothing` when the file is missing, shorter, or does not end a record there.
+function _read_checkpoint_rows(path::String, length_bytes::Integer)
+    isfile(path) && filesize(path) >= length_bytes || return nothing
+    return try
+        open(path, "r") do io
+            header = deserialize(io)
+            times = Float64[]
+            data = Any[]
+            while position(io) < length_bytes
+                record = deserialize(io)
+                append!(times, record.times)
+                append!(data, record.data)
+            end
+            position(io) == length_bytes ? (header=header, times=times, data=data) : nothing
+        end
+    catch err
+        err isa InterruptException && rethrow()
+        nothing
+    end
+end
+
+# Cut the stream back to `length_bytes`, dropping rows written after a checkpoint.
+function _truncate_checkpoint_rows!(path::String, length_bytes::Integer)::Nothing
+    filesize(path) > length_bytes || return nothing
+    open(path, "r+") do io
+        truncate(io, length_bytes)
+    end
     return nothing
 end
 
@@ -97,5 +148,8 @@ export _sha256_hex
 export _write_checkpoint!
 export _load_checkpoint
 export _clear_checkpoint!
+export _append_checkpoint_rows!
+export _read_checkpoint_rows
+export _truncate_checkpoint_rows!
 
 end # module IOSerialization
