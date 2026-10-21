@@ -99,6 +99,19 @@ An interlink checkpoint keeps its stored keys, so a checkpoint written before
 link was a laser link, are listed on the
 [Interlinks page](../user/interlinks.md#Deprecated-names).
 
+## Changed after 0.5.1
+
+One hook keeps its name and signature and is called for fewer spacecraft.
+
+| Hook | 0.5.1 and earlier | After 0.5.1 | What to do |
+|---|---|---|---|
+| `register_tstops!(integrator, model, spacecraft_index)` | called after each periodic control tick for every spacecraft index of the run | called for each spacecraft the model's `spacecraft_scope` names, in ascending order, as the tick is | a model that adds solver stops for a spacecraft outside its declared scope declares a scope that names it, or `AllSpacecraft()` |
+
+A model without a `spacecraft_scope` method of its own has the default
+`AllSpacecraft()`, which names every spacecraft, so its calls do not change. The
+burn scheduler, the only built-in model with a method, is event-driven and
+registers its stops from its own callbacks.
+
 ## Removed in 0.6.0
 
 The interlink scheduling policies chosen by a symbol were removed in 0.6.0,
@@ -117,8 +130,8 @@ still resume under the typed policy that schedules the same.
 | `SchedulingPolicyModel(:gve_eccentricity)`, with `target_index=k` or `target_index=nothing` | `EccentricityRatePolicy()`, `targets=k` or `targets=:both` | an `ArgumentError` naming the replacement | 0.6.0 |
 | `SchedulingPolicyModel(:power_delivery)`, `SchedulingPolicyModel(:data_throughput)` | `PowerDeliveryPolicy()`, `DataThroughputPolicy()` | an `ArgumentError` naming the replacement | 0.6.0 |
 | `SchedulingPolicyModel`'s keywords `target_idx` and `target_idxs` | as `target_index` and `target_indices` above | warned from 0.5.0; now an `ArgumentError` naming the replacement | 0.6.0 |
-| `SchedulingPolicyModel`'s property `policy` | `objective`, the policy value | a `FieldError` | 0.6.0 |
-| `SchedulingPolicyModel`'s properties `target_index`, `target_indices`, `target_idx` and `target_idxs` | `objective.targets` | a `FieldError` (the last two warned from 0.5.0) | 0.6.0 |
+| `SchedulingPolicyModel`'s property `policy` | `objective`, the policy value | an `ArgumentError` naming the replacement | 0.6.0 |
+| `SchedulingPolicyModel`'s properties `target_index`, `target_indices`, `target_idx` and `target_idxs` | `objective.targets` | an `ArgumentError` naming the replacement (the last two warned from 0.5.0) | 0.6.0 |
 | the interlink states `laser_dv` and `laser_delta_sma` of each spacecraft's state | `interlink_dv` and `interlink_delta_sma` | an error from the state's own property lookup: the name of a state component cannot warn | 0.6.0 |
 
 The columns of those two states keep their old names as aliases until 1.0 (see

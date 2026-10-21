@@ -352,12 +352,18 @@ args = SimulationConfiguration(...; interlink_model=model, scheduling_policy_mod
   selected. A run refuses at setup a policy type without a `candidate_score`
   method.
 - **Plain values.** A policy holds no run state: it is a value whose fields say
-  what it scores. A checkpoint records its type and every field, so a resume
-  with another value is refused. A function field is recorded by its type and,
-  for a closure, every value it captures; a named function is recorded by its
-  type alone, so a change to its code is not detected. A checkpointed run
-  refuses at setup a closure that captures a variable reassigned after the
-  closure was made, and fields that contain themselves.
+  what it scores. A checkpoint records its type and every field by value
+  (numbers with their bits; arrays, tuples, named tuples and structs element by
+  element and field by field), so an equal policy rebuilt for the resume
+  resumes, and a resume with another value is refused. A function field is
+  recorded by its type and, for a closure or a callable struct, every value it
+  holds; a named function is recorded by its type alone, so a change to its
+  code is not detected. A closure reads the globals it uses when it is called,
+  and their values are not recorded: build it in a function or a `let` block,
+  so that it captures them. A checkpointed run refuses at setup what a
+  checkpoint cannot record by value: a closure that captures a variable
+  reassigned after the closure was made, a dictionary or a set, a stream, a
+  task or a lock, an unassigned field, and fields that contain themselves.
 
 ### Contact windows
 
@@ -494,9 +500,9 @@ The scheduling policies chosen by a symbol were removed in SpaceAGORA 0.6.0,
 without a deprecation period, with their `target_index` and `target_indices`
 keywords and properties and the older `target_idx` and `target_idxs`. A call
 with a symbol throws an `ArgumentError` that names its typed replacement, also
-under `julia --depwarn=error`, and reading a removed property throws a
-`FieldError`. Checkpoints written with them still resume under the typed policy
-that schedules the same.
+under `julia --depwarn=error`, and so does reading or setting a removed
+property, naming `.objective` or `.objective.targets`. Checkpoints written with
+them still resume under the typed policy that schedules the same.
 
 | Removed | Use instead |
 | --- | --- |

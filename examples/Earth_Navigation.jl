@@ -1764,7 +1764,7 @@ args = SimulationConfiguration(
         results=true,
         verbose=true,
         generate_plots=false,
-        results_directory=joinpath(REPO_ROOT, "output_observer_noDA"),
+        results_directory=joinpath(REPO_ROOT, "output", "observer_noDA"),
         normalize=false
     ),
     mission_configuration=MissionConfiguration(
@@ -1844,6 +1844,8 @@ for target_idx in target_idxs
     end
 end
 
+# A smoke run (SPACEAGORA_EXAMPLE_SMOKE=1) shortens the mission and writes to its own directory.
+args = SpaceAGORA.TelemetryVerification._example_smoke_args(args)
 save_fields = vcat(SimulationModel.default_save_fields(args), extra_save_fields)
 t = @elapsed run_simulation(args; isolate_state=false, save_fields=save_fields)
 

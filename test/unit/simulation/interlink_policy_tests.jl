@@ -6,6 +6,7 @@ module InterlinkPolicyTests
 
 using Test
 using LinearAlgebra
+using Serialization
 using StaticArrays
 using SpaceAGORA
 
@@ -73,6 +74,24 @@ end
 struct ListPolicy <: AbstractSchedulingPolicy
     items::Vector{Any}
 end
+# Values recorded field by field: a callable struct that is not a function, a
+# closure that captures a `Ref`, and a table of arrays held by a policy.
+struct Scale
+    v::Vector{Float64}
+end
+(scale::Scale)(x) = scale.v[1] * x
+ref_policy(x) = (held = Ref(x); CallablePolicy(y -> held[] * y))
+struct Table
+    xs::Vector{Float64}
+    ys::Matrix{Float64}
+end
+struct HeldPolicy <: AbstractSchedulingPolicy
+    held::Any
+end
+mutable struct Node
+    next::Any
+end
+SpaceAGORA.candidate_score(policy::HeldPolicy, candidate, ctx, t) = 1.0
 SpaceAGORA.candidate_score(policy::ListPolicy, candidate, ctx, t) = 1.0
 
 function sat(index, arc_m)
@@ -218,6 +237,38 @@ refusal(f) = try f(); nothing catch err err end
         end
     end
 
+    @testset "a candidate carries the hardware at its terminal numbers" begin
+        # Two virtual terminals and two mounted ones on the first spacecraft, one
+        # of each on the second: each end's hardware is the terminal its number names.
+        function hardware_sat(index, arc_m, n_terminal; laser)
+            bus = Link(root=true, m=100.0)
+            θ = arc_m / RADIUS
+            ic = CartesianInitialCondition(SVector(RADIUS * cos(θ), RADIUS * sin(θ), 0.0),
+                SVector(-SPEED * sin(θ), SPEED * cos(θ), 0.0); q=SVector(0.0, 0.0, 0.0, 1.0))
+            sc = SpacecraftModel(root=bus, links=[bus], inertia_tensor=bus.inertia, initial_condition=ic, id=index,
+                n_terminal=n_terminal)
+            laser && add_actuator!(sc, bus, LaserTerminal(boresight=[0.0, 1.0, 0.0], max_power_w=100.0, efficiency=0.5))
+            add_actuator!(sc, bus, PowerReceiver(normal=[0.0, -1.0, 0.0], radius_m=0.25, efficiency=0.4))
+            return sc
+        end
+        spacecraft = [hardware_sat(1, 0.0, 2; laser=true), hardware_sat(2, 5000.0, 1; laser=false)]
+        model = InterlinkModel()
+        register_link!(model, spacecraft, (1, 1), (2, 1), LaserMomentumLink(power_w=40.0, magnification=1.0, range_m=1e4))
+        register_link!(model, spacecraft, (1, 3), (2, 2), PowerBeamLink(power_w=80.0, range_m=1e4))
+        state = (sc=[(pos=collect(sc.initial_condition.pos), vel=collect(sc.initial_condition.vel), mass=100.0)
+            for sc in spacecraft],)
+        update_availability!(model, spacecraft, state)
+        ctx = SchedulingContext(PLANET.μ, LinkContext(), spacecraft, state, nothing)
+        for edge in eachindex(model.graph.edges)
+            candidate = SP._link_candidate(model, edge, ctx)
+            for (endpoint, terminal) in zip(candidate.key, (candidate.terminal_a, candidate.terminal_b))
+                @test terminal === SM.InterLinkModels._terminal_device(spacecraft[endpoint[1]], endpoint[2])
+            end
+        end
+        @test SP._link_candidate(model, 2, ctx).terminal_a isa LaserTerminal
+        @test SP._link_candidate(model, 1, ctx).terminal_a === nothing
+    end
+
     @testset "the symbol forms are refused with their replacement" begin
         for ((symbol, keywords), replacement) in REMOVED
             err = refusal(() -> SchedulingPolicyModel(symbol; keywords...))
@@ -243,11 +294,19 @@ refusal(f) = try f(); nothing catch err err end
         @test_throws ArgumentError EccentricityRatePolicy(targets=[1])
         err = refusal(() -> SchedulingPolicyModel(:gve_sma; target_indices=Int[]))
         @test err isa ArgumentError && occursin("SemimajorAxisRatePolicy(targets=Int64[])", err.msg)
-        # The removed properties are gone.
+        # The removed properties refuse, naming their replacement; other names are fields.
         scheduler = SchedulingPolicyModel(SemimajorAxisRatePolicy())
         for name in (:policy, :target_index, :target_indices, :target_idx, :target_idxs)
-            @test_throws FieldError getproperty(scheduler, name)
+            err = refusal(() -> getproperty(scheduler, name))
+            @test err isa ArgumentError && occursin("SchedulingPolicyModel.$(name) was removed in SpaceAGORA 0.6.0", err.msg) &&
+                occursin(name === :policy ? "`.objective`" : "`.objective.targets`", err.msg)
+            err = refusal(() -> setproperty!(scheduler, name, 2))
+            @test err isa ArgumentError && occursin("removed in SpaceAGORA 0.6.0", err.msg)
         end
+        @test scheduler.objective.targets == 1
+        @test_throws FieldError scheduler.unknown
+        scheduler.matching = nothing
+        @test scheduler.matching === nothing
         # The same refusal under --depwarn=error: it is no deprecation.
         script = """
             using SpaceAGORA
@@ -355,6 +414,31 @@ refusal(f) = try f(); nothing catch err err end
         @test err isa ArgumentError && occursin("contain themselves", err.msg)
         shared = [1.0]
         @test entry(ListPolicy(Any[shared, shared]))[2] === nothing   # shared, not cyclic
+        # Any other value is recorded by its type and fields, so an equal value
+        # resumes, also once written and read back, and another value is refused.
+        roundtrip(x) = (io = IOBuffer(); serialize(io, x); seekstart(io); deserialize(io))
+        table(y) = Table([1.0, 2.0], [0.5 y; -0.0 4.0])
+        for (same, other) in ((CallablePolicy(Scale([2.0])), CallablePolicy(Scale([1.0]))),
+                (ref_policy(2.0), ref_policy(1.0)), (HeldPolicy(table(3.0)), HeldPolicy(table(-3.0))),
+                (HeldPolicy((gain=[2.0], name="a")), HeldPolicy((gain=[2.0], name="b"))),
+                (HeldPolicy(big(2)^70), HeldPolicy(big(2)^71)))
+            @test resumes(same, checkpoint(same))
+            @test !resumes(other, checkpoint(same))
+            @test isequal(roundtrip(entry(same)), entry(same))
+        end
+        @test entry(HeldPolicy(table(3.0)))[1].fields.held.fields.ys.size == (2, 2)
+        # A box inside a named tuple, a dictionary, a set, a stream and an
+        # unassigned value cannot be recorded.
+        err = refusal(() -> entry(HeldPolicy((gain=Core.Box(1.0),))))
+        @test err isa ArgumentError && occursin("reassigned after the closure was made", err.msg)
+        for held in (Dict(:gain => 2.0), Set([1.0]), IOBuffer(), Ref{Any}(), Vector{Any}(undef, 2))
+            err = refusal(() -> entry(HeldPolicy(held)))
+            @test err isa ArgumentError && occursin("cannot record by value", err.msg)
+        end
+        node = Node(nothing)
+        node.next = node
+        err = refusal(() -> entry(HeldPolicy(node)))
+        @test err isa ArgumentError && occursin("contain themselves", err.msg)
         # A checkpointed run refuses such a policy at setup, before it starts.
         mktempdir() do directory
             settings = SimulationSettings(results=false, generate_plots=false, checkpoint_enabled=true,
@@ -364,6 +448,9 @@ refusal(f) = try f(); nothing catch err err end
             @test err isa ArgumentError && occursin("reassigned after the closure was made", err.msg)
             @test isempty(readdir(directory))
             @test CALLABLE_SCORES[] == 0   # refused before the scheduler's first call
+            err = refusal(() -> run_simulation(run_args(HeldPolicy(Dict(:gain => 2.0)); settings)))
+            @test err isa ArgumentError && occursin("cannot record by value", err.msg)
+            @test isempty(readdir(directory))
         end
     end
 end

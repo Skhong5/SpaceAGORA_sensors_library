@@ -98,8 +98,9 @@ change, so:
   `AGORA_Vex.jl`, `AGORA_Titan.jl`, `AGORA_Magellan.jl`, `AGORA_LOFTID.jl`,
   `AGORA_Mars_NoGRAM.jl` and `Earth_Thruster_Test.jl`;
 - `--output-dir` has no effect on the scripts that choose their own directory:
-  `AGORA_Earth.jl`, `AGORA_Keplerian.jl` and `Earth_Navigation.jl` write to
-  `output/` directly, `AGORA_Earth_Aerobraking.jl` to `output/earth_aerobraking/`,
+  `AGORA_Earth.jl` and `AGORA_Keplerian.jl` write to `output/` directly,
+  `Earth_Navigation.jl` to `output/observer_noDA/`,
+  `AGORA_Earth_Aerobraking.jl` to `output/earth_aerobraking/`,
   `AGORA_Mars_RAAN_Scenario.jl` to `output/mars_raan_scenario/`, and the RPO,
   robot-arm and compliant multibody demos to their own `output/<demo>/` directories; running
   one of them twice overwrites its previous results;
@@ -337,6 +338,19 @@ and the run positions it acts on, and resumes only with the same scopes. It
 refuses a checkpoint whose scopes differ, and a checkpoint written without scoped
 effectors (by a run without them, or by an earlier SpaceAGORA). A run without
 scoped effectors records nothing more than before.
+
+Every checkpoint also records the spacecraft each guidance, navigation and
+control model acts on, its `spacecraft_scope` as the run-start initializers left
+it: every spacecraft, the run positions of a bound model (`BoundSpacecraft`, which
+a model declared on a spacecraft has once bound to it), or a coupled model's
+primary and partners. A resumed run refuses a checkpoint whose models act on other
+spacecraft, or whose guidance, navigation or control models are another number,
+before any model's run state is restored, whether or not the models keep run
+state. So a momentum manager's saved command never goes to a manager of another
+spacecraft. A checkpoint written by SpaceAGORA 0.5.1 or earlier holds no such
+record, so a run with any guidance, navigation or control model refuses it before
+anything is restored: resume it with SpaceAGORA 0.5.1, or run from the start. A
+run without those models resumes from it as before.
 
 ## Campaign and multi-process runs
 
