@@ -2,11 +2,12 @@ module SchedulingPolicies
 
 using LinearAlgebra
 using ..InterLinkModels
-using ..InterLinkModels: link_endpoint, _terminal_device, _spacecraft_at
+using ..InterLinkModels: link_endpoint, _terminal_device, _spacecraft_at, _battery_capacity_wh
 using ..EffectorSampling: StateSample
 
 export AbstractSchedulingPolicy, LinkCandidate, SchedulingContext, candidate_score
 export SemimajorAxisRatePolicy, EccentricityRatePolicy, PowerDeliveryPolicy, DataThroughputPolicy
+export EnergyBalancingPolicy, WeightedPolicy, PolicyTerm, state_of_charge
 export SchedulingPolicyModel, score_candidates!
 export select_interlinks!, schedule_interlinks!
 
@@ -351,6 +352,127 @@ function candidate_score(::DataThroughputPolicy, candidate::LinkCandidate, ctx::
     link_directed(candidate.link) || return 0.0
     return Float64(link_data_rate_bps(candidate.link, candidate.terminal_a, candidate.terminal_b,
         candidate.a, candidate.b, ctx.link_context))
+end
+
+"""
+    state_of_charge(ctx::SchedulingContext, spacecraft_index::Integer) -> Float64
+
+The state of charge (a fraction of its capacity) of spacecraft
+`spacecraft_index`'s battery at the scheduling state: its `battery_wh` over its
+`capacity_wh`, the `battery_soc` column's value. NaN without a battery, without
+the run's spacecraft models, or for a state without `battery_wh`.
+"""
+function state_of_charge(ctx::SchedulingContext, spacecraft_index::Integer)
+    ctx.spacecraft === nothing && return NaN
+    view = ctx._state.sc[spacecraft_index]
+    hasproperty(view, :battery_wh) || return NaN
+    return Float64(view.battery_wh) / _battery_capacity_wh(ctx.spacecraft[spacecraft_index])
+end
+
+# ---- Energy balancing ----------------------------------------------------------
+
+"""
+    EnergyBalancingPolicy()
+
+Charge the lowest state of charge. Score each available directed link whose
+receiving end is terminal hardware, between two spacecraft with a battery, by
+`P × (s_tx − s_rx)` (W): `P` is the electrical power it would deliver to the
+receiver's bus (`link_received_power_w`, as `PowerDeliveryPolicy` scores it),
+and `s_tx` and `s_rx` are the two batteries' states of charge
+(`state_of_charge`). Power flows only from a fuller battery to an emptier one,
+and a beam into a full battery never scores; of receivers competing for one
+sender's terminal, the emptier wins at equal delivered power. The score is
+signed: a beam from an emptier battery to a fuller one scores negative. Links
+with no battery at either end, and every link without the run's spacecraft
+models, score 0.
+"""
+struct EnergyBalancingPolicy <: AbstractSchedulingPolicy end
+
+function candidate_score(::EnergyBalancingPolicy, candidate::LinkCandidate, ctx::SchedulingContext, t::Float64)
+    ctx.spacecraft === nothing && return 0.0
+    link_directed(candidate.link) || return 0.0
+    candidate.terminal_b === nothing && return 0.0
+    gap = state_of_charge(ctx, candidate.key[1][1]) - state_of_charge(ctx, candidate.key[2][1])
+    isnan(gap) && return 0.0
+    delivered = Float64(link_received_power_w(candidate.link, candidate.terminal_b, candidate.a, candidate.b, ctx.link_context))
+    return delivered * gap
+end
+
+# ---- Weighted mixes ------------------------------------------------------------
+
+"""
+    PolicyTerm(policy::AbstractSchedulingPolicy; scale::Real, weight::Real=1.0)
+
+One term of a `WeightedPolicy`: `policy`'s score divided by `scale` and times
+`weight`. `scale` is in the policy's own unit (m/s, W, bit/s, ...), the amount
+of its score that counts as one, so it makes the term dimensionless; it must be
+finite and positive. `weight` must be finite; a negative weight penalizes the
+term.
+"""
+struct PolicyTerm{P <: AbstractSchedulingPolicy}
+    policy::P
+    scale::Float64
+    weight::Float64
+
+    function PolicyTerm(policy::P, scale::Real, weight::Real) where {P <: AbstractSchedulingPolicy}
+        isfinite(scale) && scale > 0 || throw(ArgumentError("A PolicyTerm's scale must be finite and positive, in its policy's unit; got $(scale)."))
+        isfinite(weight) || throw(ArgumentError("A PolicyTerm's weight must be finite; got $(weight)."))
+        new{P}(policy, Float64(scale), Float64(weight))
+    end
+end
+PolicyTerm(policy::AbstractSchedulingPolicy; scale::Real, weight::Real=1.0) = PolicyTerm(policy, scale, weight)
+
+"""
+    WeightedPolicy(terms::PolicyTerm...)
+
+A weighted mix of policies: each available link scores
+`Σ weight × (score / scale)` over the terms, summed in term order from 0.0. Each
+term's policy applies its own rules (an orbital term scores power beams 0, a
+power term scores momentum links 0), so one run can weigh link kinds against
+each other. Each term's checks run, and an eccentricity term keeps its
+near-circular refusal over the mix's own candidates. A nonfinite term is
+refused. Mixes nest. A term with `weight=1` and `scale=1` alone schedules as its
+policy does.
+
+```julia
+WeightedPolicy(PolicyTerm(SemimajorAxisRatePolicy(targets=1); scale=1.0),   # 1 m/s counts as one
+               PolicyTerm(EnergyBalancingPolicy(); scale=100.0))            # and so do 100 W
+```
+"""
+struct WeightedPolicy{T <: Tuple{Vararg{PolicyTerm}}} <: AbstractSchedulingPolicy
+    terms::T
+
+    function WeightedPolicy(terms::T) where {T <: Tuple{Vararg{PolicyTerm}}}
+        isempty(terms) && throw(ArgumentError("A WeightedPolicy needs at least one PolicyTerm."))
+        new{T}(terms)
+    end
+end
+WeightedPolicy(terms::PolicyTerm...) = WeightedPolicy(terms)
+
+function candidate_score(policy::WeightedPolicy, candidate::LinkCandidate, ctx::SchedulingContext, t::Float64)
+    score = 0.0
+    for term in policy.terms
+        value = Float64(candidate_score(term.policy, candidate, ctx, t))
+        isfinite(value) || throw(ArgumentError("Nonfinite $(nameof(typeof(term.policy))) score in a WeightedPolicy " *
+            "term for candidate $(candidate.key)."))
+        score += term.weight * (value / term.scale)
+    end
+    return score
+end
+
+function _prepare_scoring(policy::WeightedPolicy, model, ctx::SchedulingContext)
+    foreach(term -> _prepare_scoring(term.policy, model, ctx), policy.terms)
+    return nothing
+end
+# The terms' checks across candidates use the mix's scores: an eccentricity term
+# refuses a near-circular target that two positive-score links of the mix could reach.
+function _check_scores(policy::WeightedPolicy, model, scores, ctx::SchedulingContext)
+    foreach(term -> _check_scores(term.policy, model, scores, ctx), policy.terms)
+    return nothing
+end
+function _check_candidate_score(policy::WeightedPolicy)
+    foreach(term -> _check_candidate_score(term.policy), policy.terms)
+    return nothing
 end
 
 # ---- The scheduling policies chosen by a symbol, removed in 0.6.0 ---------------

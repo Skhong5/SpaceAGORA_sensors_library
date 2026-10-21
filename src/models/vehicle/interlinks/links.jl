@@ -134,6 +134,11 @@ terminal_count(spacecraft) = Int(spacecraft.n_terminal)
 # a virtual terminal. `SpacecraftModel` methods are in InterlinkTerminals.
 _terminal_device(spacecraft, number::Integer) = nothing
 
+# The capacity (Wh) of `spacecraft`'s battery, NaN without one: the denominator of
+# a scheduling policy's state of charge. `SpacecraftModel` methods are in
+# InterlinkTerminals, which comes after the power models.
+_battery_capacity_wh(spacecraft) = NaN
+
 # The terminal number of an endpoint's terminal: a number as given, or a mounted
 # terminal object (resolved on a `SpacecraftModel` in InterlinkTerminals).
 _terminal_number(spacecraft, terminal::Integer) = Int(terminal)

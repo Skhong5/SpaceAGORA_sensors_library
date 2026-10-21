@@ -823,6 +823,7 @@ const NOT_HOOKS = [
     (symbol = :update_availability!, reason = "marks the candidate interlinks that can close"),
     (symbol = :interlink_force_on_spacecraft, reason = "sums the selected links' `link_force` on one spacecraft"),
     (symbol = :score_candidates!, reason = "scores the candidate interlinks with a scheduling policy"),
+    (symbol = :state_of_charge, reason = "reads a spacecraft's battery state of charge for a scheduling policy"),
     (symbol = :select_interlinks!, reason = "selects the maximum-score terminal matching"),
     (symbol = :schedule_interlinks!, reason = "refreshes availability, scores and selects interlinks"),
     (symbol = :interlink_scheduler_callback, reason = "builds the accepted-step interlink scheduler callback"),

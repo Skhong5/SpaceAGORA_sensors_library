@@ -213,9 +213,9 @@ args = SimulationConfiguration(...; interlink_model=model,
   only transmit a power beam (`terminal_supports(terminal, link, side)`).
 - **Scheduling.** Policies that score links by their forces never select a
   power beam, so use `PowerDeliveryPolicy()`, which scores each link by the
-  power it would deliver. A run uses one policy; to weigh momentum and power
-  links together, write a policy of your own (see
-  [A custom policy](#A-custom-policy)).
+  power it would deliver, or `EnergyBalancingPolicy()`, which charges the
+  lowest state of charge (see [Energy balancing](#Energy-balancing)). To weigh
+  momentum and power links together, use a [weighted mix](#Weighted-mixes).
 - **Columns.** A run with a power beam adds `power_received_w` and
   `power_beamed_w` per spacecraft to the [power columns](output_columns.md#Power-budget).
 - **Not yet modelled.** Pointing and jitter, the receiver's incidence angle,
@@ -315,6 +315,8 @@ scheduler, which also holds the matching workspace:
 | `EccentricityRatePolicy(; targets=1)` | the rate at which its force raises its target's eccentricity, `ê·ė` | 1/s |
 | `PowerDeliveryPolicy()` | the electrical power it would deliver to the receiver's bus, `link_received_power_w` | W |
 | `DataThroughputPolicy()` | the data rate it would carry, `link_data_rate_bps` | bit/s |
+| `EnergyBalancingPolicy()` | the power it would deliver times the state-of-charge gap from sender to receiver, `P × (s_tx − s_rx)` | W |
+| `WeightedPolicy(terms...)` | `Σ weight × (score / scale)` over its terms | 1 |
 
 The orbital policies take each link's force from its `link_force`. For
 `SemimajorAxisRatePolicy`, `targets` is a spacecraft vector index, a vector or
@@ -322,6 +324,48 @@ range of them, `:both` (both ends of every link) or `:lower_index` (the lower
 spacecraft index of each pair). For `EccentricityRatePolicy` it is an index or
 `:both`. A link that lowers the objective scores negative, so it is never
 selected.
+
+### Energy balancing
+
+`EnergyBalancingPolicy()` charges the lowest state of charge. It scores a power
+beam into terminal hardware, between two spacecraft with a battery, by the
+power it would deliver times the gap between the two batteries' states of
+charge, `P × (s_tx − s_rx)`. So:
+
+- power flows only from a fuller battery to an emptier one, and a beam into a
+  full battery never scores;
+- of receivers competing for one sender's terminal, the emptier one wins at
+  equal delivered power, while a much better-coupled receiver can still win
+  over a slightly emptier one;
+- the score is signed: a beam from an emptier battery to a fuller one scores
+  negative, so it is never selected alone and counts against the beam in a mix;
+- a link with no battery at either end scores 0.
+
+The selection changes only at accepted steps, so when two states of charge
+cross within a step, the beam runs to the step's end. `PowerDeliveryPolicy`,
+by contrast, beams into a full battery: the receiver curtails, and the sender
+still pays.
+
+### Weighted mixes
+
+`WeightedPolicy(PolicyTerm(policy; scale, weight=1.0)...)` scores each link by
+`Σ weight × (score / scale)` over its terms, summed in term order. `scale` is in
+the term's own unit, the amount of its score that counts as one, so each term is
+dimensionless before the weights apply; `weight` is finite and may be negative.
+The scales are fixed, not normalized by each step's best link, so a link's
+score does not depend on the other candidates.
+
+```julia
+policy = WeightedPolicy(
+    PolicyTerm(SemimajorAxisRatePolicy(targets=1); scale=1.0),   # 1 m/s of SMA rate counts as one
+    PolicyTerm(EnergyBalancingPolicy(); scale=100.0))            # and so do 100 W
+args = SimulationConfiguration(...; interlink_model=model, scheduling_policy_model=policy)
+```
+
+Each term applies its own rules: an orbital term scores power beams 0 and a
+power term scores momentum links 0, so a mix weighs link kinds against each
+other. Each term's checks run, and an eccentricity term keeps its near-circular
+refusal over the mix's candidates. Mixes nest.
 
 ### A custom policy
 
@@ -341,8 +385,9 @@ args = SimulationConfiguration(...; interlink_model=model, scheduling_policy_mod
   `a`), and the terminal hardware at its ends, `terminal_a` and `terminal_b`
   (`nothing` for a virtual terminal).
 - **The context** (`SchedulingContext`) has the planet's gravitational parameter
-  `mu`, the `link_context` to pass to the link hooks, and the run's `spacecraft`.
-  `t` is the elapsed time in seconds.
+  `mu`, the `link_context` to pass to the link hooks, and the run's `spacecraft`;
+  `state_of_charge(ctx, i)` gives spacecraft `i`'s battery state of charge (NaN
+  without a battery). `t` is the elapsed time in seconds.
 - **The rules.** The hook is called for available candidates only; the others
   score 0. A nonfinite score is refused, and only positive scores can be
   selected. A run refuses at setup a policy type without a `candidate_score`

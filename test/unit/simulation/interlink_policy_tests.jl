@@ -75,6 +75,60 @@ struct ListPolicy <: AbstractSchedulingPolicy
 end
 SpaceAGORA.candidate_score(policy::ListPolicy, candidate, ctx, t) = 1.0
 
+# A 100 kg bus `arc_m` along the orbit, with a laser transmitter (`sender`) or a
+# power receiver, and a battery of `capacity_wh` at `soc`.
+function beam_sat(index, arc_m; sender, capacity_wh=10.0, soc=0.5, battery=true, momentum=false)
+    bus = Link(root=true, m=100.0)
+    θ = arc_m / RADIUS
+    ic = CartesianInitialCondition(SVector(RADIUS * cos(θ), RADIUS * sin(θ), 0.0),
+        SVector(-SPEED * sin(θ), SPEED * cos(θ), 0.0); q=SVector(0.0, 0.0, 0.0, 1.0))
+    sc = SpacecraftModel(root=bus, links=[bus], inertia_tensor=bus.inertia, initial_condition=ic, id=index, n_terminal=0)
+    if sender || momentum
+        add_actuator!(sc, bus, LaserTerminal(boresight=[0.0, 1.0, 0.0], max_power_w=100.0, efficiency=0.5))
+    else
+        add_actuator!(sc, bus, PowerReceiver(normal=[0.0, -1.0, 0.0], radius_m=0.25, efficiency=0.4))
+    end
+    battery && add_power!(sc, bus, Battery(capacity_wh=capacity_wh, initial_soc=soc))
+    return sc
+end
+const BEAM = PowerBeamLink(power_w=80.0, range_m=50e3)
+
+# The state a scheduler sees: each spacecraft's position, velocity, mass and, with
+# a battery, its stored energy.
+function beam_state(spacecraft)
+    return (sc=[begin
+        ic = sc.initial_condition
+        b = SM.PowerSystems.battery(sc)
+        base = (pos=collect(ic.pos), vel=collect(ic.vel), mass=100.0)
+        b === nothing ? base : merge(base, (battery_wh=b.capacity_wh * b.initial_soc,))
+    end for sc in spacecraft],)
+end
+
+# One sender and two receivers, a beam to each from the sender's one terminal.
+function energy_fixture(; sender=(;), first=(;), second=(;))
+    spacecraft = [beam_sat(1, 0.0; sender=true, soc=0.9, sender...), beam_sat(2, 5000.0; sender=false, soc=0.2, first...),
+                  beam_sat(3, -5000.0; sender=false, soc=0.6, second...)]
+    model = InterlinkModel()
+    register_link!(model, spacecraft, (1, 1), (2, 1), BEAM)
+    register_link!(model, spacecraft, (1, 1), (3, 1), BEAM)
+    state = beam_state(spacecraft)
+    update_availability!(model, spacecraft, state)
+    return spacecraft, model, state
+end
+
+# The power a beam on `edge` delivers, from the hook, at `state`.
+function delivered_w(model, spacecraft, state, edge)
+    (tx, txt), (rx, rxt) = map(v -> model.graph.vertices[v], model.graph.edges[edge])
+    a = SM.InterLinkModels.link_endpoint(state.sc[tx], spacecraft[tx], tx)
+    b = SM.InterLinkModels.link_endpoint(state.sc[rx], spacecraft[rx], rx)
+    receiver = SM.InterLinkModels._terminal_device(spacecraft[rx], rxt)
+    return link_received_power_w(model.graph.edge_properties[edge], receiver, a, b, LinkContext())
+end
+scores_of(model, policy, state, spacecraft=nothing) = (scheduler = SchedulingPolicyModel(policy);
+    score_candidates!(model, scheduler, state, PLANET.μ; spacecraft); copy(SP.matching_workspace!(model, scheduler).score))
+selected_by(model, policy, state, spacecraft=nothing) = (scheduler = SchedulingPolicyModel(policy);
+    score_candidates!(model, scheduler, state, PLANET.μ; spacecraft); select_interlinks!(model, scheduler))
+
 function sat(index, arc_m)
     bus = Link(root=true, m=100.0)
     θ = arc_m / RADIUS
@@ -365,6 +419,156 @@ refusal(f) = try f(); nothing catch err err end
             @test isempty(readdir(directory))
             @test CALLABLE_SCORES[] == 0   # refused before the scheduler's first call
         end
+    end
+
+    @testset "state of charge" begin
+        spacecraft, model, state = energy_fixture(second=(battery=false,))
+        scheduler = SchedulingPolicyModel(EnergyBalancingPolicy())
+        ctx = SchedulingContext(PLANET.μ, LinkContext(), spacecraft, state, nothing)
+        @test state_of_charge(ctx, 1) === state.sc[1].battery_wh / 10.0
+        @test state_of_charge(ctx, 2) === state.sc[2].battery_wh / 10.0
+        @test isnan(state_of_charge(ctx, 3))                     # no battery
+        @test isnan(state_of_charge(SchedulingContext(PLANET.μ, LinkContext(), nothing, state, nothing), 1))
+    end
+
+    @testset "energy balancing" begin
+        spacecraft, model, state = energy_fixture()
+        s = [state.sc[i].battery_wh / 10.0 for i in 1:3]
+        scores = scores_of(model, EnergyBalancingPolicy(), state, spacecraft)
+        @test scores == [delivered_w(model, spacecraft, state, 1) * (s[1] - s[2]),
+                         delivered_w(model, spacecraft, state, 2) * (s[1] - s[3])]
+        @test all(>(0), scores)
+        # The emptier receiver wins the sender's one terminal.
+        @test selected_by(model, EnergyBalancingPolicy(), state, spacecraft) == [((1, 1), (2, 1))]
+        # A full receiver, and one fuller than its sender, score negative; no battery at either end scores 0.
+        spacecraft, model, state = energy_fixture(first=(soc=1.0,), second=(soc=0.95,))
+        @test all(<(0), scores_of(model, EnergyBalancingPolicy(), state, spacecraft))
+        @test isempty(selected_by(model, EnergyBalancingPolicy(), state, spacecraft))
+        # Negative control: PowerDeliveryPolicy beams into the full battery.
+        @test selected_by(model, PowerDeliveryPolicy(), state, spacecraft) != InterLinkKey[]
+        spacecraft, model, state = energy_fixture(sender=(battery=false,))
+        @test all(iszero, scores_of(model, EnergyBalancingPolicy(), state, spacecraft))
+        spacecraft, model, state = energy_fixture(first=(battery=false,))
+        @test scores_of(model, EnergyBalancingPolicy(), state, spacecraft)[1] == 0.0
+        @test all(iszero, scores_of(model, EnergyBalancingPolicy(), state))   # no spacecraft models
+        # A momentum link scores 0 under energy balancing.
+        spacecraft = [beam_sat(1, 0.0; sender=true), beam_sat(2, -2000.0; sender=false, momentum=true)]
+        model = InterlinkModel()
+        register_link!(model, spacecraft, (1, 1), (2, 1), LaserMomentumLink(only(mounted_link_terminals(spacecraft[1])).terminal))
+        state = beam_state(spacecraft)
+        update_availability!(model, spacecraft, state)
+        @test scores_of(model, EnergyBalancingPolicy(), state, spacecraft) == [0.0]
+
+        # In a run: the emptier receiver is charged first; once it passes the other, the other is.
+        spacecraft = [beam_sat(1, 0.0; sender=true, soc=0.9), beam_sat(2, 5000.0; sender=false, capacity_wh=0.05, soc=0.30),
+                      beam_sat(3, -5000.0; sender=false, soc=0.35)]
+        model = InterlinkModel()
+        register_link!(model, spacecraft, (1, 1), (2, 1), BEAM)
+        register_link!(model, spacecraft, (1, 1), (3, 1), BEAM)
+        args = run_args(EnergyBalancingPolicy(); duration=10.0)
+        args = SM.SimConfig._with_configuration(args; interlink_model=model,
+            dynamics_model=DynamicsModel(spacecraft, (InverseSquaredGravityModel(),)))
+        solution = run_simulation(args; return_solution=true)
+        history = solution.prob.p.args.interlink_model.history
+        @test first(history).active == [((1, 1), (2, 1))]
+        @test any(sample -> sample.active == [((1, 1), (3, 1))], history)
+    end
+
+    @testset "weighted mixes" begin
+        spacecraft, model, state = scoring_fixture()
+        base = SemimajorAxisRatePolicy(targets=:both)
+        # One term of weight 1 and scale 1 scores, and selects, as its policy does.
+        for policy in (base, SemimajorAxisRatePolicy(targets=:lower_index), ShortLinkPolicy())
+            alone, mixed = scores_of(model, policy, state), scores_of(model, WeightedPolicy(PolicyTerm(policy; scale=1.0)), state)
+            @test mixed == alone
+            @test selected_by(model, WeightedPolicy(PolicyTerm(policy; scale=1.0)), state) == selected_by(model, policy, state)
+        end
+        # A scale and a weight scaled by one power of two leave the scores exactly as they were.
+        @test scores_of(model, WeightedPolicy(PolicyTerm(base; scale=2.0^-3, weight=2.0^-3)), state) == scores_of(model, base, state)
+        # The terms are summed in order: 1e16 + 1 + 1 rounds to 1e16, 1 + 1 + 1e16 does not.
+        ordered = WeightedPolicy(PolicyTerm(ConstantPolicy(1e16); scale=1.0), PolicyTerm(ConstantPolicy(1.0); scale=1.0),
+                                 PolicyTerm(ConstantPolicy(1.0); scale=1.0))
+        @test scores_of(model, ordered, state)[1] === 1e16
+        # Nested mixes.
+        nested = WeightedPolicy(PolicyTerm(WeightedPolicy(PolicyTerm(base; scale=1.0)); scale=1.0))
+        @test scores_of(model, nested, state) == scores_of(model, base, state)
+        # A nonfinite term is refused, naming its policy.
+        err = refusal(() -> scores_of(model, WeightedPolicy(PolicyTerm(ConstantPolicy(Inf); scale=1.0)), state))
+        @test err isa ArgumentError && occursin("ConstantPolicy", err.msg)
+        for bad in ((scale=0.0,), (scale=-1.0,), (scale=Inf,), (scale=NaN,), (scale=1.0, weight=Inf), (scale=1.0, weight=NaN))
+            @test_throws ArgumentError PolicyTerm(base; bad...)
+        end
+        @test_throws ArgumentError WeightedPolicy()
+
+        # Momentum against power on one terminal: the weights decide.
+        spacecraft = [beam_sat(1, 0.0; sender=true), beam_sat(2, -2000.0; sender=false, momentum=true),
+                      beam_sat(3, 5000.0; sender=false)]
+        model = InterlinkModel()
+        register_link!(model, spacecraft, (1, 1), (2, 1), LaserMomentumLink(only(mounted_link_terminals(spacecraft[1])).terminal))
+        register_link!(model, spacecraft, (1, 1), (3, 1), BEAM)
+        state = beam_state(spacecraft)
+        update_availability!(model, spacecraft, state)
+        sma, power = scores_of(model, SemimajorAxisRatePolicy(), state, spacecraft), scores_of(model, PowerDeliveryPolicy(), state, spacecraft)
+        @test sma[1] > 0 && sma[2] == 0 && power[1] == 0 && power[2] > 0
+        mix(w_sma, w_power) = WeightedPolicy(PolicyTerm(SemimajorAxisRatePolicy(); scale=sma[1], weight=w_sma),
+                                             PolicyTerm(PowerDeliveryPolicy(); scale=power[2], weight=w_power))
+        @test selected_by(model, mix(2.0, 1.0), state, spacecraft) == [((1, 1), (2, 1))]
+        @test selected_by(model, mix(1.0, 2.0), state, spacecraft) == [((1, 1), (3, 1))]
+        @test scores_of(model, mix(2.0, 1.0), state, spacecraft) == [2.0 * (sma[1] / sma[1]), 1.0 * (power[2] / power[2])]
+
+        # An eccentricity term keeps its near-circular refusal over the mix's candidates.
+        circular = [(n_terminal=2,), (n_terminal=1,), (n_terminal=1,)]
+        model = InterlinkModel()
+        register_link!(model, circular, (1, 1), (2, 1), LaserMomentumLink(power_w=40.0, magnification=1.0, range_m=1e4))
+        register_link!(model, circular, (1, 2), (3, 1), LaserMomentumLink(power_w=40.0, magnification=1.0, range_m=1e4))
+        state = (sc=[(pos=[RADIUS, 0.0, 0.0], vel=[0.0, SPEED, 0.0], mass=100.0),
+                     (pos=[RADIUS, 1000.0, 0.0], vel=[0.0, SPEED, 0.0], mass=100.0),
+                     (pos=[RADIUS, -1000.0, 0.0], vel=[0.0, SPEED, 0.0], mass=100.0)],)
+        update_availability!(model, circular, state)
+        @test_throws ArgumentError scores_of(model, EccentricityRatePolicy(), state)
+        err = refusal(() -> scores_of(model, WeightedPolicy(PolicyTerm(EccentricityRatePolicy(); scale=1e-9),
+            PolicyTerm(ConstantPolicy(0.0); scale=1.0)), state))
+        @test err isa ArgumentError && occursin("near-circular", err.msg)
+
+        # The setup check reaches every term.
+        err = refusal(() -> run_simulation(run_args(WeightedPolicy(PolicyTerm(ShortLinkPolicy(); scale=1.0),
+            PolicyTerm(NoScorePolicy(); scale=1.0)))))
+        @test err isa ArgumentError && occursin("NoScorePolicy has no candidate_score method", err.msg)
+        # A mix in a run.
+        solution = run_simulation(run_args(WeightedPolicy(PolicyTerm(ShortLinkPolicy(); scale=1e-3))); return_solution=true)
+        @test all(sample -> sample.active == [((1, 1), (2, 1))], solution.prob.p.args.interlink_model.history)
+    end
+
+    @testset "checkpoint entry of energy balancing and mixes" begin
+        spacecraft = [(n_terminal=2,) for _ in 1:3]
+        model = InterlinkModel()
+        register_link!(model, spacecraft, (1, 1), (2, 1), LaserMomentumLink(power_w=12.0, magnification=3.0, range_m=100.0))
+        args(policy) = (interlink_model=model, scheduling_policy_model=SchedulingPolicyModel(policy),
+            dynamics_model=(spacecraft=spacecraft,))
+        state = (sc=[(pos=[Float64(i), 0.0, 0.0],) for i in 1:3],)
+        checkpoint(policy) = (u=state, runtime_state=SE._interlink_checkpoint_runtime_state(args(policy), trues(3)))
+        resumes(policy, snapshot) = try
+            SE._restore_interlink_checkpoint_state!(args(policy), snapshot, trues(3)); true
+        catch err
+            err isa ArgumentError || rethrow(); false
+        end
+        entry = SE._interlink_checkpoint_configuration(args(EnergyBalancingPolicy()))
+        @test entry.policy.kind.name === :EnergyBalancingPolicy && entry.target_idx === nothing
+        @test resumes(EnergyBalancingPolicy(), checkpoint(EnergyBalancingPolicy()))
+        @test !resumes(PowerDeliveryPolicy(), checkpoint(EnergyBalancingPolicy()))
+        mixture(; weight=0.5, scale=100.0, targets=[1, 2]) = WeightedPolicy(PolicyTerm(SemimajorAxisRatePolicy(; targets); scale=1.0),
+            PolicyTerm(EnergyBalancingPolicy(); scale, weight))
+        entry = SE._interlink_checkpoint_configuration(args(mixture()))
+        @test entry.policy.kind.name === :WeightedPolicy
+        @test entry.policy.fields.terms[2].fields.weight.bits == reinterpret(UInt64, 0.5)
+        @test entry.policy.fields.terms[1].fields.policy.kind.name === :SemimajorAxisRatePolicy
+        @test resumes(mixture(), checkpoint(mixture()))
+        @test !resumes(mixture(weight=0.25), checkpoint(mixture()))
+        @test !resumes(mixture(scale=50.0), checkpoint(mixture()))
+        @test !resumes(mixture(targets=[1, 3]), checkpoint(mixture()))
+        reordered = WeightedPolicy(PolicyTerm(EnergyBalancingPolicy(); scale=100.0, weight=0.5),
+            PolicyTerm(SemimajorAxisRatePolicy(targets=[1, 2]); scale=1.0))
+        @test !resumes(reordered, checkpoint(mixture()))
     end
 end
 

@@ -123,8 +123,8 @@ end
 # A policy's identity: its kind, named as link kinds are, and every one of its
 # fields, recursively:
 # - a float with its bits, a bits composite field by field, as terminal fields are;
-# - a field that is a policy by its own identity, a tuple or a vector element by
-#   element;
+# - a field that is a policy, or a weighted mix's term, by its own identity, a
+#   tuple or a vector element by element;
 # - a function by its type and, for a closure, every value it captures (its
 #   fields), so that two closures made by one expression with different captures
 #   differ. A named function is its type alone: a change to its code is not part
@@ -138,6 +138,7 @@ function _scheduling_policy_identity(policy, path=Base.IdSet{Any}())
         fields=NamedTuple{names}(map(name -> _policy_field_identity(getfield(policy, name), path), names)))
 end
 _policy_field_identity(value::SimulationModel.AbstractSchedulingPolicy, path) = _scheduling_policy_identity(value, path)
+_policy_field_identity(value::SimulationModel.PolicyTerm, path) = _scheduling_policy_identity(value, path)
 _policy_field_identity(value::Tuple, path) = map(element -> _policy_field_identity(element, path), value)
 _policy_field_identity(value::AbstractVector, path) = _on_path(path, value) do
     (type=_interlink_kind_identity(typeof(value)), elements=map(element -> _policy_field_identity(element, path), value))
