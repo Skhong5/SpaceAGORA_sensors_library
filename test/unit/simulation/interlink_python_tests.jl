@@ -44,12 +44,12 @@ const SM = SpaceAGORA.SimulationModel
         # two-way pair only the better direction is a candidate.
         three = [SpacecraftModel(n_terminal=1) for _ in 1:3]
         directed = InterlinkModel()
-        data(rate) = DataLink(transmit_power_w=0.0, budget=FixedRateBudget(rate), range_m=1.0)
+        beam = PowerBeamLink(power_w=1.0, range_m=1.0)
         for (i, j) in ((2, 1), (3, 2), (1, 3), (1, 2))
-            register_link!(directed, three, (i, 1), (j, 1), data(1.0))
+            register_link!(directed, three, (i, 1), (j, 1), beam)
         end
         directed.graph.available .= true
-        directed_policy = SchedulingPolicyModel(:data_throughput)
+        directed_policy = SchedulingPolicyModel(:power_delivery)
         matching_workspace!(directed, directed_policy).score .= [1.0, 2.0, 1.0, 3.0]
         @test select_interlinks!(directed, directed_policy) == [((1, 1), (2, 1))]
         @test any(directed_policy.matching.cyclic)
@@ -58,6 +58,8 @@ const SM = SpaceAGORA.SimulationModel
         matching_workspace!(directed, directed_policy).score .= [3.0, 1.0, 5.0, 1.0]
         @test select_interlinks!(directed, directed_policy) == [((1, 1), (3, 1))]
         @test directed.graph.active == [false, false, true, false]
+        matching_workspace!(directed, directed_policy).score .= [5.0, 1.0, 1.0, 2.0]   # the first of the pair wins
+        @test select_interlinks!(directed, directed_policy) == [((2, 1), (1, 1))]
         multi_target = gve_sma_configuration(duration=20.0)
         register_allowed_link!(multi_target.interlink_model, multi_target.dynamics_model.spacecraft,
             (2, 1), (3, 1); parameters=InterLinkParameters(range=500e3))

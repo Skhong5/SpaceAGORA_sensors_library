@@ -209,6 +209,21 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
         @test select_interlinks!(triangle, triangle_policy) == [((2, 1), (3, 1))]
         @test !any(triangle_policy.matching.cyclic)
 
+        # Directed links both ways between the same two terminals share both
+        # terminals: only the higher-scoring is a candidate, the first in endpoint
+        # order on a tie, so the pair stays a tree and needs no optional backend.
+        two_way = InterlinkModel()
+        beam = PowerBeamLink(power_w=1.0, range_m=1.0)
+        backward = register_link!(two_way, spacecraft, (2, 1), (1, 1), beam)
+        forward = register_link!(two_way, spacecraft, (1, 1), (2, 1), beam)
+        fill!(two_way.graph.available, true)
+        two_way_policy = SchedulingPolicyModel(:power_delivery)
+        for (scores, expected) in (([3.0, 1.0], backward), ([1.0, 3.0], forward), ([2.0, 2.0], forward))
+            matching_workspace!(two_way, two_way_policy).score .= scores
+            @test select_interlinks!(two_way, two_way_policy) == [expected]
+            @test !any(two_way_policy.matching.cyclic)
+        end
+
 
     end
 
