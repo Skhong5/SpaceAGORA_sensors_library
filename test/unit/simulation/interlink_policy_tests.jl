@@ -59,7 +59,9 @@ SpaceAGORA.candidate_score(policy::NestedPolicy, candidate, ctx, t) = 1.0
 struct CallablePolicy{F} <: AbstractSchedulingPolicy
     f::F
 end
-SpaceAGORA.candidate_score(policy::CallablePolicy, candidate, ctx, t) = policy.f(1.0)
+# Counts every call in the process, through the run's own copy of the policy.
+const CALLABLE_SCORES = Ref(0)
+SpaceAGORA.candidate_score(policy::CallablePolicy, candidate, ctx, t) = (CALLABLE_SCORES[] += 1; policy.f(1.0))
 gain_policy(gain) = CallablePolicy(x -> gain * x)
 vector_policy(v) = CallablePolicy(x -> v[1] * x)
 function boxed_policy()
@@ -357,9 +359,11 @@ refusal(f) = try f(); nothing catch err err end
         mktempdir() do directory
             settings = SimulationSettings(results=false, generate_plots=false, checkpoint_enabled=true,
                 checkpoint_interval_s=1.0, checkpoint_directory=directory)
+            CALLABLE_SCORES[] = 0
             err = refusal(() -> run_simulation(run_args(boxed_policy(); settings)))
             @test err isa ArgumentError && occursin("reassigned after the closure was made", err.msg)
             @test isempty(readdir(directory))
+            @test CALLABLE_SCORES[] == 0   # refused before the scheduler's first call
         end
     end
 end
