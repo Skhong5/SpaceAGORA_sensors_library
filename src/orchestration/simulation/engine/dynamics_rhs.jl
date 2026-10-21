@@ -534,14 +534,42 @@ function _accumulate_control_effectors_from_tuple!(
     wheels = p.args.dynamics_model.spacecraft[sat_idx].root.rw_assembly
     _clear_mounted_rates!(wheels)
     @inbounds for control_effector in control_effectors
-        mass_rate = _add_control_effector!(forces, torques, rw_torque_body, sc_view, p, sat_idx, t, debug_control,
-            control_effector, mass_rate)
+        mounted = SimulationModel.actuation_mode(control_effector) === :mounted
+        # Each hook is called through a call-site `@noinline`, so it is compiled
+        # on its own, as a run-time-dispatched hook is, and LLVM fuses its
+        # StaticArrays arithmetic the same way in every caller (see
+        # `_evaluate_dynamic_effector`). A mounted effector's own checks of the
+        # state run before the sample is built.
+        if mounted
+            control_force, control_torque, control_mass_rate, _ = _mounted_control_effect(control_effector, sc_view, p, sat_idx, t)
+            x = _control_state_sample(sc_view, p, sat_idx)
+        else
+            x = _control_state_sample(sc_view, p, sat_idx)
+            control_force, control_torque = @noinline SimulationModel.control_wrench(control_effector, x, p, t)
+            control_mass_rate = @noinline SimulationModel.control_propellant_rate(control_effector, x, p, t)
+        end
+        rw_torque = @noinline SimulationModel.control_wheel_torque(control_effector, x, p, t)
+        # A mounted wrench holds only the mounted actuators; a wheel torque the
+        # effector reports is still applied to the body, as in ideal actuation.
+        (mounted && rw_torque !== nothing) && (control_torque = control_torque + SVector{3, Float64}(rw_torque))
+        if debug_control && (norm(control_force) > 0.0 || norm(control_torque) > 0.0)
+            println("Applying control effect for spacecraft $sat_idx at time $t seconds:")
+            println("  Control force: $control_force")
+        end
+        forces .+= control_force
+        torques .+= control_torque
+        rw_torque === nothing || (rw_torque_body .+= rw_torque)
+        # The hooks return the propellant used; the mass derivative is its negative.
+        mass_rate -= isfinite(control_mass_rate) ? control_mass_rate : 0.0
     end
     return mass_rate
 end
 
 # The control models acting on the spacecraft only (`members`), in configuration
-# order, with the same statements.
+# order. The loop body is the one above, statement for statement, and written out
+# again rather than shared: a shared helper changes how LLVM fuses the mounted
+# wrench's StaticArrays arithmetic once inlined, and with it the last bits of a
+# mounted run.
 function _accumulate_control_effectors_from_tuple!(
     forces::MVector{3, Float64},
     torques::MVector{3, Float64},
@@ -555,47 +583,39 @@ function _accumulate_control_effectors_from_tuple!(
     members::Vector{Int},
 )::Float64 where {CE <: Tuple}
     mass_rate = 0.0
+    # The mounted wheels' momentum rates and the CMGs' gimbal rates are rebuilt by every evaluation.
     wheels = p.args.dynamics_model.spacecraft[sat_idx].root.rw_assembly
     _clear_mounted_rates!(wheels)
     @inbounds for j in members
-        mass_rate = _add_control_effector!(forces, torques, rw_torque_body, sc_view, p, sat_idx, t, debug_control,
-            control_effectors[j], mass_rate)
+        control_effector = control_effectors[j]
+        mounted = SimulationModel.actuation_mode(control_effector) === :mounted
+        # Each hook is called through a call-site `@noinline`, so it is compiled
+        # on its own, as a run-time-dispatched hook is, and LLVM fuses its
+        # StaticArrays arithmetic the same way in every caller (see
+        # `_evaluate_dynamic_effector`). A mounted effector's own checks of the
+        # state run before the sample is built.
+        if mounted
+            control_force, control_torque, control_mass_rate, _ = _mounted_control_effect(control_effector, sc_view, p, sat_idx, t)
+            x = _control_state_sample(sc_view, p, sat_idx)
+        else
+            x = _control_state_sample(sc_view, p, sat_idx)
+            control_force, control_torque = @noinline SimulationModel.control_wrench(control_effector, x, p, t)
+            control_mass_rate = @noinline SimulationModel.control_propellant_rate(control_effector, x, p, t)
+        end
+        rw_torque = @noinline SimulationModel.control_wheel_torque(control_effector, x, p, t)
+        # A mounted wrench holds only the mounted actuators; a wheel torque the
+        # effector reports is still applied to the body, as in ideal actuation.
+        (mounted && rw_torque !== nothing) && (control_torque = control_torque + SVector{3, Float64}(rw_torque))
+        if debug_control && (norm(control_force) > 0.0 || norm(control_torque) > 0.0)
+            println("Applying control effect for spacecraft $sat_idx at time $t seconds:")
+            println("  Control force: $control_force")
+        end
+        forces .+= control_force
+        torques .+= control_torque
+        rw_torque === nothing || (rw_torque_body .+= rw_torque)
+        # The hooks return the propellant used; the mass derivative is its negative.
+        mass_rate -= isfinite(control_mass_rate) ? control_mass_rate : 0.0
     end
-    return mass_rate
-end
-
-# One control effector's contribution to spacecraft `sat_idx`: its force and
-# torque added to `forces` and `torques`, its wheel torque to `rw_torque_body`;
-# returns `mass_rate` less the propellant it uses.
-@inline function _add_control_effector!(forces, torques, rw_torque_body, sc_view, p, sat_idx::Int, t::Float64,
-                                        debug_control::Bool, control_effector, mass_rate::Float64)::Float64
-    mounted = SimulationModel.actuation_mode(control_effector) === :mounted
-    # Each hook is called through a call-site `@noinline`, so it is compiled
-    # on its own, as a run-time-dispatched hook is, and LLVM fuses its
-    # StaticArrays arithmetic the same way in every caller (see
-    # `_evaluate_dynamic_effector`). A mounted effector's own checks of the
-    # state run before the sample is built.
-    if mounted
-        control_force, control_torque, control_mass_rate, _ = _mounted_control_effect(control_effector, sc_view, p, sat_idx, t)
-        x = _control_state_sample(sc_view, p, sat_idx)
-    else
-        x = _control_state_sample(sc_view, p, sat_idx)
-        control_force, control_torque = @noinline SimulationModel.control_wrench(control_effector, x, p, t)
-        control_mass_rate = @noinline SimulationModel.control_propellant_rate(control_effector, x, p, t)
-    end
-    rw_torque = @noinline SimulationModel.control_wheel_torque(control_effector, x, p, t)
-    # A mounted wrench holds only the mounted actuators; a wheel torque the
-    # effector reports is still applied to the body, as in ideal actuation.
-    (mounted && rw_torque !== nothing) && (control_torque = control_torque + SVector{3, Float64}(rw_torque))
-    if debug_control && (norm(control_force) > 0.0 || norm(control_torque) > 0.0)
-        println("Applying control effect for spacecraft $sat_idx at time $t seconds:")
-        println("  Control force: $control_force")
-    end
-    forces .+= control_force
-    torques .+= control_torque
-    rw_torque === nothing || (rw_torque_body .+= rw_torque)
-    # The hooks return the propellant used; the mass derivative is its negative.
-    mass_rate -= isfinite(control_mass_rate) ? control_mass_rate : 0.0
     return mass_rate
 end
 
