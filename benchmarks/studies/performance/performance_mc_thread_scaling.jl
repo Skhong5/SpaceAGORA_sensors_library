@@ -14,7 +14,7 @@
 # across separate processes).
 #
 # Usage:
-#   julia --project=. benchmarks/studies/performance/performance_mc_thread_scaling.jl
+#   julia --project=examples benchmarks/studies/performance/performance_mc_thread_scaling.jl
 #
 # Environment variables:
 #   SPACEAGORA_MC_THREAD_COUNTS    comma-separated worker counts (default: powers of two

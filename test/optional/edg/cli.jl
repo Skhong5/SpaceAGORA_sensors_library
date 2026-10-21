@@ -25,7 +25,8 @@ const environment = dirname(Base.active_project())
             using SpaceAGORAEDG
             include($(repr(joinpath(CLI.REPO_ROOT, "examples", "common.jl"))))
             @assert SpaceAGORA.EDGServices.available()
-            @assert Base.active_project() == $(repr(joinpath(CLI.REPO_ROOT, "Project.toml")))
+            # The EDG environment lacks the example packages: common.jl continues in the examples environment.
+            @assert Base.active_project() == $(repr(joinpath(CLI.REPO_ROOT, "examples", "Project.toml")))
             @assert abspath(PROGRAM_FILE) == @__FILE__
             @assert ARGS == ["argument with spaces"]
             println("EDG_CHILD_OK")

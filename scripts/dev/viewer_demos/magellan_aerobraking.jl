@@ -17,7 +17,7 @@
 # distinction, so only the mesh surrogate and the picture change.
 #
 #   julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/magellan_aerobraking.jl
-# Load the optional renderer before example helpers activate the core project.
+# Load the optional renderer before the example helpers continue in the examples environment.
 if abspath(PROGRAM_FILE) == @__FILE__
     using SpaceAGORAVisualizer
 end

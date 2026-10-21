@@ -186,7 +186,7 @@ Every point needs its matching serial row. Aggregation joins the baseline on
 not zero-cost or infinite-speedup evidence.
 
 ```bash
-julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl \
+julia --project=examples benchmarks/studies/paper_parallelization_benchmarks.jl \
     --phases=P1,P2,P3,P4,P5 --threads=1,2,4,8,12 --process-workers=12
 python3 benchmarks/studies/paper_parallelization_benchmarks/make_paper_routing_tables.py \
     output/performance/paper_benchmarks/<stamp> --out output/paper_routing_tables
@@ -362,7 +362,7 @@ one categorical axis.
 Run it on its own, recording whether the calibration store is cold or converged:
 
 ```bash
-julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl \
+julia --project=examples benchmarks/studies/paper_parallelization_benchmarks.jl \
     --phases=P5f --threads=1,2,4,8,12 --process-workers=12
 ```
 

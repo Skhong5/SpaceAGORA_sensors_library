@@ -16,7 +16,8 @@ inside it:
 GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 cd SpaceAGORA.jl
 julia --project=. -e "using Pkg; Pkg.instantiate(julia_version_strict=true)"
-julia --project=. examples/AGORA_Basic_Quickstart.jl
+julia --startup-file=no examples/setup.jl
+julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
 On Windows set the variable first (PowerShell `$env:GIT_LFS_SKIP_SMUDGE = "1"`,

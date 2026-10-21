@@ -296,7 +296,8 @@ imports(env) = filter(event -> event[1] === :import, env.events)
             caller, env = new_caller(:examples; env=Environment(project=prior,
                 outcomes=Any[first_error], instantiate_error=fails ? failure : nothing))
             err = capture(() -> load(caller, :examples))
-            restore = prior === nothing ? REPO_SENTINEL : dirname(prior)
+            # Without a prior project the examples continue in the examples environment.
+            restore = prior === nothing ? joinpath(REPO_SENTINEL, "examples") : dirname(prior)
             @test err === (fails ? failure : nothing)
             @test activations(env) == [VENDOR_SENTINEL, restore]
             @test env.project == joinpath(restore, "Project.toml")

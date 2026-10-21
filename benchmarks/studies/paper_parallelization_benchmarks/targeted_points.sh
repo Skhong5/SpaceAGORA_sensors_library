@@ -38,7 +38,7 @@ OUT=output/performance/targeted_$(date -u +%Y%m%d_%H%M%S); mkdir -p "$OUT"
 run() { # case mode workers threads mc label
   local c=$1 m=$2 w=$3 t=$4 mc=$5 lbl=$6
   echo "[targeted] $lbl: case=$c mode=$m workers=$w threads=$t mc=$mc"
-  timeout 7200 julia --threads="$t" --project=. benchmarks/studies/parallelization_performance.jl \
+  timeout 7200 julia --threads="$t" --project=examples benchmarks/studies/parallelization_performance.jl \
     --profile=full --worker --case="$c" --mode="$m" --thread-count="$t" \
     --worker-repeats="${REPEATS:-11}" --worker-mc-samples="$mc" --warmup="${WARMUP:-1}" --process-workers="$w" --parity=0 \
     --outfile="$OUT/${lbl}_${m}.csv" > "$OUT/${lbl}_${m}.log" 2>&1

@@ -63,7 +63,7 @@ if [[ "${1:-}" == __locked_point__ ]]; then
     cd "$tree"
     exec env SPACEAGORA_PPC_DUMP_STATE_DIR="$dir/states" \
         systemd-run --user --scope -p MemoryMax="$MEMORY_MAX" -p MemorySwapMax=0 -q -- \
-        julia --startup-file=no --project=. benchmarks/studies/parallelization_performance.jl "$PROFILE" \
+        julia --startup-file=no --project=examples benchmarks/studies/parallelization_performance.jl "$PROFILE" \
             --outdir="$dir" --cases="$case" --modes="$mode" --threads="$t" \
             --repeats="$REPEATS" --warmup="$WARMUP" --parity-cases=none
 fi
