@@ -104,6 +104,12 @@ end
             @test err isa ErrorException
             @test occursin("Consumer still depends on the retired", sprint(showerror, err))
             @test read(manifest) == before
+            project = joinpath(directory, "Project.toml")
+            write(project, "[deps]\nSpaceAGORAHYPR = \"$loader_uuid\"\n[preferences]\nkeep = true\n")
+            project_before = read(project)
+            @test_throws ErrorException HYPRInstallation.setup(directory; with_hypr=false)
+            @test read(project) == project_before
+            @test read(manifest) == before
         end
     end
 end

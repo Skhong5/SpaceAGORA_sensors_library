@@ -66,12 +66,12 @@ function setup(environment; root=ROOT, with_hypr=true, local_path=get(ENV, "SPAC
     if with_hypr
         sources["HYPR"] = isempty(local_path) ? Dict("url" => spec.url, "rev" => spec.rev) : Dict("path" => spec.path)
     end
-    open(project_path, "w") do io
-        TOML.print(io, project; sorted=true)
-    end
     manifest = joinpath(env, "Manifest.toml")
     isfile(manifest) || cp(joinpath(root, "Manifest.toml"), manifest)
     retire_loader_manifest!(manifest)
+    open(project_path, "w") do io
+        TOML.print(io, project; sorted=true)
+    end
     previous = Base.active_project()
     try
         Pkg.activate(env)
