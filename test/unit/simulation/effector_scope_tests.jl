@@ -37,6 +37,16 @@ end
 SpaceAGORA.wrench(m::GatedPush, x::StateSample, env::EnvironmentSample, t::Float64) =
     x.spacecraft_index in m.indices ? (m.newtons * normalize(x.vel_ii), Z3) : (Z3, Z3)
 
+# An atmosphere that counts the density queries made of it.
+mutable struct CountingAtmosphere <: SM.AbstractDensityModel
+    queries::Int
+end
+function SM.EnvironmentModels.getDensity(m::CountingAtmosphere, h::Float64, lat::Float64, lon::Float64, t::Float64,
+                                         wind::Bool, p)
+    m.queries += 1
+    return 1.0e-11, 800.0, SVector(0.0, 0.0, 0.0)
+end
+
 # A push that binds itself to a run position by its spacecraft_index field.
 struct BoundPush <: SpaceAGORA.AbstractForceTorqueModel
     spacecraft_index::Int
@@ -342,6 +352,28 @@ end
     drag(i) = [getproperty(row, Symbol("sc$(i)_drag_$(c)")) for row in eachrow(res.table) for c in 1:3]
     @test all(iszero, drag(3)) && all(iszero, drag(4))
     @test any(!iszero, drag(1)) && any(!iszero, drag(2))
+end
+
+@testset "the per-spacecraft atmosphere pre-sample samples only spacecraft an atmosphere consumer acts on" begin
+    function presampled(drag)
+        atmosphere = CountingAtmosphere(0)
+        args = SE._resolve_effector_scopes(configuration((InverseSquaredJ2GravityModel(), drag); density=atmosphere))
+        p = params(args, "auto")
+        # An inactive spacecraft rules out the constellation batch, so the flat
+        # route's pre-sample takes its per-spacecraft path.
+        p.is_active[4] = false
+        @test SE._uniform_light_density_model(p, 4) === nothing
+        @test !SM.SimulationCallbacks._rhs_density_service_candidate(p, 4)
+        SE._prefill_environment_samples!(p, 0.0, SE.build_initial_conditions(args).sc; atmosphere=true)
+        return atmosphere.queries, copy(p.shared_buffers.densities)
+    end
+    queries, densities = presampled(scoped(SM.AerodynamicCoefficientConstant(), SpacecraftSelection(planes=1)))
+    @test queries == 2
+    @test densities[1] > 0 && densities[2] > 0 && densities[3] == 0
+    # Control: unscoped, the pre-sample also samples spacecraft 3 (4 is inactive).
+    queries, densities = presampled(SM.AerodynamicCoefficientConstant())
+    @test queries == 3
+    @test densities[3] > 0
 end
 
 @testset "the accelerometer subtracts only the gravity applied" begin
