@@ -780,4 +780,14 @@ end
 
 end
 
-abspath(PROGRAM_FILE) == abspath(@__FILE__) && ContributorEnvironment.main()
+# A refusal prints its message and exits nonzero, without the stack trace of a crash;
+# any other error keeps its trace.
+if abspath(PROGRAM_FILE) == abspath(@__FILE__)
+    try
+        ContributorEnvironment.main()
+    catch error
+        error isa ArgumentError || rethrow()
+        println(stderr, "ERROR: ", error.msg)
+        exit(1)
+    end
+end

@@ -4,6 +4,9 @@
 
 # ---- Record and state --------------------------------------------------------
 
+# The gimbal's run state: its angle, the time of its latest tick and the angle before it.
+const _GimbalRunState = NamedTuple{(:angle_rad, :last_update_s, :previous_angle_rad), Tuple{Float64, Float64, Float64}}
+
 """
     ThrusterGimbal(thruster; axis, min_angle_rad=-Inf, max_angle_rad=Inf, max_rate_rad_s=Inf, angle_rad=0.0)
 
@@ -15,7 +18,9 @@ location, which stays fixed. The angle stays within
 [`min_angle_rad`, `max_angle_rad`] and moves at most `max_rate_rad_s` between
 control ticks; all three default to unlimited. `angle_rad` holds the current
 angle, `previous_angle_rad` the angle before its latest tick (at
-`last_update_s`).
+`last_update_s`). As for a `PanelHinge`, the angles a run starts from are kept
+apart from them: each run with `isolate_state=false` starts from the previous
+run's start, unless they were changed after that run's last tick.
 
 A two-axis gimbal is two `ThrusterGimbal`s on the same thruster; their
 rotations compose in mounting order (the first mounted turns the direction
@@ -35,6 +40,8 @@ mutable struct ThrusterGimbal <: AbstractActuator
     angle_rad::Float64
     last_update_s::Float64
     previous_angle_rad::Float64
+    run_start::_GimbalRunState                  # the run state a run starts from, first the configured one
+    run_written::Union{Nothing, _GimbalRunState} # the run's last tick's write of it (`ActuatorMounting._start_run_state!`)
 
     function ThrusterGimbal(thruster::Thruster, axis, min_angle_rad::Real, max_angle_rad::Real, max_rate_rad_s::Real, angle_rad::Real)
         a = SVector{3, Float64}(axis)
@@ -47,7 +54,7 @@ mutable struct ThrusterGimbal <: AbstractActuator
         (isfinite(angle_rad) && min_angle_rad <= angle_rad <= max_angle_rad) ||
             throw(ArgumentError("ThrusterGimbal angle_rad must be finite and within its limits, got $(angle_rad)."))
         return new(thruster, a / n, Float64(min_angle_rad), Float64(max_angle_rad), Float64(max_rate_rad_s), Float64(angle_rad), NaN,
-                   Float64(angle_rad))
+                   Float64(angle_rad), _GimbalRunState((angle_rad, NaN, angle_rad)), nothing)
     end
 end
 

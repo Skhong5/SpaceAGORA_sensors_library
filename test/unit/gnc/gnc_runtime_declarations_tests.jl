@@ -4,6 +4,7 @@
 module GNCRuntimeDeclarationsTests
 using Test, StaticArrays, LinearAlgebra, Logging, SpaceAGORA
 using DiffEqCallbacks: PresetTimeCallback
+using OrdinaryDiffEq: DiscreteCallback
 import SpaceAGORA.TelemetryVerification: make_example_config
 const SM = SpaceAGORA.SimulationModel
 const L = SpaceAGORA.SimulationLifecycle
@@ -192,6 +193,29 @@ struct HalfKept <: AbstractNavigationModel end
 SpaceAGORA.update_navigation!(::HalfKept, u, p, t::Float64, i::Int) = nothing
 L.checkpoint_state(::HalfKept) = (ticks=0,)
 
+# What a resumed run's start shows, in order: a navigation model records what its
+# initializer sees (the callbacks' and the models' resume flags) and when its own
+# run state comes back, and a callback records what the callbacks see when they
+# initialize (the model's ticks and the sensor's latest sample time).
+const RESUME_LOG = Any[]
+mutable struct ResumeProbe <: AbstractNavigationModel
+    ticks::Int
+end
+SpaceAGORA.update_navigation!(m::ResumeProbe, u, p, t::Float64, i::Int) = (m.ticks += 1; nothing)
+function L.initialize_navigation!(m::ResumeProbe, u, p, t)
+    m.ticks = 0
+    push!(RESUME_LOG, (:initialize, p.shared_buffers.callback_resume[], p.shared_buffers.model_resume[]))
+    return nothing
+end
+L.checkpoint_state(m::ResumeProbe) = (ticks=m.ticks,)
+L.restore_checkpoint_state!(m::ResumeProbe, data) = (m.ticks = data.ticks; push!(RESUME_LOG, (:restore, data.ticks)); nothing)
+resume_probe_callback(args) = DiscreteCallback((u, t, integrator) -> false, integrator -> nothing;
+    initialize=(cb, u, t, integrator) -> begin
+        a = integrator.p.args
+        sensor = only(SM.mounted_sensors(only(a.dynamics_model.spacecraft))).sensor
+        push!(RESUME_LOG, (:callbacks, only(a.navigation_model.navigation_effectors).ticks, sensor.latest_time_s))
+    end, save_positions=(false, false))
+
 refusal(f) = try
     f()
     nothing
@@ -232,6 +256,74 @@ L.before_reference_control!(g::Bystander, c::SlotReader, u, p, t) = (g.prepared 
 struct BadLinks <: AbstractGuidanceModel end
 SpaceAGORA.update_guidance!(::BadLinks, u, p, t::Float64, i::Int) = nothing
 SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
+
+# What ran, and when: a sensor, navigation, a guidance model that produces the
+# link a controller consumes, plain guidance, periodic controllers, an
+# event-driven controller's own callback, a saved field, and priority and extra
+# callbacks each record themselves, to check the order of callbacks that apply at
+# one time ("Callback order" in docs/contributing/architecture.md).
+const ORDER = Tuple{Symbol, Float64}[]
+mutable struct OrderSensor <: AbstractSensor
+    period_s::Float64
+    seed::Int
+    rng::Any
+    latest::SVector{1, Float64}
+    latest_time_s::Float64
+end
+OrderSensor() = OrderSensor(1.0, 1, nothing, SVector(NaN), NaN)
+SpaceAGORA.sensor_dimension(::OrderSensor) = 1
+SpaceAGORA.sensor_measure(::OrderSensor, truth::SensorTruth, ctx, rng) = (push!(ORDER, (:sensor, truth.t_s)); SVector(0.0))
+SpaceAGORA.initialize_sensor!(::OrderSensor, truth::SensorTruth, ctx, rng) = nothing
+struct OrderNavigation <: AbstractNavigationModel end
+SpaceAGORA.update_navigation!(::OrderNavigation, u, p, t::Float64, i::Int) = (push!(ORDER, (:navigation, t)); nothing)
+mutable struct OrderSlot end
+struct OrderWriter <: AbstractGuidanceModel
+    slot::OrderSlot
+end
+SpaceAGORA.gnc_links(g::OrderWriter) = (Produces(g.slot),)
+SpaceAGORA.update_guidance!(::OrderWriter, u, p, t::Float64, i::Int) = (push!(ORDER, (:writer, t)); nothing)
+struct OrderGuidance <: AbstractGuidanceModel end
+SpaceAGORA.update_guidance!(::OrderGuidance, u, p, t::Float64, i::Int) = (push!(ORDER, (:guidance, t)); nothing)
+struct OrderControl <: SM.AbstractControlEffectorModel
+    name::Symbol
+    slot::Union{Nothing, OrderSlot}
+end
+SpaceAGORA.update_control!(c::OrderControl, u, p, t, i) = (push!(ORDER, (c.name, t)); nothing)
+SpaceAGORA.control_wrench(::OrderControl, x, p, t) = (ZERO3, ZERO3)
+SpaceAGORA.gnc_links(c::OrderControl) = c.slot === nothing ? () : (Consumes(c.slot),)
+L.before_reference_control!(::OrderWriter, c::OrderControl, u, p, t) = (push!(ORDER, (:prepare, t)); nothing)
+# A callback that records `name` at whole seconds, where the 0.5 s and 1 s ticks meet.
+order_callback(name) = DiscreteCallback((u, t, integrator) -> t > 0 && isinteger(t),
+    integrator -> (push!(ORDER, (name, integrator.t)); nothing); save_positions=(false, false))
+struct OrderEvents <: SM.AbstractControlEffectorModel end
+SpaceAGORA.update_control!(::OrderEvents, u, p, t, i) = nothing
+SpaceAGORA.control_wrench(::OrderEvents, x, p, t) = (ZERO3, ZERO3)
+SpaceAGORA.tick_schedule(::OrderEvents) = :event_driven
+SpaceAGORA.gnc_callbacks(::OrderEvents, num_sats, args, period_s) = (order_callback(:event),)
+
+# Where the hardware's run state starts a run: a controller holds a hinged panel
+# at 0.5 rad, and a priority callback's initialization and a sensor's samples
+# record the hinge's angle when they read it.
+const SEEN = Tuple{Symbol, Float64, Float64}[]
+struct HoldHinge <: SM.AbstractControlEffectorModel end
+SpaceAGORA.actuation_mode(::HoldHinge) = :mounted
+SpaceAGORA.actuator_levels(::HoldHinge, i::Int) = [0.5]
+SpaceAGORA.update_control!(::HoldHinge, u, p, t, i) = nothing
+mutable struct HingeSensor <: AbstractSensor
+    period_s::Float64
+    seed::Int
+    rng::Any
+    latest::SVector{1, Float64}
+    latest_time_s::Float64
+    hinge::PanelHinge
+end
+HingeSensor(hinge) = HingeSensor(1.0, 1, nothing, SVector(NaN), NaN, hinge)
+SpaceAGORA.sensor_dimension(::HingeSensor) = 1
+SpaceAGORA.sensor_measure(s::HingeSensor, truth::SensorTruth, ctx, rng) =
+    (push!(SEEN, (:sensor, truth.t_s, s.hinge.angle_rad)); SVector(0.0))
+SpaceAGORA.initialize_sensor!(::HingeSensor, truth::SensorTruth, ctx, rng) = nothing
+hinge_seer(hinge) = DiscreteCallback((u, t, integrator) -> false, integrator -> nothing;
+    initialize=(cb, u, t, integrator) -> (push!(SEEN, (:priority, t, hinge.angle_rad)); nothing), save_positions=(false, false))
 
 @testset "GNC runtime declarations" begin
     @testset "defaults keep the periodic tick" begin
@@ -370,6 +462,51 @@ SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
         end
     end
 
+    @testset "callbacks that apply at one time run in the documented order" begin
+        empty!(ORDER)
+        slot = OrderSlot()
+        args = runtime_args((OrderControl(:reader, slot), OrderEvents(), OrderControl(:control, nothing));
+            sensor=OrderSensor(), guidance=(OrderWriter(slot), OrderGuidance()), navigation=(OrderNavigation(),))
+        m = args.mission_configuration                       # saved every second
+        args = SM.SimConfig._with_configuration(args; mission_configuration=SM.MissionConfiguration(
+            m.mission_type, m.keplerian, m.number_of_orbits, m.mission_time, m.orientation_sim, m.num_steps_to_save, 1.0))
+        saved = vcat(SM.default_save_fields(args), [SM.SaveField(:order, (u, t, integrator) -> (push!(ORDER, (:save, t)); 0.0))])
+        run_simulation(args; return_results=true, save_fields=saved,
+            priority_callback_factories=(a -> order_callback(:priority),),
+            extra_callbacks=(order_callback(:extra),), extra_callback_factories=(a -> order_callback(:extra_factory),))
+        # At 1, 2 and 3 s (before the run's 4 s end) every recorder applies. The
+        # periodic control models tick in configuration order around the
+        # event-driven model's callback; the reader's linked producer prepares it
+        # first. Guidance that does not publish before control comes after it.
+        expected = [:priority, :sensor, :navigation, :prepare, :reader, :event, :control, :writer, :guidance,
+                    :save, :extra, :extra_factory]
+        for t in (1.0, 2.0, 3.0)
+            @test [name for (name, at) in ORDER if at == t] == expected
+        end
+        # Between them, at 0.5 s steps, only the 0.5 s control ticks apply.
+        @test [name for (name, at) in ORDER if at == 1.5] == [:prepare, :reader, :control]
+    end
+
+    @testset "the hardware's run state starts before the callbacks that read it at the run's start" begin
+        # Two runs of one configuration with isolate_state=false. At the second
+        # run's start, the priority callbacks and the sensors' first sample see
+        # the hinge at its configured angle, as at the first run's start.
+        hinge = PanelHinge(axis=SVector(0.0, 1.0, 0.0), max_rate_rad_s=0.1)
+        args = runtime_args((HoldHinge(),); sensor=HingeSensor(hinge), guidance=(), navigation=())
+        sc = only(args.dynamics_model.spacecraft)
+        panel = SM.Link(m=2.0, r=MVector(0.0, 1.5, 0.0), dims=MVector(0.02, 2.0, 1.0))
+        push!(sc.links, panel)
+        add_actuator!(sc, panel, hinge)
+        for run in 1:2
+            empty!(SEEN)
+            run_simulation(args; isolate_state=false, priority_callback_factories=(a -> hinge_seer(hinge),))
+            @testset let run = run
+                @test [(who, angle) for (who, at, angle) in SEEN if at == 0.0] == [(:priority, 0.0), (:sensor, 0.0)]
+                @test hinge.angle_rad > 0.2                                  # the run moved it
+            end
+        end
+    end
+
     @testset "a resumed run restores the run state models keep in checkpoint files" begin
         # Navigation ticks every 0.3 s, off the 1 s checkpoint boundaries (the
         # next testset ticks on them).
@@ -418,6 +555,28 @@ SpaceAGORA.gnc_links(::BadLinks) = (:not_a_link,)
         msg = refusal(() -> run!(counted(3.0, checkpointed(mktempdir()); navigation=HalfKept())))
         @test msg !== nothing && occursin("has no restore_checkpoint_state!", msg)
         @test refusal(() -> run!(counted(3.0, (;); navigation=HalfKept()))) === nothing
+    end
+
+    @testset "a resumed run restores the engine's state before the models start, and theirs after their initializers" begin
+        checkpointed(dir; kw...) = (checkpoint_enabled=true, checkpoint_interval_s=1.0, checkpoint_directory=dir, kw...)
+        # Navigation every 0.4 s has no tick at the 3 s checkpoint, so none is
+        # pending there for the resumed run to take before its callbacks initialize.
+        probed(mission_time, settings) = runtime_args((); sensor=KeptCountSensor(), navigation=(ResumeProbe(0),),
+            navigation_period=0.4, mission_time=mission_time, settings=settings)
+        dir = mktempdir()
+        early = probed(3.0, checkpointed(dir))
+        run_simulation(early; isolate_state=false)
+        saved = SM.IOSerialization._load_checkpoint(early).runtime_state
+        ticks = only(saved.models.navigation).ticks
+        latest = only(only(saved.callbacks.spacecraft).sensors).latest_time_s
+        @test ticks > 0 && latest == 3.0
+        empty!(RESUME_LOG)
+        run_simulation(probed(6.0, checkpointed(dir; resume_from_checkpoint=true)); isolate_state=false,
+            extra_callback_factories=(resume_probe_callback,))
+        # The initializer already sees both resume flags: the engine's and the
+        # callbacks' state came back first. The model's own state comes back after
+        # its initializer, and the callbacks then initialize with both.
+        @test RESUME_LOG[1:3] == [(:initialize, true, true), (:restore, ticks), (:callbacks, ticks, latest)]
     end
 
     @testset "a resumed run ticks as a run in one piece, at checkpoint boundaries too" begin

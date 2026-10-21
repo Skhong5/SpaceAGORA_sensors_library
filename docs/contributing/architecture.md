@@ -196,6 +196,8 @@ the file that performs each step.
    (`dynamics_rhs.jl`,
    `build_initial_conditions`), and allocates the shared buffers held in
    `ODEParams` (`src/orchestration/simulation/state/runtime_types.jl`).
+   The run's start, a resumed run's included, is described under
+   [Run state: owners, resets and restores](#run-state-owners-resets-and-restores).
 3. **Frames and geometry.** Inertial-to-planet-fixed conversions and their
    time-dependent SPICE variants are in
    `src/foundation/core/interfaces/reference_system.jl`
@@ -263,7 +265,8 @@ the file that performs each step.
    operations declared in `src/orchestration/simulation/callback_services.jl`;
    the engine supplies their implementations in `engine/callback_services.jl`.
    This replaces dynamic engine lookup while retaining the existing state
-   access and mutation rules. See [Stopping on a Condition](../src/user/stop_conditions.md).
+   access and mutation rules. The order the callbacks run in is explained under
+   [Callback order](#callback-order). See [Stopping on a Condition](../src/user/stop_conditions.md).
 8. **Propagation.** `spacecraft_dynamics!` in
    `dynamics_rhs.jl`
    assembles translational and rotational derivatives for every spacecraft;
@@ -287,6 +290,204 @@ the file that performs each step.
    module supplies methods for the historical GNC function objects, preserving
    existing access without duplicating the report implementation. See
    [Simulation Outputs](../src/user/outputs.md).
+
+## Callback order
+
+This section is the one place that states the order of a run's callbacks and
+why it holds. `get_callbacks` in
+`src/orchestration/simulation/callbacks/density_callbacks/assembly.jl` builds
+them in this order, and `run_simulation` in
+`src/orchestration/simulation/engine/execution.jl` adds the interlink scheduler
+around them: an initialization-only copy before them and the scheduler after
+them. Change the order and this section together.
+
+### How the solver applies them
+
+The solver keeps the continuous callbacks (events located at a root inside a
+step) apart from the discrete ones (checked at the end of each accepted step),
+and keeps each kind in the order below.
+
+- At the start of each solve, every callback's `initialize` runs: the
+  continuous callbacks first, then the discrete ones, in order.
+- After each accepted step, the solver applies the earliest root among the
+  continuous callbacks (the first in order when roots coincide), then every
+  discrete callback whose condition holds, in order. A discrete callback that
+  terminates the solve does not stop the later ones in that step.
+- A checkpointed run solves one segment after another with the same callbacks.
+  Periodic navigation, guidance and control ticks keep one tick grid for the
+  whole run (`callbacks/periodic_tick_callbacks.jl`).
+  - **At an internal segment boundary**, before the mission end, a tick fires
+    once, before the checkpoint written there.
+  - **At the final horizon**, the run does not tick. A tick due at the mission
+    end stays pending, the checkpoint written there lists it, and a longer run
+    resumed from that checkpoint takes it once, when its callbacks initialize.
+    For example, with 0.1 s ticks and a run ending at 0.3 s, the 0.3 s tick
+    stays pending; a run resumed from that checkpoint to 0.6 s takes it at its
+    start.
+  - **When a solve ends early**, through an event's or a callback's
+    `terminate!`, its checkpoint lists the clocks that had not yet taken the tick
+    due at that time. A resumed run takes those ticks once.
+
+### The order
+
+1. With interlinks, the interlink scheduler's initialization-only copy
+   (`interlink_scheduler_initialization`). It is the first discrete callback,
+   so the first link selection is in place before the other discrete callbacks
+   initialize, and the first saved row shows what the links draw. It does
+   nothing after initialization.
+2. Impact (continuous), for every spacecraft except touchdown spacecraft and
+   externally propagated ones.
+3. The planet-frame update.
+4. The external-propagation sync, when a spacecraft is propagated externally.
+   The discrete callbacks after it read the synced entries.
+5. The hardware's run-state start (`get_run_state_callbacks` in
+   `callbacks/control_callbacks.jl`), when a spacecraft carries a hinge, a
+   thruster gimbal or a thruster with firing dynamics. Its initialization
+   starts their angles and firing state for the run, as the battery's and the
+   faults' initializations start theirs, and a resumed run's initialization
+   records the restored state instead. It does nothing after initialization.
+   It initializes before every callback that reads or moves that hardware: the
+   priority callbacks, the sensors' first sample (taken at initialization) and
+   the control ticks.
+6. The callbacks built by `run_simulation`'s `priority_callback_factories`,
+   such as a mission's operational segments.
+7. Touchdown (continuous).
+8. The opt-in GRAM density perturbation, before every callback that stages or
+   reads density, so that they see the factor updated at the same step.
+9. The staged density, the thermal update, orbit end (continuous), entry end
+   (continuous) and the drag-state phase crossings (continuous), each only when
+   the run needs it.
+10. The GNC phase (`_gnc_phase_callbacks`):
+    1. sensors sample;
+    2. navigation ticks;
+    3. guidance that must publish before the same tick's control: energy
+       depletion guidance with targeting;
+    4. control, in configuration order: a periodic model's tick, or an
+       event-driven model's own `gnc_callbacks`, added as they are;
+    5. actuator faults switch;
+    6. the power budget: the battery boundary (continuous) and the step-end
+       update, which sheds by the load the switched faults leave;
+    7. CMG gimbals stop at their limits (continuous);
+    8. the remaining guidance ticks.
+11. The quaternion projection, when attitude is integrated.
+12. Plume interaction.
+13. The initial force output.
+14. Result saving.
+15. `run_simulation`'s `extra_callbacks`, then the callbacks built by its
+    `extra_callback_factories`.
+16. With interlinks, the interlink scheduler, at initialization (the same
+    selection again) and after every accepted step.
+
+When the run has EDG passage heat to observe, `_edg_observe_heat_callbacks`
+wraps every callback above except the two interlink scheduler callbacks, and
+adds one observer. The observer runs first among the assembly's discrete
+callbacks; only the scheduler's initialization-only copy comes before it. Under
+`solver_mode=:gravity_backbone_split` only impact, the external-propagation
+sync, the hardware's run-state start, the priority callbacks, touchdown, orbit end, plume interaction, the
+initial force output and the extra callbacks are installed; that mode refuses
+interlinks.
+
+### What the order guarantees
+
+- **At one time: sensors, navigation, control, guidance.** Sensors sample
+  before navigation reads them. Guidance that does not feed the same tick's
+  control ticks after control, faults, power and CMGs; energy depletion
+  guidance with targeting ticks before control, so the panel command uses the
+  plan made at the same tick.
+- **The hardware starts the run before anything reads it.** Hinge and gimbal
+  angles and the firing state of thrusters with firing dynamics start each run
+  as configured, unless changed between two runs with `isolate_state=false`.
+  The callbacks that read them at initialization, such as a sensor mounted on
+  a hinged link, see the run's start.
+- **Linked producers prepare their consumer once per tick.** A periodic control
+  tick (`_periodic_control_tick!` in `callbacks/control_callbacks.jl`) first
+  calls `before_reference_control!` for each model that produces a link the
+  controller consumes: each once, on the callback's thread, and only when the
+  tick acts on some spacecraft.
+  - **The order is that of `_linked_producers`.** It takes the run's links in
+    the order models first declare them (`gnc_link_groups`), and within each
+    link its producers in configuration order. A model already listed for an
+    earlier link is not repeated.
+  - **This is not configuration order.** For example, take guidance A producing
+    links X and Y, B producing Y and C producing X. A controller consuming X and
+    Y is prepared by A and C (link X) and then B (link Y), so in the order A, C,
+    B.
+
+  So a producer must not rely on another producer having prepared first.
+- **Scope and inactive spacecraft.** Each spacecraft's tick goes through
+  `_gnc_tick!` (`callbacks/gnc_scope.jl`): a model ticks only for the
+  spacecraft its `spacecraft_scope` names, and when it declares
+  `skip_inactive`, an inactive spacecraft gets `release_command!` instead. The
+  mounted actuators then apply the levels the model holds. An event-driven
+  model's own callbacks do this themselves; the burn scheduler keeps a released
+  command released at its scheduling passes and burn edges.
+- **Stops after the ticks, one spacecraft at a time.** The ticks of one control
+  model may run on several threads. The solver's stop list belongs to the
+  integrator they share, so `register_tstops!` runs afterwards, on the
+  callback's thread.
+- **Planner policy stays in the planner.** An RPO planner's holds, revisions,
+  retries and interval replans happen in its guidance tick;
+  `before_reference_control!` only refuses a reference that is missing or no
+  longer current. None of them is an engine callback.
+
+The engine has no scheduler of its own: each model's callback keeps its own
+period and tick grid, and the order above decides which runs first when they
+coincide.
+
+## Run state: owners, resets and restores
+
+A run's start has three phases, which `run_simulation`
+(`src/orchestration/simulation/engine/execution.jl`) calls in this order after
+building the run's buffers and callbacks:
+
+1. `_resume_engine_state!`. On a run resumed from a checkpoint file, it checks
+   the checkpoint against the run and restores the engine's and the callbacks'
+   run state: the `activity`, `interlinks` and `callbacks` entries, and the
+   periodic ticks still pending. It also sets the resume flags
+   (`callback_resume`, `model_resume`). The models' own state is only checked
+   here.
+2. `_start_run_clock!`: the run clock of the periodic ticks, for a checkpointed
+   or resumed run (`callbacks/periodic_tick_callbacks.jl`).
+3. `_start_run_models!`:
+   - each link's `link_initialize!`, once;
+   - the control clocks (`gnc_clock_started!`);
+   - the models' initializers;
+   - on a resumed run, the models' own state (`restore_checkpoint_state!`),
+     which replaces their reset;
+   - the EDG heat accounting.
+
+The callbacks initialize after these phases, when the solve starts. So there
+are two restores at two different times:
+
+- the engine's and the callbacks' state comes back before the models start and
+  before the callbacks initialize;
+- the models' state comes back after their initializers.
+
+`test/unit/gnc/gnc_runtime_declarations_tests.jl` checks that order on a resumed
+run. The checkpoint side lives in `engine/resume_checkpoint.jl`, whose sections
+follow the same order. The lifecycle hooks are listed in the order the engine
+calls them at the top of `src/models/gnc/contracts/simulation_lifecycle.jl`.
+
+| State | Owner | Reset at a run's start | Checkpoint entry | Restored on a resume | When |
+| --- | --- | --- | --- | --- | --- |
+| Which spacecraft are active | `ODEParams.is_active` | a new `ODEParams`, all active | `activity` (also in `interlinks`) | `_restore_activity_checkpoint_state!` | phase 1 |
+| Interlink selection and history | the `InterlinkModel` | `run_simulation` empties the history and clears the graph's flags and the matching | `interlinks`: the configuration's identity and the activity flags | the identity is checked; the scheduler's initialization rebuilds the selection | phase 1; the scheduler at the solve's start |
+| Battery flags, fault activity | the batteries and the actuator faults | the power and fault callbacks' first initialization | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume` so that those initializations keep it | phase 1 |
+| Sensor streams, latest measurements, biases, sample times | the mounted sensors and the sensor callbacks | `reset_sensors!` at the first solve's start | `callbacks`, and the sensor's own `checkpoint_state` in `models` | the records in phase 1; the sensor's own state in phase 3. A resumed run does not call `initialize_sensor!` | phases 1 and 3 |
+| Hinge and gimbal angles, mounted thrusters' firing state (`κ`, `thrust`) | the link hardware: `PanelHinge`, `ThrusterGimbal` and `Thruster`, which keep the state a run starts from (`run_start`, first the configured one) and the last tick's write (`run_written`) | the run-state callback's first initialization (`get_run_state_callbacks`): a value still equal to the last mounted tick's write returns to the previous run's start; a value a user changed between runs is kept | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume`: the run-state callback's initialization then keeps the restored state and records it as the latest write | phase 1 |
+| Periodic tick clocks | each run-clock callback, and the run clock in the shared buffers | each solve's start; the run clock in phase 2 | `periodic_ticks` | `_pending_periodic_ticks`, taken at the first solve's start | phases 1 and 2 |
+| GNC links | the shared object | `link_initialize!`, once per run | none of their own: the models save what they need | — | phase 3 |
+| The models' own run state | each guidance, navigation and control model | `initialize_navigation!`, `initialize_guidance!`, `initialize_control!`; a value a user changed between runs is kept | `models` (`checkpoint_state`) | `restore_checkpoint_state!`, after the initializers. `model_resume` tells an initializer that the state will come back: the RPO planner then makes no initial request | phase 3 |
+| EDG heat accounting | the EDG state | `_edg_initialize_heat_accounting!` | none: EDG refuses checkpoints | — | phase 3 |
+| Plume interaction integral | the plume model's state | the plume callback's first initialization | none: a resumed run starts a new integral | — | the solve's start |
+| GRAM density perturbation walk | the perturbation callback | its initialization | none: a resume is refused | — | the solve's start |
+| Density model histories | the density models | `_reset_density_model_histories!`, after the pre-solve probes | none | — | before the solve |
+
+Current behaviour to know:
+
+- **Runs that cannot resume.** EDG, `AlgorithmGuidance`, the GRAM density
+  perturbation and externally propagated spacecraft refuse checkpoints or a
+  resume, because the checkpoint does not hold their run state.
 
 ## Map of the repository
 

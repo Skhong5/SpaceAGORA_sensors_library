@@ -3,6 +3,20 @@
 # events and the call before a linked consumer's tick. Each default does nothing;
 # restore_checkpoint_state! has none.
 # The bind_spacecraft fallback names the effector's scope, a GNCRuntime declaration.
+#
+# The engine calls them in this order in a run (see "Run state: owners, resets
+# and restores" in docs/contributing/architecture.md):
+# 1. `bind_spacecraft` for each effector a spacecraft declares, then
+#    `preflight_guidance` and `preflight_control`, on the caller's objects, before
+#    the run copies them;
+# 2. at the run's start, each link's `link_initialize!` (GNCRuntime), then
+#    `initialize_navigation!`, `initialize_guidance!` and `initialize_control!`;
+# 3. on a resumed run, `restore_checkpoint_state!`, after those initializers;
+# 4. during the solve, the models' ticks, with `before_reference_control!` before
+#    a linked consumer's periodic tick and `atmosphere_transition!` at atmosphere
+#    crossings;
+# 5. `checkpoint_state` at every checkpoint, and at the start of a checkpointed or
+#    resumed run, to check that a model keeping run state can restore it.
 isdefined(@__MODULE__, :GNCRuntime) || Base.include(@__MODULE__, joinpath(@__DIR__, "gnc_runtime.jl"))
 module SimulationLifecycle
 using ..GNCRuntime: spacecraft_scope, BoundSpacecraft, CoupledSpacecraft
@@ -123,11 +137,17 @@ atmosphere_transition!(model, u, p, t, spacecraft_index, inside) = nothing
 
 Before each periodic tick of control model `consumer`, once per tick and on the
 callback's thread, for each model that produces a link `consumer` consumes
-(`gnc_links`), in configuration order: let `producer` bring what it writes up to
-date for time `t` (s into the run), as the RPO planner checks its reference. `u`
-is the state and `p` the run's parameters. Not called at a tick that runs
-`consumer` for no spacecraft, as when every spacecraft in its scope is inactive
-and it declares `skip_inactive`. Default: nothing.
+(`gnc_links`): let `producer` bring what it writes up to date for time `t` (s into
+the run), as the RPO planner checks its reference. `u` is the state and `p` the
+run's parameters. Not called at a tick that runs `consumer` for no spacecraft, as
+when every spacecraft in its scope is inactive and it declares `skip_inactive`.
+
+The producers are called link by link, in the order the run's models first declare
+those links, and within a link in configuration order. A producer of several of
+`consumer`'s links is called once, for the first of them. This is not
+configuration order: with A producing links X and Y, B producing Y and C producing
+X, a consumer of X and Y gets A, C, B. A producer must not rely on another having
+been called first. Default: nothing.
 """
 before_reference_control!(producer, consumer, u, p, t) = nothing
 

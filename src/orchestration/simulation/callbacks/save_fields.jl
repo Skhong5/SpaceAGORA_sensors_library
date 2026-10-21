@@ -407,7 +407,7 @@ end
 # link sets, zero while the battery sheds it.
 @inline function _with_link_driven_levels(applied, spacecraft, interlinks, i::Int, n::Int)
     link_driven(interlinks, i) || return applied
-    linked = shed_levels(spacecraft, link_driven_levels!(zeros(Float64, n), interlinks, i))
+    linked = shed_link_driven_levels!(link_driven_levels!(zeros(Float64, n), interlinks, i), interlinks, i, spacecraft)
     out = applied === nothing ? zeros(Float64, n) : copy(applied)
     for (_, _, position) in interlinks.terminal_endpoints[i]
         out[position] = linked[position]
@@ -443,6 +443,34 @@ function _save_actuator_power(num_sats::Int, counts::Vector{Int}, u, t, integrat
         link_driven(interlinks, i) && (out[i] += last(link_terminal_power(interlinks, i, spacecraft[i])))
     end
     return out
+end
+
+# Per spacecraft, the data rate its active links carry out (`which === :sent`)
+# or in.
+function _save_data_rates(u, t, integrator, which::Symbol)
+    p = integrator.p
+    sent, received = data_link_rates_bps(p.args.interlink_model, p.args.dynamics_model.spacecraft, u;
+        is_active=p.is_active, context=LinkContext(time_s=Float64(t), planet=p.args.environment_model.planet))
+    return which === :sent ? sent : received
+end
+
+"""
+    data_save_fields(args) -> Vector{SaveField}
+
+The data columns, in a run with data links (`DataLink`): per spacecraft
+`data_rate_tx_bps` and `data_rate_rx_bps`, the rates its active links carry out
+and in (bits per second), and `data_sent_bits` and `data_received_bits`, the
+bits sent and received since the run started. Empty otherwise.
+"""
+function data_save_fields(args::SimulationConfiguration)
+    has_data_links(args.interlink_model) || return SaveField[]
+    return SaveField[
+        SaveField(:data_rate_tx_bps, (u, t, integrator) -> _save_data_rates(u, t, integrator, :sent); per_satellite=true),
+        SaveField(:data_rate_rx_bps, (u, t, integrator) -> _save_data_rates(u, t, integrator, :received); per_satellite=true),
+        SaveField(:data_sent_bits, (u, t, integrator) -> [Float64(current.data_sent_bits) for current in u.sc]; per_satellite=true),
+        SaveField(:data_received_bits, (u, t, integrator) -> [Float64(current.data_received_bits) for current in u.sc];
+            per_satellite=true),
+    ]
 end
 
 """
@@ -713,6 +741,7 @@ function default_save_fields(args::SimulationConfiguration)
         push!(fields, SaveField(:laser_delta_sma,
             (u, t, integrator) -> [current.laser_delta_sma for current in u.sc]; per_satellite=true))
     end
+    append!(fields, data_save_fields(args))
     append!(fields, articulated_save_fields(args))
     append!(fields, attachment_save_fields(args))
     append!(fields, plume_save_fields(args))

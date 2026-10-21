@@ -64,7 +64,44 @@ end
 @inline function _apply_mounted_tick!(control_model, p, sat_idx::Int, t, period::Float64)
     _apply_mounted_hinges!(control_model, p, sat_idx, t)
     _apply_mounted_thruster_firing!(control_model, p, sat_idx, t, period)
+    # What the tick wrote, which the next run's start compares with (`get_run_state_callbacks`).
+    actuation_mode(control_model) === :mounted && _note_run_writes!(p.args.dynamics_model.spacecraft[sat_idx])
     return nothing
+end
+
+"""
+    get_run_state_callbacks(num_sats, args) -> Tuple
+
+For runs whose spacecraft carry hinges, thruster gimbals or thrusters with
+firing dynamics: one callback that, at the run's start, starts their run state
+(the angles, and the ramp factor and thrust) as a battery's flags and an
+actuator's faults are started. A value the previous run's control ticks wrote
+returns to its value at that run's start, and a value changed after the last
+tick (a user's edit between two runs with `isolate_state=false`) is kept and
+becomes the start of later runs (`ActuatorMounting._start_run_state!`). A run
+resumed from a checkpoint is not a run start: its run state comes from the
+checkpoint, and is recorded as the latest write. Empty without such parts.
+"""
+function get_run_state_callbacks(num_sats::Int, args::SimulationConfiguration)
+    sats = [i for (i, sc) in enumerate(args.dynamics_model.spacecraft) if _has_run_state_parts(sc)]
+    isempty(sats) && return ()
+    # A fresh callback is built for every run. Its initialization also runs at
+    # checkpoint-segment boundaries, which keep the run state.
+    initialized = Ref(false)
+    function initialize!(cb, u, t, integrator)
+        if !initialized[]
+            resumed = integrator.p.shared_buffers.callback_resume[]
+            for i in sats
+                sc = integrator.p.args.dynamics_model.spacecraft[i]
+                resumed ? _note_run_writes!(sc) : _start_run_state!(sc)
+            end
+            initialized[] = true
+        end
+        _mark_discontinuity!(integrator, false)
+        return nothing
+    end
+    return (DiscreteCallback((u, t, integrator) -> false, integrator -> nothing; initialize=initialize!,
+        save_positions=(false, false)),)
 end
 
 @inline function _run_guidance_for_thruster_schedule!(integrator, sat_idx::Int)
@@ -316,7 +353,11 @@ function initialize_gnc_links!(args, u, p, t)
     return nothing
 end
 
-# The models that produce a link `control_model` consumes, in configuration order.
+# The models that produce a link `control_model` consumes: the run's links in the
+# order models first declare them (`gnc_link_groups`), and within each link its
+# producers in configuration order, a model already listed for an earlier link not
+# repeated. Not configuration order overall: with A producing X and Y, B producing
+# Y and C producing X, a consumer of X and Y gets A, C, B.
 function _linked_producers(control_model, args)
     consumed = [declared.link for declared in gnc_links(control_model) if declared isa Consumes]
     isempty(consumed) && return ()
@@ -328,8 +369,103 @@ function _linked_producers(control_model, args)
     return Tuple(producers)
 end
 
+# One periodic control tick of `control_model`, for every spacecraft, in three
+# steps (see "Callback order" in docs/contributing/architecture.md):
+#
+# 1. the models that produce a link it consumes prepare it;
+# 2. each spacecraft gets the model's tick and then its mounted actuators' update,
+#    on several threads when the parallel policy decides so;
+# 3. the model's solver stops are registered, one spacecraft at a time.
+#
+# The parallel policy's observation of the tick covers steps 2 and 3.
+function _periodic_control_tick!(integrator, control_model, producers, num_sats::Int, period::Float64)
+    _prepare_linked_producers!(integrator, control_model, producers, num_sats)
+    decision = _control_callback_thread_decision(integrator.p, control_model, num_sats)
+    started_ns = time_ns()
+    _apply_control_ticks!(integrator, control_model, num_sats, period, decision)
+    _register_control_stops!(integrator, control_model, num_sats)
+    decision.policy_applied && _record_control_tick_policy!(integrator, decision, num_sats, started_ns)
+    return nothing
+end
+
+# Step 1. The models that write what this one reads (its links) prepare it first,
+# each once per tick, in the order `_linked_producers` lists them, on this thread:
+# the RPO planner checks its reference. Not when the tick releases or skips every
+# spacecraft (`_ticks_any`).
+function _prepare_linked_producers!(integrator, control_model, producers, num_sats::Int)
+    (isempty(producers) || !_ticks_any(control_model, integrator.p, num_sats)) && return nothing
+    for producer in producers
+        SimulationLifecycle.before_reference_control!(producer, control_model, integrator.u, integrator.p,
+            integrator.t)
+    end
+    return nothing
+end
+
+# Step 2, for spacecraft `sat_idx`: the model's tick, then, in `:mounted`
+# actuation, the update of the mounted actuators it drives. A spacecraft outside
+# the model's scope gets neither, and an inactive one gets the model's
+# `release_command!` in place of the tick (`_gnc_tick!`).
+@inline function _apply_control_and_mounted!(integrator, control_model, sat_idx::Int, period::Float64)
+    _gnc_tick!(update_control!, control_model, integrator.u, integrator.p, integrator.t, sat_idx) ||
+        return nothing
+    _apply_mounted_tick!(control_model, integrator.p, sat_idx, integrator.t, period)
+    return nothing
+end
+
+# Step 2, for every spacecraft. The spacecraft index is passed explicitly, apart
+# from the effector's index.
+function _apply_control_ticks!(integrator, control_model, num_sats::Int, period::Float64, decision)
+    if decision.use_threads
+        ParallelPolicy.threaded_foreach_persistent(:control_callback, num_sats, decision.allotment) do sat_idx
+            @inbounds _apply_control_and_mounted!(integrator, control_model, sat_idx, period)
+        end
+    else
+        @inbounds for sat_idx in 1:num_sats
+            _apply_control_and_mounted!(integrator, control_model, sat_idx, period)
+        end
+    end
+    return nothing
+end
+
+# Step 3. The solver's stop list belongs to the integrator that all spacecraft
+# share, so stops are registered one spacecraft at a time, after the ticks, even
+# when the ticks ran on several threads.
+function _register_control_stops!(integrator, control_model, num_sats::Int)
+    @inbounds for sat_idx in 1:num_sats
+        register_tstops!(integrator, control_model, sat_idx)
+    end
+    return nothing
+end
+
+function _record_control_tick_policy!(integrator, decision, num_sats::Int, started_ns)
+    ParallelPolicy.record_policy_observation!(
+        :control_callback;
+        mode=decision.mode,
+        num_items=num_sats,
+        use_threads=decision.use_threads,
+        elapsed_ns=(time_ns() - started_ns),
+        env=_policy_env_config(integrator.p),
+        ctx=ParallelPolicy.policy_context_hint(integrator.p)
+    )
+    return nothing
+end
+
+# A periodic control model's callback: its tick every `control_rate` seconds on
+# the run's tick grid (`_run_clock_periodic_callback`). At each solve's start the
+# model learns its clock's period and origin: the solve's start, or the run's in
+# a checkpointed or resumed run.
+function _periodic_control_callback(control_model, control_rate, num_sats::Int, args)
+    period = Float64(control_rate)
+    producers = _linked_producers(control_model, args)
+    tick! = integrator -> _periodic_control_tick!(integrator, control_model, producers, num_sats, period)
+    start_clock = (origin, integrator) -> gnc_clock_started!(control_model, period, origin)
+    return _run_clock_periodic_callback(tick!, period; on_clock=start_clock)
+end
+
+# The control models' callbacks, in configuration order: an event-driven model's
+# own callbacks (`gnc_callbacks`), added as they are, or a periodic model's tick at
+# its rate in `control_rates`.
 function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
-    # Perform the control effects' calculations at specific rates given by the control_rates field in the ControlModel
     control_models = args.control_model.control_effectors
     control_rates = args.control_model.control_rates
     callbacks = Any[]
@@ -341,63 +477,9 @@ function get_control_callbacks(num_sats::Int, args::SimulationConfiguration)
             "tick_schedule($(nameof(typeof(control_model)))) must return :periodic or :event_driven, not $(repr(schedule_kind))."))
         if schedule_kind === :event_driven
             append!(callbacks, gnc_callbacks(control_model, num_sats, args, control_rate))
-            continue
+        else
+            push!(callbacks, _periodic_control_callback(control_model, control_rate, num_sats, args))
         end
-        # Each control effector callback runs at its own rate and updates
-        # all spacecraft states. The spacecraft index is passed explicitly
-        # to avoid conflating effector-index with spacecraft-index.
-        # A spacecraft outside the effector's scope gets neither the tick nor the
-        # mounted actuators' update (`_gnc_tick!`).
-        apply_control! = (integrator, sat_idx) -> begin
-            _gnc_tick!(update_control!, control_model, integrator.u, integrator.p, integrator.t, sat_idx) ||
-                return nothing
-            _apply_mounted_tick!(control_model, integrator.p, sat_idx, integrator.t, Float64(control_rate))
-        end
-        # The models that write what this one reads (its links) prepare it first,
-        # once per tick and on this thread: the RPO planner checks its reference.
-        # Not when the tick releases or skips every spacecraft (`_ticks_any`).
-        producers = _linked_producers(control_model, args)
-        control_func = (integrator) -> begin
-            if !isempty(producers) && _ticks_any(control_model, integrator.p, num_sats)
-                for producer in producers
-                    SimulationLifecycle.before_reference_control!(producer, control_model, integrator.u, integrator.p,
-                        integrator.t)
-                end
-            end
-            decision = _control_callback_thread_decision(integrator.p, control_model, num_sats)
-            use_threads = decision.use_threads
-            started_ns = time_ns()
-            if use_threads
-                ParallelPolicy.threaded_foreach_persistent(:control_callback, num_sats, decision.allotment) do sat_idx
-                    @inbounds apply_control!(integrator, sat_idx)
-                end
-            else
-                @inbounds for sat_idx in 1:num_sats
-                    apply_control!(integrator, sat_idx)
-                end
-            end
-            # The solver's stop list belongs to the integrator that all spacecraft
-            # share, so stops are registered one spacecraft at a time, after the
-            # ticks, even when the ticks ran on several threads.
-            @inbounds for sat_idx in 1:num_sats
-                register_tstops!(integrator, control_model, sat_idx)
-            end
-            if decision.policy_applied
-                ParallelPolicy.record_policy_observation!(
-                    :control_callback;
-                    mode=decision.mode,
-                    num_items=num_sats,
-                    use_threads=use_threads,
-                    elapsed_ns=(time_ns() - started_ns),
-                    env=_policy_env_config(integrator.p),
-                    ctx=ParallelPolicy.policy_context_hint(integrator.p)
-                )
-            end
-        end
-        # At each solve's start the model learns its clock's period and origin:
-        # the solve's start, or the run's in a checkpointed or resumed run.
-        start_clock = (origin, integrator) -> gnc_clock_started!(control_model, Float64(control_rate), origin)
-        push!(callbacks, _run_clock_periodic_callback(control_func, Float64(control_rate); on_clock=start_clock))
     end
     return callbacks
 end

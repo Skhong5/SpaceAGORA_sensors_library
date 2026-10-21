@@ -2,7 +2,7 @@ module SchedulingPolicies
 
 using LinearAlgebra
 using ..InterLinkModels
-using ..InterLinkModels: link_endpoint_forces
+using ..InterLinkModels: link_endpoint_forces, link_endpoint, _terminal_device
 using ..HookDeprecation: _renamed_field_warning, _renamed_keyword, _NOT_PASSED
 
 export SchedulingPolicyModel, score_candidates!
@@ -33,6 +33,10 @@ end
 
 Create a scheduling policy. For `:gve_sma` and `:gve_eccentricity`, `target_index`
 selects one target and `target_index=nothing` scores both link endpoints.
+`:power_delivery` scores each link by the power it delivers to its receiver
+(`link_received_power_w`), so it selects power beams, which apply no force.
+`:data_throughput` scores each link by the data rate it carries
+(`link_data_rate_bps`), so it selects data links.
 For `:gve_sma`, `target_indices` optionally selects a set of targets and takes
 precedence over `target_index`; all selected indices must exist in the simulation state.
 
@@ -55,8 +59,9 @@ mutable struct SchedulingPolicyModel
 			throw(TypeError(:SchedulingPolicyModel, "target_index", Union{Nothing, Integer}, index))
 		indices isa Union{Nothing, AbstractVector{<:Integer}} ||
 			throw(TypeError(:SchedulingPolicyModel, "target_indices", Union{Nothing, AbstractVector{<:Integer}}, indices))
-		policy in (:gve_sma, :gve_eccentricity, :gve_sma_first_index) ||
-			throw(ArgumentError("Supported scheduling policies: :gve_sma, :gve_eccentricity, and :gve_sma_first_index."))
+		policy in (:gve_sma, :gve_eccentricity, :gve_sma_first_index, :power_delivery, :data_throughput) ||
+			throw(ArgumentError("Supported scheduling policies: :gve_sma, :gve_eccentricity, :gve_sma_first_index, " *
+				":power_delivery and :data_throughput."))
 		indices === nothing || policy === :gve_sma ||
 			throw(ArgumentError("target_indices is supported only by the :gve_sma policy."))
 		index === nothing || index > 0 ||
@@ -257,6 +262,68 @@ function score_gve_sma_first_index!(model::InterlinkModel, policy::SchedulingPol
 	return nothing
 end
 
+"""
+	score_power_delivery!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real; spacecraft, context)
+
+The `:power_delivery` policy: each available directed candidate whose receiving
+end is terminal hardware scores the electrical power (W) it would deliver,
+`link_received_power_w` at the current state. Other candidates score 0, and
+the matcher never selects a link with no positive score. `mu` is unused, and
+the scores need the run's spacecraft models (`spacecraft`).
+"""
+function score_power_delivery!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real;
+	candidate_force=nothing, spacecraft=nothing, context=LinkContext())
+	work = matching_workspace!(model, policy)
+	graph = model.graph
+	for index in eachindex(graph.edges)
+		score = 0.0
+		link = graph.edge_properties[index]
+		if graph.available[index] && spacecraft !== nothing && link_directed(link)
+			first, second = map(v -> graph.vertices[v], graph.edges[index])
+			receiver = _terminal_device(spacecraft[second[1]], second[2])
+			if receiver !== nothing
+				a = link_endpoint(state.sc[first[1]], spacecraft[first[1]], first[1])
+				b = link_endpoint(state.sc[second[1]], spacecraft[second[1]], second[1])
+				score = Float64(link_received_power_w(link, receiver, a, b, context))
+			end
+		end
+		isfinite(score) || throw(ArgumentError("Nonfinite $(policy.policy) score for candidate $index."))
+		work.score[index] = score
+	end
+	return nothing
+end
+
+"""
+	score_data_throughput!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real; spacecraft, context)
+
+The `:data_throughput` policy: each available directed candidate scores the data
+rate (bits per second) it would carry, `link_data_rate_bps` at the current
+state, with the terminal hardware at its two ends (`nothing` for a virtual
+terminal). Other candidates score 0, and the matcher never selects a link with
+no positive score. `mu` is unused, and the scores need the run's spacecraft
+models (`spacecraft`).
+"""
+function score_data_throughput!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real;
+	candidate_force=nothing, spacecraft=nothing, context=LinkContext())
+	work = matching_workspace!(model, policy)
+	graph = model.graph
+	for index in eachindex(graph.edges)
+		score = 0.0
+		link = graph.edge_properties[index]
+		if graph.available[index] && spacecraft !== nothing && link_directed(link)
+			first, second = map(v -> graph.vertices[v], graph.edges[index])
+			transmitter = _terminal_device(spacecraft[first[1]], first[2])
+			receiver = _terminal_device(spacecraft[second[1]], second[2])
+			a = link_endpoint(state.sc[first[1]], spacecraft[first[1]], first[1])
+			b = link_endpoint(state.sc[second[1]], spacecraft[second[1]], second[1])
+			score = Float64(link_data_rate_bps(link, transmitter, receiver, a, b, context))
+		end
+		isfinite(score) || throw(ArgumentError("Nonfinite $(policy.policy) score for candidate $index."))
+		work.score[index] = score
+	end
+	return nothing
+end
+
 # 2.2. Define the function to score candidate interlinks based on the scheduling policy
 # The scores follow each link's `link_force` (`candidate_force=nothing`), or a
 # caller's `candidate_force(target, partner, link)` giving the force on `target`.
@@ -270,6 +337,10 @@ function score_candidates!(model::InterlinkModel, policy::SchedulingPolicyModel,
 		return score_gve_eccentricity!(model, policy, state, mu; candidate_force, spacecraft, context)
 	elseif policy.policy === :gve_sma_first_index
 		return score_gve_sma_first_index!(model, policy, state, mu; candidate_force, spacecraft, context)
+	elseif policy.policy === :power_delivery
+		return score_power_delivery!(model, policy, state, mu; candidate_force, spacecraft, context)
+	elseif policy.policy === :data_throughput
+		return score_data_throughput!(model, policy, state, mu; candidate_force, spacecraft, context)
 	end
 	throw(ArgumentError("Unsupported scheduling policy: $(policy.policy)."))
 end
@@ -329,7 +400,9 @@ end
 	select_interlinks!(model::InterlinkModel, policy::SchedulingPolicyModel)
 
 Activate a maximum-total-score matching of available, positive-score links,
-with at most one link per terminal. Topology belongs to `model.graph`; `policy.matching`
+with at most one link per terminal. Of parallel links (directed links both ways
+between the same two terminals), only the highest-scoring is a candidate, the
+first in endpoint order on a tie. Topology belongs to `model.graph`; `policy.matching`
 contains raw per-edge `score` values and reusable solver scratch arrays. Pass the same
 policy used by `score_candidates!`; selection uses its stored scores, not its scoring
 objective. A fresh workspace starts with zero scores. Appending links preserves existing
@@ -363,6 +436,7 @@ function select_interlinks!(model::InterlinkModel, policy::SchedulingPolicyModel
 			push!(work.exact_scores, Rational{BigInt}(work.score[edge]))
 		end
 	end
+	_drop_parallel_candidates!(model, work)
 	selected = InterLinkKey[]
 	if !isempty(work.candidates)
 		# Step 2. Scale exact Float64 rationals to integer weights without rounding score sums.
@@ -418,6 +492,33 @@ function select_interlinks!(model::InterlinkModel, policy::SchedulingPolicyModel
 		model.graph.active[model.graph.edge_index_lookup[key]] = true
 	end
 	return sort!(selected)
+end
+
+# Parallel candidates (directed links both ways between the same two terminals)
+# share both terminals, so a matching holds at most one: keep the highest-scoring,
+# the first in endpoint order on a tie. The components then stay simple graphs,
+# and a two-way pair alone stays a tree.
+function _drop_parallel_candidates!(model, work)
+	length(work.candidates) < 2 && return nothing
+	edges = model.graph.edges
+	best = Dict{Tuple{Int, Int}, Int}()   # vertex pair => position in the candidates
+	keep = fill(true, length(work.candidates))
+	for (position, edge) in enumerate(work.candidates)
+		pair = minmax(edges[edge]...)
+		other = get(best, pair, 0)
+		if other == 0
+			best[pair] = position
+		elseif work.exact_scores[position] > work.exact_scores[other]
+			keep[other] = false
+			best[pair] = position
+		else
+			keep[position] = false
+		end
+	end
+	all(keep) && return nothing
+	keepat!(work.candidates, keep)
+	keepat!(work.exact_scores, keep)
+	return nothing
 end
 
 # 4. Overall scheduling function to schedule interlinks based on the current state and scoring policy

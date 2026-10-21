@@ -37,11 +37,15 @@ using ..ActuatorMounting: mounted_gimbal_count, apply_gimbal_levels!
 using ..Components: _gimbal_rotation
 using ..ActuatorMounting: mounted_thruster_fractions, mounted_hinge_count, apply_hinge_levels!, mounted_actuator_count
 using ..ActuatorMounting: applied_actuator_levels, mounted_power
+using ..ActuatorMounting: _has_run_state_parts, _note_run_writes!, _start_run_state!
 using ..Actuators: actuator_saturate
 using ..ThrusterHooks: thrust_calculation_schmitt_trigger!
 using ..PowerSystems: has_battery, has_power_parts, battery, solar_generation_w, solar_flux_w_m2, mean_solar_distance_m
 using ..PowerSystems: bus_load_w, actuator_power_by_tier, battery_boundary!, update_power_state!, shed_levels
 using ..InterlinkTerminals: without_link_driven, link_driven_levels!, link_terminal_power, link_driven
+using ..InterlinkTerminals: link_receives, received_link_power_w, beamed_link_power_w
+using ..InterlinkTerminals: data_link_rates_bps, shed_link_driven_levels!
+using ..InterLinkModels: LinkContext, PowerBeamLink, has_data_links
 using ..DynamicEffectors: eclipse_area_calc, MagneticTorqueRodModel, rod_field_body
 using ..DynamicEffectors: is_gravitational
 using ..ActuatorFaults: has_faults, faulted_levels, refresh_faults!, fault_edge, resolve_faults!

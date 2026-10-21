@@ -1,25 +1,58 @@
 # External propagation service contract
 
-[`SpaceAGORA.ExternalPropagationServices`](@ref) is the supported facade for
-optional external spacecraft integrators.
+[`SpaceAGORA.ExternalPropagationServices`](@ref) is the service module for
+external propagators. An external propagator is a package, such as
+SpaceAGORAMuJoCo, that advances some spacecraft with its own integrator instead of
+SpaceAGORA's; these pages call it the owner of those spacecraft. The service
+module lists the hooks an owner adds methods to and the SpaceAGORA services it may
+use. It follows the [optional adapter standard](adapter_contract.md).
 
-This facade follows the [optional adapter standard](adapter_contract.md). This
-page describes contract 2.0.0, which applies SpaceAGORA's hook conventions to the
-external-owner protocol: time before index, an owner-local position named
-`slot`, and one definition of the attitude quaternion. It has no global provider
-registry: independently configured owners may coexist, provided they do not claim
-the same spacecraft.
+This page describes contract 2.0.0, which applies SpaceAGORA's hook conventions
+to the owner protocol: time before index, an owner-local position named `slot`,
+and one definition of the attitude quaternion. There is no global registry of
+owners. Owners configured independently can run together, as long as no two
+claim the same spacecraft.
 
-Use `with_external_propagators` to attach owners to a configuration,
-`external_initial_state` in preparation, and `external_runtimes` in telemetry
-callbacks. These helpers keep adapter code independent of configuration-copy and
-engine-storage implementation details. Borrowed runtimes must not be stepped or
-mutated from telemetry callbacks.
+To write an adapter, use three helpers:
 
-Configuration preflight checks ownership and solver compatibility. Execution
-still checks routing, the flat-RHS guard and other runtime restrictions. This
-facade does not add checkpoint/resume, ensemble/process-pool support, actuator
-coupling or a higher-order native step.
+- `with_external_propagators` attaches owners to a configuration;
+- `external_initial_state` reads each spacecraft's initial state while you prepare
+  a run;
+- `external_runtimes` gives telemetry callbacks the owners' runtimes, to read only:
+  do not step or change them from a callback.
+
+These helpers keep adapter code independent of how SpaceAGORA copies
+configurations and stores engine data.
+
+The configuration preflight checks ownership and solver compatibility. The run
+itself still checks routing, the flat right-hand-side guard and other runtime
+restrictions. This contract does not provide checkpoints and resume, ensembles or
+process pools, actuator coupling, or a higher-order native step; plan runs with
+an external propagator without them.
+
+## Owners and users
+
+The names are defined in `src/orchestration/simulation/external_propagation_services.jl`.
+The service module exposes the same functions and types, with the same
+identities.
+
+| User | What it does | Supported access |
+|---|---|---|
+| MuJoCo `src/engine_coupling.jl` and other adapter implementations | Declares the spacecraft it owns, prepares a fresh runtime, synchronizes and reports state | Methods on the eight external-owner hooks in the inventory. |
+| Configuration builders and the generated `companion` starter | Attach owners and run the configuration preflight | `with_external_propagators` and `validate_external_propagators`. |
+| Adapter preparation | Reads each spacecraft's initial state | `external_initial_state`, which returns copied samples by run index. |
+| Telemetry callbacks | Observe the owners' runtimes without changing them | `external_runtimes`, which returns borrowed runtimes; callbacks must not step them. |
+| MuJoCo `src/proximity_scene.jl` | Gets common frame and gravity quantities | The service module's frame and gravity services and the documented root API, including `StateSample` and `EnvironmentSample`. |
+
+`with_external_propagators` makes a shallow update: it does not copy the objects
+your adapter owns. So create a separate mutable runtime for each run when you
+prepare it. The preflight checks the configuration only; the run still checks
+routing and refuses unsupported modes.
+
+Some MuJoCo tests and research scripts still use private SpaceAGORA paths. These
+paths are not supported; maintainers find them listed, with the checks for a
+boundary change, in `docs/contributing/companion_boundaries.md` in the
+[contributor documentation](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/main/docs/contributing).
 
 ## Conventions
 

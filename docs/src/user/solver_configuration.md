@@ -113,9 +113,9 @@ settings into later subsolves, so physical multirate runs with atmospheric
 crossings change.
 
 The fixed-step gravity-backbone driver is exempt from adaptive
-phase updates. This exemption does not establish support for atmospheric
-gravity-backbone runs: the density callback currently requires the ordinary
-spacecraft state layout.
+phase updates. Gravity-backbone runs sample no atmosphere: `run_simulation`
+refuses one whose density model is not `NoAtmosphereModel()`, however the
+solver mode was chosen.
 
 ## Practical recipes
 

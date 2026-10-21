@@ -7,10 +7,11 @@ const _NO_SUN = SVector{3, Float64}(NaN, NaN, NaN)
 
 # Generation, load and net power of spacecraft `sat_idx` in state `sc_view` at
 # time `t`: the arrays lit by the Sun of the run's ephemerides (none when they
-# cannot place it), the constant loads, and the mounted actuators at the levels
-# of every control effector in `:mounted` actuation that holds them, as the
-# faults leave them.
-function _power_snapshot(sc_view, spacecraft, p, sat_idx::Int, t::Float64)
+# cannot place it), the power beams it receives (from the run state `state`,
+# which has every spacecraft), the constant loads, and the mounted actuators at
+# the levels of every control effector in `:mounted` actuation that holds them,
+# as the faults leave them.
+function _power_snapshot(sc_view, spacecraft, p, sat_idx::Int, t::Float64; state=nothing)
     args = p.args
     planet = args.environment_model.planet
     generation = 0.0
@@ -28,6 +29,10 @@ function _power_snapshot(sc_view, spacecraft, p, sat_idx::Int, t::Float64)
                 SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
             generation = solar_generation_w(spacecraft, rot(q) * (to_sun / distance), solar_flux_w_m2(distance), lit)
         end
+    end
+    if state !== nothing && link_receives(args.interlink_model, sat_idx)
+        generation += received_link_power_w(args.interlink_model, sat_idx, args.dynamics_model.spacecraft, state;
+            context=LinkContext(time_s=t, planet=planet))
     end
     wheel_momentum = hasproperty(sc_view, :h_wheels) ? sc_view.h_wheels : nothing
     balance = _mounted_power_balance(spacecraft, args.control_model.control_effectors, sat_idx, generation, wheel_momentum;
@@ -89,7 +94,7 @@ function _update_power_states!(integrator, sats::Vector{Int})
     changed = false
     for i in sats
         sc_view = integrator.u.sc[i]
-        snap = _power_snapshot(sc_view, spacecraft[i], integrator.p, i, integrator.t)
+        snap = _power_snapshot(sc_view, spacecraft[i], integrator.p, i, integrator.t; state=integrator.u)
         changed |= update_power_state!(spacecraft[i], sc_view.battery_wh, snap.generation_w, snap.by_tier)
     end
     _mark_discontinuity!(integrator, changed)
@@ -169,12 +174,17 @@ function _save_power(num_sats::Int, u, t, integrator, which::Symbol)
         sc = spacecraft[i]
         if !has_power_parts(sc)
             out[i] = NaN
+        elseif which === :power_received_w
+            out[i] = received_link_power_w(integrator.p.args.interlink_model, i, spacecraft, u;
+                context=LinkContext(time_s=Float64(t), planet=integrator.p.args.environment_model.planet))
+        elseif which === :power_beamed_w
+            out[i] = beamed_link_power_w(integrator.p.args.interlink_model, i)
         elseif which === :battery_wh || which === :battery_soc
             b = battery(sc)
             out[i] = b === nothing ? NaN :
                 (which === :battery_wh ? Float64(u.sc[i].battery_wh) : Float64(u.sc[i].battery_wh) / b.capacity_wh)
         else
-            snap = _power_snapshot(u.sc[i], sc, integrator.p, i, Float64(t))
+            snap = _power_snapshot(u.sc[i], sc, integrator.p, i, Float64(t); state=u)
             out[i] = which === :power_generated_w ? snap.generation_w :
                      which === :power_load_w ? snap.load_w :
                      which === :power_net_w ? snap.net_w : snap.unshed_load_w - snap.load_w
@@ -190,11 +200,19 @@ The power columns, when a spacecraft carries power-system parts: per
 spacecraft `battery_wh` and `battery_soc` (NaN without a battery),
 `power_generated_w`, `power_load_w` (with the shedding applied),
 `power_shed_w` and `power_net_w` (generation minus load; negative while the
-battery cannot cover the load). NaN for a spacecraft without power parts.
+battery cannot cover the load). NaN for a spacecraft without power parts. A
+run with power beams adds `power_received_w`, the electrical power its incoming
+beams deliver (part of `power_generated_w`), and `power_beamed_w`, the optical
+power its outgoing beams carry.
 """
 function power_save_fields(args::SimulationConfiguration)
     any(has_power_parts, args.dynamics_model.spacecraft) || return SaveField[]
     num_sats = length(args.dynamics_model.spacecraft)
+    names = (:battery_wh, :battery_soc, :power_generated_w, :power_load_w, :power_shed_w, :power_net_w)
+    model = hasproperty(args, :interlink_model) ? args.interlink_model : nothing
+    if model !== nothing && any(link -> link isa PowerBeamLink, model.graph.edge_properties)
+        names = (names..., :power_received_w, :power_beamed_w)
+    end
     return SaveField[SaveField(name, (u, t, integrator) -> _save_power(num_sats, u, t, integrator, name); per_satellite=true)
-                     for name in (:battery_wh, :battery_soc, :power_generated_w, :power_load_w, :power_shed_w, :power_net_w)]
+                     for name in names]
 end
