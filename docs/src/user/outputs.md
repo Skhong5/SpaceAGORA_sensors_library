@@ -372,6 +372,19 @@ refuses a checkpoint whose scopes differ, and a checkpoint written without scope
 effectors (by a run without them, or by an earlier SpaceAGORA). A run without
 scoped effectors records nothing more than before.
 
+Every checkpoint also records the spacecraft each guidance, navigation and
+control model acts on, its `spacecraft_scope` as the run-start initializers left
+it: every spacecraft, the run positions of a bound model (`BoundSpacecraft`, which
+a model declared on a spacecraft has once bound to it), or a coupled model's
+primary and partners. A resumed run refuses a checkpoint whose models act on other
+spacecraft, or whose guidance, navigation or control models are another number,
+before any model's run state is restored, whether or not the models keep run
+state. So a momentum manager's saved command never goes to a manager of another
+spacecraft. A checkpoint written by SpaceAGORA 0.5.1 or earlier holds no such
+record, so a run with any guidance, navigation or control model refuses it before
+anything is restored: resume it with SpaceAGORA 0.5.1, or run from the start. A
+run without those models resumes from it as before.
+
 ## Campaign and multi-process runs
 
 `run_monte_carlo` and `run_constellation_ensemble` samples each call
