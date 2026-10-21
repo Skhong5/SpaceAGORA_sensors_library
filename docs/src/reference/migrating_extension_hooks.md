@@ -113,6 +113,15 @@ A model without a `spacecraft_scope` method of its own has the default
 burn scheduler, the only built-in model with a method, is event-driven and
 registers its stops from its own callbacks.
 
+The scope itself is read once per periodic tick instead of once per spacecraft,
+and twice for a control model that consumes a link: once before its producers
+prepare it, and once after. So a model whose tick changes its own scope sees the
+change from its next tick. A model that, ticking for spacecraft 1, retargets
+itself to spacecraft 2 used to be ticked for spacecraft 2 in the same tick, and
+is now ticked for it from the next one. A model that sets its spacecraft before
+the run, in its constructor, in `bind_spacecraft` or in an initializer, is
+unaffected.
+
 ## Changed in 0.7.0
 
 A guidance, navigation or control model's per-spacecraft hooks follow its
@@ -128,7 +137,8 @@ signatures and are called for fewer spacecraft.
 - **The scope is fixed for the run.** The engine takes each model's scope when the
   run starts, once the run-start initializers ran, and stops the run when a later
   read differs: at each tick, and once per accepted step for an event-driven model.
-  A model that changed its scope during a run sets its spacecraft before the run
+  A model that changed its scope during a run, which after 0.5.1 was ticked for
+  its new spacecraft from its next tick, sets its spacecraft before the run
   instead: in the model, in `bind_spacecraft` or in an initializer.
 - **A `SpacecraftSelection` scopes GNC models too.** 0.6 refused it; it is
   resolved when the run starts, its `where` called once per spacecraft.
