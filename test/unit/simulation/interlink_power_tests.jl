@@ -7,6 +7,7 @@ module InterlinkPowerTests
 using Test
 using LinearAlgebra
 using StaticArrays
+using TOML
 using SpaceAGORA
 
 const SM = SpaceAGORA.SimulationModel
@@ -238,9 +239,10 @@ sample(pos) = SM.InterLinkModels.link_endpoint((pos=pos,), nothing, 1)
         # is restored, and the file still resumes the unchanged run.
         straight = run_simulation(run_args(beam_pair()...); return_results=true).table
         mktempdir() do directory
-            segments(resume) = SimulationSettings(results=false, generate_plots=false, checkpoint_enabled=true,
-                checkpoint_interval_s=10.0, checkpoint_directory=directory, resume_from_checkpoint=resume)
-            run_simulation(run_args(beam_pair()...; duration=30.0, settings=segments(false)); return_results=true)
+            segments(resume) = SimulationSettings(results=resume, results_directory=directory, generate_plots=false,
+                checkpoint_enabled=true, checkpoint_interval_s=10.0, checkpoint_directory=directory,
+                resume_from_checkpoint=resume)
+            first_leg = run_simulation(run_args(beam_pair()...; duration=30.0, settings=segments(false)); return_results=true).table
             changed = (
                 "receiver radius" => (receiver=(receiver_radius=0.3,),),
                 "receiver efficiency" => (receiver=(receiver_efficiency=0.5,),),
@@ -255,7 +257,11 @@ sample(pos) = SM.InterLinkModels.link_endpoint((pos=pos,), nothing, 1)
                 @test_throws ArgumentError run_simulation(args; return_results=true)
             end
             resumed = run_simulation(run_args(beam_pair()...; settings=segments(true)); return_results=true).table
-            @test resumed.time[1] >= 30.0 - 1e-9
+            # It resumed at 30 s rather than starting again, and its table holds the
+            # whole run: the first leg's rows, kept beside its checkpoint, then its own.
+            @test TOML.parsefile(joinpath(directory, "simulation_results.manifest.toml"))["resumed_from_s"] == 30.0
+            @test resumed.time[1] == 0.0 && resumed.time[end] > 30.0
+            @test isequal(resumed[resumed.time .< 30.0, :], first_leg[first_leg.time .< 30.0, :])
             @test resumed.sc2_battery_wh[end] ≈ straight.sc2_battery_wh[end] rtol=1e-9
             @test resumed.sc1_battery_wh[end] ≈ straight.sc1_battery_wh[end] rtol=1e-9
         end
