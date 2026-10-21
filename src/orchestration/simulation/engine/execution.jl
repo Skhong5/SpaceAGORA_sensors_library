@@ -420,10 +420,7 @@ function _with_density_model_epoch(args::SimulationConfiguration)
     environment = args.environment_model
     density_model = SimulationModel.with_density_model_epoch(environment.density_model, args.initial_time)
     density_model === environment.density_model && return args
-    names = fieldnames(typeof(environment))
-    fields = NamedTuple{names}(map(name -> getfield(environment, name), names))
-    aligned_environment = SimulationModel.EnvironmentModel(;
-        merge(fields, (; density_model))...)
+    aligned_environment = SimulationModel.SimConfig._with_fields(environment; density_model)
     return SimulationModel.SimConfig._with_configuration(args;
         environment_model=aligned_environment)
 end

@@ -39,8 +39,10 @@ editing the call. A name that is not a field of `x` throws an `ArgumentError`.
 This is how configuration structs are copied: name only the fields that change,
 never pass another instance's fields one by one. The constructor takes the fields
 by keyword, or in field order for a type whose keyword constructor computes fields
-rather than taking them (`SpacecraftModel`). It is a shallow update;
-run_simulation owns mutable-state isolation.
+rather than taking them (`SpacecraftModel`). That field-order constructor checks
+nothing: a changed `SpacecraftModel` field is not validated, so change only fields
+whose values are already valid (the copy without GNC changes only the GNC
+containers). It is a shallow update; run_simulation owns mutable-state isolation.
 """
 function _with_fields(x; changes...)
     T = typeof(x)

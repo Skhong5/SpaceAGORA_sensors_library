@@ -34,8 +34,9 @@ const ODD = (
         thermal_model=MaxwellianHeat(thermal_accomodation_factor=0.5, planet=PLANET)),
     SpacecraftModel=(joints=Joint[], links=[ROOT], root=ROOT, instant_actuation=false, dry_mass=500.0,
         prop_mass=7.25, inertia_tensor=ROOT.inertia, initial_condition=IC, id=7,
-        guidance=GuidanceModel((), Float64[]), navigation=NavigationModel((), Float64[]),
-        control=ControlModel((), Float64[]), attachments=SM.CompliantAttachment[], n_terminal=2,
+        # Non-empty GNC, so a copy without GNC that fails to strip it is caught.
+        guidance=GuidanceModel((:g,), [2.0]), navigation=NavigationModel((:n,), [3.0]),
+        control=ControlModel((:c,), [4.0]), attachments=SM.CompliantAttachment[], n_terminal=2,
         battery_energy_index=3.5, tempurature_index=4.5, constellation_slot=ConstellationSlot(2, 3)),
     MonteCarloSampleResult=(index=3, seed=17, success=false, elapsed_s=1.25, value=:value, error=:error,
         backtrace=:backtrace, finished_ns=99.0),
