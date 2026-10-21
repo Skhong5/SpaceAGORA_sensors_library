@@ -303,6 +303,9 @@ end
         before = _files(dir_a)
         c = _resumed(dir_a; results)
         @test whole(c) && isempty(c.files) && _files(dir_a) == before
+        # Likewise to a mission that ends before the checkpoint: the rows up to it.
+        past = run_simulation(_resumable_config(dir_a; results, mission_time=2400.0, resume=true); return_results=true)
+        @test whole(past) && isempty(past.files) && _files(dir_a) == before
 
         # Rows a crash wrote after the last checkpoint are cut away on resume.
         dir_d = mktempdir()

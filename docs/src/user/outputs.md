@@ -324,8 +324,9 @@ whose partial results the resumed run completes. Rows written after the last
 checkpoint by a run that crashed are dropped, since the resumed run computes them
 again. A run extended from the end of a finished run takes the ticks due there
 first (see above), and saves the row at that time again after them, as a run never
-interrupted saves it. A resume from a checkpoint at the mission's end solves
-nothing and writes no results files; its returned table holds the whole run.
+interrupted saves it. A resume from a checkpoint at or past the mission's end
+solves nothing and writes no results files; its returned table holds the rows up
+to the checkpoint.
 
 The rows file stays with the checkpoint files after the run; a later run in the
 same checkpoint directory that is not a resume replaces it. It holds every row the

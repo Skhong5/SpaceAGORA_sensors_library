@@ -1180,8 +1180,8 @@ function run_simulation(
     end
 
     # Process and save results. A resumed run that solved nothing (its checkpoint
-    # is at the mission's end) returns its results but writes no files: those
-    # already hold the run.
+    # is at or past the mission's end) returns its results but writes no files:
+    # those already hold the run.
     solved = t_start < mission_end
     saved_results = _save_simulation_results_if_enabled!(results_inputs...; return_table=return_results,
         write_files=solved)
