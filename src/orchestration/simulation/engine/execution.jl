@@ -634,6 +634,8 @@ results table built in memory (same columns and values as the CSV, even when
 configuration that actually ran (the deep copy under `isolate_state=true`, so
 controller state and logs are reachable), the files the run wrote, and the
 solution when `return_solution=true` is also given (otherwise `nothing`).
+`return_results=true` cannot be combined with `return_solver_metadata=true`. With
+the default `return_results=false` the return value is unchanged.
 
 `extra_callback_factories=()` optionally supplies functions of the isolated
 configuration. Each is called once after epoch alignment, state isolation and
@@ -650,8 +652,12 @@ external-state synchronization retain their ordering. Operational mission
 segments use this hook; continuous events still follow solver event ordering.
 
 Explicitly enabled checkpoint writing remains independent of result-file output.
-It cannot be combined with `return_solver_metadata=true`. With the default
-`return_results=false` the return value is unchanged.
+With `return_solver_metadata=true`, a checkpointed run returns one `solver_trace`
+entry per segment solved, and the `retcode` (and `solution`, with
+`return_solution=true`) of the last segment solved. A run resumed from a
+checkpoint at or past the mission end solves nothing: its `retcode` and `solution`
+are `nothing` and its `solver_trace` is empty, so test the mission rather than
+these fields.
 
 # Examples
 ```jldoctest
@@ -1178,7 +1184,7 @@ function run_simulation(
         # retcode throws above, before this tuple is built, so the values
         # reachable here are the successful ones and a callback termination. And
         # it is `nothing` when no solve ran at all, which happens when a resumed
-        # checkpoint is already at mission end — a caller comparing it against
+        # checkpoint is at or past mission end — a caller comparing it against
         # "Success" reads that as failure, so test the mission, not the field,
         # if resuming is in play. Note also that appending `retcode` here shifts
         # the position of every later field, which matters only to a caller
