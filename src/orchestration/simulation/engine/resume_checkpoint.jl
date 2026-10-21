@@ -252,6 +252,65 @@ function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
     return nothing
 end
 
+# The interlink states' names. A run's state calls them `interlink_dv` and
+# `interlink_delta_sma`; a checkpoint keeps the names they had before 0.6.0,
+# `laser_dv` and `laser_delta_sma`, so its integrated state is written as earlier
+# versions wrote it and those versions can resume it. A resumed run reads either
+# pair.
+const _INTERLINK_STATE_NAMES = (:interlink_dv => :laser_dv, :interlink_delta_sma => :laser_delta_sma)
+
+# Which pair of names a state gives the interlink states: `:current`, `:legacy`
+# (the names before 0.6.0) or `:none`; `:mixed` for a state that has parts of
+# both pairs, or whose spacecraft differ.
+function _interlink_state_naming(u)
+    namings = map(eachindex(u.sc)) do i
+        names = propertynames(u.sc[i])
+        current = count(in(names), first.(_INTERLINK_STATE_NAMES))
+        legacy = count(in(names), last.(_INTERLINK_STATE_NAMES))
+        current == 2 && legacy == 0 ? :current : legacy == 2 && current == 0 ? :legacy :
+            current == 0 && legacy == 0 ? :none : :mixed
+    end
+    isempty(namings) && return :none
+    return allequal(namings) ? first(namings) : :mixed
+end
+
+# A checkpointed state's interlink states fit the run: both names of one pair in a
+# run with interlinks, neither pair in a run without.
+function _check_interlink_checkpoint_state(args, checkpoint)
+    naming = _interlink_state_naming(checkpoint.u)
+    (args.interlink_model === nothing ? naming === :none : naming in (:current, :legacy)) ||
+        throw(ArgumentError("Checkpoint interlink state does not match the configured interlink_model; resume with the same interlink setting."))
+    return nothing
+end
+
+# The state a checkpoint stores: the run's state, with the interlink states under
+# their checkpoint names in a run with interlinks.
+_checkpoint_state(args, u) = args.interlink_model === nothing ? u : _renamed_spacecraft_state(u, _INTERLINK_STATE_NAMES)
+
+# The state a resumed run starts from: the checkpoint's state, with interlink states
+# written under their checkpoint names given back the run's names.
+_resumed_checkpoint_state(args, u) = args.interlink_model !== nothing && _interlink_state_naming(u) === :legacy ?
+    _renamed_spacecraft_state(u, map(reverse, _INTERLINK_STATE_NAMES)) : u
+
+# A copy of the state `u` with the spacecraft components renamed by `names` (old =>
+# new pairs). Every other component, every shape and every value stay; the copy's
+# values are checked bit for bit against `u`'s.
+function _renamed_spacecraft_state(u, names)
+    renamed(name) = (index = findfirst(pair -> first(pair) === name, names); index === nothing ? name : last(names[index]))
+    shapes = map(eachindex(u.sc)) do i
+        spacecraft = u.sc[i]
+        components = propertynames(spacecraft)
+        NamedTuple{map(renamed, components)}(map(name -> _state_component_copy(getproperty(spacecraft, name)), components))
+    end
+    state = ComponentVector(sc=shapes)
+    old, new = ComponentArrays.getdata(u), ComponentArrays.getdata(state)
+    length(old) == length(new) && all(index -> old[index] === new[index], eachindex(old, new)) ||
+        error("Renaming the interlink states changed the state's values; this is a SpaceAGORA bug.")
+    return state
+end
+_state_component_copy(value::Number) = value
+_state_component_copy(value::AbstractArray) = copy(value)
+
 # The run state the callbacks keep on the spacecraft records: the batteries'
 # flags, the faults' activity and held levels, the sensors' streams, latest
 # measurements and gyro biases, the hinges' and gimbals' angles, and the firing
@@ -563,7 +622,7 @@ end
     return SimulationModel.IOSerialization._write_checkpoint!(
         args,
         t,
-        u_state,
+        _checkpoint_state(args, u_state),
         CHECKPOINT_SCHEMA_VERSION;
         solver_mode=solver_mode,
         runtime_state=runtime

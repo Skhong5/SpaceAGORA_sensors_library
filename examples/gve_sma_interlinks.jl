@@ -59,7 +59,7 @@ function run_gve_sma_case(; dt_max_orbit::Float64=10.0, duration::Float64=3600.0
     model = solution.prob.p.args.interlink_model
     history = model.history
     intervals = diff([sample.time for sample in history])
-    delta_sma = [current.laser_delta_sma for current in solution.u[end].sc]
+    delta_sma = [current.interlink_delta_sma for current in solution.u[end].sc]
     # Step 2: Report integration cadence, link switches, and accumulated SMA changes.
     @printf("dtmax=%.1f s: %d accepted steps, max/median dt=%.6f/%.6f s, %d switches\n",
         dt_max_orbit, length(intervals), maximum(intervals), median(intervals), length(interlink_switches(history)))

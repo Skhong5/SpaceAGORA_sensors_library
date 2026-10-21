@@ -312,7 +312,7 @@ integral(x, y) = sum((x[k + 1] - x[k]) * (y[k] + y[k + 1]) / 2 for k in 1:length
                 checkpoint_directory=directory)
             spacecraft, model = data_pair()
             args = run_args(spacecraft, model; settings)
-            state = (sc=[(pos=[RADIUS, 0.0, 0.0], laser_dv=zeros(3), laser_delta_sma=0.0, data_sent_bits=0.0,
+            state = (sc=[(pos=[RADIUS, 0.0, 0.0], interlink_dv=zeros(3), interlink_delta_sma=0.0, data_sent_bits=0.0,
                 data_received_bits=0.0) for _ in 1:2],)
             SE._write_checkpoint!(args, 5.0, state, "tsit5"; is_active=[true, true])
             checkpoint = SE._load_checkpoint(args)

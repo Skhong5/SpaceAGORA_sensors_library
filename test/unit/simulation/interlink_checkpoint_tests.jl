@@ -63,7 +63,7 @@ function checkpoint_fixture(directory)
     args = (interlink_model=model, scheduling_policy_model=policy,
         dynamics_model=(spacecraft=spacecraft,),
         simulation_settings=(checkpoint_directory=directory, results_directory=directory))
-    state = (sc=[(pos=[Float64(i), 0.0, 0.0], laser_dv=zeros(3), laser_delta_sma=0.0) for i in 1:3],)
+    state = (sc=[(pos=[Float64(i), 0.0, 0.0], interlink_dv=zeros(3), interlink_delta_sma=0.0) for i in 1:3],)
     return args, state
 end
 

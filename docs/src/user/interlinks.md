@@ -295,11 +295,15 @@ total score. Only links with a positive score can be selected. The selected sche
 stages, which avoids changing it during rejected steps. An inactive endpoint
 contributes no force even if an earlier schedule still names its link.
 
-The saved `laser_dv` vector integrates the interlink acceleration.
-`laser_delta_sma` integrates its contribution to the instantaneous osculating
-semimajor-axis rate; it is not a comparison against a separately propagated
-unforced trajectory. The history belongs to the returned run configuration.
-With the default state isolation, the input configuration is unchanged.
+In a run with interlinks, every spacecraft has two more integrated states.
+`interlink_dv` integrates the acceleration its selected links' forces give
+(m/s, inertial). `interlink_delta_sma` integrates their contribution to the
+instantaneous osculating semimajor-axis rate (m); it is not a comparison against
+a separately propagated unforced trajectory. Both stay zero for links that apply
+no force, such as power beams and data links. They are saved in the
+[interlink columns](output_columns.md#Interlinks). The history belongs to the
+returned run configuration. With the default state isolation, the input
+configuration is unchanged.
 
 ### Policies
 
@@ -467,10 +471,15 @@ under `julia --depwarn=error`. The two old type names are aliases of the new
 types and cannot warn on their own: `InterLinkParameters()`,
 `InterLinkParameters(terminal)`, the positional `InterLinkParameters(P, B, range)`
 and `ConstellationInterLinkModel(; forbidden_pairs)` run silently, so search for
-those names when you move to the new ones.
+those names when you move to the new ones. The `laser_dv` and `laser_delta_sma`
+columns cannot warn either: a run writes them beside the `interlink_dv` and
+`interlink_delta_sma` columns, with the same values, until 1.0. Leave the
+`:laser_dv` and `:laser_delta_sma` fields out of an explicit `save_fields` list
+to stop writing them.
 
 | Deprecated | Use instead | Warns |
 | --- | --- | --- |
+| the columns `sc1_laser_dv_1` .. `sc1_laser_dv_3` and `sc1_laser_delta_sma`, and their save fields `:laser_dv` and `:laser_delta_sma` | `sc1_interlink_dv_1` .. `sc1_interlink_dv_3` and `sc1_interlink_delta_sma`; `:interlink_dv` and `:interlink_delta_sma` | no, a column |
 | `ConstellationInterLinkModel` | `InterlinkModel` | no, an alias |
 | its `constellation_link_type` keyword and property | nothing: each link has its own kind | yes |
 | `InterLinkParameters` | `LaserMomentumLink` | no, an alias |
@@ -502,3 +511,14 @@ that schedules the same.
 | the keywords `target_idx`, `target_idxs` | as `target_index`, `target_indices` above |
 | `scheduler.policy` (a symbol) | `scheduler.objective` (a policy value) |
 | `scheduler.target_index`, `scheduler.target_indices`, `scheduler.target_idx`, `scheduler.target_idxs` | `scheduler.objective.targets` |
+
+The two integrated states the interlinks add to each spacecraft were renamed in
+0.6.0 as well. The name of a state component cannot warn, so they were renamed
+without a deprecation period; their columns keep the old names as aliases
+until 1.0 (see [Deprecated names](#Deprecated-names)). Checkpoints keep the old
+names inside, so checkpoints written before 0.6.0 resume.
+
+| Removed | Use instead |
+| --- | --- |
+| the state `laser_dv`, as in `solution.u[end].sc[i].laser_dv` | `interlink_dv` |
+| the state `laser_delta_sma` | `interlink_delta_sma` |
