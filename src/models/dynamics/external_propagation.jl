@@ -89,7 +89,7 @@ external_prepare(ep::AbstractExternalPropagator, args, u0) = _unimplemented("ext
 """`external_sync!(rt, t) -> Int`: advance by whole owner steps to the last step at or before elapsed time `t` [s]; return the number of steps taken."""
 external_sync!(rt, t::Float64) = _unimplemented("external_sync!", typeof(rt))
 
-"""`external_time(rt) -> Float64`: the owner's current time [s], an integer number of steps from its epoch."""
+"""`external_time(rt) -> Float64`: the owner's current time [s], an integer number of steps from its epoch. The engine does not call it; it lets tests and tools observe the owner's clock."""
 external_time(rt) = _unimplemented("external_time", typeof(rt))
 
 """

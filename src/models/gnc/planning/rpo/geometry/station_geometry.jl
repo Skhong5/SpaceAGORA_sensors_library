@@ -6,7 +6,15 @@ mutable struct RPOStationKDNode
     right::Union{Nothing, RPOStationKDNode}
 end
 
-"""Construct station geometry and its KD-tree from body-frame point samples."""
+"""
+    RPOStationGeometry
+
+Target-station geometry for RPO clearance queries: body-frame point samples in
+metres (`points_body`, 3 x N), a KD-tree over them for nearest-point queries, the
+keep-out radius around every point (`keepout_radius_m`) and a `name`. Build one
+with `RPOStationGeometry(points_body; keepout_radius_m, name)` and pair it with an
+`RPOCubeSatGeometry` chaser in an `RPOReferenceGeometry`.
+"""
 struct RPOStationGeometry
     points_body::Matrix{Float64}
     kd_root::Union{Nothing, RPOStationKDNode}
@@ -30,7 +38,12 @@ function _rpo_build_station_kdtree(points::Matrix{Float64}, indices::Vector{Int}
     )
 end
 
-"""Construct station geometry and its KD-tree from body-frame point samples."""
+"""
+    RPOStationGeometry(points_body; keepout_radius_m=0.0, name="station")
+
+Build station geometry and its KD-tree from body-frame point samples, a 3 x N
+matrix in metres with at least one point. `keepout_radius_m` must be nonnegative.
+"""
 function RPOStationGeometry(points_body; keepout_radius_m::Real=0.0, name::AbstractString="station")
     points = Matrix{Float64}(points_body)
     size(points, 1) == 3 || throw(ArgumentError("RPOStationGeometry point cloud must be a 3 x N matrix."))
