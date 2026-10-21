@@ -133,11 +133,10 @@ end
 # dynamics, as other mounted effectors do after their ticks.
 function _mounted_burn_tick_callback(control_model::BaseThrusterModel, period::Float64, num_sats::Int)
     tick! = integrator -> begin
-        @inbounds for sat_idx in 1:num_sats
-            # As every periodic tick (`_gnc_tick!`): an inactive spacecraft's command
-            # is released instead, and the mounted actuators then apply it.
-            _gnc_tick!(mounted_burn_tick!, control_model, integrator.u, integrator.p, integrator.t, sat_idx) ||
-                continue
+        @inbounds for sat_idx in _tick_positions(spacecraft_scope(control_model), num_sats)
+            # As every periodic tick (`_gnc_tick_in_scope!`): an inactive spacecraft's
+            # command is released instead, and the mounted actuators then apply it.
+            _gnc_tick_in_scope!(mounted_burn_tick!, control_model, integrator.u, integrator.p, integrator.t, sat_idx)
             _apply_mounted_tick!(control_model, integrator.p, sat_idx, integrator.t, period)
         end
         return nothing
@@ -369,22 +368,26 @@ function _linked_producers(control_model, args)
     return Tuple(producers)
 end
 
-# One periodic control tick of `control_model`, for every spacecraft, in three
-# steps (see "Callback order" in docs/contributing/architecture.md):
+# One periodic control tick of `control_model`, for every spacecraft in its scope,
+# in three steps (see "Callback order" in docs/contributing/architecture.md):
 #
 # 1. the models that produce a link it consumes prepare it;
-# 2. each spacecraft gets the model's tick and then its mounted actuators' update,
-#    on several threads when the parallel policy decides so;
+# 2. each spacecraft in the model's scope gets the model's tick and then its
+#    mounted actuators' update, on several threads when the parallel policy
+#    decides so;
 # 3. the model's solver stops are registered, one spacecraft at a time.
 #
-# The parallel policy's observation of the tick covers steps 2 and 3.
+# The scope is read once, after step 1, and its positions (`_tick_positions`) serve
+# steps 2 and 3; the thread decision counts them. The parallel policy's
+# observation of the tick covers steps 2 and 3.
 function _periodic_control_tick!(integrator, control_model, producers, num_sats::Int, period::Float64)
     _prepare_linked_producers!(integrator, control_model, producers, num_sats)
-    decision = _control_callback_thread_decision(integrator.p, control_model, num_sats)
+    positions = _tick_positions(spacecraft_scope(control_model), num_sats)
+    decision = _control_callback_thread_decision(integrator.p, control_model, length(positions))
     started_ns = time_ns()
-    _apply_control_ticks!(integrator, control_model, num_sats, period, decision)
-    _register_control_stops!(integrator, control_model, num_sats)
-    decision.policy_applied && _record_control_tick_policy!(integrator, decision, num_sats, started_ns)
+    _apply_control_ticks!(integrator, control_model, positions, period, decision)
+    _register_control_stops!(integrator, control_model, positions)
+    decision.policy_applied && _record_control_tick_policy!(integrator, decision, length(positions), started_ns)
     return nothing
 end
 
@@ -401,26 +404,25 @@ function _prepare_linked_producers!(integrator, control_model, producers, num_sa
     return nothing
 end
 
-# Step 2, for spacecraft `sat_idx`: the model's tick, then, in `:mounted`
-# actuation, the update of the mounted actuators it drives. A spacecraft outside
-# the model's scope gets neither, and an inactive one gets the model's
-# `release_command!` in place of the tick (`_gnc_tick!`).
+# Step 2, for spacecraft `sat_idx` in the model's scope: the model's tick, then,
+# in `:mounted` actuation, the update of the mounted actuators it drives. An
+# inactive spacecraft gets the model's `release_command!` in place of the tick
+# (`_gnc_tick_in_scope!`).
 @inline function _apply_control_and_mounted!(integrator, control_model, sat_idx::Int, period::Float64)
-    _gnc_tick!(update_control!, control_model, integrator.u, integrator.p, integrator.t, sat_idx) ||
-        return nothing
+    _gnc_tick_in_scope!(update_control!, control_model, integrator.u, integrator.p, integrator.t, sat_idx)
     _apply_mounted_tick!(control_model, integrator.p, sat_idx, integrator.t, period)
     return nothing
 end
 
-# Step 2, for every spacecraft. The spacecraft index is passed explicitly, apart
-# from the effector's index.
-function _apply_control_ticks!(integrator, control_model, num_sats::Int, period::Float64, decision)
+# Step 2, for every spacecraft at `positions` (the model's scope). The spacecraft
+# index is passed explicitly, apart from the effector's index.
+function _apply_control_ticks!(integrator, control_model, positions, period::Float64, decision)
     if decision.use_threads
-        ParallelPolicy.threaded_foreach_persistent(:control_callback, num_sats, decision.allotment) do sat_idx
-            @inbounds _apply_control_and_mounted!(integrator, control_model, sat_idx, period)
+        ParallelPolicy.threaded_foreach_persistent(:control_callback, length(positions), decision.allotment) do k
+            @inbounds _apply_control_and_mounted!(integrator, control_model, positions[k], period)
         end
     else
-        @inbounds for sat_idx in 1:num_sats
+        @inbounds for sat_idx in positions
             _apply_control_and_mounted!(integrator, control_model, sat_idx, period)
         end
     end
@@ -429,19 +431,19 @@ end
 
 # Step 3. The solver's stop list belongs to the integrator that all spacecraft
 # share, so stops are registered one spacecraft at a time, after the ticks, even
-# when the ticks ran on several threads.
-function _register_control_stops!(integrator, control_model, num_sats::Int)
-    @inbounds for sat_idx in 1:num_sats
+# when the ticks ran on several threads: for each spacecraft at `positions`.
+function _register_control_stops!(integrator, control_model, positions)
+    @inbounds for sat_idx in positions
         register_tstops!(integrator, control_model, sat_idx)
     end
     return nothing
 end
 
-function _record_control_tick_policy!(integrator, decision, num_sats::Int, started_ns)
+function _record_control_tick_policy!(integrator, decision, num_items::Int, started_ns)
     ParallelPolicy.record_policy_observation!(
         :control_callback;
         mode=decision.mode,
-        num_items=num_sats,
+        num_items=num_items,
         use_threads=decision.use_threads,
         elapsed_ns=(time_ns() - started_ns),
         env=_policy_env_config(integrator.p),
