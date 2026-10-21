@@ -3417,6 +3417,7 @@ function spacecraft_dynamics!(du::ComponentVector, u::ComponentVector, p, t::Flo
         rhs_width_trial_step!(du, u, p, t, trial, _spacecraft_dynamics_dispatch!)
     end
     _apply_power_rhs!(du, u, p, t)
+    _apply_data_rhs!(du, u, p, t)
     SimulationModel.SimulationCallbacks._publish_initial_force_outputs!(u, t, p)
     return nothing
 end
@@ -3433,8 +3434,24 @@ function _apply_power_rhs!(du, u, p, t::Float64)
             du.sc[i].battery_wh = 0.0
             continue
         end
-        snap = SimulationModel.SimulationCallbacks._power_snapshot(u.sc[i], sc, p, i, t)
+        snap = SimulationModel.SimulationCallbacks._power_snapshot(u.sc[i], sc, p, i, t; state=u)
         du.sc[i].battery_wh = SimulationModel.battery_rate_wh_s(SimulationModel.battery(sc), snap.net_w)
+    end
+    return nothing
+end
+
+# The data counters of a run with data links, after every route: the bits each
+# spacecraft has sent and received grow at the rates its active links carry,
+# each link's `link_data_rate_bps` at the current state.
+function _apply_data_rhs!(du, u, p, t::Float64)
+    isempty(u.sc) || hasproperty(u.sc[1], :data_sent_bits) || return nothing
+    spacecraft = p.args.dynamics_model.spacecraft
+    planet = p.args.environment_model.planet
+    sent, received = SimulationModel.data_link_rates_bps(p.args.interlink_model, spacecraft, u;
+        is_active=p.is_active, context=SimulationModel.LinkContext(time_s=t, planet=planet))
+    @inbounds for i in eachindex(spacecraft)
+        du.sc[i].data_sent_bits = p.is_active[i] ? sent[i] : 0.0
+        du.sc[i].data_received_bits = p.is_active[i] ? received[i] : 0.0
     end
     return nothing
 end
@@ -4078,6 +4095,10 @@ function build_initial_conditions(args)::ComponentVector
         base_shape = SimulationModel.has_battery(sc) ? merge(base_shape, (battery_wh = 0.0,)) : base_shape
         if args.interlink_model !== nothing
             base_shape = merge(base_shape, (laser_dv = zeros(3), laser_delta_sma = 0.0))
+        end
+        # The bits sent and received, only in a run with data links.
+        if SimulationModel.has_data_links(args.interlink_model)
+            base_shape = merge(base_shape, (data_sent_bits = 0.0, data_received_bits = 0.0))
         end
         if SimulationModel.articulated_has_moving_joints(sc)
             tree = SimulationModel.build_articulated_tree(sc; prop_mass=sc.prop_mass)

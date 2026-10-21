@@ -19,17 +19,22 @@ The package is developed against the SpaceAGORA commit in `SpaceAGORASource.toml
 in a separate environment that develops that commit by path. Once:
 
 ```bash
-git clone -c lfs.fetchexclude='*' https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../SpaceAGORA.jl
+git clone --filter=blob:none -c lfs.fetchexclude="*" https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../SpaceAGORA.jl
 git -C ../SpaceAGORA.jl checkout <the rev in SpaceAGORASource.toml>
 julia --startup-file=no ../SpaceAGORA.jl/scripts/contributor_environment.jl package . ../StarterName-env --manifest core
 ```
 
-`-c lfs.fetchexclude='*'` keeps this clone, its checkouts and later pulls from
-downloading SpaceAGORA's large data files (Git LFS), which a contributor
-repository does not use. Without Git LFS installed the setting does nothing,
-and nothing is downloaded either.
+`--filter=blob:none` skips the contents of old file versions: Git downloads the
+files of a commit when you check it out. `-c lfs.fetchexclude="*"` keeps this
+clone, its checkouts and later pulls from downloading SpaceAGORA's large data
+files (Git LFS), which a contributor repository does not use. Without Git LFS
+installed the setting does nothing, and nothing is downloaded either.
 
 Then `julia --project=../StarterName-env -e 'using Pkg; Pkg.test("StarterName")'`.
+That line is quoted for bash or zsh (on Windows, Git Bash). In PowerShell or
+Command Prompt, start `julia --project=../StarterName-env` and enter
+`using Pkg; Pkg.test("StarterName")` at the `julia>` prompt; the three commands
+above run there as written.
 `test/runtests.jl` runs SpaceAGORA's conformance checks for planners on the family's
 representative requests and a short simulation; `test/method_tests.jl` holds the
 package's own tests of its method. `examples/run_in_simulation.jl` runs the planner

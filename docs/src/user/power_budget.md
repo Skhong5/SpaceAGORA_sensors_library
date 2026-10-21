@@ -25,14 +25,16 @@ spacecraft's `battery_energy_index` (a percentage).
   or, with `SimpleEphemeridesModel`, a low-precision model for Earth (other
   bodies need SPICE). The solar flux uses the central body's mean distance
   from the Sun (1 AU for Earth and the Moon); the eclipse model is the one of
-  solar radiation pressure.
+  solar radiation pressure. A `PowerReceiver` adds the power its incoming power
+  beams deliver (see [Interlinks](interlinks.md#Power-links)); a receiver alone
+  counts as a power part.
 - **Charging.** A surplus charges the battery at `charge_efficiency`, up to
   `max_charge_w`; a full battery curtails the rest.
 - **Discharging.** A shortfall discharges it over `discharge_efficiency`, up
   to `max_discharge_w`.
 - **Shedding.** When the battery is empty, the engine sheds actuator load in
   tiers until what is left fits what the arrays generate: laser terminals
-  first, then torque rods, then the reaction wheels' motors (a shed wheel puts
+  (and the radios that transmit on data links) first, then torque rods, then the reaction wheels' motors (a shed wheel puts
   no torque on the vehicle). Shedding ends once the battery has recharged to
   `recovery_soc` of its capacity. Constant loads are never shed; while the
   battery is empty and they exceed the generation, the net power stays

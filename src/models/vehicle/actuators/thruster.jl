@@ -5,6 +5,9 @@
 
 # ---- Record ---------------------------------------------------------------
 
+# The firing state of a thruster with firing dynamics: its ramp factor and thrust.
+const _FiringRunState = NamedTuple{(:κ, :thrust), Tuple{Float64, Float64}}
+
 """
     Thruster(; max_thrust, location, direction, Isp, ...)
 
@@ -41,12 +44,17 @@ saturated command.
     firing_dynamics::Bool = false # In :mounted actuation, deliver the command through the minimum on-time, Schmitt trigger and thrust ramp above
     gimballed::Bool = false # A ThrusterGimbal turns this thruster's thrust (set when one is mounted)
     gimbal_rotation::SMatrix{3, 3, Float64, 9} = SMatrix{3, 3, Float64, 9}(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0) # Its gimbals' current rotation, link frame
+    run_start::_FiringRunState = _FiringRunState((κ, thrust)) # The firing state a run starts from, first the configured one
+    run_written::Union{Nothing, _FiringRunState} = nothing # The run's last tick's write of it (`ActuatorMounting._start_run_state!`)
 end
 
 # ---- State ----------------------------------------------------------------
 #
 # The mutable fields `thrust`, `κ` and `stop_firing_time` above hold the firing
-# state; `run_simulation(isolate_state=true)` copies them per run. The firing
+# state; `run_simulation(isolate_state=true)` copies them per run. With
+# `isolate_state=false` each run starts `κ` and `thrust` from the previous run's
+# start, unless they were changed after that run's last control tick
+# (`run_start`, `run_written`; `ActuatorMounting._start_run_state!`). The firing
 # dynamics that update them (Schmitt trigger, impulse integration, ramp
 # factor) are in `thruster_hooks.jl`, which needs the link types. A checkpoint
 # saves `κ` and `thrust` of a mounted thruster with firing dynamics, and a

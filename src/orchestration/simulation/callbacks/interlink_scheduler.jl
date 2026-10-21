@@ -1,5 +1,5 @@
 # Accepted-step scheduling and history recording belong to simulation orchestration.
-using ..InterLinkModels: InterLinkHistory, LinkContext
+using ..InterLinkModels: InterLinkHistory, InterLinkKey, LinkContext, available_links, records_available
 using ..SchedulingPolicies: schedule_interlinks!
 using ..InterlinkTerminals: terminal_availability
 
@@ -20,7 +20,8 @@ function interlink_scheduler_callback(; candidate_force=nothing)
 			candidate_force, is_active=integrator.p.is_active,
 			context=LinkContext(time_s=Float64(integrator.t), planet=planet),
 			terminal_available=terminal_availability(model, args.dynamics_model.spacecraft))
-		sample = InterLinkHistory(Float64(integrator.t), selected)
+		sample = InterLinkHistory(Float64(integrator.t), selected,
+			records_available(model) ? available_links(model) : InterLinkKey[])
 		if !isempty(model.history) && model.history[end].time == sample.time
 			model.history[end] = sample
 		else

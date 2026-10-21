@@ -86,6 +86,9 @@ using .SimulationModel: InterlinkModel, InterLinkGraph, InterLinkKey, InterLinkH
 using .SimulationModel: link_directed, link_terminal_levels, link_terminal, terminal_supports, terminal_count
 using .SimulationModel: register_links!, all_pairs, mounted_link_terminals, terminal_number
 using .SimulationModel: same_plane_pairs, ring_pairs, grid_pairs
+using .SimulationModel: PowerBeamLink, link_received_power_w, beam_spot_radius_m, beam_capture_fraction
+using .SimulationModel: DataLink, AbstractDataBudget, FixedRateBudget, ShannonBudget, link_data_rate_bps, budget_rate_bps
+using .SimulationModel: terminal_shed_tier, contact_windows, contact_time_s
 using .SimulationModel: SchedulingPolicyModel, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
 using .SimulationModel: ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
 export AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
@@ -93,6 +96,9 @@ export InterlinkModel, InterLinkGraph, InterLinkKey, InterLinkHistory, register_
 export link_directed, link_terminal_levels, link_terminal, terminal_supports, terminal_count
 export register_links!, all_pairs, mounted_link_terminals, terminal_number
 export same_plane_pairs, ring_pairs, grid_pairs
+export PowerBeamLink, link_received_power_w, beam_spot_radius_m, beam_capture_fraction
+export DataLink, AbstractDataBudget, FixedRateBudget, ShannonBudget, link_data_rate_bps, budget_rate_bps
+export terminal_shed_tier, contact_windows, contact_time_s
 export SchedulingPolicyModel, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
 export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
 @doc (@doc SimulationModel.InterLinkModels.AbstractInterlink) AbstractInterlink
@@ -116,13 +122,26 @@ export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!,
 @doc (@doc SimulationModel.InterLinkModels.register_links!) register_links!
 @doc (@doc SimulationModel.InterLinkModels.all_pairs) all_pairs
 @doc (@doc SimulationModel.InterLinkModels.same_plane_pairs) same_plane_pairs
+@doc (@doc SimulationModel.InterLinkModels.PowerBeamLink) PowerBeamLink
+@doc (@doc SimulationModel.InterLinkModels.link_received_power_w) link_received_power_w
+@doc (@doc SimulationModel.InterLinkModels.beam_spot_radius_m) beam_spot_radius_m
+@doc (@doc SimulationModel.InterLinkModels.beam_capture_fraction) beam_capture_fraction
+@doc (@doc SimulationModel.InterLinkModels.DataLink) DataLink
+@doc (@doc SimulationModel.InterLinkModels.AbstractDataBudget) AbstractDataBudget
+@doc (@doc SimulationModel.InterLinkModels.FixedRateBudget) FixedRateBudget
+@doc (@doc SimulationModel.InterLinkModels.ShannonBudget) ShannonBudget
+@doc (@doc SimulationModel.InterLinkModels.link_data_rate_bps) link_data_rate_bps
+@doc (@doc SimulationModel.InterLinkModels.budget_rate_bps) budget_rate_bps
+@doc (@doc SimulationModel.InterLinkModels.terminal_shed_tier) terminal_shed_tier
+@doc (@doc SimulationModel.InterLinkModels.contact_windows) contact_windows
+@doc (@doc SimulationModel.InterLinkModels.contact_time_s) contact_time_s
 @doc (@doc SimulationModel.InterLinkModels.ring_pairs) ring_pairs
 @doc (@doc SimulationModel.InterLinkModels.grid_pairs) grid_pairs
 @doc (@doc SimulationModel.InterlinkTerminals.mounted_link_terminals) mounted_link_terminals
 @doc (@doc SimulationModel.InterlinkTerminals.terminal_number) terminal_number
 @doc """Indexed terminal vertices, candidate edges, the link of each edge (`edge_properties`) and availability/selection flags. Register candidates with `register_link!`.""" InterLinkGraph
 @doc """Canonically ordered pair of `(spacecraft array index, terminal number)` endpoints.""" InterLinkKey
-@doc """One accepted-step schedule sample: time in seconds and selected `InterLinkKey` values.""" InterLinkHistory
+@doc """One accepted-step schedule sample: time in seconds, the selected `InterLinkKey` values (`active`) and the available ones (`available`, recorded in a run with a data link or with `InterlinkModel(; record_available=true)`, and empty for a sample built from a time and the selected keys). `contact_windows` reads a run's samples.""" InterLinkHistory
 @doc (@doc SimulationModel.SchedulingPolicies.SchedulingPolicyModel) SchedulingPolicyModel
 @doc """Score available links using a `SchedulingPolicyModel`, the current spacecraft state and the gravitational parameter, from each link's `link_force` (or a caller's `candidate_force(target, partner, link)`).""" score_candidates!
 @doc (@doc SimulationModel.SchedulingPolicies.select_interlinks!) select_interlinks!
@@ -346,7 +365,7 @@ using .SimulationModel: control_thruster_levels, touchdown_spec
 using .SimulationModel: getHeatRate
 using .SimulationModel: update_control!, update_guidance!, update_navigation!
 # Actuators: the contract (Actuators), the thruster kind (Components) and mounting (ActuatorMounting).
-using .SimulationModel: Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
+using .SimulationModel: Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PowerReceiver, RadioTerminal, PanelHinge, ActuatorContext
 using .SimulationModel: ThrusterGimbal, thrust_direction
 using .SimulationModel: ControlMomentGyro, cmg_momentum, cmg_torque_axis, cmg_angle_saturate, cmg_steering
 using .SimulationModel: CMGInnerGimbal, cmg_torque_axes
@@ -450,6 +469,8 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.ReactionWheel) ReactionWheel
 @doc (@doc SimulationModel.Magnetorquer) Magnetorquer
 @doc (@doc SimulationModel.LaserTerminal) LaserTerminal
+@doc (@doc SimulationModel.PowerReceiver) PowerReceiver
+@doc (@doc SimulationModel.RadioTerminal) RadioTerminal
 @doc (@doc SimulationModel.PanelHinge) PanelHinge
 @doc (@doc SimulationModel.ThrusterGimbal) ThrusterGimbal
 @doc (@doc SimulationModel.thrust_direction) thrust_direction
@@ -781,7 +802,7 @@ export control_wrench, control_propellant_rate, control_wheel_torque
 export control_thruster_levels, touchdown_spec, bind_spacecraft
 export getHeatRate
 export update_control!, update_guidance!, update_navigation!
-export AbstractActuator, Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PanelHinge, ActuatorContext
+export AbstractActuator, Thruster, ReactionWheel, Magnetorquer, LaserTerminal, PowerReceiver, RadioTerminal, PanelHinge, ActuatorContext
 export ThrusterGimbal, thrust_direction
 export ControlMomentGyro, cmg_momentum, cmg_torque_axis, cmg_angle_saturate, cmg_steering
 export CMGInnerGimbal, cmg_torque_axes

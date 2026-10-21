@@ -174,8 +174,77 @@ end
         @test violations == [tracking_path]
     end
     @test !_has_reflective_control_lookup(Meta.parseall("import ..ControlHooks: init_rpo_lqmpc"))
-    # The independent EDG pairing lookup is outside this C3a boundary. Do not
-    # forbid its helper in GuidanceHooks before the separate C3b migration.
+    # Guidance as a whole is checked below.
+end
+
+_is_parent_call(x) = x isa Expr && x.head === :call && _call_name(first(x.args)) === :parentmodule
+
+# The names a source binds to its parent module or an ancestor
+# (`const _PARENT = parentmodule(@__MODULE__)`).
+function _parent_aliases(x, found=Set{Symbol}())
+    if x isa Expr
+        x.head === :(=) && x.args[1] isa Symbol && _is_parent_call(x.args[2]) && push!(found, x.args[1])
+        foreach(arg -> _parent_aliases(arg, found), x.args)
+    end
+    return found
+end
+
+# Each name a source looks up at run time through its parent module, by name or
+# through a call to `parentmodule`: `getfield` and `getproperty` calls and dot
+# access (`_PARENT.Name`), in source order.
+function _parent_module_lookups(x, aliases, found=Any[])
+    through(owner) = owner in aliases || _is_parent_call(owner)
+    if x isa Expr
+        if x.head === :call && length(x.args) >= 3 && _call_name(first(x.args)) in (:getfield, :getproperty) &&
+                through(x.args[2])
+            push!(found, x.args[3] isa QuoteNode ? x.args[3].value : x.args[3])
+        elseif x.head === :. && length(x.args) == 2 && x.args[2] isa QuoteNode && through(x.args[1])
+            push!(found, x.args[2].value)
+        end
+        foreach(arg -> _parent_module_lookups(arg, aliases, found), x.args)
+    end
+    return found
+end
+
+@testset "Guidance does not discover ControlHooks at runtime" begin
+    root = normpath(joinpath(@__DIR__, "..", "..", ".."))
+    guidance_dir = joinpath(root, "src", "models", "gnc", "guidance")
+    paths = String[]
+    for (dir, _, files) in walkdir(guidance_dir)
+        append!(paths, [joinpath(dir, name) for name in files if endswith(name, ".jl")])
+    end
+    sort!(paths)
+    sources = Dict(path => read(path, String) for path in paths)
+    for path in paths
+        @testset "$(relpath(path, root))" begin
+            @test !_has_reflective_control_lookup(Meta.parseall(sources[path]))
+        end
+    end
+    @test !isdefined(SpaceAGORA.SimulationModel.GuidanceHooks, :_control_module)
+    # The one lookup through the parent module that guidance keeps, allowed by
+    # name: typed EDG guidance reaches EDGAlgorithms, which loads after
+    # GuidanceHooks (`_edg_algorithms()`). It is not a control dependency. Any
+    # other such lookup is new and needs review.
+    allowed = Dict(joinpath("src", "models", "gnc", "guidance", "aerobraking", "typed_edg", "guidance_models.jl") =>
+        Any[:EDGAlgorithms])
+    function lookups(sources)
+        parsed = Dict(path => Meta.parseall(source) for (path, source) in sources)
+        aliases = foldl((found, ex) -> _parent_aliases(ex, found), values(parsed); init=Set{Symbol}())
+        return Dict(relpath(path, root) => found for (path, ex) in parsed
+            for found in (_parent_module_lookups(ex, aliases),) if !isempty(found))
+    end
+    @test :_PARENT in foldl((found, source) -> _parent_aliases(Meta.parseall(source), found), values(sources);
+        init=Set{Symbol}())
+    @test lookups(sources) == allowed
+    # A ControlHooks lookup put back into an actual guidance source, in memory, is
+    # caught; no repository file changes.
+    edg_path = joinpath(guidance_dir, "aerobraking", "energy_depletion_lifecycle.jl")
+    for lookup in ("getfield(_PARENT, :ControlHooks)", "getproperty(parentmodule(@__MODULE__), :ControlHooks)",
+                   "_PARENT.ControlHooks", "_CORE.ControlHooks")
+        changed = sources[edg_path] * "\n_late_control() = $lookup\n"
+        @test lookups(merge(sources, Dict(edg_path => changed))) != allowed
+        startswith(lookup, "get") && @test _has_reflective_control_lookup(Meta.parseall(changed))
+    end
 end
 
 @testset "Reporting preserves result selection and file content" begin

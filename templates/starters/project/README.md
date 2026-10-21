@@ -18,15 +18,18 @@ The study is tested in a separate environment that develops the pinned SpaceAGOR
 commit by path. Once:
 
 ```bash
-git clone -c lfs.fetchexclude='*' https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../SpaceAGORA.jl
+git clone --filter=blob:none -c lfs.fetchexclude="*" https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../SpaceAGORA.jl
 git -C ../SpaceAGORA.jl checkout <the rev in SpaceAGORASource.toml>
 julia --startup-file=no ../SpaceAGORA.jl/scripts/contributor_environment.jl project . ../StarterName-env --manifest committed
 ```
 
-`-c lfs.fetchexclude='*'` keeps this clone, its checkouts and later pulls from
-downloading SpaceAGORA's large data files (Git LFS), which a contributor
-repository does not use. Without Git LFS installed the setting does nothing,
-and nothing is downloaded either.
+`--filter=blob:none` skips the contents of old file versions: Git downloads the
+files of a commit when you check it out. `-c lfs.fetchexclude="*"` keeps this
+clone, its checkouts and later pulls from downloading SpaceAGORA's large data
+files (Git LFS), which a contributor repository does not use. Without Git LFS
+installed the setting does nothing, and nothing is downloaded either. These
+commands, and the test command below, run as written in bash or zsh, PowerShell
+and Command Prompt.
 
 Then, from `test/`:
 
