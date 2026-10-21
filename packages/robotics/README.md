@@ -8,8 +8,8 @@ spacecraft rendezvous/proximity operations and robot-arm planning.
 
 | Package | Revision recorded by this layout | Role |
 | --- | --- | --- |
-| [HYPR.jl](https://github.com/Space-FALCON-Lab/HYPR.jl/tree/e68ff02dfcc5e58399f2563c4b0fbdb6a29edc0f) | `e68ff02dfcc5e58399f2563c4b0fbdb6a29edc0f` | Search and trajectory planning, with an optional SpaceAGORA extension using `HYPRServices` contract 2.0.0. |
-| [SpaceAGORAMuJoCo.jl](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl/tree/233eb1fcbcf5545f441aced5b7e0c4344283e705) | `233eb1fcbcf5545f441aced5b7e0c4344283e705` | Standalone orbital proximity scenes and spacecraft propagation through `ExternalPropagationServices` contract 2.0.0. |
+| [HYPR.jl](https://github.com/Space-FALCON-Lab/HYPR.jl/tree/816d2569a823a682f6209c321bca32a0270f1815) | `816d2569a823a682f6209c321bca32a0270f1815` | Search and trajectory planning, with an optional SpaceAGORA extension using `HYPRServices` contract 2.0.0. |
+| [SpaceAGORAMuJoCo.jl](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl/tree/4530b4c28ba75a533a0477cea513bdf3e132da09) | `4530b4c28ba75a533a0477cea513bdf3e132da09` | Standalone orbital proximity scenes and spacecraft propagation through `ExternalPropagationServices` contract 2.0.0. |
 
 From the SpaceAGORA repository root, prepare the integration you need:
 
