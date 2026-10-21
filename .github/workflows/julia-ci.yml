@@ -1254,6 +1254,10 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
+      # The interlink tests build their case with examples/gve_sma_interlinks.jl,
+      # which continues in the examples environment through examples/common.jl.
+      - name: Prepare examples environment
+        run: julia --startup-file=no examples/setup.jl
       - name: Install the explicit matching backend
         run: |
           python -m pip install 'networkx==3.4.2'
