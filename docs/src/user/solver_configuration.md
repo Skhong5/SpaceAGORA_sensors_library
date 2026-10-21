@@ -168,7 +168,8 @@ args = SimulationConfiguration(...; solver_config=SolverConfig(solver_mode=:spli
 
 When `solver_config` is left as `nothing`, `run_simulation` reads the effective
 engine settings at call time, so `SPACEAGORA_SOLVER_MODE` (or a
-`SimulationEngineConfig` override) applies. Accepted modes are `:tsit5`,
+`SimulationEngineConfig` override) applies. The mode chosen this way decides
+both the integrator and the callbacks the run installs. Accepted modes are `:tsit5`,
 `:gravity_backbone_split`, `:dp8`, `:auto_stiff`, `:rodas5p`, `:split_imex`
 and `:multirate`. IMEX (`:split_imex`) and multirate integration run only when
 selected this way; nothing in the dynamics model or routing profile switches a

@@ -38,6 +38,9 @@ The run has one spacecraft; a run with several uses
 """
 struct EDGGuidanceFamily <: GA.AbstractAlgorithmFamily end
 
+# An EDG algorithm predicts with the run's gravity models (see AlgorithmGuidance's method).
+GR._prediction_uses_run_gravity(::EDGGuidanceFamily) = true
+
 """
     EDGGuidanceCapabilities(; guidance_modes=())
 

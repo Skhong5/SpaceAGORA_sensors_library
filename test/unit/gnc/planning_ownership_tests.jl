@@ -180,13 +180,27 @@ end
 _is_parent_call(x) = x isa Expr && x.head === :call && _call_name(first(x.args)) === :parentmodule
 
 # The names a source binds to its parent module or an ancestor
-# (`const _PARENT = parentmodule(@__MODULE__)`).
+# (`const _PARENT = parentmodule(@__MODULE__)`), or to a name already in `found`
+# (`const P = _PARENT`). One pass; `_all_parent_aliases` repeats it.
 function _parent_aliases(x, found=Set{Symbol}())
     if x isa Expr
-        x.head === :(=) && x.args[1] isa Symbol && _is_parent_call(x.args[2]) && push!(found, x.args[1])
+        x.head === :(=) && x.args[1] isa Symbol && (_is_parent_call(x.args[2]) || x.args[2] in found) &&
+            push!(found, x.args[1])
         foreach(arg -> _parent_aliases(arg, found), x.args)
     end
     return found
+end
+
+# The parent-module aliases of a set of sources, with simple assignments from an
+# alias followed to a fixed point, across files: an alias one file defines and
+# another renames counts.
+function _all_parent_aliases(exprs)
+    found = Set{Symbol}()
+    while true
+        before = length(found)
+        foreach(ex -> _parent_aliases(ex, found), exprs)
+        length(found) == before && return found
+    end
 end
 
 # Each name a source looks up at run time through its parent module, by name or
@@ -229,12 +243,11 @@ end
         Any[:EDGAlgorithms])
     function lookups(sources)
         parsed = Dict(path => Meta.parseall(source) for (path, source) in sources)
-        aliases = foldl((found, ex) -> _parent_aliases(ex, found), values(parsed); init=Set{Symbol}())
+        aliases = _all_parent_aliases(values(parsed))
         return Dict(relpath(path, root) => found for (path, ex) in parsed
             for found in (_parent_module_lookups(ex, aliases),) if !isempty(found))
     end
-    @test :_PARENT in foldl((found, source) -> _parent_aliases(Meta.parseall(source), found), values(sources);
-        init=Set{Symbol}())
+    @test :_PARENT in _all_parent_aliases(Meta.parseall.(values(sources)))
     @test lookups(sources) == allowed
     # A ControlHooks lookup put back into an actual guidance source, in memory, is
     # caught; no repository file changes.
@@ -244,6 +257,19 @@ end
         changed = sources[edg_path] * "\n_late_control() = $lookup\n"
         @test lookups(merge(sources, Dict(edg_path => changed))) != allowed
         startswith(lookup, "get") && @test _has_reflective_control_lookup(Meta.parseall(changed))
+    end
+    # So is one through a renamed alias of the parent: in the same file, through a
+    # second renaming, or with the alias defined in one guidance file and used in
+    # another.
+    hooks_path = joinpath(guidance_dir, "hooks.jl")
+    for (alias_path, alias_lines, lookup) in (
+            (edg_path, "const P = _PARENT", "P.ControlHooks"),
+            (edg_path, "const P = _PARENT\nconst Q = P", "Q.ControlHooks"),
+            (edg_path, "const P = _PARENT", "getfield(P, :ControlHooks)"),
+            (hooks_path, "const P = _PARENT", "P.ControlHooks"))
+        changed = merge(sources, Dict(alias_path => sources[alias_path] * "\n$alias_lines\n"))
+        changed[edg_path] = changed[edg_path] * "\n_late_control() = $lookup\n"
+        @test lookups(changed) != allowed
     end
 end
 
