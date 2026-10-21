@@ -102,8 +102,13 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
         @test cloned.scheduling_policy_model === args.scheduling_policy_model
         legacy = SimulationConfiguration((getfield(args, field) for field in fieldnames(typeof(args))[1:12])...)
         @test legacy.interlink_model === nothing
-        @test !hasproperty(SE.build_initial_conditions(legacy).sc[1], :interlink_dv)
-        @test !hasproperty(SE.build_initial_conditions(legacy).sc[1], :laser_dv)
+        # A run with interlinks has the two interlink states under their 0.6.0 names,
+        # and only those; a run without has neither.
+        linked_names = propertynames(SE.build_initial_conditions(args).sc[1])
+        @test :interlink_dv in linked_names && :interlink_delta_sma in linked_names
+        @test !(:laser_dv in linked_names) && !(:laser_delta_sma in linked_names)
+        plain_names = propertynames(SE.build_initial_conditions(legacy).sc[1])
+        @test !any(name -> name in plain_names, (:interlink_dv, :interlink_delta_sma, :laser_dv, :laser_delta_sma))
         @test legacy.scheduling_policy_model !== SimulationConfiguration(
             environment_model=args.environment_model, dynamics_model=args.dynamics_model,
             initial_time=args.initial_time).scheduling_policy_model
@@ -380,10 +385,12 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
         baseline_args = gve_sma_configuration(duration=20.0, with_interlinks=false)
         baseline = run_simulation(baseline_args; return_solution=true)
         zero_power = run_simulation(gve_sma_configuration(duration=20.0, power=0.0); return_solution=true)
-        @test !hasproperty(baseline.u[end].sc[1], :interlink_dv)
-        @test !hasproperty(baseline.u[end].sc[1], :laser_dv)
-        @test !any(field -> field.name in (:interlink_dv, :interlink_delta_sma, :laser_dv, :laser_delta_sma),
-            default_save_fields(baseline_args))
+        interlink_fields = (:interlink_dv, :interlink_delta_sma, :laser_dv, :laser_delta_sma)
+        @test hasproperty(zero_power.u[end].sc[1], :interlink_dv) && hasproperty(zero_power.u[end].sc[1], :interlink_delta_sma)
+        @test !any(name -> hasproperty(baseline.u[end].sc[1], name), interlink_fields)
+        # The new fields, then their aliases, in a run with interlinks; none without.
+        @test [field.name for field in default_save_fields(args) if field.name in interlink_fields] == collect(interlink_fields)
+        @test !any(field -> field.name in interlink_fields, default_save_fields(baseline_args))
         for i in 1:3
             @test isapprox(baseline.u[end].sc[i].pos, zero_power.u[end].sc[i].pos; atol=1e-6, rtol=1e-12)
             @test iszero(zero_power.u[end].sc[i].interlink_dv)
