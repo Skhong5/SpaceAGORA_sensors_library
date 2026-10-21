@@ -6,7 +6,9 @@
 # selection) is refused, with or without run state of its own. A run with
 # guidance, navigation or control models refuses a checkpoint written without the
 # entry, by SpaceAGORA 0.5.1 or earlier, before anything is restored; a run
-# without them resumes from it.
+# without them resumes from it. A damaged entry is refused as it is read, and a
+# bound scope that names positions outside the run is recorded as its ticks
+# visit it, so checkpointing such a run changes nothing.
 module GNCScopeCheckpointTests
 
 using Test, StaticArrays, SpaceAGORA
@@ -31,6 +33,17 @@ SpaceAGORA.control_wrench(m::BoundPush, x::StateSample, p, t) =
     x.spacecraft_index == m.spacecraft_index ? (SVector(0.0, 1.0e-3, 0.0), ZERO3) : (ZERO3, ZERO3)
 SpaceAGORA.spacecraft_scope(m::BoundPush) = BoundSpacecraft((m.spacecraft_index,))
 SpaceAGORA.bind_spacecraft(::BoundPush, i::Int) = BoundPush(i)
+
+# A model bound to spacecraft 2 whose initializer widens its scope past the run,
+# after the pre-run check: its ticks, and its push, reach spacecraft 2 only.
+mutable struct Widened <: SM.AbstractControlEffectorModel
+    indices::Tuple{Vararg{Int}}
+end
+SpaceAGORA.update_control!(::Widened, u, p, t, i) = nothing
+SpaceAGORA.control_wrench(m::Widened, x::StateSample, p, t) =
+    x.spacecraft_index in m.indices ? (SVector(0.0, 1.0e-3, 0.0), ZERO3) : (ZERO3, ZERO3)
+SpaceAGORA.spacecraft_scope(m::Widened) = BoundSpacecraft(m.indices)
+SpaceAGORA.initialize_control!(m::Widened, u, p, t) = (m.indices = (2, 99); nothing)
 
 # Models acting on every spacecraft that keep no run state.
 struct Idle <: SM.AbstractControlEffectorModel end
@@ -140,6 +153,9 @@ round_trip(configuration, subject; index=1) = C._checkpoint_round_trip_check(
             @test scopes(Selected(same)) == bound
         end
         @test scopes(Selected(BoundSpacecraft((2, 1)))) == [(scope=:bound, positions=[1, 2])]
+        # Positions outside the run's two are never ticked, and not recorded.
+        @test scopes(Selected(BoundSpacecraft((3, 2, 0, 2)))) == [(scope=:bound, positions=[2])]
+        @test scopes(Selected(BoundSpacecraft((3,)))) == [(scope=:bound, positions=Int[])]
         @test !isequal(only(scopes(Selected(BoundSpacecraft((1, 2))))), only(scopes(Selected(AllSpacecraft()))))
         # A selection changed in place still equals itself, as the selection a model
         # holds would; the baseline taken before keeps the spacecraft it named, so
@@ -237,6 +253,39 @@ round_trip(configuration, subject; index=1) = C._checkpoint_round_trip_check(
         rewrite_checkpoint!(runtime -> merge(runtime, (gnc_scopes=merge(runtime.gnc_scopes, (version=2,)),)), written)
         msg = refusal(() -> run_simulation(second_half(dir)))
         @test msg !== nothing && occursin("GNC scope checkpoint state version 1 is required", msg)
+        # A damaged scope in an entry of the right version is refused when the
+        # checkpoint is read, as an ArgumentError naming it.
+        dir = mktempdir()
+        run_simulation(first_half(dir; control=(BoundPush(1),)))
+        for damaged in ((kind=:bound,), (scope=:bound,), (scope=:bound, positions=[1.0]), (scope=:coupled, primary=1),
+                        (scope=:coupled, primary=1, partners=nothing), (scope=:other,), :all)
+            damaged_dir = mktempdir()
+            cp(dir, damaged_dir; force=true)
+            rewrite_checkpoint!(runtime -> merge(runtime, (gnc_scopes=merge(runtime.gnc_scopes,
+                (control=Any[damaged],)),)), first_half(damaged_dir))
+            msg = refusal(() -> run_simulation(second_half(damaged_dir; control=(BoundPush(1),))))
+            @testset let damaged = damaged
+                @test msg !== nothing && occursin("The checkpoint's GNC scope entry is damaged: it gives control " *
+                    "model 1 the scope $(repr(damaged))", msg)
+            end
+        end
+        @test refusal(() -> run_simulation(second_half(dir; control=(BoundPush(1),)))) === nothing
+    end
+
+    @testset "a bound scope an initializer widens past the run is recorded as its ticks see it" begin
+        # The pre-run check sees spacecraft 2 only; the initializer then names 99 too.
+        # The checkpointed run starts, records spacecraft 2, and resumes as an
+        # uninterrupted run, bit for bit, as a run without checkpoints starts.
+        @test refusal(() -> run_simulation(scope_args(control=(Widened((2,)),)))) === nothing
+        check = round_trip(scope_args(control=(Widened((2,)),)), Widened((2,)))
+        @testset let status = check.status, detail = check.detail
+            @test status === :pass
+        end
+        dir = mktempdir()
+        written = first_half(dir; control=(Widened((2,)),))
+        run_simulation(written)
+        @test saved_runtime(written).gnc_scopes.control == Any[(scope=:bound, positions=[2])]
+        @test refusal(() -> run_simulation(second_half(dir; control=(Widened((2,)),)))) === nothing
     end
 
     @testset "the scopes are compared as the run-start initializers leave them" begin

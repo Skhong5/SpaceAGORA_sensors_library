@@ -428,12 +428,19 @@ end
 # A scope is plain data built afresh, so a selection changed in place later
 # cannot change a baseline already taken:
 # - `AllSpacecraft()`: `(scope=:all,)`;
-# - `BoundSpacecraft`, or a `SpacecraftSelection`: `(scope=:bound, positions)`,
-#   the run positions it resolves to, sorted and without repeats;
+# - `BoundSpacecraft`: `(scope=:bound, positions)`, the run positions its ticks
+#   visit: those it names within the run, ascending and each once. A position
+#   outside the run, which an initializer can set after the pre-run check, is
+#   never ticked and not recorded, so checkpointing does not decide whether such
+#   a run starts;
+# - `SpacecraftSelection` (not yet taken by these models in a run): the same form,
+#   with the run positions `resolve_spacecraft_scope` resolves it to;
 # - `CoupledSpacecraft`: `(scope=:coupled, primary, partners)`, as declared.
 # Before the run, `check_spacecraft_scopes` refuses any other scope.
 _gnc_scope_identity(::GNCRuntime.AllSpacecraft, spacecraft, owner) = (scope=:all,)
-_gnc_scope_identity(scope::Union{GNCRuntime.BoundSpacecraft, SimulationModel.SpacecraftSelection}, spacecraft, owner) =
+_gnc_scope_identity(scope::GNCRuntime.BoundSpacecraft, spacecraft, owner) =
+    (scope=:bound, positions=sort!(unique!(Int[i for i in scope.indices if 1 <= i <= length(spacecraft)])))
+_gnc_scope_identity(scope::SimulationModel.SpacecraftSelection, spacecraft, owner) =
     (scope=:bound, positions=SimulationModel.resolve_spacecraft_scope(scope, spacecraft; owner=owner))
 _gnc_scope_identity(scope::GNCRuntime.CoupledSpacecraft, spacecraft, owner) =
     (scope=:coupled, primary=scope.primary, partners=collect(Int, scope.partners))
@@ -474,15 +481,27 @@ function _gnc_scope_checkpoint_entry(args, checkpoint)
     hasproperty(entry, :version) && entry.version === 1 && all(group -> hasproperty(entry, group) &&
         getproperty(entry, group) isa AbstractVector, keys(_GNC_SCOPE_GROUPS)) ||
         throw(ArgumentError("GNC scope checkpoint state version 1 is required to resume this run."))
+    for group in keys(_GNC_SCOPE_GROUPS), (j, scope) in enumerate(getproperty(entry, group))
+        _gnc_scope_form(scope) || throw(ArgumentError(
+            "The checkpoint's GNC scope entry is damaged: it gives $(_GNC_SCOPE_GROUPS[group]) model $j the scope " *
+            "$(repr(scope)), which is not a version 1 scope. Run from the start."))
+    end
     return entry
 end
+
+# Whether `scope` has one of the forms `_gnc_scope_identity` writes.
+_gnc_scope_form(scope) = scope isa NamedTuple && hasproperty(scope, :scope) && (scope.scope === :all ||
+    scope.scope === :bound && hasproperty(scope, :positions) && scope.positions isa AbstractVector{Int} ||
+    scope.scope === :coupled && hasproperty(scope, :primary) && scope.primary isa Int &&
+        hasproperty(scope, :partners) && scope.partners isa AbstractVector{Int})
 
 function _describe_gnc_scope(scope)
     scope.scope === :all && return "every spacecraft"
     scope.scope === :bound && return isempty(scope.positions) ? "no spacecraft" :
         "the spacecraft at run position$(length(scope.positions) == 1 ? "" : "s") $(join(scope.positions, ", "))"
-    return "the spacecraft at run position $(scope.primary), coupled with run position" *
-        "$(length(scope.partners) == 1 ? "" : "s") $(join(scope.partners, ", "))"
+    scope.scope === :coupled && return "the spacecraft at run position $(scope.primary), coupled with run " *
+        "position$(length(scope.partners) == 1 ? "" : "s") $(join(scope.partners, ", "))"
+    return repr(scope)
 end
 
 # `entry` is `nothing` only for a run without guidance, navigation or control
