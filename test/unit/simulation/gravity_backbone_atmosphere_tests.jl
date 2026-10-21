@@ -59,7 +59,6 @@ refuses_density(msg) = occursin("gravity_backbone_split requires density_model=N
     end
 
     @testset "chosen by SolverConfig under another process default" begin
-        # The callbacks are then assembled for the process default, density included.
         err = run_error(backbone_config(exponential_atmosphere()); solver_mode_env="tsit5")
         @test err isa ArgumentError && refuses_density(err.msg)
     end

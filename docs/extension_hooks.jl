@@ -62,7 +62,7 @@ const EXTENSION_HOOK_GROUPS = [
     (title = "Physical effectors", core_owned = false, base = :AbstractForceTorqueModel, note = nothing, rows = [
         hook(:wrench; shape = "R",
             signature = "wrench(model, x::StateSample, env::EnvironmentSample, t::Float64) -> (force_ii, torque_body)",
-            called = "every right-hand-side evaluation, once per spacecraft, and at each accelerometer sample for a gravitational model",
+            called = "every right-hand-side evaluation, once per spacecraft in the model's scope, and at each accelerometer sample for a gravitational model",
             arguments = "`x` one spacecraft's state (`x.spacecraft_index` is its position in the run), `env` the sampled environment, `t` elapsed s; force in the inertial frame (N), torque in the body frame (N·m)",
             fallback = "none",
             page = "user/custom_effector.md"),
@@ -300,7 +300,7 @@ const EXTENSION_HOOK_GROUPS = [
             page = "user/gnc_feedback.md"),
         hook(:spacecraft_scope; shape = "D",
             signature = "spacecraft_scope(model) -> SpacecraftScope",
-            called = "before the run, by the scope check, and at each tick, for each guidance, navigation and control model",
+            called = "before the run, by the scope check, and at each tick, for each guidance, navigation and control model; once when the run starts, for each dynamic effector",
             arguments = "`AllSpacecraft()` (every spacecraft), `BoundSpacecraft(indices)` (those run positions) or `CoupledSpacecraft(primary, partners)` (ticked for `primary`, reading `partners`)",
             fallback = "returns `AllSpacecraft()`",
             base = :Any,

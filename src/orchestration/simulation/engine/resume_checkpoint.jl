@@ -522,6 +522,10 @@ end
     if periodic_ticks !== nothing
         runtime = runtime === nothing ? (periodic_ticks=periodic_ticks,) : merge(runtime, (periodic_ticks=periodic_ticks,))
     end
+    effector_scopes = _effector_scope_checkpoint_state(args)
+    if effector_scopes !== nothing
+        runtime = runtime === nothing ? (effector_scopes=effector_scopes,) : merge(runtime, (effector_scopes=effector_scopes,))
+    end
     return SimulationModel.IOSerialization._write_checkpoint!(
         args,
         t,

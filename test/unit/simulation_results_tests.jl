@@ -104,6 +104,69 @@ end
                                               return_results=true, return_solver_metadata=true)
 end
 
+# Failing runs: a callback that throws its own exception, or one that ends the
+# solve without success, part way through the mission. What the caller gets and
+# what the run leaves behind, for a run in one solve and a checkpointed one
+# (1200 s segments).
+const DEB = SpaceAGORA.SimulationModel.SimulationCallbacks.DiffEqBase
+struct Boom <: Exception
+    t::Float64
+end
+@noinline boom!(integrator) = throw(Boom(integrator.t))
+throws_after(t_s) = DEB.DiscreteCallback((u, t, integrator) -> t > t_s, boom!; save_positions=(false, false))
+fails_after(t_s) = DEB.DiscreteCallback((u, t, integrator) -> t > t_s,
+    integrator -> DEB.terminate!(integrator, DEB.SciMLBase.ReturnCode.Failure); save_positions=(false, false))
+function failed_run(config, callback)
+    dir = mktempdir()
+    args = config(results=true, dir=dir)
+    caught = try
+        run_simulation(args; extra_callbacks=(callback,))
+        nothing
+    catch e
+        (exception=e, backtrace=catch_backtrace())
+    end
+    csv = joinpath(dir, "simulation_results.csv")
+    times = isfile(csv) ? CSV.read(csv, DataFrame).time : Float64[]
+    checkpoint = SpaceAGORA.SimulationEngine._load_checkpoint(args)
+    return (; caught, times, checkpoint_t=checkpoint === nothing ? nothing : checkpoint.t)
+end
+
+@testset "A failing run reports its failure and leaves the results so far" begin
+    # The callback's own exception reaches the caller unchanged, with a
+    # backtrace through the callback that threw it, and the results so far are
+    # written first.
+    for (config, checkpointed) in ((_results_test_config, false), (_checkpointed_config, true))
+        run = failed_run(config, throws_after(1500.0))
+        @test run.caught.exception isa Boom && run.caught.exception.t > 1500.0
+        @test any(frame -> frame.func === :boom!, stacktrace(run.caught.backtrace))
+        @test !isempty(run.times) && issorted(run.times)
+        if checkpointed
+            # The rows of the segments it finished, and the checkpoint written
+            # after them: the failing segment's rows are not kept.
+            @test maximum(run.times) == 1200.0 && run.checkpoint_t == 1200.0
+        else
+            # The rows saved up to the failure.
+            @test 1400.0 < maximum(run.times) <= run.caught.exception.t && run.checkpoint_t === nothing
+        end
+    end
+    # A solve that ends without success raises an ErrorException naming its
+    # retcode, after writing the results so far: a checkpointed run's include
+    # the failing segment's rows, and its checkpoint stays the last one written.
+    for (config, message, checkpoint_t, segment_end) in
+            ((_results_test_config, "Solve failed with retcode=Failure.", nothing, 3600.0),
+             (_checkpointed_config, "Checkpointed solve failed with retcode=Failure.", 1200.0, 2400.0))
+        run = failed_run(config, fails_after(1500.0))
+        @test run.caught.exception isa ErrorException && run.caught.exception.msg == message
+        # One solve's rows reach the last save time before the failure; a
+        # checkpointed run's also hold the failing step's final state.
+        @test !isempty(run.times) && issorted(run.times) && 1500.0 <= maximum(run.times) < segment_end
+        @test run.checkpoint_t == checkpoint_t
+    end
+    # A run that succeeds returns its outcome and one trace entry per solve.
+    meta = run_simulation(_results_test_config(results=false, dir=mktempdir()); return_solver_metadata=true)
+    @test meta.retcode == "Success" && meta.solution === nothing && length(meta.solver_trace) == 1
+end
+
 # RPO command log reachable through the configuration that ran.
 module RPOResultsExample
 using SpaceAGORA
