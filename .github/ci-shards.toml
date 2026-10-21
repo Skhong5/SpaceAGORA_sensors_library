@@ -82,6 +82,7 @@ default_weight = { other = 1.2 }
 "unit:compliant_attachment_tests.jl" = 2.61
 "unit:compliant_multibody_naming_tests.jl" = 0.14
 "unit:config_defaults_tests.jl" = 0.21
+"unit:config_field_copy_tests.jl" = 0.21
 "unit:dynamics/aero_batch_parity_tests.jl" = 1.18
 "unit:dynamics/facet_srp_and_thermal_models_tests.jl" = 0.03
 "unit:dynamics/harmonics_j2_analytic_boundary_tests.jl" = 0.16
@@ -306,6 +307,7 @@ grid = 1.00
 "unit:compliant_attachment_tests.jl" = 4.71
 "unit:compliant_multibody_naming_tests.jl" = 0.15
 "unit:config_defaults_tests.jl" = 0.80
+"unit:config_field_copy_tests.jl" = 0.80
 "unit:dynamics/aero_batch_parity_tests.jl" = 1.53
 "unit:dynamics/facet_srp_and_thermal_models_tests.jl" = 0.03
 "unit:dynamics/harmonics_j2_analytic_boundary_tests.jl" = 0.34

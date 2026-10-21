@@ -422,10 +422,7 @@ function _with_density_model_epoch(args::SimulationConfiguration)
     environment = args.environment_model
     density_model = SimulationModel.with_density_model_epoch(environment.density_model, args.initial_time)
     density_model === environment.density_model && return args
-    names = fieldnames(typeof(environment))
-    fields = NamedTuple{names}(map(name -> getfield(environment, name), names))
-    aligned_environment = SimulationModel.EnvironmentModel(;
-        merge(fields, (; density_model))...)
+    aligned_environment = SimulationModel.SimConfig._with_fields(environment; density_model)
     return SimulationModel.SimConfig._with_configuration(args;
         environment_model=aligned_environment)
 end
@@ -435,12 +432,9 @@ _declares_gnc(sc) = !(isempty(sc.guidance.guidance_effectors) &&
                       isempty(sc.control.control_effectors))
 
 # Spacecraft copy without its per-spacecraft GNC (links, joints and the rest are shared).
-_without_gnc(sc::SimulationModel.SpacecraftModel) = SimulationModel.SpacecraftModel(
-    sc.joints, sc.links, sc.root, sc.instant_actuation, sc.dry_mass, sc.prop_mass, sc.inertia_tensor,
-    sc.initial_condition, sc.id,
-    SimulationModel.GuidanceModel((), Float64[]), SimulationModel.NavigationModel((), Float64[]),
-    SimulationModel.ControlModel((), Float64[]), sc.attachments,
-    sc.n_terminal, sc.battery_energy_index, sc.tempurature_index, sc.constellation_slot)
+_without_gnc(sc::SimulationModel.SpacecraftModel) = SimulationModel.SimConfig._with_fields(sc;
+    guidance=SimulationModel.GuidanceModel((), Float64[]), navigation=SimulationModel.NavigationModel((), Float64[]),
+    control=SimulationModel.ControlModel((), Float64[]))
 
 """
 Fold per-spacecraft GNC declarations (`SpacecraftModel` `guidance`/`navigation`/`control`) into the
