@@ -229,9 +229,9 @@ function wheel_spacecraft(id, template; thruster=false, fault=false)
     return sc
 end
 
-function wheel_args(n, template; mission_time=5.0, thruster=false, fault=false)
+function wheel_args(n, template; mission_time=5.0, thruster=false, fault=false, settings=(;))
     args = scope_args(n; spacecraft=[wheel_spacecraft(id, template; thruster, fault) for id in 1:n],
-        mission_time=mission_time)
+        mission_time=mission_time, settings=settings)
     mission = args.mission_configuration
     return SM.SimConfig._with_configuration(args; mission_configuration=SM.MissionConfiguration(
         mission_type=SM.MissionTime, keplerian=true, number_of_orbits=1, mission_time=mission_time,
@@ -347,12 +347,13 @@ SpaceAGORA.initialize_control!(m::MovesCtl, u, p, t) = (m.spacecraft_index = 2; 
         template = WheelCtl(n)
         serial(() -> without_lists(() -> run_simulation(wheel_args(n, template); isolate_state=false)))
         @test all(bound -> all(>(0), bound.calls), template.copies)
-        # With a thruster and a wheel fault, the thruster-level column and the fault
-        # reader read the levels too, and only for the spacecraft in the scope.
+        # With a thruster and a wheel fault, the thruster-level column (saved with the
+        # visualization scene's fields) and the fault reader read the levels too, and
+        # only for the spacecraft in the scope.
         template = WheelCtl(n; actuators=2)
-        solution = serial(() -> run_simulation(wheel_args(n, template; thruster=true, fault=true); isolate_state=false,
-            return_solution=true))
-        @test CB.thruster_level_counts(solution.prob.p.args) == [1, 1]
+        table = serial(() -> run_simulation(wheel_args(n, template; thruster=true, fault=true,
+            settings=(save_visualization_scene=true,)); isolate_state=false, return_results=true)).table
+        @test "sc1_thruster_level_1" in names(table) && "sc2_thruster_level_1" in names(table)
         for bound in template.copies
             k = bound.spacecraft_index
             @test bound.calls[k] > 0 && bound.calls[3 - k] == 0
