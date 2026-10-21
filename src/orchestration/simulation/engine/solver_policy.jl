@@ -400,6 +400,26 @@ end
     return raw in ("1", "true", "yes", "on")
 end
 
+# The most discrete callbacks a run keeps in a tuple. The solver library applies a
+# tuple of discrete callbacks by recursion over it. Past about two dozen entries
+# that recursion is no longer compiled away, and each accepted step then costs
+# time and allocation that grow with the square of their number, and the solve's
+# type inference grows with them. A vector of them is applied one callback at a
+# time, through one dynamic call each, and compiles once. A run with one periodic
+# GNC model per spacecraft has a discrete callback per model. Tests change the
+# limit to force either container.
+const _DISCRETE_CALLBACK_TUPLE_LIMIT = Ref(24)
+
+# The run's callbacks as the solver receives them: unchanged up to the limit;
+# beyond it, the discrete callbacks in a vector, in the same order, beside the
+# continuous callbacks, which stay a tuple. The solver applies the same callbacks
+# in the same order either way.
+function _solver_callback_set(callbacks::CallbackSet)
+    discrete = callbacks.discrete_callbacks
+    (discrete isa AbstractVector || length(discrete) <= _DISCRETE_CALLBACK_TUPLE_LIMIT[]) && return callbacks
+    return CallbackSet(callbacks.continuous_callbacks, collect(Any, discrete))
+end
+
 # Newer libraries store automatically specialized callbacks in erased vectors.
 # Rebuild that container from this run's closures, but reuse its event cache only
 # when the original callback layout and vector lengths are unchanged.
