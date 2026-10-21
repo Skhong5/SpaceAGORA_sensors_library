@@ -317,6 +317,83 @@ function move_gimbal!(link::Link, gimbal::ThrusterGimbal, level::Real, t::Real):
     return angle
 end
 
+# ---- Run state at a run's start ------------------------------------------------
+
+# A hinge's angle, a gimbal's angles and the firing state of a thruster with
+# firing dynamics are run state that the control ticks write. Each part keeps the
+# run state a run starts from apart from it (`run_start`: the configured state
+# before the part's first run) and a copy of the latest tick's write
+# (`run_written`, recorded by the engine after each tick and after a checkpoint
+# restore). At a run's start a value still equal to that write returns to its
+# value at the previous run's start, and a value changed since (a user's edit)
+# is kept and becomes the start of later runs: the rule of the GNC models
+# (`SimulationLifecycle._run_start_entries`). After a run that wrote them, the
+# link's attitude and the thrust's turn follow the angles the run starts from.
+
+_run_state(hinge::PanelHinge) = (angle_rad=hinge.angle_rad, last_update_s=hinge.last_update_s)
+_run_state(gimbal::ThrusterGimbal) =
+    (angle_rad=gimbal.angle_rad, last_update_s=gimbal.last_update_s, previous_angle_rad=gimbal.previous_angle_rad)
+_run_state(thruster::Thruster) = (κ=thruster.κ, thrust=thruster.thrust)
+
+function _set_run_state!(hinge::PanelHinge, s)
+    hinge.angle_rad, hinge.last_update_s = s.angle_rad, s.last_update_s
+    return nothing
+end
+function _set_run_state!(gimbal::ThrusterGimbal, s)
+    gimbal.angle_rad, gimbal.last_update_s, gimbal.previous_angle_rad = s.angle_rad, s.last_update_s, s.previous_angle_rad
+    return nothing
+end
+function _set_run_state!(thruster::Thruster, s)
+    thruster.κ, thruster.thrust = s.κ, s.thrust
+    return nothing
+end
+
+_follow_run_state!(link::Link, hinge::PanelHinge) = _set_hinge_attitude!(link, hinge, hinge.angle_rad)
+_follow_run_state!(link::Link, gimbal::ThrusterGimbal) = _update_gimbal_rotation!(link, gimbal.thruster)
+_follow_run_state!(::Link, ::Thruster) = nothing
+
+# `isequal`, so that the NaN time of a part that has not ticked equals itself.
+_run_start_state(start, written, current) =
+    written === nothing ? current : map((s, w, c) -> isequal(c, w) ? s : c, start, written, current)
+
+# `f(link, part)` for each hinge, gimbal and thruster with firing dynamics of
+# `model`, link by link.
+function _each_run_state_part(f, model::SpacecraftModel)
+    for link in model.links
+        for hinge in link.hinges
+            f(link, hinge)
+        end
+        for gimbal in link.gimbals
+            f(link, gimbal)
+        end
+        for thruster in link.thrusters
+            thruster.firing_dynamics && f(link, thruster)
+        end
+    end
+    return nothing
+end
+
+# Whether `model` has a part with run state that the control ticks write.
+_has_run_state_parts(model::SpacecraftModel) =
+    any(l -> !isempty(l.hinges) || !isempty(l.gimbals) || any(t -> t.firing_dynamics, l.thrusters), model.links)
+
+# Records the parts' run state as the latest write: after a control tick, and
+# after a checkpoint restore.
+_note_run_writes!(model::SpacecraftModel) = _each_run_state_part((_, part) -> (part.run_written = _run_state(part)), model)
+
+# At a run's start (not a resumed run's): each part of `model` takes the run
+# state by the rule above, which becomes its `run_start`.
+function _start_run_state!(model::SpacecraftModel)
+    _each_run_state_part(model) do link, part
+        written = part.run_written
+        start = _run_start_state(part.run_start, written, _run_state(part))
+        _set_run_state!(part, start)
+        written === nothing || _follow_run_state!(link, part)
+        part.run_start, part.run_written = start, nothing
+    end
+    return nothing
+end
+
 """
     mounted_cmg_count(model::SpacecraftModel) -> Int
 

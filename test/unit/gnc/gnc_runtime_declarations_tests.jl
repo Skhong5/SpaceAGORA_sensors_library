@@ -301,6 +301,30 @@ SpaceAGORA.control_wrench(::OrderEvents, x, p, t) = (ZERO3, ZERO3)
 SpaceAGORA.tick_schedule(::OrderEvents) = :event_driven
 SpaceAGORA.gnc_callbacks(::OrderEvents, num_sats, args, period_s) = (order_callback(:event),)
 
+# Where the hardware's run state starts a run: a controller holds a hinged panel
+# at 0.5 rad, and a priority callback's initialization and a sensor's samples
+# record the hinge's angle when they read it.
+const SEEN = Tuple{Symbol, Float64, Float64}[]
+struct HoldHinge <: SM.AbstractControlEffectorModel end
+SpaceAGORA.actuation_mode(::HoldHinge) = :mounted
+SpaceAGORA.actuator_levels(::HoldHinge, i::Int) = [0.5]
+SpaceAGORA.update_control!(::HoldHinge, u, p, t, i) = nothing
+mutable struct HingeSensor <: AbstractSensor
+    period_s::Float64
+    seed::Int
+    rng::Any
+    latest::SVector{1, Float64}
+    latest_time_s::Float64
+    hinge::PanelHinge
+end
+HingeSensor(hinge) = HingeSensor(1.0, 1, nothing, SVector(NaN), NaN, hinge)
+SpaceAGORA.sensor_dimension(::HingeSensor) = 1
+SpaceAGORA.sensor_measure(s::HingeSensor, truth::SensorTruth, ctx, rng) =
+    (push!(SEEN, (:sensor, truth.t_s, s.hinge.angle_rad)); SVector(0.0))
+SpaceAGORA.initialize_sensor!(::HingeSensor, truth::SensorTruth, ctx, rng) = nothing
+hinge_seer(hinge) = DiscreteCallback((u, t, integrator) -> false, integrator -> nothing;
+    initialize=(cb, u, t, integrator) -> (push!(SEEN, (:priority, t, hinge.angle_rad)); nothing), save_positions=(false, false))
+
 @testset "GNC runtime declarations" begin
     @testset "defaults keep the periodic tick" begin
         @test tick_schedule(:any_model) === :periodic
@@ -461,6 +485,26 @@ SpaceAGORA.gnc_callbacks(::OrderEvents, num_sats, args, period_s) = (order_callb
         end
         # Between them, at 0.5 s steps, only the 0.5 s control ticks apply.
         @test [name for (name, at) in ORDER if at == 1.5] == [:prepare, :reader, :control]
+    end
+
+    @testset "the hardware's run state starts before the callbacks that read it at the run's start" begin
+        # Two runs of one configuration with isolate_state=false. At the second
+        # run's start, the priority callbacks and the sensors' first sample see
+        # the hinge at its configured angle, as at the first run's start.
+        hinge = PanelHinge(axis=SVector(0.0, 1.0, 0.0), max_rate_rad_s=0.1)
+        args = runtime_args((HoldHinge(),); sensor=HingeSensor(hinge), guidance=(), navigation=())
+        sc = only(args.dynamics_model.spacecraft)
+        panel = SM.Link(m=2.0, r=MVector(0.0, 1.5, 0.0), dims=MVector(0.02, 2.0, 1.0))
+        push!(sc.links, panel)
+        add_actuator!(sc, panel, hinge)
+        for run in 1:2
+            empty!(SEEN)
+            run_simulation(args; isolate_state=false, priority_callback_factories=(a -> hinge_seer(hinge),))
+            @testset let run = run
+                @test [(who, angle) for (who, at, angle) in SEEN if at == 0.0] == [(:priority, 0.0), (:sensor, 0.0)]
+                @test hinge.angle_rad > 0.2                                  # the run moved it
+            end
+        end
     end
 
     @testset "a resumed run restores the run state models keep in checkpoint files" begin

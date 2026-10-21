@@ -64,7 +64,44 @@ end
 @inline function _apply_mounted_tick!(control_model, p, sat_idx::Int, t, period::Float64)
     _apply_mounted_hinges!(control_model, p, sat_idx, t)
     _apply_mounted_thruster_firing!(control_model, p, sat_idx, t, period)
+    # What the tick wrote, which the next run's start compares with (`get_run_state_callbacks`).
+    actuation_mode(control_model) === :mounted && _note_run_writes!(p.args.dynamics_model.spacecraft[sat_idx])
     return nothing
+end
+
+"""
+    get_run_state_callbacks(num_sats, args) -> Tuple
+
+For runs whose spacecraft carry hinges, thruster gimbals or thrusters with
+firing dynamics: one callback that, at the run's start, starts their run state
+(the angles, and the ramp factor and thrust) as a battery's flags and an
+actuator's faults are started. A value the previous run's control ticks wrote
+returns to its value at that run's start, and a value changed after the last
+tick (a user's edit between two runs with `isolate_state=false`) is kept and
+becomes the start of later runs (`ActuatorMounting._start_run_state!`). A run
+resumed from a checkpoint is not a run start: its run state comes from the
+checkpoint, and is recorded as the latest write. Empty without such parts.
+"""
+function get_run_state_callbacks(num_sats::Int, args::SimulationConfiguration)
+    sats = [i for (i, sc) in enumerate(args.dynamics_model.spacecraft) if _has_run_state_parts(sc)]
+    isempty(sats) && return ()
+    # A fresh callback is built for every run. Its initialization also runs at
+    # checkpoint-segment boundaries, which keep the run state.
+    initialized = Ref(false)
+    function initialize!(cb, u, t, integrator)
+        if !initialized[]
+            resumed = integrator.p.shared_buffers.callback_resume[]
+            for i in sats
+                sc = integrator.p.args.dynamics_model.spacecraft[i]
+                resumed ? _note_run_writes!(sc) : _start_run_state!(sc)
+            end
+            initialized[] = true
+        end
+        _mark_discontinuity!(integrator, false)
+        return nothing
+    end
+    return (DiscreteCallback((u, t, integrator) -> false, integrator -> nothing; initialize=initialize!,
+        save_positions=(false, false)),)
 end
 
 @inline function _run_guidance_for_thruster_schedule!(integrator, sat_idx::Int)

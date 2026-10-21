@@ -4,6 +4,9 @@
 
 # ---- Record and state --------------------------------------------------------
 
+# The hinge's run state: its angle and the time of its latest tick.
+const _HingeRunState = NamedTuple{(:angle_rad, :last_update_s), Tuple{Float64, Float64}}
+
 """
     PanelHinge(; axis, min_angle_rad=-Inf, max_angle_rad=Inf, max_rate_rad_s=Inf, angle_rad=0.0)
 
@@ -14,6 +17,10 @@ hinge's current angle about `axis`. The angle stays within
 [`min_angle_rad`, `max_angle_rad`] and moves at most `max_rate_rad_s` between
 control ticks; all three default to unlimited. `angle_rad` holds the current
 angle (the state the engine advances at each control tick).
+
+The angle a run starts from is kept apart from it: each run with
+`isolate_state=false` starts from the angle the previous run started from, unless
+`angle_rad` was changed after that run's last tick, and then from the new angle.
 
 A hinge changes the vehicle's geometry, not its wrench: the engine applies its
 level at the control tick of the effector that commands it, between accepted
@@ -27,6 +34,8 @@ mutable struct PanelHinge <: AbstractActuator
     max_rate_rad_s::Float64
     angle_rad::Float64
     last_update_s::Float64
+    run_start::_HingeRunState                  # the run state a run starts from, first the configured one
+    run_written::Union{Nothing, _HingeRunState} # the run's last tick's write of it (`ActuatorMounting._start_run_state!`)
 
     function PanelHinge(axis, min_angle_rad::Real, max_angle_rad::Real, max_rate_rad_s::Real, angle_rad::Real)
         a = SVector{3, Float64}(axis)
@@ -37,7 +46,8 @@ mutable struct PanelHinge <: AbstractActuator
         (max_rate_rad_s > 0.0 && !isnan(max_rate_rad_s)) || throw(ArgumentError("PanelHinge max_rate_rad_s must be positive, got $(max_rate_rad_s)."))
         (isfinite(angle_rad) && min_angle_rad <= angle_rad <= max_angle_rad) ||
             throw(ArgumentError("PanelHinge angle_rad must be finite and within its limits, got $(angle_rad)."))
-        return new(a / n, Float64(min_angle_rad), Float64(max_angle_rad), Float64(max_rate_rad_s), Float64(angle_rad), NaN)
+        return new(a / n, Float64(min_angle_rad), Float64(max_angle_rad), Float64(max_rate_rad_s), Float64(angle_rad), NaN,
+                   _HingeRunState((angle_rad, NaN)), nothing)
     end
 end
 
