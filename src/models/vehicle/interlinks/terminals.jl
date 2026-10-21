@@ -11,7 +11,7 @@ using ..AbstractTypes: AbstractActuator
 using ..SpacecraftModels: SpacecraftModel
 using ..InterLinkModels: InterlinkModel, LinkContext, link_terminal, link_terminal_levels, terminal_supports,
     link_directed, link_received_power_w, link_endpoint, PowerBeamLink, terminal_shed_tier, link_data_rate_bps
-import ..InterLinkModels: terminal_count, _terminal_device, _terminal_number
+import ..InterLinkModels: terminal_count, _terminal_device, _terminal_devices, _terminal_number
 using ..ActuatorMounting: mounted_actuators, actuator_context
 using ..Actuators: actuator_consumption, actuator_limits
 using ..PowerSystems: battery
@@ -44,6 +44,8 @@ terminal_count(spacecraft::SpacecraftModel) =
 
 _terminal_device(spacecraft::SpacecraftModel, number::Integer) =
     number <= spacecraft.n_terminal ? nothing : mounted_link_terminals(spacecraft)[number - spacecraft.n_terminal].terminal
+_terminal_devices(spacecraft::SpacecraftModel) =
+    Any[fill(nothing, spacecraft.n_terminal); [entry.terminal for entry in mounted_link_terminals(spacecraft)]]
 
 """
     terminal_number(spacecraft::SpacecraftModel, terminal) -> Int

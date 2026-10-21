@@ -2,7 +2,7 @@ module SchedulingPolicies
 
 using LinearAlgebra
 using ..InterLinkModels
-using ..InterLinkModels: link_endpoint, _terminal_device, _spacecraft_at
+using ..InterLinkModels: link_endpoint, _terminal_devices, _spacecraft_at
 using ..EffectorSampling: StateSample
 
 export AbstractSchedulingPolicy, LinkCandidate, SchedulingContext, candidate_score
@@ -79,14 +79,17 @@ What a scheduling policy may read besides the candidate:
 
 Its other fields are the engine's.
 """
-struct SchedulingContext
+struct SchedulingContext{L <: LinkContext, S, X, F, T}
     mu::Float64
-    link_context::LinkContext
-    spacecraft::Any
+    link_context::L
+    spacecraft::S
     # The run state, which the built-in orbital policies read as the engine
-    # holds it, and a caller's `candidate_force(target, partner, link)`.
-    _state::Any
-    _candidate_force::Any
+    # holds it; a caller's `candidate_force(target, partner, link)`; and each
+    # spacecraft's terminal hardware by terminal number, looked up once per
+    # scoring call (`nothing` without the spacecraft models).
+    _state::X
+    _candidate_force::F
+    _terminals::T
 end
 
 """
@@ -109,10 +112,19 @@ function _link_candidate(model, edge::Int, ctx::SchedulingContext)
     spacecraft, state = ctx.spacecraft, ctx._state
     a = link_endpoint(state.sc[first[1]], _spacecraft_at(spacecraft, first[1]), first[1])
     b = link_endpoint(state.sc[second[1]], _spacecraft_at(spacecraft, second[1]), second[1])
-    terminal_a = spacecraft === nothing ? nothing : _terminal_device(spacecraft[first[1]], first[2])
-    terminal_b = spacecraft === nothing ? nothing : _terminal_device(spacecraft[second[1]], second[2])
-    return LinkCandidate((first, second), graph.edge_properties[edge], a, b, terminal_a, terminal_b)
+    return LinkCandidate((first, second), graph.edge_properties[edge], a, b,
+        _candidate_terminal(ctx._terminals, first), _candidate_terminal(ctx._terminals, second))
 end
+_candidate_terminal(::Nothing, endpoint) = nothing
+_candidate_terminal(terminals, (satellite, number)) = _candidate_terminal(terminals[satellite], number)
+_candidate_terminal(::Nothing, number::Int) = nothing
+_candidate_terminal(devices::AbstractVector, number::Int) = devices[number]
+
+# Whether a built-in policy can give graph edge `edge` a score other than 0. The
+# loop scores an edge it cannot as 0, without building its candidate: an edge
+# with no end among an orbital policy's targets, or one that the power and data
+# policies do not score. Any other policy is called for every available edge.
+_may_score(policy, model, edge::Int, ctx::SchedulingContext) = true
 
 # Checks a policy makes of the run before scoring (its targets, the gravitational
 # parameter), and checks across the candidates' scores after it. Both default to
@@ -130,18 +142,25 @@ end
 
 # ---- The orbital policies ---------------------------------------------------------
 
-# The force the candidate puts on spacecraft `target`: from the link's
-# `link_force`, or from a caller's `candidate_force(target, partner, link)`.
-function _target_force(ctx::SchedulingContext, candidate::LinkCandidate, target::Int, partner::Int)
-    ctx._candidate_force === nothing ||
-        return ctx._candidate_force(ctx._state.sc[target], ctx._state.sc[partner], candidate.link)
-    first_force, second_force = link_force(candidate.link, candidate.a, candidate.b, ctx.link_context)
-    return target == candidate.key[1][1] ? first_force : second_force
+# The link's forces on the candidate's two ends (`link_force`), evaluated once
+# for both, or `nothing` when a caller's `candidate_force` gives the forces.
+_link_forces(ctx::SchedulingContext, candidate::LinkCandidate) = ctx._candidate_force === nothing ?
+    link_force(candidate.link, candidate.a, candidate.b, ctx.link_context) : nothing
+
+# The force the candidate puts on spacecraft `target`: from the link's forces,
+# or from a caller's `candidate_force(target, partner, link)`. The caller's
+# function is called dynamically, so it is compiled on its own as it was before
+# the context had field types, and its arithmetic rounds the same.
+function _target_force(ctx::SchedulingContext, candidate::LinkCandidate, target::Int, partner::Int, forces)
+    forces === nothing || return target == candidate.key[1][1] ? forces[1] : forces[2]
+    return Base.inferencebarrier(ctx._candidate_force)(ctx._state.sc[target], ctx._state.sc[partner], candidate.link)
 end
 
 # The rate (m/s) at which `force` changes the osculating semimajor axis of the
-# spacecraft state `target`, as the engine holds it.
-function _semimajor_axis_rate(target, force, mu::Real)
+# spacecraft state `target`, as the engine holds it. The rate functions are
+# compiled on their own (`@noinline`), not into each caller: StaticArrays' dot
+# product rounds by its compile context, so every caller gets the same bits.
+@noinline function _semimajor_axis_rate(target, force, mu::Real)
     semimajor_axis = inv(2 / norm(target.pos) - dot(target.vel, target.vel) / mu)
     return 2 * semimajor_axis^2 / mu * dot(target.vel, force) / target.mass
 end
@@ -202,16 +221,25 @@ function _prepare_scoring(policy::SemimajorAxisRatePolicy, model, ctx::Schedulin
     return nothing
 end
 
+function _may_score(policy::SemimajorAxisRatePolicy, model, edge::Int, ctx::SchedulingContext)
+    policy.targets isa Symbol && return true
+    graph = model.graph
+    first, second = graph.edges[edge]
+    return _is_target(policy.targets, graph.vertices[first][1]) || _is_target(policy.targets, graph.vertices[second][1])
+end
+
 function candidate_score(policy::SemimajorAxisRatePolicy, candidate::LinkCandidate, ctx::SchedulingContext, t::Float64)
     first_satellite, second_satellite = candidate.key[1][1], candidate.key[2][1]
     if policy.targets === :lower_index
         target, partner = minmax(first_satellite, second_satellite)
-        return _semimajor_axis_rate(ctx._state.sc[target], _target_force(ctx, candidate, target, partner), ctx.mu)
+        force = _target_force(ctx, candidate, target, partner, _link_forces(ctx, candidate))
+        return _semimajor_axis_rate(ctx._state.sc[target], force, ctx.mu)
     end
-    score = 0.0
+    score, forces = 0.0, nothing
     for (target, partner) in ((first_satellite, second_satellite), (second_satellite, first_satellite))
         _is_target(policy.targets, target) || continue
-        score += _semimajor_axis_rate(ctx._state.sc[target], _target_force(ctx, candidate, target, partner), ctx.mu)
+        forces === nothing && (forces = _link_forces(ctx, candidate))
+        score += _semimajor_axis_rate(ctx._state.sc[target], _target_force(ctx, candidate, target, partner, forces), ctx.mu)
     end
     return score
 end
@@ -251,7 +279,7 @@ end
 
 # The eccentricity rate `force` gives the spacecraft state `target`, and whether
 # its orbit is near circular (the rate is then the norm of the vector rate).
-function _eccentricity_rate(target, force, mu::Real)
+@noinline function _eccentricity_rate(target, force, mu::Real)
     position = target.pos
     velocity = target.vel
     acceleration = force / target.mass
@@ -267,15 +295,48 @@ function _eccentricity_rate(target, force, mu::Real)
     return rate, near_circular
 end
 
-function candidate_score(policy::EccentricityRatePolicy, candidate::LinkCandidate, ctx::SchedulingContext, t::Float64)
+function _may_score(policy::EccentricityRatePolicy, model, edge::Int, ctx::SchedulingContext)
+    policy.targets === :both && return true
+    graph = model.graph
+    first, second = graph.edges[edge]
+    return policy.targets == graph.vertices[first][1] || policy.targets == graph.vertices[second][1]
+end
+
+candidate_score(policy::EccentricityRatePolicy, candidate::LinkCandidate, ctx::SchedulingContext, t::Float64) =
+    _eccentricity_score(policy, candidate, ctx, nothing, 0)
+
+# The score of the candidate of graph edge `edge`. With `circular`, it also
+# records each target spacecraft on a near-circular orbit that the candidate
+# gives a positive rate.
+function _eccentricity_score(policy::EccentricityRatePolicy, candidate::LinkCandidate, ctx::SchedulingContext, circular, edge::Int)
     first_satellite, second_satellite = candidate.key[1][1], candidate.key[2][1]
-    score = 0.0
+    score, forces = 0.0, nothing
     for (target, partner) in ((first_satellite, second_satellite), (second_satellite, first_satellite))
         policy.targets === :both || policy.targets == target || continue
-        rate, _ = _eccentricity_rate(ctx._state.sc[target], _target_force(ctx, candidate, target, partner), ctx.mu)
+        forces === nothing && (forces = _link_forces(ctx, candidate))
+        rate, near_circular = _eccentricity_rate(ctx._state.sc[target], _target_force(ctx, candidate, target, partner, forces), ctx.mu)
         score += rate
+        circular !== nothing && near_circular && rate > 0 && push!(get!(Vector{Int}, circular, target), edge)
     end
     return score
+end
+
+# The scheduler's own loop records the near-circular candidates while it scores
+# them; the check of a policy inside another (a mix) computes them again.
+function _score_and_check!(scores, policy::EccentricityRatePolicy, model, ctx::SchedulingContext)
+    circular = Dict{Int, Vector{Int}}()
+    _score_candidates!(scores, policy, model, ctx, circular)
+    return _check_circular_candidates(model, scores, circular)
+end
+
+function _check_scores(policy::EccentricityRatePolicy, model, scores, ctx::SchedulingContext)
+    graph = model.graph
+    circular = Dict{Int, Vector{Int}}()
+    for edge in eachindex(graph.edges)
+        graph.available[edge] && _may_score(policy, model, edge, ctx) || continue
+        _eccentricity_score(policy, _link_candidate(model, edge, ctx), ctx, circular, edge)
+    end
+    return _check_circular_candidates(model, scores, circular)
 end
 
 # Near circularity the score is the norm of the eccentricity-vector rate. Norms
@@ -283,21 +344,8 @@ end
 # positive individual scores even though their combined rate is zero. Admit the
 # objective only when a scored near-circular spacecraft cannot receive two
 # positive-score candidate links in the same terminal matching.
-function _check_scores(policy::EccentricityRatePolicy, model, scores, ctx::SchedulingContext)
+function _check_circular_candidates(model, scores, circular_candidates)
     graph = model.graph
-    circular_candidates = Dict{Int, Vector{Int}}()
-    for edge in eachindex(graph.edges)
-        graph.available[edge] || continue
-        candidate = nothing
-        first_satellite = graph.vertices[graph.edges[edge][1]][1]
-        second_satellite = graph.vertices[graph.edges[edge][2]][1]
-        for (target, partner) in ((first_satellite, second_satellite), (second_satellite, first_satellite))
-            policy.targets === :both || policy.targets == target || continue
-            candidate === nothing && (candidate = _link_candidate(model, edge, ctx))
-            rate, near_circular = _eccentricity_rate(ctx._state.sc[target], _target_force(ctx, candidate, target, partner), ctx.mu)
-            near_circular && rate > 0 && push!(get!(Vector{Int}, circular_candidates, target), edge)
-        end
-    end
     for (satellite, edges) in circular_candidates
         candidates = Tuple{Int, Int}[]
         for edge in edges
@@ -329,6 +377,9 @@ spacecraft models are not given.
 """
 struct PowerDeliveryPolicy <: AbstractSchedulingPolicy end
 
+_may_score(::PowerDeliveryPolicy, model, edge::Int, ctx::SchedulingContext) =
+    ctx.spacecraft !== nothing && link_directed(model.graph.edge_properties[edge])
+
 function candidate_score(::PowerDeliveryPolicy, candidate::LinkCandidate, ctx::SchedulingContext, t::Float64)
     ctx.spacecraft === nothing && return 0.0
     link_directed(candidate.link) || return 0.0
@@ -345,6 +396,9 @@ ends (`nothing` for a virtual terminal). It selects data links. Undirected links
 score 0, and so does every link when the run's spacecraft models are not given.
 """
 struct DataThroughputPolicy <: AbstractSchedulingPolicy end
+
+_may_score(::DataThroughputPolicy, model, edge::Int, ctx::SchedulingContext) =
+    ctx.spacecraft !== nothing && link_directed(model.graph.edge_properties[edge])
 
 function candidate_score(::DataThroughputPolicy, candidate::LinkCandidate, ctx::SchedulingContext, t::Float64)
     ctx.spacecraft === nothing && return 0.0
@@ -437,7 +491,8 @@ others, were removed in SpaceAGORA 0.6.0, with their `target_index` and
 `target_indices` keywords and properties and the older `target_idx` and
 `target_idxs`. A call with a symbol throws an `ArgumentError` that names its
 typed replacement, such as `SemimajorAxisRatePolicy(targets=[31, 32])` for
-`SchedulingPolicyModel(:gve_sma; target_indices=[31, 32])`.
+`SchedulingPolicyModel(:gve_sma; target_indices=[31, 32])`, and so does a read
+or write of a removed property, naming `.objective` or `.objective.targets`.
 """
 mutable struct SchedulingPolicyModel
 	const objective::AbstractSchedulingPolicy
@@ -446,6 +501,24 @@ mutable struct SchedulingPolicyModel
 	SchedulingPolicyModel(objective::AbstractSchedulingPolicy) = new(objective, nothing)
 end
 SchedulingPolicyModel(policy::Symbol; kwargs...) = throw(ArgumentError(_removed_symbol_message(policy, kwargs)))
+
+# The properties removed in 0.6.0 refuse with their replacement; every other name
+# is a field. With a constant name, as in `scheduler.objective`, the check folds
+# away at compile time.
+const _REMOVED_PROPERTIES = (:policy, :target_index, :target_indices, :target_idx, :target_idxs)
+@inline function Base.getproperty(model::SchedulingPolicyModel, name::Symbol)
+	name in _REMOVED_PROPERTIES && _removed_property(name)
+	return getfield(model, name)
+end
+@inline function Base.setproperty!(model::SchedulingPolicyModel, name::Symbol, value)
+	name in _REMOVED_PROPERTIES && _removed_property(name)
+	return setfield!(model, name, convert(fieldtype(SchedulingPolicyModel, name), value))
+end
+@noinline _removed_property(name::Symbol) = throw(ArgumentError(name === :policy ?
+	"SchedulingPolicyModel.policy was removed in SpaceAGORA 0.6.0: the scheduler's policy is a typed policy, " *
+	"`.objective` (for example SemimajorAxisRatePolicy(targets=1))." :
+	"SchedulingPolicyModel.$(name) was removed in SpaceAGORA 0.6.0: a policy's targets are `.objective.targets` " *
+	"(SemimajorAxisRatePolicy, EccentricityRatePolicy)."))
 
 # 1.2. Create and maintain the dynamic-programming workspace.
 function matching_workspace!(model::InterlinkModel, policy::SchedulingPolicyModel)
@@ -483,24 +556,32 @@ the link context. The orbital policies take each link's force from its
 """
 function score_candidates!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real;
 	candidate_force=nothing, spacecraft=nothing, context=LinkContext())
-	ctx = SchedulingContext(Float64(mu), context, spacecraft, state, candidate_force)
+	terminals = spacecraft === nothing ? nothing : map(_terminal_devices, spacecraft)
+	ctx = SchedulingContext(Float64(mu), context, spacecraft, state, candidate_force, terminals)
 	objective = policy.objective
 	_prepare_scoring(objective, model, ctx)
 	work = matching_workspace!(model, policy)
-	_score_candidates!(work.score, objective, model, ctx)
-	_check_scores(objective, model, work.score, ctx)
+	_score_and_check!(work.score, objective, model, ctx)
 	return nothing
 end
 
-# The scores of every edge: one loop compiled for each policy type.
-function _score_candidates!(scores, objective::P, model::InterlinkModel, ctx::SchedulingContext) where {P}
+# Score every edge, then make the policy's checks across the scores.
+function _score_and_check!(scores, objective, model, ctx::SchedulingContext)
+	_score_candidates!(scores, objective, model, ctx)
+	return _check_scores(objective, model, scores, ctx)
+end
+
+# The scores of every edge: one loop compiled for each policy type. With
+# `circular`, the eccentricity policy also records its near-circular candidates.
+function _score_candidates!(scores, objective::P, model::InterlinkModel, ctx::SchedulingContext, circular=nothing) where {P}
 	graph = model.graph
 	t = ctx.link_context.time_s
 	for edge in eachindex(graph.edges)
 		score = 0.0
-		if graph.available[edge]
+		if graph.available[edge] && _may_score(objective, model, edge, ctx)
 			candidate = _link_candidate(model, edge, ctx)
-			score = Float64(candidate_score(objective, candidate, ctx, t))
+			score = Float64(circular === nothing ? candidate_score(objective, candidate, ctx, t) :
+				_eccentricity_score(objective, candidate, ctx, circular, edge))
 			isfinite(score) || throw(ArgumentError("Nonfinite $(nameof(P)) score for candidate $(candidate.key)."))
 		end
 		scores[edge] = score
