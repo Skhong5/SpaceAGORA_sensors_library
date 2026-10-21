@@ -173,6 +173,49 @@ end
     @test meta.retcode == "Success" && meta.solution === nothing && length(meta.solver_trace) == 1
 end
 
+# Solver metadata of a checkpointed run (1200 s segments over 3600 s), and of runs
+# resumed from its final checkpoint: to the same end, to a shorter mission and to a
+# longer one.
+function _with_settings(args; kwargs...)
+    s = args.simulation_settings
+    names = fieldnames(typeof(s))
+    vals = NamedTuple{names}(map(n -> getfield(s, n), names))
+    return SpaceAGORA.SimulationModel.SimConfig._with_configuration(args;
+        simulation_settings=SpaceAGORA.SimulationModel.SimulationSettings(; merge(vals, kwargs)...))
+end
+function _with_mission_time(args, mission_time)
+    m = args.mission_configuration
+    return SpaceAGORA.SimulationModel.SimConfig._with_configuration(args;
+        mission_configuration=SpaceAGORA.SimulationModel.MissionConfiguration(m.mission_type, m.keplerian,
+            m.number_of_orbits, mission_time, m.orientation_sim, m.num_steps_to_save, m.data_rate))
+end
+
+@testset "Solver metadata of a checkpointed run" begin
+    dir = mktempdir()
+    args = _checkpointed_config(results=false, dir=dir)
+    meta = run_simulation(args; return_solver_metadata=true)
+    @test meta.retcode == "Success" && meta.solution === nothing
+    @test length(meta.solver_trace) == 3                     # one entry per segment solved
+    # Stopped by a termination event in its second segment: two segments solved.
+    stops = DEB.DiscreteCallback((u, t, integrator) -> t > 1500.0, DEB.terminate!; save_positions=(false, false))
+    stopped = run_simulation(_checkpointed_config(results=false, dir=mktempdir());
+        extra_callbacks=(stops,), return_solver_metadata=true)
+    @test stopped.retcode == "Terminated" && length(stopped.solver_trace) == 2
+    # With return_solution=true, the final segment's solution.
+    final = run_simulation(_checkpointed_config(results=false, dir=mktempdir());
+        return_solver_metadata=true, return_solution=true)
+    @test final.retcode == "Success" && final.solution.t[1] == 2400.0 && final.solution.t[end] == 3600.0
+    # Resumed from the checkpoint at or past the mission end: nothing to solve.
+    resumed = _with_settings(args; resume_from_checkpoint=true)
+    for mission in (resumed, _with_mission_time(resumed, 2400.0))
+        none = run_simulation(mission; return_solver_metadata=true, return_solution=true)
+        @test none.retcode === nothing && none.solution === nothing && isempty(none.solver_trace)
+    end
+    # Resumed to a longer mission: one more 1200 s segment.
+    longer = run_simulation(_with_mission_time(resumed, 4800.0); return_solver_metadata=true)
+    @test longer.retcode == "Success" && length(longer.solver_trace) == 1
+end
+
 # RPO command log reachable through the configuration that ran.
 module RPOResultsExample
 using SpaceAGORA
