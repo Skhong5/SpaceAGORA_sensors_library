@@ -2,7 +2,7 @@ module SchedulingPolicies
 
 using LinearAlgebra
 using ..InterLinkModels
-using ..InterLinkModels: link_endpoint, _terminal_devices, _spacecraft_at, _battery_capacity_wh
+using ..InterLinkModels: link_endpoint, _terminal_devices, _spacecraft_at, _battery_capacity_wh, _battery_within_full
 using ..EffectorSampling: StateSample
 
 export AbstractSchedulingPolicy, LinkCandidate, SchedulingContext, candidate_score
@@ -438,9 +438,9 @@ receiving end is terminal hardware, between two spacecraft with a battery, by
 receiver's bus (`link_received_power_w`, as `PowerDeliveryPolicy` scores it),
 and `s_tx` and `s_rx` are the two batteries' states of charge
 (`state_of_charge`). Power flows only from a fuller battery to an emptier one,
-and a beam into a full battery never scores: a state of charge within `1e-9`
-of 1, where the power system calls a battery full, counts as 1, so two full
-batteries tie at 0. Of receivers competing for one sender's terminal, the
+and a beam into a full battery never scores: a battery the power system counts
+as full (its stored energy within `1e-9` of its capacity) counts as 1, so two
+full batteries tie at 0. Of receivers competing for one sender's terminal, the
 emptier wins at equal delivered power. The score is signed: a beam from an
 emptier battery to a fuller one scores negative. Links with no battery at
 either end, a link that would deliver no power (or, for a link kind of your
@@ -449,19 +449,22 @@ score 0.
 """
 struct EnergyBalancingPolicy <: AbstractSchedulingPolicy end
 
-# The power system calls a battery full within `1e-9` of its capacity
-# (`battery_boundary!`, and the power callbacks at the start), and its full
-# event leaves the stored energy just below the capacity. A state of charge
-# that close to 1 counts as 1 here, so a full receiver never scores.
-const _FULL_TOLERANCE = 1.0e-9
-_balancing_charge(state_of_charge::Float64) = state_of_charge >= 1.0 - _FULL_TOLERANCE ? 1.0 : state_of_charge
+# The state of charge energy balancing compares: 1 for a battery the power
+# system counts as full (`within_full_tolerance`, in energy, as its flags
+# decide it). The full event leaves the stored energy just below the capacity,
+# so a full battery's raw state of charge can be a hair under 1.
+function _balancing_charge(ctx::SchedulingContext, spacecraft_index::Int)
+    charge = state_of_charge(ctx, spacecraft_index)
+    isnan(charge) && return charge
+    energy_wh = Float64(ctx._state.sc[spacecraft_index].battery_wh)
+    return _battery_within_full(ctx.spacecraft[spacecraft_index], energy_wh) ? 1.0 : charge
+end
 
 function candidate_score(::EnergyBalancingPolicy, candidate::LinkCandidate, ctx::SchedulingContext, t::Float64)
     ctx.spacecraft === nothing && return 0.0
     link_directed(candidate.link) || return 0.0
     candidate.terminal_b === nothing && return 0.0
-    gap = _balancing_charge(state_of_charge(ctx, candidate.key[1][1])) -
-        _balancing_charge(state_of_charge(ctx, candidate.key[2][1]))
+    gap = _balancing_charge(ctx, candidate.key[1][1]) - _balancing_charge(ctx, candidate.key[2][1])
     isnan(gap) && return 0.0
     delivered = Float64(link_received_power_w(candidate.link, candidate.terminal_b, candidate.a, candidate.b, ctx.link_context))
     delivered <= 0 && return 0.0

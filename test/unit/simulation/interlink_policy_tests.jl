@@ -566,6 +566,20 @@ refusal(f) = try f(); nothing catch err err end
         end
         spacecraft, model, state = energy_fixture(sender=(soc=1.0,), first=(soc=1 - 1e-8,), second=(soc=1 - 1e-8,))
         @test all(>(0), scores_of(model, EnergyBalancingPolicy(), state, spacecraft))
+        # Around the threshold, a beam into a receiver scores exactly when the power
+        # system's boundary event does not flag the receiver full.
+        for capacity in (10.0, 0.033450261609188466, 7300.0)
+            spacecraft, model, state = energy_fixture(sender=(soc=1.0,), first=(capacity_wh=capacity,))
+            receiver = SM.PowerSystems.battery(spacecraft[2])
+            threshold = capacity * (1 - 1e-9)
+            for shift in -4:4
+                energy = nextfloat(threshold, shift)
+                receiver.full = receiver.empty = false
+                SM.PowerSystems.battery_boundary!(spacecraft[2], energy)
+                at = (sc=[i == 2 ? merge(sc, (battery_wh=energy,)) : sc for (i, sc) in enumerate(state.sc)],)
+                @test (scores_of(model, EnergyBalancingPolicy(), at, spacecraft)[1] > 0) == !receiver.full
+            end
+        end
         # A link that would deliver no power, or a negative power, scores 0, also from
         # an emptier battery to a fuller one.
         spacecraft, model, state = energy_fixture(first=(soc=0.95,))
@@ -606,16 +620,16 @@ refusal(f) = try f(); nothing catch err err end
         # the receiver is full, and never again; PowerDeliveryPolicy keeps beaming.
         ephemerides = SM.SimpleEphemeridesModel()
         sun = SM.ephemerides_sun_ii(ephemerides, PLANET, SM.ephemerides_epoch_seconds(ephemerides, InitialTime()))
-        function full_receiver_run(policy)
+        function full_receiver_run(policy; capacity_wh=0.05, soc=0.9)
             sender = beam_sat(1, 0.0; sender=true, soc=1.0)
             add_power!(sender, sender.root, SolarArray(normal=normalize(sun), area_m2=3.0, efficiency=0.3))
-            spacecraft = [sender, beam_sat(2, 5000.0; sender=false, capacity_wh=0.05, soc=0.9)]
+            spacecraft = [sender, beam_sat(2, 5000.0; sender=false, capacity_wh, soc)]
             model = InterlinkModel()
             register_link!(model, spacecraft, (1, 1), (2, 1), BEAM)
             args = SM.SimConfig._with_configuration(run_args(policy; duration=20.0); interlink_model=model,
                 dynamics_model=DynamicsModel(spacecraft, (InverseSquaredGravityModel(),)))
             solution = run_simulation(args; return_solution=true)
-            full_at = findfirst(u -> u.sc[2].battery_wh >= 0.05 * (1 - 1e-9), solution.u)
+            full_at = findfirst(u -> u.sc[2].battery_wh >= capacity_wh * (1 - 1e-9), solution.u)
             full_at === nothing && return (full=false, beamed_after=0)
             history = solution.prob.p.args.interlink_model.history
             return (full=SM.PowerSystems.battery(solution.prob.p.args.dynamics_model.spacecraft[2]).full,
@@ -624,6 +638,12 @@ refusal(f) = try f(); nothing catch err err end
         balancing = full_receiver_run(EnergyBalancingPolicy())
         @test balancing.full && balancing.beamed_after == 0
         @test full_receiver_run(PowerDeliveryPolicy()).beamed_after > 0
+        # A receiver that starts exactly at the threshold is full from the start, and
+        # is never beamed into.
+        at_threshold = (capacity_wh=0.033450261609188466, soc=1 - 1e-9)
+        balancing = full_receiver_run(EnergyBalancingPolicy(); at_threshold...)
+        @test balancing.full && balancing.beamed_after == 0
+        @test full_receiver_run(PowerDeliveryPolicy(); at_threshold...).beamed_after > 0
     end
 
     @testset "weighted mixes" begin

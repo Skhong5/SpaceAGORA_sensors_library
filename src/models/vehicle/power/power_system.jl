@@ -237,6 +237,12 @@ function power_balance(model::SpacecraftModel, levels, generation_w::Float64; wh
     return (load_w = load, unshed_load_w = bus + sum(unshed), by_tier = unshed, net_w = generation_w - load)
 end
 
+# Whether `energy_wh` (Wh) stored in battery `b` counts as full: within `1e-9`
+# of its capacity. It is the one test of fullness: the boundary event, the start
+# of a run and the end of each step use it, and so does the energy-balancing
+# scheduling policy.
+within_full_tolerance(b, energy_wh::Real) = energy_wh >= b.capacity_wh * (1.0 - 1.0e-9)
+
 """
     battery_boundary!(model, energy_wh) -> Bool
 
@@ -251,7 +257,7 @@ function battery_boundary!(model::SpacecraftModel, energy_wh::Real)::Bool
     if energy_wh <= tol && !b.empty
         b.empty = true
         return true
-    elseif energy_wh >= b.capacity_wh - tol && !b.full
+    elseif within_full_tolerance(b, energy_wh) && !b.full
         b.full = true
         return true
     end
@@ -276,7 +282,7 @@ function update_power_state!(model::SpacecraftModel, energy_wh::Real, generation
         b.empty = false
         changed = true
     end
-    if b.full && energy_wh < b.capacity_wh * (1.0 - 1.0e-9)
+    if b.full && !within_full_tolerance(b, energy_wh)
         b.full = false
         changed = true
     end
