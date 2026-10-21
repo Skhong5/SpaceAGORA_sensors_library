@@ -143,8 +143,11 @@ const ANCHOR_STATE = [7.0e6, 0.0, 0.0, 0.0, 7500.0, 0.0]
                 err = try T(:gve_sma; (name => [2, 1],)...) catch e e end
                 @test err isa ArgumentError && occursin("SemimajorAxisRatePolicy(targets=[2, 1])", err.msg)
             end
-            @test_throws FieldError getproperty(T(SemimajorAxisRatePolicy()), old)
-            @test_throws FieldError getproperty(T(SemimajorAxisRatePolicy()), new)
+            # The removed properties are refused, naming their replacement.
+            for name in (old, new)
+                err = try getproperty(T(SemimajorAxisRatePolicy()), name) catch e e end
+                @test err isa ArgumentError && occursin("`.objective.targets`", err.msg)
+            end
         end
         # An interlink checkpoint keeps its stored keys, so older checkpoints resume.
         stub = (interlink_model=(graph=(vertices=Any[], edges=Any[], edge_properties=Any[]),
