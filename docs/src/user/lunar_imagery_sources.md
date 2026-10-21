@@ -100,7 +100,10 @@ reports that its source is too coarse, enlarge `--root-deg`, reduce
 
 `check_site_registration.py` compares archive imagery with a DEM hillshade,
 optional Moon Trek imagery, and a bright-object heuristic near the supplied
-site coordinate. For example:
+site coordinate. The example below requires `dem_nac.json`, which the first
+LOLA-only command does not create. For the configured Apollo 11 site, first
+rerun `fetch_moon_site.py` without `--no-nac` to produce the optional NAC DEM;
+you can keep `--no-imagery`. Then run:
 
 ```text
 python3 scripts/dev/terrain/check_site_registration.py --site 0.67416 23.47314 --dem output/terrain/moon/apollo11/dem_nac.json --cache output/terrain/moon/apollo11/pds_cache

@@ -172,7 +172,8 @@ HYPR_CASES=1 HYPR_OUTPUT_ROOT="$HOME/AgentScratch/hypr_final_isparo" \
   examples/Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl
 ```
 
-Both candidate source patches must be installed in the optional environment.
+Run this command from the same SpaceAGORA checkout used to prepare
+`/path/to/hypr-env` above, and keep that checkout at the recorded revision.
 The example records cases, each planner's path/reference, successful and failed
 outcomes, and actual delivered-force fuel consumption. Failed cases remain in
 success/runtime accounting and must be excluded from fuel means. Comparisons

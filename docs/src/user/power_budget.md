@@ -48,7 +48,10 @@ run keeps these states from one segment to the next, and a run resumed from a
 checkpoint file takes them from the file, which holds the stored energy and
 whether the battery is empty and recharging or full.
 
-## A small example
+## Add power parts to a spacecraft
+
+This configuration fragment builds the vehicle and mounts its power parts.
+It does not yet define an orbit or run a simulation.
 
 ```julia
 using SpaceAGORA, StaticArrays
@@ -60,7 +63,10 @@ add_power!(spacecraft, bus, PowerLoad(power_w=5.0, name="avionics"))
 add_actuator!(spacecraft, bus, LaserTerminal(boresight=SVector(1.0, 0.0, 0.0), max_power_w=2.0, efficiency=0.2))
 ```
 
-`examples/Earth_CubeSat_Power_Budget.jl` flies this vehicle for two orbits
+For a complete runnable scenario, use
+[`Earth_CubeSat_Power_Budget.jl`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/main/examples/Earth_CubeSat_Power_Budget.jl)
+with the environment described in the [Examples Catalog](examples_catalog.md).
+It flies this vehicle for two orbits
 with its laser on: the battery fills in sunlight, empties in eclipse, the
 laser is shed until the Sun returns, and the script checks each of these.
 

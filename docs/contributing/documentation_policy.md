@@ -6,7 +6,7 @@ or the process rules that keep documentation current.
 This page is for maintainers. If you are trying to run SpaceAGORA or find a
 command, see the [User Guide](../src/index.md).
 
-Quickest maintainer check:
+From the root of a prepared checkout, use Julia 1.12 for the maintainer check:
 
 ```text
 julia --startup-file=no docs/setup.jl
@@ -126,8 +126,8 @@ modules.
 
 ## Build the docs locally
 
-From the repository root, prepare the docs environment and build the
-documentation:
+From the repository root, use Julia 1.12 to prepare the docs environment and
+build the documentation. Dependency setup may access package servers:
 
 ```text
 julia --startup-file=no docs/setup.jl
@@ -139,6 +139,11 @@ from this checkout; the root project does not include Documenter. `docs/setup.jl
 generates the ignored `docs/Manifest.toml` from the root manifest on every run,
 so the build uses the package versions the tests use. Run it again after the root
 manifest changes.
+
+Open `docs/build/index.html` after a successful build. Pages under
+`docs/contributing/`, `docs/architecture/` and `docs/quality/` are not rendered
+into that site; review their Markdown, command context and repository links
+separately when changing them.
 
 Generated documentation stays local under the ignored `docs/build/`,
 `docs/site/` and `docs/src/generated/` directories.

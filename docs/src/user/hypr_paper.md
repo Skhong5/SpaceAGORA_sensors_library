@@ -84,14 +84,16 @@ Replacement planning uses seed 1744.
     follows the v0.4.0 tag; until then, that they are reproducible from v0.4.0 is
     unchecked.
 
-In a checkout of the v0.4.0 tag, with the HYPR environment set up as in
-[Install and run](#Install-and-run), the case runs with:
+Use a separate checkout of the v0.4.0 tag for this historical case. From that
+checkout's root, create a distinct environment so the current-release setup
+above keeps its own core and HYPR pins:
 
 ```sh
+julia --startup-file=no scripts/setup_hypr.jl "$HOME/AgentScratch/hypr-paper-v040-env"
 JULIA_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 \
   HYPR_OUTPUT_ROOT="$HOME/AgentScratch/hypr-paper-dynamic" \
   HYPR_DYNAMIC_SCENARIOS=directly_ahead HYPR_DYNAMIC_MAX_TIME_S=1200 \
-  julia --startup-file=no --project="$HOME/AgentScratch/hypr-paper-env" \
+  julia --startup-file=no --project="$HOME/AgentScratch/hypr-paper-v040-env" \
   examples/Earth_RPO_HyPR_FinalISpaRo_Replanning.jl
 ```
 

@@ -23,8 +23,9 @@ randomness (supplied and derived streams), connections between components
 (links, families and install targets), lifecycle handling (pre-run checks and
 resets) and the testing machinery.
 
-A conformance pass certifies interface behaviour only. It does not validate a
-model, a method or a result; the starters' READMEs and the CI summary say so.
+A conformance pass checks interface behaviour on the supplied fixtures. It does
+not validate the scientific model, method or result; the starters' READMEs and
+the CI summary say so.
 
 ## Choose a starter
 
@@ -53,7 +54,11 @@ From a clean checkout of the SpaceAGORA commit you want to build on:
 
 ```bash
 julia --startup-file=no scripts/new_contributor_repository.jl package ../MyPlanner --name MyPlanner
+cd ../MyPlanner
 ```
+
+Run the remaining commands from `MyPlanner`. The examples assume its sibling
+core checkout is named `SpaceAGORA.jl`; adjust that path if yours has another name.
 
 The generator copies the starter from that commit, gives the repository a fresh
 UUID and a `[compat]` entry for the core's release series, and pins the commit
@@ -75,9 +80,11 @@ version = "0.5.1"          # optional: the core's version at rev
 companions = ["mujoco"]    # optional: hypr, mujoco or edg, at that commit's own pins
 ```
 
-The pin lives in its own file, not in `[sources]` of `Project.toml`: Pkg cannot
-install SpaceAGORA from a URL and revision, and `Pkg.test` would read such an
-entry instead of the tested environment. To move to a newer core, check that
+The pin lives in its own file, not in `[sources]` of `Project.toml`. The kit
+uses a local clone so tests use the checked-out core and its prepared submodules.
+Its setup script rejects a `SpaceAGORA` entry in `[sources]`, which would take
+precedence over the tested environment during `Pkg.test`. To move to a newer
+core, check that
 core out beside your repository and run its `repin`, which changes `rev`, the
 `version` and the workflow call together, and the `SpaceAGORA` entry in
 `[compat]` when the release series changes:
@@ -91,12 +98,29 @@ Record the commit with every result you keep.
 
 ## Set up and test locally
 
-Clone SpaceAGORA beside your repository at the pinned commit, then build a
-separate environment that develops that checkout by path:
+If you just generated `MyPlanner`, use the clean sibling SpaceAGORA checkout
+that generated it. It is already at the pinned commit. If you instead cloned
+an existing contributor repository and do not yet have that core checkout,
+create it from the contributor repository's root:
 
 ```bash
 git clone --filter=blob:none -c lfs.fetchexclude="*" https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../SpaceAGORA.jl
-git -C ../SpaceAGORA.jl checkout <the rev in SpaceAGORASource.toml>
+julia --startup-file=no --project=@stdlib
+```
+
+At the Julia prompt, read the recorded revision and select it in the new clone:
+
+```julia
+using TOML
+pin = TOML.parsefile("SpaceAGORASource.toml")
+run(`git -C ../SpaceAGORA.jl checkout $(pin["rev"])`)
+exit()
+```
+
+With the sibling checkout at the recorded revision, build the separate
+environment from `MyPlanner`:
+
+```bash
 julia --startup-file=no ../SpaceAGORA.jl/scripts/contributor_environment.jl package . ../MyPlanner-env --manifest core
 ```
 
