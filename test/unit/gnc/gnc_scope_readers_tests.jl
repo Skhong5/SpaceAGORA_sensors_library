@@ -189,48 +189,73 @@ function SpaceAGORA.bind_spacecraft(m::CrossingGd, k::Int)
 end
 
 # Mounted actuation: spacecraft with a reaction wheel and a battery, so the
-# dynamics, the power snapshot and the result columns read the levels. Each
-# bound copy holds a wheel command for its own spacecraft and counts every
-# actuator_levels call per spacecraft.
+# dynamics, the power snapshot and the result columns read the levels (with a
+# thruster and a fault too, the thruster-level column and the fault reader). Each
+# bound copy holds a wheel command for its own spacecraft, the last of its
+# `actuators` levels (thrusters mount first), and counts every actuator_levels
+# call per spacecraft.
 mutable struct WheelCtl <: SM.AbstractControlEffectorModel
     spacecraft_index::Int
     levels::Vector{Float64}
     calls::Vector{Int}
     copies::Vector{Any}
 end
-WheelCtl(n; index=0) = WheelCtl(index, [0.0], zeros(Int, n), Any[])
+WheelCtl(n; index=0, actuators=1) = WheelCtl(index, zeros(actuators), zeros(Int, n), Any[])
 SpaceAGORA.actuation_mode(::WheelCtl) = :mounted
 SpaceAGORA.spacecraft_scope(m::WheelCtl) = m.spacecraft_index == 0 ? AllSpacecraft() : BoundSpacecraft((m.spacecraft_index,))
-SpaceAGORA.update_control!(m::WheelCtl, u, p, t::Float64, i::Int) = (m.levels[1] = 1.0e-3 * i; nothing)
+SpaceAGORA.update_control!(m::WheelCtl, u, p, t::Float64, i::Int) = (m.levels[end] = 1.0e-3 * i; nothing)
 function SpaceAGORA.actuator_levels(m::WheelCtl, i::Int)
     m.calls[i] += 1
     return i == m.spacecraft_index ? m.levels : nothing
 end
-SpaceAGORA.initialize_control!(m::WheelCtl, u, p, t) = (m.levels[1] = 0.0; fill!(m.calls, 0); nothing)
+SpaceAGORA.initialize_control!(m::WheelCtl, u, p, t) = (fill!(m.levels, 0.0); fill!(m.calls, 0); nothing)
 function SpaceAGORA.bind_spacecraft(m::WheelCtl, k::Int)
-    bound = WheelCtl(length(m.calls); index=k)
+    bound = WheelCtl(length(m.calls); index=k, actuators=length(m.levels))
     push!(m.copies, bound)
     return bound
 end
 
-function wheel_spacecraft(id, template)
+function wheel_spacecraft(id, template; thruster=false, fault=false)
     r = PLANET.Rp_e + 500e3 + 10e3 * id
     ic = SM.CartesianInitialCondition(SVector(r, 0.0, 0.0), SVector(0.0, sqrt(PLANET.μ / r), 0.0); q=SVector(0.0, 0.0, 0.0, 1.0))
     bus = SM.Link(root=true, m=10.0, dims=MVector(0.1, 0.2, 0.3))
     sc = SM.SpacecraftModel(links=[bus], root=bus, inertia_tensor=bus.inertia, initial_condition=ic, id=id,
         control=SM.ControlModel((template,), [1.0]))
-    add_actuator!(sc, bus, ReactionWheel(spin_axis=SVector(0.0, 0.0, 1.0)))
+    wheel = add_actuator!(sc, bus, ReactionWheel(spin_axis=SVector(0.0, 0.0, 1.0)))
+    thruster && add_actuator!(sc, bus, Thruster(max_thrust=1.0, direction=MVector(1.0, 0.0, 0.0), Isp=300.0))
+    fault && add_fault!(sc, ActuatorFault(wheel; kind=:degraded, value=0.5, start_s=1.0, stop_s=3.0))
     add_power!(sc, bus, Battery(capacity_wh=5.0, initial_soc=0.5))
     add_power!(sc, bus, PowerLoad(power_w=1.0, name="avionics"))
     return sc
 end
 
-function wheel_args(n, template; mission_time=5.0)
-    args = scope_args(n; spacecraft=[wheel_spacecraft(id, template) for id in 1:n], mission_time=mission_time)
+function wheel_args(n, template; mission_time=5.0, thruster=false, fault=false)
+    args = scope_args(n; spacecraft=[wheel_spacecraft(id, template; thruster, fault) for id in 1:n],
+        mission_time=mission_time)
     mission = args.mission_configuration
     return SM.SimConfig._with_configuration(args; mission_configuration=SM.MissionConfiguration(
         mission_type=SM.MissionTime, keplerian=true, number_of_orbits=1, mission_time=mission_time,
         orientation_sim=true, num_steps_to_save=mission.num_steps_to_save))
+end
+
+# An event-driven controller that counts, per spacecraft, the reschedules an
+# atmosphere exit asks of it.
+mutable struct ExitCtl <: SM.AbstractControlEffectorModel
+    spacecraft_index::Int
+    exits::Vector{Int}
+    copies::Vector{Any}
+end
+ExitCtl(n; index=0) = ExitCtl(index, zeros(Int, n), Any[])
+SpaceAGORA.tick_schedule(::ExitCtl) = :event_driven
+SpaceAGORA.spacecraft_scope(m::ExitCtl) = m.spacecraft_index == 0 ? AllSpacecraft() : BoundSpacecraft((m.spacecraft_index,))
+SpaceAGORA.update_control!(m::ExitCtl, u, p, t::Float64, i::Int) = nothing
+SpaceAGORA.control_wrench(m::ExitCtl, x::StateSample, p, t::Float64) = (Z3, Z3)
+SpaceAGORA.gnc_callbacks(m::ExitCtl, num_sats, args, period_s) = ()
+CB._reschedule_event_driven!(integrator, m::ExitCtl, i::Int) = (m.exits[i] += 1; nothing)
+function SpaceAGORA.bind_spacecraft(m::ExitCtl, k::Int)
+    bound = ExitCtl(length(m.exits); index=k)
+    push!(m.copies, bound)
+    return bound
 end
 
 # A controller whose scope method builds its selection, with a new closure, at
@@ -312,6 +337,16 @@ SpaceAGORA.control_wrench(m::RebuildsCtl, x::StateSample, p, t::Float64) = (Z3, 
         template = WheelCtl(n)
         serial(() -> without_lists(() -> run_simulation(wheel_args(n, template); isolate_state=false)))
         @test all(bound -> all(>(0), bound.calls), template.copies)
+        # With a thruster and a wheel fault, the thruster-level column and the fault
+        # reader read the levels too, and only for the spacecraft in the scope.
+        template = WheelCtl(n; actuators=2)
+        solution = serial(() -> run_simulation(wheel_args(n, template; thruster=true, fault=true); isolate_state=false,
+            return_solution=true))
+        @test CB.thruster_level_counts(solution.prob.p.args) == [1, 1]
+        for bound in template.copies
+            k = bound.spacecraft_index
+            @test bound.calls[k] > 0 && bound.calls[3 - k] == 0
+        end
     end
 
     @testset "atmosphere_transition! is called for the models whose scope names the spacecraft" begin
@@ -321,6 +356,18 @@ SpaceAGORA.control_wrench(m::RebuildsCtl, x::StateSample, p, t::Float64) = (Z3, 
         @test !isempty(shared.crossings) && Set(first.(shared.crossings)) == Set([1, 2])
         for bound in template.copies
             @test !isempty(bound.crossings) && all(c -> first(c) == bound.spacecraft_index, bound.crossings)
+        end
+    end
+
+    @testset "an atmosphere exit reschedules the event-driven models whose scope names the spacecraft" begin
+        template, shared = ExitCtl(2), ExitCtl(2)
+        run_simulation(scope_args(2; declared=(template,), control=(shared,), drag=true, mission_time=900.0);
+            isolate_state=false)
+        @test all(>(0), shared.exits)
+        @test length(template.copies) == 2
+        for bound in template.copies
+            k = bound.spacecraft_index
+            @test bound.exits[k] > 0 && bound.exits[3 - k] == 0
         end
     end
 
