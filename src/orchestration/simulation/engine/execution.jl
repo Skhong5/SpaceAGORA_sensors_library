@@ -467,7 +467,7 @@ function _flatten_spacecraft_gnc(args::SimulationConfiguration)
         control_model=SimulationModel.ControlModel(Tuple(c), cr),
         dynamics_model=SimulationModel.DynamicsModel(
             SimulationModel.SpacecraftModel[_declares_gnc(sc) ? _without_gnc(sc) : sc for sc in spacecraft],
-            args.dynamics_model.dynamic_effectors))
+            args.dynamics_model.dynamic_effectors, args.dynamics_model.effector_scopes))
 end
 
 # Opt-in factories own fresh callback state and capture the configuration that
@@ -546,6 +546,7 @@ function _resume_engine_state!(args, p, solver_mode, initial_conditions)
                     hasproperty(sc, :laser_delta_sma) == has_interlinks, ckpt.u.sc) ||
                     throw(ArgumentError("Checkpoint interlink state does not match the configured interlink_model; resume with the same interlink setting."))
             end
+            _check_effector_scope_checkpoint_state(args, ckpt)
             _restore_activity_checkpoint_state!(args, ckpt, p.is_active)
             _restore_interlink_checkpoint_state!(args, ckpt, p.is_active)
             _restore_callback_checkpoint_state!(args, ckpt, p)
@@ -679,6 +680,9 @@ function run_simulation(
     return_results && return_solver_metadata &&
         throw(ArgumentError("return_results=true and return_solver_metadata=true cannot be combined."))
     args = _flatten_spacecraft_gnc(args)
+    # Scoped dynamic effectors become bare effectors and a table of run positions,
+    # before any check reads the effectors by type (see effector_scopes.jl).
+    args = _resolve_effector_scopes(args)
     for guidance in args.guidance_model.guidance_effectors
         SimulationLifecycle.preflight_guidance(guidance, args; isolate_state=isolate_state)
     end

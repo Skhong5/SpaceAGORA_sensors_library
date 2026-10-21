@@ -113,6 +113,17 @@ end
 # A binding acts on its one spacecraft (GNCRuntime scope), and produces its
 # configured link, which the product's consumer reads.
 GR.spacecraft_scope(g::AlgorithmGuidance) = GR.BoundSpacecraft((g.spacecraft_index,))
+
+# A binding predicts with the run's gravity models when its algorithm's family does
+# (the EDG family says so where it is defined); an algorithm without a family does not.
+function GR._prediction_uses_run_gravity(g::AlgorithmGuidance)
+    family = try
+        GA.algorithm_family(g.algorithm)
+    catch
+        nothing
+    end
+    return GR._prediction_uses_run_gravity(family)
+end
 GR.gnc_links(g::AlgorithmGuidance) = g.link === nothing ? () : (GR.Produces(g.link),)
 
 # Guidance ticks accumulate their period, so an event or interval due at a tick

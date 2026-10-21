@@ -14,6 +14,15 @@ const _SAMPLE_FRACTIONS = (0.0, 0.25, 0.5, 0.75, 1.0)
 # A concurrent run waits at most this long for the other one at each step.
 const _RENDEZVOUS_TIMEOUT_S = 60.0
 
+# The kit checks a model; a scope is engine behaviour that the engine's own tests
+# cover, so a scoped entry is refused rather than checked without its scope.
+function _refuse_scoped_subject(model)
+    model isa SimulationModel.ScopedEffector && throw(ArgumentError(
+        "check_force_torque_model checks the effector itself, not its scope: pass the effector " *
+        "(scoped_entry.effector)."))
+    return nothing
+end
+
 """
     check_force_torque_model(model; fixture=conformance_fixture(effectors=(model,)), samples=nothing)
         -> ConformanceReport
@@ -64,6 +73,7 @@ with the run's error. A pass certifies interface behaviour, not the model's phys
 """
 function check_force_torque_model(model; fixture::ConformanceFixture=conformance_fixture(effectors=(model,)),
         samples=nothing)
+    _refuse_scoped_subject(model)
     effectors = fixture.configuration.dynamics_model.dynamic_effectors
     index = findfirst(effector -> effector === model, effectors)
     index === nothing && throw(ArgumentError(

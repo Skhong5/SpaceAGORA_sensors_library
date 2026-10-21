@@ -210,7 +210,9 @@ stops before integration with an `ArgumentError` saying the effector has no
 **Attaching it.** Effectors are passed as a tuple to `DynamicsModel` (or to
 `make_example_config`'s `dynamic_effectors`). Order does not matter for the
 physics: the forces are summed. Gravity is an effector like any other, so
-`InverseSquaredGravityModel()` is listed explicitly.
+`InverseSquaredGravityModel()` is listed explicitly. An entry
+`scoped(effector, scope)` acts on some spacecraft only: see
+[Effectors on part of a constellation](constellations.md#Effectors-on-part-of-a-constellation).
 
 **Two runs, not one.** The cleanest way to see what an effector does is to run
 the same configuration with and without it and compare the results files. The

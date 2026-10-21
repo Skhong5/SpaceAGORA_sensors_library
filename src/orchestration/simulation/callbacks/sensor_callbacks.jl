@@ -36,8 +36,18 @@ function _sensor_specific_force(integrator, i::Int, q::SVector{4, Float64})
     spacecraft = p.args.dynamics_model.spacecraft[i]
     x = CallbackServices.build_state_sample(sc_view, spacecraft, hasproperty(sc_view, :q), i)
     gravity = SVector{3, Float64}(0.0, 0.0, 0.0)
-    for e in p.args.dynamics_model.dynamic_effectors
-        is_gravitational(e) && (gravity += CallbackServices._effector_force_ii(e, sc_view, x, p, i, t))
+    scopes = p.args.dynamics_model.effector_scopes
+    if scopes === nothing
+        for e in p.args.dynamics_model.dynamic_effectors
+            is_gravitational(e) && (gravity += CallbackServices._effector_force_ii(e, sc_view, x, p, i, t))
+        end
+    else
+        # Only the gravity applied to this spacecraft: a scoped effector outside
+        # its scope applies none.
+        for (j, e) in enumerate(p.args.dynamics_model.dynamic_effectors)
+            is_gravitational(e) && _simulation_model_module.SpacecraftModels._effector_applies(scopes, j, i) &&
+                (gravity += CallbackServices._effector_force_ii(e, sc_view, x, p, i, t))
+        end
     end
     return rot(q) * (a - gravity / Float64(sc_view.mass))
 end
