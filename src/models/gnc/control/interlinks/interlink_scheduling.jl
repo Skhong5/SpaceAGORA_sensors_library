@@ -38,8 +38,9 @@ end
 Supertype of the interlink scheduling policies. A policy is an immutable value
 whose fields say what it scores, and it holds no run state. A policy type
 implements `candidate_score`. The built-in policies are
-`SemimajorAxisRatePolicy`, `EccentricityRatePolicy`, `PowerDeliveryPolicy` and
-`DataThroughputPolicy`. Give a run its policy with
+`SemimajorAxisRatePolicy`, `EccentricityRatePolicy`, `PowerDeliveryPolicy`,
+`DataThroughputPolicy`, `EnergyBalancingPolicy` and `WeightedPolicy`, a
+weighted mix of policies. Give a run its policy with
 `SimulationConfiguration(scheduling_policy_model=policy)`.
 """
 abstract type AbstractSchedulingPolicy end
@@ -437,21 +438,33 @@ receiving end is terminal hardware, between two spacecraft with a battery, by
 receiver's bus (`link_received_power_w`, as `PowerDeliveryPolicy` scores it),
 and `s_tx` and `s_rx` are the two batteries' states of charge
 (`state_of_charge`). Power flows only from a fuller battery to an emptier one,
-and a beam into a full battery never scores; of receivers competing for one
-sender's terminal, the emptier wins at equal delivered power. The score is
-signed: a beam from an emptier battery to a fuller one scores negative. Links
-with no battery at either end, and every link without the run's spacecraft
-models, score 0.
+and a beam into a full battery never scores: a state of charge within `1e-9`
+of 1, where the power system calls a battery full, counts as 1, so two full
+batteries tie at 0. Of receivers competing for one sender's terminal, the
+emptier wins at equal delivered power. The score is signed: a beam from an
+emptier battery to a fuller one scores negative. Links with no battery at
+either end, a link that would deliver no power (or, for a link kind of your
+own, a negative power), and every link without the run's spacecraft models
+score 0.
 """
 struct EnergyBalancingPolicy <: AbstractSchedulingPolicy end
+
+# The power system calls a battery full within `1e-9` of its capacity
+# (`battery_boundary!`, and the power callbacks at the start), and its full
+# event leaves the stored energy just below the capacity. A state of charge
+# that close to 1 counts as 1 here, so a full receiver never scores.
+const _FULL_TOLERANCE = 1.0e-9
+_balancing_charge(state_of_charge::Float64) = state_of_charge >= 1.0 - _FULL_TOLERANCE ? 1.0 : state_of_charge
 
 function candidate_score(::EnergyBalancingPolicy, candidate::LinkCandidate, ctx::SchedulingContext, t::Float64)
     ctx.spacecraft === nothing && return 0.0
     link_directed(candidate.link) || return 0.0
     candidate.terminal_b === nothing && return 0.0
-    gap = state_of_charge(ctx, candidate.key[1][1]) - state_of_charge(ctx, candidate.key[2][1])
+    gap = _balancing_charge(state_of_charge(ctx, candidate.key[1][1])) -
+        _balancing_charge(state_of_charge(ctx, candidate.key[2][1]))
     isnan(gap) && return 0.0
     delivered = Float64(link_received_power_w(candidate.link, candidate.terminal_b, candidate.a, candidate.b, ctx.link_context))
+    delivered <= 0 && return 0.0
     return delivered * gap
 end
 
@@ -588,8 +601,9 @@ function _removed_symbol_message(policy::Symbol, kwargs)
     spec = _symbol_policy_spec(policy, index, indices)
     if spec === nothing
         return "$(call): $(repr(policy)) is not a scheduling policy, and policies chosen by a symbol were removed in " *
-            "SpaceAGORA 0.6.0. Use a policy type: SemimajorAxisRatePolicy, EccentricityRatePolicy, PowerDeliveryPolicy " *
-            "or DataThroughputPolicy, or one of your own (a subtype of AbstractSchedulingPolicy with a candidate_score method)."
+            "SpaceAGORA 0.6.0. Use a policy type: SemimajorAxisRatePolicy, EccentricityRatePolicy, PowerDeliveryPolicy, " *
+            "DataThroughputPolicy, EnergyBalancingPolicy or WeightedPolicy, or one of your own (a subtype of " *
+            "AbstractSchedulingPolicy with a candidate_score method)."
     end
     T, targets = spec
     shown = targets !== nothing && (policy === :gve_sma_first_index || any(given, _TARGET_KEYWORDS))

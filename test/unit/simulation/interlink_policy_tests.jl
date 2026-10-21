@@ -111,6 +111,12 @@ function beam_sat(index, arc_m; sender, capacity_wh=10.0, soc=0.5, battery=true,
     return sc
 end
 const BEAM = PowerBeamLink(power_w=80.0, range_m=50e3)
+# A directed link kind of your own whose receiver gets `power_w`, zero or negative.
+struct FixedPowerLink <: AbstractInterlink
+    power_w::Float64
+end
+SpaceAGORA.link_directed(::FixedPowerLink) = true
+SpaceAGORA.link_received_power_w(link::FixedPowerLink, receiver, a, b, ctx) = link.power_w
 
 # The state a scheduler sees: each spacecraft's position, velocity, mass and, with
 # a battery, its stored energy.
@@ -307,7 +313,8 @@ refusal(f) = try f(); nothing catch err err end
         err = refusal(() -> SchedulingPolicyModel(:invalid))
         @test err isa ArgumentError && occursin(":invalid is not a scheduling policy", err.msg) &&
             all(name -> occursin(name, err.msg), ("SemimajorAxisRatePolicy", "EccentricityRatePolicy",
-                "PowerDeliveryPolicy", "DataThroughputPolicy", "AbstractSchedulingPolicy"))
+                "PowerDeliveryPolicy", "DataThroughputPolicy", "EnergyBalancingPolicy", "WeightedPolicy",
+                "AbstractSchedulingPolicy"))
         err = refusal(() -> SchedulingPolicyModel(:gve_sma; target_index=2, mode=:fast))
         @test err isa ArgumentError && occursin("targets=2", err.msg) && occursin("The keyword mode has no replacement.", err.msg)
         # A combination the old constructor refused still names a typed call, whose own check refuses it.
@@ -501,6 +508,26 @@ refusal(f) = try f(); nothing catch err err end
         @test isempty(selected_by(model, EnergyBalancingPolicy(), state, spacecraft))
         # Negative control: PowerDeliveryPolicy beams into the full battery.
         @test selected_by(model, PowerDeliveryPolicy(), state, spacecraft) != InterLinkKey[]
+        # A battery within 1e-9 of its capacity, where the power system calls it full,
+        # counts as full: a full sender and full receivers tie at 0, also when the
+        # sender is a hair fuller; just outside the tolerance the beams score.
+        for (tx, rx) in ((1.0, 1 - 1e-12), (1.0, 1 - 1e-10), (1 - 1e-12, 1 - 5e-10))
+            spacecraft, model, state = energy_fixture(sender=(soc=tx,), first=(soc=rx,), second=(soc=rx,))
+            @test all(iszero, scores_of(model, EnergyBalancingPolicy(), state, spacecraft))
+            @test isempty(selected_by(model, EnergyBalancingPolicy(), state, spacecraft))
+            @test !isempty(selected_by(model, PowerDeliveryPolicy(), state, spacecraft))
+        end
+        spacecraft, model, state = energy_fixture(sender=(soc=1.0,), first=(soc=1 - 1e-8,), second=(soc=1 - 1e-8,))
+        @test all(>(0), scores_of(model, EnergyBalancingPolicy(), state, spacecraft))
+        # A link that would deliver no power, or a negative power, scores 0, also from
+        # an emptier battery to a fuller one.
+        spacecraft, model, state = energy_fixture(first=(soc=0.95,))
+        ctx = SchedulingContext(PLANET.μ, LinkContext(), spacecraft, state, nothing)
+        beam = SP._link_candidate(model, 1, ctx)
+        for power_w in (0.0, -5.0)
+            candidate = LinkCandidate(beam.key, FixedPowerLink(power_w), beam.a, beam.b, beam.terminal_a, beam.terminal_b)
+            @test candidate_score(EnergyBalancingPolicy(), candidate, ctx, 0.0) === 0.0
+        end
         spacecraft, model, state = energy_fixture(sender=(battery=false,))
         @test all(iszero, scores_of(model, EnergyBalancingPolicy(), state, spacecraft))
         spacecraft, model, state = energy_fixture(first=(battery=false,))
@@ -527,6 +554,29 @@ refusal(f) = try f(); nothing catch err err end
         history = solution.prob.p.args.interlink_model.history
         @test first(history).active == [((1, 1), (2, 1))]
         @test any(sample -> sample.active == [((1, 1), (3, 1))], history)
+
+        # In a run, a sender that its solar array keeps full beams to a receiver until
+        # the receiver is full, and never again; PowerDeliveryPolicy keeps beaming.
+        ephemerides = SM.SimpleEphemeridesModel()
+        sun = SM.ephemerides_sun_ii(ephemerides, PLANET, SM.ephemerides_epoch_seconds(ephemerides, InitialTime()))
+        function full_receiver_run(policy)
+            sender = beam_sat(1, 0.0; sender=true, soc=1.0)
+            add_power!(sender, sender.root, SolarArray(normal=normalize(sun), area_m2=3.0, efficiency=0.3))
+            spacecraft = [sender, beam_sat(2, 5000.0; sender=false, capacity_wh=0.05, soc=0.9)]
+            model = InterlinkModel()
+            register_link!(model, spacecraft, (1, 1), (2, 1), BEAM)
+            args = SM.SimConfig._with_configuration(run_args(policy; duration=20.0); interlink_model=model,
+                dynamics_model=DynamicsModel(spacecraft, (InverseSquaredGravityModel(),)))
+            solution = run_simulation(args; return_solution=true)
+            full_at = findfirst(u -> u.sc[2].battery_wh >= 0.05 * (1 - 1e-9), solution.u)
+            full_at === nothing && return (full=false, beamed_after=0)
+            history = solution.prob.p.args.interlink_model.history
+            return (full=SM.PowerSystems.battery(solution.prob.p.args.dynamics_model.spacecraft[2]).full,
+                beamed_after=count(sample -> sample.time > solution.t[full_at] && !isempty(sample.active), history))
+        end
+        balancing = full_receiver_run(EnergyBalancingPolicy())
+        @test balancing.full && balancing.beamed_after == 0
+        @test full_receiver_run(PowerDeliveryPolicy()).beamed_after > 0
     end
 
     @testset "weighted mixes" begin
@@ -617,6 +667,7 @@ refusal(f) = try f(); nothing catch err err end
         @test entry.policy.kind.name === :WeightedPolicy
         @test entry.policy.fields.terms[2].fields.weight.bits == reinterpret(UInt64, 0.5)
         @test entry.policy.fields.terms[1].fields.policy.kind.name === :SemimajorAxisRatePolicy
+        @test entry.policy.fields.terms[1].kind.name === :PolicyTerm   # a term is recorded as a policy is
         @test resumes(mixture(), checkpoint(mixture()))
         @test !resumes(mixture(weight=0.25), checkpoint(mixture()))
         @test !resumes(mixture(scale=50.0), checkpoint(mixture()))

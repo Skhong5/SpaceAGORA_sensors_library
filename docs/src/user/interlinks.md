@@ -333,13 +333,16 @@ power it would deliver times the gap between the two batteries' states of
 charge, `P × (s_tx − s_rx)`. So:
 
 - power flows only from a fuller battery to an emptier one, and a beam into a
-  full battery never scores;
+  full battery never scores: a state of charge within `1e-9` of 1, where the
+  power system calls a battery full, counts as 1, so two full batteries tie
+  at 0;
 - of receivers competing for one sender's terminal, the emptier one wins at
   equal delivered power, while a much better-coupled receiver can still win
   over a slightly emptier one;
 - the score is signed: a beam from an emptier battery to a fuller one scores
   negative, so it is never selected alone and counts against the beam in a mix;
-- a link with no battery at either end scores 0.
+- a link with no battery at either end, or one that would deliver no power,
+  scores 0.
 
 The selection changes only at accepted steps, so when two states of charge
 cross within a step, the beam runs to the step's end. `PowerDeliveryPolicy`,
