@@ -332,6 +332,12 @@ and its impact or touchdown does not happen again. A checkpoint written by an
 earlier SpaceAGORA records this only for an interlinked run; any other run
 resumed from such a checkpoint starts with every spacecraft active, as before.
 
+A run with scoped dynamic effectors (`scoped`) also records each effector's kind
+and the run positions it acts on, and resumes only with the same scopes. It
+refuses a checkpoint whose scopes differ, and a checkpoint written without scoped
+effectors (by a run without them, or by an earlier SpaceAGORA). A run without
+scoped effectors records nothing more than before.
+
 ## Campaign and multi-process runs
 
 `run_monte_carlo` and `run_constellation_ensemble` samples each call

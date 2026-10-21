@@ -228,6 +228,9 @@ struct AerobrakingEnergyDepletionGuidanceModel <: AbstractGuidanceModel
     state::AerobrakingEnergyDepletionState
 end
 
+# Its prediction applies the run's gravity models (EDGServices' gravity query).
+GNCRuntime._prediction_uses_run_gravity(::AerobrakingEnergyDepletionGuidanceModel) = true
+
 # A provider call passed this state predicts on the control clock it keeps.
 EDGServices._edg_state_clock(s::AerobrakingEnergyDepletionState) =
     (period=s.control_clock_period_s, origin=s.control_clock_origin_s)

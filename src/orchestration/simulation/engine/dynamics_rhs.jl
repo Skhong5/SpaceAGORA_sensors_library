@@ -195,7 +195,12 @@ end
     # thread, with exactly the statements of the serial loop. The thread
     # count, the scheduler and the runtime policy decision therefore change
     # timing only, never bits.
-    if effector_decision.use_threads
+    scopes = _effector_scopes(p)
+    if scopes !== nothing
+        _accumulate_scoped_effectors!(
+            forces, torques, scopes, sc_view, state_sample, p, sat_idx, t, dynamic_effectors, effector_decision
+        )
+    elseif effector_decision.use_threads
         contributions = _effector_contribution_slots(dynamic_effectors)
         SimulationModel.ParallelPolicy.threaded_collect!(contributions, n_effectors, effector_decision.allotment) do eff_idx
             effector = dynamic_effectors[eff_idx]
@@ -253,6 +258,14 @@ end
         nothing
     end
 
+    scopes = _effector_scopes(p)
+    if scopes !== nothing
+        return _accumulate_scoped_effectors_partitioned!(
+            forces, torques, scopes, sc_view, state_sample, p, sat_idx, t, dynamic_effectors, effector_decision,
+            partition, selected_count,
+        )
+    end
+
     # Same collect-then-sum pattern as _accumulate_dynamic_effectors!; the
     # serial sum skips effectors outside the partition exactly as the serial
     # loop below does.
@@ -299,6 +312,136 @@ end
         Float64(p.shared_buffers.current_time[])
     end
     return _accumulate_dynamic_effectors!(forces, torques, sc_view, p, sat_idx, t, dynamic_effectors, effector_decision)
+end
+
+# The summers above for a run with scoped effectors (`scopes`, an EffectorScopes
+# table): an effector whose scope leaves spacecraft `sat_idx` out is not
+# evaluated and adds nothing. The in-scope effectors are summed with the same
+# statements, in the same order, so spacecraft `sat_idx` gets the bits of the
+# tuple without the effectors outside its scope. (Skipping and adding a zero are
+# the same bits: the sums start at +0.0 and are never -0.0.)
+function _check_scoped_tuple(scopes, dynamic_effectors::Tuple)
+    length(dynamic_effectors) == length(scopes.masks) || throw(ArgumentError(
+        "Scoped dynamic effectors reached a filtered effector tuple ($(length(dynamic_effectors)) of " *
+        "$(length(scopes.masks)) effectors), whose positions the scopes cannot follow."))
+    return nothing
+end
+
+@inline _accumulate_scoped_effector_chain!(
+    forces::MVector{3, Float64},
+    torques::MVector{3, Float64},
+    ::Tuple{},
+    scopes,
+    eff_idx::Int,
+    sc_view,
+    state_sample,
+    p,
+    sat_idx::Int,
+    t::Float64,
+)::Nothing = nothing
+
+@inline function _accumulate_scoped_effector_chain!(
+    forces::MVector{3, Float64},
+    torques::MVector{3, Float64},
+    effs::Tuple,
+    scopes,
+    eff_idx::Int,
+    sc_view,
+    state_sample,
+    p,
+    sat_idx::Int,
+    t::Float64,
+)::Nothing
+    if _effector_applies(scopes, eff_idx, sat_idx)
+        force, torque = _evaluate_dynamic_effector(first(effs), sc_view, state_sample, p, sat_idx, t)
+        forces .+= force
+        torques .+= torque
+    end
+    return _accumulate_scoped_effector_chain!(
+        forces, torques, Base.tail(effs), scopes, eff_idx + 1, sc_view, state_sample, p, sat_idx, t
+    )
+end
+
+function _accumulate_scoped_effectors!(
+    forces::MVector{3, Float64},
+    torques::MVector{3, Float64},
+    scopes,
+    sc_view,
+    state_sample,
+    p,
+    sat_idx::Int,
+    t::Float64,
+    dynamic_effectors::Tuple,
+    effector_decision,
+)::Nothing
+    _check_scoped_tuple(scopes, dynamic_effectors)
+    n_effectors = length(dynamic_effectors)
+    if effector_decision.use_threads
+        zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
+        contributions = _effector_contribution_slots(dynamic_effectors)
+        SimulationModel.ParallelPolicy.threaded_collect!(contributions, n_effectors, effector_decision.allotment) do eff_idx
+            _effector_applies(scopes, eff_idx, sat_idx) || return (zero3, zero3)
+            effector = dynamic_effectors[eff_idx]
+            force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
+            return (SVector{3, Float64}(force), SVector{3, Float64}(torque))
+        end
+        @inbounds for eff_idx in 1:n_effectors
+            _effector_applies(scopes, eff_idx, sat_idx) || continue
+            force, torque = contributions[eff_idx]
+            forces .+= force
+            torques .+= torque
+        end
+    else
+        _accumulate_scoped_effector_chain!(
+            forces, torques, dynamic_effectors, scopes, 1, sc_view, state_sample, p, sat_idx, t
+        )
+    end
+    return nothing
+end
+
+function _accumulate_scoped_effectors_partitioned!(
+    forces::MVector{3, Float64},
+    torques::MVector{3, Float64},
+    scopes,
+    sc_view,
+    state_sample,
+    p,
+    sat_idx::Int,
+    t::Float64,
+    dynamic_effectors::Tuple,
+    effector_decision,
+    partition::Symbol,
+    selected_count::Int,
+)::Nothing
+    _check_scoped_tuple(scopes, dynamic_effectors)
+    n_effectors = length(dynamic_effectors)
+    if effector_decision.use_threads && selected_count > 1
+        zero3 = SVector{3, Float64}(0.0, 0.0, 0.0)
+        contributions = _effector_contribution_slots(dynamic_effectors)
+        SimulationModel.ParallelPolicy.threaded_collect!(contributions, n_effectors, effector_decision.allotment) do eff_idx
+            effector = dynamic_effectors[eff_idx]
+            (_effector_in_partition(effector, partition) && _effector_applies(scopes, eff_idx, sat_idx)) ||
+                return (zero3, zero3)
+            force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
+            return (SVector{3, Float64}(force), SVector{3, Float64}(torque))
+        end
+        @inbounds for eff_idx in 1:n_effectors
+            _effector_in_partition(dynamic_effectors[eff_idx], partition) || continue
+            _effector_applies(scopes, eff_idx, sat_idx) || continue
+            force, torque = contributions[eff_idx]
+            forces .+= force
+            torques .+= torque
+        end
+        return nothing
+    end
+    @inbounds for (eff_idx, effector) in enumerate(dynamic_effectors)
+        _effector_in_partition(effector, partition) || continue
+        _effector_applies(scopes, eff_idx, sat_idx) || continue
+        force, torque = _evaluate_dynamic_effector(effector, sc_view, state_sample, p, sat_idx, t)
+        forces .+= force
+        torques .+= torque
+    end
+    return nothing
 end
 
 @inline function _accumulate_control_effectors!(
@@ -756,12 +899,28 @@ function _prepare_rhs_flat_work_items!(
     # call rather than num_sats * n_effectors boxed ones.
     selected = _flat_selection_mask(dynamic_effectors, partition)
     count_items = 0
-    @inbounds for sat_idx in 1:num_sats
-        p.is_active[sat_idx] || continue
-        for eff_idx in 1:n_effectors
-            selected[eff_idx] || continue
-            count_items += 1
-            work_items[count_items] = _constellation_node_work_item(sat_idx, eff_idx, n_effectors)
+    scopes = _effector_scopes(p)
+    if scopes === nothing
+        @inbounds for sat_idx in 1:num_sats
+            p.is_active[sat_idx] || continue
+            for eff_idx in 1:n_effectors
+                selected[eff_idx] || continue
+                count_items += 1
+                work_items[count_items] = _constellation_node_work_item(sat_idx, eff_idx, n_effectors)
+            end
+        end
+    else
+        # A scoped effector has no item for a spacecraft outside its scope; its
+        # slot there stays at the zero this call's scratch reset wrote.
+        _check_scoped_tuple(scopes, dynamic_effectors)
+        @inbounds for sat_idx in 1:num_sats
+            p.is_active[sat_idx] || continue
+            for eff_idx in 1:n_effectors
+                selected[eff_idx] || continue
+                _effector_applies(scopes, eff_idx, sat_idx) || continue
+                count_items += 1
+                work_items[count_items] = _constellation_node_work_item(sat_idx, eff_idx, n_effectors)
+            end
         end
     end
     # Cost only varies by eff_idx, not sat_idx, and the pre-pass filter above already
@@ -1503,8 +1662,10 @@ function _accumulate_harmonics_flat_batch!(
     end
 
     count_items = 0
+    scopes = _effector_scopes(p)
     @inbounds for sat_idx in 1:num_sats
         p.is_active[sat_idx] || continue
+        _effector_applies(scopes, eff_idx, sat_idx) || continue
         count_items += 1
         work_items[count_items] = sat_idx
     end
@@ -1670,8 +1831,10 @@ function _accumulate_aero_flat_batch!(
         resize!(work_items, num_sats)
     end
     count_items = 0
+    scopes = _effector_scopes(p)
     @inbounds for sat_idx in 1:num_sats
         p.is_active[sat_idx] || continue
+        _effector_applies(scopes, eff_idx, sat_idx) || continue
         count_items += 1
         work_items[count_items] = sat_idx
     end
@@ -1914,9 +2077,12 @@ function _accumulate_dynamic_effectors_flat_slots!(
     if partition === nothing && _has_any_batchable_effector(dynamic_effectors)
         pos_buffers  = p.shared_buffers.rhs_flat_state_pos_ii[]
         mass_buffers = p.shared_buffers.rhs_flat_state_mass_kg[]
+        scopes = _effector_scopes(p)
         @inbounds for (eff_idx, effector) in enumerate(dynamic_effectors)
             _batchable_effector(effector) || continue
-            _accumulate_batchable_effector_flat!(slots, eff_idx, effector, pos_buffers, mass_buffers, p.is_active, p, t, num_sats)
+            # A scoped effector's kernel sees only the active spacecraft in its scope.
+            active_flags = _scoped_active_flags(p.is_active, scopes, eff_idx)
+            _accumulate_batchable_effector_flat!(slots, eff_idx, effector, pos_buffers, mass_buffers, active_flags, p, t, num_sats)
         end
         _count_non_batchable_effectors(dynamic_effectors) == 0 && return nothing
     end
@@ -2372,6 +2538,9 @@ function _prefill_environment_samples!(p, t::Float64, sc_state; atmosphere::Bool
     # sample inside the loop.
     uniform_model = (atmosphere && !batch_atmosphere) ? _uniform_light_density_model(p, num_sats) : nothing
     per_sat_atmosphere = atmosphere && !batch_atmosphere && uniform_model === nothing
+    # With scoped effectors, a spacecraft no atmosphere-consuming effector acts on
+    # is not sampled here, as the per-satellite route does not sample it.
+    scopes = _effector_scopes(p)
 
     _rhs_region(p, :rhs_atmosphere, worker_allotment) do w
         SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(:rhs_atmosphere, num_sats, w) do _, sat_idx
@@ -2385,7 +2554,7 @@ function _prefill_environment_samples!(p, t::Float64, sc_state; atmosphere::Bool
                     planet_lat[sat_idx] = planet_frame.lat_rad
                     planet_lon[sat_idx] = planet_frame.lon_rad
                 end
-                if per_sat_atmosphere
+                if per_sat_atmosphere && _atmosphere_wanted(scopes, sat_idx)
                     _sample_atmosphere_from_planet_frame(sc_view, planet_frame, p, sat_idx, t; write_buffers=true)
                 end
             end
@@ -2405,7 +2574,7 @@ function _prefill_environment_samples!(p, t::Float64, sc_state; atmosphere::Bool
             # already in the buffers, so the fallback re-reads them rather than
             # recomputing, and the result is identical to never having tried.
             SimulationModel.ParallelPolicy.threaded_foreach_worker_persistent(:rhs_atmosphere, num_sats, worker_allotment) do _, sat_idx
-                if p.is_active[sat_idx]
+                if p.is_active[sat_idx] && _atmosphere_wanted(scopes, sat_idx)
                     @views sc_view = sc_state[sat_idx]
                     _sample_atmosphere_from_planet_frame(
                         sc_view, sample_buffered_planet_frame(p, sat_idx), p, sat_idx, t;
@@ -2716,6 +2885,18 @@ end
     t::Float64,
 )::SVector{3, Float64}
     accel_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
+    scopes = _effector_scopes(p)
+    if scopes !== nothing
+        _check_scoped_tuple(scopes, dynamic_effectors)
+        @inbounds for (eff_idx, effector) in enumerate(dynamic_effectors)
+            _gravity_backbone_structure_validated(effector) === :position_only_static_gravity || continue
+            _effector_applies(scopes, eff_idx, sat_idx) || continue
+            req = SimulationModel.environment_requirements(effector)
+            env = sample_environment(req, effector, state_sample, p, sat_idx, t; write_buffers=false)
+            accel_ii .+= SimulationModel.gravity_backbone_acceleration_ii(effector, state_sample, env, t)
+        end
+        return SVector{3, Float64}(accel_ii)
+    end
     @inbounds for effector in dynamic_effectors
         _gravity_backbone_structure_validated(effector) === :position_only_static_gravity || continue
         req = SimulationModel.environment_requirements(effector)
@@ -2733,6 +2914,18 @@ end
     t::Float64,
 )::SVector{3, Float64}
     accel_ii = MVector{3, Float64}(0.0, 0.0, 0.0)
+    scopes = _effector_scopes(p)
+    if scopes !== nothing
+        _check_scoped_tuple(scopes, dynamic_effectors)
+        @inbounds for (eff_idx, effector) in enumerate(dynamic_effectors)
+            _gravity_backbone_kick_structure_validated(effector) === :velocity_kick_explicit || continue
+            _effector_applies(scopes, eff_idx, sat_idx) || continue
+            req = SimulationModel.environment_requirements(effector)
+            env = sample_environment(req, effector, state_sample, p, sat_idx, t; write_buffers=false)
+            accel_ii .+= SimulationModel.gravity_backbone_kick_acceleration_ii(effector, state_sample, env, t)
+        end
+        return SVector{3, Float64}(accel_ii)
+    end
     @inbounds for effector in dynamic_effectors
         _gravity_backbone_kick_structure_validated(effector) === :velocity_kick_explicit || continue
         req = SimulationModel.environment_requirements(effector)

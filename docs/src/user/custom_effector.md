@@ -210,7 +210,9 @@ stops before integration with an `ArgumentError` saying the effector has no
 **Attaching it.** Effectors are passed as a tuple to `DynamicsModel` (or to
 `make_example_config`'s `dynamic_effectors`). Order does not matter for the
 physics: the forces are summed. Gravity is an effector like any other, so
-`InverseSquaredGravityModel()` is listed explicitly.
+`InverseSquaredGravityModel()` is listed explicitly. An entry
+`scoped(effector, scope)` acts on some spacecraft only: see
+[Effectors on part of a constellation](constellations.md#Effectors-on-part-of-a-constellation).
 
 **Two runs, not one.** The cleanest way to see what an effector does is to run
 the same configuration with and without it and compare the results files. The
@@ -351,8 +353,8 @@ The rules every hook follows, such as the argument order, the frames, the units
 and the signs, are on [Extension Conventions](../reference/extension_conventions.md),
 and the [Extension Hook Reference](../generated/extension_hook_reference.md) lists
 when the engine calls each hook. A model written for the force hook that
-`wrench` replaced keeps running until SpaceAGORA 0.5.0, with a warning before
-the run; [Migrating Extension Hooks](../reference/migrating_extension_hooks.md)
+`wrench` replaced, `calcForceTorque`, no longer runs: SpaceAGORA 0.5.0 removed
+that hook, and [Migrating Extension Hooks](../reference/migrating_extension_hooks.md)
 shows how to move it.
 
 How the engine uses the result: the forces of all effectors are summed per

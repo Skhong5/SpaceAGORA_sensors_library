@@ -165,6 +165,13 @@ function _missing_model_hooks(args, call, solver_mode::Symbol=:tsit5)::Vector{St
     for (k, model) in enumerate(args.dynamics_model.dynamic_effectors)
         location = "dynamics_model.dynamic_effectors[$k]"
         T = typeof(model)
+        if model isa SimulationModel.ScopedEffector
+            # run_simulation resolves scoped entries before this check; a run set
+            # up by hand has to resolve them itself.
+            push!(problems, "$location is a scoped entry, which run_simulation resolves when the run starts " *
+                "(SimulationEngine._resolve_effector_scopes); the right-hand side never evaluates it.")
+            continue
+        end
         if solver_mode === :gravity_backbone_split
             # This mode evaluates an effector only through the backbone hook its
             # declaration names; its own validation refuses an effector that
