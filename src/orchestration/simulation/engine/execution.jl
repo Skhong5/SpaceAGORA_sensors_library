@@ -715,7 +715,7 @@ function run_simulation(
     args = isolate_state ? deepcopy(args) : args
     # Resolve effective solver config: explicit field on args wins; otherwise read from env
     # (which respects any active SimulationEngineConfig overrides via _engine_env_get).
-    solver_cfg = isnothing(args.solver_config) ? _solver_config_from_env() : args.solver_config
+    solver_cfg = _run_solver_config(args)
     solver_mode = solver_cfg.solver_mode
 
     # Typed pipeline is SI-native (meters, seconds, kilograms). The
@@ -809,7 +809,8 @@ function run_simulation(
         save_fields=save_fields_resolved,
         extra_callbacks=extra_callbacks,
         priority_callbacks=priority_callbacks,
-        record_saved_values=return_results
+        record_saved_values=return_results,
+        solver_mode=solver_mode
     ) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
     if args.interlink_model !== nothing
         callbacks = CallbackSet(SimulationModel.SimulationCallbacks.interlink_scheduler_initialization(), callbacks,
