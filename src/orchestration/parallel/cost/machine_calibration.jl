@@ -21,7 +21,11 @@
 # usl_beta_alloc, usl_beta_bw, llc_bytes). Bumped rather than defaulted because
 # a file without them would silently predict zero contention -- which reads as
 # "this machine scales perfectly" and is the most dangerous possible default.
-const CALIBRATION_SCHEMA_VERSION = 4
+#
+# 5: the USL arithmetic ladder and the parallel speedup curve no longer read
+# past their table (`calib_batch_kernel!` wraps its column). Constants saved at
+# 4 timed the memory after the table, so they are measured again, not kept.
+const CALIBRATION_SCHEMA_VERSION = 5
 
 # Footprint ladder for the coefficient-touch curve: square-ish tables, matching
 # the (L+2) x (M+2) shape of a full-field harmonics model, spanning L1-resident
