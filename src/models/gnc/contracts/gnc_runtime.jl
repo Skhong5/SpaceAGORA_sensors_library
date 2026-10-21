@@ -146,8 +146,8 @@ gnc_callbacks(model, num_sats, args, period_s) = ()
     register_tstops!(integrator, model, spacecraft_index) -> nothing
 
 Called after each periodic tick of control `model`, once for each spacecraft its
-`spacecraft_scope` names, in ascending order (SpaceAGORA 0.5 and earlier called it
-for every spacecraft index). Use it to add the solver stops that the new command
+`spacecraft_scope` names, in ascending order (SpaceAGORA 0.5.1 and earlier called
+it for every spacecraft index). Use it to add the solver stops that the new command
 needs; the burn scheduler adds the ends of its burn window. The ticks of several
 spacecraft may run on different threads, but these calls do not: they run one
 spacecraft at a time, after all of that tick's spacecraft have ticked, because the

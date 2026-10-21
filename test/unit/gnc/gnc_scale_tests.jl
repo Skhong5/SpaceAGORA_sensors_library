@@ -271,6 +271,21 @@ end
         @test !any(e -> e[4] == 99, LOG)
     end
 
+    @testset "register_tstops! is called only for the spacecraft in the scope" begin
+        empty!(LOG)
+        n = 4
+        models = (CountCtl(1, n; scope=BoundSpacecraft((2, 4))), CountCtl(2, n; scope=CoupledSpacecraft(3, (1,))),
+                  CountCtl(3, n))
+        in_scope = Dict(1 => [2, 4], 2 => [3], 3 => [1, 2, 3, 4])
+        run_simulation(scale_args(n; control=models); isolate_state=false)
+        stops = [(e[3], e[4]) for e in LOG if e[2] === :stop]
+        @test !isempty(stops)
+        @test all(((id, i),) -> i in in_scope[id], stops)                    # none outside the scope
+        for (id, positions) in in_scope, i in 1:n
+            @test count(==((id, i)), stops) == (i in positions ? 4 : 0)      # one per tick in the scope
+        end
+    end
+
     @testset "an inactive spacecraft is released, and linked producers prepare only an acting tick" begin
         empty!(LOG)
         n = 3
