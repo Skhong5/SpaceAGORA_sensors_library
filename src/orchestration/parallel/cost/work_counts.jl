@@ -239,11 +239,17 @@ function constellation_work_counts(
     effectors = args.dynamics_model.dynamic_effectors
     total = WorkCounts()
     queue_effectors = 0
+    # A scoped effector makes queue items only for the spacecraft in its scope.
+    scopes = hasproperty(args.dynamics_model, :effector_scopes) ? args.dynamics_model.effector_scopes : nothing
+    scoped_queue_nodes = 0
 
     @inbounds for idx in eachindex(effectors)
         effector = effectors[idx]
-        flat_queue_node_effector(effector; partition_active=partition_active) &&
-            (queue_effectors += 1)
+        if flat_queue_node_effector(effector; partition_active=partition_active)
+            queue_effectors += 1
+            mask = scopes === nothing ? nothing : scopes.masks[idx]
+            scoped_queue_nodes += mask === nothing ? n_sats : min(n_sats, count(mask))
+        end
 
         declared = effector_cost_terms(effector)
         if declared !== nothing
@@ -265,7 +271,7 @@ function constellation_work_counts(
         coeff_touches = total.coeff_touches,
         coeff_table_bytes = total.coeff_table_bytes,
         simd_workspace_bytes_per_sat = total.simd_workspace_bytes_per_sat,
-        queue_nodes = Float64(n_sats * queue_effectors),
+        queue_nodes = scopes === nothing ? Float64(n_sats * queue_effectors) : Float64(scoped_queue_nodes),
         probe_ns = total.probe_ns,
         unknown_effectors = total.unknown_effectors,
         in_domain = total.in_domain &&

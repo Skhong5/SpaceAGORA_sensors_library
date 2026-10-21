@@ -216,7 +216,9 @@ end
 # engine adds the interlink scheduler around them (an initialization-only copy
 # first, the scheduler last). "Callback order" in
 # docs/contributing/architecture.md explains this order and what it guarantees;
-# change the two together.
+# change the two together. `solver_mode` is the mode the run solves with:
+# `run_simulation` passes its own; by default it is resolved from `args` the same
+# way (`args.solver_config`, or the environment when that is `nothing`).
 function get_callbacks(
     num_sats::Int,
     effectors::Tuple,
@@ -225,10 +227,11 @@ function get_callbacks(
     save_fields=nothing,
     extra_callbacks=(),
     priority_callbacks=(),
-    record_saved_values::Bool=false
+    record_saved_values::Bool=false,
+    solver_mode::Symbol=CallbackServices._run_solver_config(args).solver_mode
 )::CallbackSet
     save_fields_resolved = _resolve_save_fields(save_fields, args)
-    backbone_mode = CallbackServices._solver_policy_mode() == :gravity_backbone_split
+    backbone_mode = solver_mode === :gravity_backbone_split
     touchdown_specs = _touchdown_specs(args, num_sats)
     has_touchdown = any(spec -> spec !== nothing, touchdown_specs)
     # Touchdown spacecraft and externally propagated shadow entries have no impact event.
@@ -292,11 +295,8 @@ function get_callbacks(
         callbacks = _append_callback(callbacks, get_quaternion_projection_callback(num_sats, args))
     end
     callbacks = _append_callback(callbacks, get_plume_callback(args))
-    engine = CallbackServices
-    output_solver_mode = args.solver_config === nothing ? engine._solver_policy_mode() :
-        engine._solver_policy_mode(args.solver_config)
     callbacks = _append_callback(callbacks,
-        get_initial_force_output_callback(effectors; solver_mode=output_solver_mode))
+        get_initial_force_output_callback(effectors; solver_mode=solver_mode))
     if !backbone_mode && (args.simulation_settings.results || record_saved_values)
         callbacks = _append_callback(callbacks, get_data_saving_callback(num_sats, args, save_fields_resolved, saved_values))
     end

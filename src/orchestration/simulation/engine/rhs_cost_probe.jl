@@ -90,24 +90,30 @@ function probe_effector_costs!(
     # measurements so contention is common-mode between them.
     reference_ns = PC.reference_kernel_ns()
 
+    scopes = _effector_scopes(p)
     @inbounds for idx in eachindex(effectors)
         effector = effectors[idx]
         declared = PC.effector_cost_terms(effector) !== nothing
         if declared && !validate_declared
             continue
         end
+        # A scoped effector is probed on the first active spacecraft in its scope,
+        # where it acts; probing it elsewhere would write diagnostics it never writes.
+        probe_sat = scopes === nothing ? sat_idx :
+            findfirst(i -> p.is_active[i] && _effector_applies(scopes, idx, i), eachindex(p.is_active))
+        probe_sat === nothing && continue
 
         measured = try
-            @views sc_view = sc_state[sat_idx]
+            @views sc_view = sc_state[probe_sat]
             # From the state, as the serial, satellite-batch and per-satellite
             # routes build it. The flat route's per-satellite buffers hold the
             # same sample, but only after a flat-route evaluation.
             state_sample = _wrench_method_available(effector) ?
-                build_state_sample(sc_view, spacecraft[sat_idx], orientation_sim, sat_idx) :
+                build_state_sample(sc_view, spacecraft[probe_sat], orientation_sim, probe_sat) :
                 nothing
             PC.timed_min(k = k) do
                 force, torque = _evaluate_dynamic_effector(
-                    effector, sc_view, state_sample, p, sat_idx, t_probe
+                    effector, sc_view, state_sample, p, probe_sat, t_probe
                 )
                 force[1] + torque[1]
             end

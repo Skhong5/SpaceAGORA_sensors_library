@@ -62,7 +62,9 @@ The engine reads them before the run and at each tick.
 | `gnc_links(model)` | none | the model shares an object with a partner: see [Pairing through a link](#Pairing-through-a-link) |
 
 Output hooks are called for every spacecraft whatever the scope, so they check
-`x.spacecraft_index` themselves.
+`x.spacecraft_index` themselves. A `SpacecraftSelection` scopes dynamic effectors
+only (see [Effectors on part of a constellation](constellations.md#Effectors-on-part-of-a-constellation));
+the scope check refuses it from a guidance, navigation or control model.
 
 A control model that is not ticked periodically declares
 `tick_schedule(model) = :event_driven` and brings its own callbacks with
