@@ -353,7 +353,11 @@ function initialize_gnc_links!(args, u, p, t)
     return nothing
 end
 
-# The models that produce a link `control_model` consumes, in configuration order.
+# The models that produce a link `control_model` consumes: the run's links in the
+# order models first declare them (`gnc_link_groups`), and within each link its
+# producers in configuration order, a model already listed for an earlier link not
+# repeated. Not configuration order overall: with A producing X and Y, B producing
+# Y and C producing X, a consumer of X and Y gets A, C, B.
 function _linked_producers(control_model, args)
     consumed = [declared.link for declared in gnc_links(control_model) if declared isa Consumes]
     isempty(consumed) && return ()
@@ -385,9 +389,9 @@ function _periodic_control_tick!(integrator, control_model, producers, num_sats:
 end
 
 # Step 1. The models that write what this one reads (its links) prepare it first,
-# each once per tick, in configuration order and on this thread: the RPO planner
-# checks its reference. Not when the tick releases or skips every spacecraft
-# (`_ticks_any`).
+# each once per tick, in the order `_linked_producers` lists them, on this thread:
+# the RPO planner checks its reference. Not when the tick releases or skips every
+# spacecraft (`_ticks_any`).
 function _prepare_linked_producers!(integrator, control_model, producers, num_sats::Int)
     (isempty(producers) || !_ticks_any(control_model, integrator.p, num_sats)) && return nothing
     for producer in producers
