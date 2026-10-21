@@ -3,11 +3,13 @@
 # the run-start initializers with the checkpoint's, before any model's run state is
 # restored. A model bound to the same spacecraft resumes as an uninterrupted run, bit
 # for bit; one bound to another spacecraft (an index-bound model, a bound copy, a
-# selection) is refused, with or without run state of its own. A checkpoint written
-# without the entry, by SpaceAGORA 0.5.1 or earlier, resumes as it did then.
+# selection) is refused, with or without run state of its own. A run with
+# guidance, navigation or control models refuses a checkpoint written without the
+# entry, by SpaceAGORA 0.5.1 or earlier, before anything is restored; a run
+# without them resumes from it.
 module GNCScopeCheckpointTests
 
-using Test, Logging, StaticArrays, SpaceAGORA
+using Test, StaticArrays, SpaceAGORA
 const SM = SpaceAGORA.SimulationModel
 const SE = SpaceAGORA.SimulationEngine
 const C = SpaceAGORA.Conformance
@@ -30,6 +32,15 @@ SpaceAGORA.control_wrench(m::BoundPush, x::StateSample, p, t) =
 SpaceAGORA.spacecraft_scope(m::BoundPush) = BoundSpacecraft((m.spacecraft_index,))
 SpaceAGORA.bind_spacecraft(::BoundPush, i::Int) = BoundPush(i)
 
+# Models acting on every spacecraft that keep no run state.
+struct Idle <: SM.AbstractControlEffectorModel end
+SpaceAGORA.update_control!(::Idle, u, p, t, i) = nothing
+SpaceAGORA.control_wrench(::Idle, x::StateSample, p, t) = (ZERO3, ZERO3)
+struct IdleGuidance <: AbstractGuidanceModel end
+SpaceAGORA.update_guidance!(::IdleGuidance, u, p, t::Float64, i::Int) = nothing
+struct IdleNavigation <: AbstractNavigationModel end
+SpaceAGORA.update_navigation!(::IdleNavigation, u, p, t::Float64, i::Int) = nothing
+
 # A model with whatever scope it is given (guidance, navigation and control models
 # do not take a SpacecraftSelection in a run yet; the scopes below are compared
 # without one).
@@ -38,10 +49,11 @@ struct Selected <: SM.AbstractControlEffectorModel
 end
 SpaceAGORA.spacecraft_scope(m::Selected) = m.scope
 
-# Two spacecraft on the conformance fixture's orbit, with attitude, each control
-# model ticking every second: `control` at configuration level, `declared[i]` on
-# spacecraft `i` (bound to it when the run starts).
-function scope_args(; control=(), declared=((), ()), mission_time=6.0, settings=(;))
+# Two spacecraft on the conformance fixture's orbit, with attitude, each model
+# ticking every second: `control`, `guidance` and `navigation` at configuration
+# level, and the control models `declared[i]` on spacecraft `i` (bound to it when
+# the run starts).
+function scope_args(; control=(), guidance=(), navigation=(), declared=((), ()), mission_time=6.0, settings=(;))
     planet = SM.make_no_gram_planet(:earth)
     spacecraft = map(1:2) do id
         root = SM.Link(root=true, m=100.0, ref_area=2.0)
@@ -61,8 +73,8 @@ function scope_args(; control=(), declared=((), ()), mission_time=6.0, settings=
             mission_time=mission_time, orientation_sim=true, num_steps_to_save=100),
         environment_model=environment,
         dynamics_model=SM.DynamicsModel(SM.SpacecraftModel[spacecraft...], (SM.InverseSquaredJ2GravityModel(),)),
-        guidance_model=SM.GuidanceModel((), Float64[]),
-        navigation_model=SM.NavigationModel((), Float64[]),
+        guidance_model=SM.GuidanceModel(Tuple(guidance), fill(1.0, length(guidance))),
+        navigation_model=SM.NavigationModel(Tuple(navigation), fill(1.0, length(navigation))),
         control_model=SM.ControlModel(Tuple(control), fill(1.0, length(control))),
         initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0))
 end
@@ -82,13 +94,6 @@ function refusal(f)
         e isa ArgumentError || rethrow()
         return sprint(showerror, e)
     end
-end
-
-# The messages of the warnings `f()` logs, and its result.
-function warnings(f)
-    logger = Test.TestLogger(min_level=Logging.Warn)
-    result = Logging.with_logger(f, logger)
-    return [string(record.message) for record in logger.logs], result
 end
 
 saved_runtime(args) = SM.IOSerialization._load_checkpoint(args).runtime_state
@@ -257,32 +262,51 @@ round_trip(configuration, subject; index=1) = C._checkpoint_round_trip_check(
         @test refusal(() -> run_simulation(rpo(4.0, dir; resume=true))) === nothing
     end
 
-    @testset "a checkpoint written without the entry resumes as before" begin
+    @testset "a run with GNC models refuses a checkpoint written without the entry" begin
         # The checkpoint of the manager of spacecraft 2, as written now and as
         # SpaceAGORA 0.5.1 wrote it.
         dir = mktempdir()
         run_simulation(first_half(dir; control=(manager(2),)))
-        legacy, other = legacy_copy(dir), legacy_copy(dir)
+        legacy = legacy_copy(dir)
         @test !hasproperty(saved_runtime(first_half(legacy)), :gnc_scopes)
         @test hasproperty(saved_runtime(first_half(legacy)), :models)
-        # Resumed with the same configuration: the same run, bit for bit, and a
-        # warning that the bound model's scope was not checked.
-        final(args) = run_simulation(args; return_solution=true).u[end]
-        current = final(second_half(dir; control=(manager(2),)))
-        logged, resumed = warnings(() -> final(second_half(legacy; control=(manager(2),))))
-        @test isequal(resumed, current)
-        @test any(m -> occursin("records no GNC spacecraft scopes", m) &&
-            occursin("control model 1 (MagneticMomentumManagerModel)", m), logged)
-        # Its scope is not compared, as before: another spacecraft's manager resumes
-        # from it, with the warning.
-        logged, outcome = warnings(() -> refusal(() -> run_simulation(second_half(other; control=(manager(1),)))))
-        @test outcome === nothing && any(m -> occursin("records no GNC spacecraft scopes", m), logged)
-        # A run whose models act on every spacecraft resumes from such a checkpoint
-        # without the warning.
+        @test refusal(() -> run_simulation(second_half(dir; control=(manager(2),)))) === nothing
+        # Refused when the checkpoint is read, before anything is restored, whatever
+        # the models: the same manager, another spacecraft's, a stateless bound model,
+        # one acting on every spacecraft, guidance or navigation alone. The run's
+        # models are left as they were, not even reset by their initializers.
+        for (name, models) in (("same", (control=(manager(2),),)), ("moved", (control=(manager(1),),)),
+                               ("stateless", (control=(BoundPush(2),),)), ("every spacecraft", (control=(Idle(),),)),
+                               ("guidance", (guidance=(IdleGuidance(),),)),
+                               ("navigation", (navigation=(IdleNavigation(),),)))
+            args = second_half(legacy; models...)
+            before = deepcopy(args)
+            msg = refusal(() -> run_simulation(args; isolate_state=false))
+            @testset let case = name
+                @test msg !== nothing && occursin("The checkpoint records no spacecraft scopes for guidance, " *
+                    "navigation and control models: it was written by SpaceAGORA 0.5.1 or earlier", msg) &&
+                    occursin("Resume it with SpaceAGORA 0.5.1, or run from the start.", msg)
+                @test C._same_state(args.navigation_model, before.navigation_model) &&
+                    C._same_state(args.guidance_model, before.guidance_model) &&
+                    C._same_state(args.control_model, before.control_model)
+            end
+        end
+        moved = manager(2)
+        msg = refusal(() -> run_simulation(second_half(legacy; control=(moved,)); isolate_state=false))
+        @test occursin("so this run's control model 1 (MagneticMomentumManagerModel) cannot be checked", msg)
+        @test moved.ticks == 0 && moved.run_start === nothing                  # its initializer did not run
+        # More than three models are named three at a time.
+        msg = refusal(() -> run_simulation(second_half(legacy; navigation=(IdleNavigation(),),
+            guidance=(IdleGuidance(),), control=(manager(2), BoundPush(1)))))
+        @test occursin("navigation model 1 (IdleNavigation), guidance model 1 (IdleGuidance), control model 1 " *
+            "(MagneticMomentumManagerModel) and 1 more cannot be checked", msg)
+        # A run without guidance, navigation or control models has nothing to
+        # compare: it resumes from such a checkpoint as from one written now.
         dir = mktempdir()
         run_simulation(first_half(dir))
-        logged, outcome = warnings(() -> refusal(() -> run_simulation(second_half(legacy_copy(dir)))))
-        @test outcome === nothing && !any(m -> occursin("records no GNC spacecraft scopes", m), logged)
+        final(args) = run_simulation(args; return_solution=true).u[end]
+        from_legacy = final(second_half(legacy_copy(dir)))
+        @test isequal(from_legacy, final(second_half(dir)))
     end
 end
 

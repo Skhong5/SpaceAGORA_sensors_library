@@ -347,8 +347,9 @@ spacecraft, or whose guidance, navigation or control models are another number,
 before any model's run state is restored, whether or not the models keep run
 state. So a momentum manager's saved command never goes to a manager of another
 spacecraft. A checkpoint written by SpaceAGORA 0.5.1 or earlier holds no such
-record and resumes as before, without the comparison; a run with a model bound to
-some spacecraft warns that it was not checked.
+record, so a run with any guidance, navigation or control model refuses it before
+anything is restored: resume it with SpaceAGORA 0.5.1, or run from the start. A
+run without those models resumes from it as before.
 
 ## Campaign and multi-process runs
 

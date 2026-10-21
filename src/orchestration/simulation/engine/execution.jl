@@ -549,7 +549,7 @@ function _resume_engine_state!(args, p, solver_mode, initial_conditions)
                     throw(ArgumentError("Checkpoint interlink state does not match the configured interlink_model; resume with the same interlink setting."))
             end
             _check_effector_scope_checkpoint_state(args, ckpt)
-            scope_entry = _gnc_scope_checkpoint_entry(ckpt)
+            scope_entry = _gnc_scope_checkpoint_entry(args, ckpt)
             _restore_activity_checkpoint_state!(args, ckpt, p.is_active)
             _restore_interlink_checkpoint_state!(args, ckpt, p.is_active)
             _restore_callback_checkpoint_state!(args, ckpt, p)
