@@ -2,7 +2,7 @@
 
 julia_version = "1.12.3"
 manifest_format = "2.0"
-project_hash = "2b1419f4bb6198d0cbf0409632075001af065fcf"
+project_hash = "9e7a0392e16280abbb3ebda640286ac675969a0e"
 
 [[deps.ADTypes]]
 deps = ["PrecompileTools"]
@@ -2156,19 +2156,6 @@ version = "2.0.0"
     ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
     Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
-[[deps.SatelliteToolboxGravityModels]]
-deps = ["Dates", "Downloads", "SatelliteToolboxBase", "SatelliteToolboxLegendre", "Scratch", "StaticArrays"]
-git-tree-sha1 = "06ccdd70529d62a46981113955ca19431422d64a"
-uuid = "bd9e9728-6f7b-4d28-9e50-c765cb1b7c8c"
-version = "2.0.0"
-
-    [deps.SatelliteToolboxGravityModels.extensions]
-    SatelliteToolboxGravityModelsZygoteExt = ["ForwardDiff", "Zygote"]
-
-    [deps.SatelliteToolboxGravityModels.weakdeps]
-    ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
-    Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
-
 [[deps.SatelliteToolboxLegendre]]
 deps = ["StyledStrings"]
 git-tree-sha1 = "469e06026894b7ea734df5994505b54502433cde"
@@ -2351,7 +2338,7 @@ uuid = "a2af1166-a08f-5f64-846c-94a0d3cef48c"
 version = "1.2.2"
 
 [[deps.SpaceAGORA]]
-deps = ["ADTypes", "Arrow", "Artifacts", "AstroTime", "Base64", "CSV", "ComponentArrays", "DataFrames", "Dates", "DiffEqBase", "DiffEqCallbacks", "Distributed", "Interpolations", "JSON", "LinearAlgebra", "LinearSolve", "Logging", "LoopVectorization", "OSQP", "OrdinaryDiffEq", "OrdinaryDiffEqHighOrderRK", "OrdinaryDiffEqSDIRK", "OrdinaryDiffEqSymplecticRK", "Pkg", "PlotlyJS", "Plots", "Polyester", "PrecompileTools", "Printf", "Random", "RecursiveArrayTools", "Reexport", "Roots", "SHA", "SPICE", "SatelliteToolboxAtmosphericModels", "SatelliteToolboxGeomagneticField", "SatelliteToolboxGravityModels", "SatelliteToolboxTransformations", "SciMLBase", "Serialization", "SpaceIndices", "SparseArrays", "SpecialFunctions", "StaticArrays", "Statistics", "TOML"]
+deps = ["ADTypes", "Arrow", "Artifacts", "AstroTime", "Base64", "CSV", "ComponentArrays", "DataFrames", "Dates", "DiffEqBase", "DiffEqCallbacks", "Distributed", "Interpolations", "JSON", "LinearAlgebra", "LinearSolve", "Logging", "LoopVectorization", "OSQP", "OrdinaryDiffEq", "OrdinaryDiffEqHighOrderRK", "OrdinaryDiffEqSDIRK", "OrdinaryDiffEqSymplecticRK", "Pkg", "PlotlyJS", "Plots", "Polyester", "PrecompileTools", "Printf", "Random", "RecursiveArrayTools", "Reexport", "Roots", "SHA", "SPICE", "SatelliteToolboxAtmosphericModels", "SatelliteToolboxGeomagneticField", "SatelliteToolboxTransformations", "SciMLBase", "Serialization", "SpaceIndices", "SparseArrays", "SpecialFunctions", "StaticArrays", "Statistics", "TOML"]
 path = "."
 uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
 version = "0.5.0"
