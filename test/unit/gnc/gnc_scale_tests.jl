@@ -1,8 +1,9 @@
 # How the periodic GNC ticks visit spacecraft: each tick reads a model's scope once
-# and ticks only the positions it names, in ascending order, so the work of a tick
-# follows the scope rather than the number of spacecraft. Counted, not timed: the
-# ticks and releases per spacecraft, the scope reads per tick, the order of every
-# tick and stop request, and the linked producers' preparation.
+# (a linked consumer's twice, once before its producers prepare) and ticks only the
+# positions it names, in ascending order, so the work of a tick follows the scope
+# rather than the number of spacecraft. Counted, not timed: the ticks and releases
+# per spacecraft, the scope reads per tick, the order of every tick and stop
+# request, and the linked producers' preparation.
 module GNCScaleTests
 using Test, StaticArrays, SpaceAGORA
 using DiffEqCallbacks: PresetTimeCallback
@@ -120,6 +121,20 @@ SpaceAGORA.control_wrench(::RetargetCtl, x::StateSample, p, t::Float64) = (ZERO3
 SpaceAGORA.spacecraft_scope(m::RetargetCtl) = BoundSpacecraft((m.spacecraft_index,))
 SpaceAGORA.gnc_links(m::RetargetCtl) = (Consumes(m.plan),)
 SpaceAGORA.before_reference_control!(g::PlanGd, c::RetargetCtl, u, p, t) = (c.spacecraft_index = 3; nothing)
+
+# A controller that counts its scope reads, linked to a producer or not.
+mutable struct ReadCountCtl{S} <: SM.AbstractControlEffectorModel
+    scope::S
+    plan::Union{Nothing, Plan}
+    reads::Int
+end
+SpaceAGORA.update_control!(m::ReadCountCtl, u, p, t::Float64, i::Int) = nothing
+SpaceAGORA.control_wrench(::ReadCountCtl, x::StateSample, p, t::Float64) = (ZERO3, ZERO3)
+SpaceAGORA.spacecraft_scope(m::ReadCountCtl) = (m.reads += 1; m.scope)
+SpaceAGORA.gnc_links(m::ReadCountCtl) = m.plan === nothing ? () : (Consumes(m.plan),)
+
+# The bytes one call of `_ticks_any` allocates, once compiled.
+ticks_any_bytes(m, p, n) = (CB._ticks_any(m, p, n); @allocated CB._ticks_any(m, p, n))
 
 # A thread-safe controller, for every spacecraft or for the positions given.
 struct ThreadedCtl <: SM.AbstractControlEffectorModel
@@ -316,6 +331,32 @@ end
         retargeted = RetargetCtl(1, plan, zeros(Int, n))
         run_simulation(scale_args(n; control=(retargeted,), guidance=(PlanGd(plan),)); isolate_state=false)
         @test retargeted.ticks == [0, 0, 4]
+    end
+
+    @testset "a linked consumer reads its scope twice per tick, once before its producers prepare" begin
+        function reads(n, mission_time; linked)
+            plan = Plan(Ref(0))
+            consumer = ReadCountCtl(BoundSpacecraft((3, 1, 3)), linked ? plan : nothing, 0)
+            run_simulation(scale_args(n; control=(consumer,), guidance=linked ? (PlanGd(plan),) : (), mission_time);
+                isolate_state=false)
+            linked && @test plan.prepared[] == round(Int, mission_time - 0.5)   # it prepared at every tick
+            return consumer.reads
+        end
+        # Four more ticks: eight more reads for a linked consumer, four for another.
+        @test reads(3, 8.5; linked=true) - reads(3, 4.5; linked=true) == 8
+        @test reads(3, 8.5; linked=false) - reads(3, 4.5; linked=false) == 4
+        # Neither grows with the constellation.
+        @test reads(9, 4.5; linked=true) == reads(3, 4.5; linked=true)
+        @test reads(9, 4.5; linked=false) == reads(3, 4.5; linked=false)
+        # The check before the producers prepare answers what the tick's positions
+        # would, for unsorted, repeated and out-of-run indices, and builds no copy.
+        for scope in (AllSpacecraft(), BoundSpacecraft((3, 1, 3)), BoundSpacecraft((9, 2)), BoundSpacecraft((9,)),
+                      CoupledSpacecraft(2, (1,)), CoupledSpacecraft(7, (1,))),
+            active in (trues(3), BitVector([false, true, false]), falses(3))
+            probe, p = ReadCountCtl(scope, nothing, 0), (is_active=active,)
+            @test CB._ticks_any(probe, p, 3) == any(i -> active[i], CB._tick_positions(scope, 3))
+            @test ticks_any_bytes(probe, p, 3) == 0
+        end
     end
 
     @testset "threaded ticks visit the same spacecraft" begin

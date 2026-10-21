@@ -1,7 +1,9 @@
 # Spacecraft scope and inactive spacecraft, as the GNC tick loops apply them
 # (GNCRuntime declarations). A periodic tick reads the model's scope once and
 # visits only the run positions it names (`_tick_positions`), in ascending order,
-# so a tick costs the size of the scope rather than the number of spacecraft.
+# so a tick costs the size of the scope rather than the number of spacecraft. A
+# control model that consumes a link has its scope read once more, first, to
+# decide whether its producers prepare it (`_ticks_any`).
 using ...GNCRuntime: SpacecraftScope, AllSpacecraft, BoundSpacecraft, CoupledSpacecraft,
     spacecraft_scope, skip_inactive, release_command!
 
@@ -77,14 +79,21 @@ end
 
 # Whether a tick of `model` at this time runs its tick for some spacecraft, rather
 # than skipping or releasing every one: the condition for preparing it first
-# (`before_reference_control!` for its linked producers).
+# (`before_reference_control!` for its linked producers). It reads the scope
+# itself, before the producers prepare; the tick reads it again afterwards (see
+# `_periodic_control_tick!`). Order and repeats do not matter to the answer, so a
+# `BoundSpacecraft`'s indices are checked as given, without the sorted copy
+# `_tick_positions` builds for unsorted ones.
 function _ticks_any(model, p, num_sats::Int)
     scope, skip = spacecraft_scope(model), skip_inactive(model)
-    for sat_idx in _tick_positions(scope, num_sats)
+    for sat_idx in _any_order_positions(scope, num_sats)
+        1 <= sat_idx <= num_sats || continue
         !(skip && !p.is_active[sat_idx]) && return true
     end
     return false
 end
+@inline _any_order_positions(scope::BoundSpacecraft, n::Int) = scope.indices
+@inline _any_order_positions(scope, n::Int) = _tick_positions(scope, n)
 
 """
     check_spacecraft_scopes(args) -> nothing

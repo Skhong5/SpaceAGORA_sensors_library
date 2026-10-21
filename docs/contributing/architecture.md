@@ -418,7 +418,10 @@ interlinks.
 - **Scope and inactive spacecraft.** A periodic tick reads the model's
   `spacecraft_scope` once and visits only the run positions it names, in
   ascending order (`_tick_positions` in `callbacks/gnc_scope.jl`), so a tick
-  costs the size of the scope, not the number of spacecraft. When the model
+  costs the size of the scope, not the number of spacecraft. A control model
+  that consumes a link has its scope read once more, first, to decide whether
+  its producers prepare it (`_ticks_any`). The tick reads the scope after they
+  have, so it follows a scope a producer changed. When the model
   declares `skip_inactive`, an inactive spacecraft gets `release_command!`
   instead of the tick (`_gnc_tick_in_scope!`). The
   mounted actuators then apply the levels the model holds. An event-driven

@@ -377,9 +377,13 @@ end
 #    decides so;
 # 3. the model's solver stops are registered, one spacecraft at a time.
 #
-# The scope is read once, after step 1, and its positions (`_tick_positions`) serve
-# steps 2 and 3; the thread decision counts them. The parallel policy's
-# observation of the tick covers steps 2 and 3.
+# The scope is read after step 1, and its positions (`_tick_positions`) serve steps
+# 2 and 3; the thread decision counts them. A model that consumes a link also has
+# its scope read before step 1, to decide whether its producers prepare it
+# (`_ticks_any`). The tick reads it again after they have, so it follows a scope
+# they changed, as it did when it read the scope for each spacecraft. That is two
+# reads per tick for a linked consumer and one for any other model. The parallel
+# policy's observation of the tick covers steps 2 and 3.
 function _periodic_control_tick!(integrator, control_model, producers, num_sats::Int, period::Float64)
     _prepare_linked_producers!(integrator, control_model, producers, num_sats)
     positions = _tick_positions(spacecraft_scope(control_model), num_sats)
