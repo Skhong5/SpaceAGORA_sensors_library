@@ -3,6 +3,8 @@
 # comparison's fixed safety distance; the contract adapter (planner_contract.jl)
 # runs the same kernels under a request's own clearance and limits.
 
+using ..SimConfig: _with_fields
+
 """Internal supertype of the seven RPO comparison planners."""
 abstract type AbstractRPOComparisonPlanner <: AbstractRPOPlanner end
 
@@ -198,38 +200,12 @@ end
 
 """Copy RRT-Connect settings with a caller-selected iteration cap."""
 function _rpo_comparison_rrt_connect_settings(src::RPORRTConnectSettings, n_iters::Integer)
-    return RPORRTConnectSettings(
-        n_iters=Int(n_iters),
-        step_size_m=src.step_size_m,
-        goal_sample_rate=src.goal_sample_rate,
-        collision_sample_ds_m=src.collision_sample_ds_m,
-        adaptive_collision_sampling_enable=src.adaptive_collision_sampling_enable,
-        collision_max_sample_ds_m=src.collision_max_sample_ds_m,
-        collision_far_clearance_m=src.collision_far_clearance_m,
-        collision_sampling_power=src.collision_sampling_power,
-        collision_safe_distance_fraction=src.collision_safe_distance_fraction,
-        collision_obstacle_guard_fraction=src.collision_obstacle_guard_fraction,
-        connect_max_steps=src.connect_max_steps,
-        shortcut_iters=src.shortcut_iters,
-    )
+    return _with_fields(src; n_iters=Int(n_iters))
 end
 
 """Copy RRT* settings with a caller-selected iteration cap."""
 function _rpo_comparison_rrt_star_settings(src::RPORRTStarSettings, n_iters::Integer)
-    return RPORRTStarSettings(
-        n_iters=Int(n_iters),
-        step_size_m=src.step_size_m,
-        goal_sample_rate=src.goal_sample_rate,
-        collision_sample_ds_m=src.collision_sample_ds_m,
-        adaptive_collision_sampling_enable=src.adaptive_collision_sampling_enable,
-        collision_max_sample_ds_m=src.collision_max_sample_ds_m,
-        collision_far_clearance_m=src.collision_far_clearance_m,
-        collision_sampling_power=src.collision_sampling_power,
-        collision_safe_distance_fraction=src.collision_safe_distance_fraction,
-        collision_obstacle_guard_fraction=src.collision_obstacle_guard_fraction,
-        neighbor_radius_m=src.neighbor_radius_m,
-        shortcut_iters=src.shortcut_iters,
-    )
+    return _with_fields(src; n_iters=Int(n_iters))
 end
 
 # The RRT-Connect path that warm-starts CHOMP and STOMP, drawn from `rng`.
@@ -325,12 +301,7 @@ end
 function _rpo_comparison_planner_path(planner::CHOMPPlanner, start_rtn, goal_rtn, geometry,
         base_cfg::RPOPSOConfig; safe_distance_m::Real, rng, runtime_limit_s::Real=Inf, warmstart_path=nothing)
     src = planner.settings
-    settings = RPOCHOMPSettings(
-        n_iters=_rpo_comparison_iterations(planner.optimizer, base_cfg, runtime_limit_s, src.n_iters),
-        learning_rate=src.learning_rate,
-        gradient_eps=src.gradient_eps,
-        w_smooth=src.w_smooth,
-    )
+    settings = _with_fields(src; n_iters=_rpo_comparison_iterations(planner.optimizer, base_cfg, runtime_limit_s, src.n_iters))
     initial_path = warmstart_path === nothing ? _rpo_comparison_seed_path(
         planner,
         start_rtn,
@@ -358,14 +329,7 @@ end
 function _rpo_comparison_planner_path(planner::STOMPPlanner, start_rtn, goal_rtn, geometry,
         base_cfg::RPOPSOConfig; safe_distance_m::Real, rng, runtime_limit_s::Real=Inf, warmstart_path=nothing)
     src = planner.settings
-    settings = RPOSTOMPSettings(
-        n_iters=_rpo_comparison_iterations(planner.optimizer, base_cfg, runtime_limit_s, src.n_iters),
-        n_rollouts=src.n_rollouts,
-        noise_std=src.noise_std,
-        lambda=src.lambda,
-        update_step=src.update_step,
-        w_smooth=src.w_smooth,
-    )
+    settings = _with_fields(src; n_iters=_rpo_comparison_iterations(planner.optimizer, base_cfg, runtime_limit_s, src.n_iters))
     initial_path = warmstart_path === nothing ? _rpo_comparison_seed_path(
         planner,
         start_rtn,
