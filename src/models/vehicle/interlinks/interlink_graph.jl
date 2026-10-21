@@ -59,8 +59,9 @@ module InterLinkModels
 	end
 
 	# 1.2. Interlink history: at each accepted step, the links the scheduler
-	# selected and the links that were available (could close). A sample built
-	# from a time and the selected links has no available links recorded.
+	# selected and, when the model records them (`record_available`), the links
+	# that were available (could close). A sample built from a time and the
+	# selected links has no available links recorded.
 	struct InterLinkHistory
 		time::Float64
 		active::Vector{InterLinkKey}
@@ -70,7 +71,7 @@ module InterLinkModels
 
 	# 1.3. Interlink model
 	"""
-	    InterlinkModel(; forbidden_pairs=())
+	    InterlinkModel(; forbidden_pairs=(), record_available=nothing)
 
 	The interlinks of a run: the candidate links between spacecraft terminals,
 	each with its own link kind (`register_link!`), spacecraft pairs that may never
@@ -80,6 +81,12 @@ module InterLinkModels
 	spacecraft in `dynamics_model.spacecraft`, not its `id`. Terminals
 	`1:n_terminal` are virtual; mounted terminal hardware (see `link_terminal`)
 	follows.
+
+	`record_available` sets whether each history sample also records the links
+	that were available, which `contact_windows` reads: `nothing`, the default,
+	records them in a run with a `DataLink`; `true` always; `false` never. A large
+	constellation over a long run keeps a list of available links per accepted
+	step, so the default leaves them out of runs that carry no data.
 	"""
 	mutable struct InterlinkModel
 		# i) Core model parameters
@@ -93,7 +100,11 @@ module InterLinkModels
 		# `(edge, side, mounted actuator position)` of each terminal hardware endpoint.
 		terminal_endpoints::Vector{Vector{NTuple{3, Int}}}
 
-		function InterlinkModel(; forbidden_pairs=Tuple{Int, Int}[], constellation_link_type=_NOT_PASSED)
+		# iv) Whether the history records the available links: `nothing` for runs with a data link.
+		record_available::Union{Nothing, Bool}
+
+		function InterlinkModel(; forbidden_pairs=Tuple{Int, Int}[], record_available::Union{Nothing, Bool}=nothing,
+			constellation_link_type=_NOT_PASSED)
 			if constellation_link_type !== _NOT_PASSED
 				_interlink_deprecation((InterlinkModel, :constellation_link_type),
 					"The constellation_link_type keyword is deprecated and will be removed in SpaceAGORA 1.0: " *
@@ -103,7 +114,7 @@ module InterLinkModels
 					"links (LaserMomentumLink) are implemented."))
 			end
 			pairs = Set{Tuple{Int, Int}}(minmax(pair...) for pair in forbidden_pairs)
-			new(pairs, InterLinkGraph(), InterLinkHistory[], Vector{NTuple{3, Int}}[])
+			new(pairs, InterLinkGraph(), InterLinkHistory[], Vector{NTuple{3, Int}}[], record_available)
 		end
 	end
 
@@ -416,12 +427,18 @@ module InterLinkModels
 
 	The keys of the candidate links marked available at the last
 	`update_availability!`, sorted. The run's scheduler records them in each
-	`InterLinkHistory` sample, beside the links it selected.
+	`InterLinkHistory` sample, beside the links it selected, when the model
+	records them (`records_available`).
 	"""
 	function available_links(model::InterlinkModel)
 		graph = model.graph
 		return sort!([map(v -> graph.vertices[v], graph.edges[edge]) for edge in eachindex(graph.edges) if graph.available[edge]])
 	end
+
+	# Whether the run's history records the available links: as `record_available`
+	# says, or, when it is `nothing`, in a run with a data link.
+	records_available(model::InterlinkModel) =
+		model.record_available === nothing ? has_data_links(model) : model.record_available
 
 	# 4. The force of the active links on one spacecraft
 	"""

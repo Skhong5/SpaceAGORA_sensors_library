@@ -305,7 +305,10 @@ With the default state isolation, the input configuration is unchanged.
 
 The history (`model.history`) has one `InterLinkHistory` sample per accepted
 step: its time, the links the scheduler selected (`active`) and the links that
-were available (`available`). `contact_windows(history)` turns it into windows,
+were available (`available`). The available links are recorded in a run with a
+data link, or when you ask for them with `InterlinkModel(; record_available=true)`;
+`record_available=false` leaves them out. In a large constellation over a long
+run they are a list per step, so other runs leave them out by default. `contact_windows(history)` turns it into windows,
 one `(key, start_s, end_s, duration_s)` for each span over which a link could
 close; `contact_windows(history; active=true)` gives the spans over which it
 was selected. `contact_time_s(history, key)` sums a link's windows.

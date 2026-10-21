@@ -221,6 +221,26 @@ integral(x, y) = sum((x[k + 1] - x[k]) * (y[k] + y[k + 1]) / 2 for k in 1:length
         @test contact_time_s(idle_history, key; active=true) == 0.0
     end
 
+    @testset "the history records the available links in a data run, or when asked" begin
+        key = ((1, 1), (2, 1))
+        for (record, recorded) in ((nothing, false), (true, true), (false, false))
+            lasers = [radio_sat(i, (i - 1) * 5000.0; terminal=LaserTerminal(boresight=[0.0, 1.0, 0.0], max_power_w=100.0))
+                      for i in 1:2]
+            model = InterlinkModel(; record_available=record)
+            register_link!(model, lasers, (1, 1), (2, 1), LaserMomentumLink(power_w=40.0))
+            history = run_simulation(run_args(lasers, model; duration=2.0, policy=:gve_sma);
+                return_solution=true).prob.p.args.interlink_model.history
+            @test all(sample -> sample.available == (recorded ? [key] : InterLinkKey[]), history)
+            @test isempty(contact_windows(history)) == !recorded
+        end
+        spacecraft, model = data_pair()
+        @test model.record_available === nothing && SM.InterLinkModels.records_available(model)
+        model.record_available = false
+        history = run_simulation(run_args(spacecraft, model; duration=5.0); return_solution=true).prob.p.args.interlink_model.history
+        @test all(sample -> isempty(sample.available), history) && isempty(contact_windows(history))
+        @test only(contact_windows(history; active=true)).key == key                 # selected windows either way
+    end
+
     @testset "shedding at the sender closes the link" begin
         # 0.001 Wh at 2 W lasts 1.8 s; tier 1 then sheds the transmitting radio.
         spacecraft, model = data_pair(sender=(capacity_wh=0.002, soc=0.5))

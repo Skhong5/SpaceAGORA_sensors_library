@@ -141,7 +141,7 @@ export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!,
 @doc (@doc SimulationModel.InterlinkTerminals.terminal_number) terminal_number
 @doc """Indexed terminal vertices, candidate edges, the link of each edge (`edge_properties`) and availability/selection flags. Register candidates with `register_link!`.""" InterLinkGraph
 @doc """Canonically ordered pair of `(spacecraft array index, terminal number)` endpoints.""" InterLinkKey
-@doc """One accepted-step schedule sample: time in seconds, the selected `InterLinkKey` values (`active`) and the available ones (`available`, empty for a sample built from a time and the selected keys). `contact_windows` reads a run's samples.""" InterLinkHistory
+@doc """One accepted-step schedule sample: time in seconds, the selected `InterLinkKey` values (`active`) and the available ones (`available`, recorded in a run with a data link or with `InterlinkModel(; record_available=true)`, and empty for a sample built from a time and the selected keys). `contact_windows` reads a run's samples.""" InterLinkHistory
 @doc (@doc SimulationModel.SchedulingPolicies.SchedulingPolicyModel) SchedulingPolicyModel
 @doc """Score available links using a `SchedulingPolicyModel`, the current spacecraft state and the gravitational parameter, from each link's `link_force` (or a caller's `candidate_force(target, partner, link)`).""" score_candidates!
 @doc (@doc SimulationModel.SchedulingPolicies.select_interlinks!) select_interlinks!

@@ -187,7 +187,9 @@ has_data_links(model) = model !== nothing && any(link -> link isa DataLink, mode
 The contact windows of a run's links, from its interlink history
 (`model.history`): one entry `(key, start_s, end_s, duration_s)` for each span of
 consecutive accepted steps over which a link was available (could close), or,
-with `active=true`, selected. A window starts at the first step that has the
+with `active=true`, selected. The history records the available links in a run
+with a `DataLink`, or with `InterlinkModel(; record_available=true)`; without
+them, only `active=true` finds windows. A window starts at the first step that has the
 link and ends at the next step that does not, or at the last step of the
 history. Windows are sorted by start time, then key.
 
