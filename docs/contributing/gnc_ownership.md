@@ -36,9 +36,26 @@ reference and collision geometry lives in `planning/rpo/geometry/`; its defining
 `NavigationHooks` bindings remain unchanged. That geometry describes the planner's
 world and clearance queries. It is not, by itself, a navigation estimator.
 
-## Reporting is an analysis responsibility
+## Comparison tracking and reporting
 
-Planner comparison execution and tracking stay with the planning sources.
+Planner selection and batch orchestration stay with the planning sources.
+Comparison tracking belongs to the private
+`src/interfaces/analysis/planning/rpo_comparison_tracking.jl` implementation,
+loaded as `SimulationModel.RPOComparisonTracking` after guidance and control.
+It imports controller operations from `ControlHooks`, the actuator type from
+`ThrusterModels`, and the reference, geometry and plant operations it uses.
+The HCW and two-body tracking loops retain their distinct behavior.
+
+The six tracking generics remain declared in `GuidanceHooks`; the new owner adds
+their sole method bodies. Existing qualified calls, SimulationModel bindings and
+serialized function references therefore retain their defining names. Tracking
+settings, planner configuration and the two-body plant type keep their original
+owners. This internal module does not add root public API.
+
+Guidance still uses `_control_module()` for EDG pairing validation. Its separate
+replacement belongs to C3b; this tracking move does not remove that helper or the
+`_PARENT` lookup used by EDG algorithms.
+
 Reporting completed results belongs to
 `src/interfaces/analysis/planning/rpo_comparison_reports.jl`. Its internal
 `RPOComparisonReports` module owns CSV generation, metric presentation and Plotly
@@ -86,3 +103,10 @@ remain under dynamics. MuJoCo uses the engine's
 [external-propagation contract](../src/reference/external_propagation_services.md), which governs
 propagation ownership rather than planning. A Robotics grouping for companion
 checkouts does not transfer these core responsibilities to either companion.
+
+## Companion boundaries
+
+[Companion boundaries](companion_boundaries.md) lists, for HYPR, SpaceAGORAEDG and
+SpaceAGORAMuJoCo, the private SpaceAGORA paths that their tests and research
+scripts still use, the rules for moving them to supported calls, and the checks to
+run when you change a boundary.

@@ -11,6 +11,7 @@ function _usage()
 
     Notes:
       - Generated outputs are written under the ignored `output/` or `docs/build/` paths.
+      - `docs` prepares the docs environment (`docs/setup.jl`) before building.
       - CI publishes telemetry CSVs as workflow artifacts instead of storing them in git.
     """)
 end
@@ -29,6 +30,10 @@ end
 function _telemetry_cmd(profile::String)
     launcher = joinpath(REPO_ROOT, "benchmarks", "studies", "telemetry_orbit_accuracy_study.jl")
     return `$(Base.julia_cmd()) --startup-file=no --project=$REPO_ROOT $launcher $profile --enforce=true`
+end
+
+function _docs_setup_cmd()
+    return `$(Base.julia_cmd()) --startup-file=no $(joinpath(REPO_ROOT, "docs", "setup.jl"))`
 end
 
 function _docs_cmd()
@@ -55,6 +60,7 @@ function main(args::Vector{String})
         _run(_telemetry_cmd(profile))
         return 0
     elseif mode == "docs"
+        _run(_docs_setup_cmd())
         _run(_docs_cmd())
         return 0
     else

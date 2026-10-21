@@ -109,7 +109,8 @@ jobs:
       # Every environment a job instantiates. The grid suite's environment is
       # seeded with the root manifest so it resolves to the same package
       # versions and reuses their package images (unseeded, it resolved to the
-      # newest registry versions and recompiled ~400 packages per job).
+      # newest registry versions and recompiled ~400 packages per job); the
+      # docs and test environments' setups seed themselves the same way.
       # SpaceAGORA's own image is dropped: it changes with every commit.
       - name: Build shared depot
         if: steps.has-depot.outputs.cache-hit != 'true'
@@ -117,6 +118,10 @@ jobs:
           cp Manifest.toml test/grid_atmosphere/Manifest.toml
           julia --startup-file=no test/grid_atmosphere/setup.jl
           julia --startup-file=no --project=test/grid_atmosphere -e 'using Pkg; Pkg.precompile()'
+          julia --startup-file=no docs/setup.jl
+          julia --startup-file=no --project=docs -e 'using Pkg; Pkg.precompile()'
+          julia --startup-file=no test/setup.jl
+          julia --startup-file=no --project=test -e 'using Pkg; Pkg.precompile()'
           julia --startup-file=no --project=scripts/dev -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
           # GRAMSuite comes from a private repository and its compiled images carry
           # its source text; the shared cache is readable by fork pull requests, so
@@ -162,10 +167,15 @@ jobs:
         with:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      # Aqua and the other test tools live in the test environment, not in the
+      # root project.
+      - name: Prepare test environment
+        run: julia --startup-file=no test/setup.jl
+
       - name: Run test suite shard
         run: |
           export SPACEAGORA_CI_STEP_START=$(date +%s)
-          julia --startup-file=no --project=. test/runtests.jl
+          julia --startup-file=no --project=test test/runtests.jl
 
       - name: Native-free GRAM grid adapter
         # Independent of the suite: runs even when the suite step failed.
@@ -262,10 +272,15 @@ jobs:
           gram: native
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      # Aqua and the other test tools live in the test environment, not in the
+      # root project.
+      - name: Prepare test environment
+        run: julia --startup-file=no test/setup.jl
+
       - name: Run test suite shard with coverage
         run: |
           export SPACEAGORA_CI_STEP_START=$(date +%s)
-          julia --startup-file=no --project=. --code-coverage=user test/runtests.jl
+          julia --startup-file=no --project=test --code-coverage=user test/runtests.jl
 
       - name: Cover grid adapter and named presets without native GRAM
         # Independent of the suite: runs even when the suite step failed.
@@ -781,10 +796,15 @@ jobs:
           gramsuite-smoke: "false"
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      # Aqua and the other test tools live in the test environment, not in the
+      # root project.
+      - name: Prepare test environment
+        run: julia --startup-file=no test/setup.jl
+
       # The contract gates load SpaceAGORA; compiling it in Setup overlaps the
       # compile with the GRAMSuite retrieval instead of following it.
       - name: Contract suite
-        run: julia --startup-file=no --project=. test/contracts/pr_runtests.jl
+        run: julia --startup-file=no --project=test test/contracts/pr_runtests.jl
 
   rpo-public-pilot:
     needs: depot
@@ -889,12 +909,16 @@ jobs:
           precompile: "false"
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
+      # Documenter lives in the docs environment, not in the root project.
+      - name: Prepare docs environment
+        run: julia --startup-file=no docs/setup.jl
+
       - name: Build docs
         env:
           # Authenticate GitHub link checks with the existing read-only job token.
           # Publishing remains the separate Documentation workflow's responsibility.
           GITHUB_TOKEN: ${{ github.token }}
-        run: julia --project=. docs/make.jl --no-deploy
+        run: julia --project=docs docs/make.jl --no-deploy
 
       - name: Public API surface gate
         run: julia --startup-file=no --project=. test/gates/ci_public_api_surface_gate.jl

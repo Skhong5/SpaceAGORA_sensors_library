@@ -47,6 +47,8 @@ end
 
 for project_path in (
     joinpath(REPO_ROOT, "Project.toml"),
+    joinpath(REPO_ROOT, "docs", "Project.toml"),
+    joinpath(REPO_ROOT, "test", "Project.toml"),
 )
     missing = missing_compat_entries(project_path)
     isempty(missing) || error("Missing compat entries in $(relpath(project_path, REPO_ROOT)): $(join(missing, ", "))")

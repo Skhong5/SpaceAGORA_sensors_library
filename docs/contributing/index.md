@@ -9,13 +9,15 @@ not for first-time users trying to run a simulation.
 Quickest maintainer build:
 
 ```text
-julia --project=. docs/make.jl
+julia --startup-file=no docs/setup.jl
+julia --project=docs docs/make.jl
 ```
 
 What to read next:
 
 - [Optional Adapter Standard](../src/reference/adapter_contract.md)
 - [EDG Package Boundary](../src/reference/edg_adapter_boundary.md)
+- [Companion boundaries](companion_boundaries.md)
 - [Documentation Policy](documentation_policy.md)
 - [API Policy](../src/public_api_policy.md)
 - [Contracts](contracts.md)
@@ -90,7 +92,9 @@ release procedures live outside `docs/src/` and are not published in the user
 site. The user site keeps supported API and extension contracts in Reference.
 
 See [adapter maintenance](adapter_maintenance.md) for conformance and release
-evidence, and [Contracts](contracts.md) for the canonical repository rules.
+evidence, [companion boundaries](companion_boundaries.md) for the private paths
+companions still use and the checks for a boundary change, and
+[Contracts](contracts.md) for the canonical repository rules.
 
 ## GNC algorithm families and contributor integrations
 

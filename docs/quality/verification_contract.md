@@ -14,7 +14,7 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
    - `test/gates/ci_path_policy_gate.jl`
    - `test/gates/ci_thin_entry_files_gate.jl`
    - `test/gates/ci_no_artifact_files_gate.jl`
-   - `test/gates/ci_stale_deps_gate.jl` (Aqua stale-dependency check: every `[deps]` entry is loaded by the package; test/docs/example-only packages are an explicit ignore list)
+   - `test/gates/ci_stale_deps_gate.jl` (Aqua stale-dependency check: every `[deps]` entry is loaded by the package; the packages only the examples and tests still load are an explicit ignore list, and the test and docs tools live in `test/Project.toml` and `docs/Project.toml`)
    - `test/gates/ci_tracked_feather_registry_gate.jl` (every tracked feather is named in `test/telemetry_benchmark_manifest.toml` or lies under an in-tree required, non lab-private `data/assets_manifest.toml` asset)
    - `test/gates/ci_vehicle_structure_boundary_gate.jl`
    - `test/gates/ci_src_completeness_contract_gate.jl`
@@ -28,7 +28,7 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
    - `test/gates/ci_rhs_parallel_route_gate.jl`
    - `test/gates/ci_docs_contract_gate.jl`
    - `test/gates/ci_public_api_surface_gate.jl`
-   - `test/gates/ci_hpc_extensibility_docs_gate.jl` (the extension templates, starters and HPC scripts exist, the extensibility and HPC pages keep their markers, and every snippet region of the scripts in `examples/gnc_algorithm_env/` and `examples/walkthrough_env/` appears unchanged as a code block of the page that shows it (`gnc_algorithm.md`, `custom_effector.md`, `custom_actuator.md`), with each script listed and run by its environment's `smoke.jl`)
+   - `test/gates/ci_hpc_extensibility_docs_gate.jl` (the extension templates, starters and HPC scripts exist, the extensibility and HPC pages keep their markers, and every snippet region of the scripts in `examples/gnc_algorithm_env/` and `examples/walkthrough_env/` appears unchanged as a code block of the page that shows it (`gnc_feedback.md`, `gnc_planning.md`, `custom_effector.md`, `custom_actuator.md`), with each script listed and run by its environment's `smoke.jl`)
    - `test/gates/ci_extension_hook_reference_gate.jl` (every exported function in the hook sections of `docs/public_api_symbols.jl` is a row of `docs/extension_hooks.jl` or a listed non-hook; each row's signature is its docstring's first line, its arity and fallback agree with the method table, its page names it, deprecated rows are consistent and current rows use `spacecraft_index`; listed known gaps fail once they no longer apply)
    - `test/gates/ci_ppb_workload_coverage_gate.jl` (the paper harness precompile workload names every case and mode the paper phases run; reads the harness definitions only)
    - `test/gates/ci_gnc_typed_command_boundary_gate.jl` (GNC reaches actuators through the typed command boundary; algorithm directories stay in scan scope)

@@ -74,8 +74,13 @@ jobs:
         if: github.event_name == 'pull_request'
         run: git fetch --no-tags --depth=1 origin ${{ github.base_ref }}
 
+      # Aqua and the other test tools live in the test environment, not in the
+      # root project.
+      - name: Prepare test environment
+        run: julia --startup-file=no test/setup.jl
+
       - name: Contract suite
-        run: julia --startup-file=no --project=. test/contracts/nightly_runtests.jl
+        run: julia --startup-file=no --project=test test/contracts/nightly_runtests.jl
 
       - name: AI review artifact gate (PR only)
         if: github.event_name == 'pull_request'

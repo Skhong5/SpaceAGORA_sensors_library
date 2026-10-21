@@ -875,18 +875,14 @@ include(joinpath(REPO_ROOT, "test", "probes", "coverage_targeted_90_probes.jl"))
 include(joinpath(REPO_ROOT, "test", "probes", "coverage_r6_routing_probes.jl"))
 
 @testset "Aqua Package Quality" begin
-    if HAS_AQUA
-        Aqua.test_all(
-            SimulationModel;
-            ambiguities=false,
-            stale_deps=false,
-            deps_compat=false,
-            project_extras=false,
-            piracies=false,
-            persistent_tasks=false,
-            undocumented_names=false
-        )
-    else
-        @test_skip "Aqua is not available in this test environment"
-    end
+    Aqua.test_all(
+        SimulationModel;
+        ambiguities=false,
+        stale_deps=false,
+        deps_compat=false,
+        project_extras=false,
+        piracies=false,
+        persistent_tasks=false,
+        undocumented_names=false
+    )
 end

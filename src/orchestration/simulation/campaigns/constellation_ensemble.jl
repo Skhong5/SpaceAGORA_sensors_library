@@ -1,6 +1,7 @@
 using ..SimulationModel: SimulationConfiguration, SimulationSettings, DynamicsModel, SpacecraftModel
 import ..SimulationEngine
 using ..SimulationModel.SimConfig: _with_configuration
+using ..SimulationModel.DynamicEffectors: PlumeSurfaceInteraction
 
 function _ensemble_member_settings(settings::SimulationSettings, member_tag::String)::SimulationSettings
     # Checkpoints can be read or written whenever checkpointing OR resume is on,
@@ -64,9 +65,76 @@ function _ensemble_member_configuration(args::SimulationConfiguration, spacecraf
     return isfile(SimulationEngine._checkpoint_paths(earlier).data) ? earlier : config
 end
 
+# The run positions a dynamic effector is bound to, by the fields the engine
+# reads as spacecraft indices: `spacecraft_index` (the robot-arm reaction and
+# reaction-wheel effectors) and `chaser_index`/`target_index`.
+function _ensemble_effector_bindings(effector)
+    bindings = Pair{Symbol, Int}[]
+    index = SimulationEngine._effector_spacecraft_index(effector)
+    index isa Integer && push!(bindings, :spacecraft_index => Int(index))
+    for name in SimulationEngine._CROSS_SATELLITE_INDEX_FIELDS
+        hasproperty(effector, name) || continue
+        index = getproperty(effector, name)
+        index isa Integer && push!(bindings, name => Int(index))
+    end
+    return bindings
+end
+
+# Every ensemble member runs its spacecraft alone, at run position 1, with the
+# parent's whole dynamic effector tuple. An effector bound to a run position
+# therefore keeps its meaning only in a one-member ensemble bound to position 1:
+# bound to k > 1 it never acts in member k, and bound to 1 it acts on every
+# member. A plume carries thrust and state for the parent's spacecraft count,
+# while each member's plume check needs a count of one. Both are refused rather
+# than remapped, so no effector silently moves to another spacecraft.
+function _validate_ensemble_dynamic_effectors(args::SimulationConfiguration)
+    spacecraft = args.dynamics_model.spacecraft
+    n_members = length(spacecraft)
+    # run_constellation_ensemble refuses an empty constellation before this check.
+    n_members == 0 && return nothing
+    member(k) = "member $(k) (spacecraft id $(spacecraft[k].id))"
+    for (position, effector) in enumerate(args.dynamics_model.dynamic_effectors)
+        problem = nothing
+        for (field, index) in _ensemble_effector_bindings(effector)
+            problem = if !(1 <= index <= n_members)
+                "its $(field)=$(index) names no member of this $(n_members)-member ensemble"
+            elseif index != 1
+                "its $(field)=$(index) binds it to $(member(index)), whose spacecraft runs alone at " *
+                "position 1, so it would never act there"
+            elseif n_members > 1
+                "its $(field)=1 binds it to $(member(1)), but every member's spacecraft runs alone at " *
+                "position 1, so it would also act on $(member(2))"
+            else
+                nothing
+            end
+            problem === nothing || break
+        end
+        if problem === nothing && effector isa PlumeSurfaceInteraction.PlumeSurfaceInteractionModel
+            thrusts = PlumeSurfaceInteraction._control_spacecraft_count(effector.control)
+            problem = if thrusts != 1
+                "it carries thrust and state for $(thrusts) spacecraft, but each member runs one, so " *
+                "its plume check would fail in $(member(1))"
+            elseif n_members > 1
+                "it carries thrust and state for one spacecraft, but every member would run it, so it " *
+                "would also act on $(member(2))"
+            else
+                nothing
+            end
+        end
+        problem === nothing || throw(ArgumentError(
+            "run_constellation_ensemble cannot split dynamic_effectors[$(position)] " *
+            "($(nameof(typeof(effector)))) across its members: $(problem). Each member gets the whole " *
+            "dynamic effector tuple, and spacecraft indices are not remapped. Use run_simulation for " *
+            "the whole constellation, or one configuration per spacecraft with its own effectors."
+        ))
+    end
+    return nothing
+end
+
 function _validate_ensemble_uncoupled(args::SimulationConfiguration, allow_gnc_effectors::Bool)
     args.interlink_model === nothing || throw(ArgumentError(
         "run_constellation_ensemble cannot split an interlinked constellation into independent spacecraft. Use run_simulation instead."))
+    _validate_ensemble_dynamic_effectors(args)
     allow_gnc_effectors && return nothing
     coupled_surfaces = String[]
     isempty(args.guidance_model.guidance_effectors) || push!(coupled_surfaces, "guidance_effectors")
@@ -144,8 +212,18 @@ act across ensemble members. If every configured effector acts on one satellite 
 `allow_gnc_effectors=true` to opt in; the effectors are passed to every member unchanged,
 so spacecraft indices are not remapped. GNC declared on a `SpacecraftModel` (its `guidance`,
 `navigation` and `control` keywords) always travels with that spacecraft, is bound to index 1
-in its member run, and needs no flag. Remaining keyword arguments are forwarded to
-[`run_simulation`](@ref) (for example `return_solution=true`).
+in its member run, and needs no flag.
+
+Every member runs its spacecraft alone at run position 1 with the whole dynamic effector
+tuple, so a dynamic effector bound to a spacecraft by run position cannot be split:
+one with a `spacecraft_index`, `chaser_index` or `target_index` (such as
+`RobotArmReactionEffector` and `ReactionWheelMomentumModel`), and the per-spacecraft
+`PlumeSurfaceInteractionModel`. The ensemble refuses such an effector with an
+`ArgumentError` naming it and the member, with or without `allow_gnc_effectors`, unless
+the ensemble has one member and the effector is bound to position 1.
+
+Remaining keyword arguments are forwarded to [`run_simulation`](@ref) (for example
+`return_solution=true`).
 """
 function run_constellation_ensemble(
     args::SimulationConfiguration;

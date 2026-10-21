@@ -1,6 +1,12 @@
+# The test tools, Aqua among them, come from the test environment
+# (test/Project.toml): `julia --startup-file=no test/setup.jl`, then
+# `julia --project=test test/runtests.jl`, or `Pkg.test()` from the root project.
+Base.find_package("Aqua") === nothing &&
+    error("Run the tests from the test environment: `julia --startup-file=no test/setup.jl`, then `julia --project=test test/runtests.jl`, or `Pkg.test()` from the root project.")
 Base.include(@__MODULE__, joinpath(@__DIR__, "..", "helpers", "load_edg.jl"))
 Base.include(@__MODULE__, joinpath(@__DIR__, "..", "helpers", "load_hypr.jl"))
 using Test
+using Aqua
 using CSV
 using DataFrames
 using Dates
@@ -23,16 +29,6 @@ using SPICE
 using SpecialFunctions: loggamma
 using TOML
 
-const HAS_AQUA = let
-    try
-        @eval using Aqua
-        true
-    catch err
-        @info "Skipping Aqua-backed test checks" exception=(err, catch_backtrace())
-        false
-    end
-end
-
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
 # Load the package the way users and the CI example jobs do. Every module name
@@ -42,6 +38,8 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 # "module-replacement" bug class -- and each probe subprocess recompiled the
 # package from source.)
 using SpaceAGORA
+samefile(pkgdir(SpaceAGORA), REPO_ROOT) ||
+    error("The tests loaded SpaceAGORA from $(pkgdir(SpaceAGORA)), not from this checkout; rerun `julia --startup-file=no test/setup.jl`.")
 const SimulationModel = SpaceAGORA.SimulationModel
 using .SimulationModel
 const RuntimeServices = SpaceAGORA.RuntimeServices

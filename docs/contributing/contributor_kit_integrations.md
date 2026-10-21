@@ -3,7 +3,9 @@
 This checklist is for the core half of work that a contributor repository
 cannot do on its own: a new GNC algorithm family, or a new service boundary for
 a companion package. Both are trusted, core-owned code and need a SpaceAGORA
-pull request. Work that uses an existing family or facade stays in the
+pull request. A feedback controller or estimator uses the public model hooks
+and needs neither a new family nor a core pull request. That work, and work
+that uses an existing family or facade, stays in the
 contributor's repository, built from a starter; see
 [Building Your Own Research Repository](../src/user/research_repository.md).
 
@@ -28,7 +30,7 @@ needs it in the pull request.
       `algorithm_instances()` (`test/fixtures/conformance_instances.jl`), so the
       core runs `check_algorithm_family` and `check_algorithm` on them.
 - [ ] A row in the families table of
-      [Writing a GNC Algorithm](../src/user/gnc_algorithm.md#The-planning-profile).
+      [Planning Algorithms](../src/user/gnc_planning.md#The-planning-profile).
 - [ ] If the package starter should show an algorithm of the family, its
       example under `templates/starters/package/` (core CI generates and tests
       each starter).

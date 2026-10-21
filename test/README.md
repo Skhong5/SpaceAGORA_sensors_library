@@ -88,15 +88,30 @@ select the suites; helpers supply reusable setup and scenarios.
 Recommended commands:
 
 ```bash
-julia --project=. test/runtests.jl
+julia --startup-file=no test/setup.jl
+julia --project=test test/runtests.jl
 julia --project=. test/smoke/runtests.jl
-julia --project=. test/contracts/pr_runtests.jl
-julia --project=. test/contracts/nightly_runtests.jl
-julia --project=. test/contracts/runtests.jl
+julia --project=test test/contracts/pr_runtests.jl
+julia --project=test test/contracts/nightly_runtests.jl
+julia --project=test test/contracts/runtests.jl
 julia --project=. test/stress/runtests.jl
 julia --project=. test/coverage/runtests.jl
 julia --startup-file=no --threads=4 --project=. test/grid_atmosphere/runtests.jl
 ```
+
+The test environment (`test/Project.toml`) holds the test tools, Aqua among
+them, and every package the harness imports, with SpaceAGORA from this checkout;
+the root project does not include Aqua. Suites 01 and 03 load the package source
+into sandbox modules, so the test environment declares all of SpaceAGORA's own
+dependencies too, and `test/setup.jl` refuses one that misses any.
+
+`test/setup.jl` generates the ignored `test/Manifest.toml` from the root
+manifest on every run, so the tests use the package versions the root project
+pins. Run it again after the root manifest changes. `Pkg.test()` from the root
+project uses the same test project. The harness requires Aqua and stops when it
+would test another checkout's SpaceAGORA. The EDG and HYPR providers stay
+separate environments: `SPACEAGORA_EDG_TEST_ENV` and `SPACEAGORA_HYPR_TEST_ENV`
+name prepared ones (`scripts/setup_edg.jl`, `scripts/setup_hypr.jl`).
 
 The grid suite constructs no native model and needs no GRAM data, shared library
 or SPICE kernels. `EXPECTED_GRAMSUITE_ROOT` can pin the resolved wrapper directory

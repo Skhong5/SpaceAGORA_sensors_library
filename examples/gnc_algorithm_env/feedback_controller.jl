@@ -1,9 +1,9 @@
-# Worked example A of "Writing a GNC Algorithm" (docs/src/user/gnc_algorithm.md):
+# Worked example A of "Writing a GNC Algorithm" (docs/src/user/gnc_feedback.md):
 # a feedback controller that damps a spacecraft's body rate. Each region between a
 # `# snippet:` line and `# end snippet` appears on that page as it is here; the HPC
 # and extensibility docs gate compares them.
 using SpaceAGORA
-using SpaceAGORA.Conformance: test_control_model
+using SpaceAGORA.Conformance: conformance_fixture, test_control_model
 using StaticArrays
 using Test
 
@@ -50,6 +50,15 @@ function SpaceAGORA.control_wrench(c::RateDamper, x::StateSample, p, t)
     zero3 = zero(SVector{3, Float64})
     x.spacecraft_index == c.spacecraft_index || return zero3, zero3
     return zero3, c.torque_body             # force_ii (N), torque_body (N·m)
+end
+
+# A checkpoint must carry the held output between ticks, including its timestamp.
+# These values are immutable; restoring them cannot share mutable buffers.
+SpaceAGORA.checkpoint_state(c::RateDamper) =
+    (torque_body=c.torque_body, tick_s=c.tick_s)
+function SpaceAGORA.restore_checkpoint_state!(c::RateDamper, data)
+    c.torque_body, c.tick_s = data.torque_body, data.tick_s
+    return nothing
 end
 
 # Declared on a spacecraft: a copy for that spacecraft, with fresh run state.
@@ -105,6 +114,11 @@ println("body rate after $(mission_s) s: $(final) rad/s, by hand $(expected) rad
 # The engine's own checks on the controller: hooks, reproducibility, copies, the
 # reset at each run's start, output-hook purity and the copies `bind_spacecraft` makes.
 @testset "RateDamper conformance" begin
-    test_control_model(RateDamper())
+    # Use the spinning case above: a zero-rate fixture would not expose a lost torque.
+    report = test_control_model(damper;
+        fixture=conformance_fixture(configuration=config))
+    # Require the checkpoint check itself to pass on this nonzero-spin fixture.
+    @test only(filter(check -> check.id === :checkpoint_round_trip,
+                      report.checks)).status === :pass
 end
 # end snippet

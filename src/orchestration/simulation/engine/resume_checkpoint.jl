@@ -1,5 +1,49 @@
+# The run state a checkpoint holds next to the integrated state, written with every
+# checkpoint (`_write_checkpoint!`) and read back when a run resumes. Its entries,
+# in the order a resumed run uses them (see "Run state: owners, resets and
+# restores" in docs/contributing/architecture.md):
+#
+# - `activity`, `interlinks` and `callbacks`: the engine's and the callbacks' run
+#   state, restored by `_resume_engine_state!` (execution.jl) before the models
+#   start and before the callbacks initialize;
+# - `models`: the models' own run state, checked when the checkpoint is read and
+#   restored by `_start_run_models!` after the models' initializers;
+# - `periodic_ticks`: the periodic ticks not yet taken at the checkpoint's time,
+#   which a resumed run takes at its start (`_start_run_clock!`).
+#
+# The definitions below follow that order, then the segment ends and the file.
+
 @inline _checkpoint_directory(args) = SimulationModel.IOConfig._checkpoint_directory(args)
 @inline _checkpoint_paths(args) = SimulationModel.IOConfig._checkpoint_paths(args)
+
+# Which spacecraft are active: an impact or a touchdown deactivates one for the
+# rest of the run. Written with every checkpoint and restored before a resumed
+# run's initializers, so a spacecraft inactive at the checkpoint stays inactive:
+# its state is not integrated, the GNC models that skip inactive spacecraft do
+# not tick for it, and its impact and touchdown do not fire again (both act on
+# active spacecraft only, and the touchdown's start check skips inactive ones).
+# An interlink checkpoint also carries the flags in its own entry; the two must
+# agree. A checkpoint without the entry, written by an earlier SpaceAGORA,
+# resumes with every spacecraft active, except in an interlinked run, which
+# restores its entry's flags.
+_activity_checkpoint_state(is_active) = (version=1, is_active=Vector{Bool}(is_active))
+
+function _restore_activity_checkpoint_state!(args, checkpoint, is_active)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    entry = runtime !== nothing && hasproperty(runtime, :activity) ? runtime.activity : nothing
+    entry === nothing && return nothing
+    hasproperty(entry, :version) && entry.version === 1 ||
+        throw(ArgumentError("Spacecraft activity checkpoint state version 1 is required to resume this run."))
+    count = length(args.dynamics_model.spacecraft)
+    hasproperty(entry, :is_active) && entry.is_active isa AbstractVector{Bool} &&
+        length(entry.is_active) == count && length(is_active) == count ||
+        throw(ArgumentError("The checkpoint's spacecraft activity flags must match the spacecraft count."))
+    interlinks = hasproperty(runtime, :interlinks) ? runtime.interlinks : nothing
+    interlinks === nothing || !hasproperty(interlinks, :is_active) || interlinks.is_active == entry.is_active ||
+        throw(ArgumentError("The checkpoint's spacecraft activity flags differ from its interlink entry's."))
+    copyto!(is_active, entry.is_active)
+    return nothing
+end
 
 # Keep feature identity and lifecycle knowledge in the simulation engine. The
 # file layer stores this plain-data snapshot without importing interlink models.
@@ -133,35 +177,6 @@ function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
     hasproperty(checkpoint.u, :sc) && length(checkpoint.u.sc) == count ||
         throw(ArgumentError("Interlink checkpoint state must match the spacecraft count."))
     copyto!(is_active, snapshot.is_active)
-    return nothing
-end
-
-# Which spacecraft are active: an impact or a touchdown deactivates one for the
-# rest of the run. Written with every checkpoint and restored before a resumed
-# run's initializers, so a spacecraft inactive at the checkpoint stays inactive:
-# its state is not integrated, the GNC models that skip inactive spacecraft do
-# not tick for it, and its impact and touchdown do not fire again (both act on
-# active spacecraft only, and the touchdown's start check skips inactive ones).
-# An interlink checkpoint also carries the flags in its own entry; the two must
-# agree. A checkpoint without the entry, written by an earlier SpaceAGORA,
-# resumes with every spacecraft active, except in an interlinked run, which
-# restores its entry's flags.
-_activity_checkpoint_state(is_active) = (version=1, is_active=Vector{Bool}(is_active))
-
-function _restore_activity_checkpoint_state!(args, checkpoint, is_active)
-    runtime = get(checkpoint, :runtime_state, nothing)
-    entry = runtime !== nothing && hasproperty(runtime, :activity) ? runtime.activity : nothing
-    entry === nothing && return nothing
-    hasproperty(entry, :version) && entry.version === 1 ||
-        throw(ArgumentError("Spacecraft activity checkpoint state version 1 is required to resume this run."))
-    count = length(args.dynamics_model.spacecraft)
-    hasproperty(entry, :is_active) && entry.is_active isa AbstractVector{Bool} &&
-        length(entry.is_active) == count && length(is_active) == count ||
-        throw(ArgumentError("The checkpoint's spacecraft activity flags must match the spacecraft count."))
-    interlinks = hasproperty(runtime, :interlinks) ? runtime.interlinks : nothing
-    interlinks === nothing || !hasproperty(interlinks, :is_active) || interlinks.is_active == entry.is_active ||
-        throw(ArgumentError("The checkpoint's spacecraft activity flags differ from its interlink entry's."))
-    copyto!(is_active, entry.is_active)
     return nothing
 end
 
@@ -391,17 +406,6 @@ function _restore_model_checkpoint_state!(args, snapshot)
     return nothing
 end
 
-# A checkpointed run's segment from `t` ends one interval later, or at the run's
-# end when that comes first or is the same time to the periodic tick clock
-# (`_same_run_time`): accumulated decimal intervals stop short of the end by an
-# ulp (ten 0.1 s intervals reach 0.9999999999999999), and a last segment that
-# short is a step the solver can reject and then abort as unstable.
-function _checkpoint_segment_end(t::Float64, interval::Float64, mission_end::Float64)
-    t_next = t + interval
-    t_next >= mission_end && return mission_end
-    return SimulationModel.SimulationCallbacks._same_run_time(t_next, mission_end) ? mission_end : t_next
-end
-
 # Every checkpoint a run writes records, for each of the run's periodic
 # navigation, guidance and control clocks (in the order of their callbacks), whether
 # it had not yet taken the tick due at the checkpoint's time, up to the clock's
@@ -451,6 +455,17 @@ function _pending_periodic_ticks(checkpoint)
         return (at_s=t, from_s=t, clocks=nothing)
     end
     throw(ArgumentError("Periodic tick checkpoint state version 1 or 2, at the checkpoint's time, is required to resume this run."))
+end
+
+# A checkpointed run's segment from `t` ends one interval later, or at the run's
+# end when that comes first or is the same time to the periodic tick clock
+# (`_same_run_time`): accumulated decimal intervals stop short of the end by an
+# ulp (ten 0.1 s intervals reach 0.9999999999999999), and a last segment that
+# short is a step the solver can reject and then abort as unstable.
+function _checkpoint_segment_end(t::Float64, interval::Float64, mission_end::Float64)
+    t_next = t + interval
+    t_next >= mission_end && return mission_end
+    return SimulationModel.SimulationCallbacks._same_run_time(t_next, mission_end) ? mission_end : t_next
 end
 
 @inline function _write_checkpoint!(args, t::Float64, u_state, solver_mode::String; is_active=nothing, callback_state=nothing,

@@ -2,7 +2,8 @@
 
 The imported function identities keep historical GuidanceHooks and
 SimulationModel access compatible. Only presentation and output methods live
-here; planning, tracking and acceptance are supplied by the GNC owners.
+here; planner selection remains with guidance and tracking/acceptance are
+supplied by the SimulationModel.RPOComparisonTracking implementation.
 """
 module RPOComparisonReports
 import PlotlyJS

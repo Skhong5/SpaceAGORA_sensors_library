@@ -220,6 +220,9 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "guidance", "aerob
 include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "control", "hooks.jl"))
 @reexport using .ControlHooks
 
+# Comparison tracking imports both completed GNC owners without a reverse lookup.
+include(joinpath(@__DIR__, "..", "..", "..", "interfaces", "analysis", "planning", "rpo_comparison_tracking.jl"))
+
 	# --- Vehicle Thermal Models ---
 	include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "thermal", "thermal_models_module.jl"))
 	@reexport using .VehicleThermalModels

@@ -9,7 +9,8 @@ command, see the [User Guide](../src/index.md).
 Quickest maintainer check:
 
 ```text
-julia --project=. docs/make.jl
+julia --startup-file=no docs/setup.jl
+julia --project=docs docs/make.jl
 ```
 
 What to read next:
@@ -77,7 +78,8 @@ Examples already in the repo:
 - the extension hook reference is generated from `docs/extension_hooks.jl` and
   checked by `test/gates/ci_extension_hook_reference_gate.jl`
 - Wave 5 docs are anchored by `test/gates/ci_hpc_extensibility_docs_gate.jl`
-- the code of the worked examples in `docs/src/user/gnc_algorithm.md` and of
+- the code of the worked examples in `docs/src/user/gnc_feedback.md` and
+  `docs/src/user/gnc_planning.md`, and of
   the two extension walkthroughs (`custom_effector.md`, `custom_actuator.md`) is
   the code CI runs: each block is a snippet region of a script in
   `examples/gnc_algorithm_env/` or `examples/walkthrough_env/`, compared byte for
@@ -100,7 +102,8 @@ Every PR should check the docs drift items in `.github/pull_request_template.md`
 Before merge to `main`, the documentation release gate is:
 
 ```text
-julia --project=. docs/make.jl
+julia --startup-file=no docs/setup.jl
+julia --project=docs docs/make.jl
 julia --project=. test/gates/ci_public_api_surface_gate.jl
 julia --project=. test/gates/ci_hpc_extensibility_docs_gate.jl
 ```
@@ -123,12 +126,19 @@ modules.
 
 ## Build the docs locally
 
-From the repository root, prepare the project and build the documentation:
+From the repository root, prepare the docs environment and build the
+documentation:
 
 ```text
-julia --project=. -e "using Pkg; Pkg.instantiate()"
-julia --project=. docs/make.jl
+julia --startup-file=no docs/setup.jl
+julia --project=docs docs/make.jl
 ```
+
+The docs environment (`docs/Project.toml`) holds Documenter and takes SpaceAGORA
+from this checkout; the root project does not include Documenter. `docs/setup.jl`
+generates the ignored `docs/Manifest.toml` from the root manifest on every run,
+so the build uses the package versions the tests use. Run it again after the root
+manifest changes.
 
 Generated documentation stays local under the ignored `docs/build/`,
 `docs/site/` and `docs/src/generated/` directories.
@@ -153,5 +163,5 @@ julia --project=. scripts/regenerate_ignored_outputs.jl docs
 ```
 
 These commands execute the selected study or build; they are not required to
-inspect existing simulation results. The helper's `docs` mode selects the
-`docs/` project. The direct build command above uses the root project.
+inspect existing simulation results. The helper's `docs` mode prepares the docs
+environment and builds with it, like the direct commands above.

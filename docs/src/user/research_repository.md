@@ -1,7 +1,7 @@
 # Building Your Own Research Repository
 
 Use this page to keep research software built on SpaceAGORA in a repository of
-your own: a study, an algorithm package or a companion package, tested against
+your own: a study, a model or algorithm package, or a companion package, tested against
 a recorded SpaceAGORA commit by the same checks the core runs on its built-in
 models.
 
@@ -31,16 +31,21 @@ model, a method or a result; the starters' READMEs and the CI summary say so.
 | Starter | For | Its example | Manifest |
 |---|---|---|---|
 | `project` | a research study on the public API | a force model (`wrench`) and a short case in `scripts/run_case.jl` | committed, so every result has its exact package versions |
-| `package` | an algorithm package for an existing family | an RPO reference planner, run in the RPO pilot by `examples/run_in_simulation.jl` | not committed |
+| `package` | a feedback model, or an algorithm for an existing family | an RPO reference planner, run in the RPO pilot by `examples/run_in_simulation.jl` | not committed |
 | `companion` | a companion that serves a core service facade | an external propagator on `ExternalPropagationServices` | not committed |
 
 A study or a package uses only names exported by `SpaceAGORA` and
 `SpaceAGORA.Conformance`; the workflow scans it for internal names. A package
-adds algorithms to a family; it never adds a family of its own. A new family or
+can implement a feedback model directly, or add a planner to an existing family;
+it never adds a family of its own. A new family or
 a new service facade is trusted, core-owned code, so it starts as a SpaceAGORA
 pull request (the repository's contributor guide,
 `docs/contributing/contributor_kit_integrations.md`, lists what it needs), and
 the companion starter is then pointed at it.
+
+For a controller package, follow [Your First Controller Package](feedback_package.md).
+It adapts the existing `package` starter and shows which planner files to replace.
+There is no separate controller starter or new core family to create.
 
 ## Create the repository
 
