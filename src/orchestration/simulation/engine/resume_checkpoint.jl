@@ -138,9 +138,10 @@ end
 #   `Ref`) by its type and its fields.
 # What it cannot record by value is refused: a closure that captures a variable
 # reassigned after the closure was made (a `Core.Box`); a dictionary or a set; a
-# channel, stream, task or lock; a value that is not a struct and not one of the
-# above; a field or element that is not assigned; and a payload that contains
-# itself.
+# channel, stream, task or lock; a pointer, or a value holding one (a `Regex`),
+# whose address differs from one process to the next; a value that is not a
+# struct and not one of the above; a field or element that is not assigned; and a
+# payload that contains itself.
 function _scheduling_policy_identity(policy, path=Base.IdSet{Any}())
     kind = typeof(policy)
     names = fieldnames(kind)
@@ -151,7 +152,7 @@ _policy_field_identity(value::SimulationModel.AbstractSchedulingPolicy, path) = 
 _policy_field_identity(value::Tuple, path) = map(element -> _policy_field_identity(element, path), value)
 _policy_field_identity(value::Union{Number, AbstractString, Symbol, Type, Module}, path) = _interlink_kind_parameter(value)
 _policy_field_identity(value::AbstractArray, path) = _on_path(path, value) do
-    all(index -> isassigned(value, index), eachindex(value)) || _unrecordable_field(value)
+    all(index -> isassigned(value, index), eachindex(value)) || _unrecordable_field(value, :element)
     (type=_interlink_kind_identity(typeof(value)), size=size(value),
         elements=[_policy_field_identity(element, path) for element in vec(value)])
 end
@@ -169,18 +170,40 @@ _policy_field_identity(::Core.Box, path) = throw(ArgumentError(
     "which a checkpoint cannot record. Capture the value instead (for example in a `let` block)."))
 _policy_field_identity(value::Union{AbstractDict, AbstractSet, AbstractChannel, IO, Task, Base.AbstractLock}, path) =
     _unrecordable_field(value)
+_policy_field_identity(value::Ptr, path) = _unrecordable_field(value, :pointer)
 function _policy_field_identity(value, path)
-    isbits(value) && return _interlink_kind_parameter(value)
     kind = typeof(value)
+    _holds_pointer(kind) && _unrecordable_field(value, :pointer)
+    isbits(value) && return _interlink_kind_parameter(value)
+    isstructtype(kind) || _unrecordable_field(value)
     names = fieldnames(kind)
-    isstructtype(kind) && all(name -> isdefined(value, name), names) || _unrecordable_field(value)
+    for name in names
+        isdefined(value, name) || _unrecordable_field(value, :field, name)
+    end
     encode() = (type=_interlink_kind_identity(kind),
         fields=NamedTuple{names}(map(name -> _policy_field_identity(getfield(value, name), path), names)))
     return ismutable(value) ? _on_path(encode, path, value) : encode()
 end
-_unrecordable_field(value) = throw(ArgumentError(
-    "A scheduling policy holds a $(nameof(typeof(value))), which a checkpoint cannot record by value. Hold numbers, " *
-    "strings, symbols, functions, arrays, tuples, named tuples and structs of these, or run without checkpoints."))
+
+# Whether a value of `kind` holds a pointer in a field, or in a bits field's own
+# fields. A field of an abstract type that holds a pointer is found when its
+# value is encoded.
+_holds_pointer(kind::DataType) =
+    any(field -> field <: Ptr || (isbitstype(field) && _holds_pointer(field)), fieldtypes(kind))
+
+# The refusal of a value the identity cannot record: `reason` is `:value` (its
+# kind), `:element` or `:field` (`name`, not assigned) or `:pointer`.
+function _unrecordable_field(value, reason::Symbol=:value, name=nothing)
+    held = "a value of type `$(repr(typeof(value)))`" * (
+        reason === :element ? " with an unassigned element" :
+        reason === :field ? " whose field `$(name)` is not assigned" :
+        reason === :pointer ? ", which holds a pointer whose address differs from one process to the next" : "")
+    advice = reason === :pointer ? "Hold the values it is built from (for a `Regex`, its pattern string)" :
+        reason === :value ? "Hold numbers, strings, symbols, functions, arrays, tuples, named tuples and structs of these" :
+        "Assign it before the run"
+    throw(ArgumentError("A scheduling policy holds $(held), which a checkpoint cannot record by value. " *
+        "$(advice), or run without checkpoints."))
+end
 
 # Encode `value` with `encode` while `value` is on the path from the policy,
 # refusing a payload that contains itself.

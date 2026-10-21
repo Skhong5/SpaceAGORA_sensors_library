@@ -359,7 +359,9 @@ args = SimulationConfiguration(...; interlink_model=model, scheduling_policy_mod
   so that it captures them. A checkpointed run refuses at setup what a
   checkpoint cannot record by value: a closure that captures a variable
   reassigned after the closure was made, a dictionary or a set, a stream, a
-  task or a lock, an unassigned field, and fields that contain themselves.
+  task or a lock, a pointer or a value holding one (such as a `Regex`), whose
+  address differs from one process to the next, an unassigned field or element,
+  and fields that contain themselves.
 
 ### Contact windows
 

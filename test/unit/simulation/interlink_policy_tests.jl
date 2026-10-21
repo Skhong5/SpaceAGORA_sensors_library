@@ -91,6 +91,9 @@ end
 mutable struct Node
     next::Any
 end
+struct Handle
+    pointer::Ptr{Cvoid}
+end
 SpaceAGORA.candidate_score(policy::HeldPolicy, candidate, ctx, t) = 1.0
 SpaceAGORA.candidate_score(policy::ListPolicy, candidate, ctx, t) = 1.0
 
@@ -431,9 +434,21 @@ refusal(f) = try f(); nothing catch err err end
         # unassigned value cannot be recorded.
         err = refusal(() -> entry(HeldPolicy((gain=Core.Box(1.0),))))
         @test err isa ArgumentError && occursin("reassigned after the closure was made", err.msg)
-        for held in (Dict(:gain => 2.0), Set([1.0]), IOBuffer(), Ref{Any}(), Vector{Any}(undef, 2))
+        for held in (Dict(:gain => 2.0), Set([1.0]), IOBuffer())
             err = refusal(() -> entry(HeldPolicy(held)))
-            @test err isa ArgumentError && occursin("cannot record by value", err.msg)
+            @test err isa ArgumentError && occursin("holds a value of type `$(repr(typeof(held)))`, which a checkpoint " *
+                "cannot record by value", err.msg)
+        end
+        # An unassigned element or field is named as such.
+        err = refusal(() -> entry(HeldPolicy(Vector{Any}(undef, 2))))
+        @test err isa ArgumentError && occursin("a value of type `Vector{Any}` with an unassigned element", err.msg)
+        err = refusal(() -> entry(HeldPolicy(Ref{Any}())))
+        @test err isa ArgumentError && occursin("whose field `x` is not assigned", err.msg)
+        # A pointer's address differs from one process to the next: a pointer, a bits
+        # value holding one, a `Regex` and a closure capturing a pointer are refused.
+        for held in (C_NULL, Handle(C_NULL), r"abc", (let p = C_NULL; x -> p; end))
+            err = refusal(() -> entry(HeldPolicy(held)))
+            @test err isa ArgumentError && occursin("which holds a pointer", err.msg)
         end
         node = Node(nothing)
         node.next = node
