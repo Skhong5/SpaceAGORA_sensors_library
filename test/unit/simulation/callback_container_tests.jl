@@ -109,9 +109,13 @@ same_solution(a, b) = a.t == b.t && length(a.u) == length(b.u) && all(isequal(co
         @test continuous isa Tuple && discrete isa Tuple
         continuous, discrete = solver_container(args, 0)
         @test continuous isa Tuple && discrete isa Vector{Any}
-        # After the interlink scheduler wraps the callbacks, which builds the set again.
-        continuous, discrete = solver_container(InterlinkExample.gve_sma_configuration(duration=20.0), 0)
-        @test discrete isa Vector{Any}
+        # A run with interlinks couples its spacecraft, so it has no block-diagonal
+        # Jacobian prototype and the solver library holds both kinds in vectors
+        # itself, whatever the limit.
+        for limit in (typemax(Int), 0)
+            continuous, discrete = solver_container(InterlinkExample.gve_sma_configuration(duration=20.0), limit)
+            @test continuous isa Vector{Any} && discrete isa Vector{Any}
+        end
     end
 
     @testset "a run gives the same bits with either container" begin

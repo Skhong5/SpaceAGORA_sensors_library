@@ -406,7 +406,12 @@ end
 # time and allocation that grow with the square of their number, and the solve's
 # type inference grows with them. A vector of them is applied one callback at a
 # time, through one dynamic call each, and compiles once. A run with one periodic
-# GNC model per spacecraft has a discrete callback per model. Tests change the
+# GNC model per spacecraft has a discrete callback per model.
+#
+# Only a fully specialized problem keeps the tuple: a run of several spacecraft
+# without cross-spacecraft coupling, whose block-diagonal Jacobian prototype makes
+# it so. The solver library already holds every other run's callbacks in vectors
+# (it erases them for its automatically specialized problems). Tests change the
 # limit to force either container.
 const _DISCRETE_CALLBACK_TUPLE_LIMIT = Ref(24)
 
