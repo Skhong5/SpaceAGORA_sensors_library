@@ -1,5 +1,5 @@
 module PowerBudgetTests
-using Test, StaticArrays, LinearAlgebra, SpaceAGORA
+using Test, StaticArrays, LinearAlgebra, SpaceAGORA, TOML
 import SpaceAGORA.TelemetryVerification: make_example_config
 const SM = SpaceAGORA.SimulationModel
 
@@ -181,9 +181,14 @@ end
         resumed_dir = mktempdir()
         first_leg = power_run(sc(); mission_time=150.0, settings=(checkpoint_enabled=true, checkpoint_interval_s=50.0, checkpoint_directory=resumed_dir)).table
         resumed = power_run(sc(); mission_time=300.0, settings=(checkpoint_enabled=true, checkpoint_interval_s=50.0, checkpoint_directory=resumed_dir,
-            resume_from_checkpoint=true)).table
-        @test resumed.time[1] >= 150.0 - 1e-9                                     # it did not restart from t = 0
-        @test all(==(0.0), resumed.sc1_actuator_level_1)                           # still shedding after the resume
+            resume_from_checkpoint=true, results=true, results_directory=resumed_dir)).table
+        # It resumed at 150 s rather than starting again, and its table holds the
+        # whole run: the first leg's rows, kept beside its checkpoint, then its own.
+        @test TOML.parsefile(joinpath(resumed_dir, "simulation_results.manifest.toml"))["resumed_from_s"] == 150.0
+        @test resumed.time[1] == 0.0
+        @test isequal(resumed[resumed.time .< 150.0, :], first_leg[first_leg.time .< 150.0, :])
+        after_resume = resumed.time .>= 150.0 - 1e-9
+        @test any(after_resume) && all(==(0.0), resumed.sc1_actuator_level_1[after_resume])   # still shedding after the resume
         @test resumed.sc1_battery_wh[end] ≈ split.sc1_battery_wh[end] rtol=1e-6
         # Another battery configuration, or a file without the callbacks' state, is refused.
         @test_throws ArgumentError power_run(power_spacecraft(soc=0.0, area=0.03, recovery_soc=0.3); mission_time=300.0,
