@@ -377,8 +377,8 @@ to an extension-provided internal method after checking availability. This is a
 coordinated extension of the package family's own contracts. No source is late
 included or evaluated inside another package's module.
 
-The HYPR extension registers availability in `__init__`; the shim verifies that
-initialization succeeded. Precompilation alone does not activate HYPR.
+The HYPR extension registers availability in `__init__`. Planner preflight
+checks that activation succeeded; precompilation alone does not activate HYPR.
 `require_planner_support` is a baseline no-op that the built-in
 HYPR adapter specializes. The public configuration builder and execution preflight
 call it, keeping missing-support errors ahead of run output creation. Third-party
