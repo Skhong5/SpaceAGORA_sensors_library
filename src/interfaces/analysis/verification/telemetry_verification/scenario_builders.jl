@@ -1,3 +1,5 @@
+using ..SimulationModel.SimConfig: _with_fields
+
 @inline function _period_seconds(planet, ra::Float64, rp::Float64)::Float64
     a = 0.5 * (ra + rp)
     return 2π * sqrt(a^3 / planet.μ)
@@ -436,20 +438,8 @@ end
 end
 
 function _with_environment_wind(args::SimulationConfiguration, include_wind::Bool)::SimulationConfiguration
-    env = args.environment_model
-    env_updated = EnvironmentModel(
-        planet=env.planet,
-        EI=env.EI,
-        density_model=env.density_model,
-        ephemerides_model=env.ephemerides_model,
-        thermal_model=env.thermal_model,
-        topography=env.topography,
-        topo_degree=env.topo_degree,
-        topo_order=env.topo_order,
-        wind=include_wind
-    )
     return _with_configuration(args;
-        environment_model=env_updated,
+        environment_model=_with_fields(args.environment_model; wind=include_wind),
     )
 end
 
@@ -509,15 +499,10 @@ function _with_orbit_mission(
     target_orbits::Int,
     mission_time_s::Float64
 )::SimulationConfiguration
-    mc = args.mission_configuration
-    mission_cfg = MissionConfiguration(
+    mission_cfg = _with_fields(args.mission_configuration;
         mission_type=MissionOrbits,
-        keplerian=mc.keplerian,
         number_of_orbits=target_orbits,
         mission_time=mission_time_s,
-        orientation_sim=mc.orientation_sim,
-        num_steps_to_save=mc.num_steps_to_save,
-        data_rate=mc.data_rate
     )
     return _with_configuration(args;
         mission_configuration=mission_cfg,
@@ -713,15 +698,7 @@ function _with_study_settings(args::SimulationConfiguration; quick::Bool=false):
             normalize=false,
             save_csv=true
         ),
-        mission_configuration=MissionConfiguration(
-            mission_type=args.mission_configuration.mission_type,
-            keplerian=args.mission_configuration.keplerian,
-            number_of_orbits=args.mission_configuration.number_of_orbits,
-            mission_time=args.mission_configuration.mission_time,
-            orientation_sim=args.mission_configuration.orientation_sim,
-            num_steps_to_save=2000,
-            data_rate=args.mission_configuration.data_rate
-        ),
+        mission_configuration=_with_fields(args.mission_configuration; num_steps_to_save=2000),
         integration_tolerances=IntegrationTolerances(
             reltol_orbit=rel_orbit,
             abstol_orbit=abs_orbit,

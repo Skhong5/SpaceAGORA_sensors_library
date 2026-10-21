@@ -1018,6 +1018,22 @@ jobs:
         run: |
           julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/hypr-installations/hypr" test/optional/hypr/optional.jl core-first
           julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/hypr-installations/hypr" test/optional/hypr/optional.jl hypr-first
+      # HYPR's own integration tests at the pinned revision, against this checkout.
+      # Some of them still reach private SpaceAGORA paths
+      # (docs/contributing/companion_boundaries.md), so a change to a path they use
+      # fails here before merge, as the EDG and MuJoCo jobs run their companions' tests.
+      - name: HYPR's integration tests at the pinned revision
+        env:
+          JULIA_LOAD_PATH: "@:@stdlib"
+        working-directory: packages/robotics/HYPR.jl
+        run: |
+          julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/integration.jl core-first
+          julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/integration.jl hypr-first
+          julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/rrt_callback_contract.jl
+          julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" -e 'include("test/sampling_compatibility.jl"); include("test/custom_objective.jl")'
+          julia --startup-file=no --compiled-modules=strict --pkgimages=existing --project="$RUNNER_TEMP/hypr-installations/hypr" test/precompiled_conflicts.jl conflict-first
+          julia --startup-file=no --compiled-modules=strict --pkgimages=existing --project="$RUNNER_TEMP/hypr-installations/hypr" test/precompiled_conflicts.jl hypr-first
+          julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/incompatible_resolution.jl "$GITHUB_WORKSPACE"
       - name: Retain installation coverage
         if: always()
         run: |

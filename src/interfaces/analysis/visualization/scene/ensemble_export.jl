@@ -5,6 +5,8 @@
 # become S pseudo-spacecraft in the frame payload, coloured by a per-sample
 # scalar in the viewer.
 
+using ..SimConfig: _with_fields
+
 const ENSEMBLE_MANIFEST = "ensemble_manifest.json"
 const ENSEMBLE_SAMPLE_DIR_RE = r"^(sample_\d+|sat_\d+_id_\d+)$"
 
@@ -39,22 +41,8 @@ Copy of `args` writing its bundle to `dir`, with the scene sidecar flag set
 unless `visualization=false`.
 """
 function with_results_directory(args::SimulationConfiguration, dir::AbstractString; visualization::Bool=true)::SimulationConfiguration
-    s = args.simulation_settings
-    settings = SimulationSettings(
-        results=true,
-        verbose=s.verbose,
-        results_directory=String(dir),
-        generate_plots=s.generate_plots,
-        generate_filenames=s.generate_filenames,
-        normalize=s.normalize,
-        save_csv=s.save_csv,
-        save_visualization_scene=visualization,
-        checkpoint_enabled=s.checkpoint_enabled,
-        checkpoint_interval_s=s.checkpoint_interval_s,
-        checkpoint_directory=s.checkpoint_directory,
-        resume_from_checkpoint=s.resume_from_checkpoint,
-        articulated_live_pose_loads=s.articulated_live_pose_loads
-    )
+    settings = _with_fields(args.simulation_settings;
+        results=true, results_directory=String(dir), save_visualization_scene=visualization)
     return _with_configuration(args;
         simulation_settings=settings,
     )

@@ -415,17 +415,22 @@ interlinks.
     B.
 
   So a producer must not rely on another producer having prepared first.
-- **Scope and inactive spacecraft.** Each spacecraft's tick goes through
-  `_gnc_tick!` (`callbacks/gnc_scope.jl`): a model ticks only for the
-  spacecraft its `spacecraft_scope` names, and when it declares
-  `skip_inactive`, an inactive spacecraft gets `release_command!` instead. The
+- **Scope and inactive spacecraft.** A periodic tick reads the model's
+  `spacecraft_scope` once and visits only the run positions it names, in
+  ascending order (`_tick_positions` in `callbacks/gnc_scope.jl`), so a tick
+  costs the size of the scope, not the number of spacecraft. A control model
+  that consumes a link has its scope read once more, first, to decide whether
+  its producers prepare it (`_ticks_any`). The tick reads the scope after they
+  have, so it follows a scope a producer changed. When the model
+  declares `skip_inactive`, an inactive spacecraft gets `release_command!`
+  instead of the tick (`_gnc_tick_in_scope!`). The
   mounted actuators then apply the levels the model holds. An event-driven
   model's own callbacks do this themselves; the burn scheduler keeps a released
   command released at its scheduling passes and burn edges.
 - **Stops after the ticks, one spacecraft at a time.** The ticks of one control
   model may run on several threads. The solver's stop list belongs to the
   integrator they share, so `register_tstops!` runs afterwards, on the
-  callback's thread.
+  callback's thread, for each spacecraft in the model's scope.
 - **Planner policy stays in the planner.** An RPO planner's holds, revisions,
   retries and interval replans happen in its guidance tick;
   `before_reference_control!` only refuses a reference that is missing or no
@@ -445,14 +450,19 @@ building the run's buffers and callbacks:
    the checkpoint against the run and restores the engine's and the callbacks'
    run state: the `activity`, `interlinks` and `callbacks` entries, and the
    periodic ticks still pending. It also sets the resume flags
-   (`callback_resume`, `model_resume`). The models' own state is only checked
-   here.
+   (`callback_resume`, `model_resume`). The models' own state and the form of
+   their `gnc_scopes` entry are only checked here; a run with guidance,
+   navigation or control models refuses a checkpoint without that entry here,
+   before anything is restored.
 2. `_start_run_clock!`: the run clock of the periodic ticks, for a checkpointed
    or resumed run (`callbacks/periodic_tick_callbacks.jl`).
 3. `_start_run_models!`:
    - each link's `link_initialize!`, once;
    - the control clocks (`gnc_clock_started!`);
    - the models' initializers;
+   - for a checkpointed or resumed run, the spacecraft each model acts on as the
+     initializers left them (`_gnc_scope_baseline`); a resumed run compares them
+     with the checkpoint's `gnc_scopes` entry first;
    - on a resumed run, the models' own state (`restore_checkpoint_state!`),
      which replaces their reset;
    - the EDG heat accounting.
@@ -477,7 +487,9 @@ calls them at the top of `src/models/gnc/contracts/simulation_lifecycle.jl`.
 | Sensor streams, latest measurements, biases, sample times | the mounted sensors and the sensor callbacks | `reset_sensors!` at the first solve's start | `callbacks`, and the sensor's own `checkpoint_state` in `models` | the records in phase 1; the sensor's own state in phase 3. A resumed run does not call `initialize_sensor!` | phases 1 and 3 |
 | Hinge and gimbal angles, mounted thrusters' firing state (`κ`, `thrust`) | the link hardware: `PanelHinge`, `ThrusterGimbal` and `Thruster`, which keep the state a run starts from (`run_start`, first the configured one) and the last tick's write (`run_written`) | the run-state callback's first initialization (`get_run_state_callbacks`): a value still equal to the last mounted tick's write returns to the previous run's start; a value a user changed between runs is kept | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume`: the run-state callback's initialization then keeps the restored state and records it as the latest write | phase 1 |
 | Periodic tick clocks | each run-clock callback, and the run clock in the shared buffers | each solve's start; the run clock in phase 2 | `periodic_ticks` | `_pending_periodic_ticks`, taken at the first solve's start | phases 1 and 2 |
+| Saved results rows | the run's row lists in `run_simulation` | empty | `results_rows`: how much of `simulation_checkpoint.results.bin`, beside the checkpoint, is its own | `_start_results_rows!` puts the rows back before the first segment, or warns when it cannot | before the solve |
 | GNC links | the shared object | `link_initialize!`, once per run | none of their own: the models save what they need | — | phase 3 |
+| The spacecraft each GNC model acts on | each guidance, navigation and control model's `spacecraft_scope` | the models' initializers: the RPO planner and controller set their positions from the spacecraft ids | `gnc_scopes`: each group's scopes in configuration order, as the initializers left them | not restored: compared by `_check_gnc_scope_baseline`, which refuses a model acting on other spacecraft before any model's run state comes back. A run with GNC models refuses a checkpoint without the entry (SpaceAGORA 0.5.1 or earlier) in phase 1 (`_gnc_scope_checkpoint_entry`) | phases 1 and 3 |
 | The models' own run state | each guidance, navigation and control model | `initialize_navigation!`, `initialize_guidance!`, `initialize_control!`; a value a user changed between runs is kept | `models` (`checkpoint_state`) | `restore_checkpoint_state!`, after the initializers. `model_resume` tells an initializer that the state will come back: the RPO planner then makes no initial request | phase 3 |
 | EDG heat accounting | the EDG state | `_edg_initialize_heat_accounting!` | none: EDG refuses checkpoints | — | phase 3 |
 | Plume interaction integral | the plume model's state | the plume callback's first initialization | none: a resumed run starts a new integral | — | the solve's start |

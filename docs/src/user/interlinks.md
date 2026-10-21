@@ -323,7 +323,8 @@ contact_time_s(history, ((1, 1), (2, 1)); active=true)
 A window starts at the first accepted step that has the link and ends at the
 next step that does not, or at the last step: the resolution is the
 scheduler's. A history resumed from a checkpoint covers the resumed interval
-only, so a window that spans the resume is split at it.
+only, so a window that spans the resume is split at it. The results table, unlike
+the history, holds the whole run (see [Outputs](outputs.md)).
 
 ### Optional matching backend
 
@@ -402,7 +403,8 @@ and each spacecraft's terminal hardware: its kinds, in mounting order, and every
 field of each, such as a receiver's aperture or a transmitter's efficiency; a
 new run is required when those change. Checkpoints written by SpaceAGORA 0.4
 and earlier still resume. The resumed history covers the resumed interval, while
-integrated diagnostic states continue from the checkpoint.
+integrated diagnostic states continue from the checkpoint and the results table
+holds the whole run.
 
 ## Deprecated names
 

@@ -79,8 +79,10 @@ clean up imports in HYPR:
 
 Run SpaceAGORA's `test/unit/gnc/hypr_services_tests.jl`, HYPR's
 `test/source_boundaries.jl`, `test/integration.jl` and
-`test/precompiled_loading.jl`, and the tests of the domain you changed. Keep these
-covered:
+`test/precompiled_loading.jl`, and the tests of the domain you changed.
+SpaceAGORA's `optional-hypr-installation` job runs HYPR's integration tests at the
+pinned HYPR revision, as the EDG and MuJoCo jobs run their companions' tests, so a
+SpaceAGORA change that breaks one of them fails before it merges. Keep these covered:
 
 - both package load orders;
 - the refusal of a planner call without an explicit `rng`;
