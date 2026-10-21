@@ -476,7 +476,7 @@ end
 # out returns zeros or `nothing` from its output hooks there, so leaving it out
 # adds nothing to the sums, which start at +0.0 and are never -0.0.
 @inline function _control_members(p, sat_idx::Int)
-    hasproperty(p, :shared_buffers) || return nothing
+    (hasproperty(p, :shared_buffers) && hasproperty(p.shared_buffers, :gnc_scopes)) || return nothing
     scopes = p.shared_buffers.gnc_scopes[]
     scopes === nothing && return nothing
     members = scopes.control_members

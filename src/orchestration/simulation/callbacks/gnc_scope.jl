@@ -90,7 +90,8 @@ end
 
 # The run's GNC scopes, set when the run starts: `nothing` before, and for
 # parameters that are not a run's.
-@inline _run_scopes(p) = hasproperty(p, :shared_buffers) ? p.shared_buffers.gnc_scopes[] : nothing
+@inline _run_scopes(p) = hasproperty(p, :shared_buffers) && hasproperty(p.shared_buffers, :gnc_scopes) ?
+    p.shared_buffers.gnc_scopes[] : nothing
 
 # The run's entry for model `j` of `group` (`:navigation`, `:guidance` or
 # `:control`, in configuration order), or `nothing` before the run starts.

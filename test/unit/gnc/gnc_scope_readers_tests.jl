@@ -58,6 +58,20 @@ function SpaceAGORA.bind_spacecraft(m::PushCtl, k::Int)
     return bound
 end
 
+# Every control_wrench call, in order: (spacecraft, model id).
+const CALLS = Tuple{Int, Int}[]
+
+# A controller that logs its control_wrench calls. `id` names it; `scope` is its
+# scope, and a template's bound copies are bound to their spacecraft.
+struct OrderCtl <: SM.AbstractControlEffectorModel
+    id::Int
+    scope::Any
+end
+SpaceAGORA.spacecraft_scope(m::OrderCtl) = m.scope
+SpaceAGORA.update_control!(m::OrderCtl, u, p, t::Float64, i::Int) = nothing
+SpaceAGORA.control_wrench(m::OrderCtl, x::StateSample, p, t::Float64) = (push!(CALLS, (x.spacecraft_index, m.id)); (Z3, Z3))
+SpaceAGORA.bind_spacecraft(m::OrderCtl, k::Int) = OrderCtl(m.id + k, BoundSpacecraft((k,)))
+
 # `n` spacecraft with J2, each declaring `declared` and `declared_guidance` (control
 # and guidance templates bound to it when the run starts), beside the
 # configuration-level `control` and `guidance`. With `drag`, an exponential
@@ -251,6 +265,19 @@ end
             everywhere = without_lists(() -> run_simulation(args(); return_solution=true))
             @test same_solution(with_lists, everywhere)
             @test length(with_lists.t) > 2
+        end
+    end
+
+    @testset "each spacecraft's models are called in configuration order" begin
+        # The control tuple is (1, 2, 11, 12): spacecraft 1 has models 1 and 11 and
+        # spacecraft 2 has 1, 2 and 12, in that order at every evaluation.
+        empty!(CALLS)
+        serial(() -> run_simulation(scope_args(2; declared=(OrderCtl(10, AllSpacecraft()),),
+            control=(OrderCtl(1, AllSpacecraft()), OrderCtl(2, BoundSpacecraft((2,)))))))
+        for (k, expected) in ((1, [1, 11]), (2, [1, 2, 12]))
+            ids = [id for (i, id) in CALLS if i == k]
+            @test !isempty(ids) && length(ids) % length(expected) == 0
+            @test ids == repeat(expected, length(ids) ÷ length(expected))
         end
     end
 
