@@ -88,7 +88,11 @@ end
         SE._write_checkpoint!(args, 12.5, state, "tsit5"; is_active=snapshot.interlinks.is_active)
         checkpoint = SE._load_checkpoint(args)
         @test checkpoint.t == 12.5
-        @test checkpoint.u == state
+        # The state keeps the interlink states' names before 0.6.0, with its values.
+        @test propertynames(checkpoint.u.sc[1]) == (:pos, :laser_dv, :laser_delta_sma)
+        @test checkpoint.u == (sc=[(pos=sc.pos, laser_dv=sc.interlink_dv, laser_delta_sma=sc.interlink_delta_sma)
+            for sc in state.sc],)
+        @test SE._resumed_checkpoint_state(args, checkpoint.u) == state
         # Every checkpoint also records the flags in its activity entry.
         @test checkpoint.runtime_state == merge(snapshot, (activity=(version=1, is_active=[true, false, true]),))
         restored = trues(3)

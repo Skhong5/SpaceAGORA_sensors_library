@@ -295,18 +295,20 @@ _resumed_checkpoint_state(args, u) = args.interlink_model !== nothing && _interl
 # A copy of the state `u` with the spacecraft components renamed by `names` (old =>
 # new pairs). Every other component, every shape and every value stay; the copy's
 # values are checked bit for bit against `u`'s.
-function _renamed_spacecraft_state(u, names)
-    renamed(name) = (index = findfirst(pair -> first(pair) === name, names); index === nothing ? name : last(names[index]))
-    shapes = map(eachindex(u.sc)) do i
-        spacecraft = u.sc[i]
-        components = propertynames(spacecraft)
-        NamedTuple{map(renamed, components)}(map(name -> _state_component_copy(getproperty(spacecraft, name)), components))
-    end
-    state = ComponentVector(sc=shapes)
+function _renamed_spacecraft_state(u::ComponentVector, names)
+    state = ComponentVector(sc=[_renamed_components(u.sc[i], names) for i in eachindex(u.sc)])
     old, new = ComponentArrays.getdata(u), ComponentArrays.getdata(state)
     length(old) == length(new) && all(index -> old[index] === new[index], eachindex(old, new)) ||
         error("Renaming the interlink states changed the state's values; this is a SpaceAGORA bug.")
     return state
+end
+# A state given as named tuples, as unit tests build one.
+_renamed_spacecraft_state(u::NamedTuple, names) = merge(u, (sc=[_renamed_components(spacecraft, names) for spacecraft in u.sc],))
+
+function _renamed_components(spacecraft, names)
+    renamed(name) = (index = findfirst(pair -> first(pair) === name, names); index === nothing ? name : last(names[index]))
+    components = propertynames(spacecraft)
+    return NamedTuple{map(renamed, components)}(map(name -> _state_component_copy(getproperty(spacecraft, name)), components))
 end
 _state_component_copy(value::Number) = value
 _state_component_copy(value::AbstractArray) = copy(value)
