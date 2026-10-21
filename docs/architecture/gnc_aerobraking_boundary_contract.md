@@ -26,7 +26,7 @@ The optional `SpaceAGORAEDG.jl` package owns the typed numerical kernels.
 Core's `SimulationModel.EDGAlgorithms`, under
 `src/models/gnc/guidance/aerobraking/typed_edg/`, retains compatibility dispatch
 rather than a second implementation. `SpaceAGORA.EDGServices` is the versioned
-boundary. The [EDG package boundary](@ref)
+boundary. The [EDG package boundary](../src/reference/edg_adapter_boundary.md)
 defines the supported calls, units, state ownership, installation and errors.
 
 Guidance and control model types remain in `GuidanceHooks` and `ControlHooks`.
