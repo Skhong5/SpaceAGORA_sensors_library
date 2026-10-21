@@ -337,8 +337,9 @@ format can change between Julia versions: resume with the Julia version that wro
 them. A resumed run that cannot read the rows warns, as below.
 
 A resumed run cannot include the earlier rows when its checkpoint holds none (a
-checkpoint written by SpaceAGORA 0.5.1 or earlier, or by a run that did not save
-results), or when they were saved with other save fields or another number of
+checkpoint written by SpaceAGORA 0.5.1 or earlier, which a run with guidance,
+navigation or control models refuses, as described below, or by a run that did not
+save results), or when they were saved with other save fields or another number of
 spacecraft. It then warns, and its results start at the resume: they are written
 to `resumed_at_<t>s` inside `results_directory` (for example
 `output/resumed_at_2400.0s/`), so the earlier results files are kept as they were.
