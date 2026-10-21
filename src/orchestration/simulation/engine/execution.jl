@@ -391,6 +391,31 @@ function _try_save_simulation_results_if_enabled!(args...)
     end
 end
 
+# One solve of the run, from `u0` over `tspan`, under the run's solver policy
+# (`setup`: what every solve of the run shares), recorded in `solver_trace`. When
+# the solve throws, the results so far are saved first (`results_inputs`) and the
+# exception is rethrown as it was, with its backtrace.
+function _solve_run_interval!(solver_trace, setup, u0, tspan, jac_prototype, results_inputs)
+    prob = _build_typed_solver_problem(u0, tspan, setup.p, setup.callbacks, setup.solver_mode, jac_prototype)
+    sol, solve_meta = try
+        _solve_with_solver_policy(prob, setup.solver_cfg, setup.args, setup.reltol, setup.abstol;
+            solver_cache=setup.solver_cache, needs_full_solution=setup.needs_full_solution)
+    catch
+        _try_save_simulation_results_if_enabled!(results_inputs...)
+        rethrow()
+    end
+    push!(solver_trace, solve_meta)
+    return sol
+end
+
+# A solve that ended without success: the results so far are saved, then an
+# `ErrorException` names `what` and the solve's return code.
+function _require_successful_solve(sol, results_inputs, what)
+    SciMLBase.successful_retcode(sol.retcode) && return nothing
+    _try_save_simulation_results_if_enabled!(results_inputs...)
+    throw(ErrorException("$what failed with retcode=$(sol.retcode)."))
+end
+
 function _with_density_model_epoch(args::SimulationConfiguration)
     environment = args.environment_model
     density_model = SimulationModel.with_density_model_epoch(environment.density_model, args.initial_time)
@@ -1030,6 +1055,13 @@ function run_simulation(
     checkpoint_saved_data = SimulationModel.SaveData[]
     backbone_saved_times = Float64[]
     backbone_saved_data = SimulationModel.SaveData[]
+    # The results so far, as both the partial saves after a failed solve and the
+    # final save read them: containers changed only in place, never rebound.
+    results_inputs = (args, solver_mode, checkpoint_active, save_fields_resolved, saved_values,
+        checkpoint_saved_times, checkpoint_saved_data, backbone_saved_times, backbone_saved_data)
+    # What every solve of the run shares (`_solve_run_interval!`).
+    solve_setup = (; p, callbacks, solver_mode, solver_cfg, args, reltol=reltol_tol, abstol=abstol_tol, solver_cache,
+        needs_full_solution)
 
     if t_start < mission_end && checkpoint_active
         interval = args.simulation_settings.checkpoint_interval_s
@@ -1054,30 +1086,13 @@ function run_simulation(
                 end
             end
             _initialize_in_atmosphere_flags!(p, u_cursor)
-            prob = _build_typed_solver_problem(u_cursor, (t_cursor, t_next), p, callbacks, solver_mode, jac_prototype)
-            seg_sol, solve_meta = try
-                # Segments with the same initial phase and save options reuse
-                # the cached integrator; a phase change rebuilds it. Reuse avoids
-                # rebuilding its cache, jac config, W and symbolic factorization. Safe here because the segment state is
-                # deepcopied into u_cursor below and _save_snapshot's getters
-                # materialise values (fresh SVectors), so nothing retains a
-                # reference into the integrator's own state buffer.
-                _solve_with_solver_policy(prob, solver_cfg, args, reltol_tol, abstol_tol; solver_cache=solver_cache, needs_full_solution=needs_full_solution)
-            catch err
-                _try_save_simulation_results_if_enabled!(
-                    args,
-                    solver_mode,
-                    checkpoint_active,
-                    save_fields_resolved,
-                    saved_values,
-                    checkpoint_saved_times,
-                    checkpoint_saved_data,
-                    backbone_saved_times,
-                    backbone_saved_data,
-                )
-                rethrow()
-            end
-            push!(solver_trace, solve_meta)
+            # Segments with the same initial phase and save options reuse
+            # the cached integrator; a phase change rebuilds it. Reuse avoids
+            # rebuilding its cache, jac config, W and symbolic factorization. Safe here because the segment state is
+            # deepcopied into u_cursor below and _save_snapshot's getters
+            # materialise values (fresh SVectors), so nothing retains a
+            # reference into the integrator's own state buffer.
+            seg_sol = _solve_run_interval!(solver_trace, solve_setup, u_cursor, (t_cursor, t_next), jac_prototype, results_inputs)
             if solver_mode == :gravity_backbone_split
                 _append_backbone_saved_segment!(checkpoint_saved_times, checkpoint_saved_data, seg_sol, save_fields_resolved, p)
             else
@@ -1091,20 +1106,7 @@ function run_simulation(
                 )
             end
             last_sol = seg_sol
-            if !SciMLBase.successful_retcode(seg_sol.retcode)
-                _try_save_simulation_results_if_enabled!(
-                    args,
-                    solver_mode,
-                    checkpoint_active,
-                    save_fields_resolved,
-                    saved_values,
-                    checkpoint_saved_times,
-                    checkpoint_saved_data,
-                    backbone_saved_times,
-                    backbone_saved_data,
-                )
-                throw(ErrorException("Checkpointed solve failed with retcode=$(seg_sol.retcode)."))
-            end
+            _require_successful_solve(seg_sol, results_inputs, "Checkpointed solve")
             t_cursor = Float64(seg_sol.t[end])
             u_cursor = deepcopy(seg_sol.u[end])
             _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode); is_active=p.is_active,
@@ -1118,42 +1120,12 @@ function run_simulation(
 
     elseif t_start < mission_end
         p.shared_buffers.solve_segment_end_time[] = mission_end
-        prob = _build_typed_solver_problem(u_start, (t_start, mission_end), p, callbacks, solver_mode, jac_prototype)
-        sol, solve_meta = try
-            _solve_with_solver_policy(prob, solver_cfg, args, reltol_tol, abstol_tol; solver_cache=solver_cache, needs_full_solution=needs_full_solution)
-        catch err
-            _try_save_simulation_results_if_enabled!(
-                args,
-                solver_mode,
-                checkpoint_active,
-                save_fields_resolved,
-                saved_values,
-                checkpoint_saved_times,
-                checkpoint_saved_data,
-                backbone_saved_times,
-                backbone_saved_data,
-            )
-            rethrow()
-        end
-        push!(solver_trace, solve_meta)
+        sol = _solve_run_interval!(solver_trace, solve_setup, u_start, (t_start, mission_end), jac_prototype, results_inputs)
         last_sol = sol
         if solver_mode == :gravity_backbone_split
             _append_backbone_saved_segment!(backbone_saved_times, backbone_saved_data, sol, save_fields_resolved, p)
         end
-        if !SciMLBase.successful_retcode(sol.retcode)
-            _try_save_simulation_results_if_enabled!(
-                args,
-                solver_mode,
-                checkpoint_active,
-                save_fields_resolved,
-                saved_values,
-                checkpoint_saved_times,
-                checkpoint_saved_data,
-                backbone_saved_times,
-                backbone_saved_data,
-            )
-            throw(ErrorException("Solve failed with retcode=$(sol.retcode)."))
-        end
+        _require_successful_solve(sol, results_inputs, "Solve")
     end
 
     # Time the solve, so the next process with this signature knows whether the
@@ -1175,18 +1147,7 @@ function run_simulation(
     end
 
     # Process and save results
-    saved_results = _save_simulation_results_if_enabled!(
-        args,
-        solver_mode,
-        checkpoint_active,
-        save_fields_resolved,
-        saved_values,
-        checkpoint_saved_times,
-        checkpoint_saved_data,
-        backbone_saved_times,
-        backbone_saved_data;
-        return_table=return_results,
-    )
+    saved_results = _save_simulation_results_if_enabled!(results_inputs...; return_table=return_results)
     scene_path = _write_visualization_scene_if_enabled!(args; density_params=p)
     export_path = nothing
     if visualization && args.simulation_settings.results
