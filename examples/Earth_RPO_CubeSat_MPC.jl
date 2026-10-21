@@ -1,5 +1,6 @@
 # Load from the companion environment before common.jl continues in the examples environment.
 # Setup: julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
+#        julia --startup-file=no examples/setup.jl
 using SpaceAGORAHYPR
 include(joinpath(@__DIR__, "common.jl"))
 using CSV
