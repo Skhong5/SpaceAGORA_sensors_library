@@ -229,6 +229,12 @@ julia --startup-file=no --compiled-modules=existing --threads=2 --depwarn=error 
 julia --startup-file=no --compiled-modules=existing --threads=2 --depwarn=error --project=../RateDamperDemo-env examples/run_in_simulation.jl
 ```
 
+The fourth line, `Pkg.test`, is quoted for bash or zsh (on Windows, Git Bash). In
+PowerShell or Command Prompt, start Julia with the same options,
+`julia --startup-file=no --compiled-modules=existing --threads=2 --depwarn=error --project=../RateDamperDemo-env`,
+and enter the code between the single quotes at the `julia>` prompt; the other
+lines run there as written.
+
 The environment directory must be new or empty and outside both repositories.
 Setup may download dependencies missing from the Julia depot. Once prepared,
 these examples need no external simulation data. The core checkout must still

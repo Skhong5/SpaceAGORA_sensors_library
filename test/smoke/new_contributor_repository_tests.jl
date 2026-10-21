@@ -44,13 +44,15 @@ clean_checkout() = isempty(readchomp(`git -C $ROOT status --porcelain=v1 --untra
 
     # The kit's clone commands keep SpaceAGORA's LFS data out of the clone for good: a
     # variable on the clone alone would not cover the checkout of the pinned commit.
-    @testset "clone commands exclude SpaceAGORA's LFS data" begin
+    # They skip old file versions too, and the double quotes reach Git as `*` in bash,
+    # PowerShell and Command Prompt alike.
+    @testset "clone commands exclude SpaceAGORA's LFS data and old file versions" begin
         pages = [joinpath(ROOT, "docs", "src", "user", "research_repository.md");
                  [joinpath(STARTERS, kind, "README.md") for kind in G.KINDS]]
         for page in pages
             clones = filter(line -> occursin("git clone", line) && occursin("SpaceAGORA.jl.git", line), readlines(page))
             @test !isempty(clones)
-            @test all(line -> occursin("git clone -c lfs.fetchexclude='*' ", line), clones)
+            @test all(line -> occursin("git clone --filter=blob:none -c lfs.fetchexclude=\"*\" ", line), clones)
             @test !occursin("GIT_LFS_SKIP_SMUDGE", read(page, String))
         end
     end
