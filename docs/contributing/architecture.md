@@ -382,7 +382,8 @@ When the run has EDG passage heat to observe, `_edg_observe_heat_callbacks`
 wraps every callback above except the two interlink scheduler callbacks, and
 adds one observer. The observer runs first among the assembly's discrete
 callbacks; only the scheduler's initialization-only copy comes before it. Under
-`solver_mode=:gravity_backbone_split` only impact, the external-propagation
+`solver_mode=:gravity_backbone_split` (the mode the run solves with: its
+`SolverConfig`'s, or `SPACEAGORA_SOLVER_MODE`'s when it has none) only impact, the external-propagation
 sync, the hardware's run-state start, the priority callbacks, touchdown, orbit end, plume interaction, the
 initial force output and the extra callbacks are installed; that mode refuses
 interlinks.
@@ -597,7 +598,7 @@ and result types, geometry, metrics, RRT and retiming services, and compatibilit
 entry points. `SpaceAGORA.HYPRServices` exposes the adapter contract without
 changing the original owners of those bindings. Only the explicitly listed
 services and extension points are supported; arbitrary internal-module access is
-not the integration API. The current supported pair is SpaceAGORA 0.5.0 with
+not the integration API. The current supported pair is SpaceAGORA 0.5.1 with
 HYPR 0.4.0, service contract 2.0.0 and compatibility package 0.2.0. Install the
 pinned pair and explicitly load `SpaceAGORAHYPR` using the
 [RPO planner guide](../src/user/rpo_planner_pilot.md#installing-optional-hypr).

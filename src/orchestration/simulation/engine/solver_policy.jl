@@ -66,6 +66,12 @@ end
 @inline _solver_policy_mode(cfg::SolverConfig)::Symbol = cfg.solver_mode
 @inline _solver_policy_mode()::Symbol = _solver_policy_mode(_active_solver_config())
 
+# The solver configuration a run uses: its own `solver_config` when it has one,
+# otherwise the one the environment gives (which respects any active
+# SimulationEngineConfig overrides via _engine_env_get).
+@inline _run_solver_config(args)::SolverConfig =
+    isnothing(args.solver_config) ? _solver_config_from_env() : args.solver_config
+
 @inline function _retcode_is_stiff_symptom(retcode)::Bool
     # Convert once to Symbol (zero-allocation for Symbol/ReturnCode inputs,
     # one allocation for String inputs — but String inputs are test-only).

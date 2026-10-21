@@ -105,6 +105,10 @@ function check_spacecraft_scopes(args)
         scope isa SpacecraftScope || throw(ArgumentError(
             "spacecraft_scope($(nameof(T))) must return AllSpacecraft(), BoundSpacecraft(indices) or " *
             "CoupledSpacecraft(primary, partners), not $(repr(scope))."))
+        scope isa Union{AllSpacecraft, BoundSpacecraft, CoupledSpacecraft} || throw(ArgumentError(
+            "spacecraft_scope($(nameof(T))) returns a $(nameof(typeof(scope))), which scopes dynamic effectors; " *
+            "a guidance, navigation or control model's scope is AllSpacecraft(), BoundSpacecraft(indices) or " *
+            "CoupledSpacecraft(primary, partners)."))
         inactive = skip_inactive(model)
         inactive isa Bool || throw(ArgumentError(
             "skip_inactive($(nameof(T))) must return true or false, not $(repr(inactive))."))

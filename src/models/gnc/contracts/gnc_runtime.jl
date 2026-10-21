@@ -74,7 +74,9 @@ the model only for the spacecraft its scope names (every one, the `BoundSpacecra
 indices, or the `CoupledSpacecraft` primary), reading the scope at each tick.
 Before the run it refuses a scope that names a run position the run does not have.
 The output hooks are still called for
-every spacecraft, so they keep their own index checks. Default: `AllSpacecraft()`.
+every spacecraft, so they keep their own index checks. A dynamic effector's scope,
+read once when the run starts, decides which spacecraft it acts on (see `scoped`);
+a dynamic effector also takes a `SpacecraftSelection`. Default: `AllSpacecraft()`.
 """
 spacecraft_scope(model) = AllSpacecraft()
 
@@ -91,6 +93,13 @@ inactive partner checks `p.is_active` itself. Default: `true` (since SpaceAGORA
 an active spacecraft.
 """
 skip_inactive(model) = true
+
+# Whether guidance `model` predicts its spacecraft's motion with the run's own
+# gravity models, applied as to every spacecraft (EDG's prediction does). Private:
+# the engine refuses to scope those gravity models in a run with such guidance
+# (engine/effector_scopes.jl). A guidance type that predicts so adds the `true`
+# method where it is defined, so the engine imports no module that loads after it.
+_prediction_uses_run_gravity(model) = false
 
 """
     held_command(model, spacecraft_index) -> Any

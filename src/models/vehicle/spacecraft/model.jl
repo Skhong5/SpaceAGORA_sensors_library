@@ -11,6 +11,7 @@ using ..EphemeridesModels: SpiceEphemeridesModel, ephemerides_epoch_seconds, eph
 
 export Link, Joint, CompliantAttachment, attachment_body_count, SpacecraftModel, DynamicsModel, InitialCondition, CartesianInitialCondition, AbstractInitialCondition, GuidanceModel, NavigationModel, ControlModel
 export ConstellationSlot, OrbitalPlane, build_constellation, walker_planes, walker_constellation
+export ScopedEffector, scoped, SpacecraftSelection, resolve_spacecraft_scope
 
 const I3 = SMatrix{3, 3, Float64}(diagm(ones(3)))
 const DEFAULT_INITIAL_CONDITION_Q = SVector{4, Float64}(0.0, 0.0, 0.0, 1.0)
@@ -775,5 +776,8 @@ include(joinpath(@__DIR__, "..", "..", "..", "orchestration", "simulation", "con
 
 # Constellation layouts: orbital planes, the Walker patterns and the builder.
 include(joinpath(@__DIR__, "..", "constellations", "builder.jl"))
+
+# Spacecraft selections by position, id, plane, slot or predicate (scopes of `scoped`).
+include(joinpath(@__DIR__, "..", "constellations", "spacecraft_selection.jl"))
 
 end # module SpacecraftModels

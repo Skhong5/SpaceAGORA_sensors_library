@@ -10,8 +10,8 @@ function _initialize_save_cache_buffers! end
 function _inside_atmosphere_at_state end
 function _is_gravity_backbone_state end
 function _rhs_plan_step_cache_enabled end
+function _run_solver_config end
 function _set_state_position_velocity_ii! end
-function _solver_policy_mode end
 function _state_heat_loads end
 function _state_mass_kg end
 function _state_position_ii end
