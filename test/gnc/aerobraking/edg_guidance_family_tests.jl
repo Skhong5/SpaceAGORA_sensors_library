@@ -189,6 +189,24 @@ end
     @test L.preflight_control(only(targeting.control_model.control_effectors), targeting; isolate_state=true) === nothing
     alone = SC._with_configuration(targeting; guidance_model=S.GuidanceModel((), Float64[]))
     @test_throws ArgumentError L.preflight_control(only(alone.control_model.control_effectors), alone; isolate_state=true)
+    # Another control model beside the EDG control, before or after it and sharing
+    # its supertype, is neither paired with the binding nor counted.
+    panel = S.SolarPanelAngleOfAttackControlModel()
+    unpaired = only(apart.control_model.control_effectors)
+    for before in (true, false)
+        mixed = SC._with_configuration(args; control_model=S.ControlModel(
+            before ? (panel, control) : (control, panel), [1 / 3, 1 / 3]))
+        @test L.preflight_control(control, mixed; isolate_state=true) === nothing
+        mixed_apart = SC._with_configuration(args; control_model=S.ControlModel(
+            before ? (panel, unpaired) : (unpaired, panel), [1 / 3, 1 / 3]))
+        err = try
+            L.preflight_control(unpaired, mixed_apart; isolate_state=true)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError && occursin("must share the same mutable state", sprint(showerror, err))
+    end
 end
 
 @testset "EDG guidance through AlgorithmGuidance runs as the EDG guidance model" begin

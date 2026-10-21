@@ -52,9 +52,13 @@ serialized function references therefore retain their defining names. Tracking
 settings, planner configuration and the two-body plant type keep their original
 owners. This internal module does not add root public API.
 
-Guidance still uses `_control_module()` for EDG pairing validation. Its separate
-replacement belongs to C3b; this tracking move does not remove that helper or the
-`_PARENT` lookup used by EDG algorithms.
+EDG pairing validation finds the EDG control by dispatch.
+`GuidanceHooks._is_edg_control` returns `false` by default, and `ControlHooks`
+adds the method for `AerobrakingEnergyDepletionControlModel`. Guidance does not
+look up `ControlHooks` at run time. Its only lookup through its parent module is
+`_edg_algorithms()`, which reaches `EDGAlgorithms` (loaded after
+`GuidanceHooks`). `test/unit/gnc/planning_ownership_tests.jl` keeps it the only
+one.
 
 Reporting completed results belongs to
 `src/interfaces/analysis/planning/rpo_comparison_reports.jl`. Its internal

@@ -30,6 +30,10 @@ function context(; n=1, targeting=false, control_only=false)
         mass=461.0, heat_loads=fill(7.0,3)) for _ in 1:n])
     return (; state, g, c, a, p, u)
 end
+
+# A control model that is not EDG, beside the built-in aerobraking panel
+# controller, which shares the EDG control's supertype without being it.
+struct OtherControl <: SpaceAGORA.AbstractControlEffectorModel end
 function seed!(s, i=1)
     s.selected_mode[i] = :targeting
     s.targeting_active[i] = true
@@ -232,6 +236,29 @@ end
             @test occursin("EDG does not support checkpoint",sprint(showerror,err))
             @test isempty(readdir(dir))
         end
+    end
+end
+
+@testset "EDG preflight pairs the EDG control and no other control model" begin
+    x=context()
+    panel=S.SolarPanelAngleOfAttackControlModel()
+    @test panel isa SpaceAGORA.AbstractControlEffectorModel && !(panel isa S.AerobrakingEnergyDepletionControlModel)
+    message(f)=try f(); "" catch e; e isa ArgumentError ? sprint(showerror,e) : rethrow() end
+    with_controls(a,controls)=SC._with_configuration(a;control_model=S.ControlModel(controls,fill(0.5,length(controls))))
+    different=S.AerobrakingEnergyDepletionControlModel(x.c.config,deepcopy(x.state))
+    for others in ((panel,),(OtherControl(),),(panel,OtherControl())), before in (true,false)
+        # The other controllers are not counted or compared, wherever they sit.
+        controls=before ? (others...,x.c) : (x.c,others...)
+        a=with_controls(x.a,controls)
+        @test isnothing(L.preflight_guidance(x.g,a;isolate_state=true))
+        @test isnothing(L.preflight_control(x.c,a;isolate_state=true))
+        # The EDG control among them is the one paired: another state is refused.
+        b=with_controls(x.a,before ? (others...,different) : (different,others...))
+        @test occursin("must share the same mutable state",message(()->L.preflight_guidance(x.g,b;isolate_state=true)))
+        # A targeting control alone still needs its guidance beside them.
+        y=context(targeting=true,control_only=true)
+        c=with_controls(y.a,before ? (others...,y.c) : (y.c,others...))
+        @test occursin("targeting control requires its paired guidance",message(()->L.preflight_control(y.c,c;isolate_state=true)))
     end
 end
 
