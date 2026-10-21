@@ -445,14 +445,17 @@ building the run's buffers and callbacks:
    the checkpoint against the run and restores the engine's and the callbacks'
    run state: the `activity`, `interlinks` and `callbacks` entries, and the
    periodic ticks still pending. It also sets the resume flags
-   (`callback_resume`, `model_resume`). The models' own state is only checked
-   here.
+   (`callback_resume`, `model_resume`). The models' own state and the form of
+   their `gnc_scopes` entry are only checked here.
 2. `_start_run_clock!`: the run clock of the periodic ticks, for a checkpointed
    or resumed run (`callbacks/periodic_tick_callbacks.jl`).
 3. `_start_run_models!`:
    - each link's `link_initialize!`, once;
    - the control clocks (`gnc_clock_started!`);
    - the models' initializers;
+   - for a checkpointed or resumed run, the spacecraft each model acts on as the
+     initializers left them (`_gnc_scope_baseline`); a resumed run compares them
+     with the checkpoint's `gnc_scopes` entry first;
    - on a resumed run, the models' own state (`restore_checkpoint_state!`),
      which replaces their reset;
    - the EDG heat accounting.
@@ -478,6 +481,7 @@ calls them at the top of `src/models/gnc/contracts/simulation_lifecycle.jl`.
 | Hinge and gimbal angles, mounted thrusters' firing state (`κ`, `thrust`) | the link hardware: `PanelHinge`, `ThrusterGimbal` and `Thruster`, which keep the state a run starts from (`run_start`, first the configured one) and the last tick's write (`run_written`) | the run-state callback's first initialization (`get_run_state_callbacks`): a value still equal to the last mounted tick's write returns to the previous run's start; a value a user changed between runs is kept | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume`: the run-state callback's initialization then keeps the restored state and records it as the latest write | phase 1 |
 | Periodic tick clocks | each run-clock callback, and the run clock in the shared buffers | each solve's start; the run clock in phase 2 | `periodic_ticks` | `_pending_periodic_ticks`, taken at the first solve's start | phases 1 and 2 |
 | GNC links | the shared object | `link_initialize!`, once per run | none of their own: the models save what they need | — | phase 3 |
+| The spacecraft each GNC model acts on | each guidance, navigation and control model's `spacecraft_scope` | the models' initializers: the RPO planner and controller set their positions from the spacecraft ids | `gnc_scopes`: each group's scopes in configuration order, as the initializers left them | not restored: compared by `_check_gnc_scope_baseline`, which refuses a model acting on other spacecraft before any model's run state comes back. A checkpoint without the entry (SpaceAGORA 0.5.1 or earlier) is not compared; a run with a bound model is warned | phase 3 |
 | The models' own run state | each guidance, navigation and control model | `initialize_navigation!`, `initialize_guidance!`, `initialize_control!`; a value a user changed between runs is kept | `models` (`checkpoint_state`) | `restore_checkpoint_state!`, after the initializers. `model_resume` tells an initializer that the state will come back: the RPO planner then makes no initial request | phase 3 |
 | EDG heat accounting | the EDG state | `_edg_initialize_heat_accounting!` | none: EDG refuses checkpoints | — | phase 3 |
 | Plume interaction integral | the plume model's state | the plume callback's first initialization | none: a resumed run starts a new integral | — | the solve's start |

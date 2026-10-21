@@ -520,12 +520,14 @@ end
 # that it fits the run, restore the spacecraft's activity, the interlinks' and the
 # callbacks' run state, and the pending periodic ticks, and set the resume flags
 # the callbacks (`callback_resume`) and the models' initializers (`model_resume`)
-# read. The models' own state is only checked here (`model_snapshot`). Without a
-# checkpoint to resume from, the run starts at 0 from `initial_conditions`.
+# read. The models' own state (`model_snapshot`) and their spacecraft scopes
+# (`scope_entry`) are only checked here. Without a checkpoint to resume from, the
+# run starts at 0 from `initial_conditions`.
 function _resume_engine_state!(args, p, solver_mode, initial_conditions)
     t_start = 0.0
     u_start = initial_conditions
-    resumed, model_snapshot, pending_ticks = false, nothing, (at_s=NaN, from_s=-Inf, clocks=nothing)
+    resumed, model_snapshot, scope_entry = false, nothing, nothing
+    pending_ticks = (at_s=NaN, from_s=-Inf, clocks=nothing)
     if args.simulation_settings.resume_from_checkpoint
         ckpt = _load_checkpoint(args)
         if ckpt === nothing
@@ -547,6 +549,7 @@ function _resume_engine_state!(args, p, solver_mode, initial_conditions)
                     throw(ArgumentError("Checkpoint interlink state does not match the configured interlink_model; resume with the same interlink setting."))
             end
             _check_effector_scope_checkpoint_state(args, ckpt)
+            scope_entry = _gnc_scope_checkpoint_entry(ckpt)
             _restore_activity_checkpoint_state!(args, ckpt, p.is_active)
             _restore_interlink_checkpoint_state!(args, ckpt, p.is_active)
             _restore_callback_checkpoint_state!(args, ckpt, p)
@@ -562,7 +565,7 @@ function _resume_engine_state!(args, p, solver_mode, initial_conditions)
             end
         end
     end
-    return (; resumed, model_snapshot, pending_ticks, t_start, u_start)
+    return (; resumed, model_snapshot, scope_entry, pending_ticks, t_start, u_start)
 end
 
 # Phase 2, the run clock of the periodic navigation, guidance and control ticks
@@ -579,8 +582,11 @@ end
 
 # Phase 3, the models: the links, the control clocks, the models' initializers,
 # then, on a resumed run, the models' own run state from the checkpoint, which
-# replaces their reset.
-function _start_run_models!(args, p, u_start, t_start, run_clock, resumed, model_snapshot, checkpoint_active)
+# replaces their reset. Returns the models' spacecraft scopes as the initializers
+# left them, which a checkpointed run writes with its checkpoints (`nothing` for a
+# run that neither writes nor resumes one).
+function _start_run_models!(args, p, u_start, t_start, run_clock, resumed, model_snapshot, scope_entry,
+                            checkpoint_active)
     # The links first (each initialized once), then the control clocks, then
     # navigation, guidance and control: each stage may read what the previous one
     # set up.
@@ -595,11 +601,14 @@ function _start_run_models!(args, p, u_start, t_start, run_clock, resumed, model
     for control in args.control_model.control_effectors
         SimulationLifecycle.initialize_control!(control, u_start, p, t_start)
     end
-    # The models' own run state replaces their reset on a resumed run.
+    # The scopes the initializers resolved, compared with the checkpoint's before
+    # the models' own run state replaces their reset on a resumed run.
+    gnc_scopes = checkpoint_active || resumed ? _gnc_scope_baseline(args) : nothing
+    resumed && _check_gnc_scope_baseline(args, scope_entry, gnc_scopes)
     resumed && _restore_model_checkpoint_state!(args, model_snapshot)
     checkpoint_active && _check_model_checkpoint_hooks(args)
     SimulationModel.ControlHooks._edg_initialize_heat_accounting!(args, u_start, Float64(t_start))
-    return nothing
+    return gnc_scopes
 end
 
 """
@@ -838,7 +847,7 @@ function run_simulation(
 
     # The run's start, in three phases (defined above): a resumed run's engine and
     # callback state, the run clock, then the models.
-    (; resumed, model_snapshot, pending_ticks, t_start, u_start) =
+    (; resumed, model_snapshot, scope_entry, pending_ticks, t_start, u_start) =
         _resume_engine_state!(args, p, solver_mode, initial_conditions)
 
 
@@ -853,7 +862,8 @@ function run_simulation(
     # at its start.
     run_clock = checkpoint_active || resumed
     _start_run_clock!(p, run_clock, mission_end, pending_ticks)
-    _start_run_models!(args, p, u_start, t_start, run_clock, resumed, model_snapshot, checkpoint_active)
+    gnc_scopes = _start_run_models!(args, p, u_start, t_start, run_clock, resumed, model_snapshot, scope_entry,
+        checkpoint_active)
     p.shared_buffers.solve_segment_end_time[] = mission_end
     # prob_debug exists only to feed the NaN-probe below, which itself only
     # runs when SPACEAGORA_DEBUG_INITIAL_DERIVATIVE is set. Building it
@@ -1116,7 +1126,7 @@ function run_simulation(
             u_cursor = deepcopy(seg_sol.u[end])
             _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode); is_active=p.is_active,
                 callback_state=_callback_checkpoint_state(args), model_state=_model_checkpoint_state(args),
-                periodic_ticks=_periodic_tick_checkpoint_state(p, t_cursor))
+                periodic_ticks=_periodic_tick_checkpoint_state(p, t_cursor), gnc_scopes=gnc_scopes)
             checkpoint_written = true
             if string(seg_sol.retcode) != "Success" || !_gravity_backbone_time_reached(t_cursor, t_next)
                 break
