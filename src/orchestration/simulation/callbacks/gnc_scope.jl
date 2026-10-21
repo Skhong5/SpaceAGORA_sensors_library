@@ -151,10 +151,25 @@ function _same_positions(positions::Vector{Int}, other)
     return true
 end
 
-_scope_change_message(slot, scope) =
-    "$(slot.owner)'s spacecraft_scope changed during the run: it was $(repr(slot.declared)) when the run " *
+_scope_change_message(slot, scope) = _scope_change_message(slot, slot.declared, scope)
+_scope_change_message(slot, declared, scope) =
+    "$(slot.owner)'s spacecraft_scope changed during the run: it was $(repr(declared)) when the run " *
     "started and is $(repr(scope)) now. A guidance, navigation or control model's scope is fixed once its " *
     "run-start initializers ran; set it before then (in the model, in bind_spacecraft or in an initializer)."
+# A selection with the same criteria and another `where` object, as a scope method
+# that builds its selection, and a new closure, at each call returns: the advice is
+# to return one object.
+function _scope_change_message(slot, declared::SpacecraftSelection, scope::SpacecraftSelection)
+    same_criteria = (declared.positions, declared.ids, declared.planes, declared.slots) ==
+        (scope.positions, scope.ids, scope.planes, scope.slots)
+    (same_criteria && declared.where !== scope.where) ||
+        return invoke(_scope_change_message, Tuple{Any, Any, Any}, slot, declared, scope)
+    return "$(slot.owner)'s spacecraft_scope changed during the run: it returns a SpacecraftSelection with " *
+        "the criteria it had when the run started but another where function. A selection's where is " *
+        "compared by identity (===), so a closure built anew at each call is a different scope. Keep the " *
+        "selection in the model and return that object at every call, or give where a function that is " *
+        "the same object at every call."
+end
 
 # Whether `model`'s command for spacecraft `sat_idx` is released at this time, as
 # `_gnc_tick!` releases it: the spacecraft is in the model's scope and inactive, and

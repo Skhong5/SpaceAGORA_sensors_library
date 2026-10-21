@@ -233,6 +233,15 @@ function wheel_args(n, template; mission_time=5.0)
         orientation_sim=true, num_steps_to_save=mission.num_steps_to_save))
 end
 
+# A controller whose scope method builds its selection, with a new closure, at
+# every call.
+struct RebuildsCtl <: SM.AbstractControlEffectorModel
+    ids::Vector{Int}
+end
+SpaceAGORA.spacecraft_scope(m::RebuildsCtl) = (ids = copy(m.ids); SpacecraftSelection(where=(i, sc) -> sc.id in ids))
+SpaceAGORA.update_control!(m::RebuildsCtl, u, p, t::Float64, i::Int) = nothing
+SpaceAGORA.control_wrench(m::RebuildsCtl, x::StateSample, p, t::Float64) = (Z3, Z3)
+
 @testset "GNC hooks follow the scope" begin
     @testset "the output hooks are called only for the spacecraft in the scope" begin
         n = 4
@@ -351,6 +360,9 @@ end
         # A selection changed in place: the run compares its own copy.
         @test_throws message run_simulation(scope_args(n;
             control=(MutatesCtl(SpacecraftSelection(positions=[1, 2]), 3.0),)))
+        # A selection built anew at each call, with a new where closure: the message
+        # says to return one object.
+        @test_throws "another where function" run_simulation(scope_args(n; control=(RebuildsCtl([2, 3]),)))
         # The same spacecraft in another order is the same scope.
         @test run_simulation(scope_args(n; control=(TurnsCtl(BoundSpacecraft((2, 1)), BoundSpacecraft((1, 2)), 3.0),))) ===
             nothing

@@ -61,13 +61,17 @@ The engine reads them before the run and at each tick.
 | `held_command(model, spacecraft_index)`, `held_command_time(model, spacecraft_index)` | `nothing`, `NaN` | the model holds a command: return it, as an immutable value, and the time of the tick that produced it |
 | `gnc_links(model)` | none | the model shares an object with a partner: see [Pairing through a link](#Pairing-through-a-link) |
 
-The engine calls a model only for the spacecraft its scope names: its ticks, its
-output hooks (`control_wrench`, `control_propellant_rate`, `control_wheel_torque`),
-its levels (`actuator_levels`, `control_thruster_levels`), `register_tstops!` and
-`atmosphere_transition!`. SpaceAGORA 0.6 and earlier called the output hooks, the
-levels and `atmosphere_transition!` for every spacecraft whatever the scope.
-Direct callers, such as the conformance kit, may still call them for others, so
-keep returning zeros or `nothing` for a spacecraft outside the scope.
+During the run the engine calls a model only for the spacecraft its scope names:
+its ticks, its output hooks (`control_wrench`, `control_propellant_rate`,
+`control_wheel_torque`), its levels (`actuator_levels`, `control_thruster_levels`),
+`register_tstops!` and `atmosphere_transition!`. For a `CoupledSpacecraft` that is
+the primary only: the partners are read, not acted on. SpaceAGORA 0.6 and earlier
+called the output hooks, the levels and `atmosphere_transition!` for every
+spacecraft whatever the scope. Before the run, `touchdown_spec` and, when the
+result columns are sized, `control_thruster_levels` are still asked for every
+spacecraft, and direct callers, such as the conformance kit, may call any of them
+for others, so keep returning zeros or `nothing` for a spacecraft outside the
+scope.
 
 The engine takes each model's scope when the run starts, once the run-start
 initializers ran, and keeps it for the whole run. A `SpacecraftSelection` is
@@ -75,7 +79,9 @@ resolved then, its `where` called once per spacecraft. A scope that changes late
 stops the run: each tick reads the scope again, and an event-driven model's scope
 is read once per accepted step. Set a model's spacecraft in the model itself, in
 `bind_spacecraft` or in an initializer, as the RPO pair does from the spacecraft
-ids.
+ids. A selection's `where` function is compared by identity, so a model whose scope
+is a `SpacecraftSelection` keeps it in a field and returns that object; one built
+anew at each call, with a new closure, differs from the run's.
 
 A control model that is not ticked periodically declares
 `tick_schedule(model) = :event_driven` and brings its own callbacks with

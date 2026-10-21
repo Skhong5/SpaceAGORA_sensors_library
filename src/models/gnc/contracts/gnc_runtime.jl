@@ -58,6 +58,10 @@ BoundSpacecraft(indices::Tuple{Vararg{Integer}}) = BoundSpacecraft(map(Int, indi
 Scope of a model that couples several spacecraft: the engine ticks it for
 `primary` only, and the tick also reads the spacecraft at the run positions in the
 tuple `partners`, as the RPO controller ticks for the chaser and reads the target.
+From SpaceAGORA 0.7.0 its output hooks and levels are called for `primary` only:
+the partners are read, not acted on. A model that also acts on its partners
+declares a scope that names them, such as `BoundSpacecraft` or `AllSpacecraft()`,
+and is ticked for them too.
 """
 struct CoupledSpacecraft{N} <: SpacecraftScope
     primary::Int
@@ -84,11 +88,15 @@ SpaceAGORA 0.6 and earlier called the output hooks, the levels and
 `atmosphere_transition!` for every spacecraft. Direct callers, such as the
 conformance kit, may still call them for other spacecraft, so they keep returning
 zeros or `nothing` there. `touchdown_spec` is still asked for every spacecraft
-before the run.
+before the run, and so is `control_thruster_levels` when the result columns are
+sized.
 
 The scope is fixed once the run-start initializers ran. Each tick reads it again
 (an event-driven model's scope is read once per accepted step), and a scope that
-differs from the one the run took stops the run. A dynamic effector's scope, read
+differs from the one the run took stops the run. So return the same scope at
+every call: for a `SpacecraftSelection`, keep the selection in the model and return
+that object, since its `where` function is compared by identity (`===`), and a
+closure built anew at each call that captures new values is a different one. A dynamic effector's scope, read
 once when the run starts, decides which spacecraft it acts on (see `scoped`).
 Default: `AllSpacecraft()`.
 """
