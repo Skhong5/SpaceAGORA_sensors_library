@@ -214,6 +214,7 @@ include(joinpath(@__DIR__, "simulation", "ephemerides_reuse_key_tests.jl"))
 
 # Focused contracts for source responsibility boundaries.
 include("gnc/planning_ownership_tests.jl")
+include("gnc/rpo_comparison_report_data_tests.jl")
 include("io/asset_catalog_boundary_tests.jl")
 include("io/checkpoint_storage_boundary_tests.jl")
 include("simulation/callback_service_boundary_tests.jl")

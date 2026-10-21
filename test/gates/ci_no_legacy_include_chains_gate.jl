@@ -41,6 +41,8 @@ const ALLOWED_RAW_INCLUDE_FILES = Set([
     joinpath("src", "models", "gnc", "planning", "robot_arm", "planning.jl"),
     joinpath("src", "models", "gnc", "planning", "rpo", "comparison", "planner_comparison.jl"),
     joinpath("src", "models", "gnc", "planning", "rpo", "comparison", "reporting_compat.jl"),
+    # The comparison report module loads its Plotly figures, kept in one file of their own.
+    joinpath("src", "interfaces", "analysis", "planning", "rpo_comparison_reports.jl"),
     joinpath("packages", "SpaceAGORAHYPR", "src", "SpaceAGORAHYPR.jl"),
     joinpath("src", "models", "gnc", "planning", "rpo", "lifecycle.jl"),
     # The RPO planner contract loads its validation and headroom parts; it sat in
