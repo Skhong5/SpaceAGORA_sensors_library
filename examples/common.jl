@@ -16,7 +16,7 @@ let core = Base.PkgId(Base.UUID("afbfb69f-5c0b-4832-b760-43725dff8540"), "SpaceA
     if !runs_examples()
         isfile(joinpath(examples, "Manifest.toml")) || error(
             "Prepare the examples environment first: run `julia --startup-file=no examples/setup.jl`, " *
-            "then `julia --project=examples examples/<name>.jl`.")
+            "then run this command again.")
         Pkg = Base.require(Base.PkgId(Base.UUID("44cfe95a-1eb2-52ea-b672-e2afdf69b78f"), "Pkg"))
         # Pkg may have been loaded just now, after this block started.
         Base.invokelatest(Pkg.activate, examples; io=devnull)

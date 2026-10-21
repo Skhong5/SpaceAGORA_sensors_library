@@ -108,7 +108,7 @@ end
 PRECOMPILE_SCRIPT !== nothing && endswith(PRECOMPILE_SCRIPT, joinpath("examples", "AGORA_Basic_GRAMEarth.jl")) &&
     !isfile(joinpath(PROJECT_ROOT, "examples", "Manifest.toml")) &&
     error("The default precompile trace runs an example: prepare the examples environment first with " *
-          "`julia --startup-file=no examples/setup.jl`, or set SPACEAGORA_SYSIMAGE_PRECOMPILE_FILE.")
+          "`julia --startup-file=no examples/setup.jl`, or name another trace script in SPACEAGORA_SYSIMAGE_PRECOMPILE_FILE.")
 
 println("Building sysimage → $(abspath(SYSIMAGE_PATH))")
 println("This will take several minutes the first time …")
