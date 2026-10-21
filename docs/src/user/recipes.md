@@ -60,14 +60,17 @@ end
 
 ## Run an RPO planner-comparison smoke case
 
-Prepare the optional HYPR companion environment once from the repository root:
+Prepare the optional HYPR companion environment once from the repository root,
+and the examples environment if it is not prepared yet:
 
 ```text
 julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
+julia --startup-file=no examples/setup.jl
 ```
 
 These HYPR examples load `SpaceAGORAHYPR` before their common helper continues
-in the examples environment. Baseline examples use `--project=examples`.
+in the examples environment, so both environments are needed. Baseline examples
+use `--project=examples`.
 
 ```text
 SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl --runs 1

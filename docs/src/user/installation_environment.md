@@ -114,11 +114,15 @@ julia --startup-file=no examples/setup.jl
 julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
-The setup copies the root manifest into the ignored `examples/Manifest.toml`
-and adds the example packages to it, so the examples load the same package
-versions as SpaceAGORA. An example started with `--project=.` continues in the
-examples environment once it is prepared, and otherwise stops with the setup
-command. Plotting packages are no longer dependencies of SpaceAGORA itself; a
+The setup seeds the ignored `examples/Manifest.toml` with the root manifest and
+adds the example packages. Resolution starts from that seed, so the packages
+SpaceAGORA uses keep the versions the root manifest records; only the records of
+the libraries bundled with Julia, such as OpenSSL_jll, follow the installed
+Julia. An example that includes `examples/common.jl`, as most do, continues in
+the examples environment when started with `--project=.`, once it is prepared,
+and otherwise stops with the setup command. The cloth-panel and solar-panel
+demos load PlotlyJS directly: run them, like every example, with
+`--project=examples`. Plotting packages are no longer dependencies of SpaceAGORA itself; a
 project of your own that plots adds them itself.
 
 ### `examples/odyssey_surrogate_env/`

@@ -295,7 +295,8 @@ physical limits, planning reserve or numerical policies.
 
 The `examples/rpo_planner_env/setup.jl` command above installs both components
 explicitly for the two-planner demonstration. The RPO and compliant robot-arm HYPR examples and ISS viewer demo also run from that project and
-load the companion before their common helper continues in the examples environment. See
+load the companion before their common helper continues in the examples environment,
+which `julia --startup-file=no examples/setup.jl` prepares. See
 [Examples Catalog](examples_catalog.md) for the exact commands. Baseline examples
 use `--project=examples` and do not preload HYPR. Do not add the companion as a required
 dependency of SpaceAGORA itself.

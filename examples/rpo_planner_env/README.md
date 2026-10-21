@@ -18,16 +18,19 @@ environment. After setup the run needs neither native assets nor network access:
 JULIA_PKG_OFFLINE=true julia --project=examples/rpo_planner_env examples/rpo_planner_env/smoke.jl
 ```
 
-The HYPR RPO and compliant robot-arm examples use this same environment, for example:
+The HYPR RPO and compliant robot-arm examples start in this same environment.
+They load the companion, then continue in the examples environment for their
+other imports, so prepare that environment once as well. For example:
 
 ```sh
+julia --startup-file=no examples/setup.jl
 julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC.jl
 ```
 
-Those research examples require the assets described in the examples catalog and
-load the companion before continuing in the examples environment for their other
-imports. Baseline examples use the examples environment without loading the
-companion.
+Without the examples environment they stop at once and print its setup command.
+Those research examples also require the assets described in the examples
+catalog. The smoke run above needs neither. Baseline examples use the examples
+environment without loading the companion.
 
 `smoke.jl` explicitly loads `SpaceAGORAHYPR`, then uses the public SpaceAGORA planner surface and its declared dependencies.
 It runs the same two-second Earth corridor case with `DirectRPOPlanner` and

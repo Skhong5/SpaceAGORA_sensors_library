@@ -29,8 +29,10 @@ Then:
 
 - Run the examples with `--project=examples`, for example
   `julia --project=examples examples/AGORA_Basic_Quickstart.jl`. An example
-  started with `--project=.` continues in the examples environment once it is
-  prepared, and otherwise stops with the setup command.
+  that includes `examples/common.jl` and is started with `--project=.`
+  continues in the examples environment once it is prepared, and otherwise
+  stops with the setup command. The others, such as the cloth-panel and
+  solar-panel demos, need `--project=examples`.
 - The command-line tool still runs with `--project=.`. Its `run`, `telemetry`
   and `benchmark` commands start their scripts in the examples environment,
   and stop with the setup command until it is prepared.
@@ -38,7 +40,7 @@ Then:
   Roots: run them with `--project=examples`, or move them to a project of your
   own that declares those packages (`Pkg.add("Plots")`).
 - Run `examples/setup.jl` again after a pull that changes the root
-  `Manifest.toml`, so the examples keep the versions it pins.
+  `Manifest.toml`, so the examples follow the versions it records.
 - Contributors: the tests start example and CLI children in the examples
   environment, so prepare it beside the test environment
   (`julia --startup-file=no test/setup.jl`).

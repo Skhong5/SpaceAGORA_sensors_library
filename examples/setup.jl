@@ -4,9 +4,10 @@ using Pkg, TOML
 # SpaceAGORA, the packages the examples, plotting scripts and reporting studies
 # use (Plots, Roots and the others), and every dependency of SpaceAGORA, which
 # the examples import directly. Its manifest is generated, not committed, and is
-# seeded with the root manifest on every run, so the examples load the package
-# versions the root project pins and reuse their package images. Resolving keeps
-# every seeded version and adds only the example tools.
+# seeded with the root manifest on every run. Resolution starts from that seed:
+# the packages the root manifest records keep its versions and package images,
+# the example tools are added, and the records of the libraries bundled with
+# Julia, such as OpenSSL_jll, follow the installed Julia.
 examples = @__DIR__
 root = dirname(examples)
 undeclared = setdiff(keys(TOML.parsefile(joinpath(root, "Project.toml"))["deps"]),

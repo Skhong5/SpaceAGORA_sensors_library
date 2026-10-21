@@ -217,14 +217,17 @@ the configured model, including files whose historical names say “Control”:
 
 ### RPO and robotics
 
-Prepare the optional HYPR companion environment once from the repository root:
+Prepare the optional HYPR companion environment once from the repository root,
+and the examples environment if it is not prepared yet:
 
 ```text
 julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
+julia --startup-file=no examples/setup.jl
 ```
 
 These HYPR examples load `SpaceAGORAHYPR` before their common helper continues
-in the examples environment. Baseline examples use `--project=examples`.
+in the examples environment, so both environments are needed. Baseline examples
+use `--project=examples`.
 
 The RPO examples need the SPICE kernels from the `data/GRAMSuite.jl` submodule
 ([GRAMSuite Setup](gramsuite_setup.md)); they do not need the native GRAM
@@ -351,9 +354,9 @@ backend or a flight-validation claim.
 | Native atmosphere missions | `AGORA_Basic_GRAMEarth.jl`, `AGORA_Earth_Aerobraking.jl`, `AGORA_Odyssey.jl`, `AGORA_Vex.jl`, `AGORA_Mars_RAAN_Scenario.jl` | Examples, native GRAM, SPICE and the mission inputs described above |
 | Native atmosphere EDG | `AGORA_Odyssey_Energy_Depletion_Control_Test.jl` | Paired EDG environment, native Mars GRAM and SPICE |
 | Frozen-atmosphere EDG | `odyssey_surrogate.jl` | `odyssey_surrogate_env` setup; downloads public scenario assets on first run |
-| RPO planning | `Earth_RPO_CubeSat_MPC.jl`, `Earth_RPO_CubeSat_MPC_Batch.jl`, `Earth_RPO_CubeSat_MPC_PlannerComparison.jl`, `Earth_RPO_CubeSat_MPC_Replanning.jl` | `rpo_planner_env` setup, SPICE and Gateway geometry; no native GRAM |
+| RPO planning | `Earth_RPO_CubeSat_MPC.jl`, `Earth_RPO_CubeSat_MPC_Batch.jl`, `Earth_RPO_CubeSat_MPC_PlannerComparison.jl`, `Earth_RPO_CubeSat_MPC_Replanning.jl` | `rpo_planner_env` and examples setup, SPICE and Gateway geometry; no native GRAM |
 | RPO planner disturbances | `Earth_RPO_Planner_Disturbances.jl` | Examples; no external data |
-| Robot-arm planning | `Robot_Arm_Planner_Cloth_Demo.jl` | `rpo_planner_env` setup; no external data |
+| Robot-arm planning | `Robot_Arm_Planner_Cloth_Demo.jl` | `rpo_planner_env` and examples setup; no external data |
 | Writing a GNC algorithm | `gnc_algorithm_env/feedback_controller.jl`, `gnc_algorithm_env/estimator.jl`, `gnc_algorithm_env/rpo_planner.jl`, `gnc_algorithm_env/burn_planner.jl`, `gnc_algorithm_env/joint_planner.jl` | `gnc_algorithm_env` setup; no external data |
 | Extension walkthroughs | `walkthrough_env/my_effector.jl`, `walkthrough_env/my_actuator.jl` | `walkthrough_env` setup; no external data |
 

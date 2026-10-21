@@ -32,11 +32,12 @@ julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
 The third line installs SpaceAGORA. The fourth prepares the examples
-environment, which adds the packages the examples use for plots and analysis at
-the same package versions. The example flies an Earth orbit without atmosphere,
-GRAM or SPICE data, and writes its results and plots under `output/`. The clone
-options skip large data files that the first run does not need. On Windows, set
-`GIT_LFS_SKIP_SMUDGE` in its own command first; the
+environment, which adds the packages the examples use for plots and analysis,
+starting from the package versions SpaceAGORA's manifest records. The example
+flies an Earth orbit without atmosphere, GRAM or SPICE data, and writes its
+results and plots under `output/`. The clone options skip large data files that
+the first run does not need. On Windows, set `GIT_LFS_SKIP_SMUDGE` in its own
+command first; the
 [Quickstart](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/quickstart/)
 shows both Windows shells, a setup check and what the run prints.
 
