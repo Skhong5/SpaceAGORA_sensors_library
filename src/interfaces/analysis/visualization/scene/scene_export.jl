@@ -1,6 +1,8 @@
 # Scene assembly from a SimulationConfiguration, the JSON sidecar format, and
 # the playback frame budget the exporter will use.
 
+using ..SimConfig: _with_fields
+
 """
     visualization_scene_path(args) -> String
 
@@ -229,23 +231,8 @@ Copy of `args` with `simulation_settings.save_visualization_scene` set to
 function with_visualization_scene(args::SimulationConfiguration, flag::Bool=true)::SimulationConfiguration
     s = args.simulation_settings
     s.save_visualization_scene == flag && return args
-    settings = SimulationSettings(
-        results=s.results,
-        verbose=s.verbose,
-        results_directory=s.results_directory,
-        generate_plots=s.generate_plots,
-        generate_filenames=s.generate_filenames,
-        normalize=s.normalize,
-        save_csv=s.save_csv,
-        save_visualization_scene=flag,
-        checkpoint_enabled=s.checkpoint_enabled,
-        checkpoint_interval_s=s.checkpoint_interval_s,
-        checkpoint_directory=s.checkpoint_directory,
-        resume_from_checkpoint=s.resume_from_checkpoint,
-        articulated_live_pose_loads=s.articulated_live_pose_loads
-    )
     return _with_configuration(args;
-        simulation_settings=settings,
+        simulation_settings=_with_fields(s; save_visualization_scene=flag),
     )
 end
 
