@@ -21,17 +21,23 @@
 # run at the thread count the jobs will use. The launcher runs that ONCE on the
 # box before the first job; this script does not run it, because calibration is
 # itself a timed measurement and must not share the machine with a benchmark.
-# Without the file the planner still runs, but it models no contention, so the
-# predictive rows measure something other than what the launcher intended. The
-# check below only warns.
+# Without current constants the planner still runs, but it models no
+# contention, so the predictive rows measure something other than what the
+# launcher intended. The check below only warns. It loads the file the way the
+# planner does, so a file written under an older calibration schema warns too:
+# the planner ignores such a file, and only a SolverConfig(parallel=true) run
+# measures it again, which these jobs never do.
 set -euo pipefail
 export SPACEAGORA_CAMPAIGN_DISPATCH_TRACE=1
 # Every point here starts from a cold store: the planner's online corrections
 # stay off so a cold row measures the constants file alone.
 export SPACEAGORA_CAMPAIGN_CORRECTIONS="${SPACEAGORA_CAMPAIGN_CORRECTIONS:-off}"
-if ! ls output/parallel_policy_state/cost_constants_*.toml >/dev/null 2>&1; then
-  echo "[targeted] WARNING: no output/parallel_policy_state/cost_constants_*.toml -- the" \
-       "predictive rows will run without machine calibration. Run" \
+if ! julia --startup-file=no --project=. -e \
+    'using SpaceAGORA; exit(SpaceAGORA.SimulationModel.ParallelCost.load_machine_constants() === nothing ? 1 : 0)' \
+    >/dev/null 2>&1; then
+  echo "[targeted] WARNING: no current machine constants (output/parallel_policy_state/cost_constants_*.toml" \
+       "is missing, unreadable or from an older calibration schema) -- the predictive rows will run" \
+       "without machine calibration. Run" \
        "'julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl' once on this box first."
 fi
 OUT=output/performance/targeted_$(date -u +%Y%m%d_%H%M%S); mkdir -p "$OUT"
