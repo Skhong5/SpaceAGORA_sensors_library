@@ -34,7 +34,7 @@ spacecraft's `battery_energy_index` (a percentage).
   to `max_discharge_w`.
 - **Shedding.** When the battery is empty, the engine sheds actuator load in
   tiers until what is left fits what the arrays generate: laser terminals
-  first, then torque rods, then the reaction wheels' motors (a shed wheel puts
+  (and the radios that transmit on data links) first, then torque rods, then the reaction wheels' motors (a shed wheel puts
   no torque on the vehicle). Shedding ends once the battery has recharged to
   `recovery_soc` of its capacity. Constant loads are never shed; while the
   battery is empty and they exceed the generation, the net power stays

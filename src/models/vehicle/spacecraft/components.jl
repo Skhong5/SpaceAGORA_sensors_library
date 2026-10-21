@@ -11,7 +11,7 @@ using ..ThrusterModels: SixAxisThrusterModel
 using ..Actuators: ActuatorContext, ActuatorRequirements, STANDARD_GRAVITY_MPS2, actuator_saturate, propellant_mass_rate
 import ..Actuators: actuator_wrench, actuator_limits, actuator_consumption, actuator_requirements
 export Facet, Thruster, Magnet, ReactionWheelAssembly, create_facet_list
-export six_axis_thrusters, ReactionWheel, wheel_momentum_saturate, wheel_power, Magnetorquer, LaserTerminal, PowerReceiver, PanelHinge, hinge_step
+export six_axis_thrusters, ReactionWheel, wheel_momentum_saturate, wheel_power, Magnetorquer, LaserTerminal, PowerReceiver, RadioTerminal, PanelHinge, hinge_step
 export ThrusterGimbal, gimbal_step, thrust_direction
 export ControlMomentGyro, cmg_momentum, cmg_torque_axis, cmg_angle_saturate, CMGInnerGimbal, cmg_torque_axes
 export SolarArray, Battery, PowerLoad
@@ -29,6 +29,8 @@ include(joinpath(@__DIR__, "..", "actuators", "magnetorquer.jl"))
 include(joinpath(@__DIR__, "..", "actuators", "laser.jl"))
 # The receiving end of a power beam (an interlink terminal; see interlinks/power_links.jl).
 include(joinpath(@__DIR__, "..", "actuators", "power_receiver.jl"))
+# A radio, either end of a data link (an interlink terminal; see interlinks/data_links.jl).
+include(joinpath(@__DIR__, "..", "actuators", "radio_terminal.jl"))
 include(joinpath(@__DIR__, "..", "actuators", "hinge.jl"))
 include(joinpath(@__DIR__, "..", "actuators", "gimbal.jl"))
 # Power-system records (mounted with PowerSystems.add_power!).

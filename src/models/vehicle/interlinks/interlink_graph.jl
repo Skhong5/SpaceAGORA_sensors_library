@@ -2,21 +2,24 @@ module InterLinkModels
 
 	using LinearAlgebra
 	using StaticArrays
-	using ..Components: LaserTerminal, PowerReceiver, _SPEED_OF_LIGHT_MPS
+	using ..Components: LaserTerminal, PowerReceiver, RadioTerminal, _SPEED_OF_LIGHT_MPS
 	using ..AbstractTypes: AbstractActuator
 	using ..EffectorSampling: StateSample
 	using ..HookDeprecation: _hook_deprecation, _NOT_PASSED
 
 	export AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
-	export link_directed, link_terminal_levels, link_terminal, terminal_supports, terminal_count
+	export link_directed, link_terminal_levels, link_terminal, terminal_supports, terminal_shed_tier, terminal_count
 	export register_links!, all_pairs, same_plane_pairs, ring_pairs, grid_pairs
 	export PowerBeamLink, link_received_power_w, beam_spot_radius_m, beam_capture_fraction
+	export DataLink, AbstractDataBudget, FixedRateBudget, ShannonBudget, link_data_rate_bps, budget_rate_bps
+	export has_data_links, contact_windows, contact_time_s, available_links
 	export InterlinkModel, InterLinkGraph, register_link!, update_availability!, interlink_force_on_spacecraft
 	export vertex, InterLinkKey, InterLinkHistory
 	export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!
 
 	include(joinpath(@__DIR__, "links.jl"))
 	include(joinpath(@__DIR__, "power_links.jl"))
+	include(joinpath(@__DIR__, "data_links.jl"))
 
 	const vertex = Tuple{Int, Int} # (spacecraft vector index, terminal number)
 	const InterLinkKey = Tuple{vertex, vertex} # Canonically ordered pair of terminal endpoints
@@ -55,15 +58,20 @@ module InterLinkModels
 			Bool[], Bool[], Vector{Int}[], Dict{InterLinkKey, Int}(), Vector{Int}[])
 	end
 
-	# 1.2. Interlink history
+	# 1.2. Interlink history: at each accepted step, the links the scheduler
+	# selected and, when the model records them (`record_available`), the links
+	# that were available (could close). A sample built from a time and the
+	# selected links has no available links recorded.
 	struct InterLinkHistory
 		time::Float64
 		active::Vector{InterLinkKey}
+		available::Vector{InterLinkKey}
 	end
+	InterLinkHistory(time::Real, active::AbstractVector) = InterLinkHistory(time, active, InterLinkKey[])
 
 	# 1.3. Interlink model
 	"""
-	    InterlinkModel(; forbidden_pairs=())
+	    InterlinkModel(; forbidden_pairs=(), record_available=nothing)
 
 	The interlinks of a run: the candidate links between spacecraft terminals,
 	each with its own link kind (`register_link!`), spacecraft pairs that may never
@@ -73,6 +81,12 @@ module InterLinkModels
 	spacecraft in `dynamics_model.spacecraft`, not its `id`. Terminals
 	`1:n_terminal` are virtual; mounted terminal hardware (see `link_terminal`)
 	follows.
+
+	`record_available` sets whether each history sample also records the links
+	that were available, which `contact_windows` reads: `nothing`, the default,
+	records them in a run with a `DataLink`; `true` always; `false` never. A large
+	constellation over a long run keeps a list of available links per accepted
+	step, so the default leaves them out of runs that carry no data.
 	"""
 	mutable struct InterlinkModel
 		# i) Core model parameters
@@ -86,7 +100,11 @@ module InterLinkModels
 		# `(edge, side, mounted actuator position)` of each terminal hardware endpoint.
 		terminal_endpoints::Vector{Vector{NTuple{3, Int}}}
 
-		function InterlinkModel(; forbidden_pairs=Tuple{Int, Int}[], constellation_link_type=_NOT_PASSED)
+		# iv) Whether the history records the available links: `nothing` for runs with a data link.
+		record_available::Union{Nothing, Bool}
+
+		function InterlinkModel(; forbidden_pairs=Tuple{Int, Int}[], record_available::Union{Nothing, Bool}=nothing,
+			constellation_link_type=_NOT_PASSED)
 			if constellation_link_type !== _NOT_PASSED
 				_interlink_deprecation((InterlinkModel, :constellation_link_type),
 					"The constellation_link_type keyword is deprecated and will be removed in SpaceAGORA 1.0: " *
@@ -96,7 +114,7 @@ module InterLinkModels
 					"links (LaserMomentumLink) are implemented."))
 			end
 			pairs = Set{Tuple{Int, Int}}(minmax(pair...) for pair in forbidden_pairs)
-			new(pairs, InterLinkGraph(), InterLinkHistory[], Vector{NTuple{3, Int}}[])
+			new(pairs, InterLinkGraph(), InterLinkHistory[], Vector{NTuple{3, Int}}[], record_available)
 		end
 	end
 
@@ -131,8 +149,9 @@ module InterLinkModels
 	key. Each endpoint is `(spacecraft vector index, terminal)`, where the terminal
 	is a terminal number or a terminal mounted on that `SpacecraftModel`. The
 	terminals must be on different spacecraft, numbered within each spacecraft's
-	`terminal_count`, and able to carry the link (`terminal_supports`). A link
-	registers once. Its key lists the lower `(spacecraft, terminal)` first, or,
+	`terminal_count`, and able to carry the link (`terminal_supports`); a link
+	that reads the terminal hardware at both ends (a `DataLink` with a
+	`ShannonBudget`) refuses a virtual terminal. A link registers once. Its key lists the lower `(spacecraft, terminal)` first, or,
 	for a directed link (`link_directed`), the endpoints in the order given. The
 	link is available only when `link_available` allows it, and active only when
 	the scheduler selects it.
@@ -155,6 +174,9 @@ module InterLinkModels
 			device === nothing || terminal_supports(device, link, side) || throw(ArgumentError(
 				"Terminal $number of spacecraft $satellite, a $(nameof(typeof(device))), cannot carry a " *
 				"$(nameof(typeof(link)))$(side === :either ? "" : " as its $(side)") (terminal_supports)."))
+			device === nothing && _link_needs_terminals(link) && throw(ArgumentError(
+				"Terminal $number of spacecraft $satellite is virtual, and this $(nameof(typeof(link))) needs terminal " *
+				"hardware at both ends (a ShannonBudget reads both radios)."))
 			(Int(satellite), number)
 		end
 
@@ -399,6 +421,24 @@ module InterLinkModels
 		end
 		return copy(graph.available)
 	end
+
+	"""
+		available_links(model::InterlinkModel) -> Vector{InterLinkKey}
+
+	The keys of the candidate links marked available at the last
+	`update_availability!`, sorted. The run's scheduler records them in each
+	`InterLinkHistory` sample, beside the links it selected, when the model
+	records them (`records_available`).
+	"""
+	function available_links(model::InterlinkModel)
+		graph = model.graph
+		return sort!([map(v -> graph.vertices[v], graph.edges[edge]) for edge in eachindex(graph.edges) if graph.available[edge]])
+	end
+
+	# Whether the run's history records the available links: as `record_available`
+	# says, or, when it is `nothing`, in a run with a data link.
+	records_available(model::InterlinkModel) =
+		model.record_available === nothing ? has_data_links(model) : model.record_available
 
 	# 4. The force of the active links on one spacecraft
 	"""

@@ -35,6 +35,8 @@ Create a scheduling policy. For `:gve_sma` and `:gve_eccentricity`, `target_inde
 selects one target and `target_index=nothing` scores both link endpoints.
 `:power_delivery` scores each link by the power it delivers to its receiver
 (`link_received_power_w`), so it selects power beams, which apply no force.
+`:data_throughput` scores each link by the data rate it carries
+(`link_data_rate_bps`), so it selects data links.
 For `:gve_sma`, `target_indices` optionally selects a set of targets and takes
 precedence over `target_index`; all selected indices must exist in the simulation state.
 
@@ -57,8 +59,9 @@ mutable struct SchedulingPolicyModel
 			throw(TypeError(:SchedulingPolicyModel, "target_index", Union{Nothing, Integer}, index))
 		indices isa Union{Nothing, AbstractVector{<:Integer}} ||
 			throw(TypeError(:SchedulingPolicyModel, "target_indices", Union{Nothing, AbstractVector{<:Integer}}, indices))
-		policy in (:gve_sma, :gve_eccentricity, :gve_sma_first_index, :power_delivery) ||
-			throw(ArgumentError("Supported scheduling policies: :gve_sma, :gve_eccentricity, :gve_sma_first_index and :power_delivery."))
+		policy in (:gve_sma, :gve_eccentricity, :gve_sma_first_index, :power_delivery, :data_throughput) ||
+			throw(ArgumentError("Supported scheduling policies: :gve_sma, :gve_eccentricity, :gve_sma_first_index, " *
+				":power_delivery and :data_throughput."))
 		indices === nothing || policy === :gve_sma ||
 			throw(ArgumentError("target_indices is supported only by the :gve_sma policy."))
 		index === nothing || index > 0 ||
@@ -290,6 +293,37 @@ function score_power_delivery!(model::InterlinkModel, policy::SchedulingPolicyMo
 	return nothing
 end
 
+"""
+	score_data_throughput!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real; spacecraft, context)
+
+The `:data_throughput` policy: each available directed candidate scores the data
+rate (bits per second) it would carry, `link_data_rate_bps` at the current
+state, with the terminal hardware at its two ends (`nothing` for a virtual
+terminal). Other candidates score 0, and the matcher never selects a link with
+no positive score. `mu` is unused, and the scores need the run's spacecraft
+models (`spacecraft`).
+"""
+function score_data_throughput!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real;
+	candidate_force=nothing, spacecraft=nothing, context=LinkContext())
+	work = matching_workspace!(model, policy)
+	graph = model.graph
+	for index in eachindex(graph.edges)
+		score = 0.0
+		link = graph.edge_properties[index]
+		if graph.available[index] && spacecraft !== nothing && link_directed(link)
+			first, second = map(v -> graph.vertices[v], graph.edges[index])
+			transmitter = _terminal_device(spacecraft[first[1]], first[2])
+			receiver = _terminal_device(spacecraft[second[1]], second[2])
+			a = link_endpoint(state.sc[first[1]], spacecraft[first[1]], first[1])
+			b = link_endpoint(state.sc[second[1]], spacecraft[second[1]], second[1])
+			score = Float64(link_data_rate_bps(link, transmitter, receiver, a, b, context))
+		end
+		isfinite(score) || throw(ArgumentError("Nonfinite $(policy.policy) score for candidate $index."))
+		work.score[index] = score
+	end
+	return nothing
+end
+
 # 2.2. Define the function to score candidate interlinks based on the scheduling policy
 # The scores follow each link's `link_force` (`candidate_force=nothing`), or a
 # caller's `candidate_force(target, partner, link)` giving the force on `target`.
@@ -305,6 +339,8 @@ function score_candidates!(model::InterlinkModel, policy::SchedulingPolicyModel,
 		return score_gve_sma_first_index!(model, policy, state, mu; candidate_force, spacecraft, context)
 	elseif policy.policy === :power_delivery
 		return score_power_delivery!(model, policy, state, mu; candidate_force, spacecraft, context)
+	elseif policy.policy === :data_throughput
+		return score_data_throughput!(model, policy, state, mu; candidate_force, spacecraft, context)
 	end
 	throw(ArgumentError("Unsupported scheduling policy: $(policy.policy)."))
 end
