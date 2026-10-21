@@ -1,5 +1,5 @@
 module ActuatorFaultTests
-using Test, StaticArrays, LinearAlgebra, SpaceAGORA
+using Test, StaticArrays, LinearAlgebra, SpaceAGORA, TOML
 import SpaceAGORA.TelemetryVerification: make_example_config
 const SM = SpaceAGORA.SimulationModel
 const G0 = 9.80665
@@ -144,11 +144,18 @@ end
         @test split.solution.u[end].sc[1].h_wheels[1] ≈ straight.solution.u[end].sc[1].h_wheels[1] rtol=1e-9
         # A run resumed from the file keeps the onset level, which the file holds.
         resumed_dir = mktempdir()
-        ramp_run(settings=(checkpoint_enabled=true, checkpoint_interval_s=1.0, checkpoint_directory=resumed_dir), mission_time=2.0)
+        first_leg = ramp_run(settings=(checkpoint_enabled=true, checkpoint_interval_s=1.0, checkpoint_directory=resumed_dir),
+            mission_time=2.0)
         resumed = ramp_run(settings=(checkpoint_enabled=true, checkpoint_interval_s=1.0, checkpoint_directory=resumed_dir,
-            resume_from_checkpoint=true))
-        @test resumed.table.time[1] >= 2.0 - 1e-9
-        @test !isempty(after(resumed)) && all(l -> isapprox(l, 0.0005; rtol=1e-9), after(resumed))
+            resume_from_checkpoint=true, results=true, results_directory=resumed_dir))
+        # It resumed at 2 s rather than starting again, and its table holds the whole
+        # run: the first leg's rows before 2 s (the row at 2 s is saved again after
+        # the ticks due then), and its own after them.
+        @test TOML.parsefile(joinpath(resumed_dir, "simulation_results.manifest.toml"))["resumed_from_s"] == 2.0
+        @test resumed.table.time[1] == 0.0
+        @test isequal(resumed.table[resumed.table.time .< 2.0, :], first_leg.table[first_leg.table.time .< 2.0, :])
+        resumed_rows = [l for (t, l) in zip(resumed.table.time, resumed.table.sc1_actuator_level_1) if t >= 2.0 - 1e-9]
+        @test !isempty(resumed_rows) && all(l -> isapprox(l, 0.0005; rtol=1e-9), resumed_rows)
         @test resumed.solution.u[end].sc[1].h_wheels[1] ≈ straight.solution.u[end].sc[1].h_wheels[1] rtol=1e-9
         # The fault moved to the other wheel of the same kind refuses the file.
         function two_wheel_run(faulted; settings, mission_time=5.0)
@@ -161,7 +168,10 @@ end
         two_dir = mktempdir()
         two_wheel_run(1; settings=(checkpoint_enabled=true, checkpoint_interval_s=1.0, checkpoint_directory=two_dir), mission_time=2.0)
         @test_throws ArgumentError two_wheel_run(2; settings=(resume_from_checkpoint=true, checkpoint_directory=two_dir))
-        @test two_wheel_run(1; settings=(resume_from_checkpoint=true, checkpoint_directory=two_dir)).table.time[1] >= 2.0 - 1e-9
+        same_wheel = two_wheel_run(1; settings=(resume_from_checkpoint=true, checkpoint_directory=two_dir,
+            results=true, results_directory=two_dir)).table
+        @test TOML.parsefile(joinpath(two_dir, "simulation_results.manifest.toml"))["resumed_from_s"] == 2.0
+        @test same_wheel.time[1] == 0.0 && same_wheel.time[end] ≈ 5.0              # the table holds the whole run
     end
 
     @testset "a thruster with firing dynamics stops at its fault time, not at the next tick" begin
