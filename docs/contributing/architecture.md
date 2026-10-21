@@ -382,7 +382,8 @@ When the run has EDG passage heat to observe, `_edg_observe_heat_callbacks`
 wraps every callback above except the two interlink scheduler callbacks, and
 adds one observer. The observer runs first among the assembly's discrete
 callbacks; only the scheduler's initialization-only copy comes before it. Under
-`solver_mode=:gravity_backbone_split` only impact, the external-propagation
+`solver_mode=:gravity_backbone_split` (the mode the run solves with: its
+`SolverConfig`'s, or `SPACEAGORA_SOLVER_MODE`'s when it has none) only impact, the external-propagation
 sync, the hardware's run-state start, the priority callbacks, touchdown, orbit end, plume interaction, the
 initial force output and the extra callbacks are installed; that mode refuses
 interlinks.
