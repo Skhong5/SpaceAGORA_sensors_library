@@ -36,6 +36,7 @@ end
     times::Vector{Float64},
     args;
     csv_path::Union{Nothing, String}=nothing,
+    resumed_from_s::Union{Nothing, Float64}=nothing,
 )
     return SimulationModel.IOOutputs._write_results_bundle!(
         results_df,
@@ -43,5 +44,6 @@ end
         args,
         RESULTS_BUNDLE_SCHEMA_VERSION;
         csv_path=csv_path,
+        resumed_from_s=resumed_from_s,
     )
 end

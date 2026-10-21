@@ -159,10 +159,8 @@ function _configuration(plan::MissionPlan, parameters::NamedTuple, destination::
     _validate_segments(plan.segments, config)
     # These three output choices are the complete wrapper override. Carry every
     # other setting by field name, including future scientific settings.
-    names = fieldnames(typeof(settings))
-    values = NamedTuple{names}(map(n -> getfield(settings, n), names))
-    output_settings = SimulationSettings(; merge(values, (
-        results=true, results_directory=destination, save_visualization_scene=save_scene))...)
+    output_settings = SimulationModel.SimConfig._with_fields(settings;
+        results=true, results_directory=destination, save_visualization_scene=save_scene)
     return SimulationModel.SimConfig._with_configuration(config; simulation_settings=output_settings)
 end
 

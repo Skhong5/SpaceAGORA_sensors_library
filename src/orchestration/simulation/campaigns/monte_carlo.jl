@@ -1,3 +1,5 @@
+using ..SimulationModel.SimConfig: _with_fields
+
 """
     MonteCarloSpec(; seeds, threads=1, fail_fast=false)
 
@@ -47,10 +49,7 @@ Base.@kwdef struct MonteCarloSampleResult
 end
 
 @inline function _stamp_finished(s::MonteCarloSampleResult)::MonteCarloSampleResult
-    return MonteCarloSampleResult(index=s.index, seed=s.seed, success=s.success,
-                                  elapsed_s=s.elapsed_s, value=s.value,
-                                  error=s.error, backtrace=s.backtrace,
-                                  finished_ns=Float64(time_ns()))
+    return _with_fields(s; finished_ns=Float64(time_ns()))
 end
 
 """

@@ -227,10 +227,13 @@ end
             @test isfile(checkpoint_manifest_path)
             @test isfile(joinpath("output", "simulation_results.csv"))
 
+            # The resumed run's results hold the whole run, from its start: the
+            # rows kept beside the checkpoint come first.
             df_resume = CSV.read(joinpath("output", "simulation_results.csv"), DataFrame)
             @test nrow(df_resume) >= 2
             @test issorted(df_resume.time)
-            @test Float64(df_resume.time[1]) > 0.0
+            @test Float64(df_resume.time[1]) == 0.0
+            @test df_resume.time == df_full.time
             @test Float64(df_resume.time[end]) > Float64(df_resume.time[1])
             @test abs(Float64(df_resume.time[end]) - Float64(df_full.time[end])) < 1e-8
 
@@ -380,6 +383,8 @@ end
             end
             df_resume = CSV.read(joinpath("output", "simulation_results.csv"), DataFrame)
             @test nrow(df_resume) >= 2
+            # The backbone's rows before the checkpoint come back too.
+            @test df_resume.time == df_full.time
 
             p_full = SVector{3, Float64}(Float64(df_full.sc1_pos_1[end]), Float64(df_full.sc1_pos_2[end]), Float64(df_full.sc1_pos_3[end]))
             v_full = SVector{3, Float64}(Float64(df_full.sc1_vel_1[end]), Float64(df_full.sc1_vel_2[end]), Float64(df_full.sc1_vel_3[end]))
