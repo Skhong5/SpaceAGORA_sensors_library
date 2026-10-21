@@ -7,9 +7,6 @@
 # table, so it runs the code it ran before scopes existed.
 
 import ..GNCRuntime
-import ..AlgorithmLifecycle
-import ..GNCAlgorithms
-import ..EDGGuidanceFamilies
 
 const _EffectorScopes = SimulationModel.SpacecraftModels.EffectorScopes
 
@@ -64,16 +61,10 @@ _index_bound_effector(e) =
 _edg_predicted_gravity(e) =
     e isa SimulationModel.InverseSquaredJ2GravityModel || e isa SimulationModel.NBodyGravityModel
 
-function _edg_guidance(g)::Bool
-    g isa SimulationModel.AerobrakingEnergyDepletionGuidanceModel && return true
-    g isa AlgorithmLifecycle.AlgorithmGuidance || return false
-    family = try
-        GNCAlgorithms.algorithm_family(g.algorithm)
-    catch
-        nothing
-    end
-    return family isa EDGGuidanceFamilies.EDGGuidanceFamily
-end
+# Guidance whose prediction applies the run's gravity models to every spacecraft
+# (EDG's). The guidance types say so where they are defined, through the private
+# GNCRuntime predicate, so this file imports no module that loads after the engine.
+_edg_guidance(g)::Bool = GNCRuntime._prediction_uses_run_gravity(g) === true
 
 """
     _resolve_effector_scopes(args) -> SimulationConfiguration

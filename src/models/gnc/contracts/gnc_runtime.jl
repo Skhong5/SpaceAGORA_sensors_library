@@ -94,6 +94,13 @@ an active spacecraft.
 """
 skip_inactive(model) = true
 
+# Whether guidance `model` predicts its spacecraft's motion with the run's own
+# gravity models, applied as to every spacecraft (EDG's prediction does). Private:
+# the engine refuses to scope those gravity models in a run with such guidance
+# (engine/effector_scopes.jl). A guidance type that predicts so adds the `true`
+# method where it is defined, so the engine imports no module that loads after it.
+_prediction_uses_run_gravity(model) = false
+
 """
     held_command(model, spacecraft_index) -> Any
 

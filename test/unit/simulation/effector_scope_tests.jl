@@ -244,6 +244,14 @@ end
         scoped(InverseSquaredJ2GravityModel(), BoundSpacecraft((1,))))))
     @test SE._resolve_effector_scopes(with_edg((InverseSquaredGravityModel(), scoped(push, BoundSpacecraft((1,)))))) isa
         SimulationConfiguration
+    # An algorithm guidance of the EDG family predicts the same way; one of another family does not.
+    with_binding(g) = SM.SimConfig._with_configuration(configuration((PointMass(),
+            scoped(InverseSquaredJ2GravityModel(), BoundSpacecraft((1,)))));
+        guidance_model=SM.GuidanceModel(guidance_effectors=(g,), guidance_rates=[1.0]))
+    @test_throws "EDG guidance" SE._resolve_effector_scopes(with_binding(
+        AlgorithmGuidance(algorithm=EDGGuidanceAlgorithm(), spacecraft_index=1)))
+    @test SE._resolve_effector_scopes(with_binding(
+        AlgorithmGuidance(algorithm=ApoapsisBurnPlanner(delta_v_mps=1.0), spacecraft_index=1))) isa SimulationConfiguration
     # GNC models take AllSpacecraft, BoundSpacecraft or CoupledSpacecraft only.
     gnc = SM.SimConfig._with_configuration(configuration((InverseSquaredGravityModel(),));
         control_model=SM.ControlModel(control_effectors=(SelectingControl(),), control_rates=[1.0]))
