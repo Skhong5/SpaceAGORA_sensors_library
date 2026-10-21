@@ -1093,7 +1093,8 @@ function run_simulation(
     retake_last_row = resumed && t_start < mission_end && solver_mode != :gravity_backbone_split &&
         pending_ticks.clocks !== nothing && !isempty(pending_ticks.clocks)
     rows_log = checkpoint_active ? _start_results_rows!(args, rows_recorded, save_fields_resolved, resumed, t_start,
-        results_rows, checkpoint_saved_times, checkpoint_saved_data; retake_last_row) : nothing
+        results_rows, checkpoint_saved_times, checkpoint_saved_data; solves=t_start < mission_end,
+        returns_table=return_results, retake_last_row) : nothing
     results_args = _results_destination(args, rows_log)
     # The results so far, as both the partial saves after a failed solve and the
     # final save read them: containers changed only in place, never rebound.
@@ -1137,6 +1138,7 @@ function run_simulation(
             if solver_mode == :gravity_backbone_split
                 _append_backbone_saved_segment!(checkpoint_saved_times, checkpoint_saved_data, seg_sol, save_fields_resolved, p)
             else
+                _retake_restored_row!(rows_log, checkpoint_saved_times, checkpoint_saved_data, saved_values.t)
                 _append_checkpoint_saved_segment!(
                     checkpoint_saved_times,
                     checkpoint_saved_data,
@@ -1251,7 +1253,9 @@ function run_simulation(
             push!(candidates, ck.data, ck.manifest, ck.rows)
         end
         files = String[string(f) for f in candidates if f !== nothing && isfile(f)]
-        return SimulationResults(saved_results.table, args, files, return_solution ? last_sol : nothing)
+        # A resume without usable rows writes beside the earlier results; its
+        # configuration names the folder it wrote to.
+        return SimulationResults(saved_results.table, results_args, files, return_solution ? last_sol : nothing)
     end
     return_solution && return last_sol
     return nothing

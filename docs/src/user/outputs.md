@@ -61,7 +61,8 @@ reading files. Its `table` is the same `DataFrame` the CSV would contain
 Explicitly enabled checkpoints can still be written; they are listed in `files`
 only when this call writes them. Resuming an already completed checkpoint does
 not report the old checkpoint files as new output, and writes no results files:
-its `table` holds the whole run from the rows kept beside the checkpoint.
+its `table` holds the whole run from the rows kept beside the checkpoint, or is
+empty when the checkpoint holds no usable rows.
 `configuration` is the configuration that actually ran: under the default
 `isolate_state=true` that is the deep copy, so controller state and logs, such
 as the RPO command log, are reachable there and not on the object you passed
@@ -326,12 +327,13 @@ again. A run extended from the end of a finished run takes the ticks due there
 first (see above), and saves the row at that time again after them, as a run never
 interrupted saves it. A resume from a checkpoint at or past the mission's end
 solves nothing and writes no results files; its returned table holds the rows up
-to the checkpoint.
+to the checkpoint, or none when the checkpoint holds no usable rows.
 
 The rows file stays with the checkpoint files after the run; a later run in the
 same checkpoint directory that is not a resume replaces it. It holds every row the
 run saves, before any thinning, so it grows with the run, to about the size of the
-results CSV. A run that neither writes nor returns results keeps no rows file. The
+results CSV. A run that neither writes nor returns results keeps no rows file,
+except one with the gravity backbone, which builds its results from those rows. The
 checkpoint and its rows file are written with Julia's `Serialization`, whose
 format can change between Julia versions: resume with the Julia version that wrote
 them. A resumed run that cannot read the rows warns, as below.
@@ -343,6 +345,7 @@ save results), or when they were saved with other save fields or another number 
 spacecraft. It then warns, and its results start at the resume: they are written
 to `resumed_at_<t>s` inside `results_directory` (for example
 `output/resumed_at_2400.0s/`), so the earlier results files are kept as they were.
+The returned `configuration` names that folder as its `results_directory`.
 The checkpoint directory defaults to `results_directory/checkpoints` when left
 empty. Besides
 the state, the checkpoint holds the run state the callbacks keep on the

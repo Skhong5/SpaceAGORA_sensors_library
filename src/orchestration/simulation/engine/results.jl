@@ -9,7 +9,9 @@ What `run_simulation(args; return_results=true)` returns.
 - `configuration`: the configuration that ran. Under the default
   `isolate_state=true` this is the deep copy, so mutated controller state and
   logs (for example the RPO command log) are reachable here and not on the
-  caller's object.
+  caller's object. A resumed run whose checkpoint holds no usable rows writes
+  to `resumed_at_<t>s`, and its configuration's `results_directory` names that
+  folder.
 - `files::Vector{String}`: paths of existing files the run wrote (results CSV,
   bundle, scene, checkpoint); empty when none.
 - `solution`: the ODE solution when `return_solution=true` was also passed,

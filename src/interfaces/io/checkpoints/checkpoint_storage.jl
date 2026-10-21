@@ -95,18 +95,20 @@ end
 
 # The results rows a checkpointed run has saved, kept beside its checkpoint so a
 # resumed run can include them: an append-only stream of serialized records, a
-# header first, then one record of rows (`times`, `data`) per checkpoint. Each
-# checkpoint records the stream's length at its time, so a resume reads exactly
-# the rows up to that checkpoint and cuts away any a crash wrote after it.
+# header first, then one record of rows (`times`, `data`) per checkpoint. A record
+# may first drop rows from the end of those before it (`drop`), so no record is
+# ever rewritten. Each checkpoint records the stream's length at its time, so a
+# resume reads exactly the rows up to that checkpoint and cuts away any a crash
+# wrote after it.
 
-# Append one record of rows; `header` starts a new stream in place of any old one.
-# Returns the stream's length in bytes.
+# Append one record of rows, which first drops `drop` rows; `header` starts a new
+# stream in place of any old one. Returns the stream's length in bytes.
 function _append_checkpoint_rows!(path::String, times::AbstractVector{Float64}, data::AbstractVector;
-                                  header=nothing)::Int
+                                  drop::Integer=0, header=nothing)::Int
     mkpath(dirname(path))
     open(path, header === nothing ? "a" : "w") do io
         header === nothing || serialize(io, header)
-        serialize(io, (times=Vector{Float64}(times), data=collect(data)))
+        serialize(io, (drop=Int(drop), times=Vector{Float64}(times), data=collect(data)))
         flush(io)
     end
     return filesize(path)
@@ -123,6 +125,10 @@ function _read_checkpoint_rows(path::String, length_bytes::Integer)
             data = Any[]
             while position(io) < length_bytes
                 record = deserialize(io)
+                for _ in 1:record.drop
+                    pop!(times)
+                    pop!(data)
+                end
                 append!(times, record.times)
                 append!(data, record.data)
             end

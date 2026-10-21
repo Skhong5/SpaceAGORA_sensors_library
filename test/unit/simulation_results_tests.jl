@@ -273,6 +273,14 @@ function _drop_rows_entry!(dir)
     kept = NamedTuple{Tuple(k for k in keys(runtime) if k !== :results_rows)}(runtime)
     serialize(data, merge(payload, (runtime_state=kept,)))
 end
+# A checkpoint whose record names another rows stream than the one beside it.
+function _set_rows_token!(dir, token)
+    data = joinpath(dir, "checkpoints", "simulation_checkpoint.bin")
+    payload = deserialize(data)
+    runtime = payload.runtime_state
+    entry = merge(runtime.results_rows, (token=token,))
+    serialize(data, merge(payload, (runtime_state=merge(runtime, (results_rows=entry,)),)))
+end
 
 @testset "A resumed run's results hold the whole run" begin
     for results in (true, false)
@@ -329,6 +337,29 @@ end
     @test old.table.time[1] == 2400.0 && nrow(old.table) == 121
     @test isfile(joinpath(folder, "simulation_results.csv")) && joinpath(folder, "simulation_results.csv") in old.files
     @test _manifest(folder)["first_time_s"] == 2400.0 && _manifest(folder)["resumed_from_s"] == 2400.0
+    @test old.configuration.simulation_settings.results_directory == folder
+
+    # A rows stream another run wrote is not mixed in: the stream and the
+    # checkpoint carry the same token.
+    dir = mktempdir()
+    run_simulation(_resumable_config(dir; results=true, mission_time=2400.0))
+    _set_rows_token!(dir, "another-run")
+    before = _files(dir)
+    stray = @test_logs (:warn, r"written by another run") match_mode=:any _resumed(dir; results=true)
+    @test _files(dir) == before && stray.table.time[1] == 2400.0
+
+    # A resume that solves nothing and returns no table reads no rows: a damaged
+    # rows file draws no warning, and no file is written.
+    dir = mktempdir()
+    run_simulation(_resumable_config(dir; results=true, mission_time=2400.0))
+    write(joinpath(dir, "checkpoints", "simulation_checkpoint.results.bin"), "damaged")
+    before = _files(dir)
+    @test_logs min_level=Logging.Warn run_simulation(_resumable_config(dir; results=true, mission_time=2400.0, resume=true))
+    @test _files(dir) == before
+    # Returning the table, it warns that the rows cannot be read, and the table is empty.
+    empty_table = @test_logs (:warn, r"solves nothing, so it returns an empty table") match_mode=:any run_simulation(
+        _resumable_config(dir; results=true, mission_time=2400.0, resume=true); return_results=true)
+    @test nrow(empty_table.table) == 0 && _files(dir) == before
 
     # Rows saved with other save fields are not mixed in either.
     dir = mktempdir()
