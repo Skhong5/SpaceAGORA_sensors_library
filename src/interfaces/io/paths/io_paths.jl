@@ -28,7 +28,8 @@ end
     ckpt_dir = _checkpoint_directory(args)
     return (
         data=joinpath(ckpt_dir, "simulation_checkpoint.bin"),
-        manifest=joinpath(ckpt_dir, "simulation_checkpoint.manifest.toml")
+        manifest=joinpath(ckpt_dir, "simulation_checkpoint.manifest.toml"),
+        rows=joinpath(ckpt_dir, "simulation_checkpoint.results.bin")
     )
 end
 
