@@ -119,7 +119,7 @@ without a deprecation period, together with `SchedulingPolicyModel`'s
 `target_index` and `target_indices` and the 0.5.0 names `target_idx` and
 `target_idxs`, which had warned since 0.5.0. Scheduling policies are types now
 (see [Interlinks](../user/interlinks.md#Policies)). A call with a symbol throws
-an `ArgumentError` naming the replacements typed replacement, whether or not Julia runs
+an `ArgumentError` that names its typed replacement, whether or not Julia runs
 with `--depwarn=error`. Interlink checkpoints written with the symbol policies
 still resume under the typed policy that schedules the same.
 
