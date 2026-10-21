@@ -351,8 +351,10 @@ function _save_simulation_results_if_enabled!(
     checkpoint_saved_times,
     checkpoint_saved_data,
     backbone_saved_times,
-    backbone_saved_data;
+    backbone_saved_data,
+    resumed_from_s::Union{Nothing, Float64};
     return_table::Bool=false,
+    write_files::Bool=true,
 )
     (args.simulation_settings.results || return_table) || return nothing
     results_times = if solver_mode == :gravity_backbone_split
@@ -371,12 +373,12 @@ function _save_simulation_results_if_enabled!(
     )
     results_df = _build_results_dataframe(results_times, results_data, save_fields_resolved, args)
     csv_path = nothing
-    if args.simulation_settings.results
+    if write_files && args.simulation_settings.results
         if args.simulation_settings.save_csv
             csv_path = _write_results_csv!(results_df, args)
         end
         if _typed_save_bundle_enabled()
-            _write_results_bundle!(results_df, results_times, args; csv_path=csv_path)
+            _write_results_bundle!(results_df, results_times, args; csv_path=csv_path, resumed_from_s=resumed_from_s)
         end
     end
     return return_table ? (; csv_path, table=results_df) : csv_path
@@ -528,6 +530,7 @@ function _resume_engine_state!(args, p, solver_mode, initial_conditions)
     u_start = initial_conditions
     resumed, model_snapshot, scope_entry = false, nothing, nothing
     pending_ticks = (at_s=NaN, from_s=-Inf, clocks=nothing)
+    results_rows = nothing
     if args.simulation_settings.resume_from_checkpoint
         ckpt = _load_checkpoint(args)
         if ckpt === nothing
@@ -555,6 +558,7 @@ function _resume_engine_state!(args, p, solver_mode, initial_conditions)
             _restore_callback_checkpoint_state!(args, ckpt, p)
             model_snapshot = _check_model_checkpoint_state(args, ckpt)
             pending_ticks = _pending_periodic_ticks(ckpt)
+            results_rows = _results_rows_checkpoint_state(ckpt)
             resumed = true
             t_start = ckpt.t
             u_start = ckpt.u
@@ -565,7 +569,7 @@ function _resume_engine_state!(args, p, solver_mode, initial_conditions)
             end
         end
     end
-    return (; resumed, model_snapshot, scope_entry, pending_ticks, t_start, u_start)
+    return (; resumed, model_snapshot, scope_entry, pending_ticks, t_start, u_start, results_rows)
 end
 
 # Phase 2, the run clock of the periodic navigation, guidance and control ticks
@@ -659,6 +663,10 @@ uses the same isolated factory contract but installs callbacks before normal
 guidance, navigation, control and result saving. Engine impact handling and
 external-state synchronization retain their ordering. Operational mission
 segments use this hook; continuous events still follow solver event ordering.
+
+A checkpointed run keeps its saved rows beside its checkpoint, so a resumed run's
+results files and table hold the whole run; a resume that finds no usable rows
+warns and writes its results to `resumed_at_<t>s` inside `results_directory`.
 
 Explicitly enabled checkpoint writing remains independent of result-file output.
 With `return_solver_metadata=true`, a checkpointed run returns one `solver_trace`
@@ -853,7 +861,7 @@ function run_simulation(
 
     # The run's start, in three phases (defined above): a resumed run's engine and
     # callback state, the run clock, then the models.
-    (; resumed, model_snapshot, scope_entry, pending_ticks, t_start, u_start) =
+    (; resumed, model_snapshot, scope_entry, pending_ticks, t_start, u_start, results_rows) =
         _resume_engine_state!(args, p, solver_mode, initial_conditions)
 
 
@@ -1076,10 +1084,23 @@ function run_simulation(
     checkpoint_saved_data = SimulationModel.SaveData[]
     backbone_saved_times = Float64[]
     backbone_saved_data = SimulationModel.SaveData[]
+    # A checkpointed run keeps its saved rows beside its checkpoints; a resumed
+    # one takes back the rows up to its checkpoint first, so its results hold the
+    # whole run (see `_start_results_rows!`).
+    rows_recorded = solver_mode == :gravity_backbone_split || args.simulation_settings.results || return_results
+    # A resume that takes ticks at its start saves its first row again after them.
+    # The backbone's rows come from the solution, which has no row of its own there.
+    retake_last_row = resumed && t_start < mission_end && solver_mode != :gravity_backbone_split &&
+        pending_ticks.clocks !== nothing && !isempty(pending_ticks.clocks)
+    rows_log = checkpoint_active ? _start_results_rows!(args, rows_recorded, save_fields_resolved, resumed, t_start,
+        results_rows, checkpoint_saved_times, checkpoint_saved_data; solves=t_start < mission_end,
+        returns_table=return_results, retake_last_row) : nothing
+    results_args = _results_destination(args, rows_log)
     # The results so far, as both the partial saves after a failed solve and the
     # final save read them: containers changed only in place, never rebound.
-    results_inputs = (args, solver_mode, checkpoint_active, save_fields_resolved, saved_values,
-        checkpoint_saved_times, checkpoint_saved_data, backbone_saved_times, backbone_saved_data)
+    results_inputs = (results_args, solver_mode, checkpoint_active, save_fields_resolved, saved_values,
+        checkpoint_saved_times, checkpoint_saved_data, backbone_saved_times, backbone_saved_data,
+        resumed ? t_start : nothing)
     # What every solve of the run shares (`_solve_run_interval!`).
     solve_setup = (; p, callbacks, solver_mode, solver_cfg, args, reltol=reltol_tol, abstol=abstol_tol, solver_cache,
         needs_full_solution)
@@ -1117,6 +1138,7 @@ function run_simulation(
             if solver_mode == :gravity_backbone_split
                 _append_backbone_saved_segment!(checkpoint_saved_times, checkpoint_saved_data, seg_sol, save_fields_resolved, p)
             else
+                _retake_restored_row!(rows_log, checkpoint_saved_times, checkpoint_saved_data, saved_values.t)
                 _append_checkpoint_saved_segment!(
                     checkpoint_saved_times,
                     checkpoint_saved_data,
@@ -1130,9 +1152,12 @@ function run_simulation(
             _require_successful_solve(seg_sol, results_inputs, "Checkpointed solve")
             t_cursor = Float64(seg_sol.t[end])
             u_cursor = deepcopy(seg_sol.u[end])
+            # The rows first: a checkpoint never records rows that are not in the file.
+            rows_entry = _append_results_rows!(rows_log, checkpoint_saved_times, checkpoint_saved_data)
             _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode); is_active=p.is_active,
                 callback_state=_callback_checkpoint_state(args), model_state=_model_checkpoint_state(args),
-                periodic_ticks=_periodic_tick_checkpoint_state(p, t_cursor), gnc_scopes=gnc_scopes)
+                periodic_ticks=_periodic_tick_checkpoint_state(p, t_cursor), gnc_scopes=gnc_scopes,
+                results_rows=rows_entry)
             checkpoint_written = true
             if string(seg_sol.retcode) != "Success" || !_gravity_backbone_time_reached(t_cursor, t_next)
                 break
@@ -1167,12 +1192,16 @@ function run_simulation(
                 "(probes $(sbt.probes), switches $(sbt.switches))")
     end
 
-    # Process and save results
-    saved_results = _save_simulation_results_if_enabled!(results_inputs...; return_table=return_results)
-    scene_path = _write_visualization_scene_if_enabled!(args; density_params=p)
+    # Process and save results. A resumed run that solved nothing (its checkpoint
+    # is at or past the mission's end) returns its results but writes no files:
+    # those already hold the run.
+    solved = t_start < mission_end
+    saved_results = _save_simulation_results_if_enabled!(results_inputs...; return_table=return_results,
+        write_files=solved)
+    scene_path = solved ? _write_visualization_scene_if_enabled!(results_args; density_params=p) : nothing
     export_path = nothing
-    if visualization && args.simulation_settings.results
-        export_path = SimulationModel.SceneVisualization.export_visualization(args)
+    if solved && visualization && args.simulation_settings.results
+        export_path = SimulationModel.SceneVisualization.export_visualization(results_args)
     end
 
     if return_solution && checkpoint_active && args.simulation_settings.checkpoint_interval_s < mission_end
@@ -1212,19 +1241,21 @@ function run_simulation(
         # Files this run left behind: only paths that exist, so a disabled
         # output never shows up. The bundle and checkpoint paths are the
         # engine's own naming (IOConfig), not guesses.
-        prefix = _results_bundle_prefix(args)
+        prefix = _results_bundle_prefix(results_args)
         candidates = Any[saved_results.csv_path, scene_path, export_path]
         # The bundle is this run's only when this run wrote it; a leftover
         # from an earlier run in the same directory must not be listed.
-        if args.simulation_settings.results && _typed_save_bundle_enabled()
+        if solved && args.simulation_settings.results && _typed_save_bundle_enabled()
             push!(candidates, prefix * ".feather", prefix * ".manifest.toml")
         end
         if checkpoint_written
             ck = SimulationModel.IOConfig._checkpoint_paths(args)
-            push!(candidates, ck.data, ck.manifest)
+            push!(candidates, ck.data, ck.manifest, ck.rows)
         end
         files = String[string(f) for f in candidates if f !== nothing && isfile(f)]
-        return SimulationResults(saved_results.table, args, files, return_solution ? last_sol : nothing)
+        # A resume without usable rows writes beside the earlier results; its
+        # configuration names the folder it wrote to.
+        return SimulationResults(saved_results.table, results_args, files, return_solution ? last_sol : nothing)
     end
     return_solution && return last_sol
     return nothing
