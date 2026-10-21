@@ -133,6 +133,10 @@ terminal_count(spacecraft) = Int(spacecraft.n_terminal)
 # The hardware terminal number `number` stands for on `spacecraft`: `nothing` for
 # a virtual terminal. `SpacecraftModel` methods are in InterlinkTerminals.
 _terminal_device(spacecraft, number::Integer) = nothing
+# Every terminal's hardware on `spacecraft`, by terminal number, for repeated
+# lookups: entry `number` is `_terminal_device(spacecraft, number)`, and
+# `nothing` stands for a spacecraft without hardware terminals.
+_terminal_devices(spacecraft) = nothing
 
 # The capacity (Wh) of `spacecraft`'s battery, NaN without one: the denominator of
 # a scheduling policy's state of charge. `SpacecraftModel` methods are in

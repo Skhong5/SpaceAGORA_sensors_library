@@ -106,7 +106,7 @@ without a deprecation period, together with `SchedulingPolicyModel`'s
 `target_index` and `target_indices` and the 0.5.0 names `target_idx` and
 `target_idxs`, which had warned since 0.5.0. Scheduling policies are types now
 (see [Interlinks](../user/interlinks.md#Policies)). A call with a symbol throws
-an `ArgumentError` that names its typed replacement, whether or not Julia runs
+an `ArgumentError` naming the replacements typed replacement, whether or not Julia runs
 with `--depwarn=error`. Interlink checkpoints written with the symbol policies
 still resume under the typed policy that schedules the same.
 
@@ -117,8 +117,8 @@ still resume under the typed policy that schedules the same.
 | `SchedulingPolicyModel(:gve_eccentricity)`, with `target_index=k` or `target_index=nothing` | `EccentricityRatePolicy()`, `targets=k` or `targets=:both` | an `ArgumentError` naming the replacement | 0.6.0 |
 | `SchedulingPolicyModel(:power_delivery)`, `SchedulingPolicyModel(:data_throughput)` | `PowerDeliveryPolicy()`, `DataThroughputPolicy()` | an `ArgumentError` naming the replacement | 0.6.0 |
 | `SchedulingPolicyModel`'s keywords `target_idx` and `target_idxs` | as `target_index` and `target_indices` above | warned from 0.5.0; now an `ArgumentError` naming the replacement | 0.6.0 |
-| `SchedulingPolicyModel`'s property `policy` | `objective`, the policy value | a `FieldError` | 0.6.0 |
-| `SchedulingPolicyModel`'s properties `target_index`, `target_indices`, `target_idx` and `target_idxs` | `objective.targets` | a `FieldError` (the last two warned from 0.5.0) | 0.6.0 |
+| `SchedulingPolicyModel`'s property `policy` | `objective`, the policy value | an `ArgumentError` naming the replacement | 0.6.0 |
+| `SchedulingPolicyModel`'s properties `target_index`, `target_indices`, `target_idx` and `target_idxs` | `objective.targets` | an `ArgumentError` naming the replacement (the last two warned from 0.5.0) | 0.6.0 |
 
 ## Schedule
 

@@ -121,16 +121,23 @@ function _scheduling_policy_entry(policy)
 end
 
 # A policy's identity: its kind, named as link kinds are, and every one of its
-# fields, recursively:
-# - a float with its bits, a bits composite field by field, as terminal fields are;
+# fields, recursively, by value, so that an equal policy rebuilt in a new process
+# has the same identity:
+# - a float with its bits, a bits composite field by field, as terminal fields
+#   are; another number, a string or a symbol by its value; a type by its name;
 # - a field that is a policy, or a weighted mix's term, by its own identity, a
-#   tuple or a vector element by element;
+#   tuple element by element, an array by its type, its size and its elements;
 # - a function by its type and, for a closure, every value it captures (its
 #   fields), so that two closures made by one expression with different captures
 #   differ. A named function is its type alone: a change to its code is not part
-#   of the identity.
-# A closure that captures a variable reassigned after the closure was made (a
-# `Core.Box`), or a payload that contains itself, cannot be recorded: refused.
+#   of the identity;
+# - any other value with fields (a struct, mutable or not, a named tuple, a
+#   `Ref`) by its type and its fields.
+# What it cannot record by value is refused: a closure that captures a variable
+# reassigned after the closure was made (a `Core.Box`); a dictionary or a set; a
+# channel, stream, task or lock; a value that is not a struct and not one of the
+# above; a field or element that is not assigned; and a payload that contains
+# itself.
 function _scheduling_policy_identity(policy, path=Base.IdSet{Any}())
     kind = typeof(policy)
     names = fieldnames(kind)
@@ -140,8 +147,11 @@ end
 _policy_field_identity(value::SimulationModel.AbstractSchedulingPolicy, path) = _scheduling_policy_identity(value, path)
 _policy_field_identity(value::SimulationModel.PolicyTerm, path) = _scheduling_policy_identity(value, path)
 _policy_field_identity(value::Tuple, path) = map(element -> _policy_field_identity(element, path), value)
-_policy_field_identity(value::AbstractVector, path) = _on_path(path, value) do
-    (type=_interlink_kind_identity(typeof(value)), elements=map(element -> _policy_field_identity(element, path), value))
+_policy_field_identity(value::Union{Number, AbstractString, Symbol, Type, Module}, path) = _interlink_kind_parameter(value)
+_policy_field_identity(value::AbstractArray, path) = _on_path(path, value) do
+    all(index -> isassigned(value, index), eachindex(value)) || _unrecordable_field(value)
+    (type=_interlink_kind_identity(typeof(value)), size=size(value),
+        elements=[_policy_field_identity(element, path) for element in vec(value)])
 end
 function _policy_field_identity(value::Function, path)
     kind = typeof(value)
@@ -155,7 +165,20 @@ end
 _policy_field_identity(::Core.Box, path) = throw(ArgumentError(
     "A scheduling policy holds a closure that captures a variable reassigned after the closure was made, " *
     "which a checkpoint cannot record. Capture the value instead (for example in a `let` block)."))
-_policy_field_identity(value, path) = _interlink_kind_parameter(value)
+_policy_field_identity(value::Union{AbstractDict, AbstractSet, AbstractChannel, IO, Task, Base.AbstractLock}, path) =
+    _unrecordable_field(value)
+function _policy_field_identity(value, path)
+    isbits(value) && return _interlink_kind_parameter(value)
+    kind = typeof(value)
+    names = fieldnames(kind)
+    isstructtype(kind) && all(name -> isdefined(value, name), names) || _unrecordable_field(value)
+    encode() = (type=_interlink_kind_identity(kind),
+        fields=NamedTuple{names}(map(name -> _policy_field_identity(getfield(value, name), path), names)))
+    return ismutable(value) ? _on_path(encode, path, value) : encode()
+end
+_unrecordable_field(value) = throw(ArgumentError(
+    "A scheduling policy holds a $(nameof(typeof(value))), which a checkpoint cannot record by value. Hold numbers, " *
+    "strings, symbols, functions, arrays, tuples, named tuples and structs of these, or run without checkpoints."))
 
 # Encode `value` with `encode` while `value` is on the path from the policy,
 # refusing a payload that contains itself.
