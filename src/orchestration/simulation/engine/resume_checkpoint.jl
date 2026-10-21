@@ -121,19 +121,53 @@ function _scheduling_policy_entry(policy)
 end
 
 # A policy's identity: its kind, named as link kinds are, and every one of its
-# fields, encoded as terminal fields are (a float with its bits), with a field that
-# is a policy recorded by its own identity and a vector element by element.
-function _scheduling_policy_identity(policy)
+# fields, recursively:
+# - a float with its bits, a bits composite field by field, as terminal fields are;
+# - a field that is a policy by its own identity, a tuple or a vector element by
+#   element;
+# - a function by its type and, for a closure, every value it captures (its
+#   fields), so that two closures made by one expression with different captures
+#   differ. A named function is its type alone: a change to its code is not part
+#   of the identity.
+# A closure that captures a variable reassigned after the closure was made (a
+# `Core.Box`), or a payload that contains itself, cannot be recorded: refused.
+function _scheduling_policy_identity(policy, path=Base.IdSet{Any}())
     kind = typeof(policy)
     names = fieldnames(kind)
     return (kind=_interlink_kind_identity(kind),
-        fields=NamedTuple{names}(map(name -> _policy_field_identity(getfield(policy, name)), names)))
+        fields=NamedTuple{names}(map(name -> _policy_field_identity(getfield(policy, name), path), names)))
 end
-_policy_field_identity(value::SimulationModel.AbstractSchedulingPolicy) = _scheduling_policy_identity(value)
-_policy_field_identity(value::Tuple) = map(_policy_field_identity, value)
-_policy_field_identity(value::AbstractVector) =
-    (type=_interlink_kind_identity(typeof(value)), elements=map(_policy_field_identity, value))
-_policy_field_identity(value) = _interlink_kind_parameter(value)
+_policy_field_identity(value::SimulationModel.AbstractSchedulingPolicy, path) = _scheduling_policy_identity(value, path)
+_policy_field_identity(value::Tuple, path) = map(element -> _policy_field_identity(element, path), value)
+_policy_field_identity(value::AbstractVector, path) = _on_path(path, value) do
+    (type=_interlink_kind_identity(typeof(value)), elements=map(element -> _policy_field_identity(element, path), value))
+end
+function _policy_field_identity(value::Function, path)
+    kind = typeof(value)
+    names = fieldnames(kind)
+    isempty(names) && return (callable=_interlink_kind_identity(kind),)
+    return _on_path(path, value) do
+        (callable=_interlink_kind_identity(kind),
+            captures=NamedTuple{names}(map(name -> _policy_field_identity(getfield(value, name), path), names)))
+    end
+end
+_policy_field_identity(::Core.Box, path) = throw(ArgumentError(
+    "A scheduling policy holds a closure that captures a variable reassigned after the closure was made, " *
+    "which a checkpoint cannot record. Capture the value instead (for example in a `let` block)."))
+_policy_field_identity(value, path) = _interlink_kind_parameter(value)
+
+# Encode `value` with `encode` while `value` is on the path from the policy,
+# refusing a payload that contains itself.
+function _on_path(encode, path, value)
+    value in path && throw(ArgumentError(
+        "A scheduling policy's fields contain themselves, which a checkpoint cannot record."))
+    push!(path, value)
+    try
+        return encode()
+    finally
+        delete!(path, value)
+    end
+end
 
 # A snapshot's policy entry in the current form: a symbol with its targets (all
 # checkpoints written before 0.6, and those of the policies they had) is rebuilt as

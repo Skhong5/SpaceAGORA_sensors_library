@@ -349,7 +349,11 @@ args = SimulationConfiguration(...; interlink_model=model, scheduling_policy_mod
   method.
 - **Plain values.** A policy holds no run state: it is a value whose fields say
   what it scores. A checkpoint records its type and every field, so a resume
-  with another value is refused.
+  with another value is refused. A function field is recorded by its type and,
+  for a closure, every value it captures; a named function is recorded by its
+  type alone, so a change to its code is not detected. A checkpointed run
+  refuses at setup a closure that captures a variable reassigned after the
+  closure was made, and fields that contain themselves.
 
 ### Contact windows
 

@@ -2590,6 +2590,8 @@ function _validate_interlinks!(args, solver_mode::Symbol)
             "SpaceAGORA.link_range_m(::$(nameof(typeof(link)))), the maximum range in metres."))
     end
     SimulationModel.SchedulingPolicies._check_candidate_score(args.scheduling_policy_model.objective)
+    # A checkpointed run's policy must be one its checkpoints can record.
+    _typed_checkpoint_enabled(args) && _scheduling_policy_entry(args.scheduling_policy_model.objective)
     solver_mode in (:gravity_backbone_split, :split_imex, :multirate) &&
         throw(ArgumentError("Interlinks require a full-state solver such as :tsit5; $solver_mode is not supported."))
     spacecraft = args.dynamics_model.spacecraft

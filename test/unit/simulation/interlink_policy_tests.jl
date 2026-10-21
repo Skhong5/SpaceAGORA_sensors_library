@@ -53,6 +53,26 @@ struct NestedPolicy <: AbstractSchedulingPolicy
 end
 SpaceAGORA.candidate_score(policy::NestedPolicy, candidate, ctx, t) = 1.0
 
+# Policies with a function field: a closure from one factory expression, which
+# captures its gain or a vector; a closure that captures a reassigned variable
+# (a `Core.Box`); and a list that can contain itself.
+struct CallablePolicy{F} <: AbstractSchedulingPolicy
+    f::F
+end
+SpaceAGORA.candidate_score(policy::CallablePolicy, candidate, ctx, t) = policy.f(1.0)
+gain_policy(gain) = CallablePolicy(x -> gain * x)
+vector_policy(v) = CallablePolicy(x -> v[1] * x)
+function boxed_policy()
+    gain = 1.0
+    f = x -> gain * x
+    gain = 2.0
+    return CallablePolicy(f)
+end
+struct ListPolicy <: AbstractSchedulingPolicy
+    items::Vector{Any}
+end
+SpaceAGORA.candidate_score(policy::ListPolicy, candidate, ctx, t) = 1.0
+
 function sat(index, arc_m)
     bus = Link(root=true, m=100.0)
     θ = arc_m / RADIUS
@@ -62,14 +82,14 @@ function sat(index, arc_m)
         n_terminal=1)
 end
 
-function run_args(policy; duration=5.0)
+function run_args(policy; duration=5.0, settings=SimulationSettings(results=false, generate_plots=false))
     spacecraft = [sat(1, 0.0), sat(2, 2000.0), sat(3, 9000.0)]
     model = InterlinkModel()
     link = LaserMomentumLink(power_w=40.0, magnification=1.0, range_m=1e4)
     register_link!(model, spacecraft, (1, 1), (2, 1), link)
     register_link!(model, spacecraft, (1, 1), (3, 1), link)
     return SimulationConfiguration(
-        simulation_settings=SimulationSettings(results=false, generate_plots=false),
+        simulation_settings=settings,
         mission_configuration=MissionConfiguration(mission_type=MissionTime, mission_time=duration,
             orientation_sim=false, data_rate=1.0),
         environment_model=make_no_gram_environment(planet=PLANET),
@@ -310,6 +330,37 @@ refusal(f) = try f(); nothing catch err err end
         @test !resumes(Right.Same(), checkpoint(Left.Same()))
         @test !resumes(SemimajorAxisRatePolicy(), checkpoint(ConstantPolicy(1.0)))
         @test !resumes(ConstantPolicy(1.0), checkpoint(SemimajorAxisRatePolicy()))
+
+        # A function field: a closure is recorded with every value it captures, so
+        # two closures of one factory expression differ by their captures.
+        @test typeof(gain_policy(1.0)) === typeof(gain_policy(2.0))
+        @test resumes(gain_policy(2.0), checkpoint(gain_policy(2.0)))
+        @test !resumes(gain_policy(1.0), checkpoint(gain_policy(2.0)))
+        @test resumes(vector_policy([2.0]), checkpoint(vector_policy([2.0])))
+        @test !resumes(vector_policy([1.0]), checkpoint(vector_policy([2.0])))
+        captured = entry(gain_policy(2.0))[1].fields.f
+        @test captured.captures.gain.bits == reinterpret(UInt64, 2.0)
+        # A named function is its type: another function is refused.
+        @test resumes(CallablePolicy(sin), checkpoint(CallablePolicy(sin)))
+        @test !resumes(CallablePolicy(cos), checkpoint(CallablePolicy(sin)))
+        @test entry(CallablePolicy(sin))[1].fields.f == (callable=SE._interlink_kind_identity(typeof(sin)),)
+        # A reassigned capture and a payload that contains itself cannot be recorded.
+        err = refusal(() -> entry(boxed_policy()))
+        @test err isa ArgumentError && occursin("reassigned after the closure was made", err.msg)
+        cycle = Any[]
+        push!(cycle, cycle)
+        err = refusal(() -> entry(ListPolicy(cycle)))
+        @test err isa ArgumentError && occursin("contain themselves", err.msg)
+        shared = [1.0]
+        @test entry(ListPolicy(Any[shared, shared]))[2] === nothing   # shared, not cyclic
+        # A checkpointed run refuses such a policy at setup, before it starts.
+        mktempdir() do directory
+            settings = SimulationSettings(results=false, generate_plots=false, checkpoint_enabled=true,
+                checkpoint_interval_s=1.0, checkpoint_directory=directory)
+            err = refusal(() -> run_simulation(run_args(boxed_policy(); settings)))
+            @test err isa ArgumentError && occursin("reassigned after the closure was made", err.msg)
+            @test isempty(readdir(directory))
+        end
     end
 end
 
