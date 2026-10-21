@@ -29,14 +29,41 @@ SimulationConfiguration(file_paths, simulation_settings, mission_configuration,
         nothing, SchedulingPolicyModel(:gve_sma))
 
 """
+    _with_fields(x; changes...)
+
+A copy of `x` with the named fields changed. Every other field is passed on as
+it is (the same object, not a copy) through the type's own constructor, so the
+constructor's checks run and a field added to the type later is carried without
+editing the call. A name that is not a field of `x` throws an `ArgumentError`.
+
+This is how configuration structs are copied: name only the fields that change,
+never pass another instance's fields one by one. The constructor takes the fields
+by keyword, or in field order for a type whose keyword constructor computes fields
+rather than taking them (`SpacecraftModel`). It is a shallow update;
+run_simulation owns mutable-state isolation.
+"""
+function _with_fields(x; changes...)
+    T = typeof(x)
+    names = fieldnames(T)
+    for name in keys(changes)
+        name in names || throw(ArgumentError(
+            "$(nameof(T)) has no field `$(name)` to change; its fields are $(join(names, ", "))."))
+    end
+    values = map(name -> haskey(changes, name) ? changes[name] : getfield(x, name), names)
+    constructor = Base.typename(T).wrapper
+    _rebuilt_in_field_order(T) && return constructor(values...)
+    return constructor(; NamedTuple{names}(values)...)
+end
+
+_rebuilt_in_field_order(::Type) = false
+_rebuilt_in_field_order(::Type{SpacecraftModel}) = true
+
+"""
     _with_configuration(args::SimulationConfiguration; overrides...)
 
 Rebuild a configuration with named field overrides, preserving all other
-fields and their references. This is a shallow update; run_simulation owns
-mutable-state isolation. Infer model types again when models are replaced.
+fields and their references (see `_with_fields`). This is a shallow update;
+run_simulation owns mutable-state isolation. Infer model types again when
+models are replaced.
 """
-function _with_configuration(args::SimulationConfiguration; overrides...)
-    names = fieldnames(typeof(args))
-    fields = NamedTuple{names}(map(name -> getfield(args, name), names))
-    return SimulationConfiguration(; merge(fields, (; overrides...))...)
-end
+_with_configuration(args::SimulationConfiguration; overrides...) = _with_fields(args; overrides...)
