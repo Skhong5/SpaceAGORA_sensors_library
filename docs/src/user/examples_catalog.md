@@ -309,6 +309,10 @@ For a planner-comparison smoke run:
 SPACEAGORA_EXAMPLE_SMOKE=1 julia --project=examples/rpo_planner_env examples/Earth_RPO_CubeSat_MPC_PlannerComparison.jl --runs 1
 ```
 
+The comparison writes a CSV of every planner result and HTML figures. The
+figures come from SpaceAGORA's PlotlyJS extension: the script loads PlotlyJS,
+which the examples environment provides.
+
 The robot-arm batch uses the same HYPR environment but does not need SPICE or
 native GRAM. Its compliant multibody dynamics are implemented in SpaceAGORA;
 this example does not use MuJoCo contacts. Run it with:
