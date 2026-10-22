@@ -12,7 +12,7 @@ let core = Base.PkgId(Base.UUID("afbfb69f-5c0b-4832-b760-43725dff8540"), "SpaceA
     examples = joinpath(REPO_ROOT, "examples")
     runs_examples() = (path = Base.locate_package(core);
         path !== nothing && isfile(path) && samefile(path, source) &&
-        all(name -> Base.find_package(name) !== nothing, ("Plots", "Roots")))
+        all(name -> Base.find_package(name) !== nothing, ("Plots", "Roots", "PlotlyJS")))
     if !runs_examples()
         isfile(joinpath(examples, "Manifest.toml")) || error(
             "Prepare the examples environment first: run `julia --startup-file=no examples/setup.jl`, " *

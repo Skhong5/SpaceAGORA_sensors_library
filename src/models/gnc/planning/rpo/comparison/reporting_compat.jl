@@ -21,5 +21,3 @@ function rpo_write_planner_comparison_outputs end
 function rpo_comparison_metric_includes_result end
 
 include(joinpath(@__DIR__, "..", "..", "..", "..", "..", "interfaces", "analysis", "planning", "rpo_comparison_reports.jl"))
-# Preserve historical qualified access without a second PlotlyJS import owner.
-using .RPOComparisonReports: PlotlyJS
