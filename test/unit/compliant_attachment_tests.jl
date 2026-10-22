@@ -7,6 +7,7 @@ using Test
 using LinearAlgebra
 using StaticArrays
 using DataFrames
+using TOML
 using SpaceAGORA
 using SpaceAGORA.TelemetryVerification: make_example_config
 
@@ -782,14 +783,19 @@ end
     end
     dir = mktempdir()
     cfg(mission; kw...) = with_settings(engine_args(sc(); mission_time=mission, data_rate=1.0, results_directory=dir, tol=tight_tolerances(dt_max=0.05)); kw...)
-    SpaceAGORA.run_simulation(cfg(5.0; checkpoint_enabled=true, checkpoint_interval_s=2.0); return_results=true)
-    resumed = SpaceAGORA.run_simulation(cfg(10.0; checkpoint_enabled=true, checkpoint_interval_s=2.0, resume_from_checkpoint=true); return_results=true)
+    first_leg = SpaceAGORA.run_simulation(cfg(5.0; checkpoint_enabled=true, checkpoint_interval_s=2.0); return_results=true)
+    resumed = SpaceAGORA.run_simulation(cfg(10.0; checkpoint_enabled=true, checkpoint_interval_s=2.0, resume_from_checkpoint=true,
+        results=true); return_results=true)
     straight = SpaceAGORA.run_simulation(cfg(10.0); return_results=true)
     cols = vcat(["sc1_attachment_pose_$k" for k in 1:21], ["sc1_pos_$k" for k in 1:3], ["sc1_q_$k" for k in 1:4])
     diff = maximum(abs(resumed.table[end, c] - straight.table[end, c]) / max(1.0, abs(straight.table[end, c])) for c in cols)
     @info "attachment resume vs straight, max relative final-state difference" diff
     @test resumed.table.time[end] ≈ 10.0
-    @test resumed.table.time[1] >= 5.0 - 1e-9
+    # It resumed at 5 s rather than starting again, and its table holds the whole
+    # run: the first leg's rows, kept beside its checkpoint, then its own.
+    @test TOML.parsefile(joinpath(dir, "simulation_results.manifest.toml"))["resumed_from_s"] == 5.0
+    @test resumed.table.time[1] == 0.0 && any(>(5.0), resumed.table.time)
+    @test isequal(resumed.table[resumed.table.time .< 5.0, :], first_leg.table[first_leg.table.time .< 5.0, :])
     @test diff < 1e-8
 end
 

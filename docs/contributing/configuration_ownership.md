@@ -26,5 +26,8 @@ derivation stays in `src/interfaces/io/paths/`; solver environment settings are 
 from assembling a scenario.
 
 `_with_configuration` makes a shallow update and preserves unspecified references.
+Any other configuration struct is copied the same way, with `_with_fields(x; changes...)`,
+which names only the fields that change and passes every other field through the type's
+constructor, so no copy lists another instance's fields one by one.
 Runtime state isolation remains the engine's responsibility. Moving the definitions
 changes neither those semantics nor typed-solver precedence over environment settings.
