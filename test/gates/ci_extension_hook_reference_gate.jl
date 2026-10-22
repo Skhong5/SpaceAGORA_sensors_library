@@ -36,7 +36,7 @@ const _HOOK_OLD_INDEX_WORDS = (:i, :sat_idx, :idx)
 # data link's link budget (`budget_rate_bps`); `policy` an interlink scheduling
 # policy (`candidate_score`).
 const _HOOK_DISPATCH_NAMES = (:model, :effector, :controller, :actuator, :sensor,
-    :planner, :algorithm, :family, :binding, :result, :provider, :link, :producer, :budget, :policy)
+    :planner, :algorithm, :family, :binding, :result, :provider, :link, :producer, :budget, :policy, :source)
 
 violations = String[]
 

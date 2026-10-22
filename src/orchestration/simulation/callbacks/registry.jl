@@ -44,7 +44,8 @@ using ..PowerSystems: has_battery, has_power_parts, battery, solar_generation_w,
 using ..PowerSystems: bus_load_w, actuator_power_by_tier, battery_boundary!, update_power_state!, shed_levels, within_full_tolerance
 using ..InterlinkTerminals: without_link_driven, link_driven_levels!, link_terminal_power, link_driven
 using ..InterlinkTerminals: link_receives, received_link_power_w, beamed_link_power_w
-using ..InterlinkTerminals: data_link_rates_bps, shed_link_driven_levels!
+using ..InterlinkTerminals: data_link_rates_bps, shed_link_driven_levels!, _data_flows
+using ..DataStorage: has_data_store, data_store, _data_store_boundary!, _update_data_state!, _start_data_state!
 using ..InterLinkModels: LinkContext, PowerBeamLink, has_data_links
 using ..DynamicEffectors: eclipse_area_calc, MagneticTorqueRodModel, rod_field_body
 using ..DynamicEffectors: is_gravitational

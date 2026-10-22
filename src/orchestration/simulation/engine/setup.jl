@@ -2616,6 +2616,24 @@ function _validate_interlinks!(args, solver_mode::Symbol)
     return nothing
 end
 
+# Onboard data parts: a spacecraft with a data source needs a data store to put
+# its data in, and each source kind needs a production rate.
+function _validate_data_parts!(args)
+    for (i, sc) in enumerate(args.dynamics_model.spacecraft)
+        sc isa SimulationModel.SpacecraftModel || continue
+        for link in sc.links, source in link.data_sources
+            SimulationModel.has_data_store(sc) || throw(ArgumentError(
+                "Spacecraft $i has a data source but no data store to hold its data; mount one with " *
+                "add_data!(spacecraft, spacecraft.root, DataStore(capacity_bits=...))."))
+            hasmethod(SimulationModel.data_production_bps,
+                Tuple{typeof(source), SimulationModel.StateSample, SimulationModel.LinkContext, Float64}) || throw(ArgumentError(
+                "The data source kind $(nameof(typeof(source))) has no data_production_bps method; implement " *
+                "SpaceAGORA.data_production_bps(source::$(nameof(typeof(source))), x, ctx, t), its production rate in bit/s."))
+        end
+    end
+    return nothing
+end
+
 # Terminal hardware endpoints: record them on the model; a spacecraft whose
 # link-driven terminals a mounted-actuation controller also holds levels for is
 # told once that the link drives them (the controller's levels for them apply
