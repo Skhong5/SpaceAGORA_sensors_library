@@ -45,8 +45,9 @@ bindings in `ControlHooks` and `GuidanceHooks`, and the private list
 
 - Code that called an EDG helper through one of those modules stops with an
   `UndefVarError`. The helper's tests now live in SpaceAGORAEDG.
-- SpaceAGORAEDG 0.5.0 runs unchanged with this release, but its own lease test
-  called a removed helper; SpaceAGORAEDG 0.5.1's tests pass with it.
+- This release installs SpaceAGORAEDG 0.5.1, whose tests use the decision route.
+  SpaceAGORAEDG 0.5.0 runs unchanged with it, but its own lease test calls a
+  removed helper.
 
 ## 0.6.0
 
