@@ -90,6 +90,9 @@ using .SimulationModel: PowerBeamLink, link_received_power_w, beam_spot_radius_m
 using .SimulationModel: DataLink, AbstractDataBudget, FixedRateBudget, ShannonBudget, link_data_rate_bps, budget_rate_bps
 using .SimulationModel: terminal_shed_tier, contact_windows, contact_time_s
 using .SimulationModel: SchedulingPolicyModel, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
+using .SimulationModel: AbstractSchedulingPolicy, LinkCandidate, SchedulingContext, candidate_score
+using .SimulationModel: SemimajorAxisRatePolicy, EccentricityRatePolicy, PowerDeliveryPolicy, DataThroughputPolicy
+using .SimulationModel: EnergyBalancingPolicy, WeightedPolicy, PolicyTerm, state_of_charge
 using .SimulationModel: ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
 export AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
 export InterlinkModel, InterLinkGraph, InterLinkKey, InterLinkHistory, register_link!, interlink_force_on_spacecraft
@@ -100,6 +103,9 @@ export PowerBeamLink, link_received_power_w, beam_spot_radius_m, beam_capture_fr
 export DataLink, AbstractDataBudget, FixedRateBudget, ShannonBudget, link_data_rate_bps, budget_rate_bps
 export terminal_shed_tier, contact_windows, contact_time_s
 export SchedulingPolicyModel, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
+export AbstractSchedulingPolicy, LinkCandidate, SchedulingContext, candidate_score
+export SemimajorAxisRatePolicy, EccentricityRatePolicy, PowerDeliveryPolicy, DataThroughputPolicy
+export EnergyBalancingPolicy, WeightedPolicy, PolicyTerm, state_of_charge
 export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
 @doc (@doc SimulationModel.InterLinkModels.AbstractInterlink) AbstractInterlink
 @doc (@doc SimulationModel.InterLinkModels.LinkContext) LinkContext
@@ -143,7 +149,19 @@ export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!,
 @doc """Canonically ordered pair of `(spacecraft array index, terminal number)` endpoints.""" InterLinkKey
 @doc """One accepted-step schedule sample: time in seconds, the selected `InterLinkKey` values (`active`) and the available ones (`available`, recorded in a run with a data link or with `InterlinkModel(; record_available=true)`, and empty for a sample built from a time and the selected keys). `contact_windows` reads a run's samples.""" InterLinkHistory
 @doc (@doc SimulationModel.SchedulingPolicies.SchedulingPolicyModel) SchedulingPolicyModel
-@doc """Score available links using a `SchedulingPolicyModel`, the current spacecraft state and the gravitational parameter, from each link's `link_force` (or a caller's `candidate_force(target, partner, link)`).""" score_candidates!
+@doc (@doc SimulationModel.SchedulingPolicies.score_candidates!) score_candidates!
+@doc (@doc SimulationModel.SchedulingPolicies.AbstractSchedulingPolicy) AbstractSchedulingPolicy
+@doc (@doc SimulationModel.SchedulingPolicies.LinkCandidate) LinkCandidate
+@doc (@doc SimulationModel.SchedulingPolicies.SchedulingContext) SchedulingContext
+@doc (@doc SimulationModel.SchedulingPolicies.candidate_score) candidate_score
+@doc (@doc SimulationModel.SchedulingPolicies.SemimajorAxisRatePolicy) SemimajorAxisRatePolicy
+@doc (@doc SimulationModel.SchedulingPolicies.EccentricityRatePolicy) EccentricityRatePolicy
+@doc (@doc SimulationModel.SchedulingPolicies.PowerDeliveryPolicy) PowerDeliveryPolicy
+@doc (@doc SimulationModel.SchedulingPolicies.DataThroughputPolicy) DataThroughputPolicy
+@doc (@doc SimulationModel.SchedulingPolicies.EnergyBalancingPolicy) EnergyBalancingPolicy
+@doc (@doc SimulationModel.SchedulingPolicies.WeightedPolicy) WeightedPolicy
+@doc (@doc SimulationModel.SchedulingPolicies.PolicyTerm) PolicyTerm
+@doc (@doc SimulationModel.SchedulingPolicies.state_of_charge) state_of_charge
 @doc (@doc SimulationModel.SchedulingPolicies.select_interlinks!) select_interlinks!
 @doc """Refresh link availability, score candidates, and select the maximum-total-score terminal matching.""" schedule_interlinks!
 @doc """Create the accepted-step scheduler callback used automatically by `run_simulation` when interlinks are enabled.""" interlink_scheduler_callback
@@ -406,6 +424,7 @@ export odyssey_surrogate_assets
 
 ## 2.7. RPO Station Assets
 using .RPOStationAssets: station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
+using .SimulationModel.NavigationHooks: RPOStationGeometry, RPOCubeSatGeometry
 
 ## 2.8. RPO Visualization
 using .RPOVisualization: rpo_path_plot, rpo_tracking_plot
@@ -430,6 +449,30 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 # Forward the docstrings onto this module's bindings: the docs build resolves
 # `@docs SpaceAGORA.X` blocks against SpaceAGORA's own doc metadata, and the
 # CI environment does not follow the explicit-import alias for these.
+# `@doc X` returns one nested Markdown.MD per docstring of X. Documenter unwraps a
+# lone nested MD, but it renders each of several as plain text and warns about Julia
+# interpolation. A name with more than one docstring (a type and its constructor,
+# several methods) is therefore forwarded through `_flat_doc`, which splices the
+# blocks into one MD in the same order, with the rule between docstrings that the
+# REPL shows. The result carries no `:results` metadata, which would make the REPL
+# draw a rule between every block.
+function _flat_doc(md::T) where {T}
+    # `@doc X` gives a Markdown.MD only while the REPL docsystem is loaded (today through
+    # DataFrames -> PrettyTables); otherwise it gives the first DocStr, forwarded as is.
+    (hasfield(T, :content) && hasfield(T, :meta)) || return md
+    blocks = Any[]
+    function add_blocks!(content)
+        for block in content
+            block isa T ? add_blocks!(block.content) : push!(blocks, block)
+        end
+    end
+    for (i, doc) in enumerate(md.content)
+        i > 1 && push!(blocks, parentmodule(T).HorizontalRule())
+        add_blocks!((doc,))
+    end
+    return T(blocks)
+end
+
 # 3.1. Simulation Engine
 @doc (@doc SimulationEngine.ParallelConfig) ParallelConfig
 @doc (@doc SimulationEngine.SolverConfig) SolverConfig
@@ -476,21 +519,21 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.ThrusterGimbal) ThrusterGimbal
 @doc (@doc SimulationModel.thrust_direction) thrust_direction
 @doc (@doc SimulationModel.ControlMomentGyro) ControlMomentGyro
-@doc (@doc SimulationModel.cmg_momentum) cmg_momentum
+@doc _flat_doc(@doc SimulationModel.cmg_momentum) cmg_momentum
 @doc (@doc SimulationModel.cmg_torque_axis) cmg_torque_axis
 @doc (@doc SimulationModel.cmg_angle_saturate) cmg_angle_saturate
 @doc (@doc SimulationModel.CMGInnerGimbal) CMGInnerGimbal
 @doc (@doc SimulationModel.cmg_torque_axes) cmg_torque_axes
 @doc (@doc SimulationModel.cmg_steering) cmg_steering
 @doc (@doc SimulationModel.ActuatorContext) ActuatorContext
-@doc (@doc SimulationModel.actuator_wrench) actuator_wrench
+@doc _flat_doc(@doc SimulationModel.actuator_wrench) actuator_wrench
 @doc (@doc SimulationModel.actuator_limits) actuator_limits
 @doc (@doc SimulationModel.actuator_saturate) actuator_saturate
-@doc (@doc SimulationModel.actuator_consumption) actuator_consumption
+@doc _flat_doc(@doc SimulationModel.actuator_consumption) actuator_consumption
 @doc (@doc SimulationModel.actuator_fraction) actuator_fraction
 @doc (@doc SimulationModel.actuator_unit_wrench) actuator_unit_wrench
 @doc (@doc SimulationModel.actuation_mode) actuation_mode
-@doc (@doc SimulationModel.actuator_levels) actuator_levels
+@doc _flat_doc(@doc SimulationModel.actuator_levels) actuator_levels
 @doc (@doc SimulationModel.allocate_actuators) allocate_actuators
 @doc (@doc SimulationModel.add_actuator!) add_actuator!
 @doc (@doc SimulationModel.mounted_actuators) mounted_actuators
@@ -679,6 +722,8 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc RPOStationAssets.load_rpo_station_pointcloud) load_rpo_station_pointcloud
 @doc (@doc RPOStationAssets.load_rpo_station_cad_triangles) load_rpo_station_cad_triangles
 @doc (@doc RPOStationAssets.load_rpo_station_cad_pointcloud) load_rpo_station_cad_pointcloud
+@doc _flat_doc(@doc SimulationModel.NavigationHooks.RPOStationGeometry) RPOStationGeometry
+@doc _flat_doc(@doc SimulationModel.NavigationHooks.RPOCubeSatGeometry) RPOCubeSatGeometry
 
 # Scene visualization and display geometry
 @doc (@doc SimulationModel.SceneVisualization.VisualizationScene) VisualizationScene
@@ -826,6 +871,7 @@ export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation, SimulationResults
 export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
+export RPOStationGeometry, RPOCubeSatGeometry
 export VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec, ArmGeometry, arm_geometry
 export load_model_triangles, model_bounding_box, sample_model_pointcloud, articulate_triangles, articulation_payload
 export spacecraft_geometry, planet_spec, planet_rotation_table, build_visualization_scene

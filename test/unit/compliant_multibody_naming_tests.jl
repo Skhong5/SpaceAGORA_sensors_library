@@ -120,8 +120,8 @@ end
     @test simulation.trajectory.states[1] == simulation.trajectory.states[2]
 end
 
-@testset "HYPR contract 2 retains its historical service names" begin
-    @test HS.CONTRACT_VERSION == v"2.0.0"
+@testset "HYPR contract 3 retains its historical service names" begin
+    @test HS.CONTRACT_VERSION == v"3.0.0"
     @test HS.RobotArm.ClothArmBasePose === RobotArmBasePose
     @test HS.RobotArm.ClothArmModel === RobotArmModel
     @test HS.RobotArm.cloth_fk === robot_arm_fk

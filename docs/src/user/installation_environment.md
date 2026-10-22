@@ -234,7 +234,7 @@ and the shared [optional adapter standard](../reference/adapter_contract.md).
 SpaceAGORAEDG contains the experimental energy-depletion planning implementation.
 Its linked checkout belongs in `packages/gnc/SpaceAGORAEDG.jl`. SpaceAGORA owns the
 simulation state, callback schedule, accumulated heat and application of panel
-commands; the companion computes decisions through `EDGServices` contract 2.0.0.
+commands; the companion computes decisions through `EDGServices` contract 3.0.0.
 
 For a core revision that records a published EDG companion pin. Terminal,
 from the repository root:

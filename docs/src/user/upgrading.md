@@ -8,6 +8,64 @@ Renamed and retired extension hooks have their own page,
 [Public API and Compatibility](../public_api_policy.md) describes the
 deprecation rules.
 
+## 0.7.0
+
+### Load HYPR directly
+
+The `SpaceAGORAHYPR` compatibility loader is removed. In a project that uses the
+optional planner, replace `using SpaceAGORAHYPR` with:
+
+```julia
+using SpaceAGORA, HYPR
+```
+
+Both load orders activate the same HYPR extension. SpaceAGORA alone still does
+not load HYPR, and planner preflight still refuses an unavailable or incompatible
+provider. The external HYPR repository and its immutable pin are retained; the
+standalone pin has moved to `packages/HYPRSource.toml`.
+
+- Run the HYPR setup helper again for an existing environment. It removes the
+  retired loader's dependency and source entries while preserving unrelated
+  project settings. A project you maintain yourself should remove the loader
+  dependency and declare HYPR directly.
+- The loader's `RPO`, `RobotArm`, `SwarmPolicy` and `PlannerAdapter` module
+  aliases are removed with it. Code that reached HYPR's own helpers through
+  `SpaceAGORAHYPR.RPO.<name>` or `SpaceAGORAHYPR.RobotArm.<name>`, the 0.6.0
+  route, uses the extension's namespaces, the one route now:
+  `Base.get_extension(HYPR, :HYPRSpaceAGORAExt).RPO.<name>` or
+  `Base.get_extension(HYPR, :HYPRSpaceAGORAExt).RobotArm.<name>`.
+  `hypr_iteration_weights`, `hypr_material_improvement` and
+  `hypr_protected_particle_mask` are HYPR's exported functions
+  ([Versioned HYPR service contract](../reference/hypr_services.md#Changes-from-contract-2.0.0)).
+- Application code should use the public planner interfaces, and companion code
+  the documented `HYPRServices` contract. This removal does not narrow that
+  service contract.
+
+## 0.6.1
+
+### Machine calibration constants are measured again
+
+The machine calibration now measures only the two constants the predictive
+campaign planner reads, and the cost constants it saves move to schema 6.
+Constants saved by SpaceAGORA 0.6.0 or earlier are no longer read:
+
+- A `SolverConfig(parallel=true)` run measures them again by itself, once in
+  each working directory, with that session's thread count.
+- On a machine that uses the predictive campaign planner any other way (profile
+  R7, or `SPACEAGORA_CAMPAIGN_PLANNER=predictive` set by hand), rerun the
+  calibration after updating, with the thread count you run with. Until then
+  that planner runs without machine constants.
+- If you calibrated with the script at a job's thread count, rerun it as well:
+  otherwise the first `parallel=true` session in that working directory measures
+  with its own thread count. Terminal, from the repository root:
+
+  ```text
+  julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl
+  ```
+
+[Parallel Execution](parallel_execution.md#Turning-on-parallel-execution) says
+where the constants are kept.
+
 ## 0.6.0
 
 ### The examples run in the examples environment
@@ -81,25 +139,123 @@ script made one of these figures.
   itself.
 - The full sysimage (`build/build_sysimage.jl`) no longer includes PlotlyJS.
 
+### Runs with guidance, navigation or control models do not resume 0.5.1 checkpoints
 
-### Load HYPR directly
+A checkpoint now records which spacecraft each guidance, navigation and control
+model acts on, and a resumed run refuses one whose models act on other
+spacecraft, or are another number in a group. A checkpoint written by
+SpaceAGORA 0.5.1 or earlier holds no such record, so a run with any guidance,
+navigation or control model refuses it with an `ArgumentError` before anything
+is restored.
 
-The `SpaceAGORAHYPR` compatibility loader is removed. In a project that uses the
-optional planner, replace `using SpaceAGORAHYPR` with:
+- Finish such a run with SpaceAGORA 0.5.1, or run it again from the start after
+  updating.
+- A run without those models resumes from a 0.5.1 checkpoint as before. Since
+  that checkpoint holds no results rows, the resume warns that the earlier rows
+  cannot be included, and writes its results to `resumed_at_<t>s` inside
+  `results_directory`, leaving the earlier files as they were.
 
-```julia
-using SpaceAGORA, HYPR
-```
+[Simulation Outputs](outputs.md#Checkpointing) lists what a checkpoint records
+and what a resumed run refuses.
 
-Both load orders activate the same HYPR extension. SpaceAGORA alone still does
-not load HYPR, and planner preflight still refuses an unavailable or incompatible
-provider. The external HYPR repository and its immutable pin are retained; the
-standalone pin has moved to `packages/HYPRSource.toml`.
+### Machine calibration constants are measured again
 
-Run the HYPR setup helper again for an existing environment. It removes the
-retired loader's dependency and source entries while preserving unrelated project
-settings. A project you maintain yourself should remove the loader dependency
-and declare HYPR directly. The loader's `RPO`, `RobotArm`, `SwarmPolicy` and
-`PlannerAdapter` module aliases are removed; application code should use the
-public planner interfaces, and companion code should use the documented
-`HYPRServices` contract. This removal does not narrow that service contract.
+The machine calibration no longer reads past its tables, and the cost constants
+it saves move to schema 5. Constants saved by SpaceAGORA 0.5.1 or earlier are no
+longer read:
+
+- A `SolverConfig(parallel=true)` run measures them again by itself, once in
+  each working directory, as on a machine without constants.
+- On a machine that uses the predictive campaign planner any other way (profile
+  R7, or `SPACEAGORA_CAMPAIGN_PLANNER=predictive` set by hand), rerun the
+  calibration after updating, with the thread count you run with. Until then
+  that planner runs without machine constants. Terminal, from the repository
+  root:
+
+  ```text
+  julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl
+  ```
+
+[Parallel Execution](parallel_execution.md#Turning-on-parallel-execution) says
+where the constants are kept.
+
+### Interlink scheduling policies are types
+
+The scheduling policies chosen by a symbol are removed, without a deprecation
+period. Give the run a policy value instead, with
+`SimulationConfiguration(scheduling_policy_model=policy)`. The default is still
+`SemimajorAxisRatePolicy()`, the old `:gve_sma`, so a run that never set a
+policy is unchanged.
+
+- A call with a symbol throws an `ArgumentError` that names its typed
+  replacement, also under `julia --depwarn=error`: for example
+  `SemimajorAxisRatePolicy(targets=[31, 32])` for
+  `SchedulingPolicyModel(:gve_sma; target_indices=[31, 32])`.
+  [Interlinks](interlinks.md#Removed-in-0.6.0) lists every replacement.
+- The keywords and properties `target_index` and `target_indices` are removed
+  with them, and so are the 0.5.0 names `target_idx` and `target_idxs`, which
+  0.5.0 had kept until 1.0. Reading or setting `scheduler.policy` or a target
+  property throws, naming `.objective` or `.objective.targets`.
+- Interlink checkpoints written by 0.4 and 0.5 resume under the typed policy
+  that schedules the same, and a run moved to the typed policies gives the same
+  results.
+- A policy of your own subtypes `AbstractSchedulingPolicy` and implements
+  `candidate_score` ([A custom policy](interlinks.md#A-custom-policy)). 0.6.0
+  also adds [energy balancing](interlinks.md#Energy-balancing) and
+  [weighted mixes](interlinks.md#Weighted-mixes) of policies.
+
+### The interlink states are `interlink_dv` and `interlink_delta_sma`
+
+In a run with interlinks, the two states every spacecraft carries are renamed,
+since they hold the effect of every link kind: `laser_dv` is now `interlink_dv`,
+and `laser_delta_sma` is now `interlink_delta_sma`.
+
+- A script that reads `u.sc[i].laser_dv` or `u.sc[i].laser_delta_sma`, from a
+  solution, an integrator or a save-field getter, stops with the state's own
+  lookup error, which does not name the replacement: the name of a state cannot
+  warn. Read `interlink_dv` and `interlink_delta_sma` instead.
+- The results gain `scN_interlink_dv_1` .. `scN_interlink_dv_3` and
+  `scN_interlink_delta_sma`. The `scN_laser_*` columns and the `:laser_dv` and
+  `:laser_delta_sma` save fields stay beside them, with the same values, until
+  1.0. A column cannot warn either, so search your analysis code for the old
+  names. Terminal, in its folder:
+
+  ```text
+  grep -rnE "laser_dv|laser_delta_sma" .
+  ```
+
+- In a run with interlinks, every column after the quaternion block moves four
+  places per spacecraft. Code that selects those columns by position needs
+  updating.
+- Checkpoints keep the old names inside: interlink checkpoints written by 0.5
+  resume, and 0.5.1 resumes one written by 0.6.0.
+
+[Output Columns](output_columns.md#Interlinks) lists the columns.
+
+### The companion packages are 0.5.0
+
+SpaceAGORA 0.6.0 provides `HYPRServices` and `EDGServices` at contract 3.0.0,
+and pins HYPR 0.5.0, SpaceAGORAEDG 0.5.0 and SpaceAGORAMuJoCo 0.5.0. The 0.4.0
+companions do not install with 0.6.0, and HYPR 0.5.0 and SpaceAGORAEDG 0.5.0
+refuse SpaceAGORA 0.5.1. `ExternalPropagationServices` stays at contract 2.0.0.
+
+- Set up each companion you use again after updating, from a Git clone of
+  SpaceAGORA. Terminal, from the repository root (likewise with `mujoco` or
+  `edg`):
+
+  ```text
+  julia --startup-file=no scripts/optional_packages.jl setup hypr /path/to/hypr-env
+  ```
+
+  [Installation & Environment](installation_environment.md#Optional-package-commands)
+  describes the commands.
+- 75 RPO and robot-arm helpers that only HYPR's extension called are HYPR's own
+  functions now, among them `rpo_path_cost`, `rpo_retime_path` and
+  `rpo_retimed_reference`. Code that reached one through `HYPRServices` or
+  SpaceAGORA's internal modules uses `SpaceAGORAHYPR.RPO.<name>` or
+  `SpaceAGORAHYPR.RobotArm.<name>`
+  ([Versioned HYPR service contract](../reference/hypr_services.md#Changes-from-contract-2.0.0)).
+- `_edg_planet_frame_lpi` and `_edg_sample_prediction_atmosphere` leave
+  `EDGServices`; SpaceAGORA keeps both calculations for its own prediction code
+  ([EDG package boundary](../reference/edg_adapter_boundary.md#Changes-from-contract-2.0.0)).
+- `RPOStationGeometry` and `RPOCubeSatGeometry` are public SpaceAGORA names.

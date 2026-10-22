@@ -24,19 +24,6 @@ function paper_config()
 end
 
 cfg=paper_config()
-@testset "Final paper swarm behavior" begin
-    for eta in (0.,.5,1.)
-        cc=G.rpo_pso_config(cfg;w_inertia=(1-eta)*.4+eta*.75,c1=(1-eta)*1.8+eta*1.2,c2=(1-eta)*1.2+eta*2.2)
-        @test collect(values(G.rpo_pso_iteration_weights(cc,cc.n_iters))) ≈ [.455,1.05,1.75]
-        @test values(G.rpo_pso_iteration_weights(cc,1)) == (cc.w_inertia,cc.c1,cc.c2)
-    end
-    cc=G.rpo_pso_config(cfg;n_particles=4,n_waypoints=1,adaptive_enable=false)
-    for i in (9,10,11,19,20,21)
-        p=fill(1.,3,4);v=zeros(3,4);best=copy(p);cost=[1.,2.,3.,4.]
-        n=G.rpo_pso_cull_swarm!(p,v,best,cost,fill(-10.,3),fill(10.,3),zeros(3),SVector(-1.,0.,0.),SVector(1.,0.,0.),1,cc,i,MersenneTwister(7))
-        @test n == (i%10==0 ? 1 : 0)
-    end
-end
 @testset "Actuator limits" begin
     jets=SM.SixAxisThrusterModel(max_thrust_n=fill(.05,6))
     @test sum(C.rpo_allocate_six_axis_thrusters([.005,0.,0.],jets)) == .005

@@ -44,6 +44,17 @@ identities.
 | Telemetry callbacks | Observe the owners' runtimes without changing them | `external_runtimes`, which returns borrowed runtimes; callbacks must not step them. |
 | MuJoCo `src/proximity_scene.jl` | Gets common frame and gravity quantities | The service module's frame and gravity services and the documented root API, including `StateSample` and `EnvironmentSample`. |
 
+The running engine calls seven of the eight hooks. It does not call
+`external_time(rt)`, which reports the owner's own clock: the contract keeps it as
+a time observer, so that tests and tools can check that an owner's clock agrees
+with the engine's, and SpaceAGORAMuJoCo implements it. Of the seven services
+SpaceAGORA supplies, five have users in SpaceAGORAMuJoCo's runtime code
+(`AbstractExternalPropagator`, `external_runtimes`, `external_initial_state`,
+`sample_planet_frame_with_lpi` and `gravity_backbone_relative_acceleration_ii`).
+The other two, `with_external_propagators` and `validate_external_propagators`,
+build and check configurations, and their users are its tests and documented
+configuration code. SpaceAGORA 0.6.0 keeps this contract at 2.0.0.
+
 `with_external_propagators` makes a shallow update: it does not copy the objects
 your adapter owns. So create a separate mutable runtime for each run when you
 prepare it. The preflight checks the configuration only; the run still checks
