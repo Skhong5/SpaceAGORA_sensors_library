@@ -156,7 +156,19 @@ export_visualization("output/viewer-earth/simulation_results";
 ```
 
 The exporter decimates saved rows to the frame and data limits. The page
-reports its resulting cadence. Smaller textures or `textures=false` reduce
+reports its resulting cadence.
+
+Positions are embedded as Float64 for runs of up to 64 spacecraft. Above that,
+they stay Float64 when that keeps the same frames as Float32 within
+`max_frames` and `data_budget_mb`, and are Float32 otherwise. Float32 resolves
+about half a metre at 7000 km, so close formations can jitter.
+`position_precision=:f64` keeps Float64 at the cost of frames;
+`position_precision=:f32` forces Float32. With mission segments, `:f64` can
+refuse an export that `:auto` completes: the boundary rows must fit the budget
+as Float64 frames. The ensemble export applies the same rule to its total
+number of sample spacecraft.
+
+Smaller textures or `textures=false` reduce
 the page size; no texture changes the recorded trajectory. Export defaults to
 `texture_resolution="4k"`. Earth, Mars and Moon also include 8192 x 4096
 textures: opt in with `texture_resolution="8k"` or select the largest available
