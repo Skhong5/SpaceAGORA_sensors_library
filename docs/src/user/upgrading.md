@@ -8,6 +8,30 @@ Renamed and retired extension hooks have their own page,
 [Public API and Compatibility](../public_api_policy.md) describes the
 deprecation rules.
 
+## 0.7.0
+
+### A GNC model's hooks follow its spacecraft scope
+
+A guidance, navigation or control model's output hooks (`control_wrench`,
+`control_propellant_rate`, `control_wheel_torque`), its levels (`actuator_levels`,
+`control_thruster_levels`) and `atmosphere_transition!` are called only for the
+spacecraft its `spacecraft_scope` names, as its ticks already were. A model that
+returns zeros or `nothing` outside its scope, as the docs asked, runs as before.
+
+- A model that acts on a spacecraft outside its declared scope, such as a
+  `CoupledSpacecraft` model that pushes its partners, declares a scope that names
+  it, or `AllSpacecraft()`.
+- The scope is fixed once the run-start initializers ran, and a scope that changes
+  during the run stops it with an `ArgumentError`. Set a model's spacecraft before
+  the run: in the model, in `bind_spacecraft` or in an initializer.
+- A `SpacecraftSelection` scopes guidance, navigation and control models too. Keep
+  it in the model and return that object at every call.
+- The conformance kit's advisory `outputs_in_scope` check reports a control model
+  whose output reaches a spacecraft outside its scope.
+
+[Migrating Extension Hooks](../reference/migrating_extension_hooks.md#Changed-in-0.7.0)
+has the table of hooks.
+
 ## 0.6.1
 
 ### Machine calibration constants are measured again
