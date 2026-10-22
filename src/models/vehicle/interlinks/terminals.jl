@@ -12,11 +12,11 @@ using ..SpacecraftModels: SpacecraftModel
 using ..InterLinkModels: InterlinkModel, LinkContext, link_terminal, link_terminal_levels, terminal_supports,
     link_directed, link_received_power_w, link_endpoint, PowerBeamLink, terminal_shed_tier, link_data_rate_bps
 import ..InterLinkModels: terminal_count, _terminal_device, _terminal_devices, _terminal_number, _battery_capacity_wh,
-    _battery_within_full
+    _battery_within_full, _data_store_capacity_bits, _data_store_within_empty, _data_store_within_full
 using ..ActuatorMounting: mounted_actuators, actuator_context
 using ..Actuators: actuator_consumption, actuator_limits
 using ..PowerSystems: battery, within_full_tolerance
-using ..DataStorage: has_data_store, data_store, _production_bps
+using ..DataStorage: has_data_store, data_store, _production_bps, _within_store_empty, _within_store_full
 
 export mounted_link_terminals, terminal_number, data_link_rates_bps
 
@@ -73,6 +73,21 @@ _terminal_number(spacecraft::SpacecraftModel, terminal::AbstractActuator) = term
 function _battery_capacity_wh(spacecraft::SpacecraftModel)
     b = battery(spacecraft)
     return b === nothing ? NaN : Float64(b.capacity_wh)
+end
+
+function _data_store_capacity_bits(spacecraft::SpacecraftModel)
+    store = data_store(spacecraft)
+    return store === nothing ? NaN : store.capacity_bits
+end
+
+function _data_store_within_empty(spacecraft::SpacecraftModel, bits::Real)
+    store = data_store(spacecraft)
+    return store !== nothing && _within_store_empty(store, bits)
+end
+
+function _data_store_within_full(spacecraft::SpacecraftModel, bits::Real)
+    store = data_store(spacecraft)
+    return store !== nothing && _within_store_full(store, bits)
 end
 
 function _battery_within_full(spacecraft::SpacecraftModel, energy_wh::Real)

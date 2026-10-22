@@ -2,12 +2,14 @@ module SchedulingPolicies
 
 using LinearAlgebra
 using ..InterLinkModels
-using ..InterLinkModels: link_endpoint, _terminal_devices, _spacecraft_at, _battery_capacity_wh, _battery_within_full
+using ..InterLinkModels: link_endpoint, _terminal_devices, _spacecraft_at, _battery_capacity_wh, _battery_within_full,
+    _data_store_capacity_bits, _data_store_within_empty, _data_store_within_full
 using ..EffectorSampling: StateSample
 
 export AbstractSchedulingPolicy, LinkCandidate, SchedulingContext, candidate_score
 export SemimajorAxisRatePolicy, EccentricityRatePolicy, PowerDeliveryPolicy, DataThroughputPolicy
 export EnergyBalancingPolicy, WeightedPolicy, PolicyTerm, state_of_charge
+export DataBacklogPolicy, stored_bits, store_room_bits
 export SchedulingPolicyModel, score_candidates!
 export select_interlinks!, schedule_interlinks!
 
@@ -42,8 +44,8 @@ Supertype of the interlink scheduling policies. A policy is an immutable value
 whose fields say what it scores, and it holds no run state. A policy type
 implements `candidate_score`. The built-in policies are
 `SemimajorAxisRatePolicy`, `EccentricityRatePolicy`, `PowerDeliveryPolicy`,
-`DataThroughputPolicy`, `EnergyBalancingPolicy` and `WeightedPolicy`, a
-weighted mix of policies. Give a run its policy with
+`DataThroughputPolicy`, `DataBacklogPolicy`, `EnergyBalancingPolicy` and
+`WeightedPolicy`, a weighted mix of policies. Give a run its policy with
 `SimulationConfiguration(scheduling_policy_model=policy)`.
 """
 abstract type AbstractSchedulingPolicy end
@@ -417,6 +419,90 @@ function candidate_score(::DataThroughputPolicy, candidate::LinkCandidate, ctx::
 end
 
 """
+    stored_bits(ctx::SchedulingContext, spacecraft_index::Integer) -> Float64
+
+The data (bit) spacecraft `spacecraft_index`'s data store holds at the
+scheduling state, the `data_stored_bits` column's value. NaN without a store,
+without the run's spacecraft models, or for a state without `data_stored_bits`.
+"""
+function stored_bits(ctx::SchedulingContext, spacecraft_index::Integer)
+    ctx.spacecraft === nothing && return NaN
+    isnan(_data_store_capacity_bits(ctx.spacecraft[spacecraft_index])) && return NaN
+    view = ctx._state.sc[spacecraft_index]
+    hasproperty(view, :data_stored_bits) || return NaN
+    return Float64(view.data_stored_bits)
+end
+
+"""
+    store_room_bits(ctx::SchedulingContext, spacecraft_index::Integer) -> Float64
+
+The room (bit) left in spacecraft `spacecraft_index`'s data store at the
+scheduling state: its capacity less `stored_bits`. Inf without a store or
+without the run's spacecraft models, since nothing then limits what the
+spacecraft takes in; NaN for a state without `data_stored_bits`.
+"""
+function store_room_bits(ctx::SchedulingContext, spacecraft_index::Integer)
+    ctx.spacecraft === nothing && return Inf
+    capacity = _data_store_capacity_bits(ctx.spacecraft[spacecraft_index])
+    isnan(capacity) && return Inf
+    return capacity - stored_bits(ctx, spacecraft_index)
+end
+
+"""
+    DataBacklogPolicy(; horizon_s)
+
+Score each available directed link by the data (as a rate, bit/s) it could move
+in the next `horizon_s` seconds: the least of the rate it would carry
+(`link_data_rate_bps`, as `DataThroughputPolicy` scores it), the data its
+transmitter's store holds over `horizon_s` (`stored_bits`) and the room in its
+receiver's store over `horizon_s` (`store_room_bits`). So it prefers links out of
+fuller stores and into emptier ones, and never selects a link with nothing to
+send or nowhere to put it: a store the engine counts as empty (within `1e-9` of
+its capacity of nothing) holds nothing here, and one it counts as full has no
+room. A transmitter without a store counts as always holding data, and a
+receiver without one as always having room. Undirected
+links score 0, and so does every link when the run's spacecraft models are not
+given. The unit is that of `DataThroughputPolicy`, so the two mix without
+rescaling.
+"""
+struct DataBacklogPolicy <: AbstractSchedulingPolicy
+    horizon_s::Float64
+
+    function DataBacklogPolicy(horizon_s::Real)
+        isfinite(horizon_s) && horizon_s > 0 || throw(ArgumentError(
+            "A DataBacklogPolicy's horizon_s must be finite and positive, in seconds; got $(horizon_s)."))
+        return new(Float64(horizon_s))
+    end
+end
+DataBacklogPolicy(; horizon_s::Real) = DataBacklogPolicy(horizon_s)
+
+_may_score(::DataBacklogPolicy, model, edge::Int, ctx::SchedulingContext) =
+    ctx.spacecraft !== nothing && link_directed(model.graph.edge_properties[edge])
+
+function candidate_score(policy::DataBacklogPolicy, candidate::LinkCandidate, ctx::SchedulingContext, t::Float64)
+    ctx.spacecraft === nothing && return 0.0
+    link_directed(candidate.link) || return 0.0
+    rate = Float64(link_data_rate_bps(candidate.link, candidate.terminal_a, candidate.terminal_b,
+        candidate.a, candidate.b, ctx.link_context))
+    transmitter, receiver = candidate.key[1][1], candidate.key[2][1]
+    return min(rate, _backlog_held_bits(ctx, transmitter) / policy.horizon_s, _backlog_room_bits(ctx, receiver) / policy.horizon_s)
+end
+
+# The data a transmitter holds and the room a receiver has, for the backlog
+# score: as the store's own events count it, so the hair a full or empty event
+# leaves does not count; Inf without a store.
+function _backlog_held_bits(ctx::SchedulingContext, i::Int)
+    held = stored_bits(ctx, i)
+    isnan(held) && return Inf
+    return _data_store_within_empty(ctx.spacecraft[i], held) ? 0.0 : held
+end
+function _backlog_room_bits(ctx::SchedulingContext, i::Int)
+    room = store_room_bits(ctx, i)
+    isnan(room) && return Inf
+    return _data_store_within_full(ctx.spacecraft[i], stored_bits(ctx, i)) ? 0.0 : room
+end
+
+"""
     state_of_charge(ctx::SchedulingContext, spacecraft_index::Integer) -> Float64
 
 The state of charge (a fraction of its capacity) of spacecraft
@@ -616,7 +702,7 @@ function _removed_symbol_message(policy::Symbol, kwargs)
     if spec === nothing
         return "$(call): $(repr(policy)) is not a scheduling policy, and policies chosen by a symbol were removed in " *
             "SpaceAGORA 0.6.0. Use a policy type: SemimajorAxisRatePolicy, EccentricityRatePolicy, PowerDeliveryPolicy, " *
-            "DataThroughputPolicy, EnergyBalancingPolicy or WeightedPolicy, or one of your own (a subtype of " *
+            "DataThroughputPolicy, DataBacklogPolicy, EnergyBalancingPolicy or WeightedPolicy, or one of your own (a subtype of " *
             "AbstractSchedulingPolicy with a candidate_score method)."
     end
     T, targets = spec

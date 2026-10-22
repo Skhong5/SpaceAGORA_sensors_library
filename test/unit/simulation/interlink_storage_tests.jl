@@ -3,7 +3,8 @@ module InterlinkStorageTests
 # Onboard data storage: the store and the sources, the setup checks, the flow
 # control at a store (an empty store passes what comes in on, a full one takes
 # in no more than it sends), relays, production lost into a full store, a source
-# of your own, the columns, the checkpoint state, and a negative control.
+# of your own, the columns, the checkpoint state, scheduling by backlog, and a
+# negative control.
 
 using Test
 using LinearAlgebra
@@ -285,6 +286,78 @@ end
                 @test getproperty(resumed.table, name)[end] ≈ getproperty(straight, name)[end] rtol=1e-9 atol=1e-6
             end
         end
+    end
+
+    @testset "scheduling by backlog" begin
+        # Three spacecraft at a point: two senders, one receiver, links from each sender.
+        function backlog_fixture(; held=(8e6, 1e6), room_capacity=1e8, room_held=0.0, rate=2e6)
+            spacecraft = [data_sat(1, 0.0; store=DataStore(capacity_bits=1e9, initial_bits=held[1])),
+                          data_sat(2, 50e3; store=DataStore(capacity_bits=1e9, initial_bits=held[2])),
+                          data_sat(3, 100e3; store=DataStore(capacity_bits=room_capacity, initial_bits=room_held))]
+            model = data_model(spacecraft, [(1, 3, rate), (2, 3, rate)])
+            state = (sc=[(pos=collect(sc.initial_condition.pos), vel=collect(sc.initial_condition.vel), mass=100.0,
+                          data_stored_bits=SM.data_store(sc).initial_bits) for sc in spacecraft],)
+            update_availability!(model, spacecraft, state)
+            return spacecraft, model, state
+        end
+        function scores(policy, spacecraft, model, state)
+            scheduler = SchedulingPolicyModel(policy)
+            score_candidates!(model, scheduler, state, PLANET.μ; spacecraft)
+            return copy(SM.SchedulingPolicies.matching_workspace!(model, scheduler).score), select_interlinks!(model, scheduler)
+        end
+        # The accessors.
+        spacecraft, model, state = backlog_fixture()
+        ctx = SchedulingContext(PLANET.μ, LinkContext(), spacecraft, state, nothing)
+        @test stored_bits(ctx, 1) === 8e6 && store_room_bits(ctx, 3) === 1e8
+        plain = [data_sat(1, 0.0), data_sat(2, 50e3)]
+        plain_state = (sc=[(pos=collect(sc.initial_condition.pos),) for sc in plain],)
+        plain_ctx = SchedulingContext(PLANET.μ, LinkContext(), plain, plain_state, nothing)
+        @test isnan(stored_bits(plain_ctx, 1)) && store_room_bits(plain_ctx, 1) == Inf
+        @test isnan(stored_bits(SchedulingContext(PLANET.μ, LinkContext(), nothing, state, nothing), 1))
+        # The score: the least of the rate, the held data and the room, over the horizon.
+        policy = DataBacklogPolicy(horizon_s=10.0)
+        values, selected = scores(policy, spacecraft, model, state)
+        @test values == [min(2e6, 8e6 / 10, 1e8 / 10), min(2e6, 1e6 / 10, 1e8 / 10)]
+        # The fuller store wins the receiver's one terminal.
+        @test selected == [((1, 1), (3, 1))]
+        # The receiver's room limits it, and a full receiver or an empty sender scores 0.
+        values, _ = scores(policy, backlog_fixture(room_capacity=1e8, room_held=1e8 - 2e6)...)
+        @test values == [2e6 / 10, 1e6 / 10]
+        # A store within its empty or full tolerance holds nothing, or has no room.
+        values, _ = scores(policy, backlog_fixture(held=(1e-3, 1e6))...)
+        @test values[1] == 0.0
+        values, _ = scores(policy, backlog_fixture(room_capacity=1e8, room_held=1e8 * (1 - 1e-12))...)
+        @test values == [0.0, 0.0]
+        values, selected = scores(policy, backlog_fixture(room_capacity=1e8, room_held=1e8)...)
+        @test values == [0.0, 0.0] && isempty(selected)
+        values, selected = scores(policy, backlog_fixture(held=(0.0, 3e6))...)
+        @test values[1] == 0.0 && selected == [((2, 1), (3, 1))]
+        # A sender without a store always holds data, and a receiver without one has room.
+        open_ends = [data_sat(1, 0.0), data_sat(2, 50e3)]
+        open_model = data_model(open_ends, [(1, 2, 2e6)])
+        open_state = (sc=[(pos=collect(sc.initial_condition.pos), vel=collect(sc.initial_condition.vel), mass=100.0)
+                          for sc in open_ends],)
+        update_availability!(open_model, open_ends, open_state)
+        @test first(scores(policy, open_ends, open_model, open_state)) == [2e6]
+        # It shares DataThroughputPolicy's unit: a mix weighs the two directly.
+        mixed = WeightedPolicy(PolicyTerm(policy; scale=1.0), PolicyTerm(DataThroughputPolicy(); scale=1.0, weight=0.5))
+        values, _ = scores(mixed, backlog_fixture()...)
+        @test values == [8e5 + 0.5 * 2e6, 1e5 + 0.5 * 2e6]
+        @test_throws ArgumentError DataBacklogPolicy(horizon_s=0.0)
+        @test_throws ArgumentError DataBacklogPolicy(horizon_s=Inf)
+        # A checkpoint records the horizon.
+        @test SE._scheduling_policy_entry(policy) == SE._scheduling_policy_entry(DataBacklogPolicy(horizon_s=10.0))
+        @test SE._scheduling_policy_entry(policy) != SE._scheduling_policy_entry(DataBacklogPolicy(horizon_s=20.0))
+        # In a run, the link closes once the sender has nothing left to send.
+        spacecraft = [data_sat(1, 0.0; store=DataStore(capacity_bits=1e8, initial_bits=1e7)),
+                      data_sat(2, 100e3; store=DataStore(capacity_bits=1e9))]
+        args = run_args(spacecraft, data_model(spacecraft, [(1, 2, 2e6)]))
+        args = SM.SimConfig._with_configuration(args; scheduling_policy_model=DataBacklogPolicy(horizon_s=5.0))
+        solution = run_simulation(args; return_solution=true)
+        history = solution.prob.p.args.interlink_model.history
+        @test first(history).active == [((1, 1), (2, 1))]
+        @test isempty(last(history).active)
+        @test solution.u[end].sc[2].data_received_bits ≈ 1e7 rtol=1e-6
     end
 
     @testset "without a store, as before" begin

@@ -331,6 +331,16 @@ add_data!(sc, bus, DataSource(rate_bps=2e5))                          # any link
   without a store, and a source kind without a method.
 - **Solvers.** As with a battery, a run with a data store needs a solver mode
   that integrates the full right-hand side.
+- **Scheduling by backlog.** `DataBacklogPolicy(; horizon_s)` scores a data
+  link by what it could move in the next `horizon_s` seconds,
+  `min(c, stored_tx / horizon_s, room_rx / horizon_s)` in bit/s, with `c` the
+  link's rate. It prefers links out of fuller stores and into emptier ones, and
+  never selects a link with nothing to send or nowhere to put it. A transmitter
+  without a store counts as always holding data, and a receiver without one as
+  always having room. It shares `DataThroughputPolicy`'s unit, so the two mix in
+  a `WeightedPolicy` without rescaling. A policy of your own reads the stores
+  with `stored_bits(ctx, i)` (NaN without a store) and `store_room_bits(ctx, i)`
+  (Inf without one).
 - **Columns.** A run with a store adds `data_stored_bits`, `data_store_fill`
   (the fraction of the capacity held), `data_produced_bits` and
   `data_lost_bits` per spacecraft (see
@@ -375,6 +385,7 @@ scheduler, which also holds the matching workspace:
 | `EccentricityRatePolicy(; targets=1)` | the rate at which its force raises its target's eccentricity, `ê·ė` | 1/s |
 | `PowerDeliveryPolicy()` | the electrical power it would deliver to the receiver's bus, `link_received_power_w` | W |
 | `DataThroughputPolicy()` | the data rate it would carry, `link_data_rate_bps` | bit/s |
+| `DataBacklogPolicy(; horizon_s)` | the data it could move in the next `horizon_s`: the least of its rate, the transmitter's stored data over `horizon_s` and the room in the receiver's store over `horizon_s` | bit/s |
 | `EnergyBalancingPolicy()` | the power it would deliver times the state-of-charge gap from sender to receiver, `P × (s_tx − s_rx)` | W |
 | `WeightedPolicy(terms...)` | `Σ weight × (score / scale)` over its terms | 1 |
 
@@ -450,7 +461,9 @@ args = SimulationConfiguration(...; interlink_model=model, scheduling_policy_mod
 - **The context** (`SchedulingContext`) has the planet's gravitational parameter
   `mu`, the `link_context` to pass to the link hooks, and the run's `spacecraft`;
   `state_of_charge(ctx, i)` gives spacecraft `i`'s battery state of charge (NaN
-  without a battery). `t` is the elapsed time in seconds.
+  without a battery), and `stored_bits(ctx, i)` and `store_room_bits(ctx, i)`
+  the data its store holds and the room left (NaN and Inf without a store). `t`
+  is the elapsed time in seconds.
 - **The rules.** The hook is called for available candidates only; the others
   score 0. A nonfinite score is refused, and only positive scores can be
   selected. A run refuses at setup a policy type without a `candidate_score`
