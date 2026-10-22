@@ -90,6 +90,8 @@ using .SimulationModel: PowerBeamLink, link_received_power_w, beam_spot_radius_m
 using .SimulationModel: DataLink, AbstractDataBudget, FixedRateBudget, ShannonBudget, link_data_rate_bps, budget_rate_bps
 using .SimulationModel: terminal_shed_tier, contact_windows, contact_time_s
 using .SimulationModel: SchedulingPolicyModel, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
+using .SimulationModel: AbstractSchedulingPolicy, LinkCandidate, SchedulingContext, candidate_score
+using .SimulationModel: SemimajorAxisRatePolicy, EccentricityRatePolicy, PowerDeliveryPolicy, DataThroughputPolicy
 using .SimulationModel: ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
 export AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
 export InterlinkModel, InterLinkGraph, InterLinkKey, InterLinkHistory, register_link!, interlink_force_on_spacecraft
@@ -100,6 +102,8 @@ export PowerBeamLink, link_received_power_w, beam_spot_radius_m, beam_capture_fr
 export DataLink, AbstractDataBudget, FixedRateBudget, ShannonBudget, link_data_rate_bps, budget_rate_bps
 export terminal_shed_tier, contact_windows, contact_time_s
 export SchedulingPolicyModel, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
+export AbstractSchedulingPolicy, LinkCandidate, SchedulingContext, candidate_score
+export SemimajorAxisRatePolicy, EccentricityRatePolicy, PowerDeliveryPolicy, DataThroughputPolicy
 export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
 @doc (@doc SimulationModel.InterLinkModels.AbstractInterlink) AbstractInterlink
 @doc (@doc SimulationModel.InterLinkModels.LinkContext) LinkContext
@@ -143,7 +147,15 @@ export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!,
 @doc """Canonically ordered pair of `(spacecraft array index, terminal number)` endpoints.""" InterLinkKey
 @doc """One accepted-step schedule sample: time in seconds, the selected `InterLinkKey` values (`active`) and the available ones (`available`, recorded in a run with a data link or with `InterlinkModel(; record_available=true)`, and empty for a sample built from a time and the selected keys). `contact_windows` reads a run's samples.""" InterLinkHistory
 @doc (@doc SimulationModel.SchedulingPolicies.SchedulingPolicyModel) SchedulingPolicyModel
-@doc """Score available links using a `SchedulingPolicyModel`, the current spacecraft state and the gravitational parameter, from each link's `link_force` (or a caller's `candidate_force(target, partner, link)`).""" score_candidates!
+@doc (@doc SimulationModel.SchedulingPolicies.score_candidates!) score_candidates!
+@doc (@doc SimulationModel.SchedulingPolicies.AbstractSchedulingPolicy) AbstractSchedulingPolicy
+@doc (@doc SimulationModel.SchedulingPolicies.LinkCandidate) LinkCandidate
+@doc (@doc SimulationModel.SchedulingPolicies.SchedulingContext) SchedulingContext
+@doc (@doc SimulationModel.SchedulingPolicies.candidate_score) candidate_score
+@doc (@doc SimulationModel.SchedulingPolicies.SemimajorAxisRatePolicy) SemimajorAxisRatePolicy
+@doc (@doc SimulationModel.SchedulingPolicies.EccentricityRatePolicy) EccentricityRatePolicy
+@doc (@doc SimulationModel.SchedulingPolicies.PowerDeliveryPolicy) PowerDeliveryPolicy
+@doc (@doc SimulationModel.SchedulingPolicies.DataThroughputPolicy) DataThroughputPolicy
 @doc (@doc SimulationModel.SchedulingPolicies.select_interlinks!) select_interlinks!
 @doc """Refresh link availability, score candidates, and select the maximum-total-score terminal matching.""" schedule_interlinks!
 @doc """Create the accepted-step scheduler callback used automatically by `run_simulation` when interlinks are enabled.""" interlink_scheduler_callback

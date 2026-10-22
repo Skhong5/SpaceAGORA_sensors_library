@@ -41,7 +41,7 @@ function gve_sma_configuration(; dt_max_orbit::Float64=10.0, duration::Float64=3
             dt_max_orbit=dt_max_orbit),
         solver_config=SM.SolverConfig(solver_mode=:tsit5),
         interlink_model=with_interlinks ? model : nothing,
-        scheduling_policy_model=SchedulingPolicyModel(:gve_sma))
+        scheduling_policy_model=SemimajorAxisRatePolicy())
 end
 
 function interlink_switches(history)
