@@ -42,7 +42,7 @@ end
         @test getfield(unchanged, name) === getfield(args, name)
     end
     @test SC._with_configuration(args; solver_config=nothing).solver_config === nothing
-    @test_throws MethodError SC._with_configuration(args; solver_confg=nothing)
+    @test_throws ArgumentError SC._with_configuration(args; solver_confg=nothing)
 
     # Both parameterized model types must be inferred anew by the constructor.
     env = args.environment_model
@@ -76,7 +76,8 @@ end
             results=true, verbose=true, results_directory="custom-results",
             generate_plots=true, generate_filenames=true, normalize=true, save_csv=true,
             checkpoint_enabled=true, checkpoint_interval_s=17.0,
-            checkpoint_directory="custom-checkpoints", resume_from_checkpoint=true))
+            checkpoint_directory="custom-checkpoints", resume_from_checkpoint=true,
+            articulated_live_pose_loads=true))
     withenv("SPACEAGORA_EXAMPLE_SMOKE" => "0") do
         @test TV._example_smoke_args(args) === args
     end
@@ -106,11 +107,13 @@ end
             @test ss.generate_filenames
             @test !ss.normalize
             @test ss.save_csv == keep_results
-            # Preserve smoke's existing restart defaults, not the full-run state.
+            # The smoke copy turns checkpoints off and keeps every other setting,
+            # physics settings included.
             @test !ss.checkpoint_enabled
-            @test ss.checkpoint_interval_s == 300.0
-            @test ss.checkpoint_directory == ""
+            @test ss.checkpoint_interval_s == 17.0
+            @test ss.checkpoint_directory == "custom-checkpoints"
             @test !ss.resume_from_checkpoint
+            @test ss.articulated_live_pose_loads
         end
     end
     @test args.simulation_settings.checkpoint_enabled

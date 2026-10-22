@@ -249,7 +249,8 @@ function _write_results_bundle!(
     times::Vector{Float64},
     args,
     results_bundle_schema_version;
-    csv_path::Union{Nothing, String}=nothing
+    csv_path::Union{Nothing, String}=nothing,
+    resumed_from_s::Union{Nothing, Float64}=nothing
 )
     _invalidate_mission_history!(args)
     prefix = IOConfig._results_bundle_prefix(args)
@@ -287,6 +288,10 @@ function _write_results_bundle!(
         "atmosphere" => atmosphere_provenance(args.environment_model.density_model),
         "files" => files
     )
+    # When the rows start, and for a resumed run where it resumed: a run resumed
+    # from a checkpoint that kept no rows starts at its resume.
+    isempty(times) || (manifest["first_time_s"] = times[1])
+    resumed_from_s === nothing || (manifest["resumed_from_s"] = resumed_from_s)
 
     IOSerialization._atomic_write_file(manifest_path, tmp -> begin
         open(tmp, "w") do io

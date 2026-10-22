@@ -150,6 +150,9 @@ routes. Source grouping does not move companion implementations into core.
   retain responsibility for nested settings and intentional resets. The telemetry
   runner explicitly clears the typed solver so its environment-based retry
   policy remains authoritative. Engine state isolation remains separate.
+  Settings, mission, environment, spacecraft and campaign-sample copies use
+  `SimConfig._with_fields` the same way: they name only the fields that change,
+  and every other field passes through the type's constructor.
 - `SimulationModel.QuaternionMath` owns the quaternion functions in
   `src/foundation/core/numerics/quaternion_utils.jl`. Consumers import this module rather
   than including another copy of the implementation. Quaternions are scalar-last;

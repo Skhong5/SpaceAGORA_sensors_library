@@ -63,12 +63,13 @@ end
 # navigation at their own periods; `fail_after` adds a navigation effector that
 # interrupts the run.
 function ramp_setup(; interval=nothing, period, data_rate=period, guidance_period=0.25, navigation_period=0.3,
-                    second_control_period=0.3, mission_time=5.0, dir=mktempdir(), resume=false, fail_after=nothing)
+                    second_control_period=0.3, mission_time=5.0, dir=mktempdir(), resume=false, fail_after=nothing,
+                    results=false)
     control, second, guidance, navigation = RampWheel(), ControlRecorder(), TickRecorder(), TickRecorder()
     navigation_effectors = fail_after === nothing ? (navigation,) : (navigation, FailAfter(fail_after))
     args = SM.SimConfig._with_configuration(wheel_config(mission_time);
-        simulation_settings=SM.SimulationSettings(results=false, verbose=false, generate_plots=false,
-            normalize=false, save_csv=false, results_directory=dir,
+        simulation_settings=SM.SimulationSettings(results=results, verbose=false, generate_plots=false,
+            normalize=false, save_csv=results, results_directory=dir,
             checkpoint_enabled=interval !== nothing, checkpoint_interval_s=something(interval, 300.0),
             checkpoint_directory=joinpath(dir, "checkpoints"), resume_from_checkpoint=resume),
         mission_configuration=SM.MissionConfiguration(mission_type=SM.MissionTime, keplerian=false,
@@ -239,8 +240,17 @@ end
             @test vcat(getfield(first_leg, field), getfield(resumed, field)) == getfield(unsplit, field)
         end
         @test resumed.final.h_wheels[1] ≈ unsplit.final.h_wheels[1] rtol=1e-12
-        # The row saved at the resume time holds the level commanded there.
-        @test resumed.table.time[1] == 2.0 && resumed.table.sc1_actuator_level_1[1] == 0.002
+        # The resumed run's table holds the whole run, as a checkpointed run never
+        # interrupted does. The first leg's last row, saved before the ticks due at
+        # 2 s, is saved again after them and holds the level commanded there.
+        whole = ramp_run(period=0.125, interval=1.0)
+        @test isequal(resumed.table, whole.table)
+        @test first_leg.table.time[end] == 2.0 && first_leg.table.sc1_actuator_level_1[end] == 0.001875
+        row = findfirst(==(2.0), resumed.table.time)
+        @test resumed.table.time[1] == 0.0 && resumed.table.sc1_actuator_level_1[row] == 0.002
+        # The rows were written anew without the first leg's last row: a resume of
+        # the finished run solves nothing and returns the same table.
+        @test isequal(ramp_run(period=0.125, interval=1.0, dir=dir, resume=true).table, whole.table)
         # Resumed with checkpoint writing off (a resume is still checkpointed, here in
         # one segment): the same ticks.
         again = ramp_run(period=0.125, dir=again_dir, resume=true)
@@ -267,6 +277,43 @@ end
                     (version=1, pending_s=1.0), (version=3, time_s=2.0, pending=[]), (pending_s=2.0,))
             @test_throws ArgumentError SE._pending_periodic_ticks(with_entry(bad))
         end
+    end
+
+    @testset "an extension that fails keeps the finished run's rows and results" begin
+        whole = ramp_run(period=0.125, interval=1.0, fail_after=Inf)
+        # Its first checkpoint cannot be written. The rows file is only appended
+        # to, so the finished run's checkpoint still finds its own rows, and a
+        # later resume holds the whole run.
+        dir = mktempdir()
+        ramp_run(period=0.125, interval=1.0, dir=dir, mission_time=2.0, fail_after=Inf)
+        checkpoints = joinpath(dir, "checkpoints")
+        chmod(checkpoints, 0o555)
+        read_only = try
+            touch(joinpath(checkpoints, "probe"))
+            false
+        catch
+            true
+        end
+        try
+            if read_only
+                @test_throws Exception ramp_run(period=0.125, interval=1.0, dir=dir, resume=true, fail_after=Inf)
+            else
+                @test_skip "the checkpoint directory stays writable here"
+            end
+        finally
+            chmod(checkpoints, 0o755)
+            rm(joinpath(checkpoints, "probe"); force=true)
+        end
+        @test isequal(ramp_run(period=0.125, interval=1.0, dir=dir, resume=true, fail_after=Inf).table, whole.table)
+        # Its first segment fails: the partial results it saves are the finished
+        # run's, its row at 2 s included, which the extension had not yet saved again.
+        dir = mktempdir()
+        ramp_run(period=0.125, interval=1.0, dir=dir, mission_time=2.0, fail_after=Inf, results=true)
+        csv = joinpath(dir, "simulation_results.csv")
+        finished = read(csv)
+        @test_throws Exception ramp_run(period=0.125, interval=1.0, dir=dir, resume=true, fail_after=2.3, results=true)
+        @test read(csv) == finished
+        @test isequal(ramp_run(period=0.125, interval=1.0, dir=dir, resume=true, fail_after=Inf).table, whole.table)
     end
 
     @testset "decimal boundaries take the tick they round away from, once" begin
