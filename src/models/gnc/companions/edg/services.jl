@@ -1,6 +1,6 @@
 """
 Versioned value and prediction services for the optional experimental EDG package,
-contract 2.0.0. The provider implements the two decision services with the EDG
+contract 3.0.0. The provider implements the two decision services with the EDG
 run state first:
 
 - `guidance_decision!(state, config, u, p, t, spacecraft_index)`;
@@ -24,15 +24,12 @@ using ..SimulationModel.EDGServices: CONTRACT_VERSION, CompatibilityError, EDGUn
 # remain private, even though they implement the same physical queries.
 import ..SimulationModel.EDGServices: _edg_environment_state as _environment,
     _edg_in_drag_passage as _in_passage, _edg_ephemeris_time as _epoch,
-    _edg_planet_frame_lpi as _frame, _edg_targeting_prediction_environment as _trajectory,
-    _edg_sample_prediction_atmosphere as _atmosphere, _edg_targeting_control_clock as _clock
+    _edg_targeting_prediction_environment as _trajectory, _edg_targeting_control_clock as _clock
 _edg_environment_state(p::AbstractPredictionContext, u, t::Float64, spacecraft_index::Int) =
     _environment(p, u, t, spacecraft_index)
 _edg_in_drag_passage(p::AbstractPredictionContext, env) = _in_passage(p, env)
 _edg_ephemeris_time(p::AbstractPredictionContext, t::Float64) = _epoch(p, t)
-_edg_planet_frame_lpi(p::AbstractPredictionContext, t::Float64) = _frame(p, t)
 _edg_targeting_prediction_environment(p::AbstractPredictionContext, r, v, t::Float64) = _trajectory(p, r, v, t)
-_edg_sample_prediction_atmosphere(p::AbstractPredictionContext, h::Float64, t::Float64) = _atmosphere(p, h, t)
 _edg_targeting_control_clock(p::AbstractPredictionContext) = _clock(p)
 using ..SimulationModel.GuidanceHooks: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState
 using ..SimulationModel.CommandTypes: AerobrakingControlCommand
@@ -58,9 +55,7 @@ const CONSUMED_SERVICES = (
     :_edg_environment_state,
     :_edg_in_drag_passage,
     :_edg_ephemeris_time,
-    :_edg_planet_frame_lpi,
     :_edg_targeting_prediction_environment,
-    :_edg_sample_prediction_atmosphere,
     :_edg_targeting_control_clock,
     :aerodynamic_coefficient_fM,
     :rvtoorbitalelement,

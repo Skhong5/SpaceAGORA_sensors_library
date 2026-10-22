@@ -1,4 +1,12 @@
-# Compatibility bindings; typed EDG calculations have one owner.
+# Historical ControlHooks bindings retained for existing callers.
+# Numerical EDG calculations remain owned by the optional companion; this file
+# only imports their core dispatch functions and preserves one model adapter.
+
+using ..EDGAlgorithms: _energy_depletion_heat_rate_calc,
+    _energy_depletion_heatrate_root_alpha,
+    _edg_maxwellian_heat_rate,
+    _edg_heat_rate_alpha
+
 using ..EDGAlgorithms: _edg_heat_load_scale_height,
     _edg_total_ref_area,
     _edg_predict_mass,
@@ -30,3 +38,7 @@ using ..EDGServices: _edg_sample_prediction_atmosphere
 @inline function _edg_heat_load_low_drag_active(model, t::Float64, i::Int)::Bool
     return EDGAlgorithms._edg_heat_load_low_drag_active(model.config, model.state, t, i)
 end
+
+using ..EDGAlgorithms: _energy_depletion_struct_drag_area,
+    _energy_depletion_struct_load_root_alpha,
+    _edg_structural_alpha

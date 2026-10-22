@@ -2,7 +2,7 @@
 
 ## Canonical ownership
 - `src/models/gnc/guidance/aerobraking/*` owns the core side of typed energy-depletion guidance (EDG): `typed_edg/` holds the model types, platform services and compatibility dispatch, and `energy_depletion_lifecycle.jl` holds run initialization and passage resets.
-- `src/models/gnc/control/` owns the EDG control lifecycle, passage heat accounting and targeting control. Its `heat_rate_control.jl`, `heat_load_control.jl` and `struct_load_control.jl` files are compatibility bindings to the typed calculations, not further implementations.
+- `src/models/gnc/control/` owns the EDG control lifecycle, passage heat accounting and targeting control. Its `aerobraking/edg_compatibility.jl` file keeps the historical control-side bindings and model adapter; the numerical calculations stay in the companion.
 - The optional `SpaceAGORAEDG.jl` package owns the EDG numerical kernels and is the only EDG implementation. SpaceAGORA no longer carries the older E-EDG and T-EDG strategy routes or their strategy selector.
 
 ## Required boundaries
@@ -26,7 +26,7 @@ The optional `SpaceAGORAEDG.jl` package owns the typed numerical kernels.
 Core's `SimulationModel.EDGAlgorithms`, under
 `src/models/gnc/guidance/aerobraking/typed_edg/`, retains compatibility dispatch
 rather than a second implementation. `SpaceAGORA.EDGServices` is the versioned
-boundary. The [EDG package boundary](@ref)
+boundary. The [EDG package boundary](../src/reference/edg_adapter_boundary.md)
 defines the supported calls, units, state ownership, installation and errors.
 
 Guidance and control model types remain in `GuidanceHooks` and `ControlHooks`.

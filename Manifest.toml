@@ -2,7 +2,7 @@
 
 julia_version = "1.12.3"
 manifest_format = "2.0"
-project_hash = "dca6c7da094c0883a0c47924709d581d3b6bf042"
+project_hash = "35f1c8a63d5d0f437345ac81e0067dd35aa0c715"
 
 [[deps.ADTypes]]
 deps = ["PrecompileTools"]
@@ -1838,7 +1838,7 @@ version = "1.2.2"
 deps = ["ADTypes", "Arrow", "Artifacts", "AstroTime", "Base64", "CSV", "ComponentArrays", "DataFrames", "Dates", "DiffEqBase", "DiffEqCallbacks", "Distributed", "Interpolations", "JSON", "LinearAlgebra", "LinearSolve", "Logging", "LoopVectorization", "OSQP", "OrdinaryDiffEq", "OrdinaryDiffEqHighOrderRK", "OrdinaryDiffEqSDIRK", "OrdinaryDiffEqSymplecticRK", "Pkg", "Polyester", "PrecompileTools", "Printf", "Random", "RecursiveArrayTools", "Reexport", "SHA", "SPICE", "SatelliteToolboxAtmosphericModels", "SatelliteToolboxGeomagneticField", "SatelliteToolboxTransformations", "SciMLBase", "Serialization", "SpaceIndices", "SparseArrays", "SpecialFunctions", "StaticArrays", "Statistics", "TOML"]
 path = "."
 uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
-version = "0.5.1"
+version = "0.6.0"
 
     [deps.SpaceAGORA.extensions]
     SpaceAGORAEDGExt = "SpaceAGORAEDG"

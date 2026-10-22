@@ -26,7 +26,7 @@ single callback or registry that all companions use.
 |---|---|---|---|
 | HYPR planning | The `HYPR.jl` extension; `SpaceAGORAHYPR` is a compatibility package that forwards to it | [`SpaceAGORA.HYPRServices`](hypr_services.md) | HYPR is activated explicitly; planner state is created for each request |
 | External propagation, including MuJoCo | The independent [SpaceAGORAMuJoCo.jl companion](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl) for MuJoCo scenes; each other adapter owns its own domain implementation | [`SpaceAGORA.ExternalPropagationServices`](external_propagation_services.md) | Propagators are set in the configuration; each simulation gets its own mutable runtime |
-| Experimental EDG guidance | The independent `SpaceAGORAEDG.jl` companion | [`SpaceAGORA.EDGServices`](edg_adapter_boundary.md), contract `v"2.0.0"` | SpaceAGORA owns the callbacks and the per-run state; the companion gets copied observations and prediction queries that are valid for one call |
+| Experimental EDG guidance | The independent `SpaceAGORAEDG.jl` companion | [`SpaceAGORA.EDGServices`](edg_adapter_boundary.md), contract `v"3.0.0"` | SpaceAGORA owns the callbacks and the per-run state; the companion gets copied observations and prediction queries that are valid for one call |
 
 EDG is experimental: review its scientific results separately from its
 interface checks. `SpaceAGORAHYPR`, HYPR's compatibility package, stays at
@@ -127,8 +127,10 @@ contract version is listed here with what changed.
 
 | Facade | Contract | Change |
 |---|---|---|
+| `HYPRServices` | 3.0.0 | Narrowed to what SpaceAGORA's own code calls or exports and what HYPR uses: 20 extension points, 50 services and the three `Cloth` services. 75 RPO and robot-arm helpers that only HYPR called, including `rpo_path_cost`, `rpo_retime_path` and `rpo_retimed_reference`, are now HYPR's own functions; the `SwarmPolicy` namespace and the policy entries are removed (HYPR exports those functions); three unused services leave the list, their functions staying in SpaceAGORA. No remaining name changes. HYPR implements it from version 0.5.0, and this source accepts HYPR 0.5.0 only. |
+| `EDGServices` | 3.0.0 | Removes `_edg_planet_frame_lpi` and `_edg_sample_prediction_atmosphere`, which the companion did not call. Nothing else changes. SpaceAGORAEDG implements it from version 0.5.0. |
 | `ExternalPropagationServices` | 2.0.0 | `external_state` and `external_acceleration` take `(rt, t, slot)`, time before the owner-local position, instead of `(rt, k, t)`. The attitude quaternion is defined by formula. No numerical change. SpaceAGORAMuJoCo implements it from version 0.2.0. |
-| `HYPRServices` | 2.0.0 | The planners HYPR supplies require an explicit `rng::AbstractRNG` keyword instead of defaulting to the global stream. HYPR implements it from version 0.2.0; this source accepts HYPR 0.4.0. No binding changes. |
+| `HYPRServices` | 2.0.0 | The planners HYPR supplies require an explicit `rng::AbstractRNG` keyword instead of defaulting to the global stream. HYPR implements it from version 0.2.0; SpaceAGORA 0.5 accepted HYPR 0.4.0. No binding changes. |
 | `EDGServices` | 2.0.0 | `guidance_decision!` and `control_decision!` take the EDG state before the configuration; `_edg_environment_state(p, u, t, spacecraft_index)` takes the context first; `_edg_targeting_control_clock(p)` returns the clock the engine reported to the call's EDG state instead of searching the configuration. No numerical change. The EDG guidance family of the GNC algorithm contract is served by this contract. SpaceAGORAEDG implements it from version 0.2.0. |
 | `HYPRServices`, `ExternalPropagationServices`, `EDGServices` | 1.0.0 | First reviewed contracts. |
 

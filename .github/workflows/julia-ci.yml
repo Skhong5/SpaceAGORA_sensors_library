@@ -1030,6 +1030,7 @@ jobs:
           julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/integration.jl core-first
           julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/integration.jl hypr-first
           julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/rrt_callback_contract.jl
+          julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/extension_helpers.jl
           julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" -e 'include("test/sampling_compatibility.jl"); include("test/custom_objective.jl")'
           julia --startup-file=no --compiled-modules=strict --pkgimages=existing --project="$RUNNER_TEMP/hypr-installations/hypr" test/precompiled_loading.jl core-first
           julia --startup-file=no --compiled-modules=strict --pkgimages=existing --project="$RUNNER_TEMP/hypr-installations/hypr" test/precompiled_loading.jl hypr-first

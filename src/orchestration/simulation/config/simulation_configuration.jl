@@ -16,7 +16,7 @@
     solver_config::Union{Nothing, SolverConfig} = nothing # nothing = read from env at run time
     external_propagators::Tuple = () # SimulationModel.ExternalPropagation owners of externally propagated spacecraft (shadow entries); () = none
     interlink_model::Union{Nothing, InterlinkModel} = nothing
-    scheduling_policy_model::SchedulingPolicyModel = SchedulingPolicyModel(:gve_sma)
+    scheduling_policy_model::SchedulingPolicyModel = SchedulingPolicyModel(SemimajorAxisRatePolicy()) # or a scheduling policy alone
 end # struct SimulationConfiguration
 
 # Preserve the positional constructor used before interlinks were added.
@@ -26,7 +26,17 @@ SimulationConfiguration(file_paths, simulation_settings, mission_configuration,
     SimulationConfiguration(file_paths, simulation_settings, mission_configuration,
         environment_model, dynamics_model, guidance_model, navigation_model, control_model,
         initial_time, integration_tolerances, solver_config, external_propagators,
-        nothing, SchedulingPolicyModel(:gve_sma))
+        nothing, SchedulingPolicyModel(SemimajorAxisRatePolicy()))
+
+# A scheduling policy alone is taken as the run's scheduler.
+SimulationConfiguration(file_paths, simulation_settings, mission_configuration,
+    environment_model, dynamics_model, guidance_model, navigation_model, control_model,
+    initial_time, integration_tolerances, solver_config, external_propagators,
+    interlink_model, scheduling_policy_model::AbstractSchedulingPolicy) =
+    SimulationConfiguration(file_paths, simulation_settings, mission_configuration,
+        environment_model, dynamics_model, guidance_model, navigation_model, control_model,
+        initial_time, integration_tolerances, solver_config, external_propagators,
+        interlink_model, SchedulingPolicyModel(scheduling_policy_model))
 
 """
     _with_fields(x; changes...)

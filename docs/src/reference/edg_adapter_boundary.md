@@ -2,7 +2,7 @@
 
 `SpaceAGORAEDG.jl` is the optional, experimental package that computes
 SpaceAGORA's typed energy-depletion guidance (EDG). SpaceAGORA reaches it through
-the service module `SpaceAGORA.EDGServices`, contract `v"2.0.0"`: a module inside
+the service module `SpaceAGORA.EDGServices`, contract `v"3.0.0"`: a module inside
 SpaceAGORA that lists the two decisions the companion implements and the types
 and queries SpaceAGORA supplies to it. The split follows the
 [optional adapter standard](adapter_contract.md).
@@ -83,8 +83,7 @@ consumed by the kernels. Mutable physical geometry is never passed to the compan
 | `planet_constants`, `thermal_parameters`, `entry_altitude_m`, `spacecraft_geometry(p, spacecraft_index)` | Immutable value projections, with entry altitude in metres. |
 | `_edg_environment_state(p, u, t, spacecraft_index)` | Current geodetic altitude, atmosphere and air-relative motion for a copied spacecraft observation. |
 | `_edg_targeting_prediction_environment` | The same physical conventions at an explicit inertial state and elapsed simulation time. |
-| `_edg_sample_prediction_atmosphere` | Altitude-only prediction at zero latitude/longitude; it is not interchangeable with a full trajectory query. |
-| `_edg_ephemeris_time`, `_edg_planet_frame_lpi`, `frame_state` | Configured epoch and frame services; `l_pi` maps inertial components to planet-fixed components. |
+| `_edg_ephemeris_time`, `frame_state` | Configured epoch and frame services. |
 | `gravity_acceleration` | The configured central/J2 and N-body acceleration, preserving the existing predictor's arithmetic. |
 | `density_scale_height` | Existing density-model fallback. |
 | `_edg_targeting_control_clock(p)` | The period and origin (s) of the EDG control ticks, on which targeting predicts its switch times. |
@@ -145,7 +144,7 @@ with SpaceAGORA alone. Selecting an EDG model without the companion raises
 silently selects another guidance law.
 
 The companion checks that the service module exists and requires exactly contract
-`v"2.0.0"` before including its algorithms. The extension repeats the version
+`v"3.0.0"` before including its algorithms. The extension repeats the version
 check during initialization and dispatch. An incompatible contract raises
 `CompatibilityError`; install a supported pair and start a fresh process.
 Core retains existing configuration, state pairing and panel-mapping validation.
@@ -182,6 +181,22 @@ the run's start), and the binding ticks before the same tick's control. The
 binding runs one spacecraft; a run with several uses the EDG guidance model.
 The binding keeps a record of every request, which costs memory over long
 campaigns.
+
+## Changes from contract 2.0.0
+
+Contract 3.0.0 removes two queries the companion did not call:
+`_edg_planet_frame_lpi` (the inertial-to-planet-fixed rotation) and
+`_edg_sample_prediction_atmosphere` (an altitude-only atmosphere sample at zero
+latitude and longitude). The companion's frame and atmosphere values come from
+`_edg_targeting_prediction_environment`, `_edg_environment_state` and
+`frame_state`. SpaceAGORA keeps both calculations for its own prediction code;
+they are no longer part of the service module. Nothing else changes: the
+decisions, the other queries, their arguments and their values are those of
+contract 2.0.0.
+
+SpaceAGORAEDG implements contract 3.0.0 from version 0.5.0. A companion built for
+2.0.0 is refused at load, and SpaceAGORAEDG 0.5.0 refuses a SpaceAGORA that
+provides 2.0.0.
 
 ## Changes from contract 1.0.0
 
