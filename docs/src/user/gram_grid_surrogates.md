@@ -121,6 +121,8 @@ The archive's support map lists the cells.
 - **1.2.0 scope.** Its validation does not establish real-world landing accuracy, the engine's use of the preset's speed of sound (the engine's Mach number uses its own gas constants), or other vehicles, epochs and entries.
 - The payload's terrain component holds Mars-GRAM's MOLA terrain values at its lattice nodes. Credit NASA MOLA as the archive README states.
 
+### Load your own grid
+
 `GRAMGridAtmosphereModel` connects GRAMSuite's existing offline interpolation
 kernel to SpaceAGORA. It needs the Julia wrapper with its native-free grid API
 and a trusted serialized grid payload. Construction and density evaluation use
@@ -140,8 +142,10 @@ density_model = GRAMGridAtmosphereModel(
 The constructor forwards grid-loader options, including `search_roots` and
 `expected_sha256`. Missing files, undownloaded Git LFS pointers, and invalid
 payloads produce errors. A checksum pins file contents; it does not establish
-scientific provenance or permission to distribute the file. Grid distribution
-and an independently reproducible public installation remain separate work.
+scientific provenance or permission to distribute the file. For a custom grid,
+you must provide the payload and document its source, access conditions and
+checksum. The named presets above have their own retrieval and verification
+route; that does not make an arbitrary local grid publicly reproducible.
 
 Queries use altitude in metres and latitude/longitude in radians, on the grid's
 documented reference surfaces. Results contain density in kg/m³, temperature in
