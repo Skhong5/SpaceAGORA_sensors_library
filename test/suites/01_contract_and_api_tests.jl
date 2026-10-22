@@ -432,13 +432,18 @@ import Markdown
     end
     squash(md) = replace(Markdown.plain(md), r"\s+" => "")
 
+    forwarded_names = (:cmg_momentum, :actuator_wrench, :actuator_consumption,
+                       :actuator_levels, :RPOStationGeometry, :RPOCubeSatGeometry)
+
     nested = String[]
+    seen = Symbol[]
     for mod in Base.Docs.modules
         Base.moduleroot(mod) === SpaceAGORA || continue
         meta = Base.Docs.meta(mod; autoinit=false)
         meta === nothing && continue
         for (binding, multidoc) in meta
             binding isa Base.Docs.Binding || continue
+            mod === SpaceAGORA && push!(seen, binding.var)
             for sig in multidoc.order
                 any(block -> block isa Markdown.MD, unwrapped(multidoc.docs[sig]).content) &&
                     push!(nested, string(mod, ": ", binding.var))
@@ -446,11 +451,17 @@ import Markdown
         end
     end
     @test isempty(nested)
+    # An empty scan would pass the check above.
+    @test issubset(forwarded_names, seen)
+
+    # `@doc X` gives something other than a Markdown.MD when the REPL docsystem is not
+    # loaded; `_flat_doc` forwards that as is.
+    @test SpaceAGORA._flat_doc(Base.Docs.docstr("x")) isa Base.Docs.DocStr
+    @test SpaceAGORA._flat_doc(nothing) === nothing
 
     stored = Base.Docs.meta(SpaceAGORA)
 
-    for name in (:cmg_momentum, :actuator_wrench, :actuator_consumption, :actuator_levels,
-                 :RPOStationGeometry, :RPOCubeSatGeometry)
+    for name in forwarded_names
         binding = Base.Docs.Binding(SpaceAGORA, name)
         forwarded = stored[binding]
         # The docstrings of one binding can sit in several modules (methods are

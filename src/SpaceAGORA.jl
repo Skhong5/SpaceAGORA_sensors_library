@@ -457,6 +457,9 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 # REPL shows. The result carries no `:results` metadata, which would make the REPL
 # draw a rule between every block.
 function _flat_doc(md::T) where {T}
+    # `@doc X` gives a Markdown.MD only while the REPL docsystem is loaded (today through
+    # DataFrames -> PrettyTables); otherwise it gives the first DocStr, forwarded as is.
+    (hasfield(T, :content) && hasfield(T, :meta)) || return md
     blocks = Any[]
     function add_blocks!(content)
         for block in content
