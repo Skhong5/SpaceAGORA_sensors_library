@@ -103,7 +103,7 @@
         @test occursin("No downloads are required for baseline no-GRAM mode", setup_text)
     end
 
-    @testset "CLI children run under the repository project" begin
+    @testset "CLI children run in the examples environment" begin
         # The child launched by `run` must find SpaceAGORA through the project the
         # CLI hands it and nothing else. The probe loads the package directly (no
         # examples/common.jl re-activation), and the child's load path is reduced
@@ -117,7 +117,7 @@
             println("PROBE_PROJECT=", Base.active_project())
             println("PROBE_PACKAGE=", pathof(SpaceAGORA))
             """)
-        expected_project = joinpath(REPO_ROOT, "Project.toml")
+        expected_project = joinpath(REPO_ROOT, "examples", "Project.toml")
         expected_package = joinpath(REPO_ROOT, "src", "SpaceAGORA.jl")
 
         log_path = joinpath(probe_dir, "child.log")
@@ -132,8 +132,8 @@
         @test occursin("PROBE_PACKAGE=$(expected_package)", child_output)
 
         # The command the CLI builds: compare its actual arguments, not a parse of
-        # the printed line. The `--project=` argument must be the repository
-        # root, and a script path containing spaces must survive as one argument.
+        # the printed line. The `--project=` argument must be the examples
+        # environment, and a script path containing spaces must survive as one argument.
         CLI = SpaceAGORA.SpaceAGORACLI
         same_dir(a, b) = rstrip(normpath(a), '/') == rstrip(normpath(b), '/')
         spaced_dir = joinpath(mktempdir(), "path with spaces")
@@ -150,7 +150,7 @@
             argv = collect(CLI._child_command(script, script_args).exec)
             project_args = filter(a -> startswith(a, "--project="), argv)
             @test length(project_args) == 1
-            @test same_dir(chopprefix(only(project_args), "--project="), REPO_ROOT)
+            @test same_dir(chopprefix(only(project_args), "--project="), joinpath(REPO_ROOT, "examples"))
             @test count(==(script), argv) == 1            # one intact argument, spaces included
             @test argv[end - length(script_args):end] == vcat([script], script_args)
             @test !any(a -> occursin(".AGORA", a), argv)
@@ -169,7 +169,7 @@
             expected_cmd = CLI._child_command(script, script_args)
             @test occursin("cmd=$(expected_cmd)\n", printed)
             @test occursin("project=$(CLI.CHILD_PROJECT)\n", printed)
-            @test same_dir(CLI.CHILD_PROJECT, REPO_ROOT)
+            @test same_dir(CLI.CHILD_PROJECT, joinpath(REPO_ROOT, "examples"))
             @test !occursin(".AGORA", printed)
         end
 

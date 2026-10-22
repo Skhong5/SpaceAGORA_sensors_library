@@ -41,6 +41,7 @@ docs/src/generated/
 docs/.CondaPkg/
 docs/Manifest.toml
 test/Manifest.toml
+examples/Manifest.toml
 !test/fixtures/*/fixture.csv
 !test/fixtures/agora_earth_regression.csv
 data/telemetry/CYGNSS/

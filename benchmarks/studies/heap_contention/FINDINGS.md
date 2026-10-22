@@ -73,7 +73,7 @@ For example, with a suitable machine and memory limit:
 
 ```bash
 SPACEAGORA_PPC_WORKER_GCTHREADS=2 SPACEAGORA_PPC_WORKER_HEAP_SIZE_HINT=4G \
-  julia --project=. benchmarks/studies/parallelization_performance.jl \
+  julia --project=examples benchmarks/studies/parallelization_performance.jl \
   --cases=independent_1sat_1hr,montecarlo_heavy_aerobraking \
   --modes=outer_threads --threads=8,16,32 --warmup=1
 ```

@@ -98,10 +98,12 @@ the run in the same way.
   became `spacecraft_index`, `chaser_index` and `target_index` in 0.3.0, and the
   `spacecraft_idx` of `RobotArmReactionEffector` in 0.3.1; the old names were
   removed in 0.5.0, and the engine reads only the new ones on a model of your
-  own. `SchedulingPolicyModel`'s `target_idx` and `target_idxs`, `StateAnchor`'s
-  `sat_idx` and the `sat_idx` keyword of `get_periapsis_pulse_callback` became
-  `target_index`, `target_indices` and `spacecraft_index` in 0.5.0, with a warning
-  for the old names until 1.0 (see the [migration page](migrating_extension_hooks.md)).
+  own. `StateAnchor`'s `sat_idx` and the `sat_idx` keyword of
+  `get_periapsis_pulse_callback` became `spacecraft_index` in 0.5.0, with a
+  warning for the old name until 1.0. `SchedulingPolicyModel`'s `target_idx` and
+  `target_idxs` became `target_index` and `target_indices` in 0.5.0, and all four
+  were removed in 0.6.0 with the scheduling policies chosen by a symbol: a policy
+  type holds its own targets (see the [migration page](migrating_extension_hooks.md)).
 - In the external-propagation facade the owner-local position of a spacecraft is
   called `slot`, because it counts within the owner's list, not the run.
 

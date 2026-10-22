@@ -11,7 +11,7 @@
 # - a displacement: at 55 s the chaser is moved 0.3 m normal to the orbit plane. The
 #   tracking error exceeds 0.2 m, so the same guidance tick replans from there.
 # `rpo_run_report` records every request, refusal, hold and installed reference.
-# Runs in the root project (`--project=.`); neither HYPR nor SPICE is needed.
+# Runs in the examples environment (`--project=examples`); neither HYPR nor SPICE is needed.
 include(joinpath(@__DIR__, "common.jl"))
 using LinearAlgebra
 using StaticArrays

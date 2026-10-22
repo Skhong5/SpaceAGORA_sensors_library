@@ -21,24 +21,43 @@
 # run at the thread count the jobs will use. The launcher runs that ONCE on the
 # box before the first job; this script does not run it, because calibration is
 # itself a timed measurement and must not share the machine with a benchmark.
-# Without the file the planner still runs, but it models no contention, so the
-# predictive rows measure something other than what the launcher intended. The
-# check below only warns.
+# Without current constants the planner still runs, but it models no
+# contention, so the predictive rows measure something other than what the
+# launcher intended. The check below only warns. It loads the file the way the
+# planner does, so a file written under an older calibration schema warns too:
+# the planner ignores such a file, and only a SolverConfig(parallel=true) run
+# measures it again, which these jobs never do.
 set -euo pipefail
 export SPACEAGORA_CAMPAIGN_DISPATCH_TRACE=1
 # Every point here starts from a cold store: the planner's online corrections
 # stay off so a cold row measures the constants file alone.
 export SPACEAGORA_CAMPAIGN_CORRECTIONS="${SPACEAGORA_CAMPAIGN_CORRECTIONS:-off}"
-if ! ls output/parallel_policy_state/cost_constants_*.toml >/dev/null 2>&1; then
-  echo "[targeted] WARNING: no output/parallel_policy_state/cost_constants_*.toml -- the" \
-       "predictive rows will run without machine calibration. Run" \
-       "'julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl' once on this box first."
-fi
+# The check prints the constants file's path (SPACEAGORA_COST_CONSTANTS_PATH can
+# move it) and exits 3 when the constants there are not current, so a Julia or
+# package failure is reported as itself.
+constants_status=0
+constants_path=$(julia --startup-file=no --project=. -e '
+    using SpaceAGORA
+    PC = SpaceAGORA.SimulationModel.ParallelCost
+    path = PC.machine_constants_path()
+    println(path)
+    exit(PC.load_machine_constants(path) === nothing ? 3 : 0)' 2>/dev/null) || constants_status=$?
+case "$constants_status" in
+  0) ;;
+  3)
+    echo "[targeted] WARNING: no current machine constants in ${constants_path##*$'\n'} (missing," \
+         "unreadable or from an older calibration schema) -- the predictive rows will run without" \
+         "machine calibration. Run" \
+         "'julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl' once on this box first." ;;
+  *)
+    echo "[targeted] WARNING: could not check the machine constants: Julia or SpaceAGORA failed to start" \
+         "(exit $constants_status)." ;;
+esac
 OUT=output/performance/targeted_$(date -u +%Y%m%d_%H%M%S); mkdir -p "$OUT"
 run() { # case mode workers threads mc label
   local c=$1 m=$2 w=$3 t=$4 mc=$5 lbl=$6
   echo "[targeted] $lbl: case=$c mode=$m workers=$w threads=$t mc=$mc"
-  timeout 7200 julia --threads="$t" --project=. benchmarks/studies/parallelization_performance.jl \
+  timeout 7200 julia --threads="$t" --project=examples benchmarks/studies/parallelization_performance.jl \
     --profile=full --worker --case="$c" --mode="$m" --thread-count="$t" \
     --worker-repeats="${REPEATS:-11}" --worker-mc-samples="$mc" --warmup="${WARMUP:-1}" --process-workers="$w" --parity=0 \
     --outfile="$OUT/${lbl}_${m}.csv" > "$OUT/${lbl}_${m}.log" 2>&1

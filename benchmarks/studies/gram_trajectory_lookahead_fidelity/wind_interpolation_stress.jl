@@ -17,7 +17,7 @@ const WIND_STRESS_DEFAULT_OUTDIR = joinpath(WIND_STRESS_REPO_ROOT, "output", "gr
 function _wind_stress_usage()
     return """
     Usage:
-      julia --project=. benchmarks/studies/gram_trajectory_lookahead_fidelity/wind_interpolation_stress.jl [options]
+      julia --project=examples benchmarks/studies/gram_trajectory_lookahead_fidelity/wind_interpolation_stress.jl [options]
 
     Options:
       --planets mars,earth,venus,titan

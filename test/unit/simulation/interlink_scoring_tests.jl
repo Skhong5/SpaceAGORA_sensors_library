@@ -35,26 +35,26 @@ end
     @test second_force == -first_force
     @test norm(2first_force) + norm(2second_force) == 4.0
     @test iszero(first_force + second_force)
-    for target_index in (1, nothing)
-        policy = SchedulingPolicyModel(:gve_eccentricity; target_index)
+    for targets in (1, :both)
+        policy = SchedulingPolicyModel(EccentricityRatePolicy(; targets))
         @test_throws ArgumentError score_candidates!(model, policy, state, 1.0;
             candidate_force=force_on_endpoint)
     end
     near_model, near_state = circular_target_fixture(eccentricity=1e-10)
-    @test_throws ArgumentError score_candidates!(near_model, SchedulingPolicyModel(:gve_eccentricity),
+    @test_throws ArgumentError score_candidates!(near_model, SchedulingPolicyModel(EccentricityRatePolicy()),
         near_state, 1.0; candidate_force=force_on_endpoint)
 
     # Distinct terminals are harmless when terminal matching forbids concurrent
     # links, a link is unavailable, or its contribution is zero.
     for configuration in ((shared_target_terminal=true,), (shared_partner=true,), (second_power=0.0,))
         supported, supported_state = circular_target_fixture(; configuration...)
-        policy = SchedulingPolicyModel(:gve_eccentricity)
+        policy = SchedulingPolicyModel(EccentricityRatePolicy())
         @test isnothing(score_candidates!(supported, policy, supported_state, 1.0;
             candidate_force=force_on_endpoint))
         @test length(select_interlinks!(supported, policy)) == 1
     end
     model.graph.available[2] = false
-    policy = SchedulingPolicyModel(:gve_eccentricity)
+    policy = SchedulingPolicyModel(EccentricityRatePolicy())
     @test isnothing(score_candidates!(model, policy, state, 1.0; candidate_force=force_on_endpoint))
     @test length(select_interlinks!(model, policy)) == 1
 
@@ -67,7 +67,7 @@ end
 
     # SMA policies keep their existing linear objective for the same graph.
     model, state = circular_target_fixture()
-    for objective in (:gve_sma, :gve_sma_first_index)
+    for objective in (SemimajorAxisRatePolicy(), SemimajorAxisRatePolicy(targets=:lower_index))
         sma_policy = SchedulingPolicyModel(objective)
         @test isnothing(score_candidates!(model, sma_policy, state, 1.0;
             candidate_force=force_on_endpoint))
