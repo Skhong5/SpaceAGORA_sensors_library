@@ -6,12 +6,14 @@ module InterLinkModels
 	using ..AbstractTypes: AbstractActuator
 	using ..EffectorSampling: StateSample
 	using ..HookDeprecation: _hook_deprecation, _NOT_PASSED
+	using ..QuaternionMath: rot
 
 	export AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
 	export interlink_wrench, link_applies_torque, terminal_pose
 	export link_directed, link_terminal_levels, link_terminal, terminal_supports, terminal_shed_tier, terminal_count
 	export register_links!, all_pairs, same_plane_pairs, ring_pairs, grid_pairs
 	export PowerBeamLink, link_received_power_w, beam_spot_radius_m, beam_capture_fraction
+	export LaserBeamLink, AbstractLaserBeam, GaussianBeam, TerminalPointing, beam_force_factor
 	export DataLink, AbstractDataBudget, FixedRateBudget, ShannonBudget, link_data_rate_bps, budget_rate_bps
 	export has_data_links, contact_windows, contact_time_s, available_links
 	export InterlinkModel, InterLinkGraph, register_link!, update_availability!, interlink_force_on_spacecraft
@@ -21,6 +23,7 @@ module InterLinkModels
 	include(joinpath(@__DIR__, "links.jl"))
 	include(joinpath(@__DIR__, "power_links.jl"))
 	include(joinpath(@__DIR__, "data_links.jl"))
+	include(joinpath(@__DIR__, "laser_beam_links.jl"))
 
 	const vertex = Tuple{Int, Int} # (spacecraft vector index, terminal number)
 	const InterLinkKey = Tuple{vertex, vertex} # Canonically ordered pair of terminal endpoints
@@ -204,7 +207,7 @@ module InterLinkModels
 				"$(nameof(typeof(link)))$(side === :either ? "" : " as its $(side)") (terminal_supports)."))
 			device === nothing && _link_needs_terminals(link) && throw(ArgumentError(
 				"Terminal $number of spacecraft $satellite is virtual, and this $(nameof(typeof(link))) needs terminal " *
-				"hardware at both ends (a ShannonBudget reads both radios)."))
+				"hardware at both ends$(_needs_terminals_reason(link))."))
 			(Int(satellite), number)
 		end
 

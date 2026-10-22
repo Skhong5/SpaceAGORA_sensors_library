@@ -42,6 +42,9 @@ The built-in kinds are:
   link with the idealized central force `magnification * power_w / c`, directed
   away from the other endpoint, equal and opposite on the two spacecraft.
   `LaserMomentumLink(terminal)` takes the numbers of a `LaserTerminal`.
+- `LaserBeamLink(; power_w, magnification, range_m, ...)`: the same link, with
+  opt-in occultation, beam divergence, pointing and mounted recoil. See
+  [Laser physics](#Laser-physics).
 - `PowerBeamLink(; power_w, wavelength_m, waist_radius_m, range_m)`: a power
   beam from a `LaserTerminal` to a `PowerReceiver`. See [Power links](#Power-links).
 - `DataLink(; transmit_power_w, budget, range_m)`: a one-way data link, from a
@@ -171,6 +174,66 @@ asking for its link's power, so the tier clears when the battery can supply it
 again. A terminal kind's tier is `terminal_shed_tier(terminal)`: 1 for
 `LaserTerminal` and `RadioTerminal`, 0 (never shed) for `PowerReceiver` and by
 default. Virtual terminals draw nothing and are never shed.
+
+## Laser physics
+
+`LaserBeamLink` is the open-cavity laser link with four effects you can switch
+on. With none of them it is `LaserMomentumLink`, bit for bit.
+
+```julia
+beam = GaussianBeam(wavelength_m=1.064e-6, waist_radius_m=0.05, aperture_radius_m=0.08)
+link = LaserBeamLink(power_w=10_000.0, magnification=100.0, range_m=200e3;
+    occultation=(; min_ray_altitude_m=100e3),   # or true
+    beam,
+    pointing=TerminalPointing(field_of_regard_rad=deg2rad(30)),
+    recoil=:mounted)
+register_link!(model, spacecraft, (1, terminal_1), (2, terminal_2), link)
+```
+
+- **Line of sight** (`occultation=true`). The link cannot close while the
+  segment between the two spacecraft meets the planet, a sphere of its
+  equatorial radius. `occultation=(; min_ray_altitude_m=h)` raises that sphere
+  by `h` metres, so that a beam grazing the atmosphere counts as blocked. The
+  atmosphere's attenuation is not modelled.
+- **Divergence** (`beam`). The force is scaled by
+  `beam_force_factor(beam, link, terminal_a, terminal_b, d)` at separation `d`.
+  - For a `GaussianBeam`, this is the share of the beam that the far aperture
+    captures, `1 − exp(−2 r² / w(d)²)`, from the same beam functions as a
+    power link (`beam_spot_radius_m`, `beam_capture_fraction`).
+  - Within the Rayleigh range `π w0² / λ`, the force is close to the near-field
+    force `magnification × power_w / c`. Far beyond it, the force falls as
+    `1/d²`.
+  - This is an engineering model, not a cavity model: it takes the
+    magnification as the near-field value and scales it by one pass's
+    geometric capture.
+  - A beam model of your own subtypes `AbstractLaserBeam` and implements
+    `beam_force_factor`, for example a recycling cavity or a measured curve.
+- **Pointing** (`pointing=TerminalPointing(; field_of_regard_rad,
+  error_rad=0.0)`).
+  - The link can close only while each end's line of sight to the other lies
+    within `field_of_regard_rad` of its terminal's boresight, read in the
+    spacecraft's attitude. Within that cone the terminal points ideally: there
+    is no slew rate or gimbal state.
+  - A static pointing error `error_rad` scales the force by
+    `exp(−2 (error / θ)²)`, with `θ = λ / (π w0)` the beam's divergence. It
+    needs a `GaussianBeam`. Jitter is not modelled.
+- **Mounted recoil** (`recoil=:mounted`). Each end's force acts at its
+  terminal's mounted location (`terminal_pose`), so it turns the spacecraft with
+  the torque of the terminal's lever arm, as the terminal's own recoil would.
+  The default, `:central`, applies the force with no torque.
+
+Pointing and mounted recoil need terminal hardware at both ends (a
+`LaserTerminal` carries a `LaserBeamLink`), and attitude (`orientation_sim=true`).
+`register_link!` refuses a virtual terminal for them, and a run without attitude
+refuses them at setup.
+
+The two forces are always equal and opposite, so the link conserves the run's
+linear momentum. While the link is active, the terminals' own recoil applies
+nothing: the link's force is their recoil (see
+[Terminal hardware and power](#Terminal-hardware-and-power)). A checkpoint
+records every option, and a resume with any of them changed is refused. The
+gve example runs with a beam when given one:
+`gve_sma_configuration(beam=GaussianBeam(...))`.
 
 ## Power links
 
@@ -562,7 +625,9 @@ works as before, bit for bit.
 
 Interlinks apply forces, and through `interlink_wrench` torques, to rigid
 spacecraft, or carry power or data. The laser momentum link does not model terminal pointing,
-occultation, beam losses, torques or thermal dynamics. Links through hardware terminals draw battery
+occultation, beam losses or torques; `LaserBeamLink` adds them as options (see
+[Laser physics](#Laser-physics)). Neither models the terminals' thermal
+dynamics. Links through hardware terminals draw battery
 power and close when it is shed; links between virtual terminals draw none.
 Actuator faults on a link-driven terminal do not yet act on its link. The
 spacecraft's `battery_energy_index` and `tempurature_index` fields are

@@ -11,7 +11,8 @@ terminals: register it with `register_link!`. A kind implements `link_range_m`,
 and the effects it has: `link_force` for a link that pushes its endpoints (the
 default exerts none), or `interlink_wrench` for one that also turns them.
 `link_available` decides when the link can close (by default, within
-`link_range_m`). The built-in kind is `LaserMomentumLink`.
+`link_range_m`). The built-in kinds are `LaserMomentumLink`, `LaserBeamLink`,
+`PowerBeamLink` and `DataLink`.
 """
 abstract type AbstractInterlink end
 
@@ -146,8 +147,14 @@ link's frame by the link's configured pose.
 function terminal_pose end
 
 # Whether `link` reads the terminal hardware at both its ends, so that a virtual
-# terminal cannot carry it (a `DataLink` with a `ShannonBudget`).
+# terminal cannot carry it (a `DataLink` with a `ShannonBudget`), and why, for
+# the refusal.
 _link_needs_terminals(link) = false
+_needs_terminals_reason(link) = ""
+
+# Whether `link` reads its endpoints' attitude, so that a run without attitude
+# (`orientation_sim`) refuses it at setup.
+_link_needs_attitude(link) = false
 
 """
     terminal_count(spacecraft) -> Int
@@ -249,8 +256,9 @@ const SPEED_OF_LIGHT_MPS = _SPEED_OF_LIGHT_MPS
 An open-cavity laser link that pushes its two spacecraft apart: an idealized
 central force of `magnification * power_w / c` on each endpoint, directed away
 from the other, equal and opposite, at any separation up to `range_m`. It models
-no pointing, occultation or beam losses. `power_w` (W) must be nonnegative,
-`magnification` and `range_m` (m) positive. The terminal form takes a link
+no pointing, occultation or beam losses; `LaserBeamLink` adds them as options.
+`power_w` (W) must be nonnegative, `magnification` and `range_m` (m) positive.
+The terminal form takes a link
 between two terminals of that design: its `max_power_w`, `magnification` and
 `range_m`.
 """

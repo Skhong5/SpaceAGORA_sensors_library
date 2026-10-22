@@ -88,6 +88,7 @@ using .SimulationModel: link_directed, link_terminal_levels, link_terminal, term
 using .SimulationModel: register_links!, all_pairs, mounted_link_terminals, terminal_number, terminal_pose
 using .SimulationModel: same_plane_pairs, ring_pairs, grid_pairs
 using .SimulationModel: PowerBeamLink, link_received_power_w, beam_spot_radius_m, beam_capture_fraction
+using .SimulationModel: LaserBeamLink, AbstractLaserBeam, GaussianBeam, TerminalPointing, beam_force_factor
 using .SimulationModel: DataLink, AbstractDataBudget, FixedRateBudget, ShannonBudget, link_data_rate_bps, budget_rate_bps
 using .SimulationModel: terminal_shed_tier, contact_windows, contact_time_s
 using .SimulationModel: SchedulingPolicyModel, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
@@ -102,6 +103,7 @@ export link_directed, link_terminal_levels, link_terminal, terminal_supports, te
 export register_links!, all_pairs, mounted_link_terminals, terminal_number, terminal_pose
 export same_plane_pairs, ring_pairs, grid_pairs
 export PowerBeamLink, link_received_power_w, beam_spot_radius_m, beam_capture_fraction
+export LaserBeamLink, AbstractLaserBeam, GaussianBeam, TerminalPointing, beam_force_factor
 export DataLink, AbstractDataBudget, FixedRateBudget, ShannonBudget, link_data_rate_bps, budget_rate_bps
 export terminal_shed_tier, contact_windows, contact_time_s
 export SchedulingPolicyModel, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
@@ -136,6 +138,11 @@ export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!,
 @doc (@doc SimulationModel.InterLinkModels.link_received_power_w) link_received_power_w
 @doc (@doc SimulationModel.InterLinkModels.beam_spot_radius_m) beam_spot_radius_m
 @doc (@doc SimulationModel.InterLinkModels.beam_capture_fraction) beam_capture_fraction
+@doc (@doc SimulationModel.InterLinkModels.LaserBeamLink) LaserBeamLink
+@doc (@doc SimulationModel.InterLinkModels.AbstractLaserBeam) AbstractLaserBeam
+@doc (@doc SimulationModel.InterLinkModels.GaussianBeam) GaussianBeam
+@doc (@doc SimulationModel.InterLinkModels.TerminalPointing) TerminalPointing
+@doc (@doc SimulationModel.InterLinkModels.beam_force_factor) beam_force_factor
 @doc (@doc SimulationModel.InterLinkModels.DataLink) DataLink
 @doc (@doc SimulationModel.InterLinkModels.AbstractDataBudget) AbstractDataBudget
 @doc (@doc SimulationModel.InterLinkModels.FixedRateBudget) FixedRateBudget

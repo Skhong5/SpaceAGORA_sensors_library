@@ -2588,10 +2588,13 @@ function _validate_interlinks!(args, solver_mode::Symbol)
         hasmethod(SimulationModel.link_range_m, Tuple{typeof(link)}) || throw(ArgumentError(
             "The interlink kind $(nameof(typeof(link))) has no link_range_m method; implement " *
             "SpaceAGORA.link_range_m(::$(nameof(typeof(link)))), the maximum range in metres."))
-        # A link that turns its endpoints needs their attitude.
+        # A link that turns its endpoints, or points its terminals, needs their attitude.
         SimulationModel.link_applies_torque(link) && !args.mission_configuration.orientation_sim && throw(ArgumentError(
             "This $(nameof(typeof(link))) applies torques to its endpoints (link_applies_torque), which needs " *
             "attitude: set orientation_sim=true, or use options without torques."))
+        SimulationModel.InterLinkModels._link_needs_attitude(link) && !args.mission_configuration.orientation_sim &&
+            throw(ArgumentError("This $(nameof(typeof(link))) reads its endpoints' attitude (its pointing), which " *
+                "needs orientation_sim=true."))
     end
     SimulationModel.SchedulingPolicies._check_candidate_score(args.scheduling_policy_model.objective)
     # Only a weighted policy has terms for the history to record.

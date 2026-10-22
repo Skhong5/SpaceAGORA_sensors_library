@@ -1,7 +1,9 @@
 module InterlinkLaserPhysicsTests
 
-# The terminal-aware link contract: the six-argument `link_available`,
-# `interlink_wrench` and its torques, `link_applies_torque` and `terminal_pose`.
+# The terminal-aware link contract (the six-argument `link_available`,
+# `interlink_wrench` and its torques, `link_applies_torque`, `terminal_pose`) and
+# the laser beam link's opt-in physics: occultation, divergence, pointing and
+# mounted recoil.
 
 using Test
 using LinearAlgebra
@@ -34,15 +36,16 @@ function bus_sat(index; y=0.0, terminals=0, n_terminal=1, location=ZERO3, ang_ve
     return sc
 end
 
-function run_args(spacecraft, model; policy=SemimajorAxisRatePolicy(), duration=60.0, orientation=false)
+function run_args(spacecraft, model; policy=SemimajorAxisRatePolicy(), duration=60.0, orientation=false,
+                  control=ControlModel((), Float64[]), settings=SimulationSettings(results=false, generate_plots=false))
     return SimulationConfiguration(
-        simulation_settings=SimulationSettings(results=false, generate_plots=false),
+        simulation_settings=settings,
         mission_configuration=MissionConfiguration(mission_type=MissionTime, mission_time=duration,
             orientation_sim=orientation, data_rate=1.0),
         environment_model=make_no_gram_environment(planet=PLANET),
         dynamics_model=DynamicsModel(spacecraft, (InverseSquaredGravityModel(),)),
         guidance_model=GuidanceModel((), Float64[]), navigation_model=NavigationModel((), Float64[]),
-        control_model=ControlModel((), Float64[]), initial_time=InitialTime(),
+        control_model=control, initial_time=InitialTime(),
         integration_tolerances=IntegrationTolerances(reltol_orbit=1e-10, abstol_orbit=1e-8, dt_max_orbit=1.0),
         solver_config=SM.SolverConfig(solver_mode=:tsit5), interlink_model=model,
         scheduling_policy_model=SchedulingPolicyModel(policy))
@@ -81,6 +84,50 @@ SpaceAGORA.interlink_wrench(link::TurningLink, terminal_a, terminal_b, a, b, ctx
 # Selects every available link.
 struct EveryLinkPolicy <: AbstractSchedulingPolicy end
 SpaceAGORA.candidate_score(::EveryLinkPolicy, candidate, ctx, t) = 1.0
+
+# A beam model of one's own: a constant share of the near-field force.
+struct ConstantBeam <: AbstractLaserBeam
+    factor::Float64
+end
+SpaceAGORA.beam_force_factor(beam::ConstantBeam, link, terminal_a, terminal_b, distance_m) = beam.factor
+
+# Holds levels for the mounted actuators of spacecraft 1.
+mutable struct HoldLevels <: AbstractControlEffectorModel
+    levels::Vector{Float64}
+end
+SpaceAGORA.actuation_mode(::HoldLevels) = :mounted
+SpaceAGORA.actuator_levels(c::HoldLevels, i::Int) = i == 1 ? c.levels : nothing
+SpaceAGORA.update_control!(::HoldLevels, u, p, t::Float64, i::Int64) = nothing
+
+const NEAR_FIELD_N = 100.0 * 40.0 / 299_792_458.0   # magnification × power / c, for 40 W at 100
+const rot = SM.QuaternionMath.rot
+
+# Spacecraft 1 and, 1 km behind it along track, spacecraft 2, each with one laser
+# terminal: boresights and locations as given (spacecraft 1's points back at 2,
+# and 2's forward at 1, by default).
+function beam_pair(link; boresights=([0.0, -1.0, 0.0], [0.0, 1.0, 0.0]), location=ZERO3)
+    spacecraft = [bus_sat(1; n_terminal=0), bus_sat(2; y=-1000.0, n_terminal=0)]
+    for (sc, boresight) in zip(spacecraft, boresights)
+        add_actuator!(sc, sc.root, LaserTerminal(boresight=boresight, location=location, max_power_w=50.0))
+    end
+    model = InterlinkModel()
+    register_link!(model, spacecraft, (1, 1), (2, 1), link)
+    return spacecraft, model
+end
+
+# The two ends of a `beam_pair` as the hooks see them, with attitudes `q1` and `q2`.
+function beam_ends(spacecraft; q1=SVector(0.0, 0.0, 0.0, 1.0), q2=SVector(0.0, 0.0, 0.0, 1.0))
+    ends = map(((1, 0.0, q1), (2, -1000.0, q2))) do (index, y, q)
+        state = IM.StateSample(SVector(RADIUS, y, 0.0), SVector(0.0, SPEED, 0.0), 100.0, q, ZERO3, spacecraft[index], index)
+        (state, only(mounted_link_terminals(spacecraft[index])).terminal)
+    end
+    return ends[1][1], ends[2][1], ends[1][2], ends[2][2]
+end
+
+# The gve example, in a module of its own.
+module GveExample
+include(joinpath(@__DIR__, "..", "..", "..", "examples", "gve_sma_interlinks.jl"))
+end
 
 function turning_pair(link; ang_vel=ZERO3)
     spacecraft = [bus_sat(1; terminals=1, n_terminal=0, ang_vel), bus_sat(2; y=-1000.0, ang_vel)]
@@ -260,6 +307,238 @@ end
         @test_throws ArgumentError terminal_pose(sc, LaserTerminal(boresight=[0.0, 0.0, 1.0], max_power_w=1.0))
         twin = bus_sat(2; terminals=2)
         @test terminal_pose(twin, mounted_link_terminals(twin)[1].terminal) == (SVector(0.0, 1.0, 0.0), ZERO3)
+    end
+
+    @testset "LaserBeamLink without options is LaserMomentumLink" begin
+        ctx = LinkContext(time_s=0.0, planet=PLANET)
+        plain = LaserMomentumLink(power_w=40.0, magnification=100.0, range_m=200e3)
+        beam_link = LaserBeamLink(power_w=40.0, magnification=100.0, range_m=200e3)
+        a = sample([RADIUS, 0.0, 0.0])
+        for other in (sample([RADIUS, -1500.0, 20.0]; index=2), sample([RADIUS, 0.0, 0.0]; index=2),
+                      sample([RADIUS, -3e5, 0.0]; index=2))
+            wrench = interlink_wrench(beam_link, nothing, nothing, a, other, ctx)
+            forces = link_force(plain, a, other, ctx)
+            @test bits(wrench[1]) == bits(forces[1]) && bits(wrench[3]) == bits(forces[2])
+            @test wrench[2] === ZERO3 && wrench[4] === ZERO3
+            @test bits(link_force(beam_link, a, other, ctx)[1]) == bits(forces[1])
+            @test link_available(beam_link, nothing, nothing, a, other, ctx) === link_available(plain, a, other, ctx)
+        end
+        @test link_terminal_levels(beam_link) == link_terminal_levels(plain)
+        @test !link_applies_torque(beam_link) && !link_directed(beam_link)
+        terminal = LaserTerminal(boresight=[0.0, 1.0, 0.0], max_power_w=50.0, magnification=80.0, range_m=1e5)
+        @test LaserBeamLink(terminal) === LaserBeamLink(power_w=50.0, magnification=80.0, range_m=1e5)
+        # A run with each ends on the same bits, with the same schedule.
+        runs = map((plain, beam_link)) do link
+            spacecraft = [bus_sat(1), bus_sat(2; y=-1000.0)]
+            model = InterlinkModel()
+            register_link!(model, spacecraft, (1, 1), (2, 1), link)
+            solution = run_simulation(run_args(spacecraft, model; duration=120.0); return_solution=true)
+            (solution.u[end], [sample.active for sample in solution.prob.p.args.interlink_model.history])
+        end
+        @test bits(runs[1][1]) == bits(runs[2][1]) && runs[1][2] == runs[2][2]
+        @test any(!isempty, runs[1][2])
+        # Option checks.
+        @test_throws ArgumentError LaserBeamLink(power_w=40.0, magnification=100.0, range_m=1e5, recoil=:sideways)
+        @test_throws ArgumentError LaserBeamLink(power_w=40.0, magnification=100.0, range_m=1e5, occultation=(; altitude=1.0))
+        @test_throws ArgumentError LaserBeamLink(power_w=40.0, magnification=100.0, range_m=1e5,
+            pointing=TerminalPointing(field_of_regard_rad=0.1, error_rad=1e-6))   # an error needs a GaussianBeam
+        @test_throws ArgumentError TerminalPointing(field_of_regard_rad=4.0)
+        @test_throws ArgumentError GaussianBeam(waist_radius_m=0.0, aperture_radius_m=0.1)
+    end
+
+    @testset "occultation" begin
+        R = PLANET.Rp_e
+        link(occultation) = LaserBeamLink(power_w=40.0, magnification=100.0, range_m=3e7; occultation)
+        ctx = LinkContext(planet=PLANET)
+        pair(x) = (sample([x, -1e6, 0.0]), sample([x, 1e6, 0.0]; index=2))
+        available(l, (a, b)) = link_available(l, nothing, nothing, a, b, ctx)
+        through = (sample([R + 7e5, 0.0, 0.0]), sample([-(R + 7e5), 0.0, 0.0]; index=2))
+        blocked = link(true)
+        @test !available(blocked, through)
+        @test !available(blocked, pair(R - 1.0))        # a segment that dips below the surface
+        @test available(blocked, pair(R + 1.0))
+        @test available(blocked, pair(R + 5e4))
+        # The grazing margin raises the sphere.
+        margin = link((; min_ray_altitude_m=1e5))
+        @test !available(margin, pair(R + 5e4)) && available(margin, pair(R + 1.5e5))
+        # The momentum link and the default beam link, documented to ignore the
+        # planet, stay available through it; without a planet nothing blocks.
+        @test link_available(LaserMomentumLink(power_w=40.0, magnification=100.0, range_m=3e7), through..., ctx)
+        @test available(link(false), through)
+        @test link_available(blocked, nothing, nothing, through..., LinkContext())
+    end
+
+    @testset "divergence" begin
+        ctx = LinkContext(planet=PLANET)
+        waist, aperture, wavelength = 0.05, 0.08, 1.064e-6
+        beam = GaussianBeam(; wavelength_m=wavelength, waist_radius_m=waist, aperture_radius_m=aperture)
+        rayleigh = pi * waist^2 / wavelength
+        link = LaserBeamLink(power_w=40.0, magnification=100.0, range_m=1e8; beam)
+        a = sample([RADIUS, 0.0, 0.0])
+        force_at(l, d) = interlink_wrench(l, nothing, nothing, a, sample([RADIUS, -d, 0.0]; index=2), ctx)[1]
+        for d in (1e-3 * rayleigh, rayleigh, 1e3 * rayleigh)
+            spot = waist * sqrt(1 + (d / rayleigh)^2)
+            capture = -expm1(-2 * aperture^2 / spot^2)
+            force = force_at(link, d)
+            @test norm(force) ≈ capture * NEAR_FIELD_N rtol = 1e-12
+            @test force / norm(force) ≈ SVector(0.0, 1.0, 0.0)          # pushes spacecraft 1 away from 2
+            @test beam_force_factor(beam, link, nothing, nothing, d) ≈ capture rtol = 1e-14
+        end
+        # Near the waist the force is the near-field force, less the aperture's
+        # loss; far beyond the Rayleigh range it falls as 1/d².
+        @test norm(force_at(link, 1e-3 * rayleigh)) ≈ (1 - exp(-2 * (aperture / waist)^2)) * NEAR_FIELD_N rtol = 1e-6
+        @test norm(force_at(link, 2e3 * rayleigh)) / norm(force_at(link, 1e3 * rayleigh)) ≈ 0.25 rtol = 1e-5
+        # A beam model of one's own.
+        own = LaserBeamLink(power_w=40.0, magnification=100.0, range_m=1e8, beam=ConstantBeam(0.25))
+        @test norm(force_at(own, 5e3)) ≈ 0.25 * NEAR_FIELD_N rtol = 1e-14
+    end
+
+    @testset "pointing" begin
+        ctx = LinkContext(planet=PLANET)
+        narrow = LaserBeamLink(power_w=40.0, magnification=100.0, range_m=200e3,
+            pointing=TerminalPointing(field_of_regard_rad=0.1))
+        spacecraft, _ = beam_pair(narrow)
+        a, b, terminal_a, terminal_b = beam_ends(spacecraft)
+        @test link_available(narrow, terminal_a, terminal_b, a, b, ctx)              # facing each other
+        @test_throws ArgumentError link_available(narrow, nothing, terminal_b, a, b, ctx)
+        # Turned 90° about z, spacecraft 1 looks away: the link cannot close; a
+        # field of regard just past 90° lets it.
+        turn = SVector(0.0, 0.0, sin(pi / 4), cos(pi / 4))
+        a_turned, b_same, _, _ = beam_ends(spacecraft; q1=turn)
+        @test !link_available(narrow, terminal_a, terminal_b, a_turned, b_same, ctx)
+        wide = LaserBeamLink(power_w=40.0, magnification=100.0, range_m=200e3,
+            pointing=TerminalPointing(field_of_regard_rad=pi / 2 + 0.01))
+        @test link_available(wide, terminal_a, terminal_b, a_turned, b_same, ctx)
+        # The line of sight is read in the body frame: a boresight along the turned
+        # line of sight closes the link only in that attitude.
+        sight_body = rot(turn) * SVector(0.0, -1.0, 0.0)
+        turned_pair, _ = beam_pair(narrow; boresights=(sight_body, [0.0, 1.0, 0.0]))
+        p, q, tp, tq = beam_ends(turned_pair; q1=turn)
+        @test link_available(narrow, tp, tq, p, q, ctx)
+        p0, q0, _, _ = beam_ends(turned_pair)
+        @test !link_available(narrow, tp, tq, p0, q0, ctx)
+        # Each end must see the other: spacecraft 2 looking away closes it.
+        away, _ = beam_pair(narrow; boresights=([0.0, -1.0, 0.0], [1.0, 0.0, 0.0]))
+        @test !link_available(narrow, beam_ends(away)[3], beam_ends(away)[4], beam_ends(away)[1], beam_ends(away)[2], ctx)
+        # A static pointing error scales the force by the far-field Gaussian loss.
+        beam = GaussianBeam(waist_radius_m=0.05, aperture_radius_m=0.08)
+        divergence = beam.wavelength_m / (pi * beam.waist_radius_m)
+        errored = LaserBeamLink(power_w=40.0, magnification=100.0, range_m=200e3; beam,
+            pointing=TerminalPointing(field_of_regard_rad=0.1, error_rad=0.5 * divergence))
+        ideal = LaserBeamLink(power_w=40.0, magnification=100.0, range_m=200e3; beam,
+            pointing=TerminalPointing(field_of_regard_rad=0.1))
+        @test norm(interlink_wrench(errored, terminal_a, terminal_b, a, b, ctx)[1]) ≈
+            exp(-0.5) * norm(interlink_wrench(ideal, terminal_a, terminal_b, a, b, ctx)[1]) rtol = 1e-14
+        # It needs terminal hardware at both ends, and attitude.
+        virtual = [bus_sat(1; terminals=1, n_terminal=0), bus_sat(2; y=-1000.0)]
+        @test_throws ArgumentError register_link!(InterlinkModel(), virtual, (1, 1), (2, 1), narrow)
+        err = try
+            run_simulation(run_args(beam_pair(narrow)...; duration=5.0)); nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError && occursin("orientation_sim", sprint(showerror, err))
+        # In a run with attitude, facing terminals link and turned-away ones do not.
+        actives(link; kwargs...) = begin
+            solution = run_simulation(run_args(beam_pair(link; kwargs...)...; duration=5.0, orientation=true);
+                return_solution=true)
+            [!isempty(sample.active) for sample in solution.prob.p.args.interlink_model.history]
+        end
+        @test all(actives(narrow))
+        @test !any(actives(narrow; boresights=([1.0, 0.0, 0.0], [0.0, 1.0, 0.0])))
+    end
+
+    @testset "mounted recoil" begin
+        ctx = LinkContext(planet=PLANET)
+        location = SVector(0.3, 0.0, 0.2)
+        mounted = LaserBeamLink(power_w=40.0, magnification=100.0, range_m=200e3, recoil=:mounted)
+        central = LaserBeamLink(power_w=40.0, magnification=100.0, range_m=200e3)
+        @test link_applies_torque(mounted)
+        spacecraft, _ = beam_pair(mounted; location)
+        a, b, terminal_a, terminal_b = beam_ends(spacecraft)
+        force_a, torque_a, force_b, torque_b = interlink_wrench(mounted, terminal_a, terminal_b, a, b, ctx)
+        central_wrench = interlink_wrench(central, terminal_a, terminal_b, a, b, ctx)
+        @test bits(force_a) == bits(central_wrench[1]) && bits(force_b) == bits(central_wrench[3])
+        # The force at the terminal's location: its lever arm's torque, which is the
+        # terminal's own recoil for the same force (its beam points at the other end).
+        _, arm = terminal_pose(spacecraft[1], terminal_a)
+        @test bits(torque_a) == bits(cross(arm, force_a))
+        _, arm_b = terminal_pose(spacecraft[2], terminal_b)
+        @test bits(torque_b) == bits(cross(arm_b, force_b))        # each end's own force at its own terminal
+        @test !iszero(torque_b)
+        recoil_force, recoil_torque = actuator_wrench(terminal_a, 100.0 * 40.0, SM.ActuatorMounting.actuator_context(spacecraft[1].root))
+        @test recoil_force ≈ force_a rtol = 1e-14
+        @test recoil_torque ≈ torque_a rtol = 1e-14
+        # In attitude, the force is turned into the body frame first.
+        turn = SVector(0.0, 0.0, sin(pi / 8), cos(pi / 8))
+        a_turned, _, _, _ = beam_ends(spacecraft; q1=turn)
+        @test interlink_wrench(mounted, terminal_a, terminal_b, a_turned, b, ctx)[2] ≈ cross(arm, rot(turn) * force_a) rtol = 1e-14
+        # It needs terminal hardware at both ends.
+        virtual = [bus_sat(1; terminals=1, n_terminal=0), bus_sat(2; y=-1000.0)]
+        @test_throws ArgumentError register_link!(InterlinkModel(), virtual, (1, 1), (2, 1), mounted)
+        # A two-spacecraft run: the link's impulses cancel, and each body spins up
+        # by I⁻¹ τ (trapezoidal over 10 s, the line of sight turning slowly).
+        duration = 10.0
+        solution = run_simulation(run_args(beam_pair(mounted; location)...; duration, orientation=true); return_solution=true)
+        first_state, final = solution.u[1], solution.u[end]
+        @test all(!isempty(sample.active) for sample in solution.prob.p.args.interlink_model.history)
+        @test norm(100.0 * final.sc[1].interlink_dv + 100.0 * final.sc[2].interlink_dv) <= 1e-12 * norm(final.sc[1].interlink_dv)
+        torque_at(state, index) = begin
+            run_sc = solution.prob.p.args.dynamics_model.spacecraft
+            ends = [IM.StateSample(SVector{3}(state.sc[i].pos), SVector{3}(state.sc[i].vel), state.sc[i].mass,
+                SVector{4}(state.sc[i].q), SVector{3}(state.sc[i].ω), run_sc[i], i) for i in 1:2]
+            terminals = [only(mounted_link_terminals(run_sc[i])).terminal for i in 1:2]
+            interlink_wrench(mounted, terminals..., ends..., ctx)[2index]
+        end
+        for index in 1:2
+            inertia = spacecraft[index].inertia_tensor
+            expected = inertia \ ((torque_at(first_state, index) + torque_at(final, index)) / 2 * duration)
+            @test final.sc[index].ω ≈ expected rtol = 1e-4
+            @test norm(final.sc[index].ω) > 0
+        end
+        # D-I2-1: while the link drives the terminal, a controller's level for it
+        # applies no recoil.
+        held = run_simulation(run_args(beam_pair(mounted; location)...; duration=5.0, orientation=true,
+            control=ControlModel(control_effectors=(HoldLevels([30.0]),), control_rates=[1.0])); return_solution=true)
+        @test SE._mounted_control_effect(HoldLevels([30.0]), held.u[end].sc[1], held.prob.p, 1, 5.0)[1] == zeros(3)
+    end
+
+    @testset "checkpoints keep the options" begin
+        mktempdir() do directory
+            segments(resume) = SimulationSettings(results=false, generate_plots=false, checkpoint_enabled=true,
+                checkpoint_interval_s=10.0, checkpoint_directory=directory, resume_from_checkpoint=resume)
+            options = (beam=GaussianBeam(waist_radius_m=0.05, aperture_radius_m=0.08), occultation=true)
+            pair(; changes...) = begin
+                spacecraft = [bus_sat(1), bus_sat(2; y=-1000.0)]
+                model = InterlinkModel()
+                register_link!(model, spacecraft, (1, 1), (2, 1),
+                    LaserBeamLink(; power_w=40.0, magnification=100.0, range_m=200e3, options..., changes...))
+                (spacecraft, model)
+            end
+            run_simulation(run_args(pair()...; duration=30.0, settings=segments(false)))
+            for change in ((beam=GaussianBeam(waist_radius_m=0.05, aperture_radius_m=0.09),),
+                           (beam=ConstantBeam(0.5),), (occultation=(; min_ray_altitude_m=1e3),), (occultation=false,))
+                @test_throws ArgumentError run_simulation(run_args(pair(; change...)...; duration=60.0, settings=segments(true)))
+            end
+            resumed = run_simulation(run_args(pair()...; duration=60.0, settings=segments(true)); return_solution=true)
+            history = resumed.prob.p.args.interlink_model.history
+            @test first(history).time == 30.0 && last(history).time == 60.0     # it resumed at 30 s
+        end
+    end
+
+    @testset "the gve example with a beam" begin
+        example = GveExample
+        beam = GaussianBeam(waist_radius_m=0.05, aperture_radius_m=0.08)
+        plain_args = example.gve_sma_configuration(duration=120.0)
+        beam_args = example.gve_sma_configuration(duration=120.0, beam=beam)
+        @test all(link -> link isa LaserMomentumLink, plain_args.interlink_model.graph.edge_properties)
+        @test all(link -> link isa LaserBeamLink{GaussianBeam} && link.occultation,
+            beam_args.interlink_model.graph.edge_properties)
+        gains = map((plain_args, beam_args)) do args
+            final = run_simulation(args; return_solution=true).u[end]
+            abs(final.sc[1].interlink_delta_sma)
+        end
+        @test 0 < gains[2] < gains[1]          # tens of kilometres apart, the beam delivers less
     end
 end
 
