@@ -234,17 +234,93 @@ end
         @test fq["link_pose"] === nothing
         @test_throws ArgumentError SV.build_viewer_frames(DataFrame(time=[0.0]), scene)
 
-        # Above the Float64 cutoff the positions fall back to Float32.
+        # Above the Float64 cutoff, positions forced to Float32.
         many = SM.SpacecraftModel[SM.SpacecraftModel(root=SM.Link(root=true, m=3.0), initial_condition=args.dynamics_model.spacecraft[1].initial_condition, id=i) for i in 1:(SV.FLOAT64_POSITION_MAX_SPACECRAFT + 1)]
         many_args = SM.SimConfig._with_configuration(args;
         dynamics_model=SM.DynamicsModel(many, args.dynamics_model.dynamic_effectors),
     )
         many_scene = build_visualization_scene(many_args; rotation_max_samples=4)
         many_df = _synthetic_results(many_scene; n_rows=4, with_vel=false, with_link_pose=false)
-        many_frames = SV.build_viewer_frames(many_df, many_scene)
+        many_frames = SV.build_viewer_frames(many_df, many_scene; position_precision=:f32)
         @test many_frames["pos_dtype"] == "f32"
         @test length(_decode_f32(many_frames["pos_km"])) == 4 * length(many) * 3
         @test many_frames["vel_kms"] === nothing
+    end
+
+    @testset "position precision: Float64 above 64 spacecraft when it costs no frames" begin
+        args = _viewer_config(results_directory=mktempdir())
+        ic = args.dynamics_model.spacecraft[1].initial_condition
+        function scene_of(n)
+            fleet = SM.SpacecraftModel[SM.SpacecraftModel(root=SM.Link(root=true, m=3.0), initial_condition=ic, id=i) for i in 1:n]
+            fleet_args = SM.SimConfig._with_configuration(args;
+                dynamics_model=SM.DynamicsModel(fleet, args.dynamics_model.dynamic_effectors))
+            return build_visualization_scene(fleet_args; rotation_max_samples=4)
+        end
+        # Every block but the positions is the same as with Float32 positions, and
+        # the Float64 positions round to the Float32 ones.
+        function only_positions_differ(f64, f32)
+            @test f64["pos_dtype"] == "f64" && f32["pos_dtype"] == "f32"
+            @test all(k -> k in ("pos_dtype", "pos_km") || isequal(f64[k], f32[k]), union(keys(f64), keys(f32)))
+            @test Float32.(_decode_f64(f64["pos_km"])) == _decode_f32(f32["pos_km"])
+        end
+        # The budget (MB) at which the frame budget holds `frames` frames of `S`
+        # spacecraft with `position_bytes` per position: these tables carry
+        # positions and mass per spacecraft, and the time per frame. The margin
+        # keeps the rounding of the MB value from losing a frame.
+        holds(S, frames, position_bytes) = frames * S * cld(S * (position_bytes + 4) + 8, S) / 1.0e6 + 1.0e-12
+        fits_all(S, n, position_bytes) = holds(S, n, position_bytes)
+        n = 100
+
+        # 64 spacecraft: Float64 whatever the budget costs, as before.
+        scene64 = scene_of(SV.FLOAT64_POSITION_MAX_SPACECRAFT)
+        df64 = _synthetic_results(scene64; n_rows=n, with_vel=false, with_link_pose=false)
+        tight64 = fits_all(64, n, 24) - 1.0e-9
+        frames64 = SV.build_viewer_frames(df64, scene64; data_budget_mb=tight64)
+        @test frames64["pos_dtype"] == "f64" && frames64["count"] < n
+        @test SV.build_viewer_frames(df64, scene64)["pos_dtype"] == "f64"
+        @test SV.build_viewer_frames(df64, scene64; position_precision=:f32)["pos_dtype"] == "f32"
+
+        # 65 spacecraft: Float64 up to the budget at which it keeps every row, and
+        # Float32 just below it, where Float64 would keep fewer.
+        scene65 = scene_of(65)
+        df65 = _synthetic_results(scene65; n_rows=n, with_vel=false, with_link_pose=false)
+        at_boundary = fits_all(65, n, 24)
+        @test fits_all(65, n, 12) < at_boundary
+        fits = SV.build_viewer_frames(df65, scene65; data_budget_mb=at_boundary)
+        @test fits["count"] == n
+        only_positions_differ(fits, SV.build_viewer_frames(df65, scene65; data_budget_mb=at_boundary, position_precision=:f32))
+        below = SV.build_viewer_frames(df65, scene65; data_budget_mb=at_boundary - 1.0e-9)
+        @test below["pos_dtype"] == "f32" && below["count"] == n
+        @test JSON.json(below) == JSON.json(SV.build_viewer_frames(df65, scene65; data_budget_mb=at_boundary - 1.0e-9,
+            position_precision=:f32))
+        forced = SV.build_viewer_frames(df65, scene65; data_budget_mb=at_boundary - 1.0e-9, position_precision=:f64)
+        @test forced["pos_dtype"] == "f64" && forced["count"] < n           # frames give way to precision
+        # The default budget holds these rows either way.
+        only_positions_differ(SV.build_viewer_frames(df65, scene65), SV.build_viewer_frames(df65, scene65; position_precision=:f32))
+
+        # A large fleet: the same rule.
+        S = 1000
+        scene_large = scene_of(S)
+        df_large = _synthetic_results(scene_large; n_rows=20, with_vel=false, with_link_pose=false)
+        only_positions_differ(SV.build_viewer_frames(df_large, scene_large),
+            SV.build_viewer_frames(df_large, scene_large; position_precision=:f32))
+        @test SV.build_viewer_frames(df_large, scene_large; data_budget_mb=fits_all(S, 20, 24) - 1.0e-9)["pos_dtype"] == "f32"
+        @test SV.build_viewer_frames(df_large, scene_large; data_budget_mb=fits_all(S, 20, 24))["pos_dtype"] == "f64"
+
+        # A budget at which Float32 also keeps every other row (99 frames by the
+        # budget, so the same stride as Float64's 58): Float64, the same frames.
+        # With mission segments, whose boundary rows the row limit bounds, Float64
+        # would lower that limit, so Float32.
+        same_stride = holds(65, 99, 12)
+        stride_only = SV.build_viewer_frames(df65, scene65; data_budget_mb=same_stride)
+        @test stride_only["pos_dtype"] == "f64" && stride_only["count"] < n
+        only_positions_differ(stride_only, SV.build_viewer_frames(df65, scene65; data_budget_mb=same_stride, position_precision=:f32))
+        mission = Dict{String, Any}("schema" => 1, "name" => "precision", "transitions" => Any[],
+            "segments" => Any[Dict{String, Any}("name" => "coast", "start_s" => 0.0, "end_s" => 500.0)])
+        @test SV.build_viewer_frames(df65, scene65; data_budget_mb=same_stride, mission=mission)["pos_dtype"] == "f32"
+        @test SV.build_viewer_frames(df65, scene65; mission=mission)["pos_dtype"] == "f64"
+
+        @test_throws ArgumentError SV.build_viewer_frames(df65, scene65; position_precision=:f16)
     end
 
     @testset "heat rate reaches the viewer in W/m²" begin

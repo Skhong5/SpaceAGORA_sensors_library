@@ -97,6 +97,45 @@ end
         @test SV.default_sample_scalar(DataFrame(time=[0.0, 1.0], sc1_periapsis_altitude=[1.0e5, 2.5e5])) == 250.0
     end
 
+    @testset "ensemble positions follow the viewer's precision rule" begin
+        scene = build_visualization_scene(_sample_args(1); rotation_max_samples=4)
+        per_sample = length(scene.spacecraft)
+        n = cld(SV.FLOAT64_POSITION_MAX_SPACECRAFT + 1, per_sample)          # more than 64 in all
+        S = n * per_sample
+        function table(i)
+            df = DataFrame(time=collect(0.0:10.0:90.0))
+            for k in 1:per_sample, c in 1:3
+                df[!, "sc$(k)_pos_$(c)"] = [7.0e6 + 1.0e3 * (i + c) + r for r in 1:10]
+            end
+            return df
+        end
+        samples = [EnsembleSample(i, string(i), true, Float64(i), "sample $(i)", mktempdir()) for i in 1:n]
+        scenes, tables = fill(scene, n), [table(i) for i in 1:n]
+        frames(; kw...) = first(SV.build_ensemble_frames(samples, scenes, tables; kw...))
+        decode(b64, T) = collect(reinterpret(T, base64decode(b64)))
+        function only_positions_differ(f64, f32)
+            @test f64["pos_dtype"] == "f64" && f32["pos_dtype"] == "f32"
+            @test all(k -> k in ("pos_dtype", "pos_km") || isequal(f64[k], f32[k]), union(keys(f64), keys(f32)))
+            @test isequal(Float32.(decode(f64["pos_km"], Float64)), decode(f32["pos_km"], Float32))
+        end
+        @test S > SV.FLOAT64_POSITION_MAX_SPACECRAFT
+        # The default budget holds the ten rows either way: Float64.
+        only_positions_differ(frames(), frames(position_precision=:f32))
+        # The budget (MB) for ten frames of positions only, at 24 bytes each:
+        # Float64 there, and Float32 just below, where Float64 would thin the axis.
+        ten = 10 * (S * 24 + 8) / 1.0e6 + 1.0e-12
+        @test frames(data_budget_mb=ten)["count"] == 10
+        only_positions_differ(frames(data_budget_mb=ten), frames(data_budget_mb=ten, position_precision=:f32))
+        below = frames(data_budget_mb=ten - 1.0e-9)
+        @test below["pos_dtype"] == "f32" && below["count"] == 10
+        forced = frames(data_budget_mb=ten - 1.0e-9, position_precision=:f64)
+        @test forced["pos_dtype"] == "f64" && forced["count"] < 10
+        # At 64 or fewer, Float64 as before.
+        few = fld(SV.FLOAT64_POSITION_MAX_SPACECRAFT, per_sample)
+        @test first(SV.build_ensemble_frames(samples[1:few], scenes[1:few], tables[1:few];
+            data_budget_mb=1.0e-4))["pos_dtype"] == "f64"
+    end
+
     @testset "Monte Carlo campaign writes samples, manifest and page" begin
         campaign = mktempdir()
         result, page = run_monte_carlo_visualization(_sample_args, [1, 2], campaign; threads=1, max_frames=200)
