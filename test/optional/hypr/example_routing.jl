@@ -12,7 +12,7 @@ Base.include(ex -> ex == :(examples = list_examples()) ? :(examples = String[]) 
         @test "--project=$(joinpath(routing.EXAMPLES_DIR,"rpo_planner_env"))" in cmd.exec
         @test all(!startswith(arg,"--load") && arg!="-L" for arg in cmd.exec)
     end
-    @test routing.example_project("Earth_Torque_Free_Test.jl")==routing.REPO_ROOT
+    @test routing.example_project("Earth_Torque_Free_Test.jl")==joinpath(routing.REPO_ROOT,"examples")
     mktempdir() do dir
         # Use the actual smoke child process to prove an ordinary example cannot
         # see the companion, even after the parent has loaded it elsewhere.

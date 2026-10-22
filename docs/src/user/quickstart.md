@@ -5,9 +5,11 @@ run.
 
 This page is for first-time users who do not need GRAM or SPICE on day one.
 
-The root environment is the canonical committed execution environment for
-the repository-owned quickstart path. There is no bootstrap step beyond
-instantiating it.
+The root environment is the canonical committed execution environment:
+instantiating it installs SpaceAGORA at the package versions its committed
+manifest pins. The examples run in the examples environment, which one setup
+command prepares from that manifest; it adds the packages the examples use for
+plots and analysis.
 
 This default quickstart baseline is the Earth vacuum path:
 `NoAtmosphereModel()` plus `SimpleEphemeridesModel()`.
@@ -24,13 +26,20 @@ that every later command on this site assumes:
 GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 cd SpaceAGORA.jl
 julia --project=. -e "using Pkg; Pkg.instantiate(julia_version_strict=true)"
-julia --project=. examples/AGORA_Basic_Quickstart.jl
+julia --startup-file=no examples/setup.jl
+julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
 `julia_version_strict=true` makes the package manager stop with one clear
 message on a Julia release other than 1.12 instead of continuing into
-unrelated errors. Command blocks on this site say where they are typed:
-"Terminal" is the shell prompt (PowerShell or Command Prompt on Windows, a
+unrelated errors. `examples/setup.jl` prepares the examples environment
+(`examples/Project.toml`); run it again after a pull that changes the root
+`Manifest.toml`.
+[Installation & Environment](installation_environment.md#Examples-environment)
+describes both environments.
+
+Command blocks on this site say where they are typed: "Terminal" is the shell
+prompt (PowerShell or Command Prompt on Windows, a
 terminal on Linux/macOS), and "Julia REPL" is the `julia>` prompt inside a
 running Julia session.
 
@@ -108,7 +117,7 @@ The first two plots from a run of this example:
 ![The trajectory projected on the inertial x-y and x-z planes, centred on the planet, whose equatorial radius is drawn as a circle, with the start and end points marked.](../assets/figures/quickstart_inertial_trajectory.png)
 
 On Windows the variable is set in a separate statement, and the remaining
-three lines of the path above then run unchanged. Terminal, Windows
+four lines of the path above then run unchanged. Terminal, Windows
 PowerShell:
 
 ```text
@@ -140,7 +149,9 @@ simulation. It does not require:
 
 ## If you prefer the CLI
 
-The equivalent command-line path. Terminal, from the repository root:
+The equivalent command-line path. The CLI itself runs in the root project and
+starts the example in the examples environment prepared above. Terminal, from
+the repository root:
 
 ```text
 julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --output-dir=output/cli_run
@@ -161,7 +172,7 @@ same three result files under `output/` without generating plots. Terminal,
 from the repository root:
 
 ```text
-julia --project=. examples/AGORA_Earth_NoGRAM.jl
+julia --project=examples examples/AGORA_Earth_NoGRAM.jl
 ```
 
 Through the command-line launcher, keeping its files in their own directory:

@@ -133,39 +133,26 @@ const PULSE = SM.SimulationCallbacks.get_periapsis_pulse_callback
 const ANCHOR_STATE = [7.0e6, 0.0, 0.0, 0.0, 7500.0, 0.0]
 
 @testset "Older index names deprecated in 0.5.0" begin
-    @testset "SchedulingPolicyModel target_index and target_indices" begin
+    @testset "SchedulingPolicyModel's target names, removed in 0.6.0" begin
         T = SchedulingPolicyModel
-        @test :target_index in fieldnames(T) && :target_indices in fieldnames(T)
-        @test !(:target_idx in fieldnames(T)) && !(:target_idxs in fieldnames(T))
-        default = T(:gve_sma)
-        @test default.target_index == 1 && default.target_indices === nothing
-        @test isempty(rename_warnings(() -> (T(:gve_sma; target_index=2), T(:gve_sma; target_indices=[2, 1]))))
-        @test T(:gve_sma; target_index=nothing).target_index === nothing
-        @test T(:gve_sma; target_indices=[3, 1]).target_indices == [1, 3]
-        for (old, new, value, expected) in ((:target_idx, :target_index, 2, 2), (:target_idxs, :target_indices, [2, 1], [1, 2]))
-            warned = rename_warnings(() -> T(:gve_sma; (old => value,)...))
-            @test length(warned) == 1 && occursin("SchedulingPolicyModel.$(old)", only(warned)) &&
-                occursin("use $(new)", only(warned))
-            @test_throws ArgumentError T(:gve_sma; (old => value, new => value)...)
-            if Base.JLOptions().depwarn != 2
-                logger = Test.TestLogger(min_level=Logging.Warn)
-                built = with_logger(() -> (T(:gve_sma; (old => value,)...), T(:gve_sma; (old => value,)...)), logger)
-                @test all(b -> getfield(b, new) == expected, built)
-                @test length(logger.logs) == 1                     # once per type and name
-                # The old property reads the new field.
-                @test quietly(() -> getproperty(built[1], old)) == expected
-            else
-                @test_throws ErrorException getproperty(T(:gve_sma; (new => value,)...), old)
+        @test fieldnames(T) == (:objective, :matching)
+        # The symbol forms are refused with their typed replacement, the old names too
+        # (interlink_policy_tests.jl has every form).
+        for (old, new) in ((:target_idx, :target_index), (:target_idxs, :target_indices))
+            for name in (old, new)
+                err = try T(:gve_sma; (name => [2, 1],)...) catch e e end
+                @test err isa ArgumentError && occursin("SemimajorAxisRatePolicy(targets=[2, 1])", err.msg)
+            end
+            # The removed properties are refused, naming their replacement.
+            for name in (old, new)
+                err = try getproperty(T(SemimajorAxisRatePolicy()), name) catch e e end
+                @test err isa ArgumentError && occursin("`.objective.targets`", err.msg)
             end
         end
-        # An explicit nothing through the old keyword still means "both endpoints".
-        Base.JLOptions().depwarn != 2 && @test quietly(() -> T(:gve_sma; target_idx=nothing)).target_index === nothing
-        @test_throws TypeError T(:gve_sma; target_index="2")
-        @test_throws TypeError T(:gve_sma; target_indices=1)
         # An interlink checkpoint keeps its stored keys, so older checkpoints resume.
         stub = (interlink_model=(graph=(vertices=Any[], edges=Any[], edge_properties=Any[]),
                 forbidden_pairs=Set{Any}(), constellation_link_type=:laser),
-            scheduling_policy_model=T(:gve_sma; target_indices=[2, 1]), dynamics_model=(spacecraft=Any[],))
+            scheduling_policy_model=T(SemimajorAxisRatePolicy(targets=[2, 1])), dynamics_model=(spacecraft=Any[],))
         snapshot = SE._interlink_checkpoint_configuration(stub)
         @test snapshot.target_idx == 1 && snapshot.target_idxs == [1, 2]
     end
@@ -202,20 +189,15 @@ const ANCHOR_STATE = [7.0e6, 0.0, 0.0, 0.0, 7500.0, 0.0]
                 e isa ErrorException && occursin("deprecated and will be removed in SpaceAGORA 1.0", e.msg) ? :refused :
                     (showerror(stderr, e); :other) end
             anchor = StateAnchor(10.0, 2, [7.0e6, 0.0, 0.0, 0.0, 7500.0, 0.0])
-            policy = SchedulingPolicyModel(:gve_sma; target_index=2)
             println("STRICT ", join(map(outcome, (
-                () -> SchedulingPolicyModel(:gve_sma; target_idx=2),
-                () -> SchedulingPolicyModel(:gve_sma; target_idxs=[2]),
-                () -> policy.target_idx,
                 () -> anchor.sat_idx,
                 () -> PULSE(0.04, 1:3; sat_idx=2),
-                () -> SchedulingPolicyModel(:gve_sma; target_index=2, target_indices=[2]),
                 () -> anchor.spacecraft_index,
                 () -> PULSE(0.04, 1:3; spacecraft_index=2))), ","))
             """
         output = read(pipeline(`$(Base.julia_cmd()) --startup-file=no --depwarn=error
             --project=$(Base.active_project()) -e $script`; stderr=devnull), String)
-        @test occursin("STRICT refused,refused,refused,refused,refused,ok,ok,ok", output)
+        @test occursin("STRICT refused,refused,ok,ok", output)
     end
 end
 end

@@ -135,70 +135,31 @@ end
     end
 end
 
-@testset "Dispatch mechanisms are priced separately" begin
-    # satellite_batch dispatches through Polyester.@batch and the flat routes
-    # through the persistent channel pool. Measured on this machine at twelve
-    # workers the two differ by ~26x (704 ns against 18.4 us), so a predictor
-    # that shares one constant between them misprices whichever route it was not
-    # calibrated on. The first version did exactly that and scored 25% decision
-    # accuracy against the real kernel.
-    mc = _synthetic_constants()
-    counts = PC.WorkCounts(simd_terms = 1000.0, scalar_items = 83.0,
-                           coeff_touches = 500.0, coeff_table_bytes = 20000.0)
-    batch = PC.predict_plan_ns(counts, mc, PC.PlanCandidate(:satellite_batch, 1, :static);
-                               n_active_sats = 256, budget = 12)
-    flat = PC.predict_plan_ns(counts, mc, PC.PlanCandidate(:flat_constellation_effector_queue, 12, :static);
-                              n_active_sats = 256, budget = 12)
-    # Same worker count, so any difference in the dispatch component comes from
-    # the mechanism rather than from width.
-    @test batch.workers == flat.workers == 12
-    @test batch.ns != flat.ns
-end
+@testset "the unwired RHS-plan predictor is gone; its live neighbours stay" begin
+    SE = SpaceAGORA.SimulationEngine
+    # Removed in 0.6.0: the analytic predictor, its work counts and its
+    # per-effector probe. Nothing in the package called them.
+    for name in (:WorkCounts, :effector_cost_terms, :constellation_work_counts,
+                 :model_in_cost_domain, :flat_queue_node_effector, :EffectorProbe,
+                 :validate_declaration, :probe_ns_map, :PlanCandidate, :PlanPrediction,
+                 :predict_plan_ns, :plan_candidates, :select_plan, :LOCK_CONVOY_ABSTAIN_RATIO,
+                 :workload_usl_parameters, :_cost_batchable_effector,
+                 :_cost_harmonics_prepass_effector, :_cost_aero_prepass_effector,
+                 :_alf_recurrence_iterations)
+        @test !isdefined(PC, name)
+    end
+    @test !isdefined(SE, :probe_effector_costs!)
+    @test !isdefined(SE, :warn_on_declaration_mismatch)
+    @test !hasfield(PC.ContentionInputs, :workspace_bytes_per_sat)
 
-@testset "select_plan abstains rather than guessing" begin
-    mc = _synthetic_constants()
-    # Out of domain: no calibration can represent the workload, so no answer.
-    out = PC.WorkCounts(simd_terms = 1000.0, in_domain = false)
-    @test PC.select_plan(out, mc; budget = 12, n_active_sats = 256) === nothing
-
-    # A margin wide enough that nothing separates the candidates must also
-    # abstain -- this is the mechanism that makes "never worse than the static
-    # route" structural rather than hoped-for.
-    counts = PC.WorkCounts(simd_terms = 1000.0, scalar_items = 83.0,
-                           coeff_touches = 500.0, coeff_table_bytes = 20000.0)
-    @test PC.select_plan(counts, mc; budget = 12, n_active_sats = 256, margin = 10.0) === nothing
-
-    # With a permissive margin it does choose.
-    @test PC.select_plan(counts, mc; budget = 12, n_active_sats = 256, margin = 0.0) !== nothing
-end
-
-@testset "Wide plans are charged for imperfect scaling" begin
-    # The predictor divides work by worker count and then corrects back up by
-    # workers/achieved_speedup. With measured speedup saturating near 5x at
-    # twelve workers, a twelve-wide plan must be charged roughly 2.4x its ideal
-    # share -- otherwise every wide plan looks better than it is, which is the
-    # error that kept the first predictor at 20% decision accuracy.
-    mc = _synthetic_constants()
-    counts = PC.WorkCounts(simd_terms = 5000.0, scalar_items = 83.0,
-                           coeff_touches = 1000.0, coeff_table_bytes = 20000.0,
-                           simd_workspace_bytes_per_sat = 4000.0)
-
-    ideal = PC.RateCurve([0.0, 1.0, 2.0, 3.0], [1.0, 2.0, 4.0, 8.0])
-    mc_ideal = PC.MachineConstants(
-        simd_lane = mc.simd_lane, coeff_touch = mc.coeff_touch,
-        parallel_speedup = ideal,
-        ns_per_scalar_item = mc.ns_per_scalar_item,
-        ns_per_queue_node = mc.ns_per_queue_node,
-        dispatch_pool_ns_base = mc.dispatch_pool_ns_base,
-        dispatch_pool_ns_per_worker = mc.dispatch_pool_ns_per_worker,
-        dispatch_batch_ns_base = mc.dispatch_batch_ns_base,
-        dispatch_batch_ns_per_worker = mc.dispatch_batch_ns_per_worker,
-        ns_per_atomic = mc.ns_per_atomic,
-        reference_fma_ns = mc.reference_fma_ns, reference_mem_ns = mc.reference_mem_ns,
-        fingerprint = "ideal", schema_version = PC.CALIBRATION_SCHEMA_VERSION)
-
-    cand = PC.PlanCandidate(:flat_constellation_effector_queue, 8, :static)
-    real_ns = PC.predict_plan_ns(counts, mc, cand; n_active_sats = 1024, budget = 12).ns
-    ideal_ns = PC.predict_plan_ns(counts, mc_ideal, cand; n_active_sats = 1024, budget = 12).ns
-    @test real_ns > ideal_ns
+    # Kept: what the native-lock width cap, the predictive planner and the RHS
+    # calibration read.
+    for name in (:ContentionInputs, :alloc_bytes_per_second, :lock_duty_cycle,
+                 :lock_wait_hold_ratio, :MachineConstants, :calibrate_machine,
+                 :ensure_machine_constants!, :load_machine_constants,
+                 :save_machine_constants, :usl_speedup, :usl_peak_workers, :_fit_usl,
+                 :timed_min, :StreamingPairedTrial)
+        @test isdefined(PC, name)
+    end
+    @test isdefined(SE, :probe_contention_inputs!)
 end

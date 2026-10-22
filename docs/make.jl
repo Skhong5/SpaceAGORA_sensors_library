@@ -310,6 +310,7 @@ makedocs(
             "Troubleshooting" => "user/troubleshooting.md",
             "Recipes" => "user/recipes.md",
             "Examples Catalog" => "user/examples_catalog.md",
+            "Upgrading" => "user/upgrading.md",
         ],
         "Extend SpaceAGORA" => Any[
             "Extensibility" => "extensibility.md",

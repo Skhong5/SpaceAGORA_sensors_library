@@ -12,7 +12,7 @@ const SM = SpaceAGORA.SimulationModel
         register_allowed_link!(triangle, spacecraft, (i, 1), (j, 1))
     end
     triangle.graph.available .= true
-    triangle_policy = SchedulingPolicyModel(:gve_sma)
+    triangle_policy = SchedulingPolicyModel(SemimajorAxisRatePolicy())
     matching_workspace!(triangle, triangle_policy).score .= [3.0, 2.0, 1.0]
         @test select_interlinks!(triangle, triangle_policy) == [((1, 1), (2, 1))]
         @test any(triangle_policy.matching.cyclic)
@@ -29,7 +29,7 @@ const SM = SpaceAGORA.SimulationModel
                 register_allowed_link!(random_model, six, (i, 1), (j, 1))
             end
             random_model.graph.available .= rand(rng, Bool, 8)
-            random_policy = SchedulingPolicyModel(:gve_sma)
+            random_policy = SchedulingPolicyModel(SemimajorAxisRatePolicy())
             scores = matching_workspace!(random_model, random_policy).score
             scores .= rand(rng, [-1.0, 0.0, 1e-20, 1.0, nextfloat(1.0), 3.0], 8)
             expected = exhaustive_matching_score(random_model, random_policy)
@@ -49,7 +49,7 @@ const SM = SpaceAGORA.SimulationModel
             register_link!(directed, three, (i, 1), (j, 1), beam)
         end
         directed.graph.available .= true
-        directed_policy = SchedulingPolicyModel(:power_delivery)
+        directed_policy = SchedulingPolicyModel(PowerDeliveryPolicy())
         matching_workspace!(directed, directed_policy).score .= [1.0, 2.0, 1.0, 3.0]
         @test select_interlinks!(directed, directed_policy) == [((1, 1), (2, 1))]
         @test any(directed_policy.matching.cyclic)
@@ -64,7 +64,7 @@ const SM = SpaceAGORA.SimulationModel
         register_allowed_link!(multi_target.interlink_model, multi_target.dynamics_model.spacecraft,
             (2, 1), (3, 1); parameters=InterLinkParameters(range=500e3))
         multi_target = SM.SimConfig._with_configuration(multi_target;
-            scheduling_policy_model=SchedulingPolicyModel(:gve_sma; target_indices=[3, 1, 2]))
+            scheduling_policy_model=SchedulingPolicyModel(SemimajorAxisRatePolicy(targets=[3, 1, 2])))
         multi_solution = run_simulation(multi_target; return_solution=true)
         multi_ran = multi_solution.prob.p.args
         @test multi_solution.t[end] == 20.0

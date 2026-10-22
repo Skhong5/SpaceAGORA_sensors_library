@@ -3,6 +3,7 @@ using StaticArrays
 using LinearAlgebra
 using Random
 using SpaceAGORA
+import PlotlyJS # the comparison figures come from its package extension
 const SM = SpaceAGORA.SimulationModel
 
 @testset "RPO RTN frame helpers" begin

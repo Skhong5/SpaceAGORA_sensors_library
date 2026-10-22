@@ -9,7 +9,7 @@ move beyond the vacuum baseline to a higher-fidelity open-data atmosphere.
 Shortest successful command:
 
 ```text
-julia --project=. examples/AGORA_Basic_Quickstart.jl
+julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
 What to read next:

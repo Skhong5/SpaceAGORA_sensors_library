@@ -7,7 +7,7 @@
 # no atmosphere. The page draws NASA's Apollo Lunar Module model.
 #
 #   julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/apollo11_lunar_orbit.jl
-# Load the optional renderer before example helpers activate the core project.
+# Load the optional renderer before the example helpers continue in the examples environment.
 if abspath(PROGRAM_FILE) == @__FILE__
     using SpaceAGORAVisualizer
 end

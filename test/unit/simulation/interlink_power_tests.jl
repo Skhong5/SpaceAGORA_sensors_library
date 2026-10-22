@@ -43,7 +43,7 @@ function beam_pair(; arc_m=5000.0, link=PowerBeamLink(power_w=80.0, range_m=50e3
     return spacecraft, model
 end
 
-function run_args(spacecraft, model; duration=60.0, policy=:power_delivery, settings=SimulationSettings(results=false, generate_plots=false))
+function run_args(spacecraft, model; duration=60.0, policy=PowerDeliveryPolicy(), settings=SimulationSettings(results=false, generate_plots=false))
     return SimulationConfiguration(
         simulation_settings=settings,
         mission_configuration=MissionConfiguration(mission_type=MissionTime, mission_time=duration,
@@ -54,7 +54,7 @@ function run_args(spacecraft, model; duration=60.0, policy=:power_delivery, sett
         control_model=ControlModel((), Float64[]), initial_time=InitialTime(),
         integration_tolerances=IntegrationTolerances(reltol_orbit=1e-10, abstol_orbit=1e-8, dt_max_orbit=1.0),
         solver_config=SM.SolverConfig(solver_mode=:tsit5), interlink_model=model,
-        scheduling_policy_model=SchedulingPolicyModel(policy))
+        scheduling_policy_model=policy)
 end
 
 sample(pos) = SM.InterLinkModels.link_endpoint((pos=pos,), nothing, 1)
@@ -173,7 +173,7 @@ sample(pos) = SM.InterLinkModels.link_endpoint((pos=pos,), nothing, 1)
 
     @testset "scheduling" begin
         spacecraft, model = beam_pair()
-        gve = run_simulation(run_args(spacecraft, model; duration=10.0, policy=:gve_sma); return_solution=true)
+        gve = run_simulation(run_args(spacecraft, model; duration=10.0, policy=SemimajorAxisRatePolicy()); return_solution=true)
         @test all(entry -> isempty(entry.active), gve.prob.p.args.interlink_model.history)   # no force, no score
         spacecraft, model = beam_pair()
         power = run_simulation(run_args(spacecraft, model; duration=10.0); return_solution=true)
@@ -188,7 +188,7 @@ sample(pos) = SM.InterLinkModels.link_endpoint((pos=pos,), nothing, 1)
         spacecraft = [beam_sat(1, 0.0; sender=true), beam_sat(2, 5000.0; sender=true)]
         model = InterlinkModel()
         register_link!(model, spacecraft, (1, 1), (2, 1), LaserMomentumLink(power_w=40.0))
-        names_laser = string.(propertynames(run_simulation(run_args(spacecraft, model; duration=1.0, policy=:gve_sma);
+        names_laser = string.(propertynames(run_simulation(run_args(spacecraft, model; duration=1.0, policy=SemimajorAxisRatePolicy());
             return_results=true).table))
         @test !any(name -> occursin("power_received", name) || occursin("power_beamed", name), names_laser)
         @test any(name -> occursin("power_generated", name), names_laser)

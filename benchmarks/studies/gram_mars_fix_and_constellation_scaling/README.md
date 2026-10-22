@@ -55,13 +55,13 @@ CPU%, sampled from that process only via `ps -p <pid>` polling
 resource totals; contention can still affect utilization and elapsed time.
 
 ```bash
-julia --project=. benchmarks/studies/gram_mars_fix_and_constellation_scaling/leo_constellation_size_scaling.jl
+julia --project=examples benchmarks/studies/gram_mars_fix_and_constellation_scaling/leo_constellation_size_scaling.jl
 ```
 
 Override the thread ladder (comma-separated, values must be <= 64):
 
 ```bash
-SPACEAGORA_SCALING_THREADS=1,8,64 julia --project=. benchmarks/studies/gram_mars_fix_and_constellation_scaling/leo_constellation_size_scaling.jl
+SPACEAGORA_SCALING_THREADS=1,8,64 julia --project=examples benchmarks/studies/gram_mars_fix_and_constellation_scaling/leo_constellation_size_scaling.jl
 ```
 
 Produces `leo_constellation_size_scaling_with_gram.png` (standard vs.
@@ -85,7 +85,7 @@ cache is beneficial. `earth_standard_gram_scaling.jl` and
 for a fixed 64-spacecraft native-GRAM ensemble:
 
 ```bash
-julia --project=. benchmarks/studies/gram_mars_fix_and_constellation_scaling/leo_ensemble_outer_backend_scaling.jl
+julia --project=examples benchmarks/studies/gram_mars_fix_and_constellation_scaling/leo_ensemble_outer_backend_scaling.jl
 ```
 
 Its outputs include `leo_ensemble_outer_backend_scaling_summary.csv` and the

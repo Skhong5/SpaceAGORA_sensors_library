@@ -12,7 +12,7 @@ run() { local name=$1 mode=$2 case=$3 extra_env=$4
   ( export SPACEAGORA_RHS_CALIBRATION_PATH="$d/store.toml" SPACEAGORA_PARALLEL_POLICY_STATE_PATH="$d/hints.toml" SPACEAGORA_OUTER_ROUTE_STATE_PATH="$d/route.toml"
     [ -n "$extra_env" ] && export $extra_env
     echo "=== $name mode=$mode case=$case env=$extra_env start $(date +%T)"
-    julia --threads=$T --project=. benchmarks/studies/parallelization_performance.jl full --worker \
+    julia --threads=$T --project=examples benchmarks/studies/parallelization_performance.jl full --worker \
       --case=$case --mode=$mode --thread-count=$T --repeat=1 --worker-repeats=4 --worker-seed=20260615 \
       --worker-mc-samples=1 --warmup=1 --solver-mode=auto_stiff --process-workers=1 --parity-samples=0 \
       --outfile="$d/row.csv" --parity=0 > "$d/stdout.log" 2>&1; echo "  exit=$?  end $(date +%T)" )

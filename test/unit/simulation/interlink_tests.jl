@@ -25,7 +25,7 @@ function endpoint_fixture(; range=200e3)
     model = ConstellationInterLinkModel()
     key = register_allowed_link!(model, spacecraft, (1, 1), (2, 1);
         parameters=InterLinkParameters(; range))
-    runtime = (args=(interlink_model=model, scheduling_policy_model=SchedulingPolicyModel(:gve_sma),
+    runtime = (args=(interlink_model=model, scheduling_policy_model=SchedulingPolicyModel(SemimajorAxisRatePolicy()),
         dynamics_model=(spacecraft=spacecraft,), environment_model=(planet=make_no_gram_planet(:earth),)),
         is_active=trues(2))
     return spacecraft, state, model, key, runtime
@@ -155,7 +155,7 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
     @testset "Exact tree and cyclic terminal matching" begin
         spacecraft = [SpacecraftModel(n_terminal=2) for _ in 1:5]
         model = ConstellationInterLinkModel()
-        policy = SchedulingPolicyModel(:gve_sma)
+        policy = SchedulingPolicyModel(SemimajorAxisRatePolicy())
         central = register_allowed_link!(model, spacecraft, (1, 1), (2, 1))
         left = register_allowed_link!(model, spacecraft, (1, 1), (3, 1))
         right = register_allowed_link!(model, spacecraft, (2, 1), (4, 1))
@@ -180,14 +180,14 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
         model.graph.available[end] = true
         matching_workspace!(model, policy).score[end] = 1.0
         @test select_interlinks!(model, policy) == sort([left, right, extra])
-        @test isempty(select_interlinks!(model, SchedulingPolicyModel(:gve_sma)))
+        @test isempty(select_interlinks!(model, SchedulingPolicyModel(SemimajorAxisRatePolicy())))
 
         triangle = ConstellationInterLinkModel()
         for (i, j) in ((1, 2), (2, 3), (1, 3))
             register_allowed_link!(triangle, spacecraft, (i, 1), (j, 1))
         end
         fill!(triangle.graph.available, true)
-        triangle_policy = SchedulingPolicyModel(:gve_sma)
+        triangle_policy = SchedulingPolicyModel(SemimajorAxisRatePolicy())
         matching_workspace!(triangle, triangle_policy).score .= [3.0, 2.0, 1.0]
         if Base.get_extension(SpaceAGORA, :SpaceAGORAPythonCallExt) === nothing
             triangle.graph.active .= [false, true, false]
@@ -217,7 +217,7 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
         backward = register_link!(two_way, spacecraft, (2, 1), (1, 1), beam)
         forward = register_link!(two_way, spacecraft, (1, 1), (2, 1), beam)
         fill!(two_way.graph.available, true)
-        two_way_policy = SchedulingPolicyModel(:power_delivery)
+        two_way_policy = SchedulingPolicyModel(PowerDeliveryPolicy())
         for (scores, expected) in (([3.0, 1.0], backward), ([1.0, 3.0], forward), ([2.0, 2.0], forward))
             matching_workspace!(two_way, two_way_policy).score .= scores
             @test select_interlinks!(two_way, two_way_policy) == [expected]
@@ -241,16 +241,16 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
         rates = [2 * semimajor_axis(state.sc[i], mu)^2 / mu *
             dot(state.sc[i].vel, i == 1 ? first_force : second_force) / state.sc[i].mass for i in 1:2]
         for (policy, expected) in (
-            (SchedulingPolicyModel(:gve_sma), rates[1]),
-            (SchedulingPolicyModel(:gve_sma; target_index=2), rates[2]),
-            (SchedulingPolicyModel(:gve_sma; target_index=nothing), sum(rates)),
-            (SchedulingPolicyModel(:gve_sma; target_index=99, target_indices=[2, 1]), sum(rates)),
-            (SchedulingPolicyModel(:gve_sma_first_index; target_index=2), rates[1]),
+            (SchedulingPolicyModel(SemimajorAxisRatePolicy()), rates[1]),
+            (SchedulingPolicyModel(SemimajorAxisRatePolicy(targets=2)), rates[2]),
+            (SchedulingPolicyModel(SemimajorAxisRatePolicy(targets=:both)), sum(rates)),
+            (SchedulingPolicyModel(SemimajorAxisRatePolicy(targets=[2, 1])), sum(rates)),
+            (SchedulingPolicyModel(SemimajorAxisRatePolicy(targets=:lower_index)), rates[1]),
         )
             score_candidates!(model, policy, state, mu; candidate_force=force_on_endpoint)
             @test only(matching_workspace!(model, policy).score) ≈ expected
         end
-        eccentric_policy = SchedulingPolicyModel(:gve_eccentricity)
+        eccentric_policy = SchedulingPolicyModel(EccentricityRatePolicy())
         score_candidates!(model, eccentric_policy, state, mu; candidate_force=force_on_endpoint)
         plus, minus = copy(state.sc[1]), copy(state.sc[1])
         plus.vel .+= first_force / plus.mass
@@ -258,13 +258,13 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
         @test isapprox(only(eccentric_policy.matching.score),
             (eccentricity(plus, mu) - eccentricity(minus, mu)) / 2; rtol=1e-5, atol=1e-14)
         for targets in (Int[], [0], [1, 1])
-            @test_throws ArgumentError SchedulingPolicyModel(:gve_sma; target_indices=targets)
+            @test_throws ArgumentError SemimajorAxisRatePolicy(targets=targets)
         end
         @test_throws ArgumentError SchedulingPolicyModel(:invalid)
-        @test_throws ArgumentError SchedulingPolicyModel(:gve_eccentricity; target_indices=[1])
-        @test_throws ArgumentError score_candidates!(model, SchedulingPolicyModel(:gve_sma; target_indices=[3]),
+        @test_throws ArgumentError EccentricityRatePolicy(targets=[1])
+        @test_throws ArgumentError score_candidates!(model, SchedulingPolicyModel(SemimajorAxisRatePolicy(targets=[3])),
             state, mu; candidate_force=force_on_endpoint)
-        @test_throws ArgumentError score_candidates!(model, SchedulingPolicyModel(:gve_sma),
+        @test_throws ArgumentError score_candidates!(model, SchedulingPolicyModel(SemimajorAxisRatePolicy()),
             state, 0.0; candidate_force=force_on_endpoint)
         @test schedule_interlinks!(model, runtime.args.scheduling_policy_model, spacecraft, state, mu;
             candidate_force=force_on_endpoint) == [key]

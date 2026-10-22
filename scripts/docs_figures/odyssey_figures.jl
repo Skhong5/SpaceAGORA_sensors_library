@@ -1,7 +1,7 @@
 # Writes the two Odyssey figures from a fresh run of the tutorial's default comparison
 # (panel caps 90 and 30 degrees). Terminal, from the repository root:
 #   julia --project=examples/odyssey_surrogate_env examples/odyssey_surrogate.jl --output=output/odyssey_figures
-#   julia --project=. scripts/docs_figures/odyssey_figures.jl output/odyssey_figures
+#   julia --project=examples scripts/docs_figures/odyssey_figures.jl output/odyssey_figures
 using CSV, DataFrames, Plots
 
 length(ARGS) == 1 || error("Usage: odyssey_figures.jl <comparison directory with cap_90_deg/ and cap_30_deg/>")

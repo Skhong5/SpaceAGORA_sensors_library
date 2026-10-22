@@ -6,26 +6,26 @@ Canonical study launcher:
 ## Run
 Quick profile:
 ```bash
-julia --startup-file=no --project=. benchmarks/studies/performance_runtime_analysis.jl quick
+julia --startup-file=no --project=examples benchmarks/studies/performance_runtime_analysis.jl quick
 ```
 
 Full profile:
 ```bash
-julia --startup-file=no --project=. benchmarks/studies/performance_runtime_analysis.jl full
+julia --startup-file=no --project=examples benchmarks/studies/performance_runtime_analysis.jl full
 ```
 
 Optional output directory:
 ```bash
-julia --startup-file=no --project=. benchmarks/studies/performance_runtime_analysis.jl --profile=quick --outdir=/absolute/path/to/output
+julia --startup-file=no --project=examples benchmarks/studies/performance_runtime_analysis.jl --profile=quick --outdir=/absolute/path/to/output
 ```
 
 The study measures `deepcopy(case.args_template)` separately and then runs the solve with `isolate_state=false`. Reported copy/setup metrics therefore represent the setup cost avoided when expert callers disable isolation. Keep `isolate_state=true` as the default for correctness; only treat `false` as a throughput lever when the configuration instance is single-use and not shared across concurrent or state-mutating runs.
 
 ## Parallel Backend Selection
 ```bash
-SPACEAGORA_PERF_PARALLEL_BACKEND=threads julia --startup-file=no --project=. benchmarks/studies/performance_runtime_analysis.jl quick
-SPACEAGORA_PERF_PARALLEL_BACKEND=process SPACEAGORA_PERF_PROCS=2 julia --startup-file=no --project=. benchmarks/studies/performance_runtime_analysis.jl quick
-JULIA_NUM_THREADS=4 SPACEAGORA_PERF_PARALLEL_BACKEND=auto SPACEAGORA_PERF_PROCS=2 julia --startup-file=no --project=. benchmarks/studies/performance_runtime_analysis.jl quick
+SPACEAGORA_PERF_PARALLEL_BACKEND=threads julia --startup-file=no --project=examples benchmarks/studies/performance_runtime_analysis.jl quick
+SPACEAGORA_PERF_PARALLEL_BACKEND=process SPACEAGORA_PERF_PROCS=2 julia --startup-file=no --project=examples benchmarks/studies/performance_runtime_analysis.jl quick
+JULIA_NUM_THREADS=4 SPACEAGORA_PERF_PARALLEL_BACKEND=auto SPACEAGORA_PERF_PROCS=2 julia --startup-file=no --project=examples benchmarks/studies/performance_runtime_analysis.jl quick
 ```
 
 ## Split-by-Responsibility Layout
@@ -71,12 +71,12 @@ This study is separate from the runtime-analysis and smart-ladder harnesses. It 
 
 Smoke profile:
 ```bash
-julia --project=. benchmarks/studies/parallelization_performance.jl smoke
+julia --project=examples benchmarks/studies/parallelization_performance.jl smoke
 ```
 
 Full profile:
 ```bash
-julia --project=. benchmarks/studies/parallelization_performance.jl full --outdir=output/performance/parallelization_performance_full
+julia --project=examples benchmarks/studies/parallelization_performance.jl full --outdir=output/performance/parallelization_performance_full
 ```
 
 Paper protocol:

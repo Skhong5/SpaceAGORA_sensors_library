@@ -123,10 +123,10 @@ end
         # spacecraft against its velocity lowers its semimajor axis, while the
         # second is pulled along its velocity.
         mu = make_no_gram_planet(:earth).μ
-        first_target = SchedulingPolicyModel(:gve_sma; target_index=1)
+        first_target = SchedulingPolicyModel(SemimajorAxisRatePolicy(targets=1))
         score_candidates!(model, first_target, state, mu)
         @test first_target.matching.score[1] < 0
-        second_target = SchedulingPolicyModel(:gve_sma; target_index=2)
+        second_target = SchedulingPolicyModel(SemimajorAxisRatePolicy(targets=2))
         score_candidates!(model, second_target, state, mu)
         @test second_target.matching.score[1] > 0
         @test schedule_interlinks!(model, second_target, spacecraft, state, mu) == [key]

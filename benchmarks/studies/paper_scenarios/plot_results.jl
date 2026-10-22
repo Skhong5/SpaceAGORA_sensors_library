@@ -8,7 +8,7 @@
 # cross-machine comparison set is also written to `results/plots_cross_machine/`.
 #
 # Usage:
-#   julia --project=. benchmarks/studies/paper_scenarios/plot_results.jl [results_dir]
+#   julia --project=examples benchmarks/studies/paper_scenarios/plot_results.jl [results_dir]
 #
 # results_dir defaults to benchmarks/studies/paper_scenarios/results.
 

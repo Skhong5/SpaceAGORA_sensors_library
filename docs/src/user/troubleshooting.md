@@ -79,9 +79,33 @@ there: `Pkg.instantiate()` reports `No packages added to or removed from
 
 ---
 
+## Examples environment not prepared
+
+**Symptom:** An example stops with `Prepare the examples environment first:
+run julia --startup-file=no examples/setup.jl`, the command-line tool's `run`,
+`telemetry` or `benchmark` command stops with `The examples environment is not
+prepared`, or a plotting script fails with `Package Plots not found in current
+path`.
+
+**Cause:** From SpaceAGORA 0.6.0 the examples, plotting scripts and studies run
+in the examples environment (`examples/Project.toml`), which adds Plots, Roots
+and the other example packages to SpaceAGORA. The root project no longer
+provides them, and the examples environment's manifest is generated, not
+committed, so a fresh clone does not have it.
+
+**Resolution:**
+- Prepare it once from the repository root, after the root instantiate:
+  `julia --startup-file=no examples/setup.jl`.
+- Run examples and plotting scripts with `--project=examples`.
+- Run the setup again after a pull that changes the root `Manifest.toml`, and
+  when an example reports that the examples environment does not provide this
+  checkout's SpaceAGORA.
+
+---
+
 ## Shell command typed into the Julia REPL, or Julia code typed into the shell
 
-**Symptom:** At the `julia>` prompt, `julia --project=. examples/...` fails
+**Symptom:** At the `julia>` prompt, `julia --project=examples examples/...` fails
 with `ParseError: ... invalid operator`, `cd SpaceAGORA.jl` with
 `extra tokens after end of expression`, `git clone ...` with
 `UndefVarError: git not defined`, and a PowerShell line such as
