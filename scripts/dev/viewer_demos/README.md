@@ -7,10 +7,12 @@ reconstructions with their studies rather than adding them to this demo family.
 
 HTML rendering is supplied by the optional `SpaceAGORAVisualizer` companion.
 Prepare a separate environment once, then use it for the direct demonstration
-commands below:
+commands below. The demos load the renderer from it and then continue in the
+examples environment through `examples/common.jl`, so prepare that once too:
 
 ```bash
 julia --startup-file=no scripts/setup_visualizer.jl /path/to/visualizer-env
+julia --startup-file=no examples/setup.jl
 julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/iss_demo.jl --duration-s 60 --output-dir output/iss-first-run
 ```
 
@@ -73,15 +75,17 @@ The station model and controller are a demonstration, not an ISS flight model.
 
 Start with the short hop:
 
-Add HYPR to the separate visualizer environment from the repository root:
+Add HYPR to the separate visualizer environment from the repository root, and
+prepare the examples environment if it is not prepared yet:
 
 ```text
 julia --startup-file=no scripts/setup_hypr.jl /path/to/visualizer-env
+julia --startup-file=no examples/setup.jl
 ```
 
 These HYPR examples load `SpaceAGORAHYPR` and the renderer before their common
-helper activates the core project. Baseline examples without HTML export can
-continue to use `--project=.`.
+helper continues in the examples environment, so both environments are needed.
+Baseline examples without HTML export use `--project=examples`.
 
 ```sh
 SPACEAGORA_DEMO_SMOKE=1 julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/iss_hypr.jl

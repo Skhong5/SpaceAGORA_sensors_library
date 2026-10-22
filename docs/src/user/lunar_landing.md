@@ -196,7 +196,7 @@ the export options and the bundle contract.
 ## Running the demo
 
 ```
-julia --project=. scripts/dev/viewer_demos/apollo11_landing.jl --output-dir output/apollo11-landing
+julia --project=examples scripts/dev/viewer_demos/apollo11_landing.jl --output-dir output/apollo11-landing
 ```
 
 The demo needs the site bundle (or `SPACEAGORA_TERRAIN_SITE`), the tracked

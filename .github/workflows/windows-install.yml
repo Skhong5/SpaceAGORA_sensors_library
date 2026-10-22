@@ -1,9 +1,9 @@
 name: Windows install
 
 # The documented first install on Windows: the README's instantiate command in
-# an empty Julia depot, precompilation, the setup check and the README's CLI
-# smoke run, in PowerShell as the onboarding pages describe. Every other
-# workflow runs on Linux. Not a required check, and it does not run on every
+# an empty Julia depot, precompilation, the setup check, the README's examples
+# setup and its CLI smoke run, in PowerShell as the onboarding pages describe.
+# Every other workflow runs on Linux. Not a required check, and it does not run on every
 # pull request: weekly, on manual dispatch, and on pull requests that change
 # the install path (the package environment, Git attributes, the quickstart
 # and the code it runs at precompile time) or the pages that document its
@@ -28,6 +28,8 @@ on:
       - ".gitmodules"
       - "examples/AGORA_Basic_Quickstart.jl"
       - "examples/common.jl"
+      - "examples/Project.toml"
+      - "examples/setup.jl"
       - "src/interfaces/cli/**"
       - "src/precompile_workload.jl"
       - "test/smoke/ci_readme_quickstart.py"
@@ -80,12 +82,15 @@ jobs:
           }
           instantiate='julia --project=. -e "using Pkg; Pkg.instantiate(julia_version_strict=true)"'
           setup_check='julia --project=. -e "using SpaceAGORA; println(pkgdir(SpaceAGORA))"'
+          examples_setup='julia --startup-file=no examples/setup.jl'
           smoke='julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --smoke'
           expect README.md "$instantiate"
+          expect README.md "$examples_setup"
           expect README.md "$smoke"
           for page in docs/src/user/quickstart.md docs/src/user/installation_environment.md; do
             expect "$page" "$instantiate"
             expect "$page" "$setup_check"
+            expect "$page" "$examples_setup"
           done
           exit "$status"
 
@@ -127,6 +132,12 @@ jobs:
 
       - name: Load the package (setup check)
         run: julia --project=. -e "using SpaceAGORA; println(pkgdir(SpaceAGORA))"
+
+      # The CLI runs the quickstart in the examples environment, which adds the
+      # plotting packages to the installed package versions.
+      - name: Prepare the examples environment (README command)
+        timeout-minutes: 60
+        run: julia --startup-file=no examples/setup.jl
 
       - name: README quickstart smoke
         timeout-minutes: 30
@@ -251,6 +262,14 @@ jobs:
         id: load
         run: julia --project=. -e "using SpaceAGORA; println(pkgdir(SpaceAGORA))"
 
+      # The trial commit predates the examples environment: its CLI ran the
+      # quickstart in the root project.
+      - name: Prepare the examples environment
+        id: examples
+        if: matrix.source == 'this-commit'
+        timeout-minutes: 60
+        run: julia --startup-file=no examples/setup.jl
+
       # The CLI entry point moved from src/cli to src/interfaces/cli after the
       # trial commit.
       - name: Quickstart smoke
@@ -274,6 +293,7 @@ jobs:
           INSTANTIATE: ${{ steps.instantiate.outcome }}
           PRECOMPILE: ${{ steps.precompile.outcome }}
           LOAD: ${{ steps.load.outcome }}
+          EXAMPLES: ${{ steps.examples.outcome }}
           QUICKSTART: ${{ steps.quickstart.outcome }}
           OUTPUTS: ${{ steps.outputs.outcome }}
         run: |
@@ -286,6 +306,7 @@ jobs:
             echo "| Plain instantiate | ${INSTANTIATE:-not run} |"
             echo "| Precompile | ${PRECOMPILE:-not run} |"
             echo "| Load the package | ${LOAD:-not run} |"
+            echo "| Prepare the examples environment | ${EXAMPLES:-not run} |"
             echo "| Quickstart smoke | ${QUICKSTART:-not run} |"
             echo "| Quickstart outputs | ${OUTPUTS:-not run} |"
           } >> "$GITHUB_STEP_SUMMARY"

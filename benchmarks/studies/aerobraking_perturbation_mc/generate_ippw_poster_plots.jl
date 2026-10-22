@@ -2,10 +2,10 @@
 # aerobraking perturbation Monte Carlo run.
 #
 # Usage:
-#   julia --project=. benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl
-#   julia --project=. benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl output/aerobraking_perturbation_mc/20260519_121929
-#   julia --project=. benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl base_run supplement_run
-#   julia --project=. benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl base_run nominal_inclination_argp_run shallow_deep_inclination_argp_run periapsis_altitude_run
+#   julia --project=examples benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl
+#   julia --project=examples benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl output/aerobraking_perturbation_mc/20260519_121929
+#   julia --project=examples benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl base_run supplement_run
+#   julia --project=examples benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl base_run nominal_inclination_argp_run shallow_deep_inclination_argp_run periapsis_altitude_run
 #
 # The analytical contour here is an additive prediction from the isolated
 # perturbation cases in the run, not the final closed-form secular Xi model.

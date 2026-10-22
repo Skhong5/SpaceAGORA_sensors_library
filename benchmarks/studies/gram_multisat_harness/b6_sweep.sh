@@ -11,7 +11,7 @@ for CASE in multi_16_gram_live montecarlo_mars_gram_live; do
 for MODE in serial outer_threads outer_process outer_inner_adaptive full_smart; do
 for THR in 1 24; do
   F="$SCRATCH/sw_${CASE}_${MODE}_${THR}"
-  timeout $CAP julia --project=. -t $THR benchmarks/studies/parallelization_performance.jl full \
+  timeout $CAP julia --project=examples -t $THR benchmarks/studies/parallelization_performance.jl full \
     --worker --case="$CASE" --mode="$MODE" --thread-count=$THR \
     --repeat=1 --outfile="$F.json" > "$F.log" 2>&1 &
   PID=$!

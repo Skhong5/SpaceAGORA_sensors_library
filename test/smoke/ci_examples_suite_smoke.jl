@@ -2,7 +2,8 @@ using SpaceAGORA
 
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const EXAMPLES_DIR = joinpath(REPO_ROOT, "examples")
-const PROJECT_PATH = REPO_ROOT
+# The examples run in the examples environment (examples/setup.jl prepares it).
+const PROJECT_PATH = joinpath(REPO_ROOT, "examples")
 
 const HYPR_EXAMPLES = Set([
     "Earth_RPO_CubeSat_MPC.jl", "Earth_RPO_CubeSat_MPC_Batch.jl",
@@ -29,7 +30,8 @@ function example_command(path)
 end
 
 function list_examples()
-    helper_files = Set(["common.jl"])
+    # setup.jl prepares the examples environment; it is not an example.
+    helper_files = Set(["common.jl", "setup.jl"])
     # Odyssey uses its pinned example environment, not this repository environment.
     # surrogate-user.yml runs its full native-free passage and verifies the outputs.
     dedicated_environment_examples = Set(["odyssey_surrogate.jl"])

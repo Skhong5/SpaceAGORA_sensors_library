@@ -406,7 +406,7 @@ function _ts_write_report(
                 (sysimage === nothing ? "" : "SPACEAGORA_THREAD_SCALE_SYSIMAGE=$(sysimage) ") *
                 "julia --threads=$(n) " *
                 (sysimage === nothing ? "" : "--sysimage=$(sysimage) ") *
-                "--project=. benchmarks/studies/performance_runtime_analysis.jl $(profile)"
+                "--project=examples benchmarks/studies/performance_runtime_analysis.jl $(profile)"
             )
         end
         println(io, "```")
