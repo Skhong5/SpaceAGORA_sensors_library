@@ -287,7 +287,7 @@ run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kw
 
 ## 2.4. Simulation Campaigns
 using .SimulationCampaigns: MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
-using .SimulationCampaigns: run_constellation_ensemble, ConstellationEnsembleResult
+using .SimulationCampaigns: run_constellation_ensemble, ConstellationEnsembleResult, read_constellation_results
 using .SimulationCampaigns: run_monte_carlo_visualization
 
 ## 2.5. Simulation Model
@@ -494,6 +494,7 @@ end
 @doc (@doc SimulationCampaigns.run_monte_carlo) run_monte_carlo
 @doc (@doc SimulationCampaigns.run_constellation_ensemble) run_constellation_ensemble
 @doc (@doc SimulationCampaigns.ConstellationEnsembleResult) ConstellationEnsembleResult
+@doc (@doc SimulationCampaigns.read_constellation_results) read_constellation_results
 
 # 3.3. Simulation Model
 @doc (@doc SimulationModel.AerobrakingEnergyDepletionConfig) AerobrakingEnergyDepletionConfig
@@ -803,7 +804,7 @@ export ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, Simula
 export simulation_engine_config_from_env
 export prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 export MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
-export run_constellation_ensemble, ConstellationEnsembleResult
+export run_constellation_ensemble, ConstellationEnsembleResult, read_constellation_results
 export StateAnchor, get_state_anchor_callback
 export AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractControlEffectorModel
 export AbstractEphemeridesModel, AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel

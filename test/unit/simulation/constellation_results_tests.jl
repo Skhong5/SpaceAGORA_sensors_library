@@ -224,15 +224,16 @@ same_columns(a::DataFrame, b::DataFrame) =
         summary = CSV.read(paths[3], DataFrame)
         @test summary.member_tag == ["sat_1_id_13", "sat_2_id_23", "sat_3_id_33"] && summary.rows == res.constellation.rows
         # The member folders are what the ensemble writes without the keyword, and
-        # the viewer's discovery finds the same samples.
+        # the viewer's discovery finds the same samples (labelled by identity from
+        # the summary, see below).
         plain_dir = mktempdir()
         quiet(() -> run_constellation_ensemble(configuration(fleet()[1:3]; dir=plain_dir, save_visualization_scene=true)))
         for tag in ("sat_1_id_13", "sat_2_id_23", "sat_3_id_33")
             @test read(joinpath(dir, tag, "simulation_results.csv")) == read(joinpath(plain_dir, tag, "simulation_results.csv"))
         end
         discover = SM.SceneVisualization.discover_ensemble_samples
-        @test [s.label for s in first(discover(dir))] == [s.label for s in first(discover(plain_dir))] ==
-            ["sat_1_id_13", "sat_2_id_23", "sat_3_id_33"]
+        @test [basename(s.directory) for s in first(discover(dir))] ==
+            [basename(s.directory) for s in first(discover(plain_dir))] == ["sat_1_id_13", "sat_2_id_23", "sat_3_id_33"]
         # save_csv=false: no members CSV.
         no_csv_dir = mktempdir()
         no_csv = quiet(() -> run_constellation_ensemble(configuration(fleet()[1:2]; dir=no_csv_dir, save_csv=false);
@@ -275,6 +276,68 @@ same_columns(a::DataFrame, b::DataFrame) =
         @test all(res.constellation.success)
         @test res.members.clock == res.members.time .^ 2
         @test findfirst(==("clock"), names(res.members)) > findfirst(==("heat_load"), names(res.members))
+    end
+
+    @testset "members merged from disk" begin
+        dir = mktempdir()
+        res = quiet(() -> run_constellation_ensemble(configuration(fleet(); dir=dir, save_visualization_scene=true);
+            merge_results=true))
+        in_memory = quiet(() -> run_constellation_ensemble(configuration(fleet(); results=false,
+            save_visualization_scene=true); merge_results=true))
+        # Written member by member and read in place, the table built in memory.
+        @test !(res.members.pos_1 isa Vector) && res.members.pos_1 isa AbstractVector
+        @test isequal(res.members, in_memory.members)
+        @test isequal(select(res.constellation, Not(:elapsed_s)), select(in_memory.constellation, Not(:elapsed_s)))
+        @test in_memory.members.pos_1 isa Vector
+        # The same tables from the member folders, without running anything; the
+        # members' status comes from the summary the ensemble wrote.
+        merged = read_constellation_results(dir)
+        @test isequal(merged.members, in_memory.members)
+        @test isequal(select(merged.constellation, Not(:elapsed_s)), select(res.constellation, Not(:elapsed_s)))
+        @test merged.constellation.elapsed_s ≈ res.constellation.elapsed_s
+        @test merged.files == joinpath.(dir, ["constellation_members.feather", "constellation_summary.csv"])
+        @test isequal(DataFrame(Arrow.Table(merged.files[1])), in_memory.members)
+        # Members written in the long layout give the same table.
+        long_dir = mktempdir()
+        quiet(() -> run_constellation_ensemble(configuration(fleet(); dir=long_dir, save_visualization_scene=true,
+            results_layout=:long)))
+        @test isequal(read_constellation_results(long_dir).members, in_memory.members)
+        # Without a summary, wide members have no plane or slot, and their status
+        # says only that they wrote results.
+        rm(joinpath(dir, "constellation_summary.csv"))
+        bare = read_constellation_results(dir)
+        @test all(ismissing, bare.members.plane) && all(ismissing, bare.members.slot)
+        @test isequal(select(bare.members, Not([:plane, :slot])), select(in_memory.members, Not([:plane, :slot])))
+        @test all(bare.constellation.success) && all(ismissing, bare.constellation.error)
+        @test all(ismissing, bare.constellation.elapsed_s)
+        # A member the summary records as failed has no rows, although it left
+        # partial results.
+        failed_dir = mktempdir()
+        spacecraft = [three_body(k) for k in 1:3]
+        quiet(() -> run_constellation_ensemble(configuration(spacecraft; dir=failed_dir,
+            effectors=(SM.InverseSquaredJ2GravityModel(), scoped(Fails(), BoundSpacecraft((2,))))); merge_results=true))
+        @test isfile(joinpath(failed_dir, "sat_2_id_2", "simulation_results.feather"))
+        partial = read_constellation_results(failed_dir)
+        @test sort(unique(partial.members.spacecraft)) == Int32[1, 3] && partial.constellation.rows[2] == 0
+        @test !partial.constellation.success[2] && occursin("this member's model failed", partial.constellation.error[2])
+        @test_throws "No constellation member folders" read_constellation_results(mktempdir())
+    end
+
+    @testset "the viewer labels members by identity" begin
+        dir = mktempdir()
+        quiet(() -> run_constellation_ensemble(configuration(fleet(); dir=dir, save_visualization_scene=true);
+            merge_results=true))
+        samples, scalar_name = SM.SceneVisualization.discover_ensemble_samples(dir)
+        @test scalar_name == "plane"
+        @test [s.label for s in samples] ==
+            ["id 13, plane 1, slot 1", "id 23, plane 1, slot 2", "id 33, plane 2, slot 1", "id 43, plane 2, slot 2",
+             "id 53, plane 3, slot 1", "id 63, plane 3, slot 2", "id 99"]
+        @test isequal([s.scalar for s in samples], [1.0, 1.0, 2.0, 2.0, 3.0, 3.0, NaN])
+        # Without the summary, as before: folder names and no scalar.
+        rm(joinpath(dir, "constellation_summary.csv"))
+        samples, scalar_name = SM.SceneVisualization.discover_ensemble_samples(dir)
+        @test scalar_name == "" && [s.label for s in samples] == sort(filter(n -> startswith(n, "sat_"), readdir(dir)))
+        @test all(s -> isnan(s.scalar), samples)
     end
 
     @testset "a resumed ensemble" begin

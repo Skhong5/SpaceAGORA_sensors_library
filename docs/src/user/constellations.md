@@ -229,9 +229,34 @@ Filter the members with the selection you scoped effectors with:
 `res.members[coalesce.(res.members.plane .== 2, false), :]` holds plane 2.
 
 The member runs, their files and the `value` of each sample are what they are
-without the keyword. The merged tables hold every saved row in memory; for a
-large campaign, `SPACEAGORA_RESULTS_THIN_STRIDE` and
-`SPACEAGORA_RESULTS_FINAL_ONLY` thin each member's rows. `merge_results=true`
+without the keyword. When the ensemble writes `constellation_members.feather`,
+it writes it one member at a time and `res.members` reads it in place, with
+read-only columns (`DataFrame(res.members)` copies it). Each member's rows are
+in memory until the merge; for a large campaign,
+`SPACEAGORA_RESULTS_THIN_STRIDE` and `SPACEAGORA_RESULTS_FINAL_ONLY` thin them.
+
+To merge member folders already written, without running anything again, use
+`read_constellation_results`:
+
+```julia
+merged = read_constellation_results("output/fleet")
+merged.members         # as res.members, read in place
+merged.constellation   # as res.constellation
+```
+
+It reads one member at a time, writes `constellation_members.feather` and
+`constellation_summary.csv` there, and returns them with `files`. Members
+written in the long layout give their tables as they are. A member written in
+the wide layout has one spacecraft, so its per-spacecraft columns are its
+`sc1_` ones, renamed; its plane and slot come from `constellation_summary.csv`,
+when an earlier merge wrote one. The members' status (`success`, `error`,
+`elapsed_s`) also comes from that summary, or says only whether a member wrote
+results.
+
+The viewer's ensemble page (`export_ensemble_visualization`) labels the
+members of a folder with `constellation_summary.csv` by id, plane and slot
+(`id 7, plane 2, slot 3`), colours them by plane, and reads one member's
+results at a time. `merge_results=true`
 with `return_solver_metadata=true` is refused before any member runs. So is a
 run-wide save field whose `column_prefix` is a per-spacecraft field's, since
 both would sit in the same table.
