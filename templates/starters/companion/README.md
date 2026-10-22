@@ -41,8 +41,10 @@ Command Prompt, start `julia --project=../StarterName-env` and enter
 `using Pkg; Pkg.test("StarterName")` at the `julia>` prompt; the three commands
 above run there as written.
 The generated checkout command contains the same exact revision as
-`SpaceAGORASource.toml`. Setup writes the separate environment and can access
-package servers; it does not install the optional native engine for you.
+`SpaceAGORASource.toml`. SpaceAGORA's `repin` does not rewrite this README:
+after a repin, use the new `rev` from `SpaceAGORASource.toml` in the checkout
+command. Setup writes the separate environment and can access package servers;
+it does not install the optional native engine for you.
 
 The tests check the facade's shape at the companion's contract version, a short run
 with the example owner, and that a SpaceAGORA-only session loads none of the

@@ -101,10 +101,9 @@ That matters when a loading helper prepends the wrapper to Julia's search path.
 From the SpaceAGORA repository root, with Python 3.11 or later and Git available:
 
 ```sh
-mkdir -p "$HOME/AgentScratch"
 python3.11 scripts/prepare_gram_loading_environment.py \
   --gram-source "$PWD/data/GRAMSuite.jl" \
-  --output "$HOME/AgentScratch/gram-loading-prepared"
+  --output "$HOME/spaceagora-gram-loading-prepared"
 ```
 
 The output directory must be new and outside both checkouts. The helper verifies
@@ -138,8 +137,8 @@ Run the separate loading diagnostic against this explicitly prepared input:
 JULIA_PKG_PRECOMPILE_AUTO=0 JULIA_PKG_OFFLINE=true \
   julia --startup-file=no --compiled-modules=existing \
   test/smoke/gram_package_readiness.jl \
-  --gram-project "$HOME/AgentScratch/gram-loading-prepared" \
-  --output "$HOME/AgentScratch/gram-loading-report"
+  --gram-project "$HOME/spaceagora-gram-loading-prepared" \
+  --output "$HOME/spaceagora-gram-loading-report"
 ```
 
 The report directory must also be new. Missing installed dependencies remain

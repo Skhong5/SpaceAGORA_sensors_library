@@ -33,7 +33,9 @@ standalone pin has moved to `packages/HYPRSource.toml`.
   `SpaceAGORAHYPR.RPO.<name>` or `SpaceAGORAHYPR.RobotArm.<name>`, the 0.6.0
   route, uses the extension's namespaces, the one route now:
   `Base.get_extension(HYPR, :HYPRSpaceAGORAExt).RPO.<name>` or
-  `Base.get_extension(HYPR, :HYPRSpaceAGORAExt).RobotArm.<name>`.
+  `Base.get_extension(HYPR, :HYPRSpaceAGORAExt).RobotArm.<name>`. The extension
+  exists after `using SpaceAGORA, HYPR` has activated HYPR; before that, or after
+  a refused activation, `Base.get_extension` returns `nothing`.
   `hypr_iteration_weights`, `hypr_material_improvement` and
   `hypr_protected_particle_mask` are HYPR's exported functions
   ([Versioned HYPR service contract](../reference/hypr_services.md#Changes-from-contract-2.0.0)).

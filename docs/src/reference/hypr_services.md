@@ -77,7 +77,9 @@ signature, meaning or owner.
   retiming and RRT helpers. SpaceAGORA no longer declares them. Code that reached
   one through `HYPRServices` or SpaceAGORA's internal modules now uses the
   extension's own namespaces, `Base.get_extension(HYPR, :HYPRSpaceAGORAExt).RPO.<name>`
-  or `Base.get_extension(HYPR, :HYPRSpaceAGORAExt).RobotArm.<name>`.
+  or `Base.get_extension(HYPR, :HYPRSpaceAGORAExt).RobotArm.<name>`. The extension
+  is available after `using SpaceAGORA, HYPR` has activated HYPR; before that, or
+  after a refused activation, `Base.get_extension` returns `nothing`.
 - **The swarm policy is HYPR's.** The `SwarmPolicy` namespace and the policy
   entries under `RPO` and `RobotArm` are removed. `hypr_iteration_weights`,
   `hypr_material_improvement` and `hypr_protected_particle_mask` are HYPR's

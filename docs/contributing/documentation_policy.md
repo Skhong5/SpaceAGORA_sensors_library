@@ -140,6 +140,12 @@ generates the ignored `docs/Manifest.toml` from the root manifest on every run,
 so the build uses the package versions the tests use. Run it again after the root
 manifest changes.
 
+The build checks external links, and GitHub limits anonymous requests, so a local
+link check can fail with HTTP 429. Give the build a GitHub token: in bash or zsh,
+`GITHUB_TOKEN=$(gh auth token) julia --project=docs docs/make.jl`; in PowerShell,
+set `$env:GITHUB_TOKEN = gh auth token` first. Documenter sends the token only
+with its requests to GitHub.
+
 Open `docs/build/index.html` after a successful build. Pages under
 `docs/contributing/`, `docs/architecture/` and `docs/quality/` are not rendered
 into that site; review their Markdown, command context and repository links
