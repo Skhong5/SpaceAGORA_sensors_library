@@ -104,6 +104,13 @@ const UNLISTED_CORE = ((:RPO, SM.GuidanceHooks, :rpo_sample_path_bezier),
     @test C.RobotArm.RobotArmPlan === SpaceAGORA.SimulationModel.RobotArmPlanning.RobotArmPlan
     @test C.RobotArm.RobotArmPlannerConfig === SpaceAGORA.SimulationModel.RobotArmPlanning.RobotArmPlannerConfig
     @test C.RobotArm.RobotArmRRTConnectTree === SpaceAGORA.SimulationModel.RobotArmPlanning.RobotArmRRTConnectTree
+    # The root constructor stays in core; its HYPR caller is the extension's warm start.
+    let tree = SpaceAGORA.SimulationModel.RobotArmPlanning.RobotArmRRTConnectTree((1, 2.5, -3))
+        @test tree.nodes == [[1.0, 2.5, -3.0]]
+        @test eltype(tree.nodes[1]) === Float64
+        @test tree.parents == [0]
+        @test tree.costs == [0.0]
+    end
     @test C.RobotArm.RobotArmSphereObstacle === SpaceAGORA.SimulationModel.RobotArmPlanning.RobotArmSphereObstacle
     @test C.RobotArm._reference_times === SpaceAGORA.SimulationModel.RobotArmPlanning._reference_times
     @test C.RobotArm._robot_arm_path_length === SpaceAGORA.SimulationModel.RobotArmPlanning._robot_arm_path_length
