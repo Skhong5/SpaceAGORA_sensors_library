@@ -352,11 +352,16 @@ function _save_simulation_results_if_enabled!(
     checkpoint_saved_data,
     backbone_saved_times,
     backbone_saved_data,
-    resumed_from_s::Union{Nothing, Float64};
+    resumed_from_s::Union{Nothing, Float64},
+    rows_log=nothing;
     return_table::Bool=false,
     write_files::Bool=true,
 )
     (args.simulation_settings.results || return_table) || return nothing
+    if checkpoint_active && rows_log !== nothing && rows_log.stream !== nothing
+        return _save_streamed_results!(args, rows_log, save_fields_resolved, checkpoint_saved_times,
+            checkpoint_saved_data, resumed_from_s; return_table=return_table, write_files=write_files)
+    end
     results_times = if solver_mode == :gravity_backbone_split
         checkpoint_active ? checkpoint_saved_times : backbone_saved_times
     else
@@ -395,6 +400,41 @@ function _save_simulation_results_if_enabled!(
         end
     end
     return return_table ? (; csv_path, table=results_df) : csv_path
+end
+
+# The results of a run that streams them (`_stream_results_rows!`): the rows still
+# in memory join the streams, then the feathers and the manifest are written from
+# them, and the returned tables read the feathers without copying them. A resume
+# that solves nothing writes nothing: it returns the rows its checkpoint records
+# in the streams (the first `written` saved times) and the ones it keeps, read
+# into memory.
+function _save_streamed_results!(args, log, save_fields, times_acc::Vector{Float64}, data_acc::Vector,
+                                 resumed_from_s::Union{Nothing, Float64}; return_table::Bool, write_files::Bool)
+    stream = log.stream
+    sink = return_table ? _LONG_TABLES_SINK[] : nothing
+    in_memory(df) = DataFrame([name => collect(df[!, name]) for name in names(df)])
+    if !write_files
+        keep = Int[i for i in eachindex(times_acc) if _results_row_written(stream.released + i, i == length(times_acc))]
+        kept = _build_long_results_tables(times_acc[keep], data_acc[keep], save_fields, args)
+        per_time = (length(args.dynamics_model.spacecraft), 1)
+        streamed(path, i) = stream.bytes[i] > 0 ?
+            in_memory(DataFrame(Arrow.Table(path))[1:(stream.written * per_time[i]), :]) : nothing
+        joined(a, b) = a === nothing ? b : b === nothing ? a : vcat(a, b)
+        tables = (spacecraft=joined(streamed(stream.spacecraft, 1), kept.spacecraft),
+                  run=joined(streamed(stream.run, 2), kept.run))
+        sink === nothing || (sink[] = tables)
+        return return_table ? (; csv_path=nothing, run_csv_path=nothing, table=tables.spacecraft, run_table=tables.run) :
+            nothing
+    end
+    _stream_results_rows!(log, times_acc, data_acc, save_fields, args; final=true)
+    written = _finish_long_stream!((spacecraft=stream.spacecraft, run=stream.bytes[2] > 0 ? stream.run : nothing), args;
+        steps=stream.written, first_time_s=isnan(stream.first_s) ? nothing : stream.first_s, resumed_from_s=resumed_from_s)
+    mapped(path) = path === nothing ? nothing : DataFrame(Arrow.Table(path); copycols=false)
+    tables = (spacecraft=mapped(written.feather.spacecraft), run=mapped(written.feather.run))
+    sink === nothing || (sink[] = (spacecraft=in_memory(tables.spacecraft),
+                                   run=tables.run === nothing ? nothing : in_memory(tables.run)))
+    return return_table ? (; csv_path=written.csv.spacecraft, run_csv_path=written.csv.run, table=tables.spacecraft,
+        run_table=tables.run) : written.csv.spacecraft
 end
 
 function _try_save_simulation_results_if_enabled!(args...)
@@ -1109,7 +1149,7 @@ function run_simulation(
     # final save read them: containers changed only in place, never rebound.
     results_inputs = (results_args, solver_mode, checkpoint_active, save_fields_resolved, saved_values,
         checkpoint_saved_times, checkpoint_saved_data, backbone_saved_times, backbone_saved_data,
-        resumed ? t_start : nothing)
+        resumed ? t_start : nothing, rows_log)
     # What every solve of the run shares (`_solve_run_interval!`).
     solve_setup = (; p, callbacks, solver_mode, solver_cfg, args, reltol=reltol_tol, abstol=abstol_tol, solver_cache,
         needs_full_solution)
@@ -1162,6 +1202,9 @@ function run_simulation(
             t_cursor = Float64(seg_sol.t[end])
             u_cursor = deepcopy(seg_sol.u[end])
             # The rows first: a checkpoint never records rows that are not in the file.
+            # A run that streams its results writes all but the last row now.
+            _stream_results_rows!(rows_log, checkpoint_saved_times, checkpoint_saved_data, save_fields_resolved,
+                results_args)
             rows_entry = _append_results_rows!(rows_log, checkpoint_saved_times, checkpoint_saved_data)
             _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode); is_active=p.is_active,
                 callback_state=_callback_checkpoint_state(args), model_state=_model_checkpoint_state(args),
@@ -1267,6 +1310,7 @@ function run_simulation(
         if checkpoint_written
             ck = SimulationModel.IOConfig._checkpoint_paths(args)
             push!(candidates, ck.data, ck.manifest, ck.rows)
+            rows_log !== nothing && rows_log.stream !== nothing && push!(candidates, ck.stream_spacecraft, ck.stream_run)
         end
         files = String[string(f) for f in candidates if f !== nothing && isfile(f)]
         # A resume without usable rows writes beside the earlier results; its

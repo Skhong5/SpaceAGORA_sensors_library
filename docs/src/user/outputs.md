@@ -315,6 +315,40 @@ Which table a field goes to follows its `per_satellite` flag, and its values
 are flattened into columns as in the wide table. The default stays
 `results_layout = :wide`, whose files are unchanged.
 
+### Streaming at each checkpoint
+
+A long-layout run with checkpoints (see [Checkpointing](#Checkpointing)) that
+writes results streams them: it does not keep its saved rows in memory until it
+ends.
+
+- **At each checkpoint**, the rows saved since the last one, except the last row,
+  are appended to the spacecraft and run tables. The last row stays in memory
+  and is kept beside the checkpoint, so the run holds about one segment of rows
+  at a time.
+- **The tables grow as the run goes.** They are appended to as Arrow IPC streams
+  beside the checkpoint (`simulation_checkpoint.results_spacecraft.arrows` and
+  `simulation_checkpoint.results_run.arrows`) and to the CSVs. The manifest
+  shows `streaming = true`, the number of saved times written and the time
+  reached.
+- **When the run ends, or a solve fails,** the last rows are appended and the
+  Feather files and the manifest are written from the streams, as for a run that
+  does not stream. The files hold the same rows, values and column types, and
+  the CSVs the same bytes. A Feather file has one record batch per checkpoint.
+- **`SimulationResults.table` and [`run_table`](@ref)** read the Feather files
+  in place instead of holding a copy. Their columns are read-only; use
+  `DataFrame(results.table)` for a copy you can change.
+- **Thinning** (`SPACEAGORA_RESULTS_THIN_STRIDE`, `SPACEAGORA_RESULTS_FINAL_ONLY`)
+  counts rows over the whole run, so it keeps the rows a run that does not
+  stream keeps.
+- **A resumed run** cuts the streams and CSVs back to its checkpoint, so rows
+  written after it by a run that crashed are dropped, and goes on appending. Its
+  files then hold the whole run. A resume that solves nothing leaves the files
+  as they are.
+
+A run without checkpoints, a run that returns results without writing them, and
+a run with `SPACEAGORA_SAVE_BUNDLE=0` keep their rows in memory, as a wide run
+does.
+
 The viewer reads both layouts. For a long run it reads the spacecraft table as
 views, without copying it, and its page equals that of the same run in the wide
 layout. `run_monte_carlo_visualization` reads each sample's wide results file
@@ -385,7 +419,11 @@ to the checkpoint, or none when the checkpoint holds no usable rows.
 The rows file stays with the checkpoint files after the run; a later run in the
 same checkpoint directory that is not a resume replaces it. It holds every row the
 run saves, before any thinning, so it grows with the run, to about the size of the
-results CSV. A run that neither writes nor returns results keeps no rows file,
+results CSV. A long-layout run that streams its results (see
+[Streaming at each checkpoint](#Streaming-at-each-checkpoint)) keeps only its last
+row there: the rest is in its results streams, which stay beside the checkpoint
+too. A resume in another layout cannot include rows kept that way: it warns and
+writes to `resumed_at_<t>s`, as below. A run that neither writes nor returns results keeps no rows file,
 except one with the gravity backbone, which builds its results from those rows. The
 checkpoint and its rows file are written with Julia's `Serialization`, whose
 format can change between Julia versions: resume with the Julia version that wrote

@@ -134,6 +134,7 @@ default_weight = { other = 1.2 }
 "unit:io/asset_catalog_boundary_tests.jl" = 0.04
 "unit:io/checkpoint_storage_boundary_tests.jl" = 0.02
 "unit:io/long_layout_tests.jl" = 1.4
+"unit:io/long_streaming_tests.jl" = 1.0
 "unit:io/results_assembly_tests.jl" = 0.62
 "unit:legacy_euler_contract_tests.jl" = 0.06
 "unit:legacy_guidance_diagnostic_contract_tests.jl" = 0.05
@@ -362,6 +363,7 @@ grid = 1.00
 "unit:io/asset_catalog_boundary_tests.jl" = 0.06
 "unit:io/checkpoint_storage_boundary_tests.jl" = 0.03
 "unit:io/long_layout_tests.jl" = 1.6
+"unit:io/long_streaming_tests.jl" = 1.6
 "unit:io/results_assembly_tests.jl" = 0.64
 "unit:legacy_euler_contract_tests.jl" = 0.06
 "unit:legacy_guidance_diagnostic_contract_tests.jl" = 0.04
