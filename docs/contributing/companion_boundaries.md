@@ -30,6 +30,40 @@ contracts. Release evidence for an adapter is in
   in `src/models/gnc/guidance/aerobraking/typed_edg/algorithms.jl`. It forwards
   older helper names to the EDG companion.
 
+## How the integration checks catch a boundary change
+
+A boundary change can start on either side, so both repositories test the pair:
+
+- **Each companion's CI** installs the companion with a released SpaceAGORA. Its
+  `core-release-pin` job checks that the pinned core commit is the commit of a
+  SpaceAGORA release tag, inside the companion's compatibility range. A companion
+  change that breaks the boundary fails there.
+- **SpaceAGORA's CI** installs each companion at its gitlink and runs the
+  companion's own integration tests against the SpaceAGORA change under review,
+  in the `optional-hypr-installation`, `optional-edg-installation` and
+  `optional-mujoco-installation` jobs. A SpaceAGORA change that breaks a
+  companion fails there, before it merges.
+
+Every companion's tests cover the same five things:
+
+| What is checked | HYPR | EDG | MuJoCo |
+|---|---|---|---|
+| Both package load orders, each in a fresh process | `test/integration.jl`, `test/service_boundary.jl` and `test/precompiled_loading.jl`, each in both orders | `test/load_order.jl core-first` and `edg-first` | `test/load_order.jl core-first` and `companion-first` |
+| The refusal when the provider is missing | `test/service_boundary.jl core-first`: a HYPR planner before HYPR loads | `test/load_order.jl core-first`: an EDG run before the companion loads | `test/missing_native.jl`: a scene without the MuJoCo library |
+| The refusal of another contract version, before any method is defined | `test/incompatible_contract.jl` | `test/compatibility_tests.jl` | `test/incompatible_core.jl` |
+| The service module's shape and exact version check (`Conformance.test_service_facade`) | `test/service_boundary.jl` | `test/service_boundary.jl` | `test/load_order.jl` |
+| The companion uses only names its service module lists (MuJoCo: and public SpaceAGORA names) | `test/service_boundary.jl` | `test/service_boundary.jl` | `test/service_boundary.jl` |
+
+SpaceAGORA's own tests add the core side of the same checks:
+`test/optional/hypr/core.jl`, `test/optional/edg/core.jl` and the companion's
+`test/core_only.jl` load SpaceAGORA without the companion, and
+`test/unit/adapter_contract_tests.jl` checks every service module's shape.
+
+The service-name check is what makes a contract narrowing safe. If a service
+module stops listing a name that a companion still uses, the companion's check
+fails in SpaceAGORA's CI. If a companion starts using a name its service module
+does not list, the check fails in the companion's CI.
+
 ## Rules for private paths
 
 1. **Keep a private path working** until every caller that uses it has moved to a
@@ -44,11 +78,17 @@ contracts. Release evidence for an adapter is in
 
 ### Private paths in HYPR's tests
 
+HYPR's tests use `SpaceAGORA.HYPRServices` and SpaceAGORA's public names, except:
+
 | HYPR file | Private SpaceAGORA access | Before you replace it |
 |---|---|---|
-| `test/custom_objective.jl` and `test/extension_coverage.jl` | Private core model and control bindings, or extension bindings, used by test fixtures | Keep the tested objective and the coverage it measures. |
-| `test/precompiled_conflicts.jl` | The private machinery that activates HYPR | Keep a test, in a fresh Julia process, that a conflicting HYPR is refused. |
-| `test/jakob_comparison.jl` | Private access to the comparison fixture | Check the replacement against the pinned fixture before you remove the access. |
+| `test/integration.jl`, `test/sampling_compatibility.jl`, `test/rrt_callback_contract.jl` and `test/custom_objective.jl` | `SimulationModel.RPOStationGeometry` and `SimulationModel.RPOCubeSatGeometry`, to build the station and chaser of an `RPOReferenceGeometry`. No public or service name builds them. | Move them when a supported name builds this geometry. |
+| `test/extension_coverage.jl` | Runs SpaceAGORA's own HYPR probes and unit tests from the paired checkout; those SpaceAGORA files use its internal modules | Keep the coverage it measures. The files are SpaceAGORA's tests, not copies. |
+| `test/precompiled_conflicts.jl` | `SimulationModel.HYPRSupport`: the activation protocol of the old companion, which the test calls on purpose | Keep a test, in a fresh Julia process, that a conflicting HYPR is refused. |
+| `test/jakob_comparison.jl` | The pinned historical comparison fixture, and `GuidanceHooks.RPOLQMPCTrackingSettings` | Check any replacement against the pinned fixture before you remove the access. |
+
+`test/custom_objective.jl` also calls HYPR's own extension module; that is HYPR's
+code, not a SpaceAGORA path.
 
 ### Who uses the HYPR names
 
@@ -73,8 +113,9 @@ clean up imports in HYPR:
 ### Checks for a HYPR boundary change
 
 Run SpaceAGORA's `test/unit/gnc/hypr_services_tests.jl`, HYPR's
-`test/source_boundaries.jl`, `test/integration.jl` and
-`test/precompiled_loading.jl`, and the tests of the domain you changed.
+`test/source_boundaries.jl`, `test/integration.jl`, `test/service_boundary.jl`,
+`test/incompatible_contract.jl` and `test/precompiled_loading.jl`, and the tests of
+the domain you changed.
 SpaceAGORA's `optional-hypr-installation` job runs HYPR's integration tests at the
 pinned HYPR revision, as the EDG and MuJoCo jobs run their companions' tests, so a
 SpaceAGORA change that breaks one of them fails before it merges. Keep these covered:
@@ -89,25 +130,26 @@ SpaceAGORA change that breaks one of them fails before it merges. Keep these cov
 
 | Caller | Private access | Before you replace it |
 |---|---|---|
-| SpaceAGORA's targeting control | `_edg_recompute_switches!`, `_edg_base_alpha` and `_edg_command_alpha!`, through the compatibility bridge | This coupling is outside the supported decision and query lists. Keep it on the bridge until the targeting control has a supported route. |
+| SpaceAGORA's EDG regression tests | The bridge helpers, called directly or through model-typed wrappers in `targeting_control.jl` (`_edg_recompute_switches!`, `_edg_base_alpha`, `_edg_command_alpha!`), `heat_load_control.jl` and `guidance_models.jl` | SpaceAGORA's runtime calls only the two decisions; these wrappers and helpers serve the regression tests. Keep them until those tests move to the companion, which owns the kernels. |
 | The companion's `test/runtests.jl` | Private fixtures for the prediction context and kernels, and checks of the compatibility bindings, next to the public analytic-run tests | Keep the assertions on lease expiry, on observation copies and on the real dispatch path. |
-| The companion's `benchmarks/native_reference/refresh_comparison.jl` and `observer_comparison_cases.jl` | Private model, engine and control aliases, `ODEParams` construction and integrator access | Give these research scripts an explicit replacement, and check that their results are unchanged, before you remove their private paths. |
+| The companion's `benchmarks/native_reference/refresh_comparison.jl` and `observer_comparison_cases.jl` | Private model, engine and control aliases, `ODEParams` construction and integrator access | These research scripts belong to the companion's v0.1.0 source pair (core `05de98e`) and do not run on a newer core. A refresh needs a new comparison, with an explicit replacement for these paths and a check that the results are unchanged. |
 
 ### The compatibility bridge
 
 The bridge, `COMPATIBILITY_FUNCTIONS` in `typed_edg/algorithms.jl`, lists the two
-decisions and the helpers that SpaceAGORA, the regression fixtures and the
-research scripts still call. Its helpers are not extra public hooks. The bridge
-is separate from `EDGServices`, so shrinking `EDGServices` leaves it in place.
-Keep the bridge until each maintained caller has moved to a supported call or has
-been retired on purpose. [Adapter maintenance](adapter_maintenance.md#edg-extraction-and-source-ownership)
+decisions and the helpers that SpaceAGORA's EDG regression tests still call.
+SpaceAGORA's runtime calls only the two decisions through it. Its helpers are not
+extra public hooks. The bridge is separate from `EDGServices`, so shrinking
+`EDGServices` leaves it in place. Keep the bridge until each maintained caller has
+moved to a supported call or has been retired on purpose. [Adapter maintenance](adapter_maintenance.md#edg-extraction-and-source-ownership)
 describes how it forwards to the companion.
 
 ### Checks for an EDG boundary change
 
 Run the companion's checks in `test/runtests.jl`: the service module and its
-signatures, the prediction-context lease, the observation copies and the analytic
-run. Run them with SpaceAGORA's EDG callback and control tests.
+signatures, the names the companion uses, the prediction-context lease, the
+observation copies and the analytic run. Run `test/load_order.jl` in both orders,
+and SpaceAGORA's EDG callback and control tests.
 
 - Go through the real path, from SpaceAGORA through the extension to the
   companion, and include a lease that expires after an exception.
@@ -120,18 +162,26 @@ run. Run them with SpaceAGORA's EDG callback and control tests.
 
 ### Private paths in SpaceAGORAMuJoCo
 
-MuJoCo's `test/common.jl`, `test/engine_tests.jl` and
-`benchmarks/basilisk_mujoco_xval/sagora_driver.jl` use private SpaceAGORA paths
-for test fixtures and research. They are maintenance dependencies, not supported
-adapter calls. Move them only when a public replacement keeps their assertions on
-synchronization, frames, spacecraft indices and isolation between runs. If some
-private access must remain, write it down here.
+MuJoCo's tests and its cross-validation driver use SpaceAGORA's public names,
+except three internals that `test/engine_tests.jl` reaches through
+`SimulationModel` (defined in `test/common.jl`):
+
+- `SimulationCallbacks.PeriodicCallback`, a no-op periodic callback that aligns
+  saved rows with the scene's steps;
+- `QuaternionMath.rot`, to compare MuJoCo's body frames with SpaceAGORA's
+  quaternion convention;
+- `project_unit_quaternion`, to check saved attitudes bitwise against SpaceAGORA's
+  own projection.
+
+They are maintenance dependencies, not supported adapter calls. Move them only when
+a public replacement keeps these assertions on synchronization and frames.
 
 ### Checks for an external-propagation boundary change
 
 Run SpaceAGORA's `test/unit/external_propagation_tests.jl` and the companion's
-`test/load_order.jl`, `test/incompatible_core.jl` and `test/engine_tests.jl`. Keep
-both load orders covered, and keep the compatibility refusal before any native
+`test/load_order.jl` (which includes `test/service_boundary.jl`),
+`test/incompatible_core.jl`, `test/missing_native.jl` and `test/engine_tests.jl`.
+Keep both load orders covered, and keep the compatibility refusal before any native
 library loads or any method is defined.
 
 Record whether an actual native run was exercised. The service-module checks and
