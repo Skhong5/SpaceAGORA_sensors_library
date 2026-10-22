@@ -130,8 +130,8 @@ end
 # has the same identity:
 # - a float with its bits, a bits composite field by field, as terminal fields
 #   are; another number, a string or a symbol by its value; a type by its name;
-# - a field that is a policy by its own identity, a tuple element by element, an
-#   array by its type, its size and its elements;
+# - a field that is a policy, or a weighted mix's term, by its own identity, a
+#   tuple element by element, an array by its type, its size and its elements;
 # - a function by its type and, for a closure, every value it captures (its
 #   fields), so that two closures made by one expression with different captures
 #   differ. A named function is its type alone: a change to its code is not part
@@ -151,6 +151,7 @@ function _scheduling_policy_identity(policy, path=Base.IdSet{Any}())
         fields=NamedTuple{names}(map(name -> _policy_field_identity(getfield(policy, name), path), names)))
 end
 _policy_field_identity(value::SimulationModel.AbstractSchedulingPolicy, path) = _scheduling_policy_identity(value, path)
+_policy_field_identity(value::SimulationModel.PolicyTerm, path) = _scheduling_policy_identity(value, path)
 _policy_field_identity(value::Tuple, path) = map(element -> _policy_field_identity(element, path), value)
 _policy_field_identity(value::Union{Number, AbstractString, Symbol, Type, Module}, path) = _interlink_kind_parameter(value)
 _policy_field_identity(value::AbstractArray, path) = _on_path(path, value) do

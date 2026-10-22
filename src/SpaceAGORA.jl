@@ -92,6 +92,7 @@ using .SimulationModel: terminal_shed_tier, contact_windows, contact_time_s
 using .SimulationModel: SchedulingPolicyModel, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
 using .SimulationModel: AbstractSchedulingPolicy, LinkCandidate, SchedulingContext, candidate_score
 using .SimulationModel: SemimajorAxisRatePolicy, EccentricityRatePolicy, PowerDeliveryPolicy, DataThroughputPolicy
+using .SimulationModel: EnergyBalancingPolicy, WeightedPolicy, PolicyTerm, state_of_charge
 using .SimulationModel: ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
 export AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
 export InterlinkModel, InterLinkGraph, InterLinkKey, InterLinkHistory, register_link!, interlink_force_on_spacecraft
@@ -104,6 +105,7 @@ export terminal_shed_tier, contact_windows, contact_time_s
 export SchedulingPolicyModel, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
 export AbstractSchedulingPolicy, LinkCandidate, SchedulingContext, candidate_score
 export SemimajorAxisRatePolicy, EccentricityRatePolicy, PowerDeliveryPolicy, DataThroughputPolicy
+export EnergyBalancingPolicy, WeightedPolicy, PolicyTerm, state_of_charge
 export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
 @doc (@doc SimulationModel.InterLinkModels.AbstractInterlink) AbstractInterlink
 @doc (@doc SimulationModel.InterLinkModels.LinkContext) LinkContext
@@ -156,6 +158,10 @@ export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!,
 @doc (@doc SimulationModel.SchedulingPolicies.EccentricityRatePolicy) EccentricityRatePolicy
 @doc (@doc SimulationModel.SchedulingPolicies.PowerDeliveryPolicy) PowerDeliveryPolicy
 @doc (@doc SimulationModel.SchedulingPolicies.DataThroughputPolicy) DataThroughputPolicy
+@doc (@doc SimulationModel.SchedulingPolicies.EnergyBalancingPolicy) EnergyBalancingPolicy
+@doc (@doc SimulationModel.SchedulingPolicies.WeightedPolicy) WeightedPolicy
+@doc (@doc SimulationModel.SchedulingPolicies.PolicyTerm) PolicyTerm
+@doc (@doc SimulationModel.SchedulingPolicies.state_of_charge) state_of_charge
 @doc (@doc SimulationModel.SchedulingPolicies.select_interlinks!) select_interlinks!
 @doc """Refresh link availability, score candidates, and select the maximum-total-score terminal matching.""" schedule_interlinks!
 @doc """Create the accepted-step scheduler callback used automatically by `run_simulation` when interlinks are enabled.""" interlink_scheduler_callback
