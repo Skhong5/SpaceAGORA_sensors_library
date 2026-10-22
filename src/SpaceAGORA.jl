@@ -449,6 +449,27 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 # Forward the docstrings onto this module's bindings: the docs build resolves
 # `@docs SpaceAGORA.X` blocks against SpaceAGORA's own doc metadata, and the
 # CI environment does not follow the explicit-import alias for these.
+# `@doc X` returns one nested Markdown.MD per docstring of X. Documenter unwraps a
+# lone nested MD, but it renders each of several as plain text and warns about Julia
+# interpolation. A name with more than one docstring (a type and its constructor,
+# several methods) is therefore forwarded through `_flat_doc`, which splices the
+# blocks into one MD in the same order, with the rule between docstrings that the
+# REPL shows. The result carries no `:results` metadata, which would make the REPL
+# draw a rule between every block.
+function _flat_doc(md::T) where {T}
+    blocks = Any[]
+    function add_blocks!(content)
+        for block in content
+            block isa T ? add_blocks!(block.content) : push!(blocks, block)
+        end
+    end
+    for (i, doc) in enumerate(md.content)
+        i > 1 && push!(blocks, parentmodule(T).HorizontalRule())
+        add_blocks!((doc,))
+    end
+    return T(blocks)
+end
+
 # 3.1. Simulation Engine
 @doc (@doc SimulationEngine.ParallelConfig) ParallelConfig
 @doc (@doc SimulationEngine.SolverConfig) SolverConfig
@@ -495,21 +516,21 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc SimulationModel.ThrusterGimbal) ThrusterGimbal
 @doc (@doc SimulationModel.thrust_direction) thrust_direction
 @doc (@doc SimulationModel.ControlMomentGyro) ControlMomentGyro
-@doc (@doc SimulationModel.cmg_momentum) cmg_momentum
+@doc _flat_doc(@doc SimulationModel.cmg_momentum) cmg_momentum
 @doc (@doc SimulationModel.cmg_torque_axis) cmg_torque_axis
 @doc (@doc SimulationModel.cmg_angle_saturate) cmg_angle_saturate
 @doc (@doc SimulationModel.CMGInnerGimbal) CMGInnerGimbal
 @doc (@doc SimulationModel.cmg_torque_axes) cmg_torque_axes
 @doc (@doc SimulationModel.cmg_steering) cmg_steering
 @doc (@doc SimulationModel.ActuatorContext) ActuatorContext
-@doc (@doc SimulationModel.actuator_wrench) actuator_wrench
+@doc _flat_doc(@doc SimulationModel.actuator_wrench) actuator_wrench
 @doc (@doc SimulationModel.actuator_limits) actuator_limits
 @doc (@doc SimulationModel.actuator_saturate) actuator_saturate
-@doc (@doc SimulationModel.actuator_consumption) actuator_consumption
+@doc _flat_doc(@doc SimulationModel.actuator_consumption) actuator_consumption
 @doc (@doc SimulationModel.actuator_fraction) actuator_fraction
 @doc (@doc SimulationModel.actuator_unit_wrench) actuator_unit_wrench
 @doc (@doc SimulationModel.actuation_mode) actuation_mode
-@doc (@doc SimulationModel.actuator_levels) actuator_levels
+@doc _flat_doc(@doc SimulationModel.actuator_levels) actuator_levels
 @doc (@doc SimulationModel.allocate_actuators) allocate_actuators
 @doc (@doc SimulationModel.add_actuator!) add_actuator!
 @doc (@doc SimulationModel.mounted_actuators) mounted_actuators
@@ -698,8 +719,8 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc RPOStationAssets.load_rpo_station_pointcloud) load_rpo_station_pointcloud
 @doc (@doc RPOStationAssets.load_rpo_station_cad_triangles) load_rpo_station_cad_triangles
 @doc (@doc RPOStationAssets.load_rpo_station_cad_pointcloud) load_rpo_station_cad_pointcloud
-@doc (@doc SimulationModel.NavigationHooks.RPOStationGeometry) RPOStationGeometry
-@doc (@doc SimulationModel.NavigationHooks.RPOCubeSatGeometry) RPOCubeSatGeometry
+@doc _flat_doc(@doc SimulationModel.NavigationHooks.RPOStationGeometry) RPOStationGeometry
+@doc _flat_doc(@doc SimulationModel.NavigationHooks.RPOCubeSatGeometry) RPOCubeSatGeometry
 
 # Scene visualization and display geometry
 @doc (@doc SimulationModel.SceneVisualization.VisualizationScene) VisualizationScene

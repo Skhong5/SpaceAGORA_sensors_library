@@ -415,6 +415,57 @@ end
     @test occursin("```jldoctest", from_env_src)
 end
 
+import Markdown
+
+@testset "Forwarded Docstrings Render Without Nested Markdown" begin
+    # Documenter unwraps a docstring that is one nested Markdown.MD, but it renders each
+    # of several nested MDs as text and warns about Julia interpolation. `@doc X` nests
+    # one MD per docstring of X, so a name with several docstrings is forwarded through
+    # `_flat_doc` in src/SpaceAGORA.jl, which keeps the docstrings in order with a rule
+    # between them.
+    function unwrapped(docstr)
+        md = Base.Docs.parsedoc(docstr)
+        while length(md.content) == 1 && first(md.content) isa Markdown.MD
+            md = first(md.content)
+        end
+        return md
+    end
+    squash(md) = replace(Markdown.plain(md), r"\s+" => "")
+
+    nested = String[]
+    for mod in Base.Docs.modules
+        Base.moduleroot(mod) === SpaceAGORA || continue
+        meta = Base.Docs.meta(mod; autoinit=false)
+        meta === nothing && continue
+        for (binding, multidoc) in meta
+            binding isa Base.Docs.Binding || continue
+            for sig in multidoc.order
+                any(block -> block isa Markdown.MD, unwrapped(multidoc.docs[sig]).content) &&
+                    push!(nested, string(mod, ": ", binding.var))
+            end
+        end
+    end
+    @test isempty(nested)
+
+    stored = Base.Docs.meta(SpaceAGORA)
+
+    for name in (:cmg_momentum, :actuator_wrench, :actuator_consumption, :actuator_levels,
+                 :RPOStationGeometry, :RPOCubeSatGeometry)
+        binding = Base.Docs.Binding(SpaceAGORA, name)
+        forwarded = stored[binding]
+        # The docstrings of one binding can sit in several modules (methods are
+        # documented where their types live); `Base.Docs.doc` gathers them in this order.
+        original = [multidoc.docs[sig]
+                    for mod in Base.Docs.modules if mod !== SpaceAGORA
+                    for meta in (Base.Docs.meta(mod; autoinit=false),) if meta !== nothing
+                    for multidoc in (get(meta, binding, nothing),) if multidoc !== nothing
+                    for sig in multidoc.order]
+        @test length(forwarded.order) == 1
+        @test squash(unwrapped(forwarded.docs[only(forwarded.order)])) ==
+            join((squash(unwrapped(docstr)) for docstr in original), "---")
+    end
+end
+
 @testset "Monte Carlo Campaign Runner Contract" begin
     sandbox = Module(:SpaceAGORAMonteCarloSandbox)
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"))
