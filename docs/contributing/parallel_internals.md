@@ -108,10 +108,11 @@ rather than assuming a fixed benchmark resolution.
 the bandit. The planner scores the candidate routes for the campaign in front
 of it -- its sample count, spacecraft count, force model and mission length --
 against per-machine calibration constants, and dispatches the route it prices
-as cheapest. Nothing is explored inside a campaign: the choice is made before
-the first sample runs and held for all of them, and a first round that the
-planner cannot price confidently falls back to the guarded default rather than
-guessing. Everything else is exactly `R6`, and the single switch
+as cheapest. The initial plan is chosen before the first sample. A mixed plan can then
+be narrowed by the dispatch guard: it closes consumers before their next job,
+without interrupting an active sample or starting a second dispatch. The
+[planner and guard contract](../architecture/predictive_routing_r7.md#the-guard)
+explains those conditions and the default-disabled route switch. Everything else is exactly `R6`, and the single switch
 `SPACEAGORA_CAMPAIGN_PLANNER` (`bandit`, the default, or `predictive`) is the
 only difference between them, so a paired run of the two measures the planner
 and nothing else.
@@ -135,7 +136,9 @@ scope; they do not establish a relative performance guarantee for this revision.
 
 ### Environment variables
 
-For CLI runs or scripted batch execution, set the controls before launching:
+For CLI runs or scripted batch execution, set the controls before launching.
+The examples run in the examples environment; prepare it once with
+`julia --startup-file=no examples/setup.jl`.
 
 ```powershell
 $env:SPACEAGORA_PERF_PARALLEL_BACKEND = "auto"
@@ -149,7 +152,7 @@ $env:SPACEAGORA_RHS_BATCH_PARALLEL = "auto"
 $env:SPACEAGORA_RHS_EXECUTION_MODE = "auto"
 $env:SPACEAGORA_RHS_CALIBRATE = "auto"
 $env:SPACEAGORA_PARALLEL_POLICY_ADAPTIVE = "1"
-julia --project=. examples/AGORA_Basic_Quickstart.jl
+julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
 `cmd.exe`:
@@ -166,7 +169,7 @@ set SPACEAGORA_RHS_BATCH_PARALLEL=auto
 set SPACEAGORA_RHS_EXECUTION_MODE=auto
 set SPACEAGORA_RHS_CALIBRATE=auto
 set SPACEAGORA_PARALLEL_POLICY_ADAPTIVE=1
-julia --project=. examples/AGORA_Basic_Quickstart.jl
+julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
 POSIX shells:
@@ -183,7 +186,7 @@ export SPACEAGORA_RHS_BATCH_PARALLEL=auto
 export SPACEAGORA_RHS_EXECUTION_MODE=auto
 export SPACEAGORA_RHS_CALIBRATE=auto
 export SPACEAGORA_PARALLEL_POLICY_ADAPTIVE=1
-julia --project=. examples/AGORA_Basic_Quickstart.jl
+julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
 To force a serial baseline for validation:
@@ -199,7 +202,7 @@ export SPACEAGORA_RHS_BATCH_PARALLEL=off
 export SPACEAGORA_RHS_EXECUTION_MODE=serial
 export SPACEAGORA_RHS_CALIBRATE=off
 export SPACEAGORA_PARALLEL_POLICY_ADAPTIVE=0
-julia --project=. examples/AGORA_Basic_Quickstart.jl
+julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
 Automatic mode evaluates the effector loop serially when at most one satellite
@@ -233,9 +236,9 @@ flight does not affect that run.
 
 When nothing reads the trajectory (`return_solution=false`,
 `results=false`, no solver metadata requested), the solver skips per-step
-solution storage entirely (`save_on=false`, endpoints kept). This is the
-dominant allocation in campaign runs — skipping it is what lets
-`run_constellation_ensemble` scale near-linearly with threads. Explicitly
+solution storage entirely (`save_on=false`, endpoints kept). Skipping this storage can reduce memory use. The effect on a campaign depends
+on its workload and output requirements; it does not establish a scaling
+guarantee. Explicitly
 set `SPACEAGORA_SOLVER_SAVE_EVERYSTEP` / `SPACEAGORA_SOLVER_SAVE_ON`
 values override this default in either direction. With storage on, a run
 holds one copy of the state (plus the interpolant stages) per accepted step
@@ -271,8 +274,9 @@ family, mission length); the `SimulationConfiguration` method derives those
 fields for you. After every campaign the runner records per-sample success and
 amortized wall-clock feedback via
 `SpaceAGORA.ParallelProfiles.record_outer_route_feedback!`, so repeated
-campaigns with the same shape first explore the feasible allocations and then
-converge to the fastest one. History accumulates in the process-global
+campaigns with the same shape can adapt their choices from observed outcomes.
+The result depends on workload, host load and available history; it is not a
+guarantee of convergence to the fastest route. History accumulates in the process-global
 `SpaceAGORA.SimulationCampaigns.campaign_outer_route_state()`; inspect it with
 `SpaceAGORA.ParallelProfiles.outer_route_stats_snapshot`, reset it with
 `SpaceAGORA.ParallelProfiles.reset_outer_route_state!`, or pass an isolated

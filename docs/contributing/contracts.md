@@ -6,12 +6,10 @@ verification gates, or documentation process expectations.
 This page is for maintainers. If you are looking for how to run SpaceAGORA,
 start with the [User Guide](../src/index.md) instead.
 
-Quickest related build command:
-
-```text
-julia --startup-file=no docs/setup.jl
-julia --project=docs docs/make.jl
-```
+For documentation setup and checks, use the
+[local build procedure](documentation_policy.md#build-the-docs-locally).
+These contract files remain repository documents; the user-site build does not
+render them.
 
 What to read next:
 
