@@ -33,8 +33,10 @@ function laser_model(spacecraft; kwargs...)
     return model
 end
 
-const MIX = WeightedPolicy(PolicyTerm(SemimajorAxisRatePolicy(targets=1); scale=1.0),
-    PolicyTerm(SemimajorAxisRatePolicy(targets=:both); scale=2.0, weight=-0.25))
+# Weights and scales that are not powers of two, so that any change in the order of
+# the mix's arithmetic changes its bits.
+const MIX = WeightedPolicy(PolicyTerm(SemimajorAxisRatePolicy(targets=1); scale=0.3, weight=0.7),
+    PolicyTerm(SemimajorAxisRatePolicy(targets=:both); scale=1.7, weight=-0.35))
 
 bits(x) = reinterpret(UInt64, collect(Float64, x))
 
