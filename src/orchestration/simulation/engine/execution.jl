@@ -371,8 +371,10 @@ function _save_simulation_results_if_enabled!(
         convert(Vector{Float64}, results_times),
         convert(Vector{SimulationModel.SaveData}, results_data),
     )
+    sink = return_table ? _LONG_TABLES_SINK[] : nothing
     if args.simulation_settings.results_layout === :long
         tables = _build_long_results_tables(results_times, results_data, save_fields_resolved, args)
+        sink === nothing || (sink[] = tables)
         csv_paths = (spacecraft=nothing, run=nothing)
         if write_files && args.simulation_settings.results
             csv_paths = _write_long_results!(tables, results_times, args; write_bundle=_typed_save_bundle_enabled(),
@@ -381,6 +383,7 @@ function _save_simulation_results_if_enabled!(
         return return_table ? (; csv_path=csv_paths.spacecraft, run_csv_path=csv_paths.run, table=tables.spacecraft,
             run_table=tables.run) : csv_paths.spacecraft
     end
+    sink === nothing || (sink[] = _build_long_results_tables(results_times, results_data, save_fields_resolved, args))
     results_df = _build_results_dataframe(results_times, results_data, save_fields_resolved, args)
     csv_path = nothing
     if write_files && args.simulation_settings.results

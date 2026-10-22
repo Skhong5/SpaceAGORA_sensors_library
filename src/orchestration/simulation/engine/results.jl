@@ -33,6 +33,12 @@ end
 SimulationResults(table::DataFrame, configuration, files::Vector{String}, solution) =
     SimulationResults(table, configuration, files, solution, nothing)
 
+# Set by `run_constellation_ensemble(merge_results=true)` around each member's
+# run. The run's final results save puts its tables in the long layout there,
+# built by the long builder from the saved rows, whichever layout the run writes
+# and returns.
+const _LONG_TABLES_SINK = Base.ScopedValues.ScopedValue{Union{Nothing, Base.RefValue{Any}}}(nothing)
+
 """
     run_table(results::SimulationResults) -> Union{Nothing, DataFrame}
 

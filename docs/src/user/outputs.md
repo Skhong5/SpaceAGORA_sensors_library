@@ -452,6 +452,12 @@ whether the outer route is serial, threaded, or process-backed. See
 [Parallel Execution](parallel_execution.md) for how to select and configure
 outer routing.
 
+`run_constellation_ensemble(args; merge_results=true)` also merges its members
+into one table in the long layout's columns, and with `results=true` writes
+`constellation_members.feather` (`.csv` with `save_csv`) and
+`constellation_summary.csv` beside the member folders. See
+[One table for the whole ensemble](constellations.md#One-table-for-the-whole-ensemble).
+
 
 ## In-memory constellation recorder
 

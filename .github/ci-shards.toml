@@ -217,6 +217,7 @@ default_weight = { other = 1.2 }
 "unit:simulation/atmospheric_phase_tests.jl" = 1.24
 "unit:simulation/callback_container_tests.jl" = 0.30
 "unit:simulation/callback_service_boundary_tests.jl" = 0.02
+"unit:simulation/constellation_results_tests.jl" = 1.20
 "unit:simulation/control_readout_tests.jl" = 0.02
 "unit:simulation/density_epoch_tests.jl" = 0.30
 "unit:simulation/effector_scope_tests.jl" = 1.50
@@ -444,6 +445,7 @@ grid = 1.00
 "unit:simulation/atmospheric_phase_tests.jl" = 1.51
 "unit:simulation/callback_container_tests.jl" = 0.60
 "unit:simulation/callback_service_boundary_tests.jl" = 0.03
+"unit:simulation/constellation_results_tests.jl" = 2.40
 "unit:simulation/control_readout_tests.jl" = 0.05
 "unit:simulation/density_epoch_tests.jl" = 0.36
 "unit:simulation/effector_scope_tests.jl" = 3.00

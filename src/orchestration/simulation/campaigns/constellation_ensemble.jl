@@ -156,7 +156,8 @@ end
 
 """
     run_constellation_ensemble(args::SimulationConfiguration; threads=1, fail_fast=false,
-                               allow_gnc_effectors=false, run_kwargs...) -> MonteCarloResult
+                               allow_gnc_effectors=false, merge_results=false,
+                               run_kwargs...) -> MonteCarloResult or ConstellationEnsembleResult
 
 Propagate each spacecraft of a multi-satellite `SimulationConfiguration` as an
 independent single-satellite simulation, parallelized across satellites with the
@@ -226,6 +227,28 @@ one with a `spacecraft_index`, `chaser_index` or `target_index` (such as
 `ArgumentError` naming it and the member, with or without `allow_gnc_effectors`, unless
 the ensemble has one member and the effector is bound to position 1.
 
+# Merged results
+
+With `merge_results=true` the call returns a [`ConstellationEnsembleResult`](@ref):
+the `MonteCarloResult` as `campaign`, plus a `members` table with every member's
+saved rows and its identity (`spacecraft`, `spacecraft_id`, `plane`, `slot`, in
+the long layout's columns, see [`long_table`](@ref)) and a `constellation` table
+with one row per member: its identity, folder, status and last saved row. With
+`results=true` it also writes `constellation_members.feather` (and `.csv` with
+`save_csv`) and `constellation_summary.csv` in `results_directory`, beside the
+member folders. Each member's own files, solve and sample `value` are what they
+are without the keyword. The merged tables hold every saved row in memory;
+`SPACEAGORA_RESULTS_THIN_STRIDE` and `SPACEAGORA_RESULTS_FINAL_ONLY` thin each
+member's rows. `merge_results=true` with `return_solver_metadata=true` is
+refused before any member runs, and so is a run-wide save field whose column
+prefix is a per-spacecraft field's.
+
+```julia
+res = run_constellation_ensemble(args; merge_results=true)
+plane_two = res.members[coalesce.(res.members.plane .== 2, false), :]
+res.constellation[:, [:spacecraft, :spacecraft_id, :success, :time]]
+```
+
 Remaining keyword arguments are forwarded to [`run_simulation`](@ref) (for example
 `return_solution=true`).
 """
@@ -234,6 +257,7 @@ function run_constellation_ensemble(
     threads::Union{Nothing, Integer, Symbol}=nothing,
     fail_fast::Bool=false,
     allow_gnc_effectors::Bool=false,
+    merge_results::Bool=false,
     route_state::Union{Nothing, OuterRouteState}=nothing,
     route_tuning::Union{Nothing, OuterRouteTuning}=nothing,
     run_kwargs...
@@ -250,6 +274,14 @@ function run_constellation_ensemble(
     # effectors whose scope holds its position, unscoped.
     args = SimulationEngine._resolve_effector_scopes(args)
     _validate_ensemble_uncoupled(args, allow_gnc_effectors)
+    if merge_results
+        # run_simulation refuses this pair with return_results, which every
+        # member of a merged ensemble runs with.
+        get(run_kwargs, :return_solver_metadata, false) === true && throw(ArgumentError(
+            "run_constellation_ensemble with merge_results=true cannot return solver metadata: each member runs " *
+            "with return_results=true, which run_simulation refuses with return_solver_metadata=true."))
+        _validate_merged_save_fields(run_kwargs)
+    end
     SimulationEngine._warn_repeated_spacecraft_ids(args)
 
     member_configs = [
@@ -261,16 +293,15 @@ function run_constellation_ensemble(
     # the flag's scope with the planner choosing the route (threads=:auto).
     parallel = _campaign_parallel_flag(member_configs)
     threads_resolved = _campaign_threads(threads, parallel, "run_constellation_ensemble")
-    parallel || return _run_constellation_members(args, member_configs, threads_resolved, fail_fast,
-                                                  route_state, route_tuning, run_kwargs)
-    return SimulationEngine._with_parallel_flag(true) do
-        _run_constellation_members(args, member_configs, threads_resolved, fail_fast,
-                                   route_state, route_tuning, run_kwargs)
-    end
+    run_members() = _run_constellation_members(args, member_configs, threads_resolved, fail_fast,
+                                               route_state, route_tuning, run_kwargs, merge_results)
+    campaign = parallel ? SimulationEngine._with_parallel_flag(run_members, true) : run_members()
+    merge_results || return campaign
+    return _constellation_ensemble_result(args, member_configs, campaign)
 end
 
 function _run_constellation_members(args::SimulationConfiguration, member_configs, threads, fail_fast::Bool,
-                                    route_state, route_tuning, run_kwargs)
+                                    route_state, route_tuning, run_kwargs, merge_results::Bool=false)
     if threads isa Symbol
         threads === :auto || throw(ArgumentError(
             "run_constellation_ensemble threads must be a positive integer or :auto; got :$(threads)."
@@ -282,8 +313,8 @@ function _run_constellation_members(args::SimulationConfiguration, member_config
         # when it is threaded).
         adaptive_kwargs = Dict{Symbol, Any}(pairs(run_kwargs))
         adaptive_kwargs[:isolate_state] = false
-        run_member_isolated = idx -> SimulationEngine.run_simulation(
-            deepcopy(member_configs[idx]); adaptive_kwargs...
+        run_member_isolated = idx -> _constellation_member_run(
+            deepcopy(member_configs[idx]), adaptive_kwargs, merge_results
         )
         # Each ensemble member propagates one satellite, so the routed workload
         # is single-sat per sample regardless of the constellation size.
@@ -314,14 +345,14 @@ function _run_constellation_members(args::SimulationConfiguration, member_config
         # run_simulation's own isolate_state copy so isolation is paid exactly once.
         parallel_kwargs = Dict{Symbol, Any}(pairs(run_kwargs))
         parallel_kwargs[:isolate_state] = false
-        run_member = idx -> SimulationEngine.run_simulation(
-            deepcopy(member_configs[idx]); parallel_kwargs...
+        run_member = idx -> _constellation_member_run(
+            deepcopy(member_configs[idx]), parallel_kwargs, merge_results
         )
         return withenv("SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1") do
             run_monte_carlo(run_member, spec)
         end
     end
 
-    run_member = idx -> SimulationEngine.run_simulation(member_configs[idx]; run_kwargs...)
+    run_member = idx -> _constellation_member_run(member_configs[idx], run_kwargs, merge_results)
     return run_monte_carlo(run_member, spec)
 end
