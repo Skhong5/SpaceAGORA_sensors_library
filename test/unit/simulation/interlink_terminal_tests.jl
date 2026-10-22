@@ -61,7 +61,7 @@ function run_args(spacecraft, model; duration=60.0, control=ControlModel((), Flo
         control_model=control, initial_time=InitialTime(),
         integration_tolerances=IntegrationTolerances(reltol_orbit=1e-10, abstol_orbit=1e-8, dt_max_orbit=1.0),
         solver_config=SM.SolverConfig(solver_mode=:tsit5), interlink_model=model,
-        scheduling_policy_model=SchedulingPolicyModel(:gve_sma))
+        scheduling_policy_model=SchedulingPolicyModel(SemimajorAxisRatePolicy()))
 end
 
 # Spacecraft 2 trails spacecraft 1, so a laser link pushes 1 forward and the
@@ -188,7 +188,7 @@ end
         for i in 1:2
             @test solution.u[1].sc[i].battery_wh - solution.u[end].sc[i].battery_wh ≈ 80.0 * 60.0 / 3600.0 rtol=1e-9
         end
-        @test norm(solution.u[end].sc[1].laser_dv) ≈ 100.0 * 40.0 / 299_792_458.0 / 100.0 * 60.0 rtol=1e-6
+        @test norm(solution.u[end].sc[1].interlink_dv) ≈ 100.0 * 40.0 / 299_792_458.0 / 100.0 * 60.0 rtol=1e-6
         result = run_simulation(run_args(linked_pair()...); return_results=true)
         @test all(==(40.0), result.table.sc1_actuator_level_1) && all(==(40.0), result.table.sc2_actuator_level_1)
         @test all(≈(80.0), result.table.sc1_actuator_power)
@@ -202,7 +202,7 @@ end
         solution = run_simulation(run_args(spacecraft, model); return_solution=true)
         @test isempty(solution.prob.p.args.interlink_model.terminal_endpoints[1])
         @test solution.u[end].sc[1].battery_wh == solution.u[1].sc[1].battery_wh
-        @test norm(solution.u[end].sc[1].laser_dv) > 0
+        @test norm(solution.u[end].sc[1].interlink_dv) > 0
     end
 
     @testset "a controller's levels for a link-driven terminal apply nothing" begin

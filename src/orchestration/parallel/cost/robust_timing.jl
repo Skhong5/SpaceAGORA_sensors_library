@@ -1,4 +1,5 @@
-# Measurement primitives for the parts of the cost model that must be measured.
+# Measurement primitives for the timings the machine calibration and the RHS
+# calibration take.
 #
 # Wall-clock timing is contaminated by three distinguishable things, and only one
 # of them is a real epistemic problem:
@@ -11,13 +12,11 @@
 #      genuinely reorder which candidate is faster.
 #
 # (1) and (2) are measurement problems with measurement answers, implemented
-# here. (3) is not, and is handled elsewhere by abstaining when the margin is
-# inside the model's residual spread.
+# here. (3) is not; the paired comparisons below answer it by declining to name
+# a winner when the margin is inside the noise.
 #
 # The estimators below are chosen against those failure modes specifically:
-# minimum against (2), paired interleaving against (1), and reference-kernel
-# normalisation against both, by turning an absolute duration into a
-# dimensionless ratio.
+# minimum against (2), paired interleaving against (1).
 
 """
     timed_min(f; k = 9, warmup = 2, target_window_ns = 20_000) -> Float64
@@ -46,13 +45,11 @@ through, so that a pure kernel is not dead-code eliminated.
     folded to a constant before the loop ever runs, and this then faithfully
     reports the cost of returning that constant: a few tenths of a nanosecond.
     A measurement that reads as nearly free is indistinguishable from a genuinely
-    free candidate, and the cost model would rank it accordingly.
+    free candidate, and a caller choosing by it would rank it accordingly.
 
     Callers timing a pure kernel must give it runtime-opaque arguments (a
     `Vector` filled at run time, a value read from a `Ref`). Compare against
-    [`timing_noise_floor`](@ref) to detect the failure when in doubt; the real
-    probe path is safe by construction, since it evaluates effectors against
-    live simulation state.
+    [`timing_noise_floor`](@ref) to detect the failure when in doubt.
 """
 function timed_min(f::F; k::Int = 9, warmup::Int = 2, target_window_ns::Int = 20_000)::Float64 where {F}
     k = max(1, k)
@@ -214,110 +211,6 @@ function _sign_test_two_sided(wins::Int, n::Int)::Float64
         tail += binomial(big(n), big(i)) / big(2)^n
     end
     return min(1.0, 2.0 * Float64(tail))
-end
-
-# Reference kernel: fixed, deterministic, L1-resident FMA throughput.
-#
-# Serves two purposes, which is why it is worth pinning down precisely.
-#
-# As a NORMALISER it converts absolute nanoseconds into a dimensionless ratio,
-# so a probe measured on a throttled machine is comparable to constants
-# calibrated on a cool one -- both numerator and denominator move together.
-#
-# As a STALENESS CANARY (see MachineConstants.reference_ns) it is re-measured at
-# the start of every run and compared against its value at calibration time. If
-# it has moved, the cached constants no longer describe this machine -- a
-# different cgroup CPU quota, a changed governor, a co-tenant, thermal state --
-# and the predictor abstains. It costs microseconds, and it is the only
-# freshness check the model needs, because everything else volatile is
-# re-derived per run rather than cached.
-#
-# TWO reference kernels, not one, and the reason is measured rather than assumed.
-#
-# A single contiguous-FMA reference was tried first. Against a probe kernel
-# (strided gather plus a transcendental) under ten memory-bound co-tenants at
-# load average 4.6 on this 12-core box:
-#
-#     raw probe cost        689.8 ns quiet -> 790.6 ns loaded   +14.6%
-#     normalised by FMA ref  36812   quiet ->  39220   loaded    +6.5%
-#
-# Normalisation cut the contention bias by 2.2x but did not remove it, because
-# normalisation only cancels the component of a slowdown that both kernels
-# share. The probe is memory-sensitive and the FMA reference is not, so they
-# degrade at different rates and the ratio drifts.
-#
-# The fix is to normalise each cost term against a reference with a matching
-# resource profile: `ns_per_simd_lane` is arithmetic-bound and normalises
-# against the FMA kernel, while `ns_per_coeff_touch` is stride-bound -- the
-# coefficient matrices are column-major and the harmonics kernel walks a row --
-# and normalises against the memory kernel.
-#
-# The FMA kernel doubles as the per-run staleness canary because it is the cheap
-# one (tens of nanoseconds per call); the memory kernel costs microseconds,
-# which is free during a one-shot calibration but not on every run.
-
-# Contiguous SIMD accumulate over L1-resident data. Mirrors the harmonics batch
-# inner loop, which is the dominant arithmetic term in the model.
-const _REFERENCE_LANES = 1024
-
-function _reference_kernel(buf::Vector{Float64})::Float64
-    acc = 0.0
-    @inbounds @simd for i in eachindex(buf)
-        acc = muladd(buf[i], 1.0000001, acc)
-    end
-    return acc
-end
-
-# One access per 64-byte cache line over a buffer that overflows L1 but stays in
-# L2, so the cost is dominated by L1-miss service rather than by arithmetic.
-# Mirrors the coefficient-table walk, whose stride guarantees a new line per read.
-const _REFERENCE_MEM_DOUBLES = 8192   # 64 KiB
-const _REFERENCE_MEM_STRIDE = 8       # 64 B, one cache line
-const _REFERENCE_MEM_TOUCHES = _REFERENCE_MEM_DOUBLES ÷ _REFERENCE_MEM_STRIDE
-
-function _reference_mem_kernel(buf::Vector{Float64})::Float64
-    acc = 0.0
-    @inbounds for i in 1:_REFERENCE_MEM_STRIDE:length(buf)
-        acc += buf[i]
-    end
-    return acc
-end
-
-function _make_reference_buffer(n::Int)::Vector{Float64}
-    buf = Vector{Float64}(undef, n)
-    @inbounds for i in eachindex(buf)
-        buf[i] = 1.0 + i * 1e-9
-    end
-    return buf
-end
-
-"""
-    reference_kernel_ns(; k = 15) -> Float64
-
-Arithmetic reference: nanoseconds per lane of the L1-resident FMA kernel.
-
-Per lane rather than per call so a stored value stays comparable if
-`_REFERENCE_LANES` changes. This is the cheap reading, and the one re-measured
-at the start of every run as the staleness canary.
-"""
-function reference_kernel_ns(; k::Int = 15)::Float64
-    buf = _make_reference_buffer(_REFERENCE_LANES)
-    return timed_min(() -> _reference_kernel(buf); k = k, warmup = 3) / _REFERENCE_LANES
-end
-
-"""
-    reference_memory_kernel_ns(; k = 15) -> Float64
-
-Memory reference: nanoseconds per cache-line touch of the L2-resident strided
-kernel.
-
-Used to normalise the stride-bound cost terms, which the arithmetic reference
-tracks poorly under memory contention -- see the measurement in this file's
-header.
-"""
-function reference_memory_kernel_ns(; k::Int = 15)::Float64
-    buf = _make_reference_buffer(_REFERENCE_MEM_DOUBLES)
-    return timed_min(() -> _reference_mem_kernel(buf); k = k, warmup = 3) / _REFERENCE_MEM_TOUCHES
 end
 
 # ── Streaming paired identification ───────────────────────────────────────────

@@ -293,6 +293,20 @@ These columns are written with the default save-field list in a run with a
 | `sc1_data_sent_bits` | bit | Bits sent since the run started (an integrated state) |
 | `sc1_data_received_bits` | bit | Bits received since the run started (an integrated state) |
 
+### Interlinks
+
+These columns are written with the default save-field list in a run with an
+interlink model (see [Interlinks](interlinks.md)), whatever its link kinds. They
+stay zero for links that apply no force, such as power beams and data links. An
+explicit list must include the `interlink_dv` and `interlink_delta_sma` fields
+to write them:
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_interlink_dv_1` .. `sc1_interlink_dv_3` | m/s | Δv the selected links' forces gave since the run started, inertial frame (an integrated state) |
+| `sc1_interlink_delta_sma` | m | The selected links' contribution to the osculating semimajor axis since the run started: the integral of `2a²(v·F)/(μm)` (an integrated state), not a comparison against an unforced trajectory |
+| `sc1_laser_dv_1` .. `sc1_laser_dv_3`, `sc1_laser_delta_sma` | as above | Deprecated aliases with the same values, the names before 0.6.0, removed in 1.0. A column cannot warn: leave the `laser_dv` and `laser_delta_sma` fields out of an explicit list to stop writing them |
+
 ### Actuator faults
 
 Written with the default save-field list when a spacecraft carries actuator

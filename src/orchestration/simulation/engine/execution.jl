@@ -549,12 +549,9 @@ function _resume_engine_state!(args, p, solver_mode, initial_conditions)
                     "Checkpoint was written by gravity_backbone_split and cannot be resumed with solver mode $(solver_mode)."
                 ))
             end
-            if solver_mode != :gravity_backbone_split
-                has_interlinks = args.interlink_model !== nothing
-                all(sc -> hasproperty(sc, :laser_dv) == has_interlinks &&
-                    hasproperty(sc, :laser_delta_sma) == has_interlinks, ckpt.u.sc) ||
-                    throw(ArgumentError("Checkpoint interlink state does not match the configured interlink_model; resume with the same interlink setting."))
-            end
+            # A gravity_backbone_split run never has interlinks (_validate_interlinks!
+            # refuses them), and its state has no `sc` components to check.
+            solver_mode != :gravity_backbone_split && _check_interlink_checkpoint_state(args, ckpt)
             _check_effector_scope_checkpoint_state(args, ckpt)
             scope_entry = _gnc_scope_checkpoint_entry(args, ckpt)
             _restore_activity_checkpoint_state!(args, ckpt, p.is_active)
@@ -565,7 +562,7 @@ function _resume_engine_state!(args, p, solver_mode, initial_conditions)
             results_rows = _results_rows_checkpoint_state(ckpt)
             resumed = true
             t_start = ckpt.t
-            u_start = ckpt.u
+            u_start = _resumed_checkpoint_state(args, ckpt.u)
             _initialize_in_atmosphere_flags!(p, u_start)
             p.shared_buffers.model_resume[] = model_snapshot !== nothing
             if args.simulation_settings.verbose

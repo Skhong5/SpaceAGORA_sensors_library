@@ -187,10 +187,10 @@ end
 """
     rpo_reference_accel_demand(ref, mean_motion)
 
-Acceleration an acceleration-limited reference (`rpo_retimed_reference`) asks
-of the actuators at each sample: the tangential acceleration along the curve,
-the centripetal term v²κ toward the centre of curvature, and the HCW terms,
-u = r̈ - [3n² x + 2n ẏ, -2n ẋ, -n² z]. Returns per-sample magnitudes
+Acceleration an acceleration-limited reference (such as HYPR's
+`rpo_retimed_reference`) asks of the actuators at each sample: the tangential
+acceleration along the curve, the centripetal term v²κ toward the centre of
+curvature, and the HCW terms, u = r̈ - [3n² x + 2n ẏ, -2n ẋ, -n² z]. Returns per-sample magnitudes
 `tangential_mps2`, `centripetal_mps2` and `hcw_mps2`, and `u_rtn` (3 x K).
 A polyline has no curvature between its vertices, so its centripetal term is
 zero here.

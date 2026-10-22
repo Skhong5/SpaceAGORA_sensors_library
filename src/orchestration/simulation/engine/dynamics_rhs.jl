@@ -3574,9 +3574,9 @@ function _apply_interlink_rhs!(derivative, state, parameters, t)
             is_active=parameters.is_active, spacecraft, context)
         acceleration = force / current.mass
         current_derivative.vel .+= acceleration
-        current_derivative.laser_dv .= acceleration
+        current_derivative.interlink_dv .= acceleration
         semimajor_axis = inv(2 / norm(current.pos) - dot(current.vel, current.vel) / mu)
-        current_derivative.laser_delta_sma = 2 * semimajor_axis^2 / mu * dot(current.vel, force) / current.mass
+        current_derivative.interlink_delta_sma = 2 * semimajor_axis^2 / mu * dot(current.vel, force) / current.mass
     end
     return nothing
 end
@@ -4286,8 +4286,11 @@ function build_initial_conditions(args)::ComponentVector
         base_shape = n_cmg > 0 ? merge(base_shape, (cmg_angles = zeros(n_cmg),)) : base_shape
         # The battery's stored energy, Wh, only when a battery is mounted.
         base_shape = SimulationModel.has_battery(sc) ? merge(base_shape, (battery_wh = 0.0,)) : base_shape
+        # The links' integrated Δv and semimajor-axis change, in a run with interlinks.
+        # A checkpoint keeps them under their names before 0.6.0, laser_dv and
+        # laser_delta_sma (see _INTERLINK_STATE_NAMES in resume_checkpoint.jl).
         if args.interlink_model !== nothing
-            base_shape = merge(base_shape, (laser_dv = zeros(3), laser_delta_sma = 0.0))
+            base_shape = merge(base_shape, (interlink_dv = zeros(3), interlink_delta_sma = 0.0))
         end
         # The bits sent and received, only in a run with data links.
         if SimulationModel.has_data_links(args.interlink_model)

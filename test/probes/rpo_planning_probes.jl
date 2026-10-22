@@ -111,31 +111,6 @@ end
         @test_throws ArgumentError HU.hypr_sample_count_path(pts, 4; curve_type=:spline)
     end
 
-    @testset "HYPRUtils PSO bookkeeping" begin
-        base = HU.hypr_iteration_weights(false, 10, 5, 0.7, 1.4, 1.4, 0.5, 0.25, 0.65, 0.75, 1.25, 0.5, 2.5)
-        @test base == (w_inertia=0.7, c1=1.4, c2=1.4)
-        first_iter = HU.hypr_iteration_weights(true, 10, 1, 0.7, 1.4, 1.4, 0.5, 0.25, 0.65, 0.75, 1.25, 0.5, 2.5)
-        @test first_iter.w_inertia ≈ 0.7
-        last_iter = HU.hypr_iteration_weights(true, 10, 10, 0.7, 1.4, 1.4, 0.5, 0.25, 0.65, 0.75, 1.25, 0.5, 2.5)
-        @test last_iter.w_inertia ≈ max(0.25, 0.65 * 0.7)
-        @test last_iter.c1 ≈ clamp(0.75 * 1.4, 0.5, 2.5)
-        @test last_iter.c2 ≈ clamp(1.25 * 1.4, 0.5, 2.5)
-        # n_iters <= 1 short-circuits even with schedule on.
-        @test HU.hypr_iteration_weights(true, 1, 1, 0.7, 1.4, 1.4, 0.5, 0.25, 0.65, 0.75, 1.25, 0.5, 2.5).w_inertia == 0.7
-
-        @test !HU.hypr_material_improvement(NaN, 1.0, 1.0e-8, 1.0e-4)
-        @test HU.hypr_material_improvement(1.0, Inf, 1.0e-8, 1.0e-4)
-        @test HU.hypr_material_improvement(0.5, 1.0, 1.0e-8, 1.0e-4)
-        @test !HU.hypr_material_improvement(1.0, 1.0, 1.0e-8, 1.0e-4)
-        # Relative threshold dominates for large reference costs.
-        @test !HU.hypr_material_improvement(999.99, 1000.0, 1.0e-8, 1.0e-3)
-
-        @test isempty(HU.hypr_protected_particle_mask(Float64[], 0.5))
-        mask = HU.hypr_protected_particle_mask([3.0, 1.0, 2.0], 0.34)
-        @test mask == [false, true, true] # two lowest costs protected
-        @test count(HU.hypr_protected_particle_mask([3.0, 1.0, 2.0], 0.0)) == 1
-    end
-
     @testset "HYPRUtils RRT helpers" begin
         nodes = [SVector{2, Float64}(0.0, 0.0), SVector{2, Float64}(1.0, 0.0), SVector{2, Float64}(2.0, 0.0)]
         tree = (nodes=nodes, parents=[0, 1, 2], costs=[0.0, 1.0, 2.0])
@@ -347,44 +322,10 @@ end
         outback = [0.0 1.0 0.0; 0.0 0.0 0.0; 0.0 0.0 0.0]
         @test GH.rpo_curvature_from_samples(outback, [0.0, 1.0, 2.0]) == zeros(3)
 
+        # Reference construction from retimed samples.
         cfg = _probe_tiny_cfg(; sample_ds_m=0.5)
         far_geom = _probe_far_geometry()
         path = [0.0 4.0; 0.0 0.0; 0.0 0.0]
-        mat, s_hist, v_hist = GH.rpo_retime_path(path, far_geom, cfg)
-        @test mat[:, 1] ≈ path[:, 1] atol = 1.0e-9
-        @test mat[:, end] ≈ path[:, 2] atol = 1.0e-9
-        @test length(s_hist) == length(v_hist) == size(mat, 2)
-        @test all(diff(s_hist) .> 0.0)  # retiming must advance strictly monotonically
-        @test s_hist[end] ≈ 4.0 atol = 1.0e-6
-        @test all(v_hist .> 0.0)
-
-        # Zero-length path warns and returns a single-point reference.
-        degenerate = [1.0 1.0; 2.0 2.0; 0.0 0.0]
-        mat0, s0, v0 = @test_logs (:warn, r"zero-length path") match_mode = :any GH.rpo_retime_path(degenerate, far_geom, cfg)
-        @test size(mat0) == (3, 1)
-        @test s0 == [0.0] && v0 == [0.0]
-
-        # Path passing exactly through a station point triggers the infeasible fallback.
-        origin_geom = _probe_origin_geometry()
-        crossing = [-1.0 1.0; 0.0 0.0; 0.0 0.0]
-        matx, sx, vx = @test_logs (:warn, r"infeasible zero-speed") match_mode = :any GH.rpo_retime_path(crossing, origin_geom, cfg)
-        @test sx[end] ≈ 2.0 atol = 1.0e-6
-        @test all(vx .> 0.0)
-        @test minimum(vx) <= 1.0e-3 + 1.0e-12  # fallback speed used near the intersection
-
-        # A finite speed cap clamps both the local speed and the fallback speed.
-        cfg_capped = _probe_tiny_cfg(; sample_ds_m=0.5, retime_max_speed_mps=0.05)
-        matc, sc, vc = GH.rpo_retime_path(path, far_geom, cfg_capped)
-        @test all(vc .<= 0.05 + 1.0e-12)
-        @test sc[end] ≈ 4.0 atol = 1.0e-6
-
-        # Step-count exhaustion still forces the endpoint into the result.
-        cfg_short = _probe_tiny_cfg(; sample_ds_m=0.5, retime_max_steps=2, retime_speed_scale=0.05)
-        matm, sm, vm = @test_logs (:warn, r"maximum step count") match_mode = :any GH.rpo_retime_path(path, far_geom, cfg_short)
-        @test sm[end] ≈ 4.0 atol = 1.0e-9
-        @test matm[:, end] ≈ path[:, 2] atol = 1.0e-9
-
-        # Reference construction from retimed samples.
         t_ref, r_ref, v_ref = GH.rpo_reference_from_path(path, far_geom, cfg)
         @test length(t_ref) == size(r_ref, 2) == size(v_ref, 2)
         @test t_ref[1] == 0.0
