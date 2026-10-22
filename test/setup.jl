@@ -5,9 +5,10 @@ using Pkg, TOML
 # the harness imports, which includes all of SpaceAGORA's own dependencies,
 # because suites 01 and 03 load the package source into sandbox modules. Its
 # manifest is generated, not committed, and is seeded with the root manifest on
-# every run, so the tests load the package versions the root project pins and
-# reuse their package images. Resolving keeps every seeded version and adds
-# only the test tools.
+# every run. Resolution starts from that seed: the packages the root manifest
+# records keep its versions and package images, the test tools are added, and
+# the records of the libraries bundled with Julia, such as OpenSSL_jll, follow
+# the installed Julia.
 test = @__DIR__
 root = dirname(test)
 undeclared = setdiff(keys(TOML.parsefile(joinpath(root, "Project.toml"))["deps"]),

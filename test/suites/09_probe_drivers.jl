@@ -42,7 +42,9 @@
             "--load=$(joinpath(REPO_ROOT, "test", "helpers", "load_hypr.jl"))",
             "--load=$(joinpath(REPO_ROOT, "test", "helpers", "load_edg.jl"))",
             "--depwarn=error",
-            "--project=$(REPO_ROOT)",
+            # The environment the tests run in (the test environment, or Pkg.test's
+            # sandbox): probes and unit files use packages the root project lacks.
+            "--project=$(dirname(Base.active_project()))",
             coverage_flags...,
             "--threads=2",
             probe_script,
@@ -83,7 +85,7 @@ end
         "--startup-file=no",
             "--load=$(joinpath(REPO_ROOT, "test", "helpers", "load_hypr.jl"))",
             "--load=$(joinpath(REPO_ROOT, "test", "helpers", "load_edg.jl"))",
-        "--project=$(REPO_ROOT)",
+        "--project=$(dirname(Base.active_project()))",
         coverage_flags...,
         "--threads=$(unit_threads)",
         unit_script,

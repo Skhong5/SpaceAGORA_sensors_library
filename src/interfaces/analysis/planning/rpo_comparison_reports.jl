@@ -6,9 +6,11 @@ here; planner selection remains with guidance and tracking/acceptance are
 supplied by the SimulationModel.RPOComparisonTracking implementation.
 
 This file prepares the report data (result rows and their CSV, metric values,
-station geometry, path and cost series) and writes the outputs without using
-PlotlyJS. `rpo_comparison_plots.jl` builds and saves the Plotly figures from
-those data; the writer calls it only when one of its two plot flags is set.
+station geometry, path and cost series) and writes the outputs. The Plotly
+figures come from the PlotlyJS package extension through
+`rpo_comparison_plots.jl`; the writer asks for them only when one of its two
+plot flags is set, and then refuses before writing anything if PlotlyJS is not
+loaded.
 """
 module RPOComparisonReports
 import ..GuidanceHooks: normalize_rpo_comparison_planner_type, rpo_comparison_planner_label
@@ -219,6 +221,7 @@ function rpo_write_planner_comparison_outputs(
     write_plotly_outputs::Bool=batch.config.write_plotly_outputs,
     write_failed_path_outputs::Bool=batch.config.write_failed_path_outputs,
 )
+    _require_plotly_renderer(write_plotly_outputs, write_failed_path_outputs)
     mkpath(output_dir)
     rows = rpo_flatten_planner_results(batch)
     csv_path = rpo_write_namedtuple_csv(joinpath(output_dir, "rpo_planner_comparison_results.csv"), rows)

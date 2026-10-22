@@ -74,7 +74,9 @@ end # isolated lifecycle environment
             end
             SPICE.kclear()
             """
-        command = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=existing --project=$ROOT -e $code`
+        # The environment the tests run in: the full-arc runner loads the scenario
+        # matrix, which plots with Plots, and the root project lacks it.
+        command = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=existing --project=$(dirname(Base.active_project())) -e $code`
         @test success(addenv(command, "XVAL_FRAME_TABLE_DIR" => root))
     end
 end

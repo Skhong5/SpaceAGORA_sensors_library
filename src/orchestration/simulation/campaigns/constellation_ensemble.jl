@@ -1,7 +1,7 @@
 import ..SimulationModel
 using ..SimulationModel: SimulationConfiguration, SimulationSettings, DynamicsModel, SpacecraftModel
 import ..SimulationEngine
-using ..SimulationModel.SimConfig: _with_configuration
+using ..SimulationModel.SimConfig: _with_configuration, _with_fields
 using ..SimulationModel.DynamicEffectors: PlumeSurfaceInteraction
 
 function _ensemble_member_settings(settings::SimulationSettings, member_tag::String)::SimulationSettings
@@ -15,22 +15,11 @@ function _ensemble_member_settings(settings::SimulationSettings, member_tag::Str
     if !needs_results_split && !needs_checkpoint_split
         return settings
     end
-    return SimulationSettings(
-        results=settings.results,
-        verbose=settings.verbose,
+    return _with_fields(settings;
         results_directory=needs_results_split ?
             joinpath(settings.results_directory, member_tag) : settings.results_directory,
-        generate_plots=settings.generate_plots,
-        generate_filenames=settings.generate_filenames,
-        normalize=settings.normalize,
-        save_csv=settings.save_csv,
-        save_visualization_scene=settings.save_visualization_scene,
-        checkpoint_enabled=settings.checkpoint_enabled,
-        checkpoint_interval_s=settings.checkpoint_interval_s,
         checkpoint_directory=needs_checkpoint_split ?
             joinpath(settings.checkpoint_directory, member_tag) : settings.checkpoint_directory,
-        resume_from_checkpoint=settings.resume_from_checkpoint,
-        articulated_live_pose_loads=settings.articulated_live_pose_loads
     )
 end
 

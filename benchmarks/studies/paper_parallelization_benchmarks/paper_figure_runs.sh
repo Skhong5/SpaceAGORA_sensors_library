@@ -215,12 +215,12 @@ target_workstation() {
   step 4 "P3 and P5, 11 repeats"
   if [ "$EXECUTE" = "1" ]; then
     SPACEAGORA_PPB_MIN_REPEATS=11 SPACEAGORA_CAMPAIGN_CORRECTIONS=off OPENBLAS_NUM_THREADS=1 GKSwstype=100 \
-      julia --project="$REPO_ROOT" "$PPB" \
+      julia --project="$REPO_ROOT/examples" "$PPB" \
         --phases=P3,P5 --threads="${threads}" --process-workers="${workers}"
     rc=$?
     [ $rc -eq 0 ] || { echo "[figure-runs] P3/P5 failed with exit ${rc}" >&2; exit "$rc"; }
   else
-    cmd "SPACEAGORA_PPB_MIN_REPEATS=11 SPACEAGORA_CAMPAIGN_CORRECTIONS=off OPENBLAS_NUM_THREADS=1 GKSwstype=100 julia --project=. $PPB --phases=P3,P5 --threads=${threads} --process-workers=${workers}"
+    cmd "SPACEAGORA_PPB_MIN_REPEATS=11 SPACEAGORA_CAMPAIGN_CORRECTIONS=off OPENBLAS_NUM_THREADS=1 GKSwstype=100 julia --project=examples $PPB --phases=P3,P5 --threads=${threads} --process-workers=${workers}"
   fi
 
   step 5 "archive the run"
@@ -268,18 +268,18 @@ target_trx50() {
 
   step 3 "the cold 11-repeat P1-P5 run"
   offer "P1-P5 cold, 11 repeats" \
-    "ssh ${REMOTE} 'mv ${REMOTE_BASE}/policy_state ${REMOTE_BASE}/policy_state_bak_\$(date -u +%Y%m%d_%H%M%S); mkdir -p ${REMOTE_BASE}/policy_state' && ${remote_sh} push --remote ${REMOTE} --threads 1,2,4,8,16,32 --process-workers 32 -- env SPACEAGORA_PPB_MIN_REPEATS=11 julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl --phases=P1,P2,P3,P4,P5 --threads=1,2,4,8,16,32 --process-workers=32"
+    "ssh ${REMOTE} 'mv ${REMOTE_BASE}/policy_state ${REMOTE_BASE}/policy_state_bak_\$(date -u +%Y%m%d_%H%M%S); mkdir -p ${REMOTE_BASE}/policy_state' && ${remote_sh} push --remote ${REMOTE} --threads 1,2,4,8,16,32 --process-workers 32 -- env SPACEAGORA_PPB_MIN_REPEATS=11 julia --project=examples benchmarks/studies/paper_parallelization_benchmarks.jl --phases=P1,P2,P3,P4,P5 --threads=1,2,4,8,16,32 --process-workers=32"
 
   step 4 "the converged P1/P5 arm"
   say "Restore the converged snapshot first; it is the input, not a by-product."
   offer "P1,P5 converged, 11 repeats" \
-    "ssh ${REMOTE} 'rm -rf ${REMOTE_BASE}/policy_state && cp -a ${REMOTE_BASE}/policy_state_converged_20260918 ${REMOTE_BASE}/policy_state' && ${remote_sh} push --remote ${REMOTE} --threads 1,2,4,8,16,32 --process-workers 32 -- env SPACEAGORA_PPB_MIN_REPEATS=11 julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl --phases=P1,P5 --threads=1,2,4,8,16,32 --process-workers=32"
+    "ssh ${REMOTE} 'rm -rf ${REMOTE_BASE}/policy_state && cp -a ${REMOTE_BASE}/policy_state_converged_20260918 ${REMOTE_BASE}/policy_state' && ${remote_sh} push --remote ${REMOTE} --threads 1,2,4,8,16,32 --process-workers 32 -- env SPACEAGORA_PPB_MIN_REPEATS=11 julia --project=examples benchmarks/studies/paper_parallelization_benchmarks.jl --phases=P1,P5 --threads=1,2,4,8,16,32 --process-workers=32"
 
   step 5 "P6 and P6p, 3 repeats (figure F2)"
   say "Recalibrate the mission lengths first if this box has not run P6 before:"
   cmd "${remote_sh} push --remote ${REMOTE} --threads 1 -- bash benchmarks/studies/paper_parallelization_benchmarks/paper_figure_runs.sh calibrate-p6 --execute"
   offer "P6 + P6p cold, 3 repeats" \
-    "ssh ${REMOTE} 'mv ${REMOTE_BASE}/policy_state ${REMOTE_BASE}/policy_state_bak_\$(date -u +%Y%m%d_%H%M%S); mkdir -p ${REMOTE_BASE}/policy_state' && ${remote_sh} push --remote ${REMOTE} --threads 1,2,4,8,16,32 --process-workers 32 -- julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl --phases=P6,P6p --threads=1,2,4,8,16,32 --process-workers=32"
+    "ssh ${REMOTE} 'mv ${REMOTE_BASE}/policy_state ${REMOTE_BASE}/policy_state_bak_\$(date -u +%Y%m%d_%H%M%S); mkdir -p ${REMOTE_BASE}/policy_state' && ${remote_sh} push --remote ${REMOTE} --threads 1,2,4,8,16,32 --process-workers 32 -- julia --project=examples benchmarks/studies/paper_parallelization_benchmarks.jl --phases=P6,P6p --threads=1,2,4,8,16,32 --process-workers=32"
 
   step 6 "pull each run back, then archive it"
   say "spaceagora-remote's auto-pull takes a release's top-level output/ and"
@@ -299,7 +299,7 @@ target_trx50() {
   say "Added after the six steps above and independent of them. P1's modes and"
   say "thread axis; the phase declares its own 11 repeats."
   offer "P7 cold, 11 repeats" \
-    "ssh ${REMOTE} 'mv ${REMOTE_BASE}/policy_state ${REMOTE_BASE}/policy_state_bak_\$(date -u +%Y%m%d_%H%M%S); mkdir -p ${REMOTE_BASE}/policy_state' && ${remote_sh} push --remote ${REMOTE} --threads 1,2,4,8,16,32 --process-workers 32 -- julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl --phases=P7 --threads=1,2,4,8,16,32 --process-workers=32"
+    "ssh ${REMOTE} 'mv ${REMOTE_BASE}/policy_state ${REMOTE_BASE}/policy_state_bak_\$(date -u +%Y%m%d_%H%M%S); mkdir -p ${REMOTE_BASE}/policy_state' && ${remote_sh} push --remote ${REMOTE} --threads 1,2,4,8,16,32 --process-workers 32 -- julia --project=examples benchmarks/studies/paper_parallelization_benchmarks.jl --phases=P7 --threads=1,2,4,8,16,32 --process-workers=32"
   say "Pull it as in step 6, then archive it:"
   cmd "python3 ${ARCHIVE} output/performance/paper_benchmarks/<stamp> --archive ${PAPER_DATA_RAW} --machine trx50 --store cold      --notes 'P7, one spacecraft short missions, 11 repeats, cold store'"
 
@@ -308,7 +308,7 @@ target_trx50() {
   say "predictive once per case at --threads=32 --process-workers=32 with no split"
   say "imposed; the phase declares its own 11 repeats."
   offer "P5f cold, 11 repeats" \
-    "ssh ${REMOTE} 'mv ${REMOTE_BASE}/policy_state ${REMOTE_BASE}/policy_state_bak_\$(date -u +%Y%m%d_%H%M%S); mkdir -p ${REMOTE_BASE}/policy_state' && ${remote_sh} push --remote ${REMOTE} --threads 1,2,4,8,16,32 --process-workers 32 -- julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl --phases=P5f --threads=1,2,4,8,16,32 --process-workers=32"
+    "ssh ${REMOTE} 'mv ${REMOTE_BASE}/policy_state ${REMOTE_BASE}/policy_state_bak_\$(date -u +%Y%m%d_%H%M%S); mkdir -p ${REMOTE_BASE}/policy_state' && ${remote_sh} push --remote ${REMOTE} --threads 1,2,4,8,16,32 --process-workers 32 -- julia --project=examples benchmarks/studies/paper_parallelization_benchmarks.jl --phases=P5f --threads=1,2,4,8,16,32 --process-workers=32"
   say "Pull it as in step 6, then archive it:"
   cmd "python3 ${ARCHIVE} output/performance/paper_benchmarks/<stamp> --archive ${PAPER_DATA_RAW} --machine trx50 --store cold      --notes 'P5f, full machine, 11 repeats, cold store'"
 
@@ -316,7 +316,7 @@ target_trx50() {
   say "The same snapshot step 4 restores, so P5f's converged arm and P5's are"
   say "measured from one store state."
   offer "P5f converged, 11 repeats" \
-    "ssh ${REMOTE} 'rm -rf ${REMOTE_BASE}/policy_state && cp -a ${REMOTE_BASE}/policy_state_converged_20260918 ${REMOTE_BASE}/policy_state' && ${remote_sh} push --remote ${REMOTE} --threads 1,2,4,8,16,32 --process-workers 32 -- julia --project=. benchmarks/studies/paper_parallelization_benchmarks.jl --phases=P5f --threads=1,2,4,8,16,32 --process-workers=32"
+    "ssh ${REMOTE} 'rm -rf ${REMOTE_BASE}/policy_state && cp -a ${REMOTE_BASE}/policy_state_converged_20260918 ${REMOTE_BASE}/policy_state' && ${remote_sh} push --remote ${REMOTE} --threads 1,2,4,8,16,32 --process-workers 32 -- julia --project=examples benchmarks/studies/paper_parallelization_benchmarks.jl --phases=P5f --threads=1,2,4,8,16,32 --process-workers=32"
   say "Pull it as in step 6, then archive it:"
   cmd "python3 ${ARCHIVE} output/performance/paper_benchmarks/<stamp> --archive ${PAPER_DATA_RAW} --machine trx50 --store converged --notes 'P5f, full machine, 11 repeats, converged store'"
 }
@@ -338,7 +338,7 @@ target_workstation_p5f() {
   while [ $((b * 2)) -lt "$cores" ]; do b=$((b * 2)); threads="${threads},${b}"; done
   [ "$b" -eq "$cores" ] || threads="${threads},${cores}"
   workers="$cores"
-  local ppb_cmd="julia --project=${REPO_ROOT} ${PPB} --phases=P5f --threads=${threads} --process-workers=${workers}"
+  local ppb_cmd="julia --project=${REPO_ROOT}/examples ${PPB} --phases=P5f --threads=${threads} --process-workers=${workers}"
 
   say "target       = workstation-p5f ($(hostname))"
   say "phase        = P5f (static routes per split; predictive at the full budget)"
@@ -436,7 +436,7 @@ target_calibrate_p6() {
     set -- $rung
     local case_name="$1" mission="$2" samples="$3" wall suggested
     timeout "${P6_CALIBRATION_TIMEOUT_S:-7200}" \
-      julia --threads=1 --project="$REPO_ROOT" "$PPC_LAUNCHER" full --worker \
+      julia --threads=1 --project="$REPO_ROOT/examples" "$PPC_LAUNCHER" full --worker \
         --case="$case_name" --mode=serial --thread-count=1 --repeat=1 --worker-repeats=1 \
         --worker-seed=20260616 --worker-mc-samples="$samples" --warmup=1 \
         --solver-mode=auto_stiff --process-workers=1 --parity-samples=512 \

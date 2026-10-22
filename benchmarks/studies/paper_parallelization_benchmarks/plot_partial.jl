@@ -9,7 +9,7 @@
 # any phase/sub-run that hasn't finished yet.
 #
 # Usage:
-#   julia --project=. benchmarks/studies/paper_parallelization_benchmarks/plot_partial.jl [run_dir]
+#   julia --project=examples benchmarks/studies/paper_parallelization_benchmarks/plot_partial.jl [run_dir]
 #
 # run_dir defaults to the most recently modified run under
 # SPACEAGORA_PPB_OUTDIR / the default paper-benchmarks output root. Output

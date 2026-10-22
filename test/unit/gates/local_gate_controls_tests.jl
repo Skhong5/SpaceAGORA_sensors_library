@@ -95,6 +95,7 @@ end
         _copy_into!(fixture, repo, "Project.toml")
         _copy_into!(fixture, repo, joinpath("docs", "Project.toml"))
         _copy_into!(fixture, repo, joinpath("test", "Project.toml"))
+        _copy_into!(fixture, repo, joinpath("examples", "Project.toml"))
         _copy_into!(fixture, repo, joinpath("build", "build_sysimage.jl"))
         _copy_into!(fixture, repo, joinpath("packages", "SpaceAGORAHYPR", "src"))
 
@@ -153,6 +154,20 @@ end
                 @test _failed_with(run_gate(), "Missing compat entries in test/Project.toml: Aqua")
             end
             @test isnothing(run_gate().failure)
+
+            # And the examples environment's.
+            examples_project_path = joinpath(fixture, "examples", "Project.toml")
+            examples_original = read(examples_project_path, String)
+            @test haskey(TOML.parsefile(examples_project_path)["compat"], "Plots")
+            examples_compat_start = first(findfirst("[compat]", examples_original))
+            examples_without = examples_original[1:examples_compat_start - 1] *
+                replace(examples_original[examples_compat_start:end], r"^Plots = .*\n"m => ""; count=1)
+            @test !haskey(TOML.parse(examples_without)["compat"], "Plots")
+            @test haskey(TOML.parse(examples_without)["deps"], "Plots")
+            _with_text(examples_project_path, examples_without) do
+                @test _failed_with(run_gate(), "Missing compat entries in examples/Project.toml: Plots")
+            end
+            @test isnothing(run_gate().failure)
         end
 
         @testset "Sysimage package lists gate" begin
@@ -195,11 +210,11 @@ end
             # Dropping a dependency from the project makes its builder entries stale.
             project_path = joinpath(fixture, "Project.toml")
             project = read(project_path, String)
-            without_roots = replace(project, r"^Roots = .*\n"m => ""; count=1)
-            @test without_roots != project
-            @test !haskey(TOML.parse(without_roots)["deps"], "Roots")
-            _with_text(project_path, without_roots) do
-                @test _failed_with(run_gate(), prefix * "FULL_PACKAGES: Roots; CI_PACKAGES: Roots")
+            without_dep = replace(project, r"^SpecialFunctions = .*\n"m => ""; count=1)
+            @test without_dep != project
+            @test !haskey(TOML.parse(without_dep)["deps"], "SpecialFunctions")
+            _with_text(project_path, without_dep) do
+                @test _failed_with(run_gate(), prefix * "FULL_PACKAGES: SpecialFunctions; CI_PACKAGES: SpecialFunctions")
             end
             @test isnothing(run_gate().failure)
         end

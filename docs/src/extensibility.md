@@ -494,7 +494,14 @@ data and which has no `restore_checkpoint_state!` method for it. A resumed run
 refuses a checkpoint that holds no run state for a model that keeps some. When
 the checkpoint holds model state, it also refuses one whose guidance, navigation
 or control models or sensors differ from its own in type name or position;
-without model state, those models are not compared. Mounted sensors are checked
+without model state, those models' types are not compared. Every checkpoint also
+records the spacecraft each guidance, navigation and control model acts on, after
+the run-start initializers, and a resumed run refuses models acting on other
+spacecraft before any `restore_checkpoint_state!`, and a checkpoint written by
+SpaceAGORA 0.5.1 or earlier, which holds no such record (see
+[Checkpointing](user/outputs.md#Checkpointing)); a model that acts on some
+spacecraft only should say so with `spacecraft_scope` for that check to cover it.
+Mounted sensors are checked
 separately as well, with the rest of the run's callback state: each sensor's type
 name, mounting link, period and seed must match, with or without model state.
 A type name is the short name, without the module or type parameters, so a

@@ -8,6 +8,7 @@ using LinearAlgebra
 using StaticArrays
 using DataFrames
 using Serialization
+using TOML
 using SpaceAGORA
 using SpaceAGORA.TelemetryVerification: make_example_config
 
@@ -558,7 +559,8 @@ end
     dir = mktempdir()
     cfg(mission; kw...) = with_settings(engine_args(sc(); mission_time = mission, data_rate = 5.0, solver_mode = :dp8, tol = tight_tolerances(dt_max = 0.1), results_directory = dir); kw...)
     first_leg = SpaceAGORA.run_simulation(cfg(40.0; checkpoint_enabled = true, checkpoint_interval_s = 20.0); return_results = true)
-    resumed = SpaceAGORA.run_simulation(cfg(80.0; checkpoint_enabled = true, checkpoint_interval_s = 20.0, resume_from_checkpoint = true); return_results = true)
+    resumed = SpaceAGORA.run_simulation(cfg(80.0; checkpoint_enabled = true, checkpoint_interval_s = 20.0, resume_from_checkpoint = true,
+        results = true); return_results = true)
     straight = SpaceAGORA.run_simulation(cfg(80.0); return_results = true)
     @test resumed.table.time[end] ≈ 80.0
     cols = ["sc1_joint_q_$k" for k in 1:6]
@@ -566,7 +568,11 @@ end
     diff = maximum(abs(resumed.table[end, c] - straight.table[end, c]) / max(1.0, abs(straight.table[end, c])) for c in cols)
     @info "resume vs straight, max relative final-state difference" diff
     @test diff < 1e-8
-    @test resumed.table.time[1] >= 40.0 - 1e-9          # the resumed run did not restart from t = 0
+    # It resumed at 40 s rather than starting again, and its table holds the whole
+    # run: the first leg's rows, kept beside its checkpoint, then its own.
+    @test TOML.parsefile(joinpath(dir, "simulation_results.manifest.toml"))["resumed_from_s"] == 40.0
+    @test resumed.table.time[1] == 0.0 && any(>(40.0), resumed.table.time)
+    @test isequal(resumed.table[resumed.table.time .< 40.0, :], first_leg.table[first_leg.table.time .< 40.0, :])
 end
 
 end # module
