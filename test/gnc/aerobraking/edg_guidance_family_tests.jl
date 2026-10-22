@@ -3,7 +3,7 @@
 # compared with the EDG guidance model's.
 module EDGGuidanceFamilyTests
 using Test, SpaceAGORA, StaticArrays, LinearAlgebra, Random
-import .._edg_test_context, .._edg_clocked, .._ODYSSEY_RA_INITIAL_M
+import .._edg_test_context, .._ODYSSEY_RA_INITIAL_M
 const S = SpaceAGORA.SimulationModel
 const SM = S
 const GA = SpaceAGORA.GNCAlgorithms
