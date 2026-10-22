@@ -147,6 +147,13 @@ dynamics = DynamicsModel(spacecraft, (
   - A guidance, navigation or control model's `spacecraft_scope` takes a
     `SpacecraftSelection` too, resolved when the run starts, after the
     run-start initializers (see [Declarations](gnc_feedback.md#Declarations)).
+  - A guidance, navigation or control model declared on a spacecraft
+    (`SpacecraftModel(...; guidance=GuidanceModel((model,), rates))`) is bound
+    to it. The two maneuver guidance models,
+    `ApoapsisTargetPeriapsisRaiseGuidanceModel` and
+    `AerobrakingCampaignPropulsiveManeuverGuidanceModel`, bind from SpaceAGORA
+    0.7.0, so each spacecraft can carry its own targets or maneuver table, with
+    one burn scheduler for the whole constellation.
 - **Resolved once.** The run resolves each scope to run positions when it
   starts, against the spacecraft that run. It refuses a scope that:
   - names a position outside the run;
@@ -200,3 +207,11 @@ that read member folders by name need the padded names. A resumed ensemble whose
 checkpoints were written before the padding finds them: a member with a
 checkpoint only under its unpadded folder (`sat_1_id_1`) resumes from that folder
 and keeps writing to it. See [Parallel Execution](parallel_execution.md).
+
+Guidance, navigation and control declared on a spacecraft travel with it to its
+member. Models at configuration level need `allow_gnc_effectors=true` and reach
+every member unchanged, so each acts on every member. From SpaceAGORA 0.7.0 the
+ensemble refuses one whose `spacecraft_scope` names run positions
+(`BoundSpacecraft`, `CoupledSpacecraft` or a `SpacecraftSelection`): every member
+runs its spacecraft alone, at position 1, so such a model would act on every
+member or fail in some. Declare it on the spacecraft it acts on instead.

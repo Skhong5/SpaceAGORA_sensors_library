@@ -32,6 +32,25 @@ returns zeros or `nothing` outside its scope, as the docs asked, runs as before.
 [Migrating Extension Hooks](../reference/migrating_extension_hooks.md#Changed-in-0.7.0)
 has the table of hooks.
 
+### Ensembles refuse configuration-level GNC bound to run positions
+
+`run_constellation_ensemble(args; allow_gnc_effectors=true)` now refuses, with an
+`ArgumentError`, a configuration-level guidance, navigation or control model whose
+`spacecraft_scope` is a `BoundSpacecraft`, a `CoupledSpacecraft` or a
+`SpacecraftSelection`. Each member runs its spacecraft alone, at run position 1,
+so such a model acted on every member or failed in some. Declare the model on the
+spacecraft it acts on (`SpacecraftModel(...; control=...)`), which each member
+binds to its own spacecraft.
+
+### Bound copies that act on every spacecraft warn
+
+A model declared on a spacecraft whose `bind_spacecraft` copy still declares
+`AllSpacecraft()` acts on every spacecraft; the run now warns once for each such
+type. Return `BoundSpacecraft((k,))` from the copy's `spacecraft_scope`. The two
+maneuver guidance models, `ApoapsisTargetPeriapsisRaiseGuidanceModel` and
+`AerobrakingCampaignPropulsiveManeuverGuidanceModel`, can now be declared on a
+spacecraft.
+
 ## 0.6.1
 
 ### Machine calibration constants are measured again

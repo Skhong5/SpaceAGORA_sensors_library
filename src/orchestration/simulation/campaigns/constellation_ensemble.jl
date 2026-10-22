@@ -135,11 +135,33 @@ function _validate_ensemble_dynamic_effectors(args::SimulationConfiguration)
     return nothing
 end
 
+# With allow_gnc_effectors, every member receives the configuration-level guidance,
+# navigation and control models unchanged and runs its spacecraft alone at run
+# position 1. A model whose scope names run positions (a BoundSpacecraft, a
+# CoupledSpacecraft or a SpacecraftSelection) would then act on every member, or
+# fail in some, so it is refused, pointing to declaring it on its spacecraft.
+function _validate_ensemble_gnc_scopes(args::SimulationConfiguration)
+    GNC = SimulationEngine.GNCRuntime
+    groups = ((:guidance, args.guidance_model.guidance_effectors),
+        (:navigation, args.navigation_model.navigation_effectors), (:control, args.control_model.control_effectors))
+    for (group, models) in groups, (j, model) in enumerate(models)
+        scope = GNC.spacecraft_scope(model)
+        scope isa GNC.AllSpacecraft && continue
+        throw(ArgumentError(
+            "run_constellation_ensemble: the configuration's $(SimulationEngine._gnc_scope_owner(group, j, model)) " *
+            "declares spacecraft_scope $(repr(scope)), but each ensemble member runs its spacecraft alone, at run " *
+            "position 1, with the configuration-level models unchanged, so it would act on every member or fail in " *
+            "some. Declare it on the spacecraft it acts on (the SpacecraftModel's $(group) keyword), where each " *
+            "member binds it to its own spacecraft, or give it AllSpacecraft() to act on every member."))
+    end
+    return nothing
+end
+
 function _validate_ensemble_uncoupled(args::SimulationConfiguration, allow_gnc_effectors::Bool)
     args.interlink_model === nothing || throw(ArgumentError(
         "run_constellation_ensemble cannot split an interlinked constellation into independent spacecraft. Use run_simulation instead."))
     _validate_ensemble_dynamic_effectors(args)
-    allow_gnc_effectors && return nothing
+    allow_gnc_effectors && return _validate_ensemble_gnc_scopes(args)
     coupled_surfaces = String[]
     isempty(args.guidance_model.guidance_effectors) || push!(coupled_surfaces, "guidance_effectors")
     isempty(args.navigation_model.navigation_effectors) || push!(coupled_surfaces, "navigation_effectors")
@@ -214,7 +236,10 @@ The configuration must be uncoupled: `interlink_model` must be `nothing`, and co
 effector tuples must be empty, because effectors that coordinate several satellites cannot
 act across ensemble members. If every configured effector acts on one satellite only, pass
 `allow_gnc_effectors=true` to opt in; the effectors are passed to every member unchanged,
-so spacecraft indices are not remapped. GNC declared on a `SpacecraftModel` (its `guidance`,
+so spacecraft indices are not remapped, and a configuration-level model whose
+`spacecraft_scope` names run positions (`BoundSpacecraft`, `CoupledSpacecraft` or a
+`SpacecraftSelection`) is refused with an `ArgumentError` (since SpaceAGORA 0.7.0): it
+would act on every member, or fail in some. GNC declared on a `SpacecraftModel` (its `guidance`,
 `navigation` and `control` keywords) always travels with that spacecraft, is bound to index 1
 in its member run, and needs no flag.
 

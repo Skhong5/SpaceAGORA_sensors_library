@@ -194,7 +194,9 @@ A `SpacecraftModel` can carry its own GNC (`SpacecraftModel(...; control=Control
 likewise `guidance` and `navigation`). At the start of `run_simulation` each such effector is
 passed through `SpaceAGORA.bind_spacecraft(effector, spacecraft_index)` with the position
 of its spacecraft and appended to the configuration-level tuples. An effector that selects
-its vehicle by an index field implements it by returning a copy with that field set:
+its vehicle by an index field implements it by returning a copy with that field set, and
+declares the spacecraft it acts on with `spacecraft_scope`, so the engine ticks it and
+calls its hooks for that spacecraft only:
 
 ```julia
 struct MyPush <: SpaceAGORA.AbstractControlEffectorModel
@@ -203,13 +205,19 @@ struct MyPush <: SpaceAGORA.AbstractControlEffectorModel
 end
 
 SpaceAGORA.bind_spacecraft(m::MyPush, spacecraft_index::Int) = MyPush(spacecraft_index, m.force_n)
+SpaceAGORA.spacecraft_scope(m::MyPush) = BoundSpacecraft((m.spacecraft_index,))
 ```
 
-The fallback throws an `ArgumentError`: an effector without an index acts on every
-spacecraft, and an effector that couples several vehicles (the RPO chaser and target
-types) cannot belong to one, so both stay at configuration level. Built in: the
-momentum manager, the robot-arm control effector and the Apollo descent guidance and control
-models bind.
+A bound copy whose `spacecraft_scope` is still `AllSpacecraft()` acts on every spacecraft,
+as at configuration level; the run warns once for each such type. The fallback throws an
+`ArgumentError`: an effector without an index acts on every spacecraft, and an effector
+that couples several vehicles (the RPO chaser and target types) cannot belong to one, so
+both stay at configuration level. So does the burn scheduler, `BaseThrusterModel`, one
+model with one entry per spacecraft. Built in: the momentum manager, the robot-arm
+control effector, the Apollo descent guidance and control models, the algorithm guidance
+binding (`AlgorithmGuidance`) and, from SpaceAGORA 0.7.0, the two maneuver guidance models
+(`ApoapsisTargetPeriapsisRaiseGuidanceModel` and
+`AerobrakingCampaignPropulsiveManeuverGuidanceModel`) bind.
 
 ## Add a guidance or navigation effector
 

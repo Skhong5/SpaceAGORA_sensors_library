@@ -302,6 +302,15 @@ end
     return nothing
 end
 
+# The burn scheduler is one event-driven model for every spacecraft, with one entry
+# per spacecraft in each of its vectors, so it cannot be declared on one; the
+# maneuver guidance models can.
+SimulationLifecycle.bind_spacecraft(model::BaseThrusterModel, sat_idx::Int) = throw(ArgumentError(
+    "Cannot declare BaseThrusterModel on a spacecraft: it is one burn scheduler for every spacecraft, with one " *
+    "entry per spacecraft in each of its vectors. Declare one at configuration level (control_model), with an " *
+    "entry for each spacecraft; the maneuver guidance models (ApoapsisTargetPeriapsisRaiseGuidanceModel, " *
+    "AerobrakingCampaignPropulsiveManeuverGuidanceModel) may be declared on the spacecraft."))
+
 # Each run starts from the configured schedule (G-8): an entry the scheduler wrote
 # in the previous run and nobody changed since returns to the value that run
 # started from; any other entry is the configuration as it stands. The burn state,

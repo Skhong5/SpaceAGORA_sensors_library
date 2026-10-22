@@ -176,6 +176,22 @@ signatures and are called for fewer spacecraft.
 - **Known user models.** The kit demo's `PDPointingController` and
   `AttitudeFilter` declare a narrower scope and return zero output outside it,
   so their runs do not change.
+- **A bound copy that acts on every spacecraft warns.** A model declared on a
+  spacecraft whose `bind_spacecraft` copy still declares `AllSpacecraft()` acts
+  on every spacecraft, as at configuration level; the run warns once for each
+  such type. Return `BoundSpacecraft((k,))` from the copy's `spacecraft_scope`.
+- **Ensembles refuse configuration-level GNC bound to run positions.**
+  `run_constellation_ensemble(args; allow_gnc_effectors=true)` refuses a
+  configuration-level model whose scope is a `BoundSpacecraft`, a
+  `CoupledSpacecraft` or a `SpacecraftSelection`. 0.6 passed it to every member,
+  where it acted on every member's spacecraft or failed. Declare it on its
+  spacecraft instead.
+- **The maneuver guidance models bind.** `ApoapsisTargetPeriapsisRaiseGuidanceModel`
+  and `AerobrakingCampaignPropulsiveManeuverGuidanceModel` gain
+  `spacecraft_index` (0, every spacecraft, by default) and may be declared on a
+  spacecraft; their positional constructors without it still work.
+  `BaseThrusterModel` stays one model for every spacecraft, and its refusal on a
+  spacecraft says so.
 
 ## Schedule
 
