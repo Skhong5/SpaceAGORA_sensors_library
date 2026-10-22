@@ -141,6 +141,11 @@ still resume under the typed policy that schedules the same.
 | `SchedulingPolicyModel`'s keywords `target_idx` and `target_idxs` | as `target_index` and `target_indices` above | warned from 0.5.0; now an `ArgumentError` naming the replacement | 0.6.0 |
 | `SchedulingPolicyModel`'s property `policy` | `objective`, the policy value | an `ArgumentError` naming the replacement | 0.6.0 |
 | `SchedulingPolicyModel`'s properties `target_index`, `target_indices`, `target_idx` and `target_idxs` | `objective.targets` | an `ArgumentError` naming the replacement (the last two warned from 0.5.0) | 0.6.0 |
+| the interlink states `laser_dv` and `laser_delta_sma` of each spacecraft's state | `interlink_dv` and `interlink_delta_sma` | an error from the state's own property lookup: the name of a state component cannot warn | 0.6.0 |
+
+The columns of those two states keep their old names as aliases until 1.0 (see
+[Names that cannot warn](#Names-that-cannot-warn)), and checkpoints keep the old
+names inside, so checkpoints written before 0.6.0 resume.
 
 ## Schedule
 
@@ -165,7 +170,9 @@ still resume under the typed policy that schedules the same.
 - **0.6.0.** The interlink scheduling policies chosen by a symbol, and
   `SchedulingPolicyModel`'s target names, are removed without a deprecation
   period (see [Removed in 0.6.0](#Removed-in-0.6.0)). A symbol is refused with
-  its typed replacement, and old interlink checkpoints resume.
+  its typed replacement, and old interlink checkpoints resume. The interlink
+  states `laser_dv` and `laser_delta_sma` become `interlink_dv` and
+  `interlink_delta_sma`; their `laser_*` columns stay as aliases until 1.0.
 
 Release numbers follow `version` in `Project.toml`. The older `v1.0.0` and
 `v2.0.0` git tags predate it.
@@ -197,4 +204,13 @@ code for them before SpaceAGORA 1.0 removes them:
 
 ```bash
 grep -rnE "ConstellationInterLinkModel|InterLinkParameters" src test
+```
+
+The columns `sc1_laser_dv_1` .. `sc1_laser_dv_3` and `sc1_laser_delta_sma`,
+deprecated in 0.6.0, cannot warn either: a run writes them beside
+`sc1_interlink_dv_1` .. `sc1_interlink_dv_3` and `sc1_interlink_delta_sma`, with
+the same values, until 1.0. Search your analysis code for them:
+
+```bash
+grep -rnE "laser_dv|laser_delta_sma" .
 ```

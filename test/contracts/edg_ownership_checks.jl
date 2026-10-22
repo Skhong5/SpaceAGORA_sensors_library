@@ -140,7 +140,7 @@ const FORWARD_CALLS = Dict(
 
 const WRAPPER_FILES = Set((
     "src/models/gnc/control/aerobraking/targeting_control.jl",
-    "src/models/gnc/control/aerobraking/heat_load_control.jl",
+    "src/models/gnc/control/aerobraking/edg_compatibility.jl",
     "src/models/gnc/guidance/aerobraking/typed_edg/guidance_models.jl",
 ))
 

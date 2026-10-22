@@ -455,6 +455,32 @@ function _save_data_rates(u, t, integrator, which::Symbol)
 end
 
 """
+    interlink_save_fields(args) -> Vector{SaveField}
+
+The interlink columns, in a run with an interlink model: per spacecraft
+`interlink_dv`, the Δv the selected links' forces gave since the run started
+(m/s, inertial, three columns), and `interlink_delta_sma`, their integrated
+contribution to the osculating semimajor axis (m). Both are integrated states.
+`laser_dv` and `laser_delta_sma`, their names before SpaceAGORA 0.6.0, follow
+with the same values: deprecated aliases, removed in 1.0. A column cannot warn,
+so leave them out of an explicit `save_fields` list to stop writing them.
+Empty without an interlink model.
+"""
+function interlink_save_fields(args::SimulationConfiguration)
+    args.interlink_model === nothing && return SaveField[]
+    return SaveField[
+        SaveField(:interlink_dv,
+            (u, t, integrator) -> [SVector{3, Float64}(current.interlink_dv) for current in u.sc]; per_satellite=true),
+        SaveField(:interlink_delta_sma,
+            (u, t, integrator) -> [current.interlink_delta_sma for current in u.sc]; per_satellite=true),
+        SaveField(:laser_dv,
+            (u, t, integrator) -> [SVector{3, Float64}(current.interlink_dv) for current in u.sc]; per_satellite=true),
+        SaveField(:laser_delta_sma,
+            (u, t, integrator) -> [current.interlink_delta_sma for current in u.sc]; per_satellite=true),
+    ]
+end
+
+"""
     data_save_fields(args) -> Vector{SaveField}
 
 The data columns, in a run with data links (`DataLink`): per spacecraft
@@ -735,12 +761,7 @@ function default_save_fields(args::SimulationConfiguration)
     if args.mission_configuration.orientation_sim
         push!(fields, SaveField(:quaternion, (u, t, integrator) -> _save_quaternion(num_sats, u, t, integrator); per_satellite=true, column_prefix="q"))
     end
-    if args.interlink_model !== nothing
-        push!(fields, SaveField(:laser_dv,
-            (u, t, integrator) -> [SVector{3, Float64}(current.laser_dv) for current in u.sc]; per_satellite=true))
-        push!(fields, SaveField(:laser_delta_sma,
-            (u, t, integrator) -> [current.laser_delta_sma for current in u.sc]; per_satellite=true))
-    end
+    append!(fields, interlink_save_fields(args))
     append!(fields, data_save_fields(args))
     append!(fields, articulated_save_fields(args))
     append!(fields, attachment_save_fields(args))
