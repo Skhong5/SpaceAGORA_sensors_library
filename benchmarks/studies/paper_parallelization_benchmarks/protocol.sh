@@ -167,4 +167,4 @@ if [ "${SPACEAGORA_PPB_PREVIEW:-0}" = "1" ]; then
     ARGS+=("--preview")
 fi
 
-julia --project=. "${SCRIPT}" "${ARGS[@]}" "$@"
+julia --project=examples "${SCRIPT}" "${ARGS[@]}" "$@"

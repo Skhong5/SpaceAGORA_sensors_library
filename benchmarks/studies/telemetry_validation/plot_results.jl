@@ -12,7 +12,7 @@
 # root; missing runs are reported and skipped.
 #
 # Usage:
-#   julia --project=. benchmarks/studies/telemetry_validation/plot_results.jl \
+#   julia --project=examples benchmarks/studies/telemetry_validation/plot_results.jl \
 #       [--out-root=DIR]
 
 include(joinpath(@__DIR__, "common.jl"))

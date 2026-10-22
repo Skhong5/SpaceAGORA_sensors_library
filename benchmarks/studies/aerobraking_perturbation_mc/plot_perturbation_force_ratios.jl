@@ -1,6 +1,6 @@
 # Build summary tables and plots for perturbation force magnitude / central-body gravity.
 #
-# Usage: julia --project=. benchmarks/studies/aerobraking_perturbation_mc/plot_perturbation_force_ratios.jl [run_dir]
+# Usage: julia --project=examples benchmarks/studies/aerobraking_perturbation_mc/plot_perturbation_force_ratios.jl [run_dir]
 #        Default: use the most recent timestamped run in output/aerobraking_perturbation_mc/.
 # Options:
 #   --planets mars,earth,venus,titan   (default: planets discovered in the run)

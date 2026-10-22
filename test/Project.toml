@@ -84,7 +84,9 @@ PrecompileTools = "1"
 Printf = "1.11"
 RecursiveArrayTools = "4"
 Reexport = "1"
-Roots = "2, 3"
+# Exact: the examples' apsis times and the EDG repair tests use its root finding,
+# and it is no longer pinned by the root manifest. Moving it is a deliberate change.
+Roots = "=3.0.8"
 SHA = "0.7, 1"
 SPICE = "0.2"
 SatelliteToolboxAtmosphericModels = "2.0.1"

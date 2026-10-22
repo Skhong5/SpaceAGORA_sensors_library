@@ -119,7 +119,7 @@ mass scale 1, `full_environment`, nominal density, and the full
 After it completes, regenerate poster products by passing both run directories:
 
 ```bash
-julia --project=. benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl \
+julia --project=examples benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl \
   output/aerobraking_perturbation_mc/20260519_121929 \
   output/aerobraking_perturbation_mc_inclination_argp_supplement/<timestamp>
 ```
@@ -164,7 +164,7 @@ writes to
 After it completes, pass this third run directory to the poster generator:
 
 ```bash
-julia --project=. benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl \
+julia --project=examples benchmarks/studies/aerobraking_perturbation_mc/generate_ippw_poster_plots.jl \
   output/aerobraking_perturbation_mc/20260519_121929 \
   output/aerobraking_perturbation_mc_inclination_argp_supplement/<timestamp> \
   output/aerobraking_perturbation_mc_inclination_argp_periapsis_supplement/<timestamp> \
@@ -204,7 +204,7 @@ order 5. Titan third-body cases include Saturn and the Sun.
 Generate perturbing-force ratio summaries and plots after a run:
 
 ```bash
-julia --project=. benchmarks/studies/aerobraking_perturbation_mc/plot_perturbation_force_ratios.jl \
+julia --project=examples benchmarks/studies/aerobraking_perturbation_mc/plot_perturbation_force_ratios.jl \
   --rebuild-summary
 ```
 

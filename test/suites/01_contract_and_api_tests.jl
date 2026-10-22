@@ -464,11 +464,21 @@ end
     @test occursin("Project.toml", tracked)
     @test occursin("Manifest.toml", tracked)
 
+    # The examples environment: its project and setup are tracked, and its
+    # manifest is generated from the root manifest.
+    examples_tracked = read(`sh -lc "cd '$REPO_ROOT' && git ls-files examples/Project.toml examples/setup.jl examples/Manifest.toml"`, String)
+    @test occursin("examples/Project.toml", examples_tracked)
+    @test occursin("examples/setup.jl", examples_tracked)
+    @test !occursin("examples/Manifest.toml", examples_tracked)
+
     readme = read(joinpath(REPO_ROOT, "README.md"), String)
     quickstart = read(joinpath(REPO_ROOT, "docs", "src", "user", "quickstart.md"), String)
     @test occursin("julia_version_strict=true", readme)
     @test occursin("canonical committed execution environment", quickstart)
-    @test occursin("there is no bootstrap step", lowercase(quickstart))
+    for page in (readme, quickstart)
+        @test occursin("julia --startup-file=no examples/setup.jl", page)
+        @test occursin("julia --project=examples examples/AGORA_Basic_Quickstart.jl", page)
+    end
 end
 
 @testset "Project Compat Coverage Contract" begin

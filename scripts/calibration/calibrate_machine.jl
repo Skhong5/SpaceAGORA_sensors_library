@@ -1,26 +1,22 @@
 #!/usr/bin/env julia
 #
-# One-shot per-machine calibration for the analytic cost model.
+# One-shot per-machine calibration of the parallel cost constants.
 #
 #   julia --project=. --threads=auto scripts/calibration/calibrate_machine.jl [--verbose] [--repeats=N]
 #
 # Writes output/parallel_policy_state/cost_constants_<fingerprint>.toml, which
 # every later run on this machine reads instead of measuring anything itself.
 #
-# Run it with the thread count you intend to simulate at: the dispatch and
-# atomic constants are properties of the inner dispatch primitive at that width.
+# Run it with the thread count you intend to simulate at: the speedup ladders and
+# the USL fit only reach the thread count of the session that measured them.
 #
 # --repeats runs the whole pass N times and reports each constant's spread.
 #
-# Read repeat spread as a diagnostic, not as the acceptance criterion. Dispatch
-# timing includes OS wake scheduling, and a cost shared by candidate routes can
-# cancel in their comparison. Coefficient-touch and SIMD-lane costs can still
-# distinguish the routes.
-#
-# Evaluate whether calibration variability changes the candidate ranking, not
-# just whether absolute timings vary. Small predicted margins can be sensitive
-# to noise; repeat validation under controlled conditions before interpreting
-# them as a reliable routing preference.
+# Read repeat spread as a diagnostic, not as an acceptance criterion: dispatch
+# timing includes OS wake scheduling. The predictive campaign planner reads the
+# USL terms (usl_alpha_base and usl_beta_alloc). The other constants were
+# measured for the RHS-plan predictor, which 0.6.0 removed, and nothing reads
+# them now.
 
 using SpaceAGORA
 

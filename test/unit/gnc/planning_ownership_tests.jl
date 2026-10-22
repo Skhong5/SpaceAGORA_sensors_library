@@ -1,5 +1,6 @@
 module PlanningOwnershipTests
 using Test, Serialization, SpaceAGORA
+import PlotlyJS # the report figures come from its package extension
 const SM = SpaceAGORA.SimulationModel
 const G = SM.GuidanceHooks
 const Reports = G.RPOComparisonReports
@@ -33,7 +34,6 @@ const REPORT_FUNCTIONS = (
                  :rpo_write_planner_comparison_outputs)
         @test getproperty(SM, name) === getproperty(G, name)
     end
-    @test G.PlotlyJS === Reports.PlotlyJS
     @test !isdefined(Reports, :RPOPSOConfig)
     @test !isdefined(Reports, :HYPRSupport)
     @test SpaceAGORA.HYPRServices.RPO.RPOPSOConfig === G.RPOPSOConfig

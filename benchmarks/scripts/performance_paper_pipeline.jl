@@ -897,7 +897,7 @@ function write_pipeline_report(
         println(io, "```bash")
         println(
             io,
-            "julia --project=. benchmarks/scripts/performance_paper_pipeline.jl --profile=$(config.profile.name) --modes=$(join(string.(config.modes), ',')) --outdir=$(config.outdir)"
+            "julia --project=examples benchmarks/scripts/performance_paper_pipeline.jl --profile=$(config.profile.name) --modes=$(join(string.(config.modes), ',')) --outdir=$(config.outdir)"
         )
         println(io, "```")
     end

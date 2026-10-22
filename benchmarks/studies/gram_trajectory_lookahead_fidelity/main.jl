@@ -35,7 +35,7 @@ const STATE_FIELDS = (
 function _usage()
     return """
     Usage:
-      julia --project=. benchmarks/studies/gram_trajectory_lookahead_fidelity/main.jl [options]
+      julia --project=examples benchmarks/studies/gram_trajectory_lookahead_fidelity/main.jl [options]
 
     Options:
       --planets mars,earth,venus,titan

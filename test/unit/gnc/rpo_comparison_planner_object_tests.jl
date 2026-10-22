@@ -25,7 +25,7 @@ function comparison_config(; kwargs...)
         optimizer=G.RPOTrajectoryOptimizerSettings(match_hypr_runtime=false, runtime_limit_s=Inf, force_full_iters=true),
         tracking=G.RPOLQMPCTrackingSettings(dt_s=0.5, horizon=4, propellant_mass_kg=0.5, settle_time_s=2.0,
             final_position_tol_m=0.75, u_max_mps2=SVector(0.05, 0.05, 0.05)),
-        safe_distance_m=0.2, write_plotly_outputs=false, show_progress=false, rng_seed=741)
+        safe_distance_m=0.2, write_plotly_outputs=false, write_failed_path_outputs=false, show_progress=false, rng_seed=741)
     return G.RPOPlannerComparisonConfig(; merge(defaults, (; kwargs...))...)
 end
 # The object each canonical identifier selects, written with the public constructors.

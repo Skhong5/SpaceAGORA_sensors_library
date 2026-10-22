@@ -14,7 +14,7 @@
 # with or without the probe depending on the flyby.
 #
 #   julia --project=/path/to/visualizer-env scripts/dev/viewer_demos/cassini_titan_flyby.jl [TA|T5|all]
-# Load the optional renderer before example helpers activate the core project.
+# Load the optional renderer before the example helpers continue in the examples environment.
 if abspath(PROGRAM_FILE) == @__FILE__
     using SpaceAGORAVisualizer
 end

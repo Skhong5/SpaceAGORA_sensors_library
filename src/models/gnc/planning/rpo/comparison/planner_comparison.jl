@@ -293,6 +293,8 @@ function rpo_run_planner_comparison_batch(cases, geometry, cfg::RPOPlannerCompar
     cfg = _rpo_comparison_config_with_fixed_safe_distance(cfg)
     planners = copy(cfg.planners)
     HYPRSupport.require_hypr()
+    # Its Plotly outputs need PlotlyJS: refuse now, not after the batch has run.
+    RPOComparisonReports._require_plotly_renderer(cfg.write_plotly_outputs, cfg.write_failed_path_outputs)
     comparison_cases = collect(cases)
     planner_types = [normalize_rpo_comparison_planner_type(p) for p in planners]
     if cfg.optimizer.match_hypr_runtime && (:hypr in planner_types)

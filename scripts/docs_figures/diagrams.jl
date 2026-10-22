@@ -106,8 +106,10 @@ end
 
 function environments_map(path)
     rows = [
-        ("Run the examples, tests or the", "command-line tool", "Root project", "julia --project=.",
+        ("Install SpaceAGORA or run the", "command-line tool", "Root project", "julia --project=.",
          ("Pkg.instantiate(julia_version_strict=true)", "from the repository root")),
+        ("Run the examples and the", "plotting scripts", "Examples environment", "--project=examples",
+         ("examples/setup.jl", "adds Plots and the other example tools")),
         ("Run the Odyssey tutorial with a", "frozen Mars atmosphere", "Odyssey example environment",
          "--project=examples/odyssey_surrogate_env",
          ("examples/odyssey_surrogate_env/setup.jl", "adds the GRAMSuite wrapper and EDG")),
@@ -120,8 +122,8 @@ function environments_map(path)
     ]
     n = length(rows)
     s = Svg(960, 92 + 74 * n + 40, "Which Julia environment to start",
-        "Five tasks and the Julia environment each one uses: the root project for examples, tests and the " *
-        "command-line tool; the Odyssey example environment for the frozen-atmosphere tutorial; the viewer " *
+        "Six tasks and the Julia environment each one uses: the root project for SpaceAGORA itself and the " *
+        "command-line tool; the examples environment for the examples and plotting scripts; the Odyssey example environment for the frozen-atmosphere tutorial; the viewer " *
         "environment for the 3D viewer; one environment per optional companion for HYPR, MuJoCo and EDG; and " *
         "your own project for scenarios kept outside the checkout. Every environment loads SpaceAGORA from the " *
         "same checkout.")

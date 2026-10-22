@@ -1,6 +1,6 @@
 # Where one serial solve of the coupled case allocates.
 #
-#   julia --project=. benchmarks/studies/coupled_local_comparison/profile_allocations.jl \
+#   julia --project=examples benchmarks/studies/coupled_local_comparison/profile_allocations.jl \
 #       [case=stack32_e6_actuated_saved] [profile=smoke] [sample_rate=0.001]
 #
 # Runs the harness's serial mode environment, warms up twice, then reports:

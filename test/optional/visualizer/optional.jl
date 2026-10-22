@@ -56,7 +56,8 @@ const V=SpaceAGORAVisualizer
         @test embedded_visualizer_payload(cli)["scene"] == payload["scene"]
 
         # The actual CLI child must retain the explicit renderer even when a
-        # normal example activates core. Julia -L must preserve its entrypoint.
+        # normal example continues in the examples environment. Julia -L must
+        # preserve its entrypoint.
         project = dirname(Base.active_project())
         CLI = SpaceAGORA.SpaceAGORACLI
         probe_dir = joinpath(dir, "child path with spaces")
@@ -68,7 +69,7 @@ const V=SpaceAGORAVisualizer
             @assert abspath(PROGRAM_FILE) == @__FILE__
             @assert isempty(ARGS)
             include($(repr(joinpath(CLI.REPO_ROOT, "examples", "common.jl"))))
-            @assert Base.active_project() == $(repr(joinpath(CLI.REPO_ROOT, "Project.toml")))
+            @assert Base.active_project() == $(repr(joinpath(CLI.REPO_ROOT, "examples", "Project.toml")))
             @assert visualizer_available()
             module ChildFixture
                 include($(repr(joinpath(@__DIR__, "fixtures.jl"))))

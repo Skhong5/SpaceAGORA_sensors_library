@@ -1,5 +1,6 @@
-# Load from the companion environment before common.jl activates the root project.
+# Load from the companion environment before common.jl continues in the examples environment.
 # Setup: julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
+#        julia --startup-file=no examples/setup.jl
 using SpaceAGORAHYPR
 include(joinpath(@__DIR__, "common.jl"))
 
@@ -27,7 +28,8 @@ Standalone smoke/demo case for the robotics arm port:
 The historical filename, output directories, CSV keys, `:cloth_quintic` planner
 identifier and `retime_cloth_*` configuration fields remain unchanged.
 
-Run with:
+Run with, after preparing the HYPR environment (`examples/rpo_planner_env/setup.jl`)
+and the examples environment (`julia --startup-file=no examples/setup.jl`):
 
 ```text
 julia --project=examples/rpo_planner_env examples/Robot_Arm_Planner_Cloth_Demo.jl

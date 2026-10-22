@@ -10,7 +10,7 @@ interpret the output.
 Shortest successful command:
 
 ```text
-julia --project=. examples/AGORA_Basic_Quickstart.jl
+julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
 What to read next:
@@ -223,7 +223,7 @@ export_visualization("output/simulation_results"; max_frames=2000, frame=:inerti
 
 Setting `SPACEAGORA_VISUALIZATION=1` in the environment does the same for a
 script you do not want to edit, for example
-`SPACEAGORA_VISUALIZATION=1 julia --project=. examples/AGORA_Earth_NoGRAM.jl`.
+`SPACEAGORA_VISUALIZATION=1 julia --project=examples examples/AGORA_Earth_NoGRAM.jl`.
 
 ```text
 output/
