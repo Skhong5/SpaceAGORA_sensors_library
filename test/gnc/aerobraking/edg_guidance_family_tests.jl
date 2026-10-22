@@ -54,7 +54,7 @@ SpaceAGORA.propose!(state, ::UnconfiguredModeEDG, r::EDGGuidanceRequest, rng) = 
     @test !SpaceAGORA.consumes_rng(ALGORITHM)
     @test SpaceAGORA.require_algorithm_support(ALGORITHM) === nothing
     @test SpaceAGORA.on_rejection(FAMILY) === :fail
-    @test SpaceAGORA.family_contract_version(FAMILY) == SpaceAGORA.EDGServices.CONTRACT_VERSION == v"2.0.0"
+    @test SpaceAGORA.family_contract_version(FAMILY) == SpaceAGORA.EDGServices.CONTRACT_VERSION == v"3.0.0"
     @test SpaceAGORA.algorithm_result_type(FAMILY) === AlgorithmResult
     # The decision holds exactly the state's guidance fields, one value per field.
     @test fieldnames(EDGGuidanceDecision) == (:spacecraft_index, F.DECISION_FIELDS...)

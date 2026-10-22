@@ -602,7 +602,9 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :station_cad_path, rendered = "SpaceAGORA.station_cad_path"),
             (owner = :SpaceAGORA, symbol = :load_rpo_station_pointcloud, rendered = "SpaceAGORA.load_rpo_station_pointcloud"),
             (owner = :SpaceAGORA, symbol = :load_rpo_station_cad_triangles, rendered = "SpaceAGORA.load_rpo_station_cad_triangles"),
-            (owner = :SpaceAGORA, symbol = :load_rpo_station_cad_pointcloud, rendered = "SpaceAGORA.load_rpo_station_cad_pointcloud")
+            (owner = :SpaceAGORA, symbol = :load_rpo_station_cad_pointcloud, rendered = "SpaceAGORA.load_rpo_station_cad_pointcloud"),
+            (owner = :SpaceAGORA, symbol = :RPOStationGeometry, rendered = "SpaceAGORA.RPOStationGeometry"),
+            (owner = :SpaceAGORA, symbol = :RPOCubeSatGeometry, rendered = "SpaceAGORA.RPOCubeSatGeometry")
         ]
     ),
     (
