@@ -4,7 +4,7 @@ The flat constellation route can evaluate supported aerodynamic effectors in a
 pre-pass before reducing the force and torque slots. This page describes the
 ownership and numerical constraints of that path. Historical profiles and
 before/after measurements are retained under the
-[research-record policy](../src/user/studies_benchmarks.md#research-records-and-generated-results).
+[research-record policy](../../../docs/src/user/studies_benchmarks.md#research-records-and-generated-results).
 
 ## Aerodynamic pre-pass
 
