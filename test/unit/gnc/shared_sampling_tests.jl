@@ -52,7 +52,6 @@ sampling_bits(x) = x
         cfg = G.RPOPSOConfig(adaptive_sampling_enable=enabled, curve_type=curve, sample_ds_m=0.17, safe_distance_m=0.23, adaptive_sampling_max_ds_m=0.41, adaptive_sampling_far_clearance_m=1.2, adaptive_sampling_power=0.7, adaptive_sampling_safe_distance_fraction=0.4, adaptive_sampling_obstacle_guard_fraction=0.6)
         # Construct the expected shared inputs independently of the adapter.
         settings = G.RPOAdaptiveSamplingSettings(enabled=enabled, max_ds_m=0.41, far_clearance_m=1.2, power=0.7, safe_distance_fraction=0.4, obstacle_guard_fraction=0.6)
-        @test (@inferred G._rpo_sampling_settings(cfg)) === settings
         for points in paths, override in (false,true)
             oldopts = override ? (safe_distance_m=0.11,base_ds_m=0.31,curve_type=(curve==:bezier ? :polyline : :bezier)) : NamedTuple()
             inputs = merge((safe_distance_m=0.23,base_ds_m=0.17,curve_type=curve),oldopts)

@@ -229,7 +229,8 @@ table and the schedule.
 `EDGServices`, `ExternalPropagationServices` and `HYPRServices` are named,
 versioned boundaries for optional packages. A companion checks the facade's
 `CONTRACT_VERSION` exactly, and a major version marks a change of any
-signature. All three are at contract 2.0.0 and follow these conventions.
+signature. `EDGServices` and `HYPRServices` are at contract 3.0.0 and
+`ExternalPropagationServices` at 2.0.0; all three follow these conventions.
 Names in a facade's inventory keep their exact spelling, underscores included.
 See the [Optional Adapter Standard](adapter_contract.md) and each facade's page.
 

@@ -124,9 +124,7 @@ const FACADE_FORWARD = Dict(
     "_edg_environment_state" => :(_environment(p, u, t, spacecraft_index)),
     "_edg_in_drag_passage" => :(_in_passage(p, env)),
     "_edg_ephemeris_time" => :(_epoch(p, t)),
-    "_edg_planet_frame_lpi" => :(_frame(p, t)),
     "_edg_targeting_prediction_environment" => :(_trajectory(p, r, v, t)),
-    "_edg_sample_prediction_atmosphere" => :(_atmosphere(p, h, t)),
 )
 
 const FORWARD_CALLS = Dict(

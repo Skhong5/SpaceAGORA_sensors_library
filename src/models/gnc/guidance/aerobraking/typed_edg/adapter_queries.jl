@@ -7,7 +7,7 @@ using ..CommandTypes: AerobrakingControlCommand
 using ..GravityEffectors: _inverse_squared_gravity_accel, _inverse_squared_j2_gravity_accel,
     NBodyGravityModel, nbody_acceleration_ii_at_epoch
 
-const CONTRACT_VERSION = v"2.0.0"
+const CONTRACT_VERSION = v"3.0.0"
 struct CompatibilityError <: Exception
     message::String
 end

@@ -424,6 +424,7 @@ export odyssey_surrogate_assets
 
 ## 2.7. RPO Station Assets
 using .RPOStationAssets: station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
+using .SimulationModel.NavigationHooks: RPOStationGeometry, RPOCubeSatGeometry
 
 ## 2.8. RPO Visualization
 using .RPOVisualization: rpo_path_plot, rpo_tracking_plot
@@ -697,6 +698,8 @@ using .SpaceAGORACLI: check_assets, render_asset_report, run_cli
 @doc (@doc RPOStationAssets.load_rpo_station_pointcloud) load_rpo_station_pointcloud
 @doc (@doc RPOStationAssets.load_rpo_station_cad_triangles) load_rpo_station_cad_triangles
 @doc (@doc RPOStationAssets.load_rpo_station_cad_pointcloud) load_rpo_station_cad_pointcloud
+@doc (@doc SimulationModel.NavigationHooks.RPOStationGeometry) RPOStationGeometry
+@doc (@doc SimulationModel.NavigationHooks.RPOCubeSatGeometry) RPOCubeSatGeometry
 
 # Scene visualization and display geometry
 @doc (@doc SimulationModel.SceneVisualization.VisualizationScene) VisualizationScene
@@ -844,6 +847,7 @@ export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
 export run_verification, run_verification_cli, run_study, run_simulation, SimulationResults
 export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
+export RPOStationGeometry, RPOCubeSatGeometry
 export VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec, ArmGeometry, arm_geometry
 export load_model_triangles, model_bounding_box, sample_model_pointcloud, articulate_triangles, articulation_payload
 export spacecraft_geometry, planet_spec, planet_rotation_table, build_visualization_scene
