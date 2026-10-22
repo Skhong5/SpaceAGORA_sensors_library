@@ -172,7 +172,8 @@ include(joinpath(@__DIR__, "atmosphere_spec.jl"))
 
 Everything the viewer needs besides the trajectory rows: epoch, planet,
 spacecraft geometry, the atmosphere (when the run had one), and where the
-trajectory and link-pose columns live.
+trajectory and link-pose columns live. `results_layout` is the run's
+`results_layout`: with `:long`, `results_feather` names the spacecraft table.
 """
 struct VisualizationScene
     schema::Int
@@ -185,7 +186,14 @@ struct VisualizationScene
     link_pose_field::String
     link_pose_stride::Int
     atmosphere::Union{Nothing, AtmosphereSpec}
+    results_layout::Symbol
 end
+
+# A scene of a run in the wide layout, as scenes were built before the long one.
+VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet, spacecraft, orientation_sim, results_feather,
+                   link_pose_field, link_pose_stride, atmosphere) =
+    VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet, spacecraft, orientation_sim, results_feather,
+                       link_pose_field, link_pose_stride, atmosphere, :wide)
 
 for T in (LinkBox, ThrusterGlyph, FacetGlyph, JointGlyph, ArmLinkGeometry, ArmGeometry, SpacecraftGeometry, PlanetSpec, VisualizationScene)
     @eval Base.:(==)(a::$T, b::$T) = all(getfield(a, f) == getfield(b, f) for f in fieldnames($T))

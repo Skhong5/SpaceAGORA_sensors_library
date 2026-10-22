@@ -369,7 +369,8 @@ function build_ensemble_frames(
         push!(spacecraft, SpacecraftGeometry((i - 1) * per_sample + k, "$(samples[i].label)/$(g.name)", g.links, g.thrusters, g.facets, g.joints, g.bounding_radius_m, g.stl_path, g.arm))
     end
     scene = VisualizationScene(base.schema, base.epoch_et_start_s, base.epoch_utc, base.planet, spacecraft, base.orientation_sim,
-                               base.results_feather, base.link_pose_field, base.link_pose_stride, base.atmosphere)
+                               base.results_feather, base.link_pose_field, base.link_pose_stride, base.atmosphere,
+                               base.results_layout)
     return frames, scene, per_sample
 end
 
@@ -405,7 +406,7 @@ function export_ensemble_visualization(
     finished = EnsembleSample[s for s in samples if isfile(joinpath(s.directory, "simulation_results_scene.json"))]
     isempty(finished) && throw(ArgumentError("None of the ensemble samples under $(campaign_dir) wrote a scene sidecar."))
     scenes = VisualizationScene[read_visualization_scene(joinpath(s.directory, "simulation_results_scene.json")) for s in finished]
-    tables = DataFrame[DataFrame(Arrow.Table(joinpath(s.directory, scenes[i].results_feather))) for (i, s) in enumerate(finished)]
+    tables = DataFrame[_saved_results_table(scenes[i], joinpath(s.directory, scenes[i].results_feather)) for (i, s) in enumerate(finished)]
     frames, scene, per_sample = build_ensemble_frames(finished, scenes, tables; max_frames=max_frames, data_budget_mb=data_budget_mb)
 
     textures_payload = Dict{String, Any}()
