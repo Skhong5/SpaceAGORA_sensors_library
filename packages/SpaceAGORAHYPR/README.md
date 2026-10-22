@@ -9,7 +9,7 @@ julia --startup-file=no scripts/setup_hypr.jl /path/to/my-rpo-project
 julia --project=/path/to/my-rpo-project -e 'using SpaceAGORAHYPR'
 ```
 
-This checkout pins HYPR 0.5.0 at `aa327b9f21622143afe54b6e0c37596e669a254e`,
+This checkout pins HYPR 0.5.0 at `ef85eb2bfc5623fdd26407868d1371c3bff07d1f`,
 paired with SpaceAGORA 0.6.0, HYPRServices 3.0.0 and this 0.2.0 shim.
 `HYPRSource.toml` is the authoritative source pin; the package compatibility range
 does not certify every HYPR revision in that range.
