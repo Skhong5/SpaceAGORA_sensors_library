@@ -1,13 +1,13 @@
 # GNC Aerobraking Boundary Contract
 
 ## Canonical ownership
-- `src/models/gnc/guidance/aerobraking/*` owns the core side of typed energy-depletion guidance (EDG): `typed_edg/` holds the model types, platform services and compatibility dispatch, and `energy_depletion_lifecycle.jl` holds run initialization and passage resets.
-- `src/models/gnc/control/` owns the EDG control lifecycle, passage heat accounting and targeting control. Its `aerobraking/edg_compatibility.jl` file keeps the historical control-side bindings and model adapter; the numerical calculations stay in the companion.
+- `src/models/gnc/guidance/aerobraking/*` owns the core side of typed energy-depletion guidance (EDG): `typed_edg/` holds the model types, platform services and the forwarders of the two EDG decisions, and `energy_depletion_lifecycle.jl` holds run initialization and passage resets.
+- `src/models/gnc/control/` owns the EDG control lifecycle, passage heat accounting and targeting control. Its `aerobraking/targeting_control.jl` applies the companion's control decision to the panels; the numerical calculations stay in the companion.
 - The optional `SpaceAGORAEDG.jl` package owns the EDG numerical kernels and is the only EDG implementation. SpaceAGORA no longer carries the older E-EDG and T-EDG strategy routes or their strategy selector.
 
 ## Required boundaries
 - Guidance files must not include control source files directly.
-- Numerical EDG kernels must not be added back to core; `typed_edg/algorithms.jl` contains only the declared package forwarders.
+- Numerical EDG kernels must not be added back to core; `typed_edg/algorithms.jl` forwards only the two decisions, `guidance_decision!` and `control_decision!`. No `src` module imports another EDG kernel name from `EDGAlgorithms` or reaches one through it.
 - Propulsive maneuver coupling must cross the typed command boundary (`PropulsiveManeuverCommand`, `AerobrakingControlCommand`) rather than `DynamicEffectors` or direct thruster-state mutation from guidance.
 
 ## Canonical interfaces
@@ -24,7 +24,7 @@
 
 The optional `SpaceAGORAEDG.jl` package owns the typed numerical kernels.
 Core's `SimulationModel.EDGAlgorithms`, under
-`src/models/gnc/guidance/aerobraking/typed_edg/`, retains compatibility dispatch
+`src/models/gnc/guidance/aerobraking/typed_edg/`, holds two decision forwarders
 rather than a second implementation. `SpaceAGORA.EDGServices` is the versioned
 boundary. The [EDG package boundary](../src/reference/edg_adapter_boundary.md)
 defines the supported calls, units, state ownership, installation and errors.

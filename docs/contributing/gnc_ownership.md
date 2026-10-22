@@ -81,8 +81,8 @@ kernels. Core retains public model types, run-owned state and passage resets,
 physical integration, queries, outputs and panel actuation.
 `guidance/aerobraking/typed_edg/` contains these core models and services; its
 `algorithms.jl` forwards to the optional provider through `SpaceAGORA.EDGServices`.
-`control/aerobraking/edg_compatibility.jl`, which imports the EDG calculations and
-keeps one model adapter, holds compatibility bindings, not additional algorithms.
+Control calls the companion's `control_decision!` and applies its command to the
+panels; it holds no EDG calculation and no binding of an EDG helper.
 
 SpaceAGORA no longer carries the older E-EDG and T-EDG strategy routes: the
 `guidance/aerobraking/e_edg/` and `t_edg/` solvers, their execution paths (then in a

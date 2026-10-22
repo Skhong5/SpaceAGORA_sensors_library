@@ -246,13 +246,12 @@ end
     nu = acos((sl / radius - 1) / e)
     r = SVector(radius * cos(nu), radius * sin(nu), 0.0)
     v = sqrt(planet.μ / sl) * SVector(-sin(nu), e + cos(nu), 0.0)
-    CH = S.ControlHooks
-    known = CH._edg_predict_targeting_outcome(c.config, _edg_clocked(c), c.spacecraft, r, v, 461.0, 0.0, 10.0;
-        heat_rate_control=true, structural_control=true)
-    coast = CH._edg_vacuum_apoapsis_correction(c.p, known.exit_position, known.exit_velocity, 461.0, known.duration_s)
+    # The replan-owner test's reachable target, as SpaceAGORAEDG's kernels give it
+    # (recorded on v0.6.0; SpaceAGORAEDG's tests check the kernels still do).
+    target = 9.750451931596396e6
     fields = (; (k => getfield(c.config, k) for k in fieldnames(typeof(c.config)))...)
     config = S.AerobrakingEnergyDepletionConfig(; merge(fields,
-        (target_apoapsis_radius_m=norm(coast.position), switch_recompute_interval_s=2.0))...)
+        (target_apoapsis_radius_m=target, switch_recompute_interval_s=2.0))...)
     c.state.heat_load_entry_j_cm2[1] = [100.0, 6.0, 6.0]
     function fixture_rhs!(du, u, p, t)
         fill!(du, 0.0)
