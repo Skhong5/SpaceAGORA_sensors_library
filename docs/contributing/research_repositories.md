@@ -20,7 +20,7 @@ dependency pin for core runtime.
 | [SpaceAGORAAtmosphereStudies](https://github.com/Space-FALCON-Lab/SpaceAGORAAtmosphereStudies/tree/32ca5be9d6b6fe4e865365a470d03a2a56b3a1fe) | Atmosphere and entry-density research | `32ca5be9d6b6fe4e865365a470d03a2a56b3a1fe` | `32ca5be9d6b6fe4e865365a470d03a2a56b3a1fe` |
 | [SpaceAGORAParallelizationStudies](https://github.com/Space-FALCON-Lab/SpaceAGORAParallelizationStudies/tree/7821388870571474550533a15d0ecb2b60d01650) | Paper campaigns and scaling investigations | `0071dd9b6e0f94828fb4da8cfcddc8425c403abd` | `7821388870571474550533a15d0ecb2b60d01650` |
 | [SpaceAGORAMissionReconstructions](https://github.com/Space-FALCON-Lab/SpaceAGORAMissionReconstructions/tree/ff67a512face495afa6dec10171806209a62033d) | Mission reconstruction and telemetry fitting | `ff67a512face495afa6dec10171806209a62033d` | `ff67a512face495afa6dec10171806209a62033d` |
-| [SpaceAGORARPOStudies](https://github.com/Space-FALCON-Lab/SpaceAGORARPOStudies/tree/7990013be23ed9171a6bae08b2f3ad9cbac5f4ac) | RPO paper reconstruction | `9356eacc6de660947133c8574fc652bae3b8e58b` | `7990013be23ed9171a6bae08b2f3ad9cbac5f4ac` |
+| [SpaceAGORARPOStudies](https://github.com/Space-FALCON-Lab/SpaceAGORARPOStudies/tree/76d12285689b339807c648fabe2f2cdddeae6828) | RPO paper reconstruction | `9356eacc6de660947133c8574fc652bae3b8e58b` | `76d12285689b339807c648fabe2f2cdddeae6828` |
 
 ## Tests and callers
 
