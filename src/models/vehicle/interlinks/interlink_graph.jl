@@ -59,19 +59,33 @@ module InterLinkModels
 	end
 
 	# 1.2. Interlink history: at each accepted step, the links the scheduler
-	# selected and, when the model records them (`record_available`), the links
-	# that were available (could close). A sample built from a time and the
-	# selected links has no available links recorded.
+	# selected, the score that selected each, and, when the model records them,
+	# the links that were available (could close, `record_available`) and the
+	# scores of a weighted mix's terms (`record_terms`). A sample built from a time
+	# and the selected links records neither scores nor available links.
 	struct InterLinkHistory
 		time::Float64
 		active::Vector{InterLinkKey}
 		available::Vector{InterLinkKey}
+		scores::Vector{Float64}   # the score of each active link, in `active` order; empty when not recorded
+		terms::Matrix{Float64}    # each top-level term's score (rows) for each active link (columns); no rows when not recorded
+
+		function InterLinkHistory(time::Real, active::AbstractVector, available::AbstractVector=InterLinkKey[],
+			scores::AbstractVector=Float64[], terms::AbstractMatrix=zeros(0, length(active)))
+			isempty(scores) || length(scores) == length(active) || throw(ArgumentError(
+				"An InterLinkHistory sample needs one score for each active link, or none; got $(length(scores)) " *
+				"scores for $(length(active)) links."))
+			size(terms, 2) == length(active) || throw(ArgumentError(
+				"An InterLinkHistory sample's terms need one column for each active link; got $(size(terms, 2)) " *
+				"columns for $(length(active)) links."))
+			new(Float64(time), convert(Vector{InterLinkKey}, active), convert(Vector{InterLinkKey}, available),
+				convert(Vector{Float64}, scores), convert(Matrix{Float64}, terms))
+		end
 	end
-	InterLinkHistory(time::Real, active::AbstractVector) = InterLinkHistory(time, active, InterLinkKey[])
 
 	# 1.3. Interlink model
 	"""
-	    InterlinkModel(; forbidden_pairs=(), record_available=nothing)
+	    InterlinkModel(; forbidden_pairs=(), record_available=nothing, record_terms=false)
 
 	The interlinks of a run: the candidate links between spacecraft terminals,
 	each with its own link kind (`register_link!`), spacecraft pairs that may never
@@ -87,6 +101,11 @@ module InterLinkModels
 	records them in a run with a `DataLink`; `true` always; `false` never. A large
 	constellation over a long run keeps a list of available links per accepted
 	step, so the default leaves them out of runs that carry no data.
+
+	Each history sample also records the score that selected each active link.
+	`record_terms=true` records as well, for a `WeightedPolicy`, each of its
+	top-level terms' scores for each active link; a run with any other policy
+	refuses it. `link_schedule` turns the history into a table.
 	"""
 	mutable struct InterlinkModel
 		# i) Core model parameters
@@ -103,8 +122,11 @@ module InterLinkModels
 		# iv) Whether the history records the available links: `nothing` for runs with a data link.
 		record_available::Union{Nothing, Bool}
 
+		# v) Whether the history records a weighted policy's term scores.
+		record_terms::Bool
+
 		function InterlinkModel(; forbidden_pairs=Tuple{Int, Int}[], record_available::Union{Nothing, Bool}=nothing,
-			constellation_link_type=_NOT_PASSED)
+			record_terms::Bool=false, constellation_link_type=_NOT_PASSED)
 			if constellation_link_type !== _NOT_PASSED
 				_interlink_deprecation((InterlinkModel, :constellation_link_type),
 					"The constellation_link_type keyword is deprecated and will be removed in SpaceAGORA 1.0: " *
@@ -114,7 +136,7 @@ module InterLinkModels
 					"links (LaserMomentumLink) are implemented."))
 			end
 			pairs = Set{Tuple{Int, Int}}(minmax(pair...) for pair in forbidden_pairs)
-			new(pairs, InterLinkGraph(), InterLinkHistory[], Vector{NTuple{3, Int}}[], record_available)
+			new(pairs, InterLinkGraph(), InterLinkHistory[], Vector{NTuple{3, Int}}[], record_available, record_terms)
 		end
 	end
 

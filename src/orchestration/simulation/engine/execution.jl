@@ -373,15 +373,26 @@ function _save_simulation_results_if_enabled!(
     )
     results_df = _build_results_dataframe(results_times, results_data, save_fields_resolved, args)
     csv_path = nothing
+    schedule_files = nothing
     if write_files && args.simulation_settings.results
         if args.simulation_settings.save_csv
             csv_path = _write_results_csv!(results_df, args)
         end
+        # A run with interlinks writes its link schedule beside its results, from
+        # the history so far; the results manifest lists it.
+        if args.interlink_model !== nothing
+            schedule = link_schedule(args.interlink_model; policy=args.scheduling_policy_model)
+            written = _write_link_schedule!(schedule, args; csv=args.simulation_settings.save_csv,
+                feather=_typed_save_bundle_enabled())
+            schedule_files = (; written..., metadata=_link_schedule_manifest(schedule, args.scheduling_policy_model,
+                args.interlink_model))
+        end
         if _typed_save_bundle_enabled()
-            _write_results_bundle!(results_df, results_times, args; csv_path=csv_path, resumed_from_s=resumed_from_s)
+            _write_results_bundle!(results_df, results_times, args; csv_path=csv_path, resumed_from_s=resumed_from_s,
+                link_schedule=schedule_files)
         end
     end
-    return return_table ? (; csv_path, table=results_df) : csv_path
+    return return_table ? (; csv_path, table=results_df, schedule_files) : csv_path
 end
 
 function _try_save_simulation_results_if_enabled!(args...)
@@ -1237,6 +1248,10 @@ function run_simulation(
         # engine's own naming (IOConfig), not guesses.
         prefix = _results_bundle_prefix(results_args)
         candidates = Any[saved_results.csv_path, scene_path, export_path]
+        # The link schedule this run wrote, beside its results.
+        if saved_results.schedule_files !== nothing
+            push!(candidates, saved_results.schedule_files.csv, saved_results.schedule_files.feather)
+        end
         # The bundle is this run's only when this run wrote it; a leftover
         # from an earlier run in the same directory must not be listed.
         if solved && args.simulation_settings.results && _typed_save_bundle_enabled()

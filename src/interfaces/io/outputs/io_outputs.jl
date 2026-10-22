@@ -244,13 +244,23 @@ function _write_results_csv!(results_df::DataFrame, args)::String
     end
 end
 
+# The link schedule's files: its CSV when `csv`, its feather file when `feather`.
+# Returns the paths written, `nothing` for a file not written.
+function _write_link_schedule!(schedule::DataFrame, args; csv::Bool, feather::Bool)
+    paths = IOConfig._link_schedule_paths(args)
+    csv_path = csv ? IOSerialization._atomic_write_file(paths.csv, tmp -> CSV.write(tmp, schedule)) : nothing
+    feather_path = feather ? IOSerialization._atomic_write_file(paths.feather, tmp -> Arrow.write(tmp, schedule)) : nothing
+    return (csv=csv_path, feather=feather_path)
+end
+
 function _write_results_bundle!(
     results_df::DataFrame,
     times::Vector{Float64},
     args,
     results_bundle_schema_version;
     csv_path::Union{Nothing, String}=nothing,
-    resumed_from_s::Union{Nothing, Float64}=nothing
+    resumed_from_s::Union{Nothing, Float64}=nothing,
+    link_schedule=nothing
 )
     _invalidate_mission_history!(args)
     prefix = IOConfig._results_bundle_prefix(args)
@@ -292,6 +302,14 @@ function _write_results_bundle!(
     # from a checkpoint that kept no rows starts at its resume.
     isempty(times) || (manifest["first_time_s"] = times[1])
     resumed_from_s === nothing || (manifest["resumed_from_s"] = resumed_from_s)
+    # A run with interlinks: its link schedule's files, and what its scores are.
+    if link_schedule !== nothing
+        for (kind, path) in (("link_schedule_csv", link_schedule.csv), ("link_schedule_feather", link_schedule.feather))
+            path === nothing && continue
+            files[kind] = Dict("path" => path, "size_bytes" => filesize(path), "sha256" => IOSerialization._sha256_hex(path))
+        end
+        manifest["interlinks"] = link_schedule.metadata
+    end
 
     IOSerialization._atomic_write_file(manifest_path, tmp -> begin
         open(tmp, "w") do io
@@ -308,5 +326,6 @@ export _direct_assembly_columns!
 export _build_results_dataframe
 export _write_results_csv!
 export _write_results_bundle!
+export _write_link_schedule!
 
 end # module IOOutputs

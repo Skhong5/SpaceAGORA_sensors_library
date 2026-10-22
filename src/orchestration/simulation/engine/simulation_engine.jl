@@ -52,6 +52,7 @@ export SimulationEngineConfig
 export simulation_engine_config_from_env
 export run_simulation
 export SimulationResults
+export link_schedule
 export SolverIntegratorCache
 export prewarm_nbody_ephemeris_cache
 export load_nbody_ephemeris_cache!

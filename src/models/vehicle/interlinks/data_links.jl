@@ -198,23 +198,35 @@ from a checkpoint covers the resumed interval only, so a window that spans the
 resume is split at it.
 """
 function contact_windows(history; active::Bool=false)
-    windows = NamedTuple{(:key, :start_s, :end_s, :duration_s), Tuple{InterLinkKey, Float64, Float64, Float64}}[]
+    return NamedTuple{(:key, :start_s, :end_s, :duration_s), Tuple{InterLinkKey, Float64, Float64, Float64}}[
+        (key=window.key, start_s=window.start_s, end_s=window.end_s, duration_s=window.end_s - window.start_s)
+        for window in _link_windows(history; active)]
+end
+
+# The spans of consecutive history samples over which each link was selected
+# (`active=true`) or available: `(key, first, last, start_s, end_s)`, with `first`
+# and `last` the first and the last sample that hold the link, `start_s` the time
+# of `first`, and `end_s` the time of the next sample, or of the history's last
+# sample when the link holds to the end. Sorted by start time, then key.
+# `contact_windows` and the link schedule read them.
+function _link_windows(history; active::Bool)
+    windows = NamedTuple{(:key, :first, :last, :start_s, :end_s), Tuple{InterLinkKey, Int, Int, Float64, Float64}}[]
     isempty(history) && return windows
-    open = Dict{InterLinkKey, Float64}()
-    for sample in history
+    open = Dict{InterLinkKey, Int}()
+    for (index, sample) in enumerate(history)
         keys_now = Set{InterLinkKey}(active ? sample.active : sample.available)
-        for (key, start) in collect(open)
+        for (key, first) in collect(open)
             key in keys_now && continue
-            push!(windows, (key=key, start_s=start, end_s=sample.time, duration_s=sample.time - start))
+            push!(windows, (key=key, first=first, last=index - 1, start_s=history[first].time, end_s=sample.time))
             delete!(open, key)
         end
         for key in keys_now
-            haskey(open, key) || (open[key] = sample.time)
+            haskey(open, key) || (open[key] = index)
         end
     end
     finish = history[end].time
-    for (key, start) in open
-        push!(windows, (key=key, start_s=start, end_s=finish, duration_s=finish - start))
+    for (key, first) in open
+        push!(windows, (key=key, first=first, last=length(history), start_s=history[first].time, end_s=finish))
     end
     return sort!(windows; by=window -> (window.start_s, window.key))
 end

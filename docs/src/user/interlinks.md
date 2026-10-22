@@ -440,6 +440,43 @@ scheduler's. A history resumed from a checkpoint covers the resumed interval
 only, so a window that spans the resume is split at it. The results table, unlike
 the history, holds the whole run (see [Outputs](outputs.md)).
 
+### The link schedule
+
+Each history sample also records the score that selected each active link
+(`scores`), read from the scheduler after it selects. `link_schedule` turns the
+history into a table with one row per window: a span over which a link was
+selected (`window == "active"`) and, when the history records the available
+links, a span over which a link could close (`"contact"`). Each row gives the
+link (its number, kind, direction and endpoints), the span (`start_s`, `end_s`,
+`duration_s` and the number of samples, `steps`) and, for an active row, the score
+at its first and last sample and its extremes.
+
+```julia
+results = run_simulation(args; return_results=true)
+schedule = link_schedule(results)              # or link_schedule(model; policy=scheduler)
+active = schedule[schedule.window .== "active", :]
+```
+
+The scores are in the policy's unit (see [Policies](#Policies)): m/s for
+`SemimajorAxisRatePolicy`, W for the power policies, bit/s for
+`DataThroughputPolicy`, 1 for a `WeightedPolicy`. The table's metadata names the
+policy and the unit. With `InterlinkModel(; record_terms=true)` and a
+`WeightedPolicy`, each sample also records each top-level term's own score, in
+its own unit, and the table gains `term1_start`, `term2_start`, ...: each term's
+score at the span's first sample. A run with another policy refuses
+`record_terms=true`. Recording the terms leaves the mix's scores, and so the
+schedule, unchanged.
+
+A run that writes results writes the table beside them, as
+`simulation_results_link_schedule.csv` (when `save_csv` is set) and
+`simulation_results_link_schedule.feather`, and lists both in the results
+manifest with the policy and its unit (see the
+[link schedule's columns](output_columns.md#Link-schedule)). The table is not
+thinned with the results rows. A run without interlinks writes none, and
+`link_schedule(results)` returns the table's columns with no rows. Like the
+contact windows, the schedule has the scheduler's resolution and, after a resume,
+covers the resumed interval.
+
 ### Optional matching backend
 
 Tree-shaped components are solved in Julia. Of parallel links (directed links

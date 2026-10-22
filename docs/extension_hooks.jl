@@ -817,6 +817,7 @@ const NOT_HOOKS = [
     (symbol = :beam_capture_fraction, reason = "the share of a `PowerBeamLink` a circular aperture captures"),
     (symbol = :contact_windows, reason = "lists the windows over which a run's links could close, or were selected"),
     (symbol = :contact_time_s, reason = "sums one link's contact windows"),
+    (symbol = :link_schedule, reason = "tabulates a run's link schedule, with the selecting scores, from its interlink history"),
     (symbol = :terminal_count, reason = "counts a spacecraft's virtual and hardware terminals"),
     (symbol = :mounted_link_terminals, reason = "lists a spacecraft's mounted terminal hardware with its numbers"),
     (symbol = :terminal_number, reason = "the terminal number of a mounted terminal"),

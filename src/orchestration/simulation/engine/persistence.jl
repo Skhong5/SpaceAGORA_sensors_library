@@ -21,6 +21,9 @@
 @inline _write_results_csv!(results_df::DataFrame, args)::String =
     SimulationModel.IOOutputs._write_results_csv!(results_df, args)
 
+@inline _write_link_schedule!(schedule::DataFrame, args; csv::Bool, feather::Bool) =
+    SimulationModel.IOOutputs._write_link_schedule!(schedule, args; csv=csv, feather=feather)
+
 # Viewer scene sidecar (docs/architecture/interactive_visualization_plan.md).
 # Opt-in: nothing is written unless `save_visualization_scene` is set, and it
 # never runs when results themselves are disabled.
@@ -37,6 +40,7 @@ end
     args;
     csv_path::Union{Nothing, String}=nothing,
     resumed_from_s::Union{Nothing, Float64}=nothing,
+    link_schedule=nothing,
 )
     return SimulationModel.IOOutputs._write_results_bundle!(
         results_df,
@@ -45,5 +49,6 @@ end
         RESULTS_BUNDLE_SCHEMA_VERSION;
         csv_path=csv_path,
         resumed_from_s=resumed_from_s,
+        link_schedule=link_schedule,
     )
 end
