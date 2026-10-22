@@ -7,16 +7,13 @@
 # Writes output/parallel_policy_state/cost_constants_<fingerprint>.toml, which
 # every later run on this machine reads instead of measuring anything itself.
 #
-# Run it with the thread count you intend to simulate at: the speedup ladders and
-# the USL fit only reach the thread count of the session that measured them.
+# Run it with the thread count you intend to simulate at: the USL ladders only
+# reach the thread count of the session that measured them.
 #
-# --repeats runs the whole pass N times and reports each constant's spread.
-#
-# Read repeat spread as a diagnostic, not as an acceptance criterion: dispatch
-# timing includes OS wake scheduling. The predictive campaign planner reads the
-# USL terms (usl_alpha_base and usl_beta_alloc). The other constants were
-# measured for the RHS-plan predictor, which 0.6.0 removed, and nothing reads
-# them now.
+# It measures the two USL terms the predictive campaign planner reads,
+# usl_alpha_base and usl_beta_alloc. --repeats runs the whole pass N times and
+# reports each term's spread. Read the spread as a diagnostic, not as an
+# acceptance criterion: dispatch timing includes OS wake scheduling.
 
 using SpaceAGORA
 
@@ -31,7 +28,7 @@ function _parse_repeats(args)::Int
 end
 repeats = _parse_repeats(ARGS)
 
-println("SpaceAGORA cost-model machine calibration")
+println("SpaceAGORA machine calibration")
 println("  fingerprint : ", PC.machine_fingerprint())
 println("  threads     : ", Threads.nthreads())
 println("  repeats     : ", repeats)
@@ -52,21 +49,8 @@ if repeats > 1
         (maximum(v) - minimum(v)) / minimum(v) * 100
     report(name, f) = println("  ", rpad(name, 30),
         isnan(spread(map(f, results))) ? "n/a" : string(round(spread(map(f, results)), digits=2), "%"))
-    report("ns_per_scalar_item", m -> m.ns_per_scalar_item)
-    report("ns_per_queue_node", m -> m.ns_per_queue_node)
-    report("dispatch_pool_ns_base", m -> m.dispatch_pool_ns_base)
-    report("dispatch_pool_ns_per_worker", m -> m.dispatch_pool_ns_per_worker)
-    report("dispatch_batch_ns_base", m -> m.dispatch_batch_ns_base)
-    report("dispatch_batch_ns_per_worker", m -> m.dispatch_batch_ns_per_worker)
-    report("ns_per_atomic", m -> m.ns_per_atomic)
-    report("reference_fma_ns", m -> m.reference_fma_ns)
-    report("reference_mem_ns", m -> m.reference_mem_ns)
-    for i in eachindex(mc.coeff_touch.ns)
-        report("coeff_touch[$(i)]", m -> m.coeff_touch.ns[i])
-    end
-    for i in eachindex(mc.simd_lane.ns)
-        report("simd_lane[$(i)]", m -> m.simd_lane.ns[i])
-    end
+    report("usl_alpha_base", m -> m.usl_alpha_base)
+    report("usl_beta_alloc", m -> m.usl_beta_alloc)
 end
 
 path = PC.save_machine_constants(mc)

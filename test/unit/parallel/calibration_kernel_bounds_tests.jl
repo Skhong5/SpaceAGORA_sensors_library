@@ -13,8 +13,8 @@ const CKB_COST_DIR = joinpath(pkgdir(SpaceAGORA), "src", "orchestration", "paral
 # package caches compiled for the default flags, and compiling SpaceAGORA's
 # dependencies again would take far longer than the test. So it includes the
 # calibration sources themselves (timing, kernels, ladders) into one module,
-# with a serial stand-in for the persistent worker pool and a minimal rate
-# curve, and runs each ladder with the calibration's own arguments.
+# with a serial stand-in for the persistent worker pool, and runs the ladders
+# with the calibration's own arguments.
 const CKB_CHILD_SCRIPT = raw"""
 const COST_DIR = ARGS[1]
 
@@ -33,27 +33,12 @@ module CalibrationLadders
     # Named in method signatures only; no ladder builds one.
     struct MachineConstants end
 
-    struct RateCurve
-        log2_size::Vector{Float64}
-        ns::Vector{Float64}
-    end
-    rate_at(::RateCurve, ::Real) = 0.0
-
-    # Polyester's loop macro, used by a dispatch ladder this script does not run.
-    macro batch(args...)
-        return esc(args[end])
-    end
-
     include(joinpath(Main.COST_DIR, "robust_timing.jl"))
     include(joinpath(Main.COST_DIR, "calibration_kernels.jl"))
     include(joinpath(Main.COST_DIR, "machine_calibration.jl"))
 end
 
 const CL = CalibrationLadders
-coeff = CL._calibrate_coeff_touch(1, false)
-CL._calibrate_simd_lane(1, false, coeff)
-CL._calibrate_scalar_item(1, false)
-CL._calibrate_parallel_speedup(1, false)
 CL._calibrate_usl(1, false)
 println("CALIBRATION_LADDERS_IN_BOUNDS threads=", Threads.nthreads(),
         " check_bounds=", Base.JLOptions().check_bounds)
@@ -90,14 +75,10 @@ end
     end
 end
 
-@testset "the table kernels refuse a row or touch count outside the table" begin
+@testset "the batch kernel refuses a row outside the table and an empty workspace" begin
     tab = CKB_PC.calib_table(6, 5)
     ws = zeros(Float64, 8, 4)
     @test_throws BoundsError CKB_PC.calib_batch_kernel!(ws, tab, 7, 4, 2)
     @test_throws BoundsError CKB_PC.calib_batch_kernel!(ws, tab, 0, 4, 2)
     @test_throws BoundsError CKB_PC.calib_batch_kernel!(zeros(Float64, 0, 4), tab, 3, 4, 2)
-    @test_throws BoundsError CKB_PC.calib_touch_kernel!(tab, 3, 6)
-    @test_throws BoundsError CKB_PC.calib_touch_kernel!(tab, 7, 5)
-    @test CKB_PC.calib_touch_kernel!(tab, 3, 5) == foldl(+, tab[3, :]; init = 0.0)
-    @test CKB_PC.calib_touch_kernel!(tab, 3, 0) == 0.0
 end
