@@ -94,18 +94,14 @@ _interlink_kind_parameter(parameter::Base.IEEEFloat) = (type=_interlink_kind_ide
 function _interlink_checkpoint_configuration(args)
     model = args.interlink_model
     graph = model.graph
-    policy = args.scheduling_policy_model
-    configuration = (
+    configuration = (;
         vertices=copy(graph.vertices),
         candidates=[(
             endpoints=map(vertex -> graph.vertices[vertex], edge),
             link=_interlink_link_identity(graph.edge_properties[index]),
         ) for (index, edge) in enumerate(graph.edges)],
         forbidden_pairs=sort!(collect(model.forbidden_pairs)),
-        policy=policy.policy,
-        # The keys keep the names checkpoints were written with, so those resume.
-        target_idx=policy.target_index,
-        target_idxs=policy.target_indices === nothing ? nothing : copy(policy.target_indices),
+        _scheduling_policy_entry(args.scheduling_policy_model.objective)...,
         terminal_counts=[spacecraft.n_terminal for spacecraft in args.dynamics_model.spacecraft],
     )
     # Terminal numbers past `n_terminal` name mounted terminal hardware, so a run
@@ -114,6 +110,128 @@ function _interlink_checkpoint_configuration(args)
     hardware = [_mounted_terminal_identities(spacecraft) for spacecraft in args.dynamics_model.spacecraft]
     all(isempty, hardware) && return configuration
     return merge(configuration, (hardware_terminals=hardware,))
+end
+
+# The scheduling policy's entry: `policy`, `target_idx` and `target_idxs`, the keys
+# checkpoints have always been written with. A policy that 0.5 chose by a symbol
+# (`SemimajorAxisRatePolicy`, `EccentricityRatePolicy`, `PowerDeliveryPolicy`,
+# `DataThroughputPolicy`) is recorded as 0.5 recorded it, with its target index and
+# target set, so those checkpoints resume and the entry is unchanged for the same
+# policy. Any other policy is recorded by its kind and every one of its fields
+# (`_scheduling_policy_identity`), with no target keys.
+function _scheduling_policy_entry(policy)
+    recorded = SimulationModel.SchedulingPolicies._symbol_policy_fields(policy)
+    recorded === nothing || return (policy=recorded[1], target_idx=recorded[2], target_idxs=recorded[3])
+    return (policy=_scheduling_policy_identity(policy), target_idx=nothing, target_idxs=nothing)
+end
+
+# A policy's identity: its kind, named as link kinds are, and every one of its
+# fields, recursively, by value, so that an equal policy rebuilt in a new process
+# has the same identity:
+# - a float with its bits, a bits composite field by field, as terminal fields
+#   are; another number, a string or a symbol by its value; a type by its name;
+# - a field that is a policy, or a weighted mix's term, by its own identity, a
+#   tuple element by element, an array by its type, its size and its elements;
+# - a function by its type and, for a closure, every value it captures (its
+#   fields), so that two closures made by one expression with different captures
+#   differ. A named function is its type alone: a change to its code is not part
+#   of the identity;
+# - any other value with fields (a struct, mutable or not, a named tuple, a
+#   `Ref`) by its type and its fields.
+# What it cannot record by value is refused: a closure that captures a variable
+# reassigned after the closure was made (a `Core.Box`); a dictionary or a set; a
+# channel, stream, task or lock; a pointer, or a value holding one (a `Regex`),
+# whose address differs from one process to the next; a value that is not a
+# struct and not one of the above; a field or element that is not assigned; and a
+# payload that contains itself.
+function _scheduling_policy_identity(policy, path=Base.IdSet{Any}())
+    kind = typeof(policy)
+    names = fieldnames(kind)
+    return (kind=_interlink_kind_identity(kind),
+        fields=NamedTuple{names}(map(name -> _policy_field_identity(getfield(policy, name), path), names)))
+end
+_policy_field_identity(value::SimulationModel.AbstractSchedulingPolicy, path) = _scheduling_policy_identity(value, path)
+_policy_field_identity(value::SimulationModel.PolicyTerm, path) = _scheduling_policy_identity(value, path)
+_policy_field_identity(value::Tuple, path) = map(element -> _policy_field_identity(element, path), value)
+_policy_field_identity(value::Union{Number, AbstractString, Symbol, Type, Module}, path) = _interlink_kind_parameter(value)
+_policy_field_identity(value::AbstractArray, path) = _on_path(path, value) do
+    all(index -> isassigned(value, index), eachindex(value)) || _unrecordable_field(value, :element)
+    (type=_interlink_kind_identity(typeof(value)), size=size(value),
+        elements=[_policy_field_identity(element, path) for element in vec(value)])
+end
+function _policy_field_identity(value::Function, path)
+    kind = typeof(value)
+    names = fieldnames(kind)
+    isempty(names) && return (callable=_interlink_kind_identity(kind),)
+    return _on_path(path, value) do
+        (callable=_interlink_kind_identity(kind),
+            captures=NamedTuple{names}(map(name -> _policy_field_identity(getfield(value, name), path), names)))
+    end
+end
+_policy_field_identity(::Core.Box, path) = throw(ArgumentError(
+    "A scheduling policy holds a closure that captures a variable reassigned after the closure was made, " *
+    "which a checkpoint cannot record. Capture the value instead (for example in a `let` block)."))
+_policy_field_identity(value::Union{AbstractDict, AbstractSet, AbstractChannel, IO, Task, Base.AbstractLock}, path) =
+    _unrecordable_field(value)
+_policy_field_identity(value::Ptr, path) = _unrecordable_field(value, :pointer)
+function _policy_field_identity(value, path)
+    kind = typeof(value)
+    _holds_pointer(kind) && _unrecordable_field(value, :pointer)
+    isbits(value) && return _interlink_kind_parameter(value)
+    isstructtype(kind) || _unrecordable_field(value)
+    names = fieldnames(kind)
+    for name in names
+        isdefined(value, name) || _unrecordable_field(value, :field, name)
+    end
+    encode() = (type=_interlink_kind_identity(kind),
+        fields=NamedTuple{names}(map(name -> _policy_field_identity(getfield(value, name), path), names)))
+    return ismutable(value) ? _on_path(encode, path, value) : encode()
+end
+
+# Whether a value of `kind` holds a pointer in a field, or in a bits field's own
+# fields. A field of an abstract type that holds a pointer is found when its
+# value is encoded.
+_holds_pointer(kind::DataType) =
+    any(field -> field <: Ptr || (isbitstype(field) && _holds_pointer(field)), fieldtypes(kind))
+
+# The refusal of a value the identity cannot record: `reason` is `:value` (its
+# kind), `:element` or `:field` (`name`, not assigned) or `:pointer`.
+function _unrecordable_field(value, reason::Symbol=:value, name=nothing)
+    held = "a value of type `$(repr(typeof(value)))`" * (
+        reason === :element ? " with an unassigned element" :
+        reason === :field ? " whose field `$(name)` is not assigned" :
+        reason === :pointer ? ", which holds a pointer whose address differs from one process to the next" : "")
+    advice = reason === :pointer ? "Hold the values it is built from (for a `Regex`, its pattern string)" :
+        reason === :value ? "Hold numbers, strings, symbols, functions, arrays, tuples, named tuples and structs of these" :
+        "Assign it before the run"
+    throw(ArgumentError("A scheduling policy holds $(held), which a checkpoint cannot record by value. " *
+        "$(advice), or run without checkpoints."))
+end
+
+# Encode `value` with `encode` while `value` is on the path from the policy,
+# refusing a payload that contains itself.
+function _on_path(encode, path, value)
+    value in path && throw(ArgumentError(
+        "A scheduling policy's fields contain themselves, which a checkpoint cannot record."))
+    push!(path, value)
+    try
+        return encode()
+    finally
+        delete!(path, value)
+    end
+end
+
+# A snapshot's policy entry in the current form: a symbol with its targets (all
+# checkpoints written before 0.6, and those of the policies they had) is rebuilt as
+# the typed policy it stands for and recorded as that policy is, so a checkpoint
+# resumes under the typed policy that schedules the same. A symbol that stands for no
+# policy is left as written, and the comparison refuses it.
+function _canonical_policy_configuration(configuration)
+    hasproperty(configuration, :policy) && configuration.policy isa Symbol || return configuration
+    policy = SimulationModel.SchedulingPolicies._symbol_scheduling_policy(configuration.policy,
+        get(configuration, :target_idx, 1), get(configuration, :target_idxs, nothing))
+    policy === nothing && return configuration
+    return merge(configuration, _scheduling_policy_entry(policy))
 end
 
 _mounted_terminal_identities(spacecraft::SimulationModel.SpacecraftModel) =
@@ -146,17 +264,18 @@ function _interlink_checkpoint_runtime_state(args, is_active)
 end
 
 # A snapshot's configuration in the current form. Version 1 (before link kinds)
-# held one laser link type for the run and P, B and range per candidate.
+# held one laser link type for the run and P, B and range per candidate. Both
+# versions' policy entries are rebuilt as typed policies.
 function _interlink_snapshot_configuration(snapshot)
     configuration = snapshot.configuration
-    snapshot.version === 2 && return configuration
+    snapshot.version === 2 && return _canonical_policy_configuration(configuration)
     hasproperty(configuration, :link_type) && configuration.link_type === :laser || return nothing
     candidates = [(endpoints=candidate.endpoints,
         link=_interlink_link_identity(SimulationModel.LaserMomentumLink(candidate.P, candidate.B, candidate.range)))
         for candidate in configuration.candidates]
     rest = (name => getproperty(configuration, name) for name in keys(configuration)
         if !(name in (:link_type, :vertices, :candidates)))
-    return (; vertices=configuration.vertices, candidates=candidates, rest...)
+    return _canonical_policy_configuration((; vertices=configuration.vertices, candidates=candidates, rest...))
 end
 
 function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
@@ -173,7 +292,7 @@ function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
     hasproperty(snapshot, :configuration) &&
         isequal(_interlink_snapshot_configuration(snapshot), _interlink_checkpoint_configuration(args)) ||
         throw(ArgumentError("Interlink configuration differs from the checkpoint. Resume with the same " *
-            "candidate topology, link kinds and parameters, forbidden pairs, policy targets and terminal counts."))
+            "candidate topology, link kinds and parameters, forbidden pairs, scheduling policy and terminal counts."))
     count = length(args.dynamics_model.spacecraft)
     hasproperty(snapshot, :is_active) && snapshot.is_active isa AbstractVector{Bool} &&
         length(snapshot.is_active) == count && is_active isa AbstractVector{Bool} &&
@@ -184,6 +303,67 @@ function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
     copyto!(is_active, snapshot.is_active)
     return nothing
 end
+
+# The interlink states' names. A run's state calls them `interlink_dv` and
+# `interlink_delta_sma`; a checkpoint keeps the names they had before 0.6.0,
+# `laser_dv` and `laser_delta_sma`, so its integrated state is written as earlier
+# versions wrote it and those versions can resume it. A resumed run reads either
+# pair.
+const _INTERLINK_STATE_NAMES = (:interlink_dv => :laser_dv, :interlink_delta_sma => :laser_delta_sma)
+
+# Which pair of names a state gives the interlink states: `:current`, `:legacy`
+# (the names before 0.6.0) or `:none`; `:mixed` for a state that has parts of
+# both pairs, or whose spacecraft differ.
+function _interlink_state_naming(u)
+    namings = map(eachindex(u.sc)) do i
+        names = propertynames(u.sc[i])
+        current = count(in(names), first.(_INTERLINK_STATE_NAMES))
+        legacy = count(in(names), last.(_INTERLINK_STATE_NAMES))
+        current == 2 && legacy == 0 ? :current : legacy == 2 && current == 0 ? :legacy :
+            current == 0 && legacy == 0 ? :none : :mixed
+    end
+    isempty(namings) && return :none
+    return allequal(namings) ? first(namings) : :mixed
+end
+
+# A checkpointed state's interlink states fit the run: both names of one pair in a
+# run with interlinks, neither pair in a run without.
+function _check_interlink_checkpoint_state(args, checkpoint)
+    naming = _interlink_state_naming(checkpoint.u)
+    (args.interlink_model === nothing ? naming === :none : naming in (:current, :legacy)) ||
+        throw(ArgumentError("Checkpoint interlink state does not match the configured interlink_model; resume with the same interlink setting."))
+    return nothing
+end
+
+# The state a checkpoint stores: the run's state, with the interlink states under
+# their checkpoint names in a run with interlinks.
+_checkpoint_state(args, u) = args.interlink_model === nothing ? u : _renamed_spacecraft_state(u, _INTERLINK_STATE_NAMES)
+
+# The state a resumed run starts from: the checkpoint's state, with interlink states
+# written under their checkpoint names given back the run's names.
+_resumed_checkpoint_state(args, u) = args.interlink_model !== nothing && _interlink_state_naming(u) === :legacy ?
+    _renamed_spacecraft_state(u, map(reverse, _INTERLINK_STATE_NAMES)) : u
+
+# A copy of the state `u` with the spacecraft components renamed by `names` (old =>
+# new pairs). Every other component, every shape and every value stay; the copy's
+# values are checked bit for bit against `u`'s.
+function _renamed_spacecraft_state(u::ComponentVector, names)
+    state = ComponentVector(sc=[_renamed_components(u.sc[i], names) for i in eachindex(u.sc)])
+    old, new = ComponentArrays.getdata(u), ComponentArrays.getdata(state)
+    length(old) == length(new) && all(index -> old[index] === new[index], eachindex(old, new)) ||
+        error("Renaming the interlink states changed the state's values; this is a SpaceAGORA bug.")
+    return state
+end
+# A state given as named tuples, as unit tests build one.
+_renamed_spacecraft_state(u::NamedTuple, names) = merge(u, (sc=[_renamed_components(spacecraft, names) for spacecraft in u.sc],))
+
+function _renamed_components(spacecraft, names)
+    renamed(name) = (index = findfirst(pair -> first(pair) === name, names); index === nothing ? name : last(names[index]))
+    components = propertynames(spacecraft)
+    return NamedTuple{map(renamed, components)}(map(name -> _state_component_copy(getproperty(spacecraft, name)), components))
+end
+_state_component_copy(value::Number) = value
+_state_component_copy(value::AbstractArray) = copy(value)
 
 # The run state the callbacks keep on the spacecraft records: the batteries'
 # flags, the faults' activity and held levels, the sensors' streams, latest
@@ -767,7 +947,7 @@ end
     return SimulationModel.IOSerialization._write_checkpoint!(
         args,
         t,
-        u_state,
+        _checkpoint_state(args, u_state),
         CHECKPOINT_SCHEMA_VERSION;
         solver_mode=solver_mode,
         runtime_state=runtime
