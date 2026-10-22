@@ -55,10 +55,9 @@ owners. This internal module does not add root public API.
 EDG pairing validation finds the EDG control by dispatch.
 `GuidanceHooks._is_edg_control` returns `false` by default, and `ControlHooks`
 adds the method for `AerobrakingEnergyDepletionControlModel`. Guidance does not
-look up `ControlHooks` at run time. Its only lookup through its parent module is
-`_edg_algorithms()`, which reaches `EDGAlgorithms` (loaded after
-`GuidanceHooks`). `test/unit/gnc/planning_ownership_tests.jl` keeps it the only
-one.
+look up `ControlHooks`, or any other module, through its parent module at run
+time: `EDGAlgorithms` loads before `GuidanceHooks`, which imports it.
+`test/unit/gnc/planning_ownership_tests.jl` refuses such a lookup.
 
 Reporting completed results belongs to
 `src/interfaces/analysis/planning/rpo_comparison_reports.jl`. Its internal

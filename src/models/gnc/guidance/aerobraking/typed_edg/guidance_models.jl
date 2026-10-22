@@ -1,4 +1,5 @@
 using ..EDGServices
+using ..EDGAlgorithms
 
 const _EDG_GUIDANCE_MODES = Set((:max_energy_depletion, :targeting))
 const _EDG_MAX_ENERGY_SUBMODES = Set((:heat_rate, :structural_load, :heat_load))
@@ -246,7 +247,5 @@ function update_guidance!(
     t::Float64,
     i::Int64,
 )
-    return _edg_algorithms().guidance_decision!(model.state, model.config, u, p, t, i)
+    return EDGAlgorithms.guidance_decision!(model.state, model.config, u, p, t, i)
 end
-
-@inline _edg_algorithms() = getfield(_PARENT, :EDGAlgorithms)
