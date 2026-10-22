@@ -42,7 +42,7 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
    - `test/gates/ci_removed_hook_names_gate.jl` (no method, declaration or other use of an extension hook name removed in 0.5.0, and no five-argument `wrench` method or call, in `src/`, `ext/`, `templates/` or `examples/`, found by parsing; the contributor starters do not name a removed hook in any file)
 
 The paper workload coverage gate belongs to
-[SpaceAGORAParallelizationStudies](https://github.com/Space-FALCON-Lab/SpaceAGORAParallelizationStudies/blob/7821388870571474550533a15d0ecb2b60d01650/test/gates/ci_ppb_workload_coverage_gate.jl).
+[SpaceAGORAParallelizationStudies](https://github.com/Space-FALCON-Lab/SpaceAGORAParallelizationStudies/blob/f5c57d52a7d0662771e38e2e29b3cd0148d6ce52/test/gates/ci_ppb_workload_coverage_gate.jl).
 It checks that the research workload names every case and mode its paper phases
 run. The core mode-profile parity and runtime-analysis gates above remain
 required.

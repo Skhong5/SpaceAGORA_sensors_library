@@ -116,7 +116,7 @@ change, so:
   set it on `SimulationSettings`.
 
 The Mars RAAN campaign and its output convention belong to
-[SpaceAGORAMissionReconstructions](https://github.com/Space-FALCON-Lab/SpaceAGORAMissionReconstructions/blob/ff67a512face495afa6dec10171806209a62033d/README.md).
+[SpaceAGORAMissionReconstructions](https://github.com/Space-FALCON-Lab/SpaceAGORAMissionReconstructions/blob/a14f6e9cdc20ac30fbf7f74396484a25f683e5e8/README.md).
 Its launcher and output paths are documented there.
 
 The quickstart example additionally saves four PNG plots under

@@ -49,7 +49,7 @@ benchmark exclusions recorded in an old investigation must be requalified
 before they are lifted or described as current failures.
 
 The paper phase definitions and
-[case guide](https://github.com/Space-FALCON-Lab/SpaceAGORAParallelizationStudies/blob/7821388870571474550533a15d0ecb2b60d01650/benchmarks/studies/paper_parallelization_benchmarks/CASES.md)
+[case guide](https://github.com/Space-FALCON-Lab/SpaceAGORAParallelizationStudies/blob/f5c57d52a7d0662771e38e2e29b3cd0148d6ce52/benchmarks/studies/paper_parallelization_benchmarks/CASES.md)
 now live in SpaceAGORAParallelizationStudies.
 The larger B7–B14 families cover constellation size, Monte Carlo throughput,
 atmosphere fidelity, force/actuator stacks, interacting propagation, fixed

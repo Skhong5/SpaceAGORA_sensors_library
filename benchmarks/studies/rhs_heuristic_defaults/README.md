@@ -6,7 +6,7 @@ sweep would consider, size by size, on one machine at one thread budget.
 ## Why
 
 The pinned parallel routes (`R1a`/`R2`/`R3` in
-the [paper study](https://github.com/Space-FALCON-Lab/SpaceAGORAParallelizationStudies/tree/7821388870571474550533a15d0ecb2b60d01650/benchmarks/studies/paper_parallelization_benchmarks)) run whatever
+the [paper study](https://github.com/Space-FALCON-Lab/SpaceAGORAParallelizationStudies/tree/f5c57d52a7d0662771e38e2e29b3cd0148d6ce52/benchmarks/studies/paper_parallelization_benchmarks)) run whatever
 `_rhs_execution_plan_uncached` (`src/orchestration/simulation/engine/setup.jl`) decides; the
 adaptive routes (`R6`/`R7`) run whatever the pre-solve calibration sweep
 measured. Compare the heuristic and calibrated plans at the same resource

@@ -11,15 +11,15 @@ The public study snapshot comes from core
 `bfa32f6a44c5f242714b8cf182a451e863119a05`. Each destination records original Git
 blobs, the license and intentional path/environment adaptations. The initial
 import commits identify the transferred source. Later commits on each import adapt
-it (study folder names, and the parallelization studies' core pin, now the v0.6.0
-release); core's links point at the current heads below. Neither is a floating
-dependency pin for core runtime.
+it (study folder names and wording, and the parallelization studies' core pin, now
+the v0.6.0 release); core's links point at the current heads below. Neither is a
+floating dependency pin for core runtime.
 
 | Repository | Owns | Imported source | Current head |
 |---|---|---|---|
 | [SpaceAGORAAtmosphereStudies](https://github.com/Space-FALCON-Lab/SpaceAGORAAtmosphereStudies/tree/32ca5be9d6b6fe4e865365a470d03a2a56b3a1fe) | Atmosphere and entry-density research | `32ca5be9d6b6fe4e865365a470d03a2a56b3a1fe` | `32ca5be9d6b6fe4e865365a470d03a2a56b3a1fe` |
-| [SpaceAGORAParallelizationStudies](https://github.com/Space-FALCON-Lab/SpaceAGORAParallelizationStudies/tree/7821388870571474550533a15d0ecb2b60d01650) | Paper campaigns and scaling investigations | `0071dd9b6e0f94828fb4da8cfcddc8425c403abd` | `7821388870571474550533a15d0ecb2b60d01650` |
-| [SpaceAGORAMissionReconstructions](https://github.com/Space-FALCON-Lab/SpaceAGORAMissionReconstructions/tree/ff67a512face495afa6dec10171806209a62033d) | Mission reconstruction and telemetry fitting | `ff67a512face495afa6dec10171806209a62033d` | `ff67a512face495afa6dec10171806209a62033d` |
+| [SpaceAGORAParallelizationStudies](https://github.com/Space-FALCON-Lab/SpaceAGORAParallelizationStudies/tree/f5c57d52a7d0662771e38e2e29b3cd0148d6ce52) | Paper campaigns and scaling investigations | `0071dd9b6e0f94828fb4da8cfcddc8425c403abd` | `f5c57d52a7d0662771e38e2e29b3cd0148d6ce52` |
+| [SpaceAGORAMissionReconstructions](https://github.com/Space-FALCON-Lab/SpaceAGORAMissionReconstructions/tree/a14f6e9cdc20ac30fbf7f74396484a25f683e5e8) | Mission reconstruction and telemetry fitting | `ff67a512face495afa6dec10171806209a62033d` | `a14f6e9cdc20ac30fbf7f74396484a25f683e5e8` |
 | [SpaceAGORARPOStudies](https://github.com/Space-FALCON-Lab/SpaceAGORARPOStudies/tree/76d12285689b339807c648fabe2f2cdddeae6828) | RPO paper reconstruction | `9356eacc6de660947133c8574fc652bae3b8e58b` | `76d12285689b339807c648fabe2f2cdddeae6828` |
 
 ## Tests and callers
