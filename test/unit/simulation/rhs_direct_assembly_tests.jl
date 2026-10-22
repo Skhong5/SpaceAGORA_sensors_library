@@ -5,7 +5,8 @@ using ComponentArrays
 
 const RHSDA_SE = SpaceAGORA.SimulationEngine
 
-function _rhs_direct_assembly_config(; n_sats::Int=3, effectors::Tuple=(InverseSquaredGravityModel(),))
+function _rhs_direct_assembly_config(; n_sats::Int=3, effectors::Tuple=(InverseSquaredGravityModel(),),
+                                     orientation_sim::Bool=false)
     planet = Earth()
     spacecraft = SpacecraftModel[]
     for i in 1:n_sats
@@ -48,7 +49,7 @@ function _rhs_direct_assembly_config(; n_sats::Int=3, effectors::Tuple=(InverseS
             keplerian=true,
             number_of_orbits=1,
             mission_time=120.0,
-            orientation_sim=false,
+            orientation_sim=orientation_sim,
             num_steps_to_save=20,
         ),
         environment_model=EnvironmentModel(
@@ -765,5 +766,37 @@ end
     @testset "operational segment context" begin
         context = SpaceAGORA.MissionWorkflow._segment_context(u, 0.0, args)
         @test [x.spacecraft_index for x in context.spacecraft] == collect(1:n)
+    end
+end
+
+@testset "the flat route's buffered state sample is the one built from the state" begin
+    # The flat route evaluates wrench effectors with a sample it rebuilds from
+    # its per-satellite buffers, where every other route builds it from the
+    # state. Field for field the two must be the same, with and without
+    # attitude, including fields no current effector reads.
+    plan = (
+        mode=:flat_constellation_effector_queue, allotment=1, scheduler=:static,
+        dominant_axis=:effector, policy_applied=false,
+        effector_decision=(use_threads=false, allotment=1, mode=:off, policy_applied=false),
+    )
+    n = 3
+    for orientation_sim in (false, true)
+        args = _rhs_direct_assembly_config(n_sats=n, effectors=(InverseSquaredJ2GravityModel(), _RHSDAIndexProbe()),
+                                           orientation_sim=orientation_sim)
+        u = RHSDA_SE.build_initial_conditions(args)
+        p = _rhsda_index_params(args, n, "auto")
+        RHSDA_SE._spacecraft_dynamics_flat_constellation_effector_queue!(
+            zero(u), u, p, 0.0, plan; rhs_kind=:full, partition=nothing)
+        @test length(p.shared_buffers.rhs_flat_state_pos_ii[]) >= n
+        for k in 1:n
+            flat = RHSDA_SE._rhs_flat_state_sample_from_buffers(
+                p.shared_buffers, args.dynamics_model.spacecraft, k, orientation_sim)
+            built = RHSDA_SE.build_state_sample(u.sc[k], args.dynamics_model.spacecraft[k], orientation_sim, k)
+            @test typeof(flat) === typeof(built)
+            for field in fieldnames(StateSample)
+                @test getfield(flat, field) === getfield(built, field)
+            end
+            @test (built.q_ib === nothing) == !orientation_sim
+        end
     end
 end

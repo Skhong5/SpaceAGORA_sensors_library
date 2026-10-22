@@ -65,7 +65,7 @@ function calib_batch_kernel!(
     # of 64), so the walk wraps round the row, as the harmonics kernel walks its
     # table again for every satellite. Widening the table to the touch count
     # instead would move it out of the cache level it was sized for. A counter,
-    # not `mod1`, so no touch pays for an integer division.
+    # not `mod1`, so the wrap adds no integer division.
     cols = size(table, 2)
     col = 0
     @inbounds for t in 1:n_touch
