@@ -1,6 +1,7 @@
 # ParallelProfiles names arrive from the SimulationCampaigns module header so
 # that monte_carlo.jl (included first) can annotate its adaptive keywords.
 using ..SimulationModel: SimulationConfiguration, EnvironmentModels, ParallelPolicy
+using ..SimulationModel.SimConfig: _with_fields
 
 const _CAMPAIGN_OUTER_ROUTE_STATE = OuterRouteState()
 
@@ -471,10 +472,7 @@ end
 end
 
 @inline function _reindexed_sample(s::MonteCarloSampleResult, index::Int)::MonteCarloSampleResult
-    return MonteCarloSampleResult(index=index, seed=s.seed, success=s.success,
-                                  elapsed_s=s.elapsed_s, value=s.value,
-                                  error=s.error, backtrace=s.backtrace,
-                                  finished_ns=s.finished_ns)
+    return _with_fields(s; index=index)
 end
 
 # Returns the campaign result and the per-sample time to credit the ROUTE

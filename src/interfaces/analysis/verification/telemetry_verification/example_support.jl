@@ -20,25 +20,25 @@ function _example_smoke_args(args::SM.SimulationConfiguration)
     mc = args.mission_configuration
     ss = args.simulation_settings
     keep_results = _example_smoke_results_enabled()
-    mc_smoke = SM.MissionConfiguration(
-        mission_type=mc.mission_type,
-        keplerian=mc.keplerian,
+    mc_smoke = SM.SimConfig._with_fields(mc;
         number_of_orbits=max(1, min(mc.number_of_orbits, 1)),
         mission_time=_example_smoke_mission_time(mc.mission_time),
-        orientation_sim=mc.orientation_sim,
         num_steps_to_save=max(50, min(mc.num_steps_to_save, 200)),
-        data_rate=mc.data_rate
     )
     output_override = strip(get(ENV, "SPACEAGORA_CLI_OUTPUT_DIR", ""))
-    ss_smoke = SM.SimulationSettings(
+    # A smoke run writes at most its results table: no plots, scene or
+    # checkpoints. Every other setting, physics included, is the example's own.
+    ss_smoke = SM.SimConfig._with_fields(ss;
         results=keep_results,
         verbose=false,
         # Honor an explicit CLI destination; otherwise retain per-run smoke isolation.
         results_directory=isempty(output_override) ? joinpath(pwd(), "output") : abspath(output_override),
         generate_plots=false,
-        generate_filenames=ss.generate_filenames,
         normalize=false,
-        save_csv=keep_results
+        save_csv=keep_results,
+        save_visualization_scene=false,
+        checkpoint_enabled=false,
+        resume_from_checkpoint=false,
     )
 
     return SM.SimConfig._with_configuration(args;

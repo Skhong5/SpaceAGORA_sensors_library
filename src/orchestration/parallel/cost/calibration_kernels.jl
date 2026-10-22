@@ -31,8 +31,9 @@
 
 Synthetic stand-in for the harmonics phase-4 accumulation loop.
 
-Performs `n_touch` strided reads from `table` (fixed `row`, varying column) and,
-after each, `simd_per_touch` vectorized passes over the whole of `out`. So
+Performs `n_touch` strided reads from `table` (fixed `row`, varying column,
+starting again at the first column after the last) and, after each,
+`simd_per_touch` vectorized passes over the whole of `out`. So
 
     coeff_touches = n_touch
     simd_terms    = n_touch * simd_per_touch      (per lane of `out`)
@@ -58,8 +59,18 @@ function calib_batch_kernel!(
     # is why the model under-predicted the serial case by ~2x and kept choosing
     # it.
     B, depth = size(ws)
+    checkbounds(table, row, 1)
+    checkbounds(ws, 1, 1)
+    # The ladders ask for more touches than the table has columns (up to 4096
+    # of 64), so the walk wraps round the row, as the harmonics kernel walks its
+    # table again for every satellite. Widening the table to the touch count
+    # instead would move it out of the cache level it was sized for. A counter,
+    # not `mod1`, so no touch pays for an integer division.
+    cols = size(table, 2)
+    col = 0
     @inbounds for t in 1:n_touch
-        c = table[row, t]
+        col = col == cols ? 1 : col + 1
+        c = table[row, col]
         for s in 1:simd_per_touch
             d = ((t * simd_per_touch + s) % depth) + 1
             @simd for b in 1:B
@@ -75,9 +86,11 @@ end
 
 Pure strided table walk with no arithmetic beyond the accumulation needed to
 keep it alive. Isolates the cost of a coefficient touch at whatever cache level
-`table` occupies.
+`table` occupies. One walk at most: `n_touch` must not exceed the table's
+columns.
 """
 function calib_touch_kernel!(table::Matrix{Float64}, row::Int, n_touch::Int)::Float64
+    n_touch > 0 && checkbounds(table, row, n_touch)
     acc = 0.0
     @inbounds for t in 1:n_touch
         acc += table[row, t]

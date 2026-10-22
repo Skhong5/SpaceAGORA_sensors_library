@@ -13,13 +13,10 @@ _unwrapped(err) = err isa TaskFailedException ? _unwrapped(err.task.exception) :
 # `configuration` checkpointed halfway through its mission into `directory`, or
 # resumed from there.
 function _checkpointed(configuration, directory::AbstractString; resume::Bool=false)
-    settings = configuration.simulation_settings
-    names = fieldnames(typeof(settings))
-    fields = NamedTuple{names}(map(name -> getfield(settings, name), names))
-    checkpointing = (checkpoint_enabled=true, checkpoint_interval_s=configuration.mission_configuration.mission_time / 2,
+    settings = SimulationModel.SimConfig._with_fields(configuration.simulation_settings;
+        checkpoint_enabled=true, checkpoint_interval_s=configuration.mission_configuration.mission_time / 2,
         checkpoint_directory=String(directory), resume_from_checkpoint=resume)
-    return SimulationModel.SimConfig._with_configuration(configuration;
-        simulation_settings=SimulationModel.SimulationSettings(; merge(fields, checkpointing)...))
+    return SimulationModel.SimConfig._with_configuration(configuration; simulation_settings=settings)
 end
 
 # Warnings of these runs repeat the fixture's other runs' (and the engine's note that
