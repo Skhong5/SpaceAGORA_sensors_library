@@ -81,11 +81,18 @@ include(joinpath(@__DIR__, "rpo_comparison_report_fixture.jl"))
 end
 
 @testset "The figures need PlotlyJS, in either load order" begin
-    # Fresh processes in this environment, with this process's load path, so
-    # the HYPR companion the comparison entry needs is found as it is here.
+    # Fresh processes in this environment. Their load path is this environment,
+    # the one that provides the HYPR companion (the comparison entry needs it)
+    # and the standard library, not this process's whole load path: an earlier
+    # test may have put another project first, as the native GRAM tests do with
+    # GRAMSuite's, and the children would resolve packages there. GRAMSuite's
+    # manifest has StaticArrays without ChainRulesCore, so StaticArrays'
+    # ChainRulesCore extension then failed to precompile in a coverage run.
     child = joinpath(@__DIR__, "rpo_plotlyjs_extension_child.jl")
     project = dirname(Base.active_project())
-    load_path = join(LOAD_PATH, Sys.iswindows() ? ';' : ':')
+    hypr = Base.identify_package_env("HYPR")
+    hypr === nothing && error("HYPR is not on the load path; load test/helpers/load_hypr.jl first.")
+    load_path = join(unique(["@", last(hypr), "@stdlib"]), Sys.iswindows() ? ';' : ':')
     for order in ("core-first", "plotlyjs-first")
         output = IOBuffer()
         command = addenv(`$(Base.julia_cmd()) --startup-file=no --project=$(project) $(child) $(order)`,
