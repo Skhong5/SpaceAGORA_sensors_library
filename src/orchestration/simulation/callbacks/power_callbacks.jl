@@ -155,7 +155,7 @@ function get_power_callbacks(num_sats::Int, args::SimulationConfiguration)
                 sc = integrator.p.args.dynamics_model.spacecraft[i]
                 b = battery(sc)
                 energy = u.sc[i].battery_wh
-                b.full = energy >= b.capacity_wh * (1.0 - 1.0e-9)
+                b.full = within_full_tolerance(b, energy)
                 b.empty = energy <= 1.0e-9 * b.capacity_wh
                 b.shed_tier = 0
             end

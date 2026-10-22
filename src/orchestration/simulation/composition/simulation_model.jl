@@ -194,8 +194,8 @@ include(joinpath(@__DIR__, "..", "..", "parallel", "routing", "effector_routing.
 include(joinpath(@__DIR__, "..", "..", "..", "models", "environment", "gravity", "gravity_effectors.jl"))
 include(joinpath(@__DIR__, "..", "..", "..", "models", "environment", "aerodynamics", "aerodynamic_effectors.jl"))
 
-# Analytic cost model for routing decisions. Included after the effector owners
-# because its work-count methods dispatch on their concrete types.
+# Machine constants, contention inputs and robust timing for the parallel
+# planners.
 include(joinpath(@__DIR__, "..", "..", "parallel", "cost", "parallel_cost.jl"))
 
 # --- IO Owners ---

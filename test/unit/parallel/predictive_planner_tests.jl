@@ -14,17 +14,9 @@ using SpaceAGORA
 const SCamp = SpaceAGORA.SimulationCampaigns
 const PCost = SpaceAGORA.SimulationModel.ParallelCost
 
-_curve() = PCost.RateCurve([0.0, 10.0], [1.0, 1.0])
-
-# A MachineConstants carrying nothing but the two USL terms the planner reads.
-# The other fields are required by the struct and are not consulted here.
+# A MachineConstants carrying the two USL terms the planner reads.
 function _constants(; alpha = 0.05, beta_alloc = 0.004)
     return PCost.MachineConstants(
-        simd_lane = _curve(), coeff_touch = _curve(), parallel_speedup = _curve(),
-        ns_per_scalar_item = 1.0, ns_per_queue_node = 1.0,
-        dispatch_pool_ns_base = 1.0, dispatch_pool_ns_per_worker = 1.0,
-        dispatch_batch_ns_base = 1.0, dispatch_batch_ns_per_worker = 1.0,
-        ns_per_atomic = 1.0, reference_fma_ns = 1.0, reference_mem_ns = 1.0,
         usl_alpha_base = alpha, usl_beta_alloc = beta_alloc,
     )
 end

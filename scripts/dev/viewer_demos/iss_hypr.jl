@@ -33,7 +33,7 @@
 # plan, never from a new one. With fixed iteration budgets and no wall-clock
 # limits, seeded planning is reproducible across thread counts. Otherwise the
 # run is fresh. Nothing is deleted.
-# Load the optional renderer before example helpers activate the core project.
+# Load the optional renderer before the example helpers continue in the examples environment.
 if abspath(PROGRAM_FILE) == @__FILE__
     using SpaceAGORAVisualizer
 end
@@ -419,7 +419,7 @@ validated it. Without a run (plan only) they are HyPR's own retimed reference, w
 function iss_hypr_plan_record(demo, inputs, flown=nothing)
     plan = demo.plan_result
     cfg = plan.config
-    ref = SM.GuidanceHooks.rpo_retimed_reference(plan.path, demo.geometry, cfg; safe_distance_m=inputs.safe_distance_m)
+    ref = SpaceAGORAHYPR.RPO.rpo_retimed_reference(plan.path, demo.geometry, cfg; safe_distance_m=inputs.safe_distance_m)
     demand = SM.GuidanceHooks.rpo_reference_accel_demand(ref, demo.orbit.mean_motion_radps)
     a_axis = demo.chaser.max_axis_accel_mps2
     per_axis = [maximum(abs, demand.u_rtn[:, k]) for k in axes(demand.u_rtn, 2)]
@@ -496,7 +496,7 @@ function iss_hypr_plan_record(demo, inputs, flown=nothing)
         "fuel_proxy" => Dict(
             "J_fuel_kg" => plan.components.J_fuel,
             "delta_v_eq_mps" => plan.components.delta_v_eq_mps,
-            "dt_s" => SM.GuidanceHooks.rpo_fuel_proxy_dt_s(cfg),
+            "dt_s" => SpaceAGORAHYPR.RPO.rpo_fuel_proxy_dt_s(cfg),
             "mean_motion_radps" => cfg.mean_motion_radps,
             "mass_kg" => cfg.mass_kg,
             "isp_s" => cfg.isp_s,

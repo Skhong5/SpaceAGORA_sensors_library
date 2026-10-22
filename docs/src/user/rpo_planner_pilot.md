@@ -151,7 +151,7 @@ The run records mark each of these requests, and each kept geometry revision, wi
 `event=:trigger`, and each hold with `event=:fallback_installed`.
 
 `examples/Earth_RPO_Planner_Disturbances.jl` combines them with
-`DirectRPOPlanner`, in the root project. A sphere appears on the remaining path,
+`DirectRPOPlanner`, in the examples environment. A sphere appears on the remaining path,
 so the replan is refused and the chaser holds; once it settles, the planner is
 asked once more and refuses again. When the sphere disappears, the new revision
 replaces the hold with a reference to the goal. A displacement later raises the
@@ -248,8 +248,8 @@ julia --startup-file=no scripts/optional_packages.jl setup hypr /path/to/my-rpo-
 The helper checks out `packages/robotics/HYPR.jl` at the parent repository's
 recorded revision, verifies its identity and clean state, and delegates to the
 existing HYPR installer with that path. The pin agrees with
-`packages/SpaceAGORAHYPR/HYPRSource.toml`. It selects HYPR 0.4.0 alongside
-SpaceAGORA 0.5.1 and compatibility shim 0.2.0. The shim keeps its existing location;
+`packages/SpaceAGORAHYPR/HYPRSource.toml`. It selects HYPR 0.5.0 alongside
+SpaceAGORA 0.6.0 and compatibility shim 0.2.0. The shim keeps its existing location;
 HYPR remains optional for the simulator core.
 
 The original external-source route is also supported:
@@ -295,9 +295,10 @@ physical limits, planning reserve or numerical policies.
 
 The `examples/rpo_planner_env/setup.jl` command above installs both components
 explicitly for the two-planner demonstration. The RPO and compliant robot-arm HYPR examples and ISS viewer demo also run from that project and
-load the companion before their common helper activates the root project. See
+load the companion before their common helper continues in the examples environment,
+which `julia --startup-file=no examples/setup.jl` prepares. See
 [Examples Catalog](examples_catalog.md) for the exact commands. Baseline examples
-keep `--project=.` and do not preload HYPR. Do not add the companion as a required
+use `--project=examples` and do not preload HYPR. Do not add the companion as a required
 dependency of SpaceAGORA itself.
 
 ## Moving from RPOGuidanceModel

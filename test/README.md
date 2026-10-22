@@ -22,7 +22,8 @@ select the suites; helpers supply reusable setup and scenarios.
   orchestration out of the internal `reference_system.jl` leaf.
 - `test/unit/`
   A smaller, standalone (`using SpaceAGORA`, no shared-scope dependency) set of
-  domain tests, runnable on their own via `test/unit/runtests.jl`. The default
+  domain tests, runnable on their own via
+  `julia --project=test test/unit/runtests.jl`. The default
   `test/runtests.jl` chain also runs the whole tree once, as a subprocess
   dispatched from `test/suites/09_probe_drivers.jl` with the coverage flag
   forwarded, so their line data reaches the coverage gate.
@@ -89,6 +90,7 @@ Recommended commands:
 
 ```bash
 julia --startup-file=no test/setup.jl
+julia --startup-file=no examples/setup.jl
 julia --project=test test/runtests.jl
 julia --project=. test/smoke/runtests.jl
 julia --project=test test/contracts/pr_runtests.jl
@@ -103,7 +105,10 @@ The test environment (`test/Project.toml`) holds the test tools, Aqua among
 them, and every package the harness imports, with SpaceAGORA from this checkout;
 the root project does not include Aqua. Suites 01 and 03 load the package source
 into sandbox modules, so the test environment declares all of SpaceAGORA's own
-dependencies too, and `test/setup.jl` refuses one that misses any.
+dependencies too, and `test/setup.jl` refuses one that misses any. The tests
+also start example and CLI children, which run in the examples environment
+(`examples/Project.toml`, prepared by `examples/setup.jl`), as do the example
+smoke runs of `test/smoke/runtests.jl`.
 
 `test/setup.jl` generates the ignored `test/Manifest.toml` from the root
 manifest on every run, so the tests use the package versions the root project

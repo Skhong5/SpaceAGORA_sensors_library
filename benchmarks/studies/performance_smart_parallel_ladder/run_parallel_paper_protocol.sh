@@ -132,7 +132,7 @@ done
 
 echo "[run] 4) Paper pipeline summary across modes"
 JULIA_NUM_THREADS="$THREADS_MAIN" \
-julia --project=. benchmarks/scripts/performance_paper_pipeline.jl \
+julia --project=examples benchmarks/scripts/performance_paper_pipeline.jl \
   --profile=full \
   --modes=serial,auto,threads,process \
   --outdir="$BASE_OUT/paper_pipeline_full"

@@ -415,6 +415,68 @@ end
     @test occursin("```jldoctest", from_env_src)
 end
 
+import Markdown
+
+@testset "Forwarded Docstrings Render Without Nested Markdown" begin
+    # Documenter unwraps a docstring that is one nested Markdown.MD, but it renders each
+    # of several nested MDs as text and warns about Julia interpolation. `@doc X` nests
+    # one MD per docstring of X, so a name with several docstrings is forwarded through
+    # `_flat_doc` in src/SpaceAGORA.jl, which keeps the docstrings in order with a rule
+    # between them.
+    function unwrapped(docstr)
+        md = Base.Docs.parsedoc(docstr)
+        while length(md.content) == 1 && first(md.content) isa Markdown.MD
+            md = first(md.content)
+        end
+        return md
+    end
+    squash(md) = replace(Markdown.plain(md), r"\s+" => "")
+
+    forwarded_names = (:cmg_momentum, :actuator_wrench, :actuator_consumption,
+                       :actuator_levels, :RPOStationGeometry, :RPOCubeSatGeometry)
+
+    nested = String[]
+    seen = Symbol[]
+    for mod in Base.Docs.modules
+        Base.moduleroot(mod) === SpaceAGORA || continue
+        meta = Base.Docs.meta(mod; autoinit=false)
+        meta === nothing && continue
+        for (binding, multidoc) in meta
+            binding isa Base.Docs.Binding || continue
+            mod === SpaceAGORA && push!(seen, binding.var)
+            for sig in multidoc.order
+                any(block -> block isa Markdown.MD, unwrapped(multidoc.docs[sig]).content) &&
+                    push!(nested, string(mod, ": ", binding.var))
+            end
+        end
+    end
+    @test isempty(nested)
+    # An empty scan would pass the check above.
+    @test issubset(forwarded_names, seen)
+
+    # `@doc X` gives something other than a Markdown.MD when the REPL docsystem is not
+    # loaded; `_flat_doc` forwards that as is.
+    @test SpaceAGORA._flat_doc(Base.Docs.docstr("x")) isa Base.Docs.DocStr
+    @test SpaceAGORA._flat_doc(nothing) === nothing
+
+    stored = Base.Docs.meta(SpaceAGORA)
+
+    for name in forwarded_names
+        binding = Base.Docs.Binding(SpaceAGORA, name)
+        forwarded = stored[binding]
+        # The docstrings of one binding can sit in several modules (methods are
+        # documented where their types live); `Base.Docs.doc` gathers them in this order.
+        original = [multidoc.docs[sig]
+                    for mod in Base.Docs.modules if mod !== SpaceAGORA
+                    for meta in (Base.Docs.meta(mod; autoinit=false),) if meta !== nothing
+                    for multidoc in (get(meta, binding, nothing),) if multidoc !== nothing
+                    for sig in multidoc.order]
+        @test length(forwarded.order) == 1
+        @test squash(unwrapped(forwarded.docs[only(forwarded.order)])) ==
+            join((squash(unwrapped(docstr)) for docstr in original), "---")
+    end
+end
+
 @testset "Monte Carlo Campaign Runner Contract" begin
     sandbox = Module(:SpaceAGORAMonteCarloSandbox)
     @test_nowarn Base.include(sandbox, joinpath(REPO_ROOT, "src", "SpaceAGORA.jl"))
@@ -464,11 +526,21 @@ end
     @test occursin("Project.toml", tracked)
     @test occursin("Manifest.toml", tracked)
 
+    # The examples environment: its project and setup are tracked, and its
+    # manifest is generated from the root manifest.
+    examples_tracked = read(`sh -lc "cd '$REPO_ROOT' && git ls-files examples/Project.toml examples/setup.jl examples/Manifest.toml"`, String)
+    @test occursin("examples/Project.toml", examples_tracked)
+    @test occursin("examples/setup.jl", examples_tracked)
+    @test !occursin("examples/Manifest.toml", examples_tracked)
+
     readme = read(joinpath(REPO_ROOT, "README.md"), String)
     quickstart = read(joinpath(REPO_ROOT, "docs", "src", "user", "quickstart.md"), String)
     @test occursin("julia_version_strict=true", readme)
     @test occursin("canonical committed execution environment", quickstart)
-    @test occursin("there is no bootstrap step", lowercase(quickstart))
+    for page in (readme, quickstart)
+        @test occursin("julia --startup-file=no examples/setup.jl", page)
+        @test occursin("julia --project=examples examples/AGORA_Basic_Quickstart.jl", page)
+    end
 end
 
 @testset "Project Compat Coverage Contract" begin

@@ -10,8 +10,8 @@ installation checks and do not enforce the matrix testsets' acceptance limits.
 From a configured repository environment:
 
 ```sh
-julia --project=. scripts/dev/diagnostics/j2_parity_debug.jl
-julia --project=. scripts/dev/diagnostics/tb_matrix_debug.jl
+julia --project=examples scripts/dev/diagnostics/j2_parity_debug.jl
+julia --project=examples scripts/dev/diagnostics/tb_matrix_debug.jl
 ```
 
 The J2 utility prints per-axis RMSE in kilometres, the combined-axis norm, and the

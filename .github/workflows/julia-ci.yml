@@ -110,7 +110,7 @@ jobs:
       # seeded with the root manifest so it resolves to the same package
       # versions and reuses their package images (unseeded, it resolved to the
       # newest registry versions and recompiled ~400 packages per job); the
-      # docs and test environments' setups seed themselves the same way.
+      # docs, test and examples environments' setups seed themselves the same way.
       # SpaceAGORA's own image is dropped: it changes with every commit.
       - name: Build shared depot
         if: steps.has-depot.outputs.cache-hit != 'true'
@@ -122,6 +122,8 @@ jobs:
           julia --startup-file=no --project=docs -e 'using Pkg; Pkg.precompile()'
           julia --startup-file=no test/setup.jl
           julia --startup-file=no --project=test -e 'using Pkg; Pkg.precompile()'
+          julia --startup-file=no examples/setup.jl
+          julia --startup-file=no --project=examples -e 'using Pkg; Pkg.precompile()'
           julia --startup-file=no --project=scripts/dev -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
           # GRAMSuite comes from a private repository and its compiled images carry
           # its source text; the shared cache is readable by fork pull requests, so
@@ -168,9 +170,12 @@ jobs:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       # Aqua and the other test tools live in the test environment, not in the
-      # root project.
-      - name: Prepare test environment
-        run: julia --startup-file=no test/setup.jl
+      # root project. The example and CLI children the tests start run in the
+      # examples environment.
+      - name: Prepare test and examples environments
+        run: |
+          julia --startup-file=no test/setup.jl
+          julia --startup-file=no examples/setup.jl
 
       - name: Run test suite shard
         run: |
@@ -191,7 +196,7 @@ jobs:
         # Independent of the suite: runs even when the suite step failed.
         if: matrix.depwarn && !cancelled() && steps.setup.outcome == 'success'
         run: |
-          julia --startup-file=no --compiled-modules=existing --depwarn=error --project=. examples/Earth_Thruster_Test.jl
+          julia --startup-file=no --compiled-modules=existing --depwarn=error --project=examples examples/Earth_Thruster_Test.jl
           touch "$SPACEAGORA_CI_SHARD_REPORT_DIR/depwarn.done"
 
       - name: Mark shard complete
@@ -273,9 +278,12 @@ jobs:
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
 
       # Aqua and the other test tools live in the test environment, not in the
-      # root project.
-      - name: Prepare test environment
-        run: julia --startup-file=no test/setup.jl
+      # root project. The example and CLI children the tests start run in the
+      # examples environment.
+      - name: Prepare test and examples environments
+        run: |
+          julia --startup-file=no test/setup.jl
+          julia --startup-file=no examples/setup.jl
 
       - name: Run test suite shard with coverage
         run: |
@@ -445,6 +453,9 @@ jobs:
         with:
           gram: native
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+
+      - name: Prepare examples environment
+        run: julia --startup-file=no examples/setup.jl
 
       - name: Prepare documented HYPR example environment
         run: julia --startup-file=no --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
@@ -661,12 +672,15 @@ jobs:
       - name: README quickstart artifact checker regressions
         run: python3 -B -m unittest discover -s test/scripts -p test_readme_quickstart.py -v
 
+      - name: Prepare examples environment (README command)
+        run: julia --startup-file=no examples/setup.jl
+
       - name: README quickstart command and artifacts
         run: python3 -B test/smoke/ci_readme_quickstart.py
 
       # Preserve the full thruster burn exercised by the formerly mislabeled step.
       - name: Earth thruster example
-        run: julia --startup-file=no --compiled-modules=existing --project=. examples/Earth_Thruster_Test.jl
+        run: julia --startup-file=no --compiled-modules=existing --project=examples examples/Earth_Thruster_Test.jl
 
   example-regression:
     needs: depot
@@ -690,6 +704,9 @@ jobs:
         with:
           gram: native
           token: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN || github.token }}
+
+      - name: Prepare examples environment
+        run: julia --startup-file=no examples/setup.jl
 
       - name: Example regression
         run: julia --startup-file=no --project=. test/integration/examples/runtests.jl
@@ -981,6 +998,8 @@ jobs:
         run: julia --startup-file=no --project=. test/smoke/installation_contract.jl
       - name: Verify repeatable example setup without tracked changes
         run: julia --startup-file=no --project=. test/optional/hypr/example_setup.jl
+      - name: Prepare examples environment
+        run: julia --startup-file=no examples/setup.jl
       - name: Example environment isolation
         env:
           JULIA_LOAD_PATH: "@:@stdlib"
@@ -1011,6 +1030,7 @@ jobs:
           julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/integration.jl core-first
           julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/integration.jl hypr-first
           julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/rrt_callback_contract.jl
+          julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/extension_helpers.jl
           julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" -e 'include("test/sampling_compatibility.jl"); include("test/custom_objective.jl")'
           julia --startup-file=no --compiled-modules=strict --pkgimages=existing --project="$RUNNER_TEMP/hypr-installations/hypr" test/precompiled_loading.jl core-first
           julia --startup-file=no --compiled-modules=strict --pkgimages=existing --project="$RUNNER_TEMP/hypr-installations/hypr" test/precompiled_loading.jl hypr-first
@@ -1133,6 +1153,9 @@ jobs:
           set -euo pipefail
           julia --startup-file=no --project=. test/optional/visualizer/setup.jl "$RUNNER_TEMP/visualizer-installations"
           printf 'SPACEAGORA_VISUALIZER_TEST_ENV=%s\n' "$RUNNER_TEMP/visualizer-installations/visualizer" >> "$GITHUB_ENV"
+      # The CLI child continues in the examples environment.
+      - name: Prepare examples environment
+        run: julia --startup-file=no examples/setup.jl
       - name: Core installation without a renderer
         run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/visualizer-installations/core" test/optional/visualizer/core.jl
       - name: Core-first renderer integration
@@ -1199,6 +1222,9 @@ jobs:
         env:
           JULIA_PKG_PRECOMPILE_AUTO: "0"
         run: julia --startup-file=no --project=@stdlib test/optional/edg/setup.jl "$RUNNER_TEMP/edg-installations"
+      # The CLI and example children continue in the examples environment.
+      - name: Prepare examples environment
+        run: julia --startup-file=no examples/setup.jl
       - name: Core without the EDG provider
         run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/core" test/optional/edg/core.jl
       - name: Both EDG load orders
@@ -1257,6 +1283,10 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
+      # The interlink tests build their case with examples/gve_sma_interlinks.jl,
+      # which continues in the examples environment through examples/common.jl.
+      - name: Prepare examples environment
+        run: julia --startup-file=no examples/setup.jl
       - name: Install the explicit matching backend
         run: |
           python -m pip install 'networkx==3.4.2'

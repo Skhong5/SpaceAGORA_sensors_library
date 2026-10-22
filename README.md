@@ -27,17 +27,22 @@ SpaceAGORA needs Julia 1.12. In a terminal on Linux or macOS:
 GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none https://github.com/Space-FALCON-Lab/SpaceAGORA.jl
 cd SpaceAGORA.jl
 julia --project=. -e "using Pkg; Pkg.instantiate(julia_version_strict=true)"
-julia --project=. examples/AGORA_Basic_Quickstart.jl
+julia --startup-file=no examples/setup.jl
+julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
-The example flies an Earth orbit without atmosphere, GRAM or SPICE data, and
-writes its results and plots under `output/`. The clone options skip large data
-files that the first run does not need. On Windows, set `GIT_LFS_SKIP_SMUDGE`
-in its own command first; the
+The third line installs SpaceAGORA. The fourth prepares the examples
+environment, which adds the packages the examples use for plots and analysis,
+starting from the package versions SpaceAGORA's manifest records. The example
+flies an Earth orbit without atmosphere, GRAM or SPICE data, and writes its
+results and plots under `output/`. The clone options skip large data files that
+the first run does not need. On Windows, set `GIT_LFS_SKIP_SMUDGE` in its own
+command first; the
 [Quickstart](https://space-falcon-lab.github.io/SpaceAGORA.jl/user/quickstart/)
 shows both Windows shells, a setup check and what the run prints.
 
-For a short check run through the command-line tool, from the same directory:
+For a short check run through the command-line tool, from the same directory
+(it runs the example in the examples environment):
 
 ```text
 julia --project=. src/interfaces/cli/main.jl run --example=AGORA_Basic_Quickstart.jl --smoke

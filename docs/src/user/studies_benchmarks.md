@@ -31,8 +31,9 @@ Benchmark `smoke` profiles execute workloads, including simulations. Executing
 the `runtime-analysis` or `smart-parallel-ladder` launcher needs the
 `data/GRAMSuite.jl` submodule ([GRAMSuite Setup](gramsuite_setup.md)) because
 both import the vendored package before parsing study options. GRAM-backed
-cases also need the native GRAM library built. The CLI runs its child under the
-repository project; instantiate that project's dependencies before execution.
+cases also need the native GRAM library built. The CLI runs its child in the
+examples environment; prepare it with `julia --startup-file=no examples/setup.jl`
+before execution.
 
 Other direct studies have their own prerequisites. For example, the aerobraking
 perturbation study's `--help` command loads SpaceAGORA and exits before GRAM
@@ -99,13 +100,13 @@ Use this when the goal is the aerobraking perturbation study rather than one
 mission example.
 
 ```text
-julia --project=. benchmarks/studies/aerobraking_perturbation_mc/main.jl --smoke --output-dir output/aerobraking_perturbation_smoke
+julia --project=examples benchmarks/studies/aerobraking_perturbation_mc/main.jl --smoke --output-dir output/aerobraking_perturbation_smoke
 ```
 
 For the full option list:
 
 ```text
-julia --project=. benchmarks/studies/aerobraking_perturbation_mc/main.jl --help
+julia --project=examples benchmarks/studies/aerobraking_perturbation_mc/main.jl --help
 ```
 
 ## Profiles

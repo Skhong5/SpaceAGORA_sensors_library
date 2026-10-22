@@ -75,9 +75,12 @@ jobs:
         run: git fetch --no-tags --depth=1 origin ${{ github.base_ref }}
 
       # Aqua and the other test tools live in the test environment, not in the
-      # root project.
-      - name: Prepare test environment
-        run: julia --startup-file=no test/setup.jl
+      # root project. The example regression runs its children in the examples
+      # environment.
+      - name: Prepare test and examples environments
+        run: |
+          julia --startup-file=no test/setup.jl
+          julia --startup-file=no examples/setup.jl
 
       - name: Contract suite
         run: julia --startup-file=no --project=test test/contracts/nightly_runtests.jl

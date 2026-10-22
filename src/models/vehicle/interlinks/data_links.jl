@@ -11,7 +11,7 @@ The data rate (bits per second) that `link` carries from its transmitting end
 are the terminal hardware at the two ends, `nothing` for a virtual terminal.
 The engine integrates it, at every right-hand-side evaluation, into the sending
 spacecraft's `data_sent_bits` and the receiving one's `data_received_bits`, and
-the `:data_throughput` policy scores candidate links by it. Default: 0.
+`DataThroughputPolicy` scores candidate links by it. Default: 0.
 """
 link_data_rate_bps(link, transmitter, receiver, a, b, ctx) = 0.0
 

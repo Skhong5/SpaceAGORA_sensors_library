@@ -36,7 +36,8 @@ end
             @assert ENV["SPACEAGORA_EXAMPLE_SMOKE_MISSION_TIME"] == "120.0"
             include($(repr(joinpath(harness.EXAMPLES_DIR, "common.jl"))))
             @assert SpaceAGORA.EDGServices.available()
-            @assert Base.active_project() == $(repr(joinpath(harness.REPO_ROOT, "Project.toml")))
+            # The EDG environment lacks the example packages: common.jl continues in the examples environment.
+            @assert Base.active_project() == $(repr(joinpath(harness.REPO_ROOT, "examples", "Project.toml")))
             @assert LOAD_PATH == ["@", "@stdlib"]
             println("EDG_EXAMPLE_SMOKE_CHILD_OK")
             """)
@@ -53,7 +54,7 @@ end
             # Selecting an EDG environment must not reroute ordinary or HYPR examples.
             ordinary = joinpath(directory, "Ordinary_Project_Probe.jl")
             write(ordinary, """
-                @assert Base.active_project() == $(repr(joinpath(harness.REPO_ROOT, "Project.toml")))
+                @assert Base.active_project() == $(repr(joinpath(harness.REPO_ROOT, "examples", "Project.toml")))
                 @assert LOAD_PATH == ["@", "@stdlib"]
                 println("ORDINARY_EXAMPLE_SMOKE_CHILD_OK")
                 """)
