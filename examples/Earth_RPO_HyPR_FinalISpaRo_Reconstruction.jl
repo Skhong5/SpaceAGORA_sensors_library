@@ -9,7 +9,7 @@ using SpaceAGORA, HYPR
 const ROOT = normpath(joinpath(@__DIR__,".."))
 include(joinpath(ROOT,"examples","Earth_RPO_CubeSat_MPC_Batch.jl"))
 using SpaceAGORA, JSON, SHA, Random, LinearAlgebra, StaticArrays, Statistics, Dates, Test
-const OUT = get(ENV,"HYPR_OUTPUT_ROOT",joinpath(homedir(),"AgentScratch","hypr_final_isparo"))
+const OUT = get(ENV,"HYPR_OUTPUT_ROOT",joinpath(homedir(),"spaceagora-hypr-final-isparo"))
 const G = SM.GuidanceHooks
 const C = SM.ControlHooks
 include(joinpath(@__DIR__, "support", "hypr_paper_comparison.jl"))
