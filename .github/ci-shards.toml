@@ -152,7 +152,7 @@ default_weight = { other = 1.2 }
 "unit:parallel/contention_inputs_tests.jl" = 0.00
 "unit:parallel/cost_machine_calibration_tests.jl" = 0.02
 "unit:parallel/cost_robust_timing_tests.jl" = 0.02
-"unit:parallel/cost_work_counts_tests.jl" = 0.12
+"unit:parallel/flat_queue_predicates_tests.jl" = 0.12
 "unit:parallel/density_callback_light_work_tests.jl" = 0.09
 "unit:parallel/density_service_recipe_tests.jl" = 0.13
 "unit:parallel/gram_memory_model_tests.jl" = 0.02
@@ -370,7 +370,7 @@ grid = 1.00
 "unit:parallel/contention_inputs_tests.jl" = 0.00
 "unit:parallel/cost_machine_calibration_tests.jl" = 0.02
 "unit:parallel/cost_robust_timing_tests.jl" = 0.02
-"unit:parallel/cost_work_counts_tests.jl" = 0.26
+"unit:parallel/flat_queue_predicates_tests.jl" = 0.26
 "unit:parallel/density_callback_light_work_tests.jl" = 0.07
 "unit:parallel/density_service_recipe_tests.jl" = 0.11
 "unit:parallel/gram_memory_model_tests.jl" = 0.03

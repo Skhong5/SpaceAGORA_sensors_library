@@ -136,18 +136,10 @@ function run_family(name::String, builder::Function)
         return nothing
     end
 
-    counts = try
-        PC.constellation_work_counts(case.args, N_SATS)
-    catch
-        nothing
-    end
-    workspace = counts === nothing ? 0.0 : counts.simd_workspace_bytes_per_sat
-
     before = RS.native_lock_stats_snapshot()
     ci = try
         SE.probe_contention_inputs!(case.p, case.u0, case.args;
-                                    k = 7, t_step = T_STEP,
-                                    workspace_bytes_per_sat = workspace)
+                                    k = 7, t_step = T_STEP)
     catch err
         @warn "Probe failed; skipping." family = name exception = err
         return nothing
@@ -188,7 +180,6 @@ function run_family(name::String, builder::Function)
         wait_hold = PC.lock_wait_hold_ratio(ci),
         acq = ci.lock_acquisitions,
         top_site = top_site,
-        in_domain = counts === nothing ? false : counts.in_domain,
     )
 end
 
@@ -196,19 +187,19 @@ function main()
     println("contention probe matrix   N=", N_SATS, "  L=", HARM_DEGREE,
             "  threads=", Threads.nthreads())
     println()
-    @printf("%-12s %5s %10s %12s %12s %9s %10s %8s %-16s %s\n",
+    @printf("%-12s %5s %10s %12s %12s %9s %10s %8s %s\n",
             "family", "effs", "pass_ms", "alloc_KiB", "alloc_MiB/s", "rho",
-            "wait/hold", "lock_acq", "top_lock_site", "in_domain")
-    println("-"^116)
+            "wait/hold", "lock_acq", "top_lock_site")
+    println("-"^106)
     rows = Any[]
     for (name, builder) in families()
         RS.reset_native_lock_stats!()
         row = run_family(name, builder)
         row === nothing && continue
         push!(rows, row)
-        @printf("%-12s %5d %10.3f %12.1f %12.2f %9.4f %10.3f %8d %-16s %s\n",
+        @printf("%-12s %5d %10.3f %12.1f %12.2f %9.4f %10.3f %8d %s\n",
                 row.name, row.n_effectors, row.pass_ms, row.alloc_kib, row.alloc_mibs,
-                row.rho, row.wait_hold, row.acq, String(row.top_site), row.in_domain)
+                row.rho, row.wait_hold, row.acq, String(row.top_site))
     end
     println()
 

@@ -1,104 +1,9 @@
-# Work-count and machine-constant types for the analytic cost model.
+# Machine-constant and contention types for the parallel planners.
 #
-# The model is T = sum_k w_k * n_k, split so that the two halves have opposite
-# volatility:
-#
-#   n_k (WorkCounts)       -- countable in closed form from the configuration
-#                             before the solve runs. Machine-independent, exact,
-#                             zero measurement.
-#   w_k (MachineConstants) -- rates in ns per unit of n_k. Measured once per
-#                             machine by scripts/calibration/calibrate_machine.jl, cached,
-#                             and reused by every run on that machine.
-#
-# That split is what makes a per-solve decision affordable: the part that varies
-# per solve needs no measurement, and the part that needs measurement does not
-# vary per solve. A routing decision becomes a length-7 dot product instead of a
-# timed sweep over candidate plans.
-
-"""
-    WorkCounts
-
-Countable work in one full evaluation of a constellation's dynamic effectors,
-before any decision about how to split it across threads.
-
-The counts are *per pass over the whole constellation*, not per satellite or per
-worker; the predictor applies the split. Fields are `Float64` rather than `Int`
-because probe-derived terms are measured, and because the predictor divides them
-by worker counts.
-
-Units differ per field and the distinction is the whole model, so they are
-stated explicitly:
-
-- `simd_terms`      PER SATELLITE. Inner-loop arithmetic of the harmonics
-                    kernel, counted in flops per satellite. The name is kept
-                    for the calibration schema: the kernel is scalar and runs
-                    one satellite at a time on every route since the batched
-                    `@turbo` pre-pass was retired, so the count is the same
-                    work the serial route does. Scales with the satellites a
-                    worker holds, hence shrinks under a split.
-- `scalar_items`    PER SATELLITE. Setup/teardown that does not vectorize.
-- `coeff_touches`   PER PASS of one satellite. Distinct coefficient-table
-                    reads needed to sweep the model once for one satellite.
-                    Every route now runs the scalar kernel and re-walks the
-                    table for each satellite, so the predictor charges this
-                    once per satellite on `satellite_batch` and on the flat
-                    route alike. (The batched pre-pass that loaded each
-                    coefficient once per worker, and made this term the
-                    discriminator between the candidates, is gone.)
-- `simd_workspace_bytes_per_sat` SIZE ARGUMENT. Scratch the kernel holds for
-                    one satellite; it is the footprint that decides the lane
-                    rate on every route, because every route runs the kernel
-                    one satellite at a time. For harmonics the A workspace is
-                    (L+3) x (M+2) Float64 per satellite.
-- `queue_nodes`     TOTAL. Flat-queue work items (satellites x effectors),
-                    driving per-node dispatch bookkeeping.
-- `coeff_table_bytes` SIZE ARGUMENT, not a count. The footprint strided over
-                    while accumulating `coeff_touches`, used to look up the
-                    right rate on `MachineConstants.coeff_touch` -- a touch into
-                    an L1-resident table and one into an L3-resident table
-                    differ by 3.4x and the model has to tell them apart. Summed
-                    across effectors that contribute touches; zero when none do.
-- `probe_ns`        PER SATELLITE. Summed measured cost in ns of effectors the
-                    model cannot count analytically. Zero when
-                    every effector is either known or has declared its terms.
-- `unknown_effectors` how many effectors contributed `probe_ns` rather than
-                    analytic counts. Purely informational for telemetry; the
-                    probe makes them predictable, so a nonzero value is not by
-                    itself a reason to abstain.
-- `in_domain`       false when the workload contains a term the linear model
-                    provably cannot represent -- today, a density model holding
-                    a process-wide native lock, whose cost is superlinear in
-                    concurrency. The predictor refuses to answer rather than
-                    answering confidently and wrongly; callers fall back to the
-                    heuristic route.
-"""
-Base.@kwdef struct WorkCounts
-    simd_terms::Float64 = 0.0
-    scalar_items::Float64 = 0.0
-    coeff_touches::Float64 = 0.0
-    coeff_table_bytes::Float64 = 0.0
-    simd_workspace_bytes_per_sat::Float64 = 0.0
-    queue_nodes::Float64 = 0.0
-    probe_ns::Float64 = 0.0
-    unknown_effectors::Int = 0
-    in_domain::Bool = true
-end
-
-function Base.:+(a::WorkCounts, b::WorkCounts)::WorkCounts
-    return WorkCounts(
-        simd_terms = a.simd_terms + b.simd_terms,
-        scalar_items = a.scalar_items + b.scalar_items,
-        coeff_touches = a.coeff_touches + b.coeff_touches,
-        coeff_table_bytes = a.coeff_table_bytes + b.coeff_table_bytes,
-        simd_workspace_bytes_per_sat = a.simd_workspace_bytes_per_sat + b.simd_workspace_bytes_per_sat,
-        queue_nodes = a.queue_nodes + b.queue_nodes,
-        probe_ns = a.probe_ns + b.probe_ns,
-        unknown_effectors = a.unknown_effectors + b.unknown_effectors,
-        in_domain = a.in_domain && b.in_domain,
-    )
-end
-
-Base.zero(::Type{WorkCounts})::WorkCounts = WorkCounts()
+# `MachineConstants` holds the rates `calibrate_machine` measures once per
+# machine; the predictive campaign planner reads its USL terms.
+# `ContentionInputs` holds what one warm RHS pass shows about how a workload
+# scales; the native-lock width cap reads its lock occupancy.
 
 """
     ContentionInputs
@@ -106,9 +11,9 @@ Base.zero(::Type{WorkCounts})::WorkCounts = WorkCounts()
 What one warm RHS pass reveals about how this workload will behave under a
 split, as opposed to how much work it contains.
 
-`WorkCounts` answers "how much work"; this answers "how badly does that work
-scale", which is a different question and needs different evidence. The three
-terms are the three mechanisms measured to cap thread scaling in this codebase:
+It answers "how badly does this work scale", which needs different evidence
+from how much work there is. It measures two of the mechanisms found to cap
+thread scaling in this codebase:
 
 - `alloc_bytes_per_pass` / `pass_ns`  allocation pressure. Shared-heap
                     allocation and the GC it drives are process-wide, which is
@@ -118,13 +23,8 @@ terms are the three mechanisms measured to cap thread scaling in this codebase:
                     1-tuple and allocates 0 bytes per pass, while the same
                     physics plus atmosphere reaches tens of GiB over a solve and
                     inverts past four threads.
-- `workspace_bytes_per_sat`  memory footprint, carried through from
-                    `WorkCounts` rather than re-measured, so the two cannot
-                    disagree. Scaled by the satellites a worker holds it gives
-                    the working set that decides whether a wider split still
-                    fits in cache.
 - `lock_*`          native-lock occupancy, read straight off the shared
-                    GRAM/SPICE critical section. Unlike the other two this is
+                    GRAM/SPICE critical section. Unlike allocation this is
                     not a proxy: `lock_hold_ns` over the window is an Amdahl
                     serial fraction with a hard `1/rho` speedup ceiling, and
                     `lock_wait_ns / lock_hold_ns` reports whether the width in
@@ -137,7 +37,6 @@ one that could not be measured must not read the same.
 Base.@kwdef struct ContentionInputs
     alloc_bytes_per_pass::Float64 = 0.0
     pass_ns::Float64 = 0.0
-    workspace_bytes_per_sat::Float64 = 0.0
     n_active_sats::Int = 0
     lock_acquisitions::Int64 = 0
     lock_hold_ns::Float64 = 0.0
@@ -256,8 +155,10 @@ end
 """
     MachineConstants
 
-Per-machine rates, in nanoseconds per unit of the corresponding `WorkCounts`
-field, plus the reference-kernel reading that validates them.
+Per-machine rates measured by [`calibrate_machine`](@ref), plus the
+reference-kernel reading that validates them. The predictive campaign planner
+reads `usl_alpha_base` and `usl_beta_alloc`. The other rates were measured for
+the RHS-plan predictor, removed in 0.6.0, and nothing reads them now.
 
 Produced by `scripts/calibration/calibrate_machine.jl` and cached in a fingerprinted TOML.
 Never fitted from the benchmark case catalog: the catalog is held out so that a
@@ -390,83 +291,3 @@ they never hurt either.
     a = clamp(Float64(alpha), 0.0, 1.0)
     return sqrt(max(0.0, 1.0 - a) / b)
 end
-
-"""
-    workload_usl_parameters(mc, contention; workers, n_active_sats) -> (α, β)
-
-Predict this workload's scalability parameters from machine constants and one
-warm probe.
-
-`α` is the serial fraction: the dispatch primitive's own residual (measured once
-per machine) plus the native-lock duty cycle (measured per workload). A lock is
-an Amdahl term, not a contention one -- it caps speedup at `1/ρ` however the
-work is split -- and treating it as anything else is what left the cost model
-declaring native-GRAM workloads simply out of domain.
-
-`β` is contention, and it is predicted rather than measured per workload because
-the two things that drive it are countable: how fast a worker allocates, and how
-much memory it touches relative to the last-level cache. Both coefficients are
-machine constants; both workload quantities come from `ContentionInputs`.
-
-Scaled per worker, not per pass: allocation pressure and working set are
-properties of what one worker does concurrently with the others, so the split
-enters here rather than being folded into the coefficients.
-"""
-function workload_usl_parameters(
-    mc::MachineConstants,
-    contention::Union{Nothing, ContentionInputs};
-    n_active_sats::Integer,
-)::NTuple{2, Float64}
-    alpha = max(0.0, mc.usl_alpha_base)
-    beta = max(0.0, mc.usl_beta_arith)
-    (contention === nothing || !contention.valid) && return (alpha, beta)
-
-    alpha = clamp(alpha + lock_duty_cycle(contention, 1), 0.0, 1.0)
-
-    # NEITHER TERM MAY DEPEND ON THE WIDTH. `beta` is a property of the
-    # workload, and the closed-form turning point `k* = √((1−α)/β)` is only
-    # meaningful if it is one: a first version divided the footprint by the
-    # worker count, so beta fell as the split widened and the model reported a
-    # larger `k*` when evaluated at twelve workers than at four -- an optimum
-    # that moved depending on where you stood.
-    #
-    # The per-worker share is real, but it is already carried by the SIMD lane
-    # rate, which is indexed by the workspace footprint the batch actually
-    # produces. Counting it here too would double it.
-    beta += max(0.0, mc.usl_beta_alloc) * (alloc_bytes_per_second(contention) / 1024^3)
-    if mc.llc_bytes > 0.0
-        footprint = contention.workspace_bytes_per_sat * Float64(max(1, Int(n_active_sats)))
-        beta += max(0.0, mc.usl_beta_bw) * (footprint / mc.llc_bytes)
-    end
-    return (alpha, max(0.0, beta))
-end
-
-"""
-    effector_cost_terms(model) -> Union{Nothing, WorkCounts}
-
-Declare the analytic work an effector performs per satellite per RHS pass, so
-the cost model can predict its routing without timing it.
-
-Returns `nothing` by default, which means "measure me": the model probes the
-effector once at run start and uses the measured per-satellite cost instead.
-That fallback is why this is optional -- a user-defined effector works with the
-cost model without implementing anything, it just costs one extra call per
-effector at setup rather than zero.
-
-Declaring is still worth it for an effector whose cost varies strongly with its
-own parameters, because a probe measures only the configuration in front of it
-while a declaration extrapolates. A declaration is validated against a single
-probe at run start and warns if the two disagree by more than a factor, so a
-wrong declaration is caught without being required to be right.
-
-Extend it the same way as [`environment_requirements`](@ref):
-
-```julia
-SpaceAGORA.effector_cost_terms(m::MyEffector) =
-    WorkCounts(simd_terms = m.n_modes, coeff_touches = m.n_modes)
-```
-
-Counts are per satellite per pass; the model multiplies by satellite count and
-divides by the worker split.
-"""
-@inline effector_cost_terms(::Any)::Union{Nothing, WorkCounts} = nothing
