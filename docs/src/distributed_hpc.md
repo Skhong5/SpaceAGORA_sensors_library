@@ -177,8 +177,9 @@ The current first-class distributed support is:
 
 - process-worker benchmark and study execution
 - deterministic persistent-hint state for parallel-policy tuning
-- self-bootstrapping process-backend outer parallelism for `run_monte_carlo`
-  and `run_constellation_ensemble` campaigns (`SpaceAGORA.ParallelProcess`)
+- self-bootstrapping process-backend outer parallelism
+  (`SpaceAGORA.ParallelProcess`) for `run_constellation_ensemble` campaigns, and
+  for `run_monte_carlo` campaigns given `route_features` and prepared workers
 
 The following are not yet treated as a full cluster product surface:
 

@@ -81,9 +81,10 @@ version = "0.6.0"          # optional: the core's version at rev
 companions = ["mujoco"]    # optional: hypr, mujoco or edg, at that commit's own pins
 ```
 
-The pin lives in its own file, not in `[sources]` of `Project.toml`. The kit
-uses a local clone so tests use the checked-out core and its prepared submodules.
-Its setup script rejects a `SpaceAGORA` entry in `[sources]`, which would take
+The pin lives in its own file, not in `[sources]` of `Project.toml`. Pkg cannot
+install SpaceAGORA from a URL and revision, because the core has submodules, so
+the kit tests against a local clone of the core at the pinned commit. Its setup
+script rejects a `SpaceAGORA` entry in `[sources]`, which would take
 precedence over the tested environment during `Pkg.test`. To move to a newer
 core, check that
 core out beside your repository and run its `repin`, which changes `rev`, the
@@ -100,6 +101,13 @@ commit the new Manifest.
 Record the commit with every result you keep.
 
 ## Set up and test locally
+
+Use one of two routes, not both. Each builds the environment in a directory that
+must be new, so a second build into the same directory is refused:
+
+- The generated README's commands are self-contained: they clone a new
+  `../MyPlanner-core` at the pinned commit and build `../MyPlanner-env` from it.
+- The commands below reuse a sibling `../SpaceAGORA.jl` checkout instead.
 
 If you just generated `MyPlanner`, use the clean sibling SpaceAGORA checkout
 that generated it. It is already at the pinned commit. If you instead cloned
@@ -121,7 +129,9 @@ exit()
 ```
 
 With the sibling checkout at the recorded revision, build the separate
-environment from `MyPlanner`:
+environment from the contributor repository's root. For a repository other than
+this `MyPlanner` package, use its kind and name in place of `package` and
+`MyPlanner`:
 
 ```bash
 julia --startup-file=no ../SpaceAGORA.jl/scripts/contributor_environment.jl package . ../MyPlanner-env --manifest core

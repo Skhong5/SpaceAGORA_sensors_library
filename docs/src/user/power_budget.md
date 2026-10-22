@@ -64,7 +64,7 @@ add_actuator!(spacecraft, bus, LaserTerminal(boresight=SVector(1.0, 0.0, 0.0), m
 ```
 
 For a complete runnable scenario, use
-[`Earth_CubeSat_Power_Budget.jl`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/main/examples/Earth_CubeSat_Power_Budget.jl)
+[`Earth_CubeSat_Power_Budget.jl`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/0487e8226107592b19221618f0f21f500cf2aacf/examples/Earth_CubeSat_Power_Budget.jl)
 with the environment described in the [Examples Catalog](examples_catalog.md).
 It flies this vehicle for two orbits
 with its laser on: the battery fills in sunlight, empties in eclipse, the
