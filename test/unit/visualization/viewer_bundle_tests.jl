@@ -306,6 +306,11 @@ end
             SV.build_viewer_frames(df_large, scene_large; position_precision=:f32))
         @test SV.build_viewer_frames(df_large, scene_large; data_budget_mb=fits_all(S, 20, 24) - 1.0e-9)["pos_dtype"] == "f32"
         @test SV.build_viewer_frames(df_large, scene_large; data_budget_mb=fits_all(S, 20, 24))["pos_dtype"] == "f64"
+        # Below two frames, the floor keeps two at either precision, over the
+        # budget: Float32 above 64, Float64 at 64 or fewer.
+        @test SV.build_viewer_frames(df_large, scene_large; data_budget_mb=1.0e-4)["pos_dtype"] == "f32"
+        @test SV.build_viewer_frames(df65, scene65; data_budget_mb=1.0e-4)["pos_dtype"] == "f32"
+        @test SV.build_viewer_frames(df64, scene64; data_budget_mb=1.0e-4)["pos_dtype"] == "f64"
 
         # A budget at which Float32 also keeps every other row (99 frames by the
         # budget, so the same stride as Float64's 58): Float64, the same frames.
@@ -319,8 +324,30 @@ end
             "segments" => Any[Dict{String, Any}("name" => "coast", "start_s" => 0.0, "end_s" => 500.0)])
         @test SV.build_viewer_frames(df65, scene65; data_budget_mb=same_stride, mission=mission)["pos_dtype"] == "f32"
         @test SV.build_viewer_frames(df65, scene65; mission=mission)["pos_dtype"] == "f64"
+        # Twenty-four boundary rows at a budget that holds them as Float32 frames
+        # only: :auto completes, and :f64's refusal names the keyword.
+        bounds = df65.time[10:4:94]
+        m = length(bounds) - 1
+        boundaries = Dict{String, Any}("schema" => 1, "name" => "boundaries",
+            "segments" => Any[Dict{String, Any}("name" => "s$(j)", "start_s" => bounds[j], "end_s" => bounds[j + 1]) for j in 1:m],
+            "transitions" => Any[Dict{String, Any}("time_s" => bounds[j + 1], "from" => "s$(j)", "to" => "s$(j + 1)",
+                "reason" => "boundary") for j in 1:(m - 1)])
+        room = (length(bounds) + 2) * (65 * 16 + 8) / 1.0e6 + 1.0e-12
+        @test SV.build_viewer_frames(df65, scene65; data_budget_mb=room, mission=boundaries)["pos_dtype"] == "f32"
+        err = try SV.build_viewer_frames(df65, scene65; data_budget_mb=room, mission=boundaries, position_precision=:f64)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError && occursin("position_precision=:auto", err.msg)
 
-        @test_throws ArgumentError SV.build_viewer_frames(df65, scene65; position_precision=:f16)
+        # The keyword is checked before any results are read.
+        for bad in (:f16, "f64", nothing)
+            err = try SV.build_viewer_frames(df65, scene65; position_precision=bad); nothing catch e; e end
+            @test err isa ArgumentError && occursin(repr(bad), err.msg)
+        end
+        err = try export_viewer_payload(joinpath(mktempdir(), "missing"); position_precision=nothing); nothing catch e; e end
+        @test err isa ArgumentError && occursin("position_precision", err.msg)
     end
 
     @testset "heat rate reaches the viewer in W/m²" begin

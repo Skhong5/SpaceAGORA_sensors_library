@@ -163,8 +163,10 @@ they stay Float64 when that keeps the same frames as Float32 within
 `max_frames` and `data_budget_mb`, and are Float32 otherwise. Float32 resolves
 about half a metre at 7000 km, so close formations can jitter.
 `position_precision=:f64` keeps Float64 at the cost of frames;
-`position_precision=:f32` forces Float32. The ensemble export applies the same
-rule to its total number of sample spacecraft.
+`position_precision=:f32` forces Float32. With mission segments, `:f64` can
+refuse an export that `:auto` completes: the boundary rows must fit the budget
+as Float64 frames. The ensemble export applies the same rule to its total
+number of sample spacecraft.
 
 Smaller textures or `textures=false` reduce
 the page size; no texture changes the recorded trajectory. Export defaults to

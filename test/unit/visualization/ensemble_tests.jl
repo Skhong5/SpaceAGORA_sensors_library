@@ -98,42 +98,84 @@ end
     end
 
     @testset "ensemble positions follow the viewer's precision rule" begin
-        scene = build_visualization_scene(_sample_args(1); rotation_max_samples=4)
-        per_sample = length(scene.spacecraft)
-        n = cld(SV.FLOAT64_POSITION_MAX_SPACECRAFT + 1, per_sample)          # more than 64 in all
-        S = n * per_sample
-        function table(i)
-            df = DataFrame(time=collect(0.0:10.0:90.0))
+        one = build_visualization_scene(_sample_args(1); rotation_max_samples=4)
+        # The same scene with three spacecraft per sample.
+        sc1 = only(one.spacecraft)
+        rest = [getfield(sc1, f) for f in fieldnames(SV.SpacecraftGeometry)[3:end]]
+        three = SV.VisualizationScene((f === :spacecraft ?
+            [SV.SpacecraftGeometry(k, "$(sc1.name) $(k)", rest...) for k in 1:3] : getfield(one, f)
+            for f in fieldnames(SV.VisualizationScene))...)
+        function table(per_sample, i, time)
+            df = DataFrame(time=time)
             for k in 1:per_sample, c in 1:3
-                df[!, "sc$(k)_pos_$(c)"] = [7.0e6 + 1.0e3 * (i + c) + r for r in 1:10]
+                df[!, "sc$(k)_pos_$(c)"] = [7.0e6 + 1.0e3 * (i + k + c) + r for r in eachindex(time)]
             end
             return df
         end
-        samples = [EnsembleSample(i, string(i), true, Float64(i), "sample $(i)", mktempdir()) for i in 1:n]
-        scenes, tables = fill(scene, n), [table(i) for i in 1:n]
-        frames(; kw...) = first(SV.build_ensemble_frames(samples, scenes, tables; kw...))
+        dir = mktempdir()
+        # `n` samples of `scene`, sample `i` saved at `times(i)`.
+        function frames(scene, n; times=i -> collect(0.0:10.0:90.0), kw...)
+            samples = [EnsembleSample(i, string(i), true, Float64(i), "sample $(i)", dir) for i in 1:n]
+            tables = [table(length(scene.spacecraft), i, times(i)) for i in 1:n]
+            return first(SV.build_ensemble_frames(samples, fill(scene, n), tables; kw...))
+        end
         decode(b64, T) = collect(reinterpret(T, base64decode(b64)))
         function only_positions_differ(f64, f32)
             @test f64["pos_dtype"] == "f64" && f32["pos_dtype"] == "f32"
             @test all(k -> k in ("pos_dtype", "pos_km") || isequal(f64[k], f32[k]), union(keys(f64), keys(f32)))
             @test isequal(Float32.(decode(f64["pos_km"], Float64)), decode(f32["pos_km"], Float32))
         end
-        @test S > SV.FLOAT64_POSITION_MAX_SPACECRAFT
-        # The default budget holds the ten rows either way: Float64.
-        only_positions_differ(frames(), frames(position_precision=:f32))
-        # The budget (MB) for ten frames of positions only, at 24 bytes each:
-        # Float64 there, and Float32 just below, where Float64 would thin the axis.
-        ten = 10 * (S * 24 + 8) / 1.0e6 + 1.0e-12
-        @test frames(data_budget_mb=ten)["count"] == 10
-        only_positions_differ(frames(data_budget_mb=ten), frames(data_budget_mb=ten, position_precision=:f32))
-        below = frames(data_budget_mb=ten - 1.0e-9)
-        @test below["pos_dtype"] == "f32" && below["count"] == 10
-        forced = frames(data_budget_mb=ten - 1.0e-9, position_precision=:f64)
+        # The budget (MB) for `k` frames of `S` spacecraft's positions only, at
+        # 24 bytes each, and just below it.
+        holds(k, S) = k * (S * 24 + 8) / 1.0e6 + 1.0e-12
+        below(k, S) = holds(k, S) - 1.0e-9
+
+        # 22 samples of three, 66 spacecraft in all. The default budget holds the
+        # ten rows either way: Float64.
+        only_positions_differ(frames(three, 22), frames(three, 22; position_precision=:f32))
+        # Float64 within the budget for ten Float64 frames, and Float32 just
+        # below it, where Float64 would thin the axis.
+        @test frames(three, 22; data_budget_mb=holds(10, 66))["count"] == 10
+        only_positions_differ(frames(three, 22; data_budget_mb=holds(10, 66)),
+            frames(three, 22; data_budget_mb=holds(10, 66), position_precision=:f32))
+        thin = frames(three, 22; data_budget_mb=below(10, 66))
+        @test thin["sats"] == 66 && thin["pos_dtype"] == "f32" && thin["count"] == 10
+        forced = frames(three, 22; data_budget_mb=below(10, 66), position_precision=:f64)
         @test forced["pos_dtype"] == "f64" && forced["count"] < 10
-        # At 64 or fewer, Float64 as before.
-        few = fld(SV.FLOAT64_POSITION_MAX_SPACECRAFT, per_sample)
-        @test first(SV.build_ensemble_frames(samples[1:few], scenes[1:few], tables[1:few];
-            data_budget_mb=1.0e-4))["pos_dtype"] == "f64"
+        # The rule counts every sample's spacecraft: 21 samples of three are 63,
+        # Float64 even where it costs frames.
+        kept = frames(three, 21; data_budget_mb=below(10, 63))
+        @test kept["sats"] == 63 && kept["pos_dtype"] == "f64" && kept["count"] < 10
+        # The boundary, at a budget where Float64 costs frames: 64 keep Float64,
+        # 65 get Float32.
+        @test frames(one, 64; data_budget_mb=below(10, 64))["pos_dtype"] == "f64"
+        @test frames(one, 65; data_budget_mb=below(10, 65))["pos_dtype"] == "f32"
+        # Below two frames, both precisions keep the floor's two, over the budget:
+        # Float32 above 64, Float64 at 64 or fewer.
+        tiny = frames(three, 22; data_budget_mb=1.0e-4)
+        @test tiny["pos_dtype"] == "f32" && tiny["count"] == 2
+        @test frames(three, 21; data_budget_mb=1.0e-4)["pos_dtype"] == "f64"
+
+        # Rounding can end the thinner Float64 axis with an extra point, so that
+        # it has the full axis's length at a wider spacing: Float32 there.
+        T = 786.2641453844527
+        c = T / 22.5
+        times(i) = i == 1 ? [0.0, T] : collect(c .* (0:5))
+        ends = [T, 5c]
+        cadences = [SV._table_cadence([0.0, T]), SV._table_cadence(times(2))]
+        f64_axis = SV.ensemble_time_axis(ends, cadences; max_frames=23)
+        f32_axis = SV.ensemble_time_axis(ends, cadences; max_frames=45)
+        @test length(f64_axis) == length(f32_axis) == 24 && f64_axis != f32_axis
+        spaced = frames(three, 22; times=times, data_budget_mb=holds(23, 66))
+        @test spaced["pos_dtype"] == "f32" && spaced["count"] == 24
+
+        # The keyword is checked before any results are read.
+        for bad in (:f16, "f64", nothing)
+            err = try frames(one, 1; position_precision=bad); nothing catch e; e end
+            @test err isa ArgumentError && occursin(repr(bad), err.msg)
+        end
+        err = try export_ensemble_visualization(mktempdir(); position_precision="auto"); nothing catch e; e end
+        @test err isa ArgumentError && occursin("position_precision", err.msg)
     end
 
     @testset "Monte Carlo campaign writes samples, manifest and page" begin

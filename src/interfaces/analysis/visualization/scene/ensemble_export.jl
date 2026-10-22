@@ -227,8 +227,9 @@ function build_ensemble_frames(
     tables::AbstractVector{DataFrame};
     max_frames::Integer=DEFAULT_MAX_FRAMES,
     data_budget_mb::Real=DEFAULT_DATA_BUDGET_MB,
-    position_precision::Symbol=:auto
+    position_precision=:auto
 )
+    _checked_position_precision(position_precision)
     n = length(samples)
     n >= 1 || throw(ArgumentError("An ensemble needs at least one sample."))
     length(scenes) == n && length(tables) == n || throw(ArgumentError("samples, scenes and tables must have the same length."))
@@ -261,12 +262,13 @@ function build_ensemble_frames(
     other_frame_bytes = 4 * lp_total + 8
     ends = [Float64(df.time[end]) for df in tables]
     cadences = [_table_cadence(df.time) for df in tables]
-    function time_axis(position_bytes)
-        frames_budget = max(2, min(Int(max_frames),
-            floor(Int, Float64(data_budget_mb) * 1.0e6 / (S * (position_bytes + other_sat_bytes) + other_frame_bytes))))
-        return ensemble_time_axis(ends, cadences; max_frames=frames_budget)
-    end
-    pos_f64 = _float64_positions(position_precision, S, () -> time_axis(24) == time_axis(12))
+    budget_frames(position_bytes) =
+        floor(Int, Float64(data_budget_mb) * 1.0e6 / (S * (position_bytes + other_sat_bytes) + other_frame_bytes))
+    time_axis(position_bytes) =
+        ensemble_time_axis(ends, cadences; max_frames=max(2, min(Int(max_frames), budget_frames(position_bytes))))
+    # Below two frames the floor keeps two at either precision, over the budget:
+    # that costs, so Float32.
+    pos_f64 = _float64_positions(position_precision, S, () -> budget_frames(24) >= 2 && time_axis(24) == time_axis(12))
     times = time_axis(pos_f64 ? 24 : 12)
     N = length(times)
 
@@ -397,7 +399,7 @@ function export_ensemble_visualization(
     out::Union{Nothing, AbstractString}=nothing,
     max_frames::Integer=DEFAULT_MAX_FRAMES,
     data_budget_mb::Real=DEFAULT_DATA_BUDGET_MB,
-    position_precision::Symbol=:auto,
+    position_precision=:auto,
     scalar_name::Union{Nothing, AbstractString}=nothing,
     trail_s::Union{Nothing, Real}=nothing,
     trail_orbits::Union{Nothing, Real}=nothing,
@@ -409,6 +411,7 @@ function export_ensemble_visualization(
     viewer_dir::Union{Nothing, AbstractString}=nothing,
     textures_dir::AbstractString=TEXTURES_DIR
 )::String
+    _checked_position_precision(position_precision)
     VisualizerServices.require_available()
     campaign_dir = String(campaign_dir)
     samples, manifest_scalar = discover_ensemble_samples(campaign_dir)
