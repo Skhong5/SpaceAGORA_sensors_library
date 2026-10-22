@@ -299,8 +299,10 @@ They preserve the current implementation; none is a new performance claim.
 | `SPACEAGORA_CAMPAIGN_CORRECTION_STALE_CAMPAIGNS` | `20` | Expiry interval without an observation. |
 | `SPACEAGORA_CAMPAIGN_CORRECTIONS` | `on` | Persist bounded shared-parameter corrections. |
 
-The USL `alpha` and `beta` come from `MachineConstants`; they are fitted
-allocation-kernel parameters, not proven whole-sample slowdown coefficients.
+The USL `alpha` and `beta` come from `MachineConstants`: `alpha` is fitted to the
+arithmetic calibration ladder and `beta` to the allocation ladder's excess over
+it. They are calibration-kernel parameters, not proven whole-sample slowdown
+coefficients.
 The optional `[campaign]` parameters are measured inputs, absent by default as
 described above. A single scale cannot correct a wrong contention-curve shape.
 
