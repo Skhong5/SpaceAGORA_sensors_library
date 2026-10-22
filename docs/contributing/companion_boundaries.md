@@ -82,13 +82,16 @@ HYPR's tests use `SpaceAGORA.HYPRServices` and SpaceAGORA's public names, except
 
 | HYPR file | Private SpaceAGORA access | Before you replace it |
 |---|---|---|
-| `test/integration.jl`, `test/sampling_compatibility.jl`, `test/rrt_callback_contract.jl` and `test/custom_objective.jl` | `SimulationModel.RPOStationGeometry` and `SimulationModel.RPOCubeSatGeometry`, to build the station and chaser of an `RPOReferenceGeometry`. No public or service name builds them. | Move them when a supported name builds this geometry. |
 | `test/extension_coverage.jl` | Runs SpaceAGORA's own HYPR probes and unit tests from the paired checkout; those SpaceAGORA files use its internal modules | Keep the coverage it measures. The files are SpaceAGORA's tests, not copies. |
 | `test/precompiled_conflicts.jl` | `SimulationModel.HYPRSupport`: the activation protocol of the old companion, which the test calls on purpose | Keep a test, in a fresh Julia process, that a conflicting HYPR is refused. |
-| `test/jakob_comparison.jl` | The pinned historical comparison fixture, and `GuidanceHooks.RPOLQMPCTrackingSettings` | Check any replacement against the pinned fixture before you remove the access. |
+| `test/jakob_comparison.jl` | `GuidanceHooks.RPOLQMPCTrackingSettings`, next to the pinned historical comparison fixture | Check any replacement against the pinned fixture before you remove the access. |
 
-`test/custom_objective.jl` also calls HYPR's own extension module; that is HYPR's
-code, not a SpaceAGORA path.
+The station and chaser geometry come from the public `RPOStationGeometry` and
+`RPOCubeSatGeometry` (SpaceAGORA 0.6.0). `test/extension_helpers.jl`,
+`test/custom_objective.jl`, `test/rrt_callback_contract.jl` and
+`test/final_isparo_swarm.jl` also call HYPR's own extension modules, where the
+helpers HYPR owns since contract 3.0.0 live; that is HYPR's code, not a
+SpaceAGORA path.
 
 ### Who uses the HYPR names
 
@@ -101,21 +104,26 @@ the contract or by another caller.
 
 ### Before you remove an import from HYPR
 
-HYPR's extension namespaces remain implementation details. Removing the old
-loader does not narrow the service contract or move shared bindings. When you
-clean up imports in HYPR:
+HYPR's own helpers live in its extension's `RPO` and `RobotArm` namespaces, reached
+as `Base.get_extension(HYPR, :HYPRSpaceAGORAExt).RPO` and `.RobotArm`. Code that
+reaches those namespaces can reach every name they import, even a name HYPR itself
+never uses. Removing the old loader does not narrow the service contract or move
+shared bindings. So when you clean up imports in HYPR:
 
-- check direct extension accesses and callers in each repository;
-- keep every name in SpaceAGORA's contract lists;
-- run the checks below, not only a search: a search finds imports, not every
-  method or alias that reaches those bindings.
+- check the names reachable through those two namespaces, as well as the callers in
+  each repository;
+- change SpaceAGORA's contract lists in the same reviewed contract version. HYPR's
+  `test/service_boundary.jl` requires the names HYPR imports or reaches to equal
+  those lists, and each of them to be used in code outside its import;
+- run the checks below, not only a search: a search finds imports, not the code
+  that reaches names through the namespaces.
 
 ### Checks for a HYPR boundary change
 
 Run SpaceAGORA's `test/unit/gnc/hypr_services_tests.jl`, HYPR's
-`test/source_boundaries.jl`, `test/integration.jl`, `test/service_boundary.jl`,
-`test/incompatible_contract.jl` and `test/precompiled_loading.jl`, and the tests of
-the domain you changed.
+`test/source_boundaries.jl`, `test/integration.jl`, `test/extension_helpers.jl`,
+`test/service_boundary.jl`, `test/incompatible_contract.jl` and
+`test/precompiled_loading.jl`, and the tests of the domain you changed.
 SpaceAGORA's `optional-hypr-installation` job runs HYPR's integration tests at the
 pinned HYPR revision, as the EDG and MuJoCo jobs run their companions' tests, so a
 SpaceAGORA change that breaks one of them fails before it merges. Keep these covered:
@@ -130,15 +138,16 @@ SpaceAGORA change that breaks one of them fails before it merges. Keep these cov
 
 | Caller | Private access | Before you replace it |
 |---|---|---|
-| SpaceAGORA's EDG regression tests | The bridge helpers, called directly or through model-typed wrappers in `targeting_control.jl` (`_edg_recompute_switches!`, `_edg_base_alpha`, `_edg_command_alpha!`), `heat_load_control.jl` and `guidance_models.jl` | SpaceAGORA's runtime calls only the two decisions; these wrappers and helpers serve the regression tests. Keep them until those tests move to the companion, which owns the kernels. |
+| SpaceAGORA's EDG regression tests | The bridge helpers, called directly or through model-typed wrappers in `targeting_control.jl` (`_edg_recompute_switches!`, `_edg_base_alpha`, `_edg_command_alpha!`), `edg_compatibility.jl` and `guidance_models.jl` | SpaceAGORA's runtime reaches only the two decisions; the other entries support compatibility and tests, SpaceAGORA's regression tests and the companion's lease tests. Keep them until those tests move to the companion, which owns the kernels. |
 | The companion's `test/runtests.jl` | Private fixtures for the prediction context and kernels, and checks of the compatibility bindings, next to the public analytic-run tests | Keep the assertions on lease expiry, on observation copies and on the real dispatch path. |
 | The companion's `benchmarks/native_reference/refresh_comparison.jl` and `observer_comparison_cases.jl` | Private model, engine and control aliases, `ODEParams` construction and integrator access | These research scripts belong to the companion's v0.1.0 source pair (core `05de98e`) and do not run on a newer core. A refresh needs a new comparison, with an explicit replacement for these paths and a check that the results are unchanged. |
 
 ### The compatibility bridge
 
 The bridge, `COMPATIBILITY_FUNCTIONS` in `typed_edg/algorithms.jl`, lists the two
-decisions and the helpers that SpaceAGORA's EDG regression tests still call.
-SpaceAGORA's runtime calls only the two decisions through it. Its helpers are not
+decisions and the helpers kept for compatibility and tests: SpaceAGORA's EDG
+regression tests and the companion's lease tests. SpaceAGORA's runtime reaches
+only the two decisions through it. Its helpers are not
 extra public hooks. The bridge is separate from `EDGServices`, so shrinking
 `EDGServices` leaves it in place. Keep the bridge until each maintained caller has
 moved to a supported call or has been retired on purpose. [Adapter maintenance](adapter_maintenance.md#edg-extraction-and-source-ownership)

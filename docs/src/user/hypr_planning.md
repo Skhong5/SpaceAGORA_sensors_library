@@ -168,7 +168,7 @@ cloud-synced vault, for example:
 
 ```sh
 cd /path/to/SpaceAGORARPOStudies
-HYPR_CASES=1 HYPR_OUTPUT_ROOT="$HOME/AgentScratch/hypr_final_isparo" \
+HYPR_CASES=1 HYPR_OUTPUT_ROOT="$HOME/spaceagora-hypr-final-isparo" \
   JULIA_NUM_THREADS=2 julia --startup-file=no --compiled-modules=existing \
   --project=/path/to/rpo-study-env \
   examples/Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl

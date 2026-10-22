@@ -5,7 +5,7 @@ const ES = SpaceAGORA.EDGServices
     @test Base.get_extension(SpaceAGORA, :SpaceAGORAEDGExt) === nothing
     @test_throws ES.EDGUnavailableError ES.require_provider()
     @test all(id.name != "SpaceAGORAEDG" for id in keys(Base.loaded_modules))
-    @test ES.CONTRACT_VERSION == v"2.0.0"
+    @test ES.CONTRACT_VERSION == v"3.0.0"
     @test isdefined(SpaceAGORA, :run_simulation)
 end
 

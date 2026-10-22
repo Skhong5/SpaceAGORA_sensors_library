@@ -32,11 +32,12 @@ function _preflight_warning(key::Tuple, msg::String; group::Symbol=:preflight)
     return nothing
 end
 
-# Old-style index names deprecated in 0.5.0 (`SchedulingPolicyModel.target_idx`
-# and `target_idxs`, `StateAnchor.sat_idx`, the `sat_idx` keyword of
-# `get_periapsis_pulse_callback`): an old keyword or property warns through
-# `_hook_deprecation`, keyed by `(owner, old name)`, so the warning shows once per
-# owner and name. The owner is the type or the function that had the name.
+# Old-style index names deprecated in 0.5.0 (`StateAnchor.sat_idx` and the
+# `sat_idx` keyword of `get_periapsis_pulse_callback`; `SchedulingPolicyModel`'s
+# `target_idx` and `target_idxs` were removed in 0.6.0): an old keyword or property
+# warns through `_hook_deprecation`, keyed by `(owner, old name)`, so the warning
+# shows once per owner and name. The owner is the type or the function that had
+# the name.
 _renamed_name(owner::Type, old::Symbol) = "$(nameof(owner)).$(old)"
 _renamed_name(owner::Function, old::Symbol) = "The $(old) keyword of $(nameof(owner))"
 @noinline function _renamed_field_warning(owner, old::Symbol, new::Symbol)

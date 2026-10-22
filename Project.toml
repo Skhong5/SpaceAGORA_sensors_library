@@ -1,6 +1,6 @@
 name = "SpaceAGORA"
 uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
-version = "0.5.1"
+version = "0.6.0"
 authors = ["SpaceAGORA Contributors"]
 
 [deps]
@@ -73,7 +73,7 @@ GRAMSuite = {path = "data/GRAMSuite.jl"}
 [compat]
 Printf = "1.11"
 PythonCall = "0.9.36"
-SpaceAGORAEDG = "0.4"
+SpaceAGORAEDG = "0.5"
 SpaceAGORAVisualizer = "0.1"
 ADTypes = "1"
 Arrow = "2"

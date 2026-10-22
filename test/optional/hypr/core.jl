@@ -55,9 +55,8 @@ end
     @test_throws HYPRUnavailableError G.rpo_run_planner_comparison_batch(
         (error("cases must not be consumed") for _ in 1:1),nothing,comparison)
     @test_throws HYPRUnavailableError G.rpo_track_retimed_path_lqmpc(path,b,nothing,cfg,G.RPOLQMPCTrackingSettings())
-    for f in (G.rpo_retime_path,G.rpo_retimed_reference,G.rpo_path_cost)
-        @test_throws HYPRUnavailableError f(path,nothing,cfg)
-    end
+    # HYPR owns these helpers since contract 3.0.0; core no longer declares them.
+    @test !any(name -> isdefined(G, name), (:rpo_retime_path, :rpo_retimed_reference, :rpo_path_cost))
     for f in (G.rpo_rrt_connect_plan_path,G.rpo_rrt_connect_bezier_plan_path,G.rpo_rrt_star_plan_path)
         @test_throws HYPRUnavailableError f(a,b,nothing,cfg)
     end

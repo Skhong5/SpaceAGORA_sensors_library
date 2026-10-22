@@ -248,7 +248,7 @@ julia --startup-file=no scripts/optional_packages.jl setup hypr /path/to/my-rpo-
 The helper checks out `packages/robotics/HYPR.jl` at the parent repository's
 recorded revision, verifies its identity and clean state, and delegates to the
 existing HYPR installer with that path. The pin agrees with
-`packages/HYPRSource.toml`. It selects HYPR 0.4.0 alongside
+`packages/HYPRSource.toml`. It selects HYPR 0.5.0 alongside
 the supported SpaceAGORA source. HYPR remains optional for the simulator core;
 there is no separate compatibility loader to install.
 

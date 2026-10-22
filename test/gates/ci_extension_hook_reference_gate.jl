@@ -33,9 +33,10 @@ const _HOOK_OLD_INDEX_WORDS = (:i, :sat_idx, :idx)
 # The argument a hook dispatches on is the first one with one of these names.
 # `link` is the shared object of a GNC link (`check_link`, `link_initialize!`);
 # `producer` the model that writes one (`before_reference_control!`); `budget` a
-# data link's link budget (`budget_rate_bps`).
+# data link's link budget (`budget_rate_bps`); `policy` an interlink scheduling
+# policy (`candidate_score`).
 const _HOOK_DISPATCH_NAMES = (:model, :effector, :controller, :actuator, :sensor,
-    :planner, :algorithm, :family, :binding, :result, :provider, :link, :producer, :budget)
+    :planner, :algorithm, :family, :binding, :result, :provider, :link, :producer, :budget, :policy)
 
 violations = String[]
 

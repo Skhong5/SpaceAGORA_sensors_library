@@ -13,15 +13,8 @@ using SpaceAGORA
 const SCamp = SpaceAGORA.SimulationCampaigns
 const PCost = SpaceAGORA.SimulationModel.ParallelCost
 
-_curve() = PCost.RateCurve([0.0, 10.0], [1.0, 1.0])
-
 function _constants(; alpha = 0.156, beta_alloc = 0.00605)
     return PCost.MachineConstants(
-        simd_lane = _curve(), coeff_touch = _curve(), parallel_speedup = _curve(),
-        ns_per_scalar_item = 1.0, ns_per_queue_node = 1.0,
-        dispatch_pool_ns_base = 1.0, dispatch_pool_ns_per_worker = 1.0,
-        dispatch_batch_ns_base = 1.0, dispatch_batch_ns_per_worker = 1.0,
-        ns_per_atomic = 1.0, reference_fma_ns = 1.0, reference_mem_ns = 1.0,
         usl_alpha_base = alpha, usl_beta_alloc = beta_alloc,
         schema_version = PCost.CALIBRATION_SCHEMA_VERSION,
     )

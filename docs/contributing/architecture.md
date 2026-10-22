@@ -597,7 +597,7 @@ own package, with its simulator-specific adapter kept distinct from standalone
 search. HYPR now follows that split: its `src/` owns standalone search and swarm
 policy, while its `ext/HYPRSpaceAGORAExt.jl`, `ext/rpo/` and `ext/robot/` provide
 configured SpaceAGORA execution. These paths are in
-[HYPR.jl at the pinned revision](https://github.com/Space-FALCON-Lab/HYPR.jl/tree/5372daccbe5448de3b6992c8673a9844becc1e4c),
+[HYPR.jl at the pinned revision](https://github.com/Space-FALCON-Lab/HYPR.jl/tree/4654e8b79fcc08209bf66adcd83d2d2053f4e1d8),
 which has its own tests, examples and documentation.
 
 SpaceAGORA retains shared planner interfaces, the direct baseline, configuration
@@ -605,8 +605,8 @@ and result types, geometry, metrics, RRT and retiming services, and compatibilit
 entry points. `SpaceAGORA.HYPRServices` exposes the adapter contract without
 changing the original owners of those bindings. Only the explicitly listed
 services and extension points are supported; arbitrary internal-module access is
-not the integration API. The current supported pair is SpaceAGORA 0.5.1 with
-HYPR 0.4.0 and service contract 2.0.0. Install the pinned pair and explicitly
+not the integration API. The current supported pair is SpaceAGORA 0.6.0 with
+HYPR 0.5.0 and service contract 3.0.0. Install the pinned pair and explicitly
 load `SpaceAGORA` and `HYPR` using the
 [RPO planner guide](../src/user/rpo_planner_pilot.md#installing-optional-hypr).
 The optimizer can run independently; configured RPO and robot-arm execution

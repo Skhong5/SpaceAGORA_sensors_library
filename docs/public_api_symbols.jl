@@ -46,6 +46,18 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :update_availability!, rendered = "SpaceAGORA.update_availability!"),
         (owner = :SpaceAGORA, symbol = :interlink_force_on_spacecraft, rendered = "SpaceAGORA.interlink_force_on_spacecraft"),
         (owner = :SpaceAGORA, symbol = :SchedulingPolicyModel, rendered = "SpaceAGORA.SchedulingPolicyModel"),
+        (owner = :SpaceAGORA, symbol = :AbstractSchedulingPolicy, rendered = "SpaceAGORA.AbstractSchedulingPolicy"),
+        (owner = :SpaceAGORA, symbol = :SemimajorAxisRatePolicy, rendered = "SpaceAGORA.SemimajorAxisRatePolicy"),
+        (owner = :SpaceAGORA, symbol = :EccentricityRatePolicy, rendered = "SpaceAGORA.EccentricityRatePolicy"),
+        (owner = :SpaceAGORA, symbol = :PowerDeliveryPolicy, rendered = "SpaceAGORA.PowerDeliveryPolicy"),
+        (owner = :SpaceAGORA, symbol = :DataThroughputPolicy, rendered = "SpaceAGORA.DataThroughputPolicy"),
+        (owner = :SpaceAGORA, symbol = :EnergyBalancingPolicy, rendered = "SpaceAGORA.EnergyBalancingPolicy"),
+        (owner = :SpaceAGORA, symbol = :WeightedPolicy, rendered = "SpaceAGORA.WeightedPolicy"),
+        (owner = :SpaceAGORA, symbol = :PolicyTerm, rendered = "SpaceAGORA.PolicyTerm"),
+        (owner = :SpaceAGORA, symbol = :state_of_charge, rendered = "SpaceAGORA.state_of_charge"),
+        (owner = :SpaceAGORA, symbol = :candidate_score, rendered = "SpaceAGORA.candidate_score"),
+        (owner = :SpaceAGORA, symbol = :LinkCandidate, rendered = "SpaceAGORA.LinkCandidate"),
+        (owner = :SpaceAGORA, symbol = :SchedulingContext, rendered = "SpaceAGORA.SchedulingContext"),
         (owner = :SpaceAGORA, symbol = :score_candidates!, rendered = "SpaceAGORA.score_candidates!"),
         (owner = :SpaceAGORA, symbol = :select_interlinks!, rendered = "SpaceAGORA.select_interlinks!"),
         (owner = :SpaceAGORA, symbol = :schedule_interlinks!, rendered = "SpaceAGORA.schedule_interlinks!"),
@@ -590,7 +602,9 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SpaceAGORA, symbol = :station_cad_path, rendered = "SpaceAGORA.station_cad_path"),
             (owner = :SpaceAGORA, symbol = :load_rpo_station_pointcloud, rendered = "SpaceAGORA.load_rpo_station_pointcloud"),
             (owner = :SpaceAGORA, symbol = :load_rpo_station_cad_triangles, rendered = "SpaceAGORA.load_rpo_station_cad_triangles"),
-            (owner = :SpaceAGORA, symbol = :load_rpo_station_cad_pointcloud, rendered = "SpaceAGORA.load_rpo_station_cad_pointcloud")
+            (owner = :SpaceAGORA, symbol = :load_rpo_station_cad_pointcloud, rendered = "SpaceAGORA.load_rpo_station_cad_pointcloud"),
+            (owner = :SpaceAGORA, symbol = :RPOStationGeometry, rendered = "SpaceAGORA.RPOStationGeometry"),
+            (owner = :SpaceAGORA, symbol = :RPOCubeSatGeometry, rendered = "SpaceAGORA.RPOCubeSatGeometry")
         ]
     ),
     (
