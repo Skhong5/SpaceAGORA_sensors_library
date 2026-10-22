@@ -309,13 +309,14 @@ runs with `make_rpo_configuration` and a planner. For HYPR planning, pass
 `planner=HYPRRPOPlanner(RPOPSOConfig(...))`; the configuration then uses a
 `PlannerGuidance`, which validates each reference before installing it.
 
-The RPO examples run on this path: the main example plans inside the run, and
-the reconstruction example flies each comparison planner's plan with
-`RetainedPathRPOPlanner`, which times a given path for the run's request so that
-the run can validate it. The replanning study of the reconstructed disturbance
-families, including a goal change and the model's brake-then-replan policy, ran on
-the model and was removed with it; [Run the HyPR paper algorithm](hypr_paper.md)
-says how to reproduce it with SpaceAGORA 0.4.0.
+The RPO examples run on this path: the main example plans inside the run. The
+reconstruction example, now in the [SpaceAGORARPOStudies](https://github.com/Space-FALCON-Lab/SpaceAGORARPOStudies/blob/7990013be23ed9171a6bae08b2f3ad9cbac5f4ac/README.md) project,
+flies each comparison planner's plan with `RetainedPathRPOPlanner`, which times a
+given path for the run's request so that the run can validate it. The replanning
+study of the reconstructed disturbance families, including a goal change and the
+model's brake-then-replan policy, ran on the model and was removed with it; that
+project's [reconstruction guide](https://github.com/Space-FALCON-Lab/SpaceAGORARPOStudies/blob/7990013be23ed9171a6bae08b2f3ad9cbac5f4ac/docs/hypr_paper.md) says how to reproduce it
+with SpaceAGORA 0.4.0.
 `examples/Earth_RPO_Planner_Disturbances.jl` shows disturbances on the planner
 path.
 

@@ -288,7 +288,7 @@ makedocs(
         ],
         "Tutorials" => Any[
             "Odyssey Guidance with a Frozen Atmosphere" => "tutorials/odyssey_surrogate.md",
-            "Run the HyPR Paper Algorithm" => "user/hypr_paper.md",
+            "HyPR Paper Reconstruction" => "user/hypr_paper.md",
             "Lunar Landing" => "user/lunar_landing.md",
         ],
         "Results" => Any[

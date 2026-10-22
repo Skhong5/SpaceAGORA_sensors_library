@@ -669,7 +669,7 @@ and proposals describe separate work; they do not reopen delivered repairs.
 - [#200](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/200) added a CI
   safeguard that keeps the retired test-migration script absent.
 - [#204](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/204) changed
-  the [CYGNSS constellation study](https://github.com/Space-FALCON-Lab/SpaceAGORAMissionReconstructions/blob/research-source-import/benchmarks/studies/cygnss_reconstruction/cygnss_constellation.jl) to use `_with_configuration`.
+  the [CYGNSS constellation study](https://github.com/Space-FALCON-Lab/SpaceAGORAMissionReconstructions/blob/ff67a512face495afa6dec10171806209a62033d/benchmarks/studies/cygnss_reconstruction/cygnss_constellation.jl) to use `_with_configuration`.
   It preserves the explicit DP8 solver, fresh tolerance settings, and mission
   and dynamics overrides.
 - [#272](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/pull/272) gave the

@@ -12,7 +12,7 @@ contains the Stage 1/2 frame conventions, numerical method, measured agreement,
 refusals and remaining limits. Extraction does not change those scientific
 claims or provide new benchmark results. The coupled comparison study from
 PR253 now belongs to
-[SpaceAGORAParallelizationStudies](https://github.com/Space-FALCON-Lab/SpaceAGORAParallelizationStudies/blob/research-source-import/benchmarks/studies/coupled_local_comparison/README.md),
+[SpaceAGORAParallelizationStudies](https://github.com/Space-FALCON-Lab/SpaceAGORAParallelizationStudies/blob/7821388870571474550533a15d0ecb2b60d01650/benchmarks/studies/coupled_local_comparison/README.md),
 which records its pinned core checkout and reproduction requirements.
 
 Core retains the generic external-propagation lifecycle and shared dynamics.
