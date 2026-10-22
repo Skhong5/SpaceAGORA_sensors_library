@@ -4,6 +4,7 @@ using Test
 using ComponentArrays
 using OrdinaryDiffEq
 using Random
+using Serialization
 using StaticArrays
 include(joinpath(@__DIR__, "..", "..", "..", "examples", "gve_sma_interlinks.jl"))
 using SpaceAGORA.SimulationModel.SchedulingPolicies: matching_workspace!
@@ -12,6 +13,7 @@ const SE = SpaceAGORA.SimulationEngine
 const EP = SM.ExternalPropagation
 
 edge_key(graph, edge) = map(v -> graph.vertices[v], graph.edges[edge])
+state_bits(u) = reinterpret(UInt64, collect(ComponentArrays.getdata(u)))
 semimajor_axis(state, mu) = inv(2 / norm(state.pos) - dot(state.vel, state.vel) / mu)
 eccentricity(state, mu) = norm(cross(state.vel, cross(state.pos, state.vel)) / mu - state.pos / norm(state.pos))
 
@@ -19,9 +21,9 @@ function endpoint_fixture(; range=200e3)
     spacecraft = [SpacecraftModel(id=100 + index) for index in 1:2]
     state = ComponentVector(sc=[
         (pos=[7e6, 1000.0, 0.0], vel=[0.0, 7500.0, 0.0], mass=100.0,
-            laser_dv=zeros(3), laser_delta_sma=0.0),
+            interlink_dv=zeros(3), interlink_delta_sma=0.0),
         (pos=[7e6, 0.0, 0.0], vel=[0.0, 7500.0, 0.0], mass=200.0,
-            laser_dv=zeros(3), laser_delta_sma=0.0)])
+            interlink_dv=zeros(3), interlink_delta_sma=0.0)])
     model = ConstellationInterLinkModel()
     key = register_allowed_link!(model, spacecraft, (1, 1), (2, 1);
         parameters=InterLinkParameters(; range))
@@ -100,7 +102,13 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
         @test cloned.scheduling_policy_model === args.scheduling_policy_model
         legacy = SimulationConfiguration((getfield(args, field) for field in fieldnames(typeof(args))[1:12])...)
         @test legacy.interlink_model === nothing
-        @test !hasproperty(SE.build_initial_conditions(legacy).sc[1], :laser_dv)
+        # A run with interlinks has the two interlink states under their 0.6.0 names,
+        # and only those; a run without has neither.
+        linked_names = propertynames(SE.build_initial_conditions(args).sc[1])
+        @test :interlink_dv in linked_names && :interlink_delta_sma in linked_names
+        @test !(:laser_dv in linked_names) && !(:laser_delta_sma in linked_names)
+        plain_names = propertynames(SE.build_initial_conditions(legacy).sc[1])
+        @test !any(name -> name in plain_names, (:interlink_dv, :interlink_delta_sma, :laser_dv, :laser_delta_sma))
         @test legacy.scheduling_policy_model !== SimulationConfiguration(
             environment_model=args.environment_model, dynamics_model=args.dynamics_model,
             initial_time=args.initial_time).scheduling_policy_model
@@ -270,9 +278,9 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
             candidate_force=force_on_endpoint) == [key]
         derivative = zero(state)
         SE._apply_interlink_rhs!(derivative, state, runtime)
-        @test derivative.sc[1].laser_dv ≈ first_force / state.sc[1].mass
-        @test derivative.sc[1].vel == derivative.sc[1].laser_dv
-        @test derivative.sc[1].laser_delta_sma ≈ rates[1]
+        @test derivative.sc[1].interlink_dv ≈ first_force / state.sc[1].mass
+        @test derivative.sc[1].vel == derivative.sc[1].interlink_dv
+        @test derivative.sc[1].interlink_delta_sma ≈ rates[1]
         @test state.sc[1].mass * derivative.sc[1].vel + state.sc[2].mass * derivative.sc[2].vel ≈ zeros(3)
         state.sc[2].pos[3] = 1000.0
         @test laser_force_on_spacecraft(model, state, 1) != first_force
@@ -290,8 +298,8 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
             derivative = zero(state)
             SE._apply_interlink_rhs!(derivative, state, runtime)
             @test all(iszero(sc.vel) for sc in derivative.sc)
-            @test all(iszero(sc.laser_dv) for sc in derivative.sc)
-            @test all(iszero(sc.laser_delta_sma) for sc in derivative.sc)
+            @test all(iszero(sc.interlink_dv) for sc in derivative.sc)
+            @test all(iszero(sc.interlink_delta_sma) for sc in derivative.sc)
             @test model.graph.active == [true] # RHS never reschedules a trial state.
         end
     end
@@ -311,7 +319,7 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
                 model.graph.edge_properties[1]) / state.sc[index].mass
             @test isapprox(solution.u[end].sc[index].vel, state.sc[index].vel + acceleration; atol=1e-10, rtol=0)
             @test isapprox(solution.u[end].sc[index].pos, state.sc[index].pos + 2 * state.sc[index].vel + 1.5 * acceleration; atol=1e-9, rtol=0)
-            @test isapprox(solution.u[end].sc[index].laser_dv, acceleration; atol=1e-12, rtol=0)
+            @test isapprox(solution.u[end].sc[index].interlink_dv, acceleration; atol=1e-12, rtol=0)
         end
     end
 
@@ -345,7 +353,7 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
             p = routed.prob.p
             @test SE._rhs_execution_plan(p.args, p, p.args.dynamics_model.dynamic_effectors, 3).mode == expected
             @test isapprox(routed.u[end], solution.u[end]; rtol=1e-12, atol=1e-8)
-            @test any(!iszero(sc.laser_delta_sma) for sc in routed.u[end].sc)
+            @test any(!iszero(sc.interlink_delta_sma) for sc in routed.u[end].sc)
         end
         stiff_args = SM.SimConfig._with_configuration(args; solver_config=SM.SolverConfig(solver_mode=:rodas5p))
         stiff = run_simulation(stiff_args; return_solution=true)
@@ -358,7 +366,7 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
         for i in 1:3
             @test norm(oriented.u[end].sc[i].q) ≈ 1.0
             @test isapprox(oriented.u[end].sc[i].pos, solution.u[end].sc[i].pos; atol=1e-6, rtol=1e-12)
-            @test isapprox(oriented.u[end].sc[i].laser_dv, solution.u[end].sc[i].laser_dv; atol=1e-10)
+            @test isapprox(oriented.u[end].sc[i].interlink_dv, solution.u[end].sc[i].interlink_dv; atol=1e-10)
         end
         problem = deepcopy(solution.prob)
         empty!(problem.p.args.interlink_model.history)
@@ -371,18 +379,22 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
         empty!(reference_problem.p.args.interlink_model.history)
         reference = solve(reference_problem, Tsit5(); dt=0.1, dtmax=0.25, reltol=1e-13, abstol=1e-13)
         for index in 1:3
-            @test isapprox(rejected.u[end].sc[index].laser_dv, reference.u[end].sc[index].laser_dv; atol=1e-9)
-            @test isapprox(rejected.u[end].sc[index].laser_delta_sma, reference.u[end].sc[index].laser_delta_sma; atol=1e-6)
+            @test isapprox(rejected.u[end].sc[index].interlink_dv, reference.u[end].sc[index].interlink_dv; atol=1e-9)
+            @test isapprox(rejected.u[end].sc[index].interlink_delta_sma, reference.u[end].sc[index].interlink_delta_sma; atol=1e-6)
         end
         baseline_args = gve_sma_configuration(duration=20.0, with_interlinks=false)
         baseline = run_simulation(baseline_args; return_solution=true)
         zero_power = run_simulation(gve_sma_configuration(duration=20.0, power=0.0); return_solution=true)
-        @test !hasproperty(baseline.u[end].sc[1], :laser_dv)
-        @test !any(field -> field.name in (:laser_dv, :laser_delta_sma), default_save_fields(baseline_args))
+        interlink_fields = (:interlink_dv, :interlink_delta_sma, :laser_dv, :laser_delta_sma)
+        @test hasproperty(zero_power.u[end].sc[1], :interlink_dv) && hasproperty(zero_power.u[end].sc[1], :interlink_delta_sma)
+        @test !any(name -> hasproperty(baseline.u[end].sc[1], name), interlink_fields)
+        # The new fields, then their aliases, in a run with interlinks; none without.
+        @test [field.name for field in default_save_fields(args) if field.name in interlink_fields] == collect(interlink_fields)
+        @test !any(field -> field.name in interlink_fields, default_save_fields(baseline_args))
         for i in 1:3
             @test isapprox(baseline.u[end].sc[i].pos, zero_power.u[end].sc[i].pos; atol=1e-6, rtol=1e-12)
-            @test iszero(zero_power.u[end].sc[i].laser_dv)
-            @test iszero(zero_power.u[end].sc[i].laser_delta_sma)
+            @test iszero(zero_power.u[end].sc[i].interlink_dv)
+            @test iszero(zero_power.u[end].sc[i].interlink_delta_sma)
         end
         run_simulation(args; isolate_state=false)
         first_history = [(sample.time, copy(sample.active)) for sample in args.interlink_model.history]
@@ -397,15 +409,45 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
             result = run_simulation(args; return_results=true, return_solution=true)
             csv = CSV.read(joinpath(directory, "simulation_results.csv"), DataFrame)
             @test names(result.table) == names(csv)
-            sma_columns = ["sc$(i)_laser_delta_sma" for i in 1:3]
-            dv_columns = ["sc$(i)_laser_dv_$(axis)" for i in 1:3 for axis in 1:3]
-            @test filter(name -> occursin("laser_delta_sma", name), names(csv)) == sma_columns
-            @test filter(name -> occursin("laser_dv", name), names(csv)) == dv_columns
-            @test [last(csv[!, name]) for name in sma_columns] ≈ [sc.laser_delta_sma for sc in result.solution.u[end].sc]
-            @test [last(csv[!, name]) for name in dv_columns] ≈ vcat([collect(sc.laser_dv) for sc in result.solution.u[end].sc]...)
+            sma_columns = ["sc$(i)_interlink_delta_sma" for i in 1:3]
+            dv_columns = ["sc$(i)_interlink_dv_$(axis)" for i in 1:3 for axis in 1:3]
+            @test filter(name -> occursin("interlink_delta_sma", name), names(csv)) == sma_columns
+            @test filter(name -> occursin("interlink_dv", name), names(csv)) == dv_columns
+            @test [last(csv[!, name]) for name in sma_columns] ≈ [sc.interlink_delta_sma for sc in result.solution.u[end].sc]
+            @test [last(csv[!, name]) for name in dv_columns] ≈ vcat([collect(sc.interlink_dv) for sc in result.solution.u[end].sc]...)
+            # The names before 0.6.0 stay as aliases with the same values.
+            @test filter(name -> occursin("laser_delta_sma", name), names(csv)) == replace.(sma_columns, "interlink" => "laser")
+            @test filter(name -> occursin("laser_dv", name), names(csv)) == replace.(dv_columns, "interlink" => "laser")
+            for name in vcat(sma_columns, dv_columns)
+                @test reinterpret(UInt64, result.table[!, name]) ==
+                    reinterpret(UInt64, result.table[!, replace(name, "interlink" => "laser")])
+            end
+            # An explicit list without the alias fields writes no laser columns, and
+            # only those.
+            plain_fields = filter(field -> !(field.name in (:laser_dv, :laser_delta_sma)), default_save_fields(args))
+            no_alias = run_simulation(with_settings(args; results=false); save_fields=plain_fields, return_results=true)
+            @test names(no_alias.table) == filter(name -> !occursin("laser", name), names(result.table))
+            @test !hasproperty(result.solution.u[end].sc[1], :laser_dv)
             @test !isempty(result.configuration.interlink_model.history)
+            # A checkpoint keeps the interlink states under their names before 0.6.0;
+            # the run's state round-trips through it with its type and bits.
+            initial = SE.build_initial_conditions(args)
+            stored = SE._checkpoint_state(args, initial)
+            @test collect(propertynames(stored.sc[1])) == replace(collect(propertynames(initial.sc[1])),
+                :interlink_dv => :laser_dv, :interlink_delta_sma => :laser_delta_sma)
+            @test state_bits(stored) == state_bits(initial)
+            back = SE._resumed_checkpoint_state(args, stored)
+            @test typeof(back) === typeof(initial) && state_bits(back) == state_bits(initial)
+            plain_args = gve_sma_configuration(duration=20.0, with_interlinks=false)
+            plain_initial = SE.build_initial_conditions(plain_args)
+            @test SE._checkpoint_state(plain_args, plain_initial) === plain_initial
             checkpointed = with_settings(args; results=false, checkpoint_enabled=true, checkpoint_interval_s=10.0)
             segments = run_simulation(checkpointed; return_results=true, return_solution=true)
+            checkpoint_path = SM.IOConfig._checkpoint_paths(checkpointed).data
+            payload = open(deserialize, checkpoint_path)
+            @test (:laser_dv, :laser_delta_sma) ⊆ propertynames(payload.u.sc[1])
+            @test !(:interlink_dv in propertynames(payload.u.sc[1]))
+            @test state_bits(payload.u) == state_bits(segments.solution.u[end])
             times = [sample.time for sample in segments.configuration.interlink_model.history]
             @test all(diff(times) .> 0)
             @test first(times) == 0.0 && last(times) == 20.0
@@ -415,10 +457,21 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
             resumed = run_simulation(resumed_args; return_results=true, return_solution=true)
             @test first(resumed.configuration.interlink_model.history).time == 20.0
             @test last(resumed.configuration.interlink_model.history).time == 30.0
-            @test resumed.solution.prob.u0.sc[1].laser_delta_sma ≈ segments.solution.u[end].sc[1].laser_delta_sma
+            @test resumed.solution.prob.u0.sc[1].interlink_delta_sma ≈ segments.solution.u[end].sc[1].interlink_delta_sma
             full = run_simulation(gve_sma_configuration(duration=30.0); return_solution=true)
             @test isapprox(resumed.solution.u[end], full.u[end]; atol=1e-5, rtol=1e-9)
             mismatch = SM.SimConfig._with_configuration(resumed_args; interlink_model=nothing)
+            @test_throws ArgumentError run_simulation(mismatch)
+            # A checkpoint whose states carry the 0.6.0 names resumes the same, bit for
+            # bit; one that mixes the two pairs is refused.
+            rewrite(u) = open(io -> serialize(io, merge(payload, (u=u,))), checkpoint_path, "w")
+            rewrite(SE._renamed_spacecraft_state(payload.u, map(reverse, SE._INTERLINK_STATE_NAMES)))
+            renamed = run_simulation(resumed_args; return_results=true, return_solution=true)
+            @test hasproperty(renamed.solution.prob.u0.sc[1], :interlink_dv)
+            @test state_bits(renamed.solution.u[end]) == state_bits(resumed.solution.u[end])
+            rewrite(SE._renamed_spacecraft_state(payload.u, (:laser_dv => :interlink_dv,)))
+            @test_throws ArgumentError run_simulation(resumed_args)
+            rewrite(payload.u)
             @test_throws ArgumentError run_simulation(mismatch)
         end
         args = gve_sma_configuration(duration=20.0)
@@ -456,15 +509,15 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
             @test all(intervals .> 0)
             @test 0.9 * step_cap < maximum(intervals) <= step_cap + 1e-9
             @test !isempty(interlink_switches(history))
-            @test sum(sc.laser_delta_sma for sc in solution.u[end].sc) > 0
+            @test sum(sc.interlink_delta_sma for sc in solution.u[end].sc) > 0
             for index in 1:3
                 mu = solution.prob.p.args.environment_model.planet.μ
                 measured = semimajor_axis(solution.u[end].sc[index], mu) - semimajor_axis(baseline.u[end].sc[index], mu)
-                @test isapprox(measured, solution.u[end].sc[index].laser_delta_sma; atol=0.01, rtol=0)
+                @test isapprox(measured, solution.u[end].sc[index].interlink_delta_sma; atol=0.01, rtol=0)
             end
         end
-        @test maximum(abs(coarse.u[end].sc[i].laser_delta_sma - fine.u[end].sc[i].laser_delta_sma) for i in 1:3) <= 1.0
-        @test maximum(norm(coarse.u[end].sc[i].laser_dv - fine.u[end].sc[i].laser_dv) for i in 1:3) <= 1e-3
+        @test maximum(abs(coarse.u[end].sc[i].interlink_delta_sma - fine.u[end].sc[i].interlink_delta_sma) for i in 1:3) <= 1.0
+        @test maximum(norm(coarse.u[end].sc[i].interlink_dv - fine.u[end].sc[i].interlink_dv) for i in 1:3) <= 1e-3
         @test maximum(norm(coarse.u[end].sc[i].pos - fine.u[end].sc[i].pos) for i in 1:3) <= 5.0
         coarse_switches = interlink_switches(coarse.prob.p.args.interlink_model.history)
         fine_switches = interlink_switches(fine.prob.p.args.interlink_model.history)

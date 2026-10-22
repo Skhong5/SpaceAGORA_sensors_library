@@ -63,7 +63,7 @@ function checkpoint_fixture(directory)
     args = (interlink_model=model, scheduling_policy_model=policy,
         dynamics_model=(spacecraft=spacecraft,),
         simulation_settings=(checkpoint_directory=directory, results_directory=directory))
-    state = (sc=[(pos=[Float64(i), 0.0, 0.0], laser_dv=zeros(3), laser_delta_sma=0.0) for i in 1:3],)
+    state = (sc=[(pos=[Float64(i), 0.0, 0.0], interlink_dv=zeros(3), interlink_delta_sma=0.0) for i in 1:3],)
     return args, state
 end
 
@@ -88,7 +88,17 @@ end
         SE._write_checkpoint!(args, 12.5, state, "tsit5"; is_active=snapshot.interlinks.is_active)
         checkpoint = SE._load_checkpoint(args)
         @test checkpoint.t == 12.5
-        @test checkpoint.u == state
+        # The state keeps the interlink states' names before 0.6.0, with its values.
+        @test propertynames(checkpoint.u.sc[1]) == (:pos, :laser_dv, :laser_delta_sma)
+        @test checkpoint.u == (sc=[(pos=sc.pos, laser_dv=sc.interlink_dv, laser_delta_sma=sc.interlink_delta_sma)
+            for sc in state.sc],)
+        @test SE._resumed_checkpoint_state(args, checkpoint.u) == state
+        # A state whose spacecraft name the interlink states differently is refused. A
+        # run's own state cannot be built that way; a state given as named tuples can.
+        uneven = (sc=[i == 1 ? sc : (pos=sc.pos, laser_dv=sc.interlink_dv, laser_delta_sma=sc.interlink_delta_sma)
+            for (i, sc) in enumerate(state.sc)],)
+        @test SE._interlink_state_naming(uneven) === :mixed
+        @test_throws ArgumentError SE._check_interlink_checkpoint_state(args, (u=uneven,))
         # Every checkpoint also records the flags in its activity entry.
         @test checkpoint.runtime_state == merge(snapshot, (activity=(version=1, is_active=[true, false, true]),))
         restored = trues(3)
