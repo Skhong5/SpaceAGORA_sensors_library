@@ -62,8 +62,9 @@ core checkout is named `SpaceAGORA.jl`; adjust that path if yours has another na
 
 The generator copies the starter from that commit, gives the repository a fresh
 UUID and a `[compat]` entry for the core's release series, and pins the commit
-(`HEAD`) in two places: the pin file `SpaceAGORASource.toml` and the workflow
-call in `.github/workflows/ci.yml`. A `project` also gets the commit's Manifest
+(`HEAD`) in three places: the pin file `SpaceAGORASource.toml`, the workflow
+call in `.github/workflows/ci.yml`, and the core checkout command in the
+generated `README.md`. A `project` also gets the commit's Manifest
 as its committed Manifest; a `companion` requires the facade's current contract
 version. It refuses a checkout with tracked changes, a non-empty directory, a
 directory inside the checkout and a name that is not a package name.
@@ -93,7 +94,9 @@ core out beside your repository and run its `repin`, which changes `rev`, the
 julia --startup-file=no --project=@stdlib ../SpaceAGORA.jl/scripts/contributor_environment.jl repin package .
 ```
 
-Then rebuild the environment, and for a project commit the new Manifest.
+`repin` does not change the README's checkout command: replace the commit there
+with the new `rev` by hand. Then rebuild the environment, and for a project
+commit the new Manifest.
 Record the commit with every result you keep.
 
 ## Set up and test locally

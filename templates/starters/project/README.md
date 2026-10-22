@@ -35,8 +35,9 @@ commands, and the test command below, run as written in bash or zsh, PowerShell
 and Command Prompt.
 
 The generated checkout command contains the same exact revision as
-`SpaceAGORASource.toml`. Setup writes the separate environment and can access
-package servers.
+`SpaceAGORASource.toml`. SpaceAGORA's `repin` does not rewrite this README:
+after a repin, use the new `rev` from `SpaceAGORASource.toml` in the checkout
+command. Setup writes the separate environment and can access package servers.
 
 Then, from `test/`:
 

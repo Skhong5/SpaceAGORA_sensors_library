@@ -19,9 +19,12 @@ The setup helper installs the immutable HYPR source revision recorded in
 `packages/SpaceAGORAHYPR/HYPRSource.toml`, SpaceAGORA and its companion package.
 Record the SpaceAGORA commit, the HYPR pin, Julia version, hardware and thread
 count with any results. An older HYPR release is not a substitute for this pin.
+The example loads HYPR from that environment and then continues in the
+checkout's examples environment, which the second command prepares.
 
 ```sh
 julia --startup-file=no scripts/setup_hypr.jl "$HOME/AgentScratch/hypr-paper-env"
+julia --startup-file=no examples/setup.jl
 JULIA_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 \
   HYPR_OUTPUT_ROOT="$HOME/AgentScratch/hypr-paper-static" \
   julia --startup-file=no --project="$HOME/AgentScratch/hypr-paper-env" \

@@ -35,8 +35,9 @@ files (Git LFS), which a contributor repository does not use. Without Git LFS
 installed the setting does nothing, and nothing is downloaded either.
 
 The generated checkout command contains the same exact revision as
-`SpaceAGORASource.toml`. Setup writes the separate environment and can access
-package servers.
+`SpaceAGORASource.toml`. SpaceAGORA's `repin` does not rewrite this README:
+after a repin, use the new `rev` from `SpaceAGORASource.toml` in the checkout
+command. Setup writes the separate environment and can access package servers.
 
 Then `julia --project=../StarterName-env -e 'using Pkg; Pkg.test("StarterName")'`.
 That line is quoted for bash or zsh (on Windows, Git Bash). In PowerShell or

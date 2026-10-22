@@ -12,9 +12,11 @@ the repository root:
 julia --project=. src/interfaces/cli/main.jl benchmark runtime-analysis smoke --output-dir=output/hpc_local_runtime_analysis --print-only
 ```
 
-The preview shows the launch command without running the study. Before executing
-it, prepare the selected study's assets and worker environment; remove
-`--print-only` when those prerequisites are ready. See the [CLI](cli.md) for
+The preview shows the launch command without running the study. The CLI starts
+the study in the examples environment, so before executing it, prepare that
+environment with `julia --startup-file=no examples/setup.jl`, and the selected
+study's assets and worker environment; remove `--print-only` when those
+prerequisites are ready. See the [CLI](cli.md) for
 command options and [Parallel Execution](user/parallel_execution.md) for campaign
 routing and worker preparation.
 

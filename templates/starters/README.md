@@ -14,7 +14,6 @@ Use Julia 1.12 and run the generator from the root of a clean SpaceAGORA
 checkout at the commit you want to build on. The output directory must not
 already contain files:
 
-
 ```bash
 julia --startup-file=no scripts/new_contributor_repository.jl package ../MyPlanner --name MyPlanner --holder "Your Lab"
 ```

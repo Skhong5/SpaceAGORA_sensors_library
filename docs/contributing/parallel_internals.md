@@ -136,7 +136,9 @@ scope; they do not establish a relative performance guarantee for this revision.
 
 ### Environment variables
 
-For CLI runs or scripted batch execution, set the controls before launching:
+For CLI runs or scripted batch execution, set the controls before launching.
+The examples run in the examples environment; prepare it once with
+`julia --startup-file=no examples/setup.jl`.
 
 ```powershell
 $env:SPACEAGORA_PERF_PARALLEL_BACKEND = "auto"
@@ -150,7 +152,7 @@ $env:SPACEAGORA_RHS_BATCH_PARALLEL = "auto"
 $env:SPACEAGORA_RHS_EXECUTION_MODE = "auto"
 $env:SPACEAGORA_RHS_CALIBRATE = "auto"
 $env:SPACEAGORA_PARALLEL_POLICY_ADAPTIVE = "1"
-julia --project=. examples/AGORA_Basic_Quickstart.jl
+julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
 `cmd.exe`:
@@ -167,7 +169,7 @@ set SPACEAGORA_RHS_BATCH_PARALLEL=auto
 set SPACEAGORA_RHS_EXECUTION_MODE=auto
 set SPACEAGORA_RHS_CALIBRATE=auto
 set SPACEAGORA_PARALLEL_POLICY_ADAPTIVE=1
-julia --project=. examples/AGORA_Basic_Quickstart.jl
+julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
 POSIX shells:
@@ -184,7 +186,7 @@ export SPACEAGORA_RHS_BATCH_PARALLEL=auto
 export SPACEAGORA_RHS_EXECUTION_MODE=auto
 export SPACEAGORA_RHS_CALIBRATE=auto
 export SPACEAGORA_PARALLEL_POLICY_ADAPTIVE=1
-julia --project=. examples/AGORA_Basic_Quickstart.jl
+julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
 To force a serial baseline for validation:
@@ -200,7 +202,7 @@ export SPACEAGORA_RHS_BATCH_PARALLEL=off
 export SPACEAGORA_RHS_EXECUTION_MODE=serial
 export SPACEAGORA_RHS_CALIBRATE=off
 export SPACEAGORA_PARALLEL_POLICY_ADAPTIVE=0
-julia --project=. examples/AGORA_Basic_Quickstart.jl
+julia --project=examples examples/AGORA_Basic_Quickstart.jl
 ```
 
 Automatic mode evaluates the effector loop serially when at most one satellite

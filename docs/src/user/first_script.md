@@ -14,8 +14,10 @@ What to read next:
 ## Your own script
 
 Save the following code as `first_orbit.jl` in your SpaceAGORA checkout.
-Use the Julia environment prepared in the [Quickstart](quickstart.md). This
-example needs no GRAM installation or SPICE kernels.
+It runs in the root environment that the [Quickstart](quickstart.md)'s
+`Pkg.instantiate` step prepared: the script loads only SpaceAGORA, so it does
+not need the examples environment. This example needs no GRAM installation or
+SPICE kernels.
 
 Every type needed for this example is exported from the root module, so
 `using SpaceAGORA` is the only import. `make_example_config` and
