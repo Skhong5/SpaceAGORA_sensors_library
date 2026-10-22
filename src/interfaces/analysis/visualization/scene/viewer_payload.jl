@@ -679,10 +679,19 @@ function viewer_payload(
     terrain=nothing,
     terrain_max_grid=512,
     mission=nothing,
-    position_precision=:auto
+    position_precision=:auto,
+    link_schedule=nothing
 )::Dict{String, Any}
     _checked_position_precision(position_precision)
     mission = _validated_mission_history(mission)
+    # The links' windows share the data budget with the frames.
+    interlinks = link_schedule === nothing ? nothing : interlink_payload(link_schedule, length(scene.spacecraft))
+    if interlinks !== nothing
+        link_mb = _interlink_payload_bytes(interlinks) / 1.0e6
+        link_mb < data_budget_mb || throw(ArgumentError("The interlink windows ($(round(link_mb; digits=3)) MB) " *
+            "exceed the viewer's data budget; increase data_budget_mb, or pass interlinks=false to leave the links out."))
+        data_budget_mb -= link_mb
+    end
     textures = Dict{String, Any}()
     if include_textures
         entry = texture_payload(scene.planet.texture; resolution=texture_resolution, dir=textures_dir)
@@ -701,8 +710,49 @@ function viewer_payload(
         "options" => Dict{String, Any}(options),
     )
     mission === nothing || (payload["mission"] = deepcopy(mission))
+    interlinks === nothing || (payload["interlinks"] = interlinks)
     return payload
 end
+
+"""
+    interlink_payload(schedule::DataFrame, spacecraft_count) -> Dict{String, Any}
+
+The `interlinks` block of the viewer payload, from a run's link schedule (see
+`link_schedule`): `schema` 1; `links`, one entry per link that appears in a
+window, in link order, with `link`, `kind`, `directed`, the spacecraft `a` and
+`b` (numbered from 1, as `paths[].target`) and their terminals; `active`, the
+spans over which each link was selected, as `count`, `index` (0-based positions
+in `links`) and Float64 `start_s` and `end_s` on the clock of `frames.t_s`; and
+`contact`, the same for the spans over which a link was available, or `nothing`
+when the run did not record them. A link is drawn at playback time `t` when
+`start_s <= t < end_s`, and at `t == end_s` when that is its schedule's last time.
+"""
+function interlink_payload(schedule::DataFrame, spacecraft_count::Integer)::Dict{String, Any}
+    for column in ("window", "link", "kind", "directed", "a_spacecraft", "a_terminal", "b_spacecraft", "b_terminal",
+                   "start_s", "end_s")
+        column in names(schedule) || throw(ArgumentError("The link schedule has no `$(column)` column."))
+    end
+    for spacecraft in Iterators.flatten((schedule.a_spacecraft, schedule.b_spacecraft))
+        1 <= spacecraft <= spacecraft_count || throw(ArgumentError(
+            "The link schedule names spacecraft $(spacecraft), but the scene has $(spacecraft_count)."))
+    end
+    numbers = sort!(unique(schedule.link))
+    position = Dict(number => k - 1 for (k, number) in enumerate(numbers))
+    first_row = Dict(number => findfirst(==(number), schedule.link) for number in numbers)
+    links = Any[Dict{String, Any}("link" => number, "kind" => String(schedule.kind[row]),
+        "directed" => Bool(schedule.directed[row]), "a" => Int(schedule.a_spacecraft[row]),
+        "a_terminal" => Int(schedule.a_terminal[row]), "b" => Int(schedule.b_spacecraft[row]),
+        "b_terminal" => Int(schedule.b_terminal[row])) for (number, row) in ((n, first_row[n]) for n in numbers)]
+    windows(kind) = (rows = findall(==(kind), schedule.window); Dict{String, Any}("count" => length(rows),
+        "index" => Int[position[schedule.link[row]] for row in rows],
+        "start_s" => _float64_base64(Float64[schedule.start_s[row] for row in rows]),
+        "end_s" => _float64_base64(Float64[schedule.end_s[row] for row in rows])))
+    return Dict{String, Any}("schema" => 1, "links" => links, "active" => windows("active"),
+        "contact" => any(==("contact"), schedule.window) ? windows("contact") : nothing)
+end
+
+# The bytes the block adds to the payload, as JSON text.
+_interlink_payload_bytes(block) = sizeof(JSON.json(block))
 
 """
     path_payloads(paths) -> Vector{Dict{String, Any}}
@@ -894,7 +944,8 @@ function _saved_viewer_payload(
     terrain_max_grid=512,
     textures_dir::AbstractString=TEXTURES_DIR,
     mission=nothing,
-    position_precision=:auto
+    position_precision=:auto,
+    interlinks::Bool=true
 )
     _checked_position_precision(position_precision)
     prefix = String(prefix)
@@ -905,8 +956,9 @@ function _saved_viewer_payload(
     isfile(feather_path) || throw(ArgumentError("Results file $(feather_path) referenced by the sidecar does not exist."))
     df = DataFrame(Arrow.Table(feather_path))
     mission === nothing && (mission = _saved_mission_history(prefix, scene_path, feather_path))
+    link_schedule = interlinks ? _saved_link_schedule(prefix, scene) : nothing
     payload = viewer_payload(
-        scene, df;
+        scene, df; link_schedule=link_schedule,
         textures_dir=textures_dir, include_textures=textures, texture_resolution=texture_resolution,
         options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title, ground_tracks=ground_tracks),
         max_frames=max_frames, data_budget_mb=data_budget_mb, position_precision=position_precision,
@@ -915,6 +967,22 @@ function _saved_viewer_payload(
     )
     page_title = title === nothing ? "SpaceAGORA · $(scene.planet.name) · $(basename(prefix))" : String(title)
     return payload, page_title
+end
+
+# The link schedule the scene names, checked against the hash the results manifest
+# recorded for it, so a schedule written by another run is never drawn; `nothing`
+# when the scene names none.
+function _saved_link_schedule(prefix::AbstractString, scene::VisualizationScene)
+    scene.link_schedule === nothing && return nothing
+    path = joinpath(dirname(String(prefix)), scene.link_schedule)
+    manifest_path = String(prefix) * ".manifest.toml"
+    recorded = isfile(manifest_path) ?
+        get(get(get(TOML.parsefile(manifest_path), "files", Dict()), "link_schedule_feather", Dict()), "sha256", nothing) :
+        nothing
+    isfile(path) && recorded !== nothing && recorded == IOSerialization._sha256_hex(path) ||
+        throw(ArgumentError("The link schedule $(path) is missing or no longer matches its results manifest; export the " *
+            "matching saved bundle, or pass interlinks=false to leave the links out."))
+    return DataFrame(Arrow.Table(path))
 end
 
 function _check_viewer_output(path::AbstractString, protected)
@@ -928,8 +996,10 @@ end
 
 function _viewer_output_path(prefix::AbstractString, payload::AbstractDict, out, suffix::String)
     path = out === nothing ? String(prefix) * suffix : String(out)
+    schedule = get(payload["scene"]["results"], "link_schedule", nothing)
     protected = (String(prefix) * "_scene.json", String(prefix) * "_mission.json", String(prefix) * ".manifest.toml",
-        joinpath(dirname(String(prefix)), String(payload["scene"]["results"]["feather"])))
+        joinpath(dirname(String(prefix)), String(payload["scene"]["results"]["feather"])),
+        (schedule === nothing ? () : (joinpath(dirname(String(prefix)), String(schedule["file"])),))...)
     return _check_viewer_output(path, protected)
 end
 
@@ -945,7 +1015,9 @@ verified association is carried into the optional `mission` block; an unbound
 sidecar is never attached automatically. Move the complete saved folder to
 preserve that association, or supply a deliberate `mission` keyword value.
 Exact saved boundary rows are retained within the frame budget; missing boundary
-states are never reconstructed. No renderer package, browser, download or simulation is needed. Load
+states are never reconstructed. A run with interlinks adds its link schedule's
+windows as the `interlinks` block (see `interlink_payload`), checked against the
+results manifest; `interlinks=false` leaves them out. No renderer package, browser, download or simulation is needed. Load
 SpaceAGORAVisualizer to turn this portable payload into an HTML page.
 """
 function export_viewer_payload(prefix::AbstractString; out::Union{Nothing, AbstractString}=nothing, kwargs...)::String
@@ -997,7 +1069,9 @@ A channel missing from any spacecraft is omitted. Samples are Float32;
 `missing`/NaN are gaps and infinities/overflow are rejected. Channels use the
 same decimated rows and budget as positions. `terrain` names a local site.json;
 `terrain_max_grid` (default 512) limits its exported DEM dimensions (see
-`terrain_payload`). `viewer_dir` overrides the optional visualizer package assets; `textures_dir`
+`terrain_payload`). A run with interlinks draws its active links from its link
+schedule, which shares `data_budget_mb` with the frames; `interlinks=false`
+leaves them out. `viewer_dir` overrides the optional visualizer package assets; `textures_dir`
 overrides the local texture directory. Load `SpaceAGORAVisualizer` before
 requesting an HTML page, or use `export_viewer_payload` to save portable JSON.
 """
@@ -1030,14 +1104,15 @@ Write `window.SPACEAGORA_VIEWER = {...};` for `viewer/dev.html` in the
 SpaceAGORAVisualizer.jl companion repository, so its viewer modules can be
 edited and reloaded without rebundling.
 """
-function write_viewer_dev_payload(prefix::AbstractString, out_js::AbstractString; textures::Bool=true, textures_dir::AbstractString=TEXTURES_DIR, mission=nothing, kwargs...)::String
+function write_viewer_dev_payload(prefix::AbstractString, out_js::AbstractString; textures::Bool=true, textures_dir::AbstractString=TEXTURES_DIR, mission=nothing, interlinks::Bool=true, kwargs...)::String
     _checked_position_precision(get(kwargs, :position_precision, :auto))
     scene_path = String(prefix) * "_scene.json"
     scene = read_visualization_scene(scene_path)
     feather_path = joinpath(dirname(scene_path), scene.results_feather)
     df = DataFrame(Arrow.Table(feather_path))
     mission === nothing && (mission = _saved_mission_history(prefix, scene_path, feather_path))
-    payload = viewer_payload(scene, df; textures_dir=textures_dir, include_textures=textures, mission=mission, kwargs...)
+    payload = viewer_payload(scene, df; textures_dir=textures_dir, include_textures=textures, mission=mission,
+        link_schedule=interlinks ? _saved_link_schedule(prefix, scene) : nothing, kwargs...)
     path = _viewer_output_path(prefix, payload, out_js, "_viewer.js")
     _check_viewer_output(path, (String(prefix) * "_viewer.json",))
     return IOSerialization._atomic_write_file(path, tmp -> write(tmp, "window.SPACEAGORA_VIEWER = " * _script_safe_json(payload) * ";\n"))
