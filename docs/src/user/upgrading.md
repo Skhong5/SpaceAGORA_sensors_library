@@ -80,3 +80,49 @@ script made one of these figures.
   `GuidanceHooks.RPOComparisonReports.PlotlyJS` are gone: use `PlotlyJS`
   itself.
 - The full sysimage (`build/build_sysimage.jl`) no longer includes PlotlyJS.
+
+### Runs with guidance, navigation or control models do not resume 0.5.1 checkpoints
+
+A checkpoint now records which spacecraft each guidance, navigation and control
+model acts on, and a resumed run refuses one whose models act on other
+spacecraft, or are another number in a group. A checkpoint written by
+SpaceAGORA 0.5.1 or earlier holds no such record, so a run with any guidance,
+navigation or control model refuses it with an `ArgumentError` before anything
+is restored.
+
+- Finish such a run with SpaceAGORA 0.5.1, or run it again from the start after
+  updating.
+- A run without those models resumes from a 0.5.1 checkpoint as before. Since
+  that checkpoint holds no results rows, the resume warns that the earlier rows
+  cannot be included, and writes its results to `resumed_at_<t>s` inside
+  `results_directory`, leaving the earlier files as they were.
+
+[Simulation Outputs](outputs.md#Checkpointing) lists what a checkpoint records
+and what a resumed run refuses.
+
+### Machine calibration constants are measured again
+
+The machine calibration no longer reads past its tables, and the cost constants
+it saves move to schema 5. Constants saved by SpaceAGORA 0.5.1 or earlier are no
+longer read:
+
+- A `SolverConfig(parallel=true)` run measures them again by itself, once in
+  each working directory, as on a machine without constants.
+- On a machine that uses the predictive campaign planner any other way (profile
+  R7, or `SPACEAGORA_CAMPAIGN_PLANNER=predictive` set by hand), rerun the
+  calibration after updating, with the thread count you run with. Until then
+  that planner runs without machine constants. Terminal, from the repository
+  root:
+
+  ```text
+  julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl
+  ```
+
+[Parallel Execution](parallel_execution.md#Turning-on-parallel-execution) says
+where the constants are kept.
+
+!!! note "TODO(0.6.0 release PR): sections still to add"
+    Added on the release branch as each pull request merges: the typed interlink
+    scheduling policies (#478, #480), the renamed interlink states (#486), and
+    the companion versions of contract 3.0.0 (HYPR, SpaceAGORAEDG and
+    SpaceAGORAMuJoCo 0.5.0).
