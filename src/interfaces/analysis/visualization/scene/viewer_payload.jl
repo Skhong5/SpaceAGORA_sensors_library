@@ -52,7 +52,8 @@ const TEXTURES_DIR = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "..", "
 const PLUME_FRAME_FIELDS = ("height_m", "shear_pa", "pressure_pa", "erosion_kg_s", "eroded_kg", "ejecta_mps", "ground_effect_n")
 
 # Runs up to this many spacecraft embed Float64 positions so a 3 m assembly
-# does not jitter at planetary distances; larger runs keep Float32.
+# does not jitter at planetary distances; larger runs do too when that costs
+# no frames (`_float64_positions`), and keep Float32 otherwise.
 const FLOAT64_POSITION_MAX_SPACECRAFT = 64
 const DEFAULT_MAX_FRAMES = 2000
 const DEFAULT_DATA_BUDGET_MB = 150.0
@@ -180,14 +181,15 @@ end
 
 # Keep exact saved boundaries while staying inside the requested frame budget.
 # A transition without a saved row remains metadata; no state is invented here.
-function _mission_kept_rows(df, mission, regular_rows, limit::Int)
+# `hint` ends the refusal's advice.
+function _mission_kept_rows(df, mission, regular_rows, limit::Int; hint::AbstractString="")
     mission === nothing && return regular_rows
     isempty(mission["segments"]) && return regular_rows
     nrow(df) == 0 && return Int[]
     boundaries = Set(v for segment in mission["segments"] for v in (segment["start_s"], segment["end_s"]))
     required = unique!([1; findall(t -> t in boundaries, df[!, "time"]); nrow(df)])
     length(required) <= limit || throw(ArgumentError(
-        "Mission boundary samples exceed the viewer frame budget; increase max_frames or data_budget_mb."))
+        "Mission boundary samples exceed the viewer frame budget; increase max_frames or data_budget_mb$(hint)."))
     available = setdiff(collect(1:nrow(df)), required)
     count = min(limit - length(required), length(available))
     extra = count == 0 ? Int[] : count == 1 ? [available[cld(length(available), 2)]] :
@@ -195,12 +197,41 @@ function _mission_kept_rows(df, mission, regular_rows, limit::Int)
     return sort!([required; extra])
 end
 
+# `position_precision` as given, refused unless it is one of the three values;
+# the export entry points check it before reading any results.
+function _checked_position_precision(position_precision)::Symbol
+    position_precision isa Symbol && position_precision in (:auto, :f64, :f32) && return position_precision
+    throw(ArgumentError("position_precision must be :auto, :f64 or :f32, got $(repr(position_precision))."))
+end
+
+# Whether `S` spacecraft get Float64 positions: always with `:f64`, never with
+# `:f32`. With `:auto`, at `FLOAT64_POSITION_MAX_SPACECRAFT` or fewer, and above
+# that when Float64 costs no frames: `same_frames()` says whether the frames kept
+# at 24 bytes per position are those kept at 12, within the budget.
+function _float64_positions(position_precision, S::Integer, same_frames)::Bool
+    precision = _checked_position_precision(position_precision)
+    precision === :f64 && return true
+    precision === :f32 && return false
+    return S <= FLOAT64_POSITION_MAX_SPACECRAFT || same_frames()
+end
+
+# What decides the frames kept at `bytes_per_frame`: the budget, whose regular
+# stride picks the rows, and the row limit that bounds a mission's rows.
+function _viewer_frame_plan(n_rows::Integer, S::Integer, bytes_per_frame::Integer, max_frames::Integer, data_budget_mb::Real)
+    budget = visualization_frame_budget(n_rows, S; max_frames=max_frames, data_budget_mb=data_budget_mb,
+                                        bytes_per_sat_frame=cld(bytes_per_frame, S))
+    limit = min(n_rows, Int(max_frames), max(min(n_rows, 2), floor(Int, Float64(data_budget_mb) * 1.0e6 / bytes_per_frame)))
+    return (budget=budget, limit=limit)
+end
+
 """
-    build_viewer_frames(df, scene; max_frames=2000, data_budget_mb=150.0) -> Dict{String, Any}
+    build_viewer_frames(df, scene; max_frames=2000, data_budget_mb=150.0, position_precision=:auto) -> Dict{String, Any}
 
 Decimate the results table to the playback budget and encode positions (km),
 velocities (km/s), attitude quaternions and link poses as base64 Float32
-blocks, row-major over (frame, spacecraft, component).
+blocks, row-major over (frame, spacecraft, component). Positions are Float64
+for 64 spacecraft or fewer, and above that when Float64 keeps the same frames
+as Float32 would; `position_precision=:f64` or `:f32` forces either.
 """
 function build_viewer_frames(
     df::DataFrame,
@@ -208,8 +239,10 @@ function build_viewer_frames(
     max_frames::Integer=DEFAULT_MAX_FRAMES,
     data_budget_mb::Real=DEFAULT_DATA_BUDGET_MB,
     channels=(),
-    mission=nothing
+    mission=nothing,
+    position_precision=:auto
 )::Dict{String, Any}
+    _checked_position_precision(position_precision)
     mission = _validated_mission_history(mission)
     S = length(scene.spacecraft)
     S >= 1 || throw(ArgumentError("The scene has no spacecraft."))
@@ -230,7 +263,6 @@ function build_viewer_frames(
     # Sun direction: one unit vector per row for the whole scene (the viewer's
     # sun lighting), absent when the run's ephemerides could not resolve the Sun.
     has_sun = _has_columns(df, ("sun_dir_1", "sun_dir_2", "sun_dir_3"))
-    pos_f64 = S <= FLOAT64_POSITION_MAX_SPACECRAFT
     stride_lp = scene.link_pose_stride
     counts = Int[max(0, length(sc.links) - 1) for sc in scene.spacecraft]
     has_lp = any(>(0), counts) && all(1:S) do i
@@ -291,14 +323,25 @@ function build_viewer_frames(
     end
 
     channel_specs = _resolved_channels(df, channels, S)
-    bytes_per_frame = S * ((pos_f64 ? 24 : 12) + (has_vel ? 12 : 0) + (has_q ? 16 : 0) + (has_mass ? 4 : 0) +
-                           (has_density ? 4 : 0) + (has_heat ? 4 : 0) + (has_drag ? 4 : 0) + (has_wind ? 12 : 0) +
-                           (has_plume ? 4 * length(PLUME_FRAME_FIELDS) : 0) + 4 * length(channel_specs)) + 4 * lp_total + 4 * arm_total + 4 * thr_total + 4 * dir_total + (has_sun ? 12 : 0) + 8
-    budget = visualization_frame_budget(n_rows, S; max_frames=max_frames, data_budget_mb=data_budget_mb,
-                                        bytes_per_sat_frame=cld(bytes_per_frame, S))
+    # Bytes per frame besides the positions: per spacecraft, and for the frame.
+    other_sat_bytes = (has_vel ? 12 : 0) + (has_q ? 16 : 0) + (has_mass ? 4 : 0) +
+                      (has_density ? 4 : 0) + (has_heat ? 4 : 0) + (has_drag ? 4 : 0) + (has_wind ? 12 : 0) +
+                      (has_plume ? 4 * length(PLUME_FRAME_FIELDS) : 0) + 4 * length(channel_specs)
+    other_frame_bytes = 4 * lp_total + 4 * arm_total + 4 * thr_total + 4 * dir_total + (has_sun ? 12 : 0) + 8
+    plan(position_bytes) = _viewer_frame_plan(n_rows, S, S * (position_bytes + other_sat_bytes) + other_frame_bytes,
+        max_frames, data_budget_mb)
+    # The kept rows follow the stride, and with mission segments the row limit.
+    # Below two frames the budget's floor keeps two at either precision, and the
+    # Float64 frames then exceed the budget: that costs, so Float32.
+    mission_rows = mission !== nothing && !isempty(mission["segments"])
+    same_frames(a, b) = a.budget.stride == b.budget.stride && (!mission_rows || a.limit == b.limit) &&
+        a.budget.bytes <= Float64(data_budget_mb) * 1.0e6
+    pos_f64 = _float64_positions(position_precision, S, () -> same_frames(plan(24), plan(12)))
+    (; budget, limit) = plan(pos_f64 ? 24 : 12)
     regular_rows = kept_row_indices(n_rows, budget.stride)
-    limit = min(n_rows, Int(max_frames), max(min(n_rows, 2), floor(Int, Float64(data_budget_mb) * 1.0e6 / bytes_per_frame)))
-    rows = _mission_kept_rows(df, mission, regular_rows, limit)
+    forced_f64 = position_precision === :f64 && S > FLOAT64_POSITION_MAX_SPACECRAFT
+    rows = _mission_kept_rows(df, mission, regular_rows, limit;
+        hint=forced_f64 ? ", or use position_precision=:auto, which can keep Float32 positions to leave room for more rows" : "")
     N = length(rows)
 
     times = Float64[Float64(df[r, "time"]) for r in rows]
@@ -609,7 +652,7 @@ function model_payloads(
 end
 
 """
-    viewer_payload(scene, df; textures_dir=TEXTURES_DIR, options=Dict(), max_frames=2000, data_budget_mb=150.0, stl=Dict(), stl_scale=1.0) -> Dict{String, Any}
+    viewer_payload(scene, df; textures_dir=TEXTURES_DIR, options=Dict(), max_frames=2000, data_budget_mb=150.0, position_precision=:auto, stl=Dict(), stl_scale=1.0) -> Dict{String, Any}
 
 The `window.SPACEAGORA_VIEWER` object: sidecar, encoded frames, the planet's
 texture (if registered), STL models (if any) and viewer options.
@@ -635,8 +678,10 @@ function viewer_payload(
     channels=(),
     terrain=nothing,
     terrain_max_grid=512,
-    mission=nothing
+    mission=nothing,
+    position_precision=:auto
 )::Dict{String, Any}
+    _checked_position_precision(position_precision)
     mission = _validated_mission_history(mission)
     textures = Dict{String, Any}()
     if include_textures
@@ -646,7 +691,8 @@ function viewer_payload(
     payload = Dict{String, Any}(
         "viewer_schema" => 1,
         "scene" => scene_dict(scene),
-        "frames" => build_viewer_frames(df, scene; max_frames=max_frames, data_budget_mb=data_budget_mb, channels=channels, mission=mission),
+        "frames" => build_viewer_frames(df, scene; max_frames=max_frames, data_budget_mb=data_budget_mb, channels=channels,
+            mission=mission, position_precision=position_precision),
         "textures" => textures,
         "models" => model_payloads(scene; models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, model_articulations=model_articulations, stl=stl, stl_scale=stl_scale),
         "paths" => path_payloads(paths),
@@ -847,8 +893,10 @@ function _saved_viewer_payload(
     terrain=nothing,
     terrain_max_grid=512,
     textures_dir::AbstractString=TEXTURES_DIR,
-    mission=nothing
+    mission=nothing,
+    position_precision=:auto
 )
+    _checked_position_precision(position_precision)
     prefix = String(prefix)
     scene_path = prefix * "_scene.json"
     isfile(scene_path) || throw(ArgumentError("No visualization sidecar at $(scene_path); run with simulation_settings.save_visualization_scene = true."))
@@ -861,7 +909,7 @@ function _saved_viewer_payload(
         scene, df;
         textures_dir=textures_dir, include_textures=textures, texture_resolution=texture_resolution,
         options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title, ground_tracks=ground_tracks),
-        max_frames=max_frames, data_budget_mb=data_budget_mb,
+        max_frames=max_frames, data_budget_mb=data_budget_mb, position_precision=position_precision,
         models=models, model_scale=model_scale, model_rotation_deg=model_rotation_deg, model_center=model_center, model_articulations=model_articulations, stl=stl, stl_scale=stl_scale,
         paths=paths, references=references, channels=channels, terrain=terrain, terrain_max_grid=terrain_max_grid, mission=mission
     )
@@ -921,7 +969,11 @@ Build the self-contained viewer page for a run written with
 and the Arrow file `<prefix>.feather` must exist.
 
 Keywords: `max_frames` (default 2000) and `data_budget_mb` (default 150)
-bound the embedded trajectory; `trail_orbits` (default 3, estimated from the
+bound the embedded trajectory. Positions are Float64 for 64 spacecraft or
+fewer, and above that when Float64 keeps the frames Float32 would; otherwise
+Float32. `position_precision=:f64` keeps Float64 at the cost of frames (with
+mission segments, it can need a larger budget for their boundary rows), and
+`:f32` forces Float32 (`:auto` by default). `trail_orbits` (default 3, estimated from the
 trajectory's periapsis passages) or `trail_s` set the trail window; `frame`
 is `:inertial` (default) or `:planet_fixed`; `speed` is the initial playback
 rate in simulated seconds per wall second; `title` names the page;
@@ -979,6 +1031,7 @@ SpaceAGORAVisualizer.jl companion repository, so its viewer modules can be
 edited and reloaded without rebundling.
 """
 function write_viewer_dev_payload(prefix::AbstractString, out_js::AbstractString; textures::Bool=true, textures_dir::AbstractString=TEXTURES_DIR, mission=nothing, kwargs...)::String
+    _checked_position_precision(get(kwargs, :position_precision, :auto))
     scene_path = String(prefix) * "_scene.json"
     scene = read_visualization_scene(scene_path)
     feather_path = joinpath(dirname(scene_path), scene.results_feather)
