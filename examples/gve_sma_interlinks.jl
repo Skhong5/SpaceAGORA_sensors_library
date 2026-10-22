@@ -64,6 +64,7 @@ function run_gve_sma_case(; dt_max_orbit::Float64=10.0, duration::Float64=3600.0
     @printf("dtmax=%.1f s: %d accepted steps, max/median dt=%.6f/%.6f s, %d switches\n",
         dt_max_orbit, length(intervals), maximum(intervals), median(intervals), length(interlink_switches(history)))
     println("  Integrated laser semimajor-axis changes [m]: ", delta_sma)
+    println("  Link schedule: ", nrow(link_schedule(model; policy=args.scheduling_policy_model)), " windows")
     if save_results
         # Step 3: Write the accepted-step link schedule alongside the simulation output.
         output = args.simulation_settings.results_directory
