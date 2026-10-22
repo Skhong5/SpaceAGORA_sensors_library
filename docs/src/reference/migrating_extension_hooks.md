@@ -112,6 +112,15 @@ A model without a `spacecraft_scope` method of its own has the default
 burn scheduler, the only built-in model with a method, is event-driven and
 registers its stops from its own callbacks.
 
+The scope itself is read once per periodic tick instead of once per spacecraft,
+and twice for a control model that consumes a link: once before its producers
+prepare it, and once after. So a model whose tick changes its own scope sees the
+change from its next tick. A model that, ticking for spacecraft 1, retargets
+itself to spacecraft 2 used to be ticked for spacecraft 2 in the same tick, and
+is now ticked for it from the next one. A model that sets its spacecraft before
+the run, in its constructor, in `bind_spacecraft` or in an initializer, is
+unaffected.
+
 ## Removed in 0.6.0
 
 The interlink scheduling policies chosen by a symbol were removed in 0.6.0,
