@@ -230,8 +230,12 @@ fixed-attitude runs, the force and thermal models must also respond to the
 changed panel geometry. The Odyssey example uses
 `AerodynamicCoefficientfM(fixed_attitude_incidence=:attitude)` for this
 purpose; see [panel angles and heating](simulation_configuration.md).
-The EDG effector directly updates panel geometry. It does not add actuator
-rate limits, hinge dynamics, or a spacecraft attitude controller.
+Without a mounted `PanelHinge`, the EDG effector turns a panel directly to the
+commanded angle. With a hinge, it moves the panel at control ticks within that
+hinge's configured angle and rate limits. It does not create a hinge or add
+joint dynamics or a spacecraft attitude controller for you. Keep the predictor
+limitation described above in mind: its commanded panel angle can differ from
+the angle a rate-limited hinge has reached.
 
 The principal settings are:
 
