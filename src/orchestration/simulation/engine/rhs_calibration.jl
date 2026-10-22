@@ -176,11 +176,11 @@ function _rhs_calib_effector_token(dynamic_effectors)::String
     return bytes2hex(SHA.sha256(codeunits(join(names, ",")))[1:4])
 end
 
-# The density model's identity, because it decides both the cost of a pass and
-# whether the cost model is willing to rank plans at all: model_in_cost_domain
-# rejects GRAMAtmosphereModel, whose process-wide lock has no representation as
-# a sum of per-unit rates. Plain type name rather than a hash -- there is only
-# ever one, and a readable cache file is worth more than four bytes.
+# The density model's identity, because it decides the cost of a pass: native
+# GRAM (GRAMAtmosphereModel) serialises behind a process-wide lock, so a plan
+# measured against a cheap analytic atmosphere does not carry over to it. Plain
+# type name rather than a hash -- there is only ever one, and a readable cache
+# file is worth more than four bytes.
 _rhs_calib_density_token(density_model)::String = string(nameof(typeof(density_model)))
 
 # The version of the RHS execution the store's verdicts and timings describe.
@@ -273,15 +273,14 @@ function _rhs_calib_signature(p, dynamic_effectors, density_model)::String
         # already has an answer, so invalidating them is the only way the fix
         # reaches an already-calibrated machine.
         # v5: v4 entries are blind to the DENSITY MODEL, and that is not a
-        # near-miss collision -- it silently defeats the cost model's own
+        # near-miss collision -- it silently defeated the cost model's own
         # abstention.
         #
-        # select_plan declines when counts.in_domain is false, and
-        # model_in_cost_domain clears it for GRAMAtmosphereModel precisely
+        # The analytic cost model (removed in 0.6.0) declined to rank live GRAM,
         # because the native lock's cost is superlinear in concurrency. But a
         # cached entry short-circuits calibration before any of that runs, so a
         # plan calibrated against a cheap analytic atmosphere is replayed
-        # verbatim against live GRAM -- the one workload the model refuses to
+        # verbatim against live GRAM -- the one workload the model refused to
         # rank. Measured on B10, where three cases share an effector set and
         # differ only in density model: atmo256_exponential_10min calibrates to
         # satellite_batch and caches it, then atmo256_gram_surrogate_10min
