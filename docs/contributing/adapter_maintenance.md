@@ -12,6 +12,21 @@ do not create a reverse runtime dependency. Advance pins deliberately after both
 repositories have qualified the pair; do not use a moving branch as release
 evidence.
 
+A companion that SpaceAGORA's CI qualifies keeps these checks in its own CI, and
+SpaceAGORA's CI runs them again at the companion's gitlink against the change under
+review ([companion boundaries](companion_boundaries.md#how-the-integration-checks-catch-a-boundary-change)
+lists the tests):
+
+- its integration job installs a released SpaceAGORA, and a `core-release-pin` job
+  checks that the pinned commit is the commit of a SpaceAGORA release tag inside the
+  companion's compatibility range (while a contract change pins an unreleased
+  candidate, that job fails until the release);
+- both package load orders, each in a fresh process;
+- the refusal when the provider is missing;
+- the refusal of another contract version before any method is defined;
+- `SpaceAGORA.Conformance.test_service_facade` on its service module, and a check that
+  its runtime source uses only names the service module lists.
+
 ## Conformance and release evidence
 
 `test/unit/adapter_contract_tests.jl` checks the common facade shape, inventory
