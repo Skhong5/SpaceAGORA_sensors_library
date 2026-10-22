@@ -529,10 +529,39 @@ register_link!(model, spacecraft, (1, 1), (2, 1), PullLink(3.0, 2_000.0))
 A run refuses at setup a link whose kind has no `link_range_m` method. Links of
 different kinds can be registered in one model.
 
+### Terminals and torques
+
+A kind that reads its terminal hardware, or that turns the spacecraft it
+links, implements the terminal-aware forms of the hooks. The engine calls these
+forms, and their defaults call the ones above, so a kind written without them
+works as before, bit for bit.
+
+- `link_available(link, terminal_a, terminal_b, a, b, ctx)` decides whether the
+  link can close, given the terminal hardware at its two ends (`nothing` for a
+  virtual terminal).
+- `interlink_wrench(link, terminal_a, terminal_b, a, b, ctx)` returns
+  `(force_a_ii, torque_a_body, force_b_ii, torque_b_body)`.
+  - The forces act as `link_force`'s do, and the scheduling policies score
+    candidate links by them.
+  - Each torque is in its spacecraft's body frame, about its body reference
+    point, as a mounted actuator's torque is (see
+    [Frames](../reference/extension_conventions.md#Frames)).
+  - The engine adds each torque to its spacecraft's angular acceleration as
+    `I⁻¹ τ`, with `I` the inertia tensor. This is exact for the rigid spacecraft
+    interlinks support.
+- `link_applies_torque(link) = true` says that a kind's torques can be nonzero.
+  A run with such a link needs attitude (`orientation_sim=true`), and setup
+  refuses it otherwise. A nonzero torque from a kind that does not say so
+  stops a run without attitude.
+- `terminal_pose(spacecraft, terminal)` gives a mounted terminal's boresight and
+  location in its spacecraft's body frame. A force applied at that location has
+  the torque the terminal's own recoil would have: the cross product of the
+  location and the force, in the body frame.
+
 ### Supported scope
 
-Interlinks currently apply a translational force to rigid spacecraft, or carry
-power or data. The laser momentum link does not model terminal pointing,
+Interlinks apply forces, and through `interlink_wrench` torques, to rigid
+spacecraft, or carry power or data. The laser momentum link does not model terminal pointing,
 occultation, beam losses, torques or thermal dynamics. Links through hardware terminals draw battery
 power and close when it is shed; links between virtual terminals draw none.
 Actuator faults on a link-driven terminal do not yet act on its link. The

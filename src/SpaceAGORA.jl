@@ -82,9 +82,10 @@ export AerodynamicCoefficientfM
 using .SimulationModel: SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, GravitationalHarmonicsModel, make_example_config, make_three_body_spacecraft
 export SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, GravitationalHarmonicsModel, make_example_config, make_three_body_spacecraft
 using .SimulationModel: AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
+using .SimulationModel: interlink_wrench, link_applies_torque
 using .SimulationModel: InterlinkModel, InterLinkGraph, InterLinkKey, InterLinkHistory, register_link!, interlink_force_on_spacecraft
 using .SimulationModel: link_directed, link_terminal_levels, link_terminal, terminal_supports, terminal_count
-using .SimulationModel: register_links!, all_pairs, mounted_link_terminals, terminal_number
+using .SimulationModel: register_links!, all_pairs, mounted_link_terminals, terminal_number, terminal_pose
 using .SimulationModel: same_plane_pairs, ring_pairs, grid_pairs
 using .SimulationModel: PowerBeamLink, link_received_power_w, beam_spot_radius_m, beam_capture_fraction
 using .SimulationModel: DataLink, AbstractDataBudget, FixedRateBudget, ShannonBudget, link_data_rate_bps, budget_rate_bps
@@ -95,9 +96,10 @@ using .SimulationModel: SemimajorAxisRatePolicy, EccentricityRatePolicy, PowerDe
 using .SimulationModel: EnergyBalancingPolicy, WeightedPolicy, PolicyTerm, state_of_charge
 using .SimulationModel: ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
 export AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
+export interlink_wrench, link_applies_torque
 export InterlinkModel, InterLinkGraph, InterLinkKey, InterLinkHistory, register_link!, interlink_force_on_spacecraft
 export link_directed, link_terminal_levels, link_terminal, terminal_supports, terminal_count
-export register_links!, all_pairs, mounted_link_terminals, terminal_number
+export register_links!, all_pairs, mounted_link_terminals, terminal_number, terminal_pose
 export same_plane_pairs, ring_pairs, grid_pairs
 export PowerBeamLink, link_received_power_w, beam_spot_radius_m, beam_capture_fraction
 export DataLink, AbstractDataBudget, FixedRateBudget, ShannonBudget, link_data_rate_bps, budget_rate_bps
@@ -113,6 +115,8 @@ export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!,
 @doc (@doc SimulationModel.InterLinkModels.link_range_m) link_range_m
 @doc (@doc SimulationModel.InterLinkModels.link_available) link_available
 @doc (@doc SimulationModel.InterLinkModels.link_force) link_force
+@doc (@doc SimulationModel.InterLinkModels.interlink_wrench) interlink_wrench
+@doc (@doc SimulationModel.InterLinkModels.link_applies_torque) link_applies_torque
 @doc (@doc SimulationModel.InterLinkModels.InterlinkModel) InterlinkModel
 @doc (@doc SimulationModel.InterLinkModels.register_link!) register_link!
 @doc (@doc SimulationModel.InterLinkModels.interlink_force_on_spacecraft) interlink_force_on_spacecraft
@@ -145,6 +149,7 @@ export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!,
 @doc (@doc SimulationModel.InterLinkModels.grid_pairs) grid_pairs
 @doc (@doc SimulationModel.InterlinkTerminals.mounted_link_terminals) mounted_link_terminals
 @doc (@doc SimulationModel.InterlinkTerminals.terminal_number) terminal_number
+@doc (@doc SimulationModel.InterLinkModels.terminal_pose) terminal_pose
 @doc """Indexed terminal vertices, candidate edges, the link of each edge (`edge_properties`) and availability/selection flags. Register candidates with `register_link!`.""" InterLinkGraph
 @doc """Canonically ordered pair of `(spacecraft array index, terminal number)` endpoints.""" InterLinkKey
 @doc """One accepted-step schedule sample: time in seconds, the selected `InterLinkKey` values (`active`), the available ones (`available`, recorded in a run with a data link or with `InterlinkModel(; record_available=true)`), the score that selected each active link (`scores`), and, with `InterlinkModel(; record_terms=true)` and a `WeightedPolicy`, each top-level term's score for each active link (`terms`, one row per term, one column per active link). A sample built from a time and the selected keys records neither scores nor available links. `contact_windows` and `link_schedule` read a run's samples.""" InterLinkHistory

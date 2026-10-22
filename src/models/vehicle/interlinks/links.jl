@@ -9,8 +9,9 @@
 Supertype of the link kinds. One value describes one registered link between two
 terminals: register it with `register_link!`. A kind implements `link_range_m`,
 and the effects it has: `link_force` for a link that pushes its endpoints (the
-default exerts none). `link_available` decides when the link can close (by
-default, within `link_range_m`). The built-in kind is `LaserMomentumLink`.
+default exerts none), or `interlink_wrench` for one that also turns them.
+`link_available` decides when the link can close (by default, within
+`link_range_m`). The built-in kind is `LaserMomentumLink`.
 """
 abstract type AbstractInterlink end
 
@@ -37,16 +38,24 @@ function link_range_m end
 
 """
     link_available(link, a::StateSample, b::StateSample, ctx::LinkContext) -> Bool
+    link_available(link, terminal_a, terminal_b, a::StateSample, b::StateSample, ctx::LinkContext) -> Bool
 
 Whether `link` can close between its endpoints `a` and `b`, in the order of the
 link's key (the lower `(spacecraft, terminal)` pair first). The engine asks at the start of the run and after every accepted step,
 once the run's own rules (forbidden pairs, active spacecraft) allow the pair.
-Default: the endpoints are apart and within `link_range_m(link)`.
+
+- The engine calls the six-argument form, with `terminal_a` and `terminal_b`
+  the terminal hardware at the two ends (`nothing` for a virtual terminal). A
+  kind that reads its terminals, such as their pointing (`terminal_pose`),
+  implements it.
+- Default: the six-argument form calls the four-argument form, which is true
+  while the endpoints are apart and within `link_range_m(link)`.
 """
 function link_available(link, a, b, ctx)
     separation = norm(a.pos_ii - b.pos_ii)
     return 0 < separation <= link_range_m(link)
 end
+link_available(link, terminal_a, terminal_b, a, b, ctx) = link_available(link, a, b, ctx)
 
 """
     link_directed(link) -> Bool
@@ -117,6 +126,25 @@ in that tier of the power budget (0: with the kinds never shed). 1 for
 terminal_shed_tier(actuator) = 0
 terminal_shed_tier(::LaserTerminal) = 1
 
+"""
+    terminal_pose(spacecraft, terminal) -> (boresight_body, location_body)
+
+Where `terminal`, terminal hardware mounted on `spacecraft` (a
+`SpacecraftModel`), points and sits, in the spacecraft's body frame: its
+`boresight` (a `PowerReceiver`'s `normal`) and its `location`, carried from its
+link's frame by the link's configured pose.
+
+- `location_body` is the lever arm about the body reference point that the
+  terminal's own recoil uses (`actuator_wrench`), so a link that applies its
+  force there (`interlink_wrench`) has the terminal's torque.
+- A terminal without a `location` sits at its link's origin. One without a
+  `boresight` or `normal` has no pointing axis, and is refused.
+- Two mounted terminals with equal fields are the same value. If they sit at
+  different poses, they cannot be told apart and are refused; give them
+  distinct fields.
+"""
+function terminal_pose end
+
 # Whether `link` reads the terminal hardware at both its ends, so that a virtual
 # terminal cannot carry it (a `DataLink` with a `ShannonBudget`).
 _link_needs_terminals(link) = false
@@ -158,11 +186,44 @@ const _ZERO_FORCE = SVector{3, Float64}(0.0, 0.0, 0.0)
     link_force(link, a::StateSample, b::StateSample, ctx::LinkContext) -> (force_a_ii, force_b_ii)
 
 The inertial forces (N) an active `link` puts on its endpoints `a` and `b`, in
-the order of the link's key. The engine adds them to the endpoints' accelerations at every
-right-hand-side evaluation, and the scheduling policies score candidate links by
-them. Default: no force.
+the order of the link's key. The engine reads them through `interlink_wrench`, whose
+default returns them with zero torques: it adds them to the endpoints'
+accelerations at every right-hand-side evaluation, and the scheduling policies
+score candidate links by them. Default: no force.
 """
 link_force(link, a, b, ctx) = (_ZERO_FORCE, _ZERO_FORCE)
+
+"""
+    interlink_wrench(link, terminal_a, terminal_b, a::StateSample, b::StateSample, ctx::LinkContext) -> (force_a_ii, torque_a_body, force_b_ii, torque_b_body)
+
+What an active `link` does to its endpoints `a` and `b`, in the order of the
+link's key: the inertial force (N) on each, and the torque (N·m) on each in its
+body frame, about its body reference point, as a mounted actuator's torque.
+`terminal_a` and `terminal_b` are the terminal hardware at the two ends
+(`nothing` for a virtual terminal).
+
+- The engine adds the forces to the endpoints' accelerations at every
+  right-hand-side evaluation, and the scheduling policies score candidate links
+  by them. It adds each nonzero torque to its spacecraft's angular acceleration
+  as `I⁻¹ τ`, with `I` the spacecraft's inertia tensor.
+- A kind whose torques can be nonzero says so with `link_applies_torque`, so
+  that a run without attitude (`orientation_sim`) refuses it at setup.
+- Default: `link_force`'s two forces, with zero torques.
+"""
+function interlink_wrench(link, terminal_a, terminal_b, a, b, ctx)
+    force_a, force_b = link_force(link, a, b, ctx)
+    return (force_a, _ZERO_FORCE, force_b, _ZERO_FORCE)
+end
+
+"""
+    link_applies_torque(link) -> Bool
+
+Whether `interlink_wrench` can return nonzero torques for `link`. A run with such a
+link needs attitude (`orientation_sim`): setup refuses it otherwise, and a
+nonzero torque from a kind that does not say so stops a run without attitude.
+Default: false.
+"""
+link_applies_torque(link) = false
 
 # The state sample of a link endpoint: spacecraft `index` of a run state
 # `view`, with its model when known. A run state holds every field; a velocity
