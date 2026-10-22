@@ -600,7 +600,7 @@ own package, with its simulator-specific adapter kept distinct from standalone
 search. HYPR now follows that split: its `src/` owns standalone search and swarm
 policy, while its `ext/HYPRSpaceAGORAExt.jl`, `ext/rpo/` and `ext/robot/` provide
 configured SpaceAGORA execution. These paths are in
-[HYPR.jl at the pinned revision](https://github.com/Space-FALCON-Lab/HYPR.jl/tree/aa327b9f21622143afe54b6e0c37596e669a254e),
+[HYPR.jl at the pinned revision](https://github.com/Space-FALCON-Lab/HYPR.jl/tree/ef85eb2bfc5623fdd26407868d1371c3bff07d1f),
 which has its own tests, examples and documentation.
 
 SpaceAGORA retains shared planner interfaces, the direct baseline, configuration
