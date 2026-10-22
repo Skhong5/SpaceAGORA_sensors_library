@@ -180,9 +180,15 @@ function bind_spacecraft(effector, sat_idx::Int)
         scope isa BoundSpacecraft ?
         "it is bound to spacecraft $(join(scope.indices, ", ")) (its spacecraft_scope) and has no method to bind another" :
         "it acts on every spacecraft (its spacecraft_scope is AllSpacecraft)"
+    # A model for every spacecraft keeps any per-spacecraft settings as one entry per
+    # spacecraft, as the burn scheduler does.
+    shared = scope isa CoupledSpacecraft || scope isa BoundSpacecraft ? "" :
+        ", as one model for every spacecraft with one entry per spacecraft in its per-spacecraft settings " *
+        "(as the burn scheduler, BaseThrusterModel, is declared)"
     throw(ArgumentError(
         "Cannot declare $(nameof(T)) on a spacecraft: $why. Declare it at configuration level " *
-        "(guidance_model/navigation_model/control_model), or implement SpaceAGORA.bind_spacecraft(::$(nameof(T)), ::Int)."))
+        "(guidance_model/navigation_model/control_model)$shared, or implement " *
+        "SpaceAGORA.bind_spacecraft(::$(nameof(T)), ::Int)."))
 end
 
 # Shallow copy of a plain struct with all fields set by position (kwdef types included).

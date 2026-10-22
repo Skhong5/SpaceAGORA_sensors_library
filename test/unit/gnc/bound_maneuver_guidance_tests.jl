@@ -234,7 +234,10 @@ end
     @testset "the burn scheduler cannot be declared on a spacecraft" begin
         scheduler = SM.ThrusterModels.BaseThrusterModel(thrust=[1.0], direction=[0.0], Δv=[0.0],
             start_burn_time=[-1.0], stop_burn_time=[-1.0], Isp=[300.0])
-        @test_throws "one burn scheduler for every spacecraft" SpaceAGORA.bind_spacecraft(scheduler, 1)
+        @test_throws "one model for every spacecraft with one entry per spacecraft" SpaceAGORA.bind_spacecraft(
+            scheduler, 1)
+        # The pointer is for a model that acts on every spacecraft, not for a bound one.
+        @test_throws "acts on every spacecraft" SpaceAGORA.bind_spacecraft(scheduler, 1)
     end
 
     @testset "a bound copy that acts on every spacecraft warns once per type" begin
