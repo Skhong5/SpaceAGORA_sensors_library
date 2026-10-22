@@ -14,7 +14,7 @@
 # values above 64 are rejected since this sweep is deliberately scoped to
 # "up to 64 threads").
 #
-#   julia --project=. benchmarks/studies/gram_mars_fix_and_constellation_scaling/leo_constellation_size_scaling.jl
+#   julia --project=examples benchmarks/studies/gram_mars_fix_and_constellation_scaling/leo_constellation_size_scaling.jl
 #
 # Julia's thread count is fixed at process startup, so each thread count in
 # the ladder runs as its OWN subprocess (this same script, re-invoked with
@@ -190,7 +190,7 @@ end
 # handling of a crashed worker) rather than aborting the whole ladder.
 function run_thread_count!(t::Int)::Bool
     julia_bin = Base.julia_cmd().exec[1]
-    cmd = Cmd([julia_bin, "--project=$(REPO_ROOT)", "--threads=$(t)", SELF_PATH])
+    cmd = Cmd([julia_bin, "--project=$(joinpath(REPO_ROOT, "examples"))", "--threads=$(t)", SELF_PATH])
     println("=== threads=$(t) ===")
     flush(stdout)
     try

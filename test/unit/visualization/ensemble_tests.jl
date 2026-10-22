@@ -6,6 +6,7 @@ using Arrow
 using DataFrames
 using JSON
 using Base64
+using TOML
 
 import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft
 
@@ -212,9 +213,16 @@ end
                 df = DataFrame(Arrow.Table(joinpath(sample_dirs[seed], "simulation_results.feather")))
                 @test nrow(df) >= 2
                 @test issorted(df.time)
-                @test df.time[1] ≈ 2.0
+                # It resumed at 2 s rather than starting again, and its results hold
+                # the whole run: its first run's rows, then its own.
+                @test TOML.parsefile(joinpath(sample_dirs[seed], "simulation_results.manifest.toml"))["resumed_from_s"] == 2.0
+                @test df.time[1] == 0.0
+                @test isequal(df[df.time .< 2.0, :], first_tables[seed][first_tables[seed].time .< 2.0, :])
                 @test df.time[end] ≈ 4.0
-                @test isapprox(position(df, 1), first_positions[seed]; rtol=0.0, atol=1e-6)
+                # The row at the resume time continues this member's own first run.
+                at_resume = findfirst(t -> isapprox(t, 2.0), df.time)
+                @test at_resume !== nothing
+                @test isapprox(position(df, at_resume), first_positions[seed]; rtol=0.0, atol=1e-6)
             end
             # Campaign wrapping must leave builder-owned settings and the typed
             # solver untouched in both the first run and the continuation.

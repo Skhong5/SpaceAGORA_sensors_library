@@ -321,7 +321,9 @@ end
         @test _BASILISK_MATRIX_RESULT_CACHE[] === nothing
         @test _STK_MATRIX_RESULT_CACHE[] === nothing
     """
-    cmd = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=existing --project=$(_DEBUG_PROBE_ROOT) -e $code`
+    # The environment the tests run in: the matrix definitions plot with Plots,
+    # which the root project lacks.
+    cmd = `$(Base.julia_cmd()) --startup-file=no --compiled-modules=existing --project=$(dirname(Base.active_project())) -e $code`
     @test success(pipeline(cmd; stdout=devnull))
     support = DebugProbeDefinitions.ScenarioMatrixDebugSupport
     @test !isdefined(support, :_LUNA_STK_ADJUSTED_HARMONICS_FILE)

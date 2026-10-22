@@ -50,8 +50,9 @@ Plot generation is off by default in the CLI path so the command remains usable
 even when plotting dependencies or scripts are unavailable. Enable it explicitly
 with `--plots=1` when needed.
 
-The CLI form runs the same study script under the repository project, so it
-has the same prerequisite as the script entrypoint: the `data/GRAMSuite.jl`
+The CLI form runs the same study script in the examples environment, so it
+needs that environment prepared (`julia --startup-file=no examples/setup.jl`)
+and has the same prerequisite as the script entrypoint: the `data/GRAMSuite.jl`
 submodule (see Prerequisites above). Without it the command stops with
 "Package GRAMSuite not found in current path".
 

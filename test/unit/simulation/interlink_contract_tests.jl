@@ -48,8 +48,8 @@ struct RangelessLink <: AbstractInterlink end
 
 function pair_state(; first_y=1000.0)
     return ComponentVector(sc=[
-        (pos=[7e6, first_y, 0.0], vel=[0.0, 7500.0, 0.0], mass=100.0, laser_dv=zeros(3), laser_delta_sma=0.0),
-        (pos=[7e6, 0.0, 0.0], vel=[0.0, 7500.0, 0.0], mass=200.0, laser_dv=zeros(3), laser_delta_sma=0.0)])
+        (pos=[7e6, first_y, 0.0], vel=[0.0, 7500.0, 0.0], mass=100.0, interlink_dv=zeros(3), interlink_delta_sma=0.0),
+        (pos=[7e6, 0.0, 0.0], vel=[0.0, 7500.0, 0.0], mass=200.0, interlink_dv=zeros(3), interlink_delta_sma=0.0)])
 end
 
 # The warnings `f` gives; under --depwarn=error the deprecation throws instead.
@@ -123,10 +123,10 @@ end
         # spacecraft against its velocity lowers its semimajor axis, while the
         # second is pulled along its velocity.
         mu = make_no_gram_planet(:earth).μ
-        first_target = SchedulingPolicyModel(:gve_sma; target_index=1)
+        first_target = SchedulingPolicyModel(SemimajorAxisRatePolicy(targets=1))
         score_candidates!(model, first_target, state, mu)
         @test first_target.matching.score[1] < 0
-        second_target = SchedulingPolicyModel(:gve_sma; target_index=2)
+        second_target = SchedulingPolicyModel(SemimajorAxisRatePolicy(targets=2))
         score_candidates!(model, second_target, state, mu)
         @test second_target.matching.score[1] > 0
         @test schedule_interlinks!(model, second_target, spacecraft, state, mu) == [key]
@@ -144,9 +144,9 @@ end
         history = solution.prob.p.args.interlink_model.history
         @test all(sample -> sample.active == [((1, 1), (2, 1))], history)
         mass = solution.u[1].sc[1].mass
-        @test norm(solution.u[end].sc[1].laser_dv) ≈ 2.0 / mass * 60.0 rtol=1e-3
-        @test norm(solution.u[end].sc[2].laser_dv) > 0
-        @test norm(solution.u[end].sc[3].laser_dv) == 0                            # not linked
+        @test norm(solution.u[end].sc[1].interlink_dv) ≈ 2.0 / mass * 60.0 rtol=1e-3
+        @test norm(solution.u[end].sc[2].interlink_dv) > 0
+        @test norm(solution.u[end].sc[3].interlink_dv) == 0                            # not linked
     end
 
     @testset "a kind without link_range_m is refused at setup" begin

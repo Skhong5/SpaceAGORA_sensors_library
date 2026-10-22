@@ -102,21 +102,9 @@ _rpo_comparison_planners(pso_config, rrt_connect, rrt_star, chomp, stomp, optimi
 
 """Return the comparison config with planner cost safety pinned to the published 0.5 m value."""
 function _rpo_comparison_config_with_fixed_safe_distance(cfg::RPOPlannerComparisonConfig)
-    return RPOPlannerComparisonConfig(
-        planners=cfg.planners,
+    return _with_fields(cfg;
         pso_config=rpo_pso_config(cfg.pso_config; safe_distance_m=RPO_PLANNER_COMPARISON_SAFE_DISTANCE_M),
-        rrt_connect=cfg.rrt_connect,
-        rrt_star=cfg.rrt_star,
-        chomp=cfg.chomp,
-        stomp=cfg.stomp,
-        optimizer=cfg.optimizer,
-        tracking=cfg.tracking,
         safe_distance_m=RPO_PLANNER_COMPARISON_SAFE_DISTANCE_M,
-        output_dir=cfg.output_dir,
-        write_plotly_outputs=cfg.write_plotly_outputs,
-        write_failed_path_outputs=cfg.write_failed_path_outputs,
-        rng_seed=cfg.rng_seed,
-        show_progress=cfg.show_progress,
     )
 end
 
@@ -305,6 +293,8 @@ function rpo_run_planner_comparison_batch(cases, geometry, cfg::RPOPlannerCompar
     cfg = _rpo_comparison_config_with_fixed_safe_distance(cfg)
     planners = copy(cfg.planners)
     HYPRSupport.require_hypr()
+    # Its Plotly outputs need PlotlyJS: refuse now, not after the batch has run.
+    RPOComparisonReports._require_plotly_renderer(cfg.write_plotly_outputs, cfg.write_failed_path_outputs)
     comparison_cases = collect(cases)
     planner_types = [normalize_rpo_comparison_planner_type(p) for p in planners]
     if cfg.optimizer.match_hypr_runtime && (:hypr in planner_types)

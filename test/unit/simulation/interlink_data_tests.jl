@@ -8,6 +8,7 @@ module InterlinkDataTests
 using Test
 using LinearAlgebra
 using StaticArrays
+using TOML
 using SpaceAGORA
 
 const SM = SpaceAGORA.SimulationModel
@@ -42,7 +43,7 @@ function data_pair(; arc_m=100e3, link=LINK, sender=(;), receiver=(;))
     return spacecraft, model
 end
 
-function run_args(spacecraft, model; duration=60.0, policy=:data_throughput,
+function run_args(spacecraft, model; duration=60.0, policy=DataThroughputPolicy(),
                   settings=SimulationSettings(results=false, generate_plots=false))
     return SimulationConfiguration(
         simulation_settings=settings,
@@ -54,7 +55,7 @@ function run_args(spacecraft, model; duration=60.0, policy=:data_throughput,
         control_model=ControlModel((), Float64[]), initial_time=InitialTime(),
         integration_tolerances=IntegrationTolerances(reltol_orbit=1e-10, abstol_orbit=1e-8, dt_max_orbit=1.0),
         solver_config=SM.SolverConfig(solver_mode=:tsit5), interlink_model=model,
-        scheduling_policy_model=SchedulingPolicyModel(policy))
+        scheduling_policy_model=policy)
 end
 
 sample(pos) = SM.InterLinkModels.link_endpoint((pos=pos,), nothing, 1)
@@ -215,7 +216,7 @@ integral(x, y) = sum((x[k + 1] - x[k]) * (y[k] + y[k + 1]) / 2 for k in 1:length
         # counters it leaves at zero take part in the step control, so its
         # accepted steps, and the window's end, differ by less than a step.
         spacecraft, model = data_pair(arc_m=0.0, link=reach, receiver=(radius=RADIUS + 50e3,))
-        idle = run_simulation(run_args(spacecraft, model; duration=600.0, policy=:gve_sma); return_solution=true)
+        idle = run_simulation(run_args(spacecraft, model; duration=600.0, policy=SemimajorAxisRatePolicy()); return_solution=true)
         idle_history = idle.prob.p.args.interlink_model.history
         @test contact_time_s(idle_history, key) ≈ window.end_s atol=1.0
         @test contact_time_s(idle_history, key; active=true) == 0.0
@@ -228,7 +229,7 @@ integral(x, y) = sum((x[k + 1] - x[k]) * (y[k] + y[k + 1]) / 2 for k in 1:length
                       for i in 1:2]
             model = InterlinkModel(; record_available=record)
             register_link!(model, lasers, (1, 1), (2, 1), LaserMomentumLink(power_w=40.0))
-            history = run_simulation(run_args(lasers, model; duration=2.0, policy=:gve_sma);
+            history = run_simulation(run_args(lasers, model; duration=2.0, policy=SemimajorAxisRatePolicy());
                 return_solution=true).prob.p.args.interlink_model.history
             @test all(sample -> sample.available == (recorded ? [key] : InterLinkKey[]), history)
             @test isempty(contact_windows(history)) == !recorded
@@ -267,7 +268,7 @@ integral(x, y) = sum((x[k + 1] - x[k]) * (y[k] + y[k + 1]) / 2 for k in 1:length
     end
 
     @testset "scheduling" begin
-        for (policy, selected) in ((:gve_sma, false), (:power_delivery, false), (:data_throughput, true))
+        for (policy, selected) in ((SemimajorAxisRatePolicy(), false), (PowerDeliveryPolicy(), false), (DataThroughputPolicy(), true))
             spacecraft, model = data_pair()
             solution = run_simulation(run_args(spacecraft, model; duration=5.0, policy); return_solution=true)
             history = solution.prob.p.args.interlink_model.history
@@ -296,9 +297,9 @@ integral(x, y) = sum((x[k + 1] - x[k]) * (y[k] + y[k + 1]) / 2 for k in 1:length
         lasers = [radio_sat(i, (i - 1) * 5000.0; terminal=LaserTerminal(boresight=[0.0, 1.0, 0.0], max_power_w=100.0)) for i in 1:2]
         model = InterlinkModel()
         register_link!(model, lasers, (1, 1), (2, 1), LaserMomentumLink(power_w=40.0))
-        solution = run_simulation(run_args(lasers, model; duration=1.0, policy=:gve_sma); return_solution=true)
+        solution = run_simulation(run_args(lasers, model; duration=1.0, policy=SemimajorAxisRatePolicy()); return_solution=true)
         @test !hasproperty(solution.u[1].sc[1], :data_sent_bits)
-        names_laser = string.(propertynames(run_simulation(run_args(lasers, model; duration=1.0, policy=:gve_sma);
+        names_laser = string.(propertynames(run_simulation(run_args(lasers, model; duration=1.0, policy=SemimajorAxisRatePolicy());
             return_results=true).table))
         @test !any(name -> occursin("data_", name), names_laser)
         @test !SM.has_data_links(model) && !SM.has_data_links(nothing)
@@ -312,7 +313,7 @@ integral(x, y) = sum((x[k + 1] - x[k]) * (y[k] + y[k + 1]) / 2 for k in 1:length
                 checkpoint_directory=directory)
             spacecraft, model = data_pair()
             args = run_args(spacecraft, model; settings)
-            state = (sc=[(pos=[RADIUS, 0.0, 0.0], laser_dv=zeros(3), laser_delta_sma=0.0, data_sent_bits=0.0,
+            state = (sc=[(pos=[RADIUS, 0.0, 0.0], interlink_dv=zeros(3), interlink_delta_sma=0.0, data_sent_bits=0.0,
                 data_received_bits=0.0) for _ in 1:2],)
             SE._write_checkpoint!(args, 5.0, state, "tsit5"; is_active=[true, true])
             checkpoint = SE._load_checkpoint(args)
@@ -361,13 +362,21 @@ integral(x, y) = sum((x[k + 1] - x[k]) * (y[k] + y[k + 1]) / 2 for k in 1:length
         straight_pair = data_pair()
         straight = run_simulation(run_args(straight_pair...); return_results=true).table
         mktempdir() do directory
-            segments(resume) = SimulationSettings(results=false, generate_plots=false, checkpoint_enabled=true,
-                checkpoint_interval_s=10.0, checkpoint_directory=directory, resume_from_checkpoint=resume)
-            run_simulation(run_args(data_pair()...; duration=30.0, settings=segments(false)); return_results=true)
+            segments(resume) = SimulationSettings(results=resume, results_directory=directory, generate_plots=false,
+                checkpoint_enabled=true, checkpoint_interval_s=10.0, checkpoint_directory=directory,
+                resume_from_checkpoint=resume)
+            first_leg = run_simulation(run_args(data_pair()...; duration=30.0, settings=segments(false)); return_results=true).table
             resumed = run_simulation(run_args(data_pair()...; settings=segments(true)); return_results=true).table
-            @test resumed.time[1] >= 30.0 - 1e-9
+            # It resumed at 30 s rather than starting again, and its table holds the
+            # whole run: the first leg's rows, kept beside its checkpoint, then its own.
+            @test TOML.parsefile(joinpath(directory, "simulation_results.manifest.toml"))["resumed_from_s"] == 30.0
+            @test resumed.time[1] == 0.0
+            @test isequal(resumed[resumed.time .< 30.0, :], first_leg[first_leg.time .< 30.0, :])
             @test resumed.sc2_data_received_bits[end] ≈ straight.sc2_data_received_bits[end] rtol=1e-9
-            @test resumed.sc2_data_received_bits[1] ≈ shannon(SHANNON, chord(100e3)) * resumed.time[1] rtol=1e-6
+            # The counter at the resume time holds what the first leg received.
+            at_resume = findfirst(t -> t >= 30.0 - 1e-9, resumed.time)
+            @test resumed.time[at_resume] ≈ 30.0
+            @test resumed.sc2_data_received_bits[at_resume] ≈ shannon(SHANNON, chord(100e3)) * resumed.time[at_resume] rtol=1e-6
         end
     end
 end

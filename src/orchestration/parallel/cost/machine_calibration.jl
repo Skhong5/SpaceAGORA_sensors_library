@@ -21,7 +21,11 @@
 # usl_beta_alloc, usl_beta_bw, llc_bytes). Bumped rather than defaulted because
 # a file without them would silently predict zero contention -- which reads as
 # "this machine scales perfectly" and is the most dangerous possible default.
-const CALIBRATION_SCHEMA_VERSION = 4
+#
+# 5: the USL arithmetic ladder and the parallel speedup curve no longer read
+# past their table (`calib_batch_kernel!` wraps its column). Constants saved at
+# 4 timed the memory after the table, so they are measured again, not kept.
+const CALIBRATION_SCHEMA_VERSION = 5
 
 # Footprint ladder for the coefficient-touch curve: square-ish tables, matching
 # the (L+2) x (M+2) shape of a full-field harmonics model, spanning L1-resident
@@ -791,7 +795,7 @@ end
 Read cached constants, or `nothing` if absent, unparseable, or written by a
 different schema version. A stale-schema file is discarded rather than
 reinterpreted: term semantics changed by definition when the version moved, so
-its numbers do not mean what the current predictor would take them to mean.
+its numbers do not mean what the current readers would take them to mean.
 """
 function load_machine_constants(path::AbstractString = machine_constants_path())::Union{Nothing, MachineConstants}
     path_s = String(path)
@@ -840,17 +844,16 @@ end
 The staleness canary. Re-measures the cheap arithmetic reference and compares it
 against its value at calibration time.
 
-This is the *only* freshness check the model needs, and that is a consequence of
-the caching rule rather than an optimism: what is cached is expensive and stable
-(these constants), and what is volatile is re-derived every run (per-effector
-probes). So the single thing that can silently go stale is whether these numbers
-still describe this machine -- and they stop doing so not when the hardware
-changes but when its *effective* capacity does: a different cgroup quota, a
-changed governor, a co-tenant, thermal state.
+What is cached is expensive to measure and stable, so the thing that can
+silently go stale is whether these numbers still describe this machine -- and
+they stop doing so not when the hardware changes but when its *effective*
+capacity does: a different cgroup quota, a changed governor, a co-tenant,
+thermal state.
 
-Costs microseconds. A drift beyond `tolerance` means abstain and keep the
-heuristic route, not recalibrate mid-run: recalibrating on a machine that is
-currently contended would bake the contention into the constants.
+Costs microseconds. A drift beyond `tolerance` means the constants should not be
+trusted for this run, not that they should be re-measured mid-run:
+recalibrating on a machine that is currently contended would bake the
+contention into the constants. Nothing in the package calls it at present.
 
 The default tolerance is deliberately loose. Measured on this box, ten busy
 loops on twelve cores moved the reference about 5%, and a co-tenant that

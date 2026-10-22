@@ -1,4 +1,4 @@
 url = "https://github.com/Space-FALCON-Lab/HYPR.jl.git"
-rev = "c434404dd3e4ac3ba351b2a5e0bb77d9be95fb94"
+rev = "aa327b9f21622143afe54b6e0c37596e669a254e"
 uuid = "342c8629-b435-4bda-9d24-004c735fb297"
-version = "0.4.0"
+version = "0.5.0"

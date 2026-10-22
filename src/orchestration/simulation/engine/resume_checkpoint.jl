@@ -8,8 +8,13 @@
 #   start and before the callbacks initialize;
 # - `models`: the models' own run state, checked when the checkpoint is read and
 #   restored by `_start_run_models!` after the models' initializers;
+# - `gnc_scopes`: the spacecraft each guidance, navigation and control model acts
+#   on, compared by `_start_run_models!` after the initializers and before the
+#   models' run state is restored;
 # - `periodic_ticks`: the periodic ticks not yet taken at the checkpoint's time,
-#   which a resumed run takes at its start (`_start_run_clock!`).
+#   which a resumed run takes at its start (`_start_run_clock!`);
+# - `results_rows`: how much of the results rows kept beside the checkpoint
+#   belongs to it, read before the run's first segment (`_start_results_rows!`).
 #
 # The definitions below follow that order, then the segment ends and the file.
 
@@ -89,18 +94,14 @@ _interlink_kind_parameter(parameter::Base.IEEEFloat) = (type=_interlink_kind_ide
 function _interlink_checkpoint_configuration(args)
     model = args.interlink_model
     graph = model.graph
-    policy = args.scheduling_policy_model
-    configuration = (
+    configuration = (;
         vertices=copy(graph.vertices),
         candidates=[(
             endpoints=map(vertex -> graph.vertices[vertex], edge),
             link=_interlink_link_identity(graph.edge_properties[index]),
         ) for (index, edge) in enumerate(graph.edges)],
         forbidden_pairs=sort!(collect(model.forbidden_pairs)),
-        policy=policy.policy,
-        # The keys keep the names checkpoints were written with, so those resume.
-        target_idx=policy.target_index,
-        target_idxs=policy.target_indices === nothing ? nothing : copy(policy.target_indices),
+        _scheduling_policy_entry(args.scheduling_policy_model.objective)...,
         terminal_counts=[spacecraft.n_terminal for spacecraft in args.dynamics_model.spacecraft],
     )
     # Terminal numbers past `n_terminal` name mounted terminal hardware, so a run
@@ -109,6 +110,128 @@ function _interlink_checkpoint_configuration(args)
     hardware = [_mounted_terminal_identities(spacecraft) for spacecraft in args.dynamics_model.spacecraft]
     all(isempty, hardware) && return configuration
     return merge(configuration, (hardware_terminals=hardware,))
+end
+
+# The scheduling policy's entry: `policy`, `target_idx` and `target_idxs`, the keys
+# checkpoints have always been written with. A policy that 0.5 chose by a symbol
+# (`SemimajorAxisRatePolicy`, `EccentricityRatePolicy`, `PowerDeliveryPolicy`,
+# `DataThroughputPolicy`) is recorded as 0.5 recorded it, with its target index and
+# target set, so those checkpoints resume and the entry is unchanged for the same
+# policy. Any other policy is recorded by its kind and every one of its fields
+# (`_scheduling_policy_identity`), with no target keys.
+function _scheduling_policy_entry(policy)
+    recorded = SimulationModel.SchedulingPolicies._symbol_policy_fields(policy)
+    recorded === nothing || return (policy=recorded[1], target_idx=recorded[2], target_idxs=recorded[3])
+    return (policy=_scheduling_policy_identity(policy), target_idx=nothing, target_idxs=nothing)
+end
+
+# A policy's identity: its kind, named as link kinds are, and every one of its
+# fields, recursively, by value, so that an equal policy rebuilt in a new process
+# has the same identity:
+# - a float with its bits, a bits composite field by field, as terminal fields
+#   are; another number, a string or a symbol by its value; a type by its name;
+# - a field that is a policy, or a weighted mix's term, by its own identity, a
+#   tuple element by element, an array by its type, its size and its elements;
+# - a function by its type and, for a closure, every value it captures (its
+#   fields), so that two closures made by one expression with different captures
+#   differ. A named function is its type alone: a change to its code is not part
+#   of the identity;
+# - any other value with fields (a struct, mutable or not, a named tuple, a
+#   `Ref`) by its type and its fields.
+# What it cannot record by value is refused: a closure that captures a variable
+# reassigned after the closure was made (a `Core.Box`); a dictionary or a set; a
+# channel, stream, task or lock; a pointer, or a value holding one (a `Regex`),
+# whose address differs from one process to the next; a value that is not a
+# struct and not one of the above; a field or element that is not assigned; and a
+# payload that contains itself.
+function _scheduling_policy_identity(policy, path=Base.IdSet{Any}())
+    kind = typeof(policy)
+    names = fieldnames(kind)
+    return (kind=_interlink_kind_identity(kind),
+        fields=NamedTuple{names}(map(name -> _policy_field_identity(getfield(policy, name), path), names)))
+end
+_policy_field_identity(value::SimulationModel.AbstractSchedulingPolicy, path) = _scheduling_policy_identity(value, path)
+_policy_field_identity(value::SimulationModel.PolicyTerm, path) = _scheduling_policy_identity(value, path)
+_policy_field_identity(value::Tuple, path) = map(element -> _policy_field_identity(element, path), value)
+_policy_field_identity(value::Union{Number, AbstractString, Symbol, Type, Module}, path) = _interlink_kind_parameter(value)
+_policy_field_identity(value::AbstractArray, path) = _on_path(path, value) do
+    all(index -> isassigned(value, index), eachindex(value)) || _unrecordable_field(value, :element)
+    (type=_interlink_kind_identity(typeof(value)), size=size(value),
+        elements=[_policy_field_identity(element, path) for element in vec(value)])
+end
+function _policy_field_identity(value::Function, path)
+    kind = typeof(value)
+    names = fieldnames(kind)
+    isempty(names) && return (callable=_interlink_kind_identity(kind),)
+    return _on_path(path, value) do
+        (callable=_interlink_kind_identity(kind),
+            captures=NamedTuple{names}(map(name -> _policy_field_identity(getfield(value, name), path), names)))
+    end
+end
+_policy_field_identity(::Core.Box, path) = throw(ArgumentError(
+    "A scheduling policy holds a closure that captures a variable reassigned after the closure was made, " *
+    "which a checkpoint cannot record. Capture the value instead (for example in a `let` block)."))
+_policy_field_identity(value::Union{AbstractDict, AbstractSet, AbstractChannel, IO, Task, Base.AbstractLock}, path) =
+    _unrecordable_field(value)
+_policy_field_identity(value::Ptr, path) = _unrecordable_field(value, :pointer)
+function _policy_field_identity(value, path)
+    kind = typeof(value)
+    _holds_pointer(kind) && _unrecordable_field(value, :pointer)
+    isbits(value) && return _interlink_kind_parameter(value)
+    isstructtype(kind) || _unrecordable_field(value)
+    names = fieldnames(kind)
+    for name in names
+        isdefined(value, name) || _unrecordable_field(value, :field, name)
+    end
+    encode() = (type=_interlink_kind_identity(kind),
+        fields=NamedTuple{names}(map(name -> _policy_field_identity(getfield(value, name), path), names)))
+    return ismutable(value) ? _on_path(encode, path, value) : encode()
+end
+
+# Whether a value of `kind` holds a pointer in a field, or in a bits field's own
+# fields. A field of an abstract type that holds a pointer is found when its
+# value is encoded.
+_holds_pointer(kind::DataType) =
+    any(field -> field <: Ptr || (isbitstype(field) && _holds_pointer(field)), fieldtypes(kind))
+
+# The refusal of a value the identity cannot record: `reason` is `:value` (its
+# kind), `:element` or `:field` (`name`, not assigned) or `:pointer`.
+function _unrecordable_field(value, reason::Symbol=:value, name=nothing)
+    held = "a value of type `$(repr(typeof(value)))`" * (
+        reason === :element ? " with an unassigned element" :
+        reason === :field ? " whose field `$(name)` is not assigned" :
+        reason === :pointer ? ", which holds a pointer whose address differs from one process to the next" : "")
+    advice = reason === :pointer ? "Hold the values it is built from (for a `Regex`, its pattern string)" :
+        reason === :value ? "Hold numbers, strings, symbols, functions, arrays, tuples, named tuples and structs of these" :
+        "Assign it before the run"
+    throw(ArgumentError("A scheduling policy holds $(held), which a checkpoint cannot record by value. " *
+        "$(advice), or run without checkpoints."))
+end
+
+# Encode `value` with `encode` while `value` is on the path from the policy,
+# refusing a payload that contains itself.
+function _on_path(encode, path, value)
+    value in path && throw(ArgumentError(
+        "A scheduling policy's fields contain themselves, which a checkpoint cannot record."))
+    push!(path, value)
+    try
+        return encode()
+    finally
+        delete!(path, value)
+    end
+end
+
+# A snapshot's policy entry in the current form: a symbol with its targets (all
+# checkpoints written before 0.6, and those of the policies they had) is rebuilt as
+# the typed policy it stands for and recorded as that policy is, so a checkpoint
+# resumes under the typed policy that schedules the same. A symbol that stands for no
+# policy is left as written, and the comparison refuses it.
+function _canonical_policy_configuration(configuration)
+    hasproperty(configuration, :policy) && configuration.policy isa Symbol || return configuration
+    policy = SimulationModel.SchedulingPolicies._symbol_scheduling_policy(configuration.policy,
+        get(configuration, :target_idx, 1), get(configuration, :target_idxs, nothing))
+    policy === nothing && return configuration
+    return merge(configuration, _scheduling_policy_entry(policy))
 end
 
 _mounted_terminal_identities(spacecraft::SimulationModel.SpacecraftModel) =
@@ -141,17 +264,18 @@ function _interlink_checkpoint_runtime_state(args, is_active)
 end
 
 # A snapshot's configuration in the current form. Version 1 (before link kinds)
-# held one laser link type for the run and P, B and range per candidate.
+# held one laser link type for the run and P, B and range per candidate. Both
+# versions' policy entries are rebuilt as typed policies.
 function _interlink_snapshot_configuration(snapshot)
     configuration = snapshot.configuration
-    snapshot.version === 2 && return configuration
+    snapshot.version === 2 && return _canonical_policy_configuration(configuration)
     hasproperty(configuration, :link_type) && configuration.link_type === :laser || return nothing
     candidates = [(endpoints=candidate.endpoints,
         link=_interlink_link_identity(SimulationModel.LaserMomentumLink(candidate.P, candidate.B, candidate.range)))
         for candidate in configuration.candidates]
     rest = (name => getproperty(configuration, name) for name in keys(configuration)
         if !(name in (:link_type, :vertices, :candidates)))
-    return (; vertices=configuration.vertices, candidates=candidates, rest...)
+    return _canonical_policy_configuration((; vertices=configuration.vertices, candidates=candidates, rest...))
 end
 
 function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
@@ -168,7 +292,7 @@ function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
     hasproperty(snapshot, :configuration) &&
         isequal(_interlink_snapshot_configuration(snapshot), _interlink_checkpoint_configuration(args)) ||
         throw(ArgumentError("Interlink configuration differs from the checkpoint. Resume with the same " *
-            "candidate topology, link kinds and parameters, forbidden pairs, policy targets and terminal counts."))
+            "candidate topology, link kinds and parameters, forbidden pairs, scheduling policy and terminal counts."))
     count = length(args.dynamics_model.spacecraft)
     hasproperty(snapshot, :is_active) && snapshot.is_active isa AbstractVector{Bool} &&
         length(snapshot.is_active) == count && is_active isa AbstractVector{Bool} &&
@@ -179,6 +303,67 @@ function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
     copyto!(is_active, snapshot.is_active)
     return nothing
 end
+
+# The interlink states' names. A run's state calls them `interlink_dv` and
+# `interlink_delta_sma`; a checkpoint keeps the names they had before 0.6.0,
+# `laser_dv` and `laser_delta_sma`, so its integrated state is written as earlier
+# versions wrote it and those versions can resume it. A resumed run reads either
+# pair.
+const _INTERLINK_STATE_NAMES = (:interlink_dv => :laser_dv, :interlink_delta_sma => :laser_delta_sma)
+
+# Which pair of names a state gives the interlink states: `:current`, `:legacy`
+# (the names before 0.6.0) or `:none`; `:mixed` for a state that has parts of
+# both pairs, or whose spacecraft differ.
+function _interlink_state_naming(u)
+    namings = map(eachindex(u.sc)) do i
+        names = propertynames(u.sc[i])
+        current = count(in(names), first.(_INTERLINK_STATE_NAMES))
+        legacy = count(in(names), last.(_INTERLINK_STATE_NAMES))
+        current == 2 && legacy == 0 ? :current : legacy == 2 && current == 0 ? :legacy :
+            current == 0 && legacy == 0 ? :none : :mixed
+    end
+    isempty(namings) && return :none
+    return allequal(namings) ? first(namings) : :mixed
+end
+
+# A checkpointed state's interlink states fit the run: both names of one pair in a
+# run with interlinks, neither pair in a run without.
+function _check_interlink_checkpoint_state(args, checkpoint)
+    naming = _interlink_state_naming(checkpoint.u)
+    (args.interlink_model === nothing ? naming === :none : naming in (:current, :legacy)) ||
+        throw(ArgumentError("Checkpoint interlink state does not match the configured interlink_model; resume with the same interlink setting."))
+    return nothing
+end
+
+# The state a checkpoint stores: the run's state, with the interlink states under
+# their checkpoint names in a run with interlinks.
+_checkpoint_state(args, u) = args.interlink_model === nothing ? u : _renamed_spacecraft_state(u, _INTERLINK_STATE_NAMES)
+
+# The state a resumed run starts from: the checkpoint's state, with interlink states
+# written under their checkpoint names given back the run's names.
+_resumed_checkpoint_state(args, u) = args.interlink_model !== nothing && _interlink_state_naming(u) === :legacy ?
+    _renamed_spacecraft_state(u, map(reverse, _INTERLINK_STATE_NAMES)) : u
+
+# A copy of the state `u` with the spacecraft components renamed by `names` (old =>
+# new pairs). Every other component, every shape and every value stay; the copy's
+# values are checked bit for bit against `u`'s.
+function _renamed_spacecraft_state(u::ComponentVector, names)
+    state = ComponentVector(sc=[_renamed_components(u.sc[i], names) for i in eachindex(u.sc)])
+    old, new = ComponentArrays.getdata(u), ComponentArrays.getdata(state)
+    length(old) == length(new) && all(index -> old[index] === new[index], eachindex(old, new)) ||
+        error("Renaming the interlink states changed the state's values; this is a SpaceAGORA bug.")
+    return state
+end
+# A state given as named tuples, as unit tests build one.
+_renamed_spacecraft_state(u::NamedTuple, names) = merge(u, (sc=[_renamed_components(spacecraft, names) for spacecraft in u.sc],))
+
+function _renamed_components(spacecraft, names)
+    renamed(name) = (index = findfirst(pair -> first(pair) === name, names); index === nothing ? name : last(names[index]))
+    components = propertynames(spacecraft)
+    return NamedTuple{map(renamed, components)}(map(name -> _state_component_copy(getproperty(spacecraft, name)), components))
+end
+_state_component_copy(value::Number) = value
+_state_component_copy(value::AbstractArray) = copy(value)
 
 # The run state the callbacks keep on the spacecraft records: the batteries'
 # flags, the faults' activity and held levels, the sensors' streams, latest
@@ -406,6 +591,124 @@ function _restore_model_checkpoint_state!(args, snapshot)
     return nothing
 end
 
+# The spacecraft each guidance, navigation and control model acts on, as its
+# `spacecraft_scope` reads once the run-start initializers ran (the RPO planner
+# and controller set their positions there, from the spacecraft ids). A
+# checkpointed or resumed run takes this baseline after its initializers and
+# writes it with every checkpoint (`gnc_scopes`). A resumed run compares its own
+# baseline with the checkpoint's before any model's run state is restored, so
+# saved state never goes back into a model that acts on other spacecraft, such as
+# a momentum manager's held command into a manager of another spacecraft, or a
+# bound copy declared on another spacecraft. Each group's scopes are compared in
+# configuration order (the configuration's models, then each spacecraft's bound
+# copies, as `_flatten_spacecraft_gnc` orders them). The models' types are
+# compared with their run state (`models`), as before. A run without these
+# models writes the entry too, with empty groups, so a checkpoint without it was
+# written by SpaceAGORA 0.5.1 or earlier; a run with any of them refuses such a
+# checkpoint when it is read (`_gnc_scope_checkpoint_entry`).
+#
+# A scope is plain data built afresh, so a selection changed in place later
+# cannot change a baseline already taken:
+# - `AllSpacecraft()`: `(scope=:all,)`;
+# - `BoundSpacecraft`: `(scope=:bound, positions)`, the run positions its ticks
+#   visit: those it names within the run, ascending and each once. A position
+#   outside the run, which an initializer can set after the pre-run check, is
+#   never ticked and not recorded, so checkpointing does not decide whether such
+#   a run starts;
+# - `SpacecraftSelection` (not yet taken by these models in a run): the same form,
+#   with the run positions `resolve_spacecraft_scope` resolves it to;
+# - `CoupledSpacecraft`: `(scope=:coupled, primary, partners)`, as declared.
+# Before the run, `check_spacecraft_scopes` refuses any other scope.
+_gnc_scope_identity(::GNCRuntime.AllSpacecraft, spacecraft, owner) = (scope=:all,)
+_gnc_scope_identity(scope::GNCRuntime.BoundSpacecraft, spacecraft, owner) =
+    (scope=:bound, positions=sort!(unique!(Int[i for i in scope.indices if 1 <= i <= length(spacecraft)])))
+_gnc_scope_identity(scope::SimulationModel.SpacecraftSelection, spacecraft, owner) =
+    (scope=:bound, positions=SimulationModel.resolve_spacecraft_scope(scope, spacecraft; owner=owner))
+_gnc_scope_identity(scope::GNCRuntime.CoupledSpacecraft, spacecraft, owner) =
+    (scope=:coupled, primary=scope.primary, partners=collect(Int, scope.partners))
+
+const _GNC_SCOPE_GROUPS = (navigation="navigation", guidance="guidance", control="control")
+
+_gnc_groups(args) = (navigation=args.navigation_model.navigation_effectors,
+    guidance=args.guidance_model.guidance_effectors, control=args.control_model.control_effectors)
+
+_gnc_scope_owner(group::Symbol, j::Int, model) = "$(_GNC_SCOPE_GROUPS[group]) model $j ($(nameof(typeof(model))))"
+
+function _gnc_scope_baseline(args)
+    spacecraft = args.dynamics_model.spacecraft
+    groups = _gnc_groups(args)
+    scopes(group) = Any[_gnc_scope_identity(GNCRuntime.spacecraft_scope(m), spacecraft, _gnc_scope_owner(group, j, m))
+        for (j, m) in enumerate(getproperty(groups, group))]
+    return (version=1, navigation=scopes(:navigation), guidance=scopes(:guidance), control=scopes(:control))
+end
+
+# The checkpoint's entry, checked for its form when the checkpoint is read, before
+# anything is restored. A checkpoint without one cannot show which spacecraft its
+# models acted on, so a run with any guidance, navigation or control model, of
+# any scope, refuses it; a run without them resumes from it (`nothing`), having
+# nothing to compare.
+function _gnc_scope_checkpoint_entry(args, checkpoint)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    entry = runtime !== nothing && hasproperty(runtime, :gnc_scopes) ? runtime.gnc_scopes : nothing
+    if entry === nothing
+        models = [_gnc_scope_owner(group, j, m) for (group, group_models) in pairs(_gnc_groups(args))
+            for (j, m) in enumerate(group_models)]
+        isempty(models) && return nothing
+        named = length(models) <= 3 ? join(models, ", ") : join(models[1:3], ", ") * " and $(length(models) - 3) more"
+        throw(ArgumentError(
+            "The checkpoint records no spacecraft scopes for guidance, navigation and control models: it was written " *
+            "by SpaceAGORA 0.5.1 or earlier, so this run's $named cannot be checked against it. Resume it with " *
+            "SpaceAGORA 0.5.1, or run from the start."))
+    end
+    hasproperty(entry, :version) && entry.version === 1 && all(group -> hasproperty(entry, group) &&
+        getproperty(entry, group) isa AbstractVector, keys(_GNC_SCOPE_GROUPS)) ||
+        throw(ArgumentError("GNC scope checkpoint state version 1 is required to resume this run."))
+    for group in keys(_GNC_SCOPE_GROUPS), (j, scope) in enumerate(getproperty(entry, group))
+        _gnc_scope_form(scope) || throw(ArgumentError(
+            "The checkpoint's GNC scope entry is damaged: it gives $(_GNC_SCOPE_GROUPS[group]) model $j the scope " *
+            "$(repr(scope)), which is not a version 1 scope. Run from the start."))
+    end
+    return entry
+end
+
+# Whether `scope` has one of the forms `_gnc_scope_identity` writes.
+_gnc_scope_form(scope) = scope isa NamedTuple && hasproperty(scope, :scope) && (scope.scope === :all ||
+    scope.scope === :bound && hasproperty(scope, :positions) && scope.positions isa AbstractVector{Int} ||
+    scope.scope === :coupled && hasproperty(scope, :primary) && scope.primary isa Int &&
+        hasproperty(scope, :partners) && scope.partners isa AbstractVector{Int})
+
+function _describe_gnc_scope(scope)
+    scope.scope === :all && return "every spacecraft"
+    scope.scope === :bound && return isempty(scope.positions) ? "no spacecraft" :
+        "the spacecraft at run position$(length(scope.positions) == 1 ? "" : "s") $(join(scope.positions, ", "))"
+    scope.scope === :coupled && return "the spacecraft at run position $(scope.primary), coupled with run " *
+        "position$(length(scope.partners) == 1 ? "" : "s") $(join(scope.partners, ", "))"
+    return repr(scope)
+end
+
+# `entry` is `nothing` only for a run without guidance, navigation or control
+# models resumed from a checkpoint written before the entry, which has nothing
+# to compare (`_gnc_scope_checkpoint_entry` refuses one with models).
+function _check_gnc_scope_baseline(args, entry, baseline)
+    entry === nothing && return nothing
+    for (group, models) in pairs(_gnc_groups(args))
+        saved, current = getproperty(entry, group), getproperty(baseline, group)
+        isequal(saved, current) && continue
+        name = _GNC_SCOPE_GROUPS[group]
+        length(saved) == length(current) || throw(ArgumentError(
+            "The GNC models' spacecraft scopes differ from the checkpoint's: it has $(length(saved)) $name " *
+            "model$(length(saved) == 1 ? "" : "s") and this run $(length(current)). Resume with the same models, " *
+            "or run from the start."))
+        j = findfirst(k -> !isequal(saved[k], current[k]), eachindex(current))
+        owner = _gnc_scope_owner(group, j, models[j])
+        throw(ArgumentError(
+            "The GNC models' spacecraft scopes differ from the checkpoint's: $owner acts on " *
+            "$(_describe_gnc_scope(current[j])) here and on $(_describe_gnc_scope(saved[j])) in the " *
+            "checkpoint. Resume with the scopes the checkpoint was written with, or run from the start."))
+    end
+    return nothing
+end
+
 # Every checkpoint a run writes records, for each of the run's periodic
 # navigation, guidance and control clocks (in the order of their callbacks), whether
 # it had not yet taken the tick due at the checkpoint's time, up to the clock's
@@ -457,6 +760,152 @@ function _pending_periodic_ticks(checkpoint)
     throw(ArgumentError("Periodic tick checkpoint state version 1 or 2, at the checkpoint's time, is required to resume this run."))
 end
 
+# The results rows kept beside the checkpoint, so that a resumed run's results
+# hold the whole run and not only the rows after its resume. A run that records
+# rows (it writes or returns results, or runs the gravity backbone) appends the
+# rows saved since the last checkpoint at each checkpoint
+# (`IOSerialization._append_checkpoint_rows!`). The stream is only ever appended
+# to: a record can drop rows from the end of the ones before it, but earlier
+# records stay as they are, so an earlier checkpoint still finds its own rows.
+# The checkpoint's `results_rows` entry records how much of that stream is its own
+# (`bytes`, `rows`), the stream's `token`, which ties the two together, and when
+# the rows start (`start_s`): 0 for a run started from its initial conditions, the
+# resume time for a resumed run that could not include the rows before it.
+mutable struct _ResultsRowsLog
+    path::String
+    header::NamedTuple
+    token::String
+    recording::Bool
+    start_s::Float64
+    logged::Int  # rows of the run's accumulators already in the stream
+    bytes::Int
+    fresh::Bool  # the next append starts a new stream
+    drop::Int  # rows the next record drops from the end of the stream's rows
+    retake::Bool  # the restored last row is saved again by the first segment
+end
+
+# What the rows were saved with: a resumed run can include them only if it saves
+# the same fields for the same number of spacecraft.
+_results_rows_header(save_fields, spacecraft_count::Int) = (kind=:spaceagora_results_rows, version=1,
+    spacecraft_count=spacecraft_count, fields=[(field.name, field.per_satellite, field.column_prefix) for field in save_fields])
+
+# A token for a new stream, from the clock and the process: it ties the stream to
+# the checkpoints of the run that started it, and draws on no random stream.
+_results_rows_token(path::String) = string(hash((time_ns(), getpid(), path)); base=16)
+
+# The checkpoint's `results_rows` entry, or `nothing` for a checkpoint written
+# before SpaceAGORA kept the rows.
+function _results_rows_checkpoint_state(checkpoint)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    return runtime !== nothing && hasproperty(runtime, :results_rows) ? runtime.results_rows : nothing
+end
+
+# The rows up to the checkpoint at `t`, or `nothing` and the reason they cannot be used.
+function _checkpoint_results_rows(entry, path::String, header, t::Float64)
+    entry === nothing &&
+        return nothing, "the checkpoint holds no record of them (it was written before SpaceAGORA kept them)"
+    hasproperty(entry, :version) && entry.version === 1 ||
+        return nothing, "the checkpoint's record of them has an unknown version"
+    entry.recording || return nothing, "the run that wrote the checkpoint did not save results rows"
+    rows = SimulationModel.IOSerialization._read_checkpoint_rows(path, entry.bytes)
+    rows === nothing && return nothing, "$(path) is missing, shorter than the checkpoint records, or unreadable"
+    hasproperty(entry, :token) && hasproperty(rows.header, :token) && rows.header.token == entry.token ||
+        return nothing, "$(path) was written by another run than the checkpoint"
+    Base.structdiff(rows.header, NamedTuple{(:token,)}) == header ||
+        return nothing, "they were saved with other save fields or another number of spacecraft"
+    length(rows.times) == entry.rows && !isempty(rows.times) && rows.times[end] == t ||
+        return nothing, "they do not reach the checkpoint's time"
+    return rows, nothing
+end
+
+# Start the run's rows: a resumed run that records rows first takes back the rows
+# up to its checkpoint into `times_acc` and `data_acc`, and continues their stream
+# after cutting away anything written after the checkpoint. When it cannot, it
+# warns: its rows then start at the resume, and its results are written beside the
+# earlier ones (`_results_destination`). A resume that solves nothing and returns
+# no table needs no rows and reads none.
+#
+# `retake_last_row`: the checkpoint's run ended before the ticks due at its time,
+# so its last row, at the checkpoint's time, does not hold them. The resumed run
+# takes those ticks first and saves that row again, as a run never interrupted
+# saves it after them. The restored row stays until that row arrives
+# (`_retake_restored_row!`), so a solve that fails first keeps it.
+function _start_results_rows!(args, recording::Bool, save_fields, resumed::Bool, t_start::Float64, entry,
+                              times_acc::Vector{Float64}, data_acc::Vector; solves::Bool=true,
+                              returns_table::Bool=true, retake_last_row::Bool=false)::_ResultsRowsLog
+    path = _checkpoint_paths(args).rows
+    header = _results_rows_header(save_fields, length(args.dynamics_model.spacecraft))
+    log = _ResultsRowsLog(path, header, _results_rows_token(path), recording, resumed ? t_start : 0.0, 0, 0, true,
+        0, false)
+    (resumed && recording && (solves || returns_table)) || return log
+    rows, reason = _checkpoint_results_rows(entry, path, header, t_start)
+    if rows === nothing
+        consequence = solves ?
+            "They start at the resume, and any results files are written to " *
+            "$(_results_destination(args, log).simulation_settings.results_directory), so the earlier ones are kept." :
+            "This resume solves nothing, so it returns an empty table and writes no files."
+        @warn "The resumed run's results cannot include the rows before its checkpoint at t = $(t_start) s: " *
+              "$(reason). $(consequence)"
+        return log
+    end
+    append!(times_acc, rows.times)
+    append!(data_acc, rows.data)
+    SimulationModel.IOSerialization._truncate_checkpoint_rows!(path, entry.bytes)
+    log.token = rows.header.token
+    log.start_s = entry.start_s
+    log.logged = length(times_acc)
+    log.bytes = entry.bytes
+    log.fresh = false
+    log.retake = retake_last_row
+    return log
+end
+
+# Before a segment's rows join the run's: when the restored last row is to be
+# saved again (`retake_last_row`), drop it as the segment's own row at that time
+# arrives, and drop it from the stream with the next record.
+function _retake_restored_row!(log, times_acc::Vector{Float64}, data_acc::Vector, saved_times)
+    (log === nothing || !log.retake) && return nothing
+    log.retake = false
+    !isempty(saved_times) && !isempty(times_acc) && first(saved_times) == times_acc[end] || return nothing
+    pop!(times_acc)
+    pop!(data_acc)
+    log.logged -= 1
+    log.drop += 1
+    return nothing
+end
+
+# At a checkpoint: append the rows saved since the last one, and return the
+# checkpoint's entry. A run that records no rows removes a stream an earlier run
+# left, which is not its own.
+function _append_results_rows!(log::_ResultsRowsLog, times_acc::Vector{Float64}, data_acc::Vector)
+    if log.recording
+        new = (log.logged + 1):length(times_acc)
+        log.bytes = SimulationModel.IOSerialization._append_checkpoint_rows!(log.path, view(times_acc, new),
+            view(data_acc, new); drop=log.drop, header=log.fresh ? merge(log.header, (token=log.token,)) : nothing)
+        log.logged = length(times_acc)
+        log.drop = 0
+    elseif log.fresh
+        rm(log.path; force=true)
+    end
+    log.fresh = false
+    return (version=1, recording=log.recording, bytes=log.bytes, rows=log.logged, start_s=log.start_s,
+        token=log.token)
+end
+
+# Where the run writes its results: its results directory when its rows start at
+# the start of the run, otherwise (a resumed run that could not include the rows
+# before its resume) `resumed_at_<start>s` inside it, so the earlier results are
+# not replaced. Every other setting is carried by field name.
+function _results_destination(args, log)
+    (log === nothing || log.start_s == 0.0) && return args
+    settings = args.simulation_settings
+    names = fieldnames(typeof(settings))
+    fields = NamedTuple{names}(map(name -> getfield(settings, name), names))
+    directory = joinpath(settings.results_directory, "resumed_at_$(log.start_s)s")
+    return SimulationModel.SimConfig._with_configuration(args;
+        simulation_settings=SimulationModel.SimulationSettings(; merge(fields, (results_directory=directory,))...))
+end
+
 # A checkpointed run's segment from `t` ends one interval later, or at the run's
 # end when that comes first or is the same time to the periodic tick clock
 # (`_same_run_time`): accumulated decimal intervals stop short of the end by an
@@ -469,7 +918,8 @@ function _checkpoint_segment_end(t::Float64, interval::Float64, mission_end::Flo
 end
 
 @inline function _write_checkpoint!(args, t::Float64, u_state, solver_mode::String; is_active=nothing, callback_state=nothing,
-                                     model_state=nothing, periodic_ticks=nothing)
+                                     model_state=nothing, periodic_ticks=nothing, gnc_scopes=nothing,
+                                     results_rows=nothing)
     runtime = _interlink_checkpoint_runtime_state(args, is_active)
     if callback_state !== nothing
         runtime = runtime === nothing ? (callbacks=callback_state,) : merge(runtime, (callbacks=callback_state,))
@@ -484,14 +934,20 @@ end
     if periodic_ticks !== nothing
         runtime = runtime === nothing ? (periodic_ticks=periodic_ticks,) : merge(runtime, (periodic_ticks=periodic_ticks,))
     end
+    if gnc_scopes !== nothing
+        runtime = runtime === nothing ? (gnc_scopes=gnc_scopes,) : merge(runtime, (gnc_scopes=gnc_scopes,))
+    end
     effector_scopes = _effector_scope_checkpoint_state(args)
     if effector_scopes !== nothing
         runtime = runtime === nothing ? (effector_scopes=effector_scopes,) : merge(runtime, (effector_scopes=effector_scopes,))
     end
+    if results_rows !== nothing
+        runtime = runtime === nothing ? (results_rows=results_rows,) : merge(runtime, (results_rows=results_rows,))
+    end
     return SimulationModel.IOSerialization._write_checkpoint!(
         args,
         t,
-        u_state,
+        _checkpoint_state(args, u_state),
         CHECKPOINT_SCHEMA_VERSION;
         solver_mode=solver_mode,
         runtime_state=runtime

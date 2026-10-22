@@ -45,7 +45,7 @@ for rung in "${RUNGS[@]}"; do
   n="${rung% *}"
   mission="${rung#* }"
   case_name="gravity_${n}sat_l50_vacuum_${mission}s"
-  julia --threads=1 --project="$REPO_ROOT" \
+  julia --threads=1 --project="$REPO_ROOT/examples" \
     "$REPO_ROOT/benchmarks/studies/parallelization_performance.jl" full --worker \
     --case="$case_name" --mode=serial --thread-count=1 --repeat=1 --worker-repeats=1 \
     --worker-seed=20260616 --worker-mc-samples=1 --warmup=1 --solver-mode=auto_stiff \

@@ -77,6 +77,33 @@ end
     end
 end
 
+@testset "constants saved at schema 4 are measured again, not refused" begin
+    # Schema 4 constants were measured by ladders that read past their table.
+    @test MC_PC.CALIBRATION_SCHEMA_VERSION >= 5
+    mktempdir() do dir
+        calls = Ref(0)
+        calibrate = () -> (calls[] += 1; mc_constants(threads = 4))
+
+        old = joinpath(dir, "schema4.toml")
+        MC_PC.save_machine_constants(mc_constants(threads = 16), old)
+        text = replace(read(old, String),
+                       "schema_version = $(MC_PC.CALIBRATION_SCHEMA_VERSION)" => "schema_version = 4")
+        write(old, text * "\n[campaign]\npool_cold_start_s = 1.5\n")
+        @test MC_PC.load_machine_constants(old) === nothing
+
+        # Measured with more threads than this session, so only the schema
+        # makes the file stale.
+        @test MC_PC.ensure_machine_constants!(path = old, calibrate = calibrate, threads = 4) === :calibrated
+        @test calls[] == 1
+        again = MC_PC.load_machine_constants(old)
+        @test again !== nothing
+        @test again.schema_version == MC_PC.CALIBRATION_SCHEMA_VERSION
+        @test again.measured_threads == 4
+        @test occursin("pool_cold_start_s", read(old, String))
+        @test isempty(mc_leftover_temps(dir))
+    end
+end
+
 @testset "a calibration another process holds is waited for, not repeated" begin
     mktempdir() do dir
         calls = Ref(0)

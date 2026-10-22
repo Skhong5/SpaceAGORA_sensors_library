@@ -5,7 +5,7 @@ set -u
 REPO=/home/space-falcon-1/Documents/SpaceAGORA.jl
 OUT="$1"; CASE="$2"; MODE="$3"; THREADS="$4"; LIMIT_S="${5:-900}"
 cd "$REPO"
-env ${EXTRA_ENV:-FOO=bar} julia --project=. -t "$THREADS" benchmarks/studies/parallelization_performance.jl full \
+env ${EXTRA_ENV:-FOO=bar} julia --project=examples -t "$THREADS" benchmarks/studies/parallelization_performance.jl full \
   --worker --case="$CASE" --mode="$MODE" --thread-count="$THREADS" \
   --repeat=1 --outfile="$OUT.json" > "$OUT.log" 2>&1 &
 PID=$!

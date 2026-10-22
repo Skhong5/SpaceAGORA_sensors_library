@@ -7,6 +7,7 @@ module InterlinkPowerTests
 using Test
 using LinearAlgebra
 using StaticArrays
+using TOML
 using SpaceAGORA
 
 const SM = SpaceAGORA.SimulationModel
@@ -42,7 +43,7 @@ function beam_pair(; arc_m=5000.0, link=PowerBeamLink(power_w=80.0, range_m=50e3
     return spacecraft, model
 end
 
-function run_args(spacecraft, model; duration=60.0, policy=:power_delivery, settings=SimulationSettings(results=false, generate_plots=false))
+function run_args(spacecraft, model; duration=60.0, policy=PowerDeliveryPolicy(), settings=SimulationSettings(results=false, generate_plots=false))
     return SimulationConfiguration(
         simulation_settings=settings,
         mission_configuration=MissionConfiguration(mission_type=MissionTime, mission_time=duration,
@@ -53,7 +54,7 @@ function run_args(spacecraft, model; duration=60.0, policy=:power_delivery, sett
         control_model=ControlModel((), Float64[]), initial_time=InitialTime(),
         integration_tolerances=IntegrationTolerances(reltol_orbit=1e-10, abstol_orbit=1e-8, dt_max_orbit=1.0),
         solver_config=SM.SolverConfig(solver_mode=:tsit5), interlink_model=model,
-        scheduling_policy_model=SchedulingPolicyModel(policy))
+        scheduling_policy_model=policy)
 end
 
 sample(pos) = SM.InterLinkModels.link_endpoint((pos=pos,), nothing, 1)
@@ -172,7 +173,7 @@ sample(pos) = SM.InterLinkModels.link_endpoint((pos=pos,), nothing, 1)
 
     @testset "scheduling" begin
         spacecraft, model = beam_pair()
-        gve = run_simulation(run_args(spacecraft, model; duration=10.0, policy=:gve_sma); return_solution=true)
+        gve = run_simulation(run_args(spacecraft, model; duration=10.0, policy=SemimajorAxisRatePolicy()); return_solution=true)
         @test all(entry -> isempty(entry.active), gve.prob.p.args.interlink_model.history)   # no force, no score
         spacecraft, model = beam_pair()
         power = run_simulation(run_args(spacecraft, model; duration=10.0); return_solution=true)
@@ -187,7 +188,7 @@ sample(pos) = SM.InterLinkModels.link_endpoint((pos=pos,), nothing, 1)
         spacecraft = [beam_sat(1, 0.0; sender=true), beam_sat(2, 5000.0; sender=true)]
         model = InterlinkModel()
         register_link!(model, spacecraft, (1, 1), (2, 1), LaserMomentumLink(power_w=40.0))
-        names_laser = string.(propertynames(run_simulation(run_args(spacecraft, model; duration=1.0, policy=:gve_sma);
+        names_laser = string.(propertynames(run_simulation(run_args(spacecraft, model; duration=1.0, policy=SemimajorAxisRatePolicy());
             return_results=true).table))
         @test !any(name -> occursin("power_received", name) || occursin("power_beamed", name), names_laser)
         @test any(name -> occursin("power_generated", name), names_laser)
@@ -201,7 +202,7 @@ sample(pos) = SM.InterLinkModels.link_endpoint((pos=pos,), nothing, 1)
                 checkpoint_directory=directory)
             spacecraft, model = beam_pair()
             args = run_args(spacecraft, model; settings)
-            state = (sc=[(pos=[RADIUS, 0.0, 0.0], laser_dv=zeros(3), laser_delta_sma=0.0) for _ in 1:2],)
+            state = (sc=[(pos=[RADIUS, 0.0, 0.0], interlink_dv=zeros(3), interlink_delta_sma=0.0) for _ in 1:2],)
             SE._write_checkpoint!(args, 5.0, state, "tsit5"; is_active=[true, true])
             checkpoint = SE._load_checkpoint(args)
             @test isnothing(SE._restore_interlink_checkpoint_state!(args, checkpoint, trues(2)))
@@ -238,9 +239,10 @@ sample(pos) = SM.InterLinkModels.link_endpoint((pos=pos,), nothing, 1)
         # is restored, and the file still resumes the unchanged run.
         straight = run_simulation(run_args(beam_pair()...); return_results=true).table
         mktempdir() do directory
-            segments(resume) = SimulationSettings(results=false, generate_plots=false, checkpoint_enabled=true,
-                checkpoint_interval_s=10.0, checkpoint_directory=directory, resume_from_checkpoint=resume)
-            run_simulation(run_args(beam_pair()...; duration=30.0, settings=segments(false)); return_results=true)
+            segments(resume) = SimulationSettings(results=resume, results_directory=directory, generate_plots=false,
+                checkpoint_enabled=true, checkpoint_interval_s=10.0, checkpoint_directory=directory,
+                resume_from_checkpoint=resume)
+            first_leg = run_simulation(run_args(beam_pair()...; duration=30.0, settings=segments(false)); return_results=true).table
             changed = (
                 "receiver radius" => (receiver=(receiver_radius=0.3,),),
                 "receiver efficiency" => (receiver=(receiver_efficiency=0.5,),),
@@ -255,7 +257,11 @@ sample(pos) = SM.InterLinkModels.link_endpoint((pos=pos,), nothing, 1)
                 @test_throws ArgumentError run_simulation(args; return_results=true)
             end
             resumed = run_simulation(run_args(beam_pair()...; settings=segments(true)); return_results=true).table
-            @test resumed.time[1] >= 30.0 - 1e-9
+            # It resumed at 30 s rather than starting again, and its table holds the
+            # whole run: the first leg's rows, kept beside its checkpoint, then its own.
+            @test TOML.parsefile(joinpath(directory, "simulation_results.manifest.toml"))["resumed_from_s"] == 30.0
+            @test resumed.time[1] == 0.0 && resumed.time[end] > 30.0
+            @test isequal(resumed[resumed.time .< 30.0, :], first_leg[first_leg.time .< 30.0, :])
             @test resumed.sc2_battery_wh[end] ≈ straight.sc2_battery_wh[end] rtol=1e-9
             @test resumed.sc1_battery_wh[end] ≈ straight.sc1_battery_wh[end] rtol=1e-9
         end

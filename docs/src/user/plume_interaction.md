@@ -46,7 +46,9 @@ samples the trajectory and integrates erosion rate by trapezoidal quadrature,
 using the thrust held across that interval. Endpoint throttle changes apply to
 the following interval. A new run resets the integral; checkpoint segments
 inside one run retain it. A separately resumed run starts a new diagnostic
-integral at its resume time.
+integral at its resume time. Its results table holds the whole run (see
+[Outputs](outputs.md)), so the cumulative mass column falls back to zero after the
+resume time and counts only the resumed interval from there.
 
 The cumulative mass is a diagnostic, not an extra ODE state controlled by solver
 tolerances. Demonstrate convergence by reducing `dt_max_orbit` and, for an

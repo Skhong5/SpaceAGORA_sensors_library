@@ -20,7 +20,7 @@
 # so other load on the machine never pollutes the numbers -- plotted
 # separately from the wall-time curve.
 #
-#   julia --project=. benchmarks/studies/gram_mars_fix_and_constellation_scaling/leo_thread_scaling_by_mode.jl
+#   julia --project=examples benchmarks/studies/gram_mars_fix_and_constellation_scaling/leo_thread_scaling_by_mode.jl
 #
 # Default thread ladder now goes up to 64 threads (1, 2, 4, 8, 16, 32, 64).
 # Override satellite count / thread ladder:

@@ -1,6 +1,7 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const EXAMPLES_DIR = joinpath(REPO_ROOT, "examples")
-const PROJECT_PATH = REPO_ROOT
+# The examples run in the examples environment (examples/setup.jl prepares it).
+const PROJECT_PATH = joinpath(REPO_ROOT, "examples")
 
 using CSV
 using DataFrames

@@ -59,7 +59,7 @@ julia --project=. benchmarks/studies/telemetry_validation/run_validation.jl full
 julia --project=. benchmarks/studies/telemetry_validation/density_compare.jl
 
 # Figures 1-5 of the record's visual section, from whatever outputs exist:
-julia --project=. benchmarks/studies/telemetry_validation/plot_results.jl
+julia --project=examples benchmarks/studies/telemetry_validation/plot_results.jl
 ```
 
 `--enforce=true` applies the manifest gate tolerances to `odyssey_tolson`,
