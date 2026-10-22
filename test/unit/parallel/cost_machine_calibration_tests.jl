@@ -43,6 +43,13 @@ const _KEPT_CONSTANT_KEYS = Set(["schema_version", "fingerprint", "measured_thre
             @test getfield(back, field) == getfield(mc, field)
         end
 
+        # Built with the defaults, a value saves a file the loader reads: the
+        # schema defaults to the current one.
+        @test PC.MachineConstants().schema_version == PC.CALIBRATION_SCHEMA_VERSION
+        built = joinpath(dir, "defaults.toml")
+        PC.save_machine_constants(PC.MachineConstants(usl_alpha_base = 0.1, usl_beta_alloc = 0.2), built)
+        @test PC.load_machine_constants(built) == PC.MachineConstants(usl_alpha_base = 0.1, usl_beta_alloc = 0.2)
+
         # A campaign table written by the trace extraction survives a re-save,
         # and is the only other table the file holds.
         write(path, read(path, String) * "\n[campaign]\npool_cold_start_s = 1.5\n")
@@ -70,9 +77,10 @@ end
         write(stale, body)
         @test PC.load_machine_constants(stale) === nothing
 
-        # A current-schema file without one of the two terms the planner reads
-        # is not current either, so it is measured again rather than read as 0.
-        for key in ("usl_alpha_base", "usl_beta_alloc")
+        # A current-schema file without one of the two terms the planner reads,
+        # or without the measuring thread count, is not current either, so it is
+        # measured again rather than read with a made-up value.
+        for key in ("usl_alpha_base", "usl_beta_alloc", "measured_threads")
             partial = joinpath(dir, "without_$(key).toml")
             PC.save_machine_constants(_synthetic_constants(), partial)
             write(partial, join(filter(l -> !startswith(l, key), readlines(partial)), "\n"))
@@ -83,7 +91,10 @@ end
 
 @testset "calibrate_machine measures the USL terms the planner reads" begin
     mc = PC.calibrate_machine(k = 1)
-    @test isfinite(mc.usl_alpha_base) && 0.0 <= mc.usl_alpha_base <= 1.0
+    # Non-negative but not bounded above: with two threads the fit has one rung
+    # above serial, and a noisy reading can put alpha past 1 (the speedup it
+    # predicts is then floored at 1).
+    @test isfinite(mc.usl_alpha_base) && mc.usl_alpha_base >= 0.0
     @test isfinite(mc.usl_beta_alloc) && mc.usl_beta_alloc >= 0.0
     @test mc.measured_threads == Threads.nthreads()
     @test mc.schema_version == PC.CALIBRATION_SCHEMA_VERSION

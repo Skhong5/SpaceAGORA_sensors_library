@@ -49,8 +49,7 @@ through, so that a pure kernel is not dead-code eliminated.
 
     Callers timing a pure kernel must give it runtime-opaque arguments (a
     `Vector` filled at run time, a value read from a `Ref`). Compare against
-    [`timing_noise_floor`](@ref) to detect the failure when in doubt. Timings of
-    whole RHS passes against live simulation state are safe by construction.
+    [`timing_noise_floor`](@ref) to detect the failure when in doubt.
 """
 function timed_min(f::F; k::Int = 9, warmup::Int = 2, target_window_ns::Int = 20_000)::Float64 where {F}
     k = max(1, k)

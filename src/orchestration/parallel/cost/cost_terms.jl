@@ -1,7 +1,7 @@
 # Machine-constant and contention types for the parallel planners.
 #
-# `MachineConstants` holds the rates `calibrate_machine` measures once per
-# machine; the predictive campaign planner reads its USL terms.
+# `MachineConstants` holds the two USL terms `calibrate_machine` measures once
+# per machine, which the predictive campaign planner reads.
 # `ContentionInputs` holds what one warm RHS pass shows about how a workload
 # scales; the native-lock width cap reads its lock occupancy.
 
@@ -80,6 +80,22 @@ needs no history to reach: it is visible in the window that measured it.
     return ci.lock_wait_ns / ci.lock_hold_ns
 end
 
+# 4: adds the USL contention parameters (usl_alpha_base, usl_beta_arith,
+# usl_beta_alloc, usl_beta_bw, llc_bytes). Bumped rather than defaulted because
+# a file without them would silently predict zero contention -- which reads as
+# "this machine scales perfectly" and is the most dangerous possible default.
+#
+# 5: the USL arithmetic ladder and the parallel speedup curve no longer read
+# past their table (`calib_batch_kernel!` wraps its column). Constants saved at
+# 4 timed the memory after the table, so they are measured again, not kept.
+#
+# 6: only the constants something reads are kept: `usl_alpha_base`,
+# `usl_beta_alloc`, the fingerprint and the measuring thread count. The other
+# rates were measured for the RHS-plan predictor, which 0.6.0 removed. A file at
+# 5 is measured again rather than read for its two kept values, so the loader
+# reads one version only.
+const CALIBRATION_SCHEMA_VERSION = 6
+
 """
     MachineConstants
 
@@ -93,15 +109,18 @@ predictive campaign planner reads the two USL terms.
                       USL `β` an allocation ladder shows over the arithmetic one.
 - `fingerprint`       machine identity these constants were measured on.
 - `schema_version`    bumped when the file's meaning changes, so stale files are
-                      measured again rather than reinterpreted.
+                      measured again rather than reinterpreted. Defaults to the
+                      current schema, so a value built here saves a file the
+                      loader reads.
 - `measured_threads`  `Threads.nthreads()` of the session that measured them, the
-                      widest rung of its ladders; 0 when unknown.
+                      widest rung of its ladders; 0 when unknown, which is never
+                      current.
 """
 Base.@kwdef struct MachineConstants
     usl_alpha_base::Float64 = 0.0
     usl_beta_alloc::Float64 = 0.0
     fingerprint::String = ""
-    schema_version::Int = 1
+    schema_version::Int = CALIBRATION_SCHEMA_VERSION
     measured_threads::Int = 0
 end
 

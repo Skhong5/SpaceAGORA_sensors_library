@@ -7,22 +7,6 @@
 # (`usl_beta_alloc`), both from speedup ladders over the synthetic kernels in
 # calibration_kernels.jl.
 
-# 4: adds the USL contention parameters (usl_alpha_base, usl_beta_arith,
-# usl_beta_alloc, usl_beta_bw, llc_bytes). Bumped rather than defaulted because
-# a file without them would silently predict zero contention -- which reads as
-# "this machine scales perfectly" and is the most dangerous possible default.
-#
-# 5: the USL arithmetic ladder and the parallel speedup curve no longer read
-# past their table (`calib_batch_kernel!` wraps its column). Constants saved at
-# 4 timed the memory after the table, so they are measured again, not kept.
-#
-# 6: only the constants something reads are kept: `usl_alpha_base`,
-# `usl_beta_alloc`, the fingerprint and the measuring thread count. The other
-# rates were measured for the RHS-plan predictor, which 0.6.0 removed. A file at
-# 5 is measured again rather than read for its two kept values, so the loader
-# reads one version only.
-const CALIBRATION_SCHEMA_VERSION = 6
-
 """
     machine_fingerprint() -> String
 
@@ -333,8 +317,7 @@ with at least `threads` Julia threads. The USL ladders only reach the thread
 count of the session that measured them, so a file written by a one-thread
 session is re-measured the first time a wider session runs with the flag; a file
 measured wider serves a narrower session as is, and is never overwritten by it.
-A file that does not record the thread count (`measured_threads == 0`) is
-treated as current.
+A file that does not record the thread count, or records 0, is measured again.
 
 Several processes started together in one working directory (a job array,
 parallel test runners) share the fingerprinted path. Only one of them measures:
@@ -399,7 +382,7 @@ end
 
 _constants_current(mc::Nothing, threads::Integer)::Bool = false
 _constants_current(mc::MachineConstants, threads::Integer)::Bool =
-    mc.measured_threads == 0 || mc.measured_threads >= threads
+    mc.measured_threads >= max(1, threads)
 
 # Create `lock_path` exclusively (O_CREAT|O_EXCL), holding this process's id.
 # False when another process holds it; a lock older than `stale_s` seconds is
@@ -436,7 +419,8 @@ end
     load_machine_constants(path = machine_constants_path()) -> Union{Nothing, MachineConstants}
 
 Read cached constants, or `nothing` if absent, unparseable, written by a
-different schema version, or missing one of the two USL terms. A stale-schema
+different schema version, or missing one of the two USL terms or the measuring
+thread count. A stale-schema
 file is discarded rather than reinterpreted: term semantics changed by
 definition when the version moved, so its numbers do not mean what the current
 readers would take them to mean.
@@ -456,7 +440,7 @@ function load_machine_constants(path::AbstractString = machine_constants_path())
             usl_beta_alloc = Float64(parsed["usl_beta_alloc"]),
             fingerprint = String(get(parsed, "fingerprint", "")),
             schema_version = CALIBRATION_SCHEMA_VERSION,
-            measured_threads = Int(get(parsed, "measured_threads", 0)),
+            measured_threads = Int(parsed["measured_threads"]),
         )
     catch
         return nothing

@@ -8,6 +8,31 @@ Renamed and retired extension hooks have their own page,
 [Public API and Compatibility](../public_api_policy.md) describes the
 deprecation rules.
 
+## 0.6.1
+
+### Machine calibration constants are measured again
+
+The machine calibration now measures only the two constants the predictive
+campaign planner reads, and the cost constants it saves move to schema 6.
+Constants saved by SpaceAGORA 0.6.0 or earlier are no longer read:
+
+- A `SolverConfig(parallel=true)` run measures them again by itself, once in
+  each working directory, with that session's thread count.
+- On a machine that uses the predictive campaign planner any other way (profile
+  R7, or `SPACEAGORA_CAMPAIGN_PLANNER=predictive` set by hand), rerun the
+  calibration after updating, with the thread count you run with. Until then
+  that planner runs without machine constants.
+- If you calibrated with the script at a job's thread count, rerun it as well:
+  otherwise the first `parallel=true` session in that working directory measures
+  with its own thread count. Terminal, from the repository root:
+
+  ```text
+  julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl
+  ```
+
+[Parallel Execution](parallel_execution.md#Turning-on-parallel-execution) says
+where the constants are kept.
+
 ## 0.6.0
 
 ### The examples run in the examples environment

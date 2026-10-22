@@ -12,8 +12,10 @@
 #
 # It measures the two USL terms the predictive campaign planner reads,
 # usl_alpha_base and usl_beta_alloc. --repeats runs the whole pass N times and
-# reports each term's spread. Read the spread as a diagnostic, not as an
-# acceptance criterion: dispatch timing includes OS wake scheduling.
+# prints both terms for every pass with their range. Read the range as a
+# diagnostic, not as an acceptance criterion: dispatch timing includes OS wake
+# scheduling. A relative spread would say little here: both terms sit near zero,
+# and usl_beta_alloc is often exactly zero.
 
 using SpaceAGORA
 
@@ -43,14 +45,16 @@ mc = results[end]
 
 if repeats > 1
     println()
-    println("Reproducibility across $(repeats) passes (max spread, % of min).")
+    println("The two terms in each of $(repeats) passes, and their range.")
     println("Diagnostics, not an acceptance gate -- see the header comment:")
-    spread(v) = isempty(v) || minimum(v) <= 0 ? NaN :
-        (maximum(v) - minimum(v)) / minimum(v) * 100
-    report(name, f) = println("  ", rpad(name, 30),
-        isnan(spread(map(f, results))) ? "n/a" : string(round(spread(map(f, results)), digits=2), "%"))
-    report("usl_alpha_base", m -> m.usl_alpha_base)
-    report("usl_beta_alloc", m -> m.usl_beta_alloc)
+    cell(x) = rpad(string(round(x; sigdigits = 4)), 18)
+    println("  ", rpad("pass", 8), rpad("usl_alpha_base", 18), "usl_beta_alloc")
+    for (r, m) in enumerate(results)
+        println("  ", rpad(string(r), 8), cell(m.usl_alpha_base), cell(m.usl_beta_alloc))
+    end
+    term_range(f) = maximum(f, results) - minimum(f, results)
+    println("  ", rpad("range", 8), cell(term_range(m -> m.usl_alpha_base)),
+            cell(term_range(m -> m.usl_beta_alloc)))
 end
 
 path = PC.save_machine_constants(mc)

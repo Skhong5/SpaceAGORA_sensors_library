@@ -27,10 +27,11 @@ mc_leftover_temps(dir) = filter(f -> endswith(f, ".tmp") || endswith(f, ".lock")
         path = joinpath(dir, "constants.toml")
         MC_PC.save_machine_constants(mc_constants(threads = 7), path)
         @test MC_PC.load_machine_constants(path).measured_threads == 7
-        # A file written before the count was recorded reads as 0 (unknown).
+        # A file without the count is not read, so it is measured again rather
+        # than served to sessions of any width.
         text = replace(read(path, String), r"measured_threads = 7\n" => "")
         write(path, text)
-        @test MC_PC.load_machine_constants(path).measured_threads == 0
+        @test MC_PC.load_machine_constants(path) === nothing
         @test isempty(mc_leftover_temps(dir))
     end
 end
@@ -52,10 +53,13 @@ end
         @test calls[] == 1
         @test MC_PC.load_machine_constants(wide).measured_threads == 16
 
-        legacy = joinpath(dir, "legacy.toml")
-        MC_PC.save_machine_constants(mc_constants(threads = 0), legacy)
-        @test MC_PC.ensure_machine_constants!(path = legacy, calibrate = calibrate(64), threads = 64) === :present
-        @test calls[] == 1
+        # A count of 0 (unknown) is not current at any width.
+        unknown = joinpath(dir, "unknown.toml")
+        MC_PC.save_machine_constants(mc_constants(threads = 0), unknown)
+        @test MC_PC.load_machine_constants(unknown).measured_threads == 0
+        @test MC_PC.ensure_machine_constants!(path = unknown, calibrate = calibrate(1), threads = 1) === :calibrated
+        @test calls[] == 2
+        @test MC_PC.load_machine_constants(unknown).measured_threads == 1
 
         # A campaign table survives the re-measurement.
         table = joinpath(dir, "table.toml")
