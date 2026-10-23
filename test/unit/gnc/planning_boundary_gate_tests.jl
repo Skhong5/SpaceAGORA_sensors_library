@@ -11,8 +11,6 @@ using Test
         joinpath("src", "models", "gnc", "planning", "robot_arm"),
         joinpath("src", "models", "gnc", "planning", "rpo", "nested_probe"),
         joinpath("src", "interfaces", "analysis", "planning"),
-        joinpath("packages", "SpaceAGORAHYPR", "src"),
-        joinpath("packages", "SpaceAGORAHYPR", "src", "rpo"),
     )
     gates = (
         ("ci_src_completeness_contract_gate.jl", "boundary_stub() = nothing\n",
@@ -184,7 +182,7 @@ using Test
                 original = read(dispatcher, String)
                 try
                     write(dispatcher, replace(original,
-                        "_invoke_kernel(:_edg_at_control_tick" => "_invoke_kernel(:_edg_wrong_kernel"))
+                        "_invoke_kernel(:guidance_decision!" => "_invoke_kernel(:_edg_wrong_kernel"))
                     rejected = run_gate()
                     @test rejected.failure isa LoadError
                     @test any(v -> occursin("must be an exact package forwarder", v), rejected.violations)

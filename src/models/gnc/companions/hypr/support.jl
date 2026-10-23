@@ -4,7 +4,7 @@ export HYPRUnavailableError, HYPRCompatibilityError, hypr_available
 """HYPR was selected before loading its optional companion package."""
 struct HYPRUnavailableError <: Exception end
 Base.showerror(io::IO, ::HYPRUnavailableError) = print(io,
-    "HYPR execution requires the optional SpaceAGORAHYPR package. Install it in your project and run `using SpaceAGORAHYPR` before selecting HYPR. See the optional HYPR installation guide.")
+    "HYPR execution requires the optional HYPR package. Install it in your project and run `using SpaceAGORA, HYPR` before selecting HYPR. See the optional HYPR installation guide.")
 """An incompatible optional planner implementation was requested in this process."""
 struct HYPRCompatibilityError <: Exception
     message::String
@@ -36,7 +36,7 @@ hypr_available() = _loaded[] && !_conflicted[]
 function activate!()
     _conflicted[] = true
     _loaded[] = false
-    throw(HYPRCompatibilityError("SpaceAGORAHYPR 0.1 contains an unsupported implementation. Use the 0.2 compatibility package with HYPR and start a fresh process."))
+    throw(HYPRCompatibilityError("SpaceAGORAHYPR 0.1 contains an unsupported implementation. Install the supported HYPR package, load it with SpaceAGORA directly, and start a fresh process."))
 end
 function require_hypr()
     _conflicted[] && throw(HYPRCompatibilityError("HYPR loading conflicted. Start a fresh process with the supported package pair."))

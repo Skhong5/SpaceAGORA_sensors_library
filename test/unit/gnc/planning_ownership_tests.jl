@@ -235,38 +235,38 @@ end
         end
     end
     @test !isdefined(SpaceAGORA.SimulationModel.GuidanceHooks, :_control_module)
-    # The one lookup through the parent module that guidance keeps, allowed by
-    # name: typed EDG guidance reaches EDGAlgorithms, which loads after
-    # GuidanceHooks (`_edg_algorithms()`). It is not a control dependency. Any
-    # other such lookup is new and needs review.
-    allowed = Dict(joinpath("src", "models", "gnc", "guidance", "aerobraking", "typed_edg", "guidance_models.jl") =>
-        Any[:EDGAlgorithms])
+    # Guidance looks nothing up through its parent module at run time: typed EDG
+    # guidance imports EDGAlgorithms, which loads before GuidanceHooks. Any such
+    # lookup is new and needs review.
+    allowed = Dict{String, Vector{Any}}()
     function lookups(sources)
         parsed = Dict(path => Meta.parseall(source) for (path, source) in sources)
         aliases = _all_parent_aliases(values(parsed))
         return Dict(relpath(path, root) => found for (path, ex) in parsed
             for found in (_parent_module_lookups(ex, aliases),) if !isempty(found))
     end
-    @test :_PARENT in _all_parent_aliases(Meta.parseall.(values(sources)))
+    @test :_CORE in _all_parent_aliases(Meta.parseall.(values(sources)))
     @test lookups(sources) == allowed
     # A ControlHooks lookup put back into an actual guidance source, in memory, is
-    # caught; no repository file changes.
+    # caught; no repository file changes. So is the EDGAlgorithms lookup guidance
+    # no longer needs.
     edg_path = joinpath(guidance_dir, "aerobraking", "energy_depletion_lifecycle.jl")
     for lookup in ("getfield(_PARENT, :ControlHooks)", "getproperty(parentmodule(@__MODULE__), :ControlHooks)",
-                   "_PARENT.ControlHooks", "_CORE.ControlHooks")
-        changed = sources[edg_path] * "\n_late_control() = $lookup\n"
+                   "_PARENT.ControlHooks", "_CORE.ControlHooks", "getfield(_PARENT, :EDGAlgorithms)")
+        changed = sources[edg_path] * "\nconst _PARENT = parentmodule(@__MODULE__)\n_late_control() = $lookup\n"
         @test lookups(merge(sources, Dict(edg_path => changed))) != allowed
-        startswith(lookup, "get") && @test _has_reflective_control_lookup(Meta.parseall(changed))
+        startswith(lookup, "get") && occursin("ControlHooks", lookup) &&
+            @test _has_reflective_control_lookup(Meta.parseall(changed))
     end
     # So is one through a renamed alias of the parent: in the same file, through a
     # second renaming, or with the alias defined in one guidance file and used in
     # another.
     hooks_path = joinpath(guidance_dir, "hooks.jl")
     for (alias_path, alias_lines, lookup) in (
-            (edg_path, "const P = _PARENT", "P.ControlHooks"),
-            (edg_path, "const P = _PARENT\nconst Q = P", "Q.ControlHooks"),
-            (edg_path, "const P = _PARENT", "getfield(P, :ControlHooks)"),
-            (hooks_path, "const P = _PARENT", "P.ControlHooks"))
+            (edg_path, "const P = _CORE", "P.ControlHooks"),
+            (edg_path, "const P = _CORE\nconst Q = P", "Q.ControlHooks"),
+            (edg_path, "const P = _CORE", "getfield(P, :ControlHooks)"),
+            (hooks_path, "const P = _CORE", "P.ControlHooks"))
         changed = merge(sources, Dict(alias_path => sources[alias_path] * "\n$alias_lines\n"))
         changed[edg_path] = changed[edg_path] * "\n_late_control() = $lookup\n"
         @test lookups(changed) != allowed

@@ -12,10 +12,10 @@ function paired_bezier_shape(base_plan,geometry,cfg;safe_distance_m=.5)
     base_controls = max(2, bezier_cfg.n_waypoints + 2)
     max_controls = max(base_controls, min(size(samples, 2), max(base_controls + 6, size(base_plan.path, 2))))
 
-    best_path = SpaceAGORAHYPR.RPO.rpo_fit_bezier_fixed_endpoints(samples, base_controls, bezier_cfg)
+    best_path = Base.get_extension(HYPR, :HYPRSpaceAGORAExt).RPO.rpo_fit_bezier_fixed_endpoints(samples, base_controls, bezier_cfg)
     best_components = G.rpo_normalized_path_cost_components(best_path, geometry, bezier_cfg; safe_distance_m=safe_distance_m)
     for n_control in (base_controls + 1):max_controls
-        candidate = SpaceAGORAHYPR.RPO.rpo_fit_bezier_fixed_endpoints(samples, n_control, bezier_cfg)
+        candidate = Base.get_extension(HYPR, :HYPRSpaceAGORAExt).RPO.rpo_fit_bezier_fixed_endpoints(samples, n_control, bezier_cfg)
         comps = G.rpo_normalized_path_cost_components(candidate, geometry, bezier_cfg; safe_distance_m=safe_distance_m)
         if comps.J_obs < best_components.J_obs - 1.0e-9 ||
                 (comps.J_obs <= best_components.J_obs + 1.0e-9 && comps.total < best_components.total)

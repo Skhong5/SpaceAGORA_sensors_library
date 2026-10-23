@@ -10,7 +10,7 @@ Loading SpaceAGORA alone does not activate these packages.
 | [robotics/](robotics/README.md) | Pinned HYPR and MuJoCo repositories for motion planning and mechanical scenes. HYPR supports both spacecraft RPO and robot-arm planning. |
 | [gnc/](gnc/README.md) | Pinned SpaceAGORAEDG repository for experimental energy-depletion guidance; core retains simulation lifecycle and actuation. |
 | [VisualizerSource.toml](VisualizerSource.toml) | Source pin for the separate SpaceAGORAVisualizer installer; the renderer is not stored in this tree. |
-| [SpaceAGORAHYPR/](SpaceAGORAHYPR/README.md) | Existing compatibility package that loads SpaceAGORA and HYPR together. Its location and role are unchanged. |
+| [HYPRSource.toml](HYPRSource.toml) | Immutable HYPR source pin for the standalone installer; it must agree with the external HYPR gitlink. |
 
 GRAMSuite keeps its submodule at `data/GRAMSuite.jl`. Browser rendering lives in
 [SpaceAGORAVisualizer.jl](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl),
@@ -50,8 +50,8 @@ for loading each integration and for standalone installation routes.
 
 The source records serve different installation routes. `OptionalPackages.toml`
 describes the HYPR, MuJoCo and EDG checkouts; their Git revisions are recorded by
-gitlinks. `SpaceAGORAHYPR/HYPRSource.toml` also supplies HYPR's revision to its
-standalone compatibility installer, while `VisualizerSource.toml` pins the separate
+gitlinks. `HYPRSource.toml` also supplies HYPR's revision to its
+standalone installer, while `VisualizerSource.toml` pins the separate
 visualizer installer. Keep these routes compatible when updating a companion.
 Combining the records requires migrating their readers and validating both clone
 and standalone installation; removing a record alone would break a supported

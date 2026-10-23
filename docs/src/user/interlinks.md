@@ -175,13 +175,15 @@ default. Virtual terminals draw nothing and are never shed.
 ## Power links
 
 A `PowerBeamLink` carries power, one way, from a `LaserTerminal` (the
-transmitter) to a `PowerReceiver` (the receiver). It applies no force.
+transmitter) to a `PowerReceiver` (the receiver). It applies no force. This
+configuration fragment uses the 50 W `terminal` mounted above and requests
+40 W, within its limit:
 
 ```julia
 receiver = PowerReceiver(normal=[0.0, -1.0, 0.0], radius_m=0.25, efficiency=0.4)
 add_actuator!(other, other.root, receiver)
 register_link!(model, spacecraft, (1, terminal), (2, receiver),
-    PowerBeamLink(power_w=80.0, wavelength_m=1.064e-6, waist_radius_m=0.05, range_m=50e3))
+    PowerBeamLink(power_w=40.0, wavelength_m=1.064e-6, waist_radius_m=0.05, range_m=50e3))
 args = SimulationConfiguration(...; interlink_model=model,
     scheduling_policy_model=PowerDeliveryPolicy())
 ```
@@ -207,8 +209,8 @@ args = SimulationConfiguration(...; interlink_model=model,
   keeps paying.
 - **Availability.** The link can close within `range_m`, while the segment
   between the spacecraft clears the planet (a sphere of its equatorial radius).
-  When the transmitter's battery sheds tier 1, the beam closes until the tier
-  clears.
+  When the transmitter's battery sheds tier 1, the beam becomes unavailable
+  until the tier clears.
 - **Direction.** A `PowerReceiver` can only receive, and a `LaserTerminal` can
   only transmit a power beam (`terminal_supports(terminal, link, side)`).
 - **Scheduling.** Policies that score links by their forces never select a
@@ -263,13 +265,14 @@ args = SimulationConfiguration(...; interlink_model=model,
   it runs at the link's `transmit_power_w` and draws `transmit_power_w / efficiency`,
   as a tier-1 load. A receiving radio draws nothing; give its electronics a
   constant `PowerLoad`. When the transmitter's battery sheds tier 1, the link
-  closes until the tier clears. A `LaserTerminal` or a `PowerReceiver` cannot
-  carry a data link.
+  becomes unavailable until the tier clears. A `LaserTerminal` or a
+  `PowerReceiver` cannot carry a data link.
 - **Bits.** In a run with a data link, every spacecraft has two more integrated
   states, `data_sent_bits` and `data_received_bits`. Their rates are the sums of
   the rates its active links carry out and in, evaluated at every
-  right-hand-side call, so they are exact integrals of a varying rate. They
-  continue across a checkpoint resume.
+  right-hand-side call. The solver integrates these counters alongside the
+  other states, subject to its integration tolerances. They continue across a
+  checkpoint resume.
 - **Availability.** As for a power beam: within `range_m`, while the segment
   between the spacecraft clears the planet.
 - **Direction.** Two-way traffic is two links, one each way. A radio carries
@@ -619,3 +622,9 @@ names inside, so checkpoints written before 0.6.0 resume.
 | --- | --- |
 | the state `laser_dv`, as in `solution.u[end].sc[i].laser_dv` | `interlink_dv` |
 | the state `laser_delta_sma` | `interlink_delta_sma` |
+
+The schedule is also saved for long-format and checkpoint-streamed results. A
+resume that only finishes interrupted trajectory file writes has no restored
+link history: it preserves any earlier schedule file, but does not list it in
+the recovered manifest or returned files. A resume that advances the simulation
+writes the schedule for its resumed interval, as described above.

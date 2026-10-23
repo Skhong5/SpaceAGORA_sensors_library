@@ -15,6 +15,11 @@ one-based position in the spacecraft list passed to `DynamicsModel`.
 `SpacecraftModel.id` does not set this prefix. A single-spacecraft run
 produces `sc1_*` columns even when its spacecraft has a different `id`.
 
+With `results_layout = :long`, the spacecraft table has the same columns
+without the prefix (`pos_1` for `sc{N}_pos_1`), one row per spacecraft, and
+the run-wide columns (those without a prefix) are in the run table. See
+[Long layout for many spacecraft](outputs.md#Long-layout-for-many-spacecraft).
+
 ### Time
 
 | Column | Unit | Description |
@@ -71,18 +76,18 @@ initial sample. Those event and sampled values are distinct from
 
 | Column | Unit | Description |
 |---|---|---|
-| `sc1_wind_1` | m/s | Atmospheric wind vector X |
-| `sc1_wind_2` | m/s | Atmospheric wind vector Y |
-| `sc1_wind_3` | m/s | Atmospheric wind vector Z |
-| `sc1_drag_1` | N | Aerodynamic drag force X (planet frame) |
-| `sc1_drag_2` | N | Aerodynamic drag force Y |
-| `sc1_drag_3` | N | Aerodynamic drag force Z |
-| `sc1_lift_1` | N | Aerodynamic lift force X |
-| `sc1_lift_2` | N | Aerodynamic lift force Y |
-| `sc1_lift_3` | N | Aerodynamic lift force Z |
-| `sc1_cross_1` | N | Aerodynamic cross force X |
-| `sc1_cross_2` | N | Aerodynamic cross force Y |
-| `sc1_cross_3` | N | Aerodynamic cross force Z |
+| `sc1_wind_1` | m/s | Local eastward wind component |
+| `sc1_wind_2` | m/s | Local northward wind component |
+| `sc1_wind_3` | m/s | Local upward wind component |
+| `sc1_drag_1` | N | Aerodynamic drag force X (inertial frame) |
+| `sc1_drag_2` | N | Aerodynamic drag force Y (inertial frame) |
+| `sc1_drag_3` | N | Aerodynamic drag force Z (inertial frame) |
+| `sc1_lift_1` | N | Aerodynamic lift force X (inertial frame) |
+| `sc1_lift_2` | N | Aerodynamic lift force Y (inertial frame) |
+| `sc1_lift_3` | N | Aerodynamic lift force Z (inertial frame) |
+| `sc1_cross_1` | N | Aerodynamic cross force X (inertial frame) |
+| `sc1_cross_2` | N | Aerodynamic cross force Y (inertial frame) |
+| `sc1_cross_3` | N | Aerodynamic cross force Z (inertial frame) |
 
 ### Thermal
 

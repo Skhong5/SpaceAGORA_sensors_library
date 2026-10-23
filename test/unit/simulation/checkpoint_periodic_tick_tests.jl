@@ -64,12 +64,12 @@ end
 # interrupts the run.
 function ramp_setup(; interval=nothing, period, data_rate=period, guidance_period=0.25, navigation_period=0.3,
                     second_control_period=0.3, mission_time=5.0, dir=mktempdir(), resume=false, fail_after=nothing,
-                    results=false)
+                    results=false, layout=:wide)
     control, second, guidance, navigation = RampWheel(), ControlRecorder(), TickRecorder(), TickRecorder()
     navigation_effectors = fail_after === nothing ? (navigation,) : (navigation, FailAfter(fail_after))
     args = SM.SimConfig._with_configuration(wheel_config(mission_time);
         simulation_settings=SM.SimulationSettings(results=results, verbose=false, generate_plots=false,
-            normalize=false, save_csv=results, results_directory=dir,
+            normalize=false, save_csv=results, results_directory=dir, results_layout=layout,
             checkpoint_enabled=interval !== nothing, checkpoint_interval_s=something(interval, 300.0),
             checkpoint_directory=joinpath(dir, "checkpoints"), resume_from_checkpoint=resume),
         mission_configuration=SM.MissionConfiguration(mission_type=SM.MissionTime, keplerian=false,
@@ -223,6 +223,23 @@ end
             @test vcat(getfield(stopped, field), getfield(resumed, field)) == getfield(unsplit, field)
         end
         @test resumed.final.h_wheels[1] ≈ unsplit.final.h_wheels[1] rtol=1e-12
+    end
+
+    @testset "a streamed long-layout run extended from its end saves the row due there again" begin
+        # The streams hold every row but the last at each checkpoint; the resumed
+        # run takes the ticks due at 2 s and saves the row there again, as the
+        # run never interrupted does.
+        whole_dir, dir = mktempdir(), mktempdir()
+        whole = ramp_run(period=0.125, interval=1.0, dir=whole_dir, results=true, layout=:long)
+        first_leg = ramp_run(period=0.125, interval=1.0, dir=dir, mission_time=2.0, results=true, layout=:long)
+        @test SE._load_checkpoint(first_leg.args).runtime_state.results_rows.version == 2
+        @test first_leg.table.time[end] == 2.0 && first_leg.table.actuator_level_1[end] == 0.001875
+        resumed = ramp_run(period=0.125, interval=1.0, dir=dir, resume=true, results=true, layout=:long)
+        @test isequal(resumed.table, whole.table)
+        row = findfirst(==(2.0), resumed.table.time)
+        @test resumed.table.time[1] == 0.0 && resumed.table.actuator_level_1[row] == 0.002
+        @test read(joinpath(dir, "simulation_results_spacecraft.csv")) ==
+            read(joinpath(whole_dir, "simulation_results_spacecraft.csv"))
     end
 
     @testset "a run extended from the end of a finished run takes the ticks due there" begin

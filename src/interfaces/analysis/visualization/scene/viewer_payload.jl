@@ -874,6 +874,92 @@ function _mission_file_sha256(path::AbstractString)
     end
 end
 
+# The manifest's entry for the results feather a scene names.
+_manifest_feather_key(scene::VisualizationScene) = scene.results_layout === :long ? "spacecraft_feather" : "feather"
+
+# The results a saved scene's viewer reads, as the wide table. A wide run's
+# feather is read as it is. A long run's spacecraft table is opened memory-mapped
+# and its columns become the wide `sc{i}_<column>` columns as views of the rows
+# of spacecraft `i` (and the run table's columns are added), so no row is copied:
+# the viewer then reads only the rows it keeps.
+function _saved_results_table(scene::VisualizationScene, feather_path::AbstractString)::DataFrame
+    scene.results_layout === :long || return DataFrame(Arrow.Table(feather_path))
+    run_path = replace(String(feather_path), r"_spacecraft\.feather$" => "_run.feather")
+    run = run_path != feather_path && isfile(run_path) ? DataFrame(Arrow.Table(run_path); copycols=false) : nothing
+    arrow_table = Arrow.Table(feather_path)
+    long = DataFrame(arrow_table; copycols=false)
+    arrow_metadata = Arrow.getmetadata(arrow_table)
+    key = "spaceagora.long_column_spacecraft.v1"
+    if arrow_metadata !== nothing && haskey(arrow_metadata, key)
+        metadata!(long, key, arrow_metadata[key]; style=:note)
+    end
+    return _wide_view(long, run, length(scene.spacecraft))
+end
+
+const _LONG_IDENTITY_COLUMNS = ("spacecraft", "spacecraft_id", "plane", "slot", "time")
+
+"""
+    _wide_view(spacecraft_table, run_table, num_sats) -> DataFrame
+
+The wide table of a long spacecraft table (one row per spacecraft and time), as
+views: `time`, then `sc{i}_<column>` for each spacecraft `i` and column, then the
+run table's columns. The rows may come in any order but must hold every
+spacecraft at every time once.
+"""
+function _wide_view(long::DataFrame, run::Union{Nothing, DataFrame}, num_sats::Integer)::DataFrame
+    raw_presence = metadata(long, "spaceagora.long_column_spacecraft.v1", nothing)
+    presence = if raw_presence === nothing
+        nothing
+    else
+        parsed = try
+            JSON.parse(raw_presence)
+        catch
+            throw(ArgumentError("Invalid long-results column-presence metadata."))
+        end
+        parsed isa AbstractDict || throw(ArgumentError("Invalid long-results column-presence metadata."))
+        for name in names(long)
+            name in _LONG_IDENTITY_COLUMNS && continue
+            members = get(parsed, name, nothing)
+            members isa AbstractVector && all(i -> i isa Integer && !(i isa Bool) && 1 <= i <= num_sats, members) &&
+                length(unique(members)) == length(members) ||
+                throw(ArgumentError("Invalid long-results column-presence metadata for column $(name)."))
+        end
+        parsed
+    end
+    spacecraft, times = long[!, "spacecraft"], long[!, "time"]
+    n = length(spacecraft)
+    n % num_sats == 0 || throw(ArgumentError("The long results table does not hold every spacecraft at every time."))
+    in_order = all(r -> spacecraft[r] == mod1(r, num_sats) && times[r] == times[r - mod1(r, num_sats) + 1], 1:n)
+    order = in_order ? collect(1:n) : sortperm(1:n; by=r -> (times[r], spacecraft[r]))
+    all(r -> spacecraft[order[r]] == mod1(r, num_sats) && times[order[r]] == times[order[r - mod1(r, num_sats) + 1]], 1:n) ||
+        throw(ArgumentError("The long results table does not hold every spacecraft at every time."))
+    rows = [view(order, i:num_sats:n) for i in 1:num_sats]
+    wide = DataFrame("time" => view(times, rows[1]); copycols=false)
+    for name in names(long)
+        name in _LONG_IDENTITY_COLUMNS && continue
+        column = long[!, name]
+        for i in 1:num_sats
+            spacecraft_column = view(column, rows[i])
+            if presence === nothing
+                # Compatibility with older draft bundles: their all-missing columns
+                # cannot distinguish absent fields from present measurement gaps.
+                Missing <: eltype(column) && all(ismissing, spacecraft_column) && continue
+            else
+                i in presence[name] || continue
+            end
+            wide[!, "sc$(i)_$(name)"] = spacecraft_column
+        end
+    end
+    if run !== nothing
+        nrow(run) == nrow(wide) && run[!, "time"] == wide[!, "time"] ||
+            throw(ArgumentError("The run table's times differ from the spacecraft table's."))
+        for name in names(run)
+            name == "time" || (wide[!, name] = run[!, name])
+        end
+    end
+    return wide
+end
+
 function _bind_mission_history!(prefix::AbstractString)
     manifest_path = String(prefix) * ".manifest.toml"
     scene_path = String(prefix) * "_scene.json"
@@ -883,7 +969,7 @@ function _bind_mission_history!(prefix::AbstractString)
     _validated_mission_history(JSON.parsefile(history_path))
     manifest = TOML.parsefile(manifest_path)
     feather_hash = _mission_file_sha256(feather_path)
-    get(get(get(manifest, "files", Dict()), "feather", Dict()), "sha256", nothing) == feather_hash ||
+    get(get(get(manifest, "files", Dict()), _manifest_feather_key(scene), Dict()), "sha256", nothing) == feather_hash ||
         throw(ArgumentError("Cannot associate mission history with a different saved results bundle."))
     manifest["mission_history"] = Dict(
         "schema" => 1, "path" => basename(history_path),
@@ -954,7 +1040,7 @@ function _saved_viewer_payload(
     scene = read_visualization_scene(scene_path)
     feather_path = joinpath(dirname(scene_path), scene.results_feather)
     isfile(feather_path) || throw(ArgumentError("Results file $(feather_path) referenced by the sidecar does not exist."))
-    df = DataFrame(Arrow.Table(feather_path))
+    df = _saved_results_table(scene, feather_path)
     mission === nothing && (mission = _saved_mission_history(prefix, scene_path, feather_path))
     link_schedule = interlinks ? _saved_link_schedule(prefix, scene) : nothing
     payload = viewer_payload(
@@ -978,7 +1064,7 @@ function _saved_link_schedule(prefix::AbstractString, scene::VisualizationScene)
     manifest_path = String(prefix) * ".manifest.toml"
     files = isfile(manifest_path) ? get(TOML.parsefile(manifest_path), "files", Dict()) : Dict()
     trajectory_path = joinpath(dirname(String(prefix)), scene.results_feather)
-    for (file, entry) in ((path, "link_schedule_feather"), (trajectory_path, "feather"))
+    for (file, entry) in ((path, "link_schedule_feather"), (trajectory_path, _manifest_feather_key(scene)))
         recorded = get(get(files, entry, Dict()), "sha256", nothing)
         isfile(file) && recorded !== nothing && recorded == IOSerialization._sha256_hex(file) ||
             throw(ArgumentError("The interlink input $(file) is missing or no longer matches its results manifest; export the " *
@@ -1111,7 +1197,7 @@ function write_viewer_dev_payload(prefix::AbstractString, out_js::AbstractString
     scene_path = String(prefix) * "_scene.json"
     scene = read_visualization_scene(scene_path)
     feather_path = joinpath(dirname(scene_path), scene.results_feather)
-    df = DataFrame(Arrow.Table(feather_path))
+    df = _saved_results_table(scene, feather_path)
     mission === nothing && (mission = _saved_mission_history(prefix, scene_path, feather_path))
     payload = viewer_payload(scene, df; textures_dir=textures_dir, include_textures=textures, mission=mission,
         link_schedule=interlinks ? _saved_link_schedule(prefix, scene) : nothing, kwargs...)

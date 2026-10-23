@@ -17,7 +17,7 @@ Base.include(ex -> ex == :(examples = list_examples()) ? :(examples = String[]) 
         # Use the actual smoke child process to prove an ordinary example cannot
         # see the companion, even after the parent has loaded it elsewhere.
         probe=joinpath(dir,"baseline_core_witness.jl")
-        write(probe,"using SpaceAGORA; @assert !hypr_available(); @assert Base.find_package(\"SpaceAGORAHYPR\") === nothing; println(\"baseline_core_only_ok\")")
+        write(probe,"using SpaceAGORA; @assert !hypr_available(); @assert Base.find_package(\"HYPR\") === nothing; println(\"baseline_core_only_ok\")")
         ok,has_nan,output=routing.run_example(probe)
         @test ok
         @test !has_nan
