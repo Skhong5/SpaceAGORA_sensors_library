@@ -186,7 +186,7 @@ does not mean the package is installed in the active Julia environment.
 The 0.7 development checkout pins the following compatibility updates. Their
 package versions remain unchanged; the existing companion release tags do not
 contain the new core-0.7 compatibility metadata. Use the setup commands from
-this checkout so its immutable source pins select the qualified pair.
+this checkout so its immutable source pins select the recorded candidate pair.
 
 | Companion | Package version | Source revision |
 | --- | --- | --- |
