@@ -124,10 +124,11 @@ requires_atmosphere_events(model) = false
 """
     atmosphere_transition!(model, u, p, t, spacecraft_index, inside) -> nothing
 
-Called for each guidance and control `model` when the spacecraft at
-`spacecraft_index` (its position in the run, from 1) enters (`inside` is `true`)
-or leaves the atmosphere at time `t` (s into the run), after the engine has
-reconciled every spacecraft's crossing at that time. `u` is the state and `p` the
+Called for each guidance and control `model` whose `spacecraft_scope` names the
+spacecraft at `spacecraft_index` (its position in the run, from 1) when that
+spacecraft enters (`inside` is `true`) or leaves the atmosphere at time `t` (s into
+the run), after the engine has reconciled every spacecraft's crossing at that
+time. SpaceAGORA 0.6 and earlier called every model. `u` is the state and `p` the
 run's parameters. The model's run state is its own. Default: nothing.
 """
 atmosphere_transition!(model, u, p, t, spacecraft_index, inside) = nothing

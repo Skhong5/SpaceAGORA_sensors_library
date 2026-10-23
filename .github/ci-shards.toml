@@ -117,6 +117,7 @@ default_weight = { other = 1.2 }
 "unit:gnc/direct_rpo_planner_tests.jl" = 0.05
 "unit:gnc/edg_wind_relative_velocity_tests.jl" = 0.07
 "unit:gnc/gnc_scale_tests.jl" = 0.30
+"unit:gnc/gnc_scope_readers_tests.jl" = 0.90
 "unit:gnc/hypr_services_tests.jl" = 0.02
 "unit:gnc/planning_boundary_gate_tests.jl" = 0.71
 "unit:gnc/planning_ownership_tests.jl" = 0.12
@@ -346,6 +347,7 @@ grid = 1.00
 "unit:gnc/direct_rpo_planner_tests.jl" = 0.05
 "unit:gnc/edg_wind_relative_velocity_tests.jl" = 0.09
 "unit:gnc/gnc_scale_tests.jl" = 0.60
+"unit:gnc/gnc_scope_readers_tests.jl" = 1.60
 "unit:gnc/hypr_services_tests.jl" = 0.02
 "unit:gnc/planning_boundary_gate_tests.jl" = 0.67
 "unit:gnc/planning_ownership_tests.jl" = 0.17

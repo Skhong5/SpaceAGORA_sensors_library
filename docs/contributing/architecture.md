@@ -419,13 +419,34 @@ interlinks.
   ascending order (`_tick_positions` in `callbacks/gnc_scope.jl`), so a tick
   costs the size of the scope, not the number of spacecraft. A control model
   that consumes a link has its scope read once more, first, to decide whether
-  its producers prepare it (`_ticks_any`). The tick reads the scope after they
-  have, so it follows a scope a producer changed. When the model
+  its producers prepare it (`_ticks_any`). The tick reads the scope again after
+  they have, and a producer that changed it stops the run (see the run's GNC
+  scopes below). When the model
   declares `skip_inactive`, an inactive spacecraft gets `release_command!`
   instead of the tick (`_gnc_tick_in_scope!`). The
   mounted actuators then apply the levels the model holds. An event-driven
   model's own callbacks do this themselves; the burn scheduler keeps a released
   command released at its scheduling passes and burn edges.
+- **The run's GNC scopes.** When the run starts, after the run-start
+  initializers (`_start_run_models!`), the engine takes each guidance,
+  navigation and control model's scope (`_gnc_run_scopes` in
+  `engine/gnc_run_scopes.jl`, held in `SharedBuffers.gnc_scopes`). A checkpoint
+  records the same scopes in its `gnc_scopes` entry, and a resumed run compares
+  that entry before restoring any model's state.
+  - **Fixed for the run.** Each tick compares the scope it reads with the run's
+    (`_check_run_scope`), and one callback after the event-driven models' own
+    compares theirs once per accepted step. A difference stops the run. A
+    `SpacecraftSelection` is resolved once, here, and compared with the run's
+    own copy of its criteria.
+  - **Hooks follow the scope.** For each spacecraft the run lists the control
+    and guidance models whose scope names it, in configuration order, when some
+    model acts on fewer than every spacecraft. The right-hand side
+    (`_accumulate_control_effectors!`), the robot-arm coupling, the power, fault
+    and result readers, the burn scheduler's passes and the atmosphere
+    crossings call only those models' hooks (`_scope_members`). Without the
+    lists every model is called, as before. A model left out returns zeros or
+    `nothing` there, and the sums it would add to start at +0.0 and are never
+    -0.0, so leaving it out changes no bit.
 - **Stops after the ticks, one spacecraft at a time.** The ticks of one control
   model may run on several threads. The solver's stop list belongs to the
   integrator they share, so `register_tstops!` runs afterwards, on the

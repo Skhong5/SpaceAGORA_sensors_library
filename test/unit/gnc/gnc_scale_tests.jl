@@ -109,8 +109,8 @@ SpaceAGORA.spacecraft_scope(m::PlanCtl) = BoundSpacecraft((m.spacecraft_index,))
 SpaceAGORA.skip_inactive(m::PlanCtl) = m.skip
 SpaceAGORA.gnc_links(m::PlanCtl) = (Consumes(m.plan),)
 
-# A controller whose producer retargets it before each tick: the tick reads the
-# scope after the producers prepared it.
+# A controller whose producer retargets it before each tick, which changes its
+# scope during the run: the tick reads the scope after the producers prepared it.
 mutable struct RetargetCtl <: SM.AbstractControlEffectorModel
     spacecraft_index::Int
     plan::Plan
@@ -326,11 +326,15 @@ end
             @test plan.prepared[] == prepared
             @test consumer.ticks == [0, skip ? 2 : 4, 0]
         end
-        # A producer that retargets its consumer before the tick: the tick follows.
+        # A producer that retargets its consumer before the tick changes the
+        # consumer's scope during the run, which stops it (SpaceAGORA 0.6 followed the
+        # change): the tick reads the scope after the producers prepared and compares
+        # it with the one the run took when it started.
         plan = Plan(Ref(0))
         retargeted = RetargetCtl(1, plan, zeros(Int, n))
-        run_simulation(scale_args(n; control=(retargeted,), guidance=(PlanGd(plan),)); isolate_state=false)
-        @test retargeted.ticks == [0, 0, 4]
+        @test_throws "control model 1 (RetargetCtl)'s spacecraft_scope changed during the run" run_simulation(
+            scale_args(n; control=(retargeted,), guidance=(PlanGd(plan),)); isolate_state=false)
+        @test retargeted.ticks == [0, 0, 0]
     end
 
     @testset "a linked consumer reads its scope twice per tick, once before its producers prepare" begin

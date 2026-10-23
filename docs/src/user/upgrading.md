@@ -10,6 +10,30 @@ deprecation rules.
 
 ## 0.7.0 (unreleased)
 
+### A GNC model's hooks follow its spacecraft scope
+
+During the run, a guidance, navigation or control model's output hooks
+(`control_wrench`, `control_propellant_rate`, `control_wheel_torque`), its levels
+(`actuator_levels`, `control_thruster_levels`) and `atmosphere_transition!` are
+called only for the spacecraft its `spacecraft_scope` names, as its ticks already
+were. Before the run, `control_thruster_levels` is still asked for every
+spacecraft, to size the result columns (see the table). A model that returns zeros
+or `nothing` outside its scope, as the docs asked, runs as before.
+
+- A model that acts on a spacecraft outside its declared scope, such as a
+  `CoupledSpacecraft` model that pushes its partners, declares a scope that names
+  it, or `AllSpacecraft()`.
+- The scope is fixed once the run-start initializers ran, and a scope that changes
+  during the run stops it with an `ArgumentError`. Set a model's spacecraft before
+  the run: in the model, in `bind_spacecraft` or in an initializer.
+- A `SpacecraftSelection` scopes guidance, navigation and control models too. Keep
+  it in the model and return that object at every call.
+- The conformance kit's advisory `outputs_in_scope` check reports a control model
+  whose output reaches a spacecraft outside its scope.
+
+[Migrating Extension Hooks](../reference/migrating_extension_hooks.md#Changed-in-0.7.0)
+has the table of hooks.
+
 ### Load HYPR directly
 
 The `SpaceAGORAHYPR` compatibility loader is removed. In a project that uses the
