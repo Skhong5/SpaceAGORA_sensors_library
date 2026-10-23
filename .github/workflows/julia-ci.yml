@@ -310,12 +310,12 @@ jobs:
         if: always()
         run: |
           shard_no=$(printf '%02d' "${SHARD##*-}")
-          find src packages/SpaceAGORAHYPR/src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
+          find src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
             mv "$f" "$(printf '%s' "$f" | sed -E "s/\.([0-9]+)\.cov\$/.9${shard_no}\1.cov/")"
           done
-          echo "coverage files: $(find src packages/SpaceAGORAHYPR/src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' | wc -l)"
+          echo "coverage files: $(find src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' | wc -l)"
           mkdir -p "$SPACEAGORA_CI_SHARD_REPORT_DIR"
-          find src packages/SpaceAGORAHYPR/src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | tar --null -czf "$SPACEAGORA_CI_SHARD_REPORT_DIR/coverage.tgz" -T -
+          find src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | tar --null -czf "$SPACEAGORA_CI_SHARD_REPORT_DIR/coverage.tgz" -T -
         env:
           SHARD: ${{ matrix.shard }}
 
@@ -420,7 +420,7 @@ jobs:
           tar -xzmf visualizer-installation-coverage/coverage.tgz
           tar -xzmf edg-installation-coverage/coverage.tgz
           tar -xzmf interlink-installation-coverage/coverage.tgz
-          echo "coverage files: $(find src packages/SpaceAGORAHYPR/src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' | wc -l)"
+          echo "coverage files: $(find src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' | wc -l)"
 
       - name: Coverage quality gate
         if: always()
@@ -1011,7 +1011,7 @@ jobs:
       - name: Precompile the complete optional stack
         env:
           JULIA_LOAD_PATH: "@:@stdlib"
-        run: julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" -e 'using Pkg; Pkg.precompile(["SpaceAGORA", "HYPR", "SpaceAGORAHYPR"]; strict=true)'
+        run: julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" -e 'using Pkg; Pkg.precompile(["SpaceAGORA", "HYPR"]; strict=true)'
       - name: Both companion load orders
         env:
           JULIA_LOAD_PATH: "@:@stdlib"
@@ -1034,7 +1034,6 @@ jobs:
           julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" -e 'include("test/sampling_compatibility.jl"); include("test/custom_objective.jl")'
           julia --startup-file=no --compiled-modules=strict --pkgimages=existing --project="$RUNNER_TEMP/hypr-installations/hypr" test/precompiled_loading.jl core-first
           julia --startup-file=no --compiled-modules=strict --pkgimages=existing --project="$RUNNER_TEMP/hypr-installations/hypr" test/precompiled_loading.jl hypr-first
-          julia --startup-file=no --compiled-modules=strict --pkgimages=existing --project="$RUNNER_TEMP/hypr-installations/hypr" test/precompiled_loading.jl shim-first
           julia --startup-file=no --compiled-modules=strict --pkgimages=existing --project="$RUNNER_TEMP/hypr-installations/hypr" test/precompiled_conflicts.jl conflict-first
           julia --startup-file=no --compiled-modules=strict --pkgimages=existing --project="$RUNNER_TEMP/hypr-installations/hypr" test/precompiled_conflicts.jl hypr-first
           julia --startup-file=no --project="$RUNNER_TEMP/hypr-installations/hypr" test/incompatible_resolution.jl "$GITHUB_WORKSPACE"
@@ -1044,11 +1043,11 @@ jobs:
       - name: Retain installation coverage
         if: always()
         run: |
-          find src packages/SpaceAGORAHYPR/src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
+          find src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | while IFS= read -r -d '' f; do
             mv "$f" "$(printf '%s' "$f" | sed -E 's/\.([0-9]+)\.cov$/.88\1.cov/')"
           done
           mkdir -p hypr-installation-coverage
-          find src packages/SpaceAGORAHYPR/src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | tar --null -czf hypr-installation-coverage/coverage.tgz -T -
+          find src packages/gnc/SpaceAGORAEDG.jl/src -name '*.cov' -print0 | tar --null -czf hypr-installation-coverage/coverage.tgz -T -
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -1235,8 +1234,10 @@ jobs:
         run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional/edg/cli.jl
       - name: EDG example smoke child environment
         run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional/edg/example_smoke.jl
+      # With coverage: the EDG kernel tests run here, and the next step collects
+      # the companion's .cov files for the per-file coverage gate.
       - name: Companion tests
-        run: julia --startup-file=no --project="$RUNNER_TEMP/edg-installations/edg" -e 'using Pkg; Pkg.test("SpaceAGORAEDG")'
+        run: julia --startup-file=no --project="$RUNNER_TEMP/edg-installations/edg" -e 'using Pkg; Pkg.test("SpaceAGORAEDG"; coverage=true)'
       - name: Companion load orders and the refusal without the companion
         run: |
           julia --startup-file=no --project="$RUNNER_TEMP/edg-installations/edg" packages/gnc/SpaceAGORAEDG.jl/test/load_order.jl core-first

@@ -1,7 +1,7 @@
 # Motion planning with HYPR
 
 !!! note "Optional package"
-    Requires the optional `SpaceAGORAHYPR` package and the HYPR planner; see
+    Requires the optional `HYPR` package; see
     [Install and try the planner](#Install-and-try-the-planner).
 
 HYPR plans a route through a cluttered environment and turns that route into a
@@ -54,7 +54,7 @@ distance with the experiment settings when comparing results.
 The search implementation lives in the separate
 [HYPR.jl repository](https://github.com/Space-FALCON-Lab/HYPR.jl). SpaceAGORA
 provides the simulation, shared geometry and the versioned integration services.
-The small `SpaceAGORAHYPR` package loads the two together. Loading SpaceAGORA alone
+Load `SpaceAGORA` and `HYPR` directly. Loading SpaceAGORA alone
 does not activate HYPR.
 
 From a SpaceAGORA Git clone, prepare a separate environment and run the public
@@ -67,8 +67,7 @@ JULIA_LOAD_PATH='@:@stdlib' julia --startup-file=no --project=/path/to/hypr-env 
 ```
 
 The setup helper uses the verified submodule at `packages/robotics/HYPR.jl`.
-Its recorded revision agrees with
-[`packages/SpaceAGORAHYPR/HYPRSource.toml`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/main/packages/SpaceAGORAHYPR/HYPRSource.toml).
+Its recorded revision agrees with `packages/HYPRSource.toml`.
 The robotics folder is a source organization choice; HYPR supports spacecraft
 RPO as well as robot arms. The [installation guide](installation_environment.md#Optional-package-commands)
 describes source checks, and the [RPO guide](rpo_planner_pilot.md#Installing-optional-HYPR)
@@ -79,7 +78,7 @@ references reach the controller and produce finite, bounded outputs. It covers
 only a two-second portion of a maneuver. Its small swarm, simple geometry and
 short controller preview are installation checks, not the paper experiment.
 
-For a new application, load `SpaceAGORA` and `SpaceAGORAHYPR`, construct an
+For a new application, load `SpaceAGORA` and `HYPR`, construct an
 `HYPRRPOPlanner` with an explicit `RPOPSOConfig`, and pass it as `planner` to
 `make_rpo_configuration`. Use `hypr_mode=:manuscript` when investigating the
 manuscript formulation; the configuration default is `:legacy`. The
@@ -167,12 +166,16 @@ algorithm mapping and the retained dynamic failure. Write evidence outside the r
 cloud-synced vault, for example:
 
 ```sh
-HYPR_CASES=1 HYPR_OUTPUT_ROOT="$HOME/AgentScratch/hypr_final_isparo" \
+HYPR_CASES=1 HYPR_OUTPUT_ROOT="$HOME/spaceagora-hypr-final-isparo" \
   JULIA_NUM_THREADS=2 julia --project=/path/to/hypr-env \
   examples/Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl
 ```
 
-Both candidate source patches must be installed in the optional environment.
+Run this command from the same SpaceAGORA checkout used to prepare
+`/path/to/hypr-env` above, and keep that checkout at the recorded revision.
+The example loads HYPR from that environment and then continues in the
+checkout's examples environment, so prepare it there first with
+`julia --startup-file=no examples/setup.jl`.
 The example records cases, each planner's path/reference, successful and failed
 outcomes, and actual delivered-force fuel consumption. Failed cases remain in
 success/runtime accounting and must be excluded from fuel means. Comparisons

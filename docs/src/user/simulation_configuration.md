@@ -222,7 +222,7 @@ SM.MissionConfiguration(
     number_of_orbits = 1,                # orbit count (MissionOrbits)
     keplerian        = true,             # use Keplerian orbit mode
     orientation_sim  = false,            # include attitude dynamics
-    num_steps_to_save = 1000,            # output buffer size before flush
+    num_steps_to_save = 1000,            # not read: results are written when the run ends
     data_rate        = 10.0              # output sample cadence, seconds
 )
 ```
@@ -361,7 +361,8 @@ SM.SimulationSettings(
     checkpoint_enabled = false,          # periodic checkpoint for restart safety
     checkpoint_interval_s = 300.0,      # checkpoint cadence, simulated seconds
     checkpoint_directory  = "",         # defaults to results_directory/checkpoints
-    resume_from_checkpoint = false       # resume from latest checkpoint if present
+    resume_from_checkpoint = false,      # resume from latest checkpoint if present
+    results_layout = :wide               # :long writes one row per spacecraft and saved time (see Simulation Outputs)
 )
 ```
 

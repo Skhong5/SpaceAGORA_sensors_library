@@ -8,6 +8,41 @@ Renamed and retired extension hooks have their own page,
 [Public API and Compatibility](../public_api_policy.md) describes the
 deprecation rules.
 
+## 0.7.0 (unreleased)
+
+### Load HYPR directly
+
+The `SpaceAGORAHYPR` compatibility loader is removed. In a project that uses the
+optional planner, replace `using SpaceAGORAHYPR` with:
+
+```julia
+using SpaceAGORA, HYPR
+```
+
+Both load orders activate the same HYPR extension. SpaceAGORA alone still does
+not load HYPR, and planner preflight still refuses an unavailable or incompatible
+provider. The external HYPR repository and its immutable pin are retained; the
+standalone pin has moved to `packages/HYPRSource.toml`.
+
+- Run the HYPR setup helper again for an existing environment. It removes the
+  retired loader's dependency and source entries while preserving unrelated
+  project settings. A project you maintain yourself should remove the loader
+  dependency and declare HYPR directly.
+- The loader's `RPO`, `RobotArm`, `SwarmPolicy` and `PlannerAdapter` module
+  aliases are removed with it. Code that reached HYPR's own helpers through
+  `SpaceAGORAHYPR.RPO.<name>` or `SpaceAGORAHYPR.RobotArm.<name>`, the 0.6.0
+  route, uses the extension's namespaces, the one route now:
+  `Base.get_extension(HYPR, :HYPRSpaceAGORAExt).RPO.<name>` or
+  `Base.get_extension(HYPR, :HYPRSpaceAGORAExt).RobotArm.<name>`. The extension
+  exists after `using SpaceAGORA, HYPR` has activated HYPR; before that, or after
+  a refused activation, `Base.get_extension` returns `nothing`.
+  `hypr_iteration_weights`, `hypr_material_improvement` and
+  `hypr_protected_particle_mask` are HYPR's exported functions
+  ([Versioned HYPR service contract](../reference/hypr_services.md#Changes-from-contract-2.0.0)).
+- Application code should use the public planner interfaces, and companion code
+  the documented `HYPRServices` contract. This removal does not narrow that
+  service contract.
+
 ## 0.6.1
 
 ### Machine calibration constants are measured again
@@ -24,14 +59,33 @@ Constants saved by SpaceAGORA 0.6.0 or earlier are no longer read:
   that planner runs without machine constants.
 - If you calibrated with the script at a job's thread count, rerun it as well:
   otherwise the first `parallel=true` session in that working directory measures
-  with its own thread count. Terminal, from the repository root:
+  with its own thread count.
 
-  ```text
-  julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl
-  ```
+To rerun the calibration, replace `<T>` with the thread count you run with.
+Terminal, from the repository root:
+
+```text
+julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl
+```
 
 [Parallel Execution](parallel_execution.md#Turning-on-parallel-execution) says
 where the constants are kept.
+
+### SpaceAGORA calls the EDG companion only through its two decisions
+
+SpaceAGORA reaches SpaceAGORAEDG only through `guidance_decision!` and
+`control_decision!`, as before at run time. The EDG helpers it also forwarded,
+only for tests, are gone: their forwarders in the internal
+`SimulationModel.EDGAlgorithms`, the eight model-typed EDG wrappers and the helper
+bindings in `ControlHooks` and `GuidanceHooks`, and the private list
+`EDGServices.COMPATIBILITY_FUNCTIONS`. None of them was exported or part of the
+`EDGServices` contract, which stays at 3.0.0, and EDG results do not change.
+
+- Code that called an EDG helper through one of those modules stops with an
+  `UndefVarError`. The helper's tests now live in SpaceAGORAEDG.
+- This release installs SpaceAGORAEDG 0.5.1, whose tests use the decision route.
+  SpaceAGORAEDG 0.5.0 runs unchanged with it, but its own lease test calls a
+  removed helper.
 
 ## 0.6.0
 

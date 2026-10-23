@@ -3,7 +3,7 @@ if !isdefined(@__MODULE__, :EDGOwnershipChecks)
 end
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const SRC_ROOT = joinpath(REPO_ROOT, "src")
-const SOURCE_ROOTS = (SRC_ROOT, joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"))
+const SOURCE_ROOTS = (SRC_ROOT,)
 
 const CANONICAL_AGGREGATOR_FILES = Set([
     joinpath("src", "models", "gnc", "planning", "rpo", "lifecycle.jl"),
@@ -14,9 +14,9 @@ const CANONICAL_AGGREGATOR_FILES = Set([
     joinpath("src", "orchestration", "simulation", "composition", "simulation_model.jl")
 ])
 
-# The EDG owner is now a compatibility dispatcher, not an include aggregator.
-# Its exact declared forwards are checked rather than exempted as arbitrary code.
-const EDG_COMPATIBILITY_DISPATCHER = joinpath("src", "models", "gnc", "guidance",
+# The EDG owner forwards the two decisions; it is not an include aggregator.
+# Its exact forwarders are checked rather than exempted as arbitrary code.
+const EDG_DECISION_FORWARDERS = joinpath("src", "models", "gnc", "guidance",
     "aerobraking", "typed_edg", "algorithms.jl")
 
 const STUB_PATTERN = r"\b[a-zA-Z0-9_]*_stub\(\)\s*=\s*nothing\b"
@@ -64,7 +64,7 @@ for source_root in SOURCE_ROOTS, (root, _, files) in walkdir(source_root)
         rel = relpath(path, REPO_ROOT)
         src = read(path, String)
 
-        if rel == EDG_COMPATIBILITY_DISPATCHER
+        if rel == EDG_DECISION_FORWARDERS
             append!(violations, EDGOwnershipChecks.aggregator_violations(src))
         end
 
