@@ -18,12 +18,15 @@ reviewed there, then this starter pointed at it.
 
 ## Set up and test
 
-Once:
+Use Julia 1.12, matching the pinned core. Run the setup commands from this
+generated repository's root, beside `SpaceAGORASource.toml`. The sibling
+directories `../StarterName-core` and `../StarterName-env` must be new; these
+commands do not reuse or change another SpaceAGORA checkout:
 
 ```bash
-git clone --filter=blob:none -c lfs.fetchexclude="*" https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../SpaceAGORA.jl
-git -C ../SpaceAGORA.jl checkout <the rev in SpaceAGORASource.toml>
-julia --startup-file=no ../SpaceAGORA.jl/scripts/contributor_environment.jl companion . ../StarterName-env --manifest core
+git clone --filter=blob:none -c lfs.fetchexclude="*" https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../StarterName-core
+git -C ../StarterName-core checkout 0000000000000000000000000000000000000000
+julia --startup-file=no ../StarterName-core/scripts/contributor_environment.jl companion . ../StarterName-env --manifest core
 ```
 
 `--filter=blob:none` skips the contents of old file versions: Git downloads the
@@ -37,6 +40,12 @@ That line is quoted for bash or zsh (on Windows, Git Bash). In PowerShell or
 Command Prompt, start `julia --project=../StarterName-env` and enter
 `using Pkg; Pkg.test("StarterName")` at the `julia>` prompt; the three commands
 above run there as written.
+The generated checkout command contains the same exact revision as
+`SpaceAGORASource.toml`. SpaceAGORA's `repin` does not rewrite this README:
+after a repin, use the new `rev` from `SpaceAGORASource.toml` in the checkout
+command. Setup writes the separate environment and can access package servers;
+it does not install the optional native engine for you.
+
 The tests check the facade's shape at the companion's contract version, a short run
 with the example owner, and that a SpaceAGORA-only session loads none of the
 companion. `test/incompatible_core.jl` (an incompatible contract is refused) and

@@ -167,12 +167,16 @@ algorithm mapping and the retained dynamic failure. Write evidence outside the r
 cloud-synced vault, for example:
 
 ```sh
-HYPR_CASES=1 HYPR_OUTPUT_ROOT="$HOME/AgentScratch/hypr_final_isparo" \
+HYPR_CASES=1 HYPR_OUTPUT_ROOT="$HOME/spaceagora-hypr-final-isparo" \
   JULIA_NUM_THREADS=2 julia --project=/path/to/hypr-env \
   examples/Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl
 ```
 
-Both candidate source patches must be installed in the optional environment.
+Run this command from the same SpaceAGORA checkout used to prepare
+`/path/to/hypr-env` above, and keep that checkout at the recorded revision.
+The example loads HYPR from that environment and then continues in the
+checkout's examples environment, so prepare it there first with
+`julia --startup-file=no examples/setup.jl`.
 The example records cases, each planner's path/reference, successful and failed
 outcomes, and actual delivered-force fuel consumption. Failed cases remain in
 success/runtime accounting and must be excluded from fuel means. Comparisons

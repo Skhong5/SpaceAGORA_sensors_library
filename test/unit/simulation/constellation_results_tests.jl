@@ -177,6 +177,40 @@ same_columns(a::DataFrame, b::DataFrame) =
         @test length(results.campaign.successful) == 2 && isempty(results.campaign.failed)
     end
 
+    @testset "returned results in the long layout are left as they are" begin
+        for results in (false, true)
+            spacecraft = [three_body(k) for k in 1:3]
+            setup() = configuration(spacecraft; results=results, results_layout=:long, save_visualization_scene=true)
+            plain = quiet(() -> run_constellation_ensemble(setup(); return_results=true))
+            merged = quiet(() -> run_constellation_ensemble(setup(); return_results=true, merge_results=true))
+            for (a, b) in zip(plain.samples, merged.campaign.samples)
+                @test isequal(a.value.table, b.value.table) && isequal(run_table(a.value), run_table(b.value))
+                @test b.value.table.spacecraft == fill(Int32(1), nrow(b.value.table))
+                @test !("sun_dir_1" in names(b.value.table)) && "sun_dir_1" in names(run_table(b.value))
+                @test b.value.table !== merged.members
+                @test !isempty(sprint(show, run_table(b.value)))                   # not left inconsistent
+            end
+            @test nrow(merged.members) == sum(s -> nrow(s.value.table), merged.campaign.samples)
+            @test sort(unique(merged.members.spacecraft)) == Int32[1, 2, 3]
+        end
+    end
+
+    @testset "each member's rows are released as they are merged" begin
+        args = SE._resolve_effector_scopes(configuration([three_body(k) for k in 1:3]; results=false))
+        configs = [SC._ensemble_member_configuration(args, args.dynamics_model.spacecraft[k], k, 3) for k in 1:3]
+        campaign = quiet(() -> SC._run_constellation_members(args, configs, 1, false, nothing, nothing,
+            pairs((;)), true))
+        tables = [WeakRef(sample.value.spacecraft) for sample in campaign.samples]
+        res = SC._constellation_ensemble_result(args, configs, campaign)
+        GC.gc(true)
+        # The campaign's samples hold only the caller's values now, and the tables
+        # of the members appended after the first are gone.
+        @test all(sample -> sample.value === nothing, campaign.samples)
+        @test all(sample -> sample.value === nothing, campaign.successful)
+        @test tables[1].value === res.members
+        @test tables[2].value === nothing && tables[3].value === nothing
+    end
+
     @testset "members with different columns" begin
         # With the scene saved, a member with links has link poses; one without has none.
         spacecraft = [three_body(1), one_link(2), three_body(3)]
@@ -255,6 +289,8 @@ same_columns(a::DataFrame, b::DataFrame) =
         clash = [SM.SaveField(:pos_again, (u, t, integrator) -> t; per_satellite=false, column_prefix="pos")]
         @test_throws "has the column prefix \"pos\"" run_constellation_ensemble(args; merge_results=true,
             save_fields=vcat(SM.default_save_fields(member(args, 1)), clash), extra_callback_factories=(counting,))
+        @test_throws "results_layout must be :wide or :long" run_constellation_ensemble(
+            configuration(fleet()[1:2]; results_layout=:tall); extra_callback_factories=(counting,))
         bound = configuration(fleet()[1:2]; effectors=(SM.InverseSquaredJ2GravityModel(), Bound(2)))
         @test_throws "binds it to member 2" run_constellation_ensemble(bound; merge_results=true,
             extra_callback_factories=(counting,))

@@ -37,10 +37,12 @@ What [`run_constellation_ensemble`](@ref)`(args; merge_results=true)` returns.
   `constellation_summary.csv`, in `results_directory` beside the member
   folders. Empty otherwise.
 
-Each member's rows are in memory until the merge. For large campaigns,
-`SPACEAGORA_RESULTS_THIN_STRIDE` and `SPACEAGORA_RESULTS_FINAL_ONLY` thin each
-member's rows, and [`read_constellation_results`](@ref) merges member folders
-already written, one member at a time.
+Each member's rows come back from it whole and are released as they are
+merged, so while the merge runs the members' rows are held about once. For
+large campaigns, `SPACEAGORA_RESULTS_THIN_STRIDE` and
+`SPACEAGORA_RESULTS_FINAL_ONLY` thin each member's rows, and
+[`read_constellation_results`](@ref) merges member folders already written, one
+member at a time.
 """
 struct ConstellationEnsembleResult{M}
     campaign::MonteCarloResult
@@ -98,9 +100,14 @@ _constellation_member_run(member::SimulationConfiguration, run_kwargs, merge_res
 # Member `position`'s rows in the members table: its spacecraft table, with
 # `spacecraft` set to its position in the constellation, and its run-wide
 # columns beside them. A member runs one spacecraft, so its run table has one
-# row per row of its spacecraft table.
+# row per row of its spacecraft table. When the member's returned value holds
+# these tables (the long layout with `return_results=true`), they are copied
+# first, so that the value stays what `run_simulation` returned.
 function _constellation_member_rows(position::Integer, outcome)::DataFrame
-    rows = outcome.spacecraft
+    value = hasproperty(outcome, :value) ? outcome.value : nothing
+    shared = value isa SimulationEngine.SimulationResults &&
+        (value.table === outcome.spacecraft || (outcome.run !== nothing && value.run_table === outcome.run))
+    rows = shared ? copy(outcome.spacecraft) : outcome.spacecraft
     rows[!, "spacecraft"] = fill(Int32(position), nrow(rows))
     run = outcome.run
     run === nothing && return rows
@@ -112,7 +119,7 @@ function _constellation_member_rows(position::Integer, outcome)::DataFrame
             "run_constellation_ensemble with merge_results=true cannot put member $(position)'s run-wide column " *
             "\"$(name)\" beside its per-spacecraft column of the same name. Give the run-wide save field another " *
             "column_prefix."))
-        rows[!, name] = run[!, name]
+        rows[!, name] = shared ? copy(run[!, name]) : run[!, name]
     end
     return rows
 end
@@ -127,8 +134,11 @@ end
 
 # The merged result of an ensemble run with merge_results=true, from the
 # campaign whose samples hold the members' outcomes. Members are merged in
-# position order, whatever order they finished in, and each member's tables are
-# released once appended.
+# position order, whatever order they finished in. As each member's rows are
+# taken, its sample in `campaign` is replaced by one holding only the caller's
+# value, so the members' tables are held once: in `member_rows`, from which
+# `_write_constellation_results!` writes or appends them one at a time and
+# releases each.
 function _constellation_ensemble_result(args::SimulationConfiguration, member_configs, campaign::MonteCarloResult)
     spacecraft = args.dynamics_model.spacecraft
     count = length(spacecraft)
@@ -136,8 +146,7 @@ function _constellation_ensemble_result(args::SimulationConfiguration, member_co
     member_rows = DataFrame[]
     last_rows = Union{Nothing, DataFrame}[]
     row_counts = Int[]
-    samples = MonteCarloSampleResult[]
-    for sample in campaign.samples
+    for (k, sample) in enumerate(campaign.samples)
         position = sample.index
         if sample.success
             outcome = sample.value
@@ -145,11 +154,15 @@ function _constellation_ensemble_result(args::SimulationConfiguration, member_co
             push!(row_counts, nrow(rows))
             push!(last_rows, nrow(rows) == 0 ? nothing : rows[nrow(rows):nrow(rows), :])
             push!(member_rows, rows)
-            push!(samples, _with_fields(sample; value=outcome.value))
+            # The sample now holds only the caller's value, here and in
+            # `successful`, so only `member_rows` keeps this member's tables.
+            released = _with_fields(sample; value=outcome.value)
+            campaign.samples[k] = released
+            j = findfirst(s -> s.index == position, campaign.successful)
+            j === nothing || (campaign.successful[j] = released)
         else
             push!(row_counts, 0)
             push!(last_rows, nothing)
-            push!(samples, sample)
         end
     end
 
@@ -165,7 +178,7 @@ function _constellation_ensemble_result(args::SimulationConfiguration, member_co
         Union{Missing, String}[sample.success ? missing : sprint(showerror, sample.error) for sample in campaign.samples],
         Float64[sample.elapsed_s for sample in campaign.samples], row_counts, last_rows)
 
-    result_campaign = MonteCarloResult(samples, campaign.elapsed_s, campaign.threads;
+    result_campaign = MonteCarloResult(campaign.samples, campaign.elapsed_s, campaign.threads;
                                        route=campaign.route, local_slots=campaign.local_slots)
     members, files = _write_constellation_results!(args, member_rows, constellation)
     return ConstellationEnsembleResult(result_campaign, members, constellation, files)
