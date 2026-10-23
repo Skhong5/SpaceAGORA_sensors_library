@@ -283,12 +283,16 @@ function get_callbacks(
         callbacks = _append_callback(callbacks, get_orbit_end_callback(num_sats))
     end
 
-    if !backbone_mode && _requires_entry_end_callback(effectors, args)
-        callbacks = _append_callback(callbacks, get_entry_end_callback(num_sats, args))
-    end
-
     if !backbone_mode
-        drag_callback = _requires_drag_state_callback(effectors, args) ? get_drag_state_callback(num_sats) : nothing
+        needs_entry = _requires_entry_end_callback(effectors, args)
+        needs_drag = _requires_drag_state_callback(effectors, args)
+        # Entry limits and phase changes use the identical altitude root. Keep
+        # one callback when both are active; an entry-only run keeps its own.
+        if needs_entry && !needs_drag
+            callbacks = _append_callback(callbacks, get_entry_end_callback(num_sats, args))
+        end
+        drag_callback = needs_drag ? get_drag_state_callback(num_sats;
+            entry_target=needs_entry ? _entry_target_count() : 0) : nothing
         # Preserve main's original continuous roots and their priority. EDG
         # passage heat is observed after the complete callback set is assembled.
         callbacks = _append_callback(callbacks, drag_callback)

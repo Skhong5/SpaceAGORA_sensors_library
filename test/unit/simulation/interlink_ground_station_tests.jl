@@ -11,6 +11,7 @@ using Test
 using LinearAlgebra
 using StaticArrays
 using SpaceAGORA
+using OrdinaryDiffEq: DiscreteCallback
 
 const SM = SpaceAGORA.SimulationModel
 const SE = SpaceAGORA.SimulationEngine
@@ -492,6 +493,49 @@ end
         block = SM.SceneVisualization.interlink_payload(table, 2)
         @test length(block["links"]) == 1 && only(block["links"])["b"] == 2
         @test block["active"]["count"] == 1 && block["contact"]["count"] == 1
+    end
+
+    @testset "resume initializes the station schedule at checkpoint time" begin
+        # Choose a rising pass where the epoch-zero station frame sees the link
+        # at the checkpoint, but the physically rotated station is still below
+        # its elevation mask. The mission horizon is unchanged across the crash.
+        checkpoint_time = 200.0
+        mask = deg2rad(10.0)
+        limit = acos(PLANET.Rp_e / RADIUS * cos(mask)) - mask
+        mean_motion = sqrt(PLANET.μ / RADIUS^3)
+        spin = norm(PLANET.ω)
+        lead = rad2deg(limit + mean_motion * checkpoint_time - spin * checkpoint_time / 2)
+        function args_at(directory; resume=false)
+            settings = SimulationSettings(results=false, generate_plots=false, verbose=false,
+                results_directory=directory, checkpoint_directory=directory,
+                checkpoint_enabled=true, checkpoint_interval_s=100.0, resume_from_checkpoint=resume)
+            return run_args(pass_fixture(lead_deg=lead)...; duration=400.0, dt_max=5.0, settings)
+        end
+        function observer(selections)
+            DiscreteCallback((u, t, integrator) -> false, integrator -> nothing;
+                initialize=(cb, u, t, integrator) -> begin
+                    t == checkpoint_time && push!(selections,
+                        copy(last(integrator.p.args.interlink_model.history).active))
+                    nothing
+                end, save_positions=(false, false))
+        end
+        uninterrupted = Any[]
+        straight = run_simulation(args_at(mktempdir()); return_results=true,
+            extra_callbacks=(observer(uninterrupted),))
+        dir = mktempdir()
+        crash = DiscreteCallback((u, t, integrator) -> t > 250.0,
+            integrator -> error("station resume interruption"); save_positions=(false, false))
+        @test_throws Exception run_simulation(args_at(dir); return_results=true, extra_callbacks=(crash,))
+        selections = Any[]
+        resumed = run_simulation(args_at(dir; resume=true); return_results=true,
+            extra_callbacks=(observer(selections),))
+        @test length(uninterrupted) == length(selections) == 1
+        @test isempty(only(uninterrupted))
+        @test selections == uninterrupted
+        rows = findall(==(checkpoint_time), resumed.table.time)
+        @test !isempty(rows)
+        @test all(iszero, resumed.table.sc1_data_rate_tx_bps[rows])
+        @test resumed.table.sc1_data_sent_bits[end] ≈ straight.table.sc1_data_sent_bits[end] rtol=1e-8
     end
 
     @testset "checkpoints" begin

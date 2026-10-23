@@ -1,5 +1,9 @@
 # SpaceAGORA Documentation
 
+This site follows `main`. For a released version, read the `docs/` folder at
+its [release tag](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tags).
+The [migration guide](reference/migrating_extension_hooks.md) lists renamed and removed hooks.
+
 SpaceAGORA is a Julia toolkit for spacecraft orbit and atmospheric-flight
 simulation. Use this site to run a first example, configure a study, understand
 saved results or extend a model through the supported API.
