@@ -29,6 +29,16 @@ struct SilentSource <: AbstractDataSource end
 struct DrainSource <: AbstractDataSource end
 SpaceAGORA.data_production_bps(::DrainSource, x, ctx, t) = -1.0
 
+# Record which directed endpoint and current context a backlog policy samples.
+struct BacklogProbeSource <: AbstractDataSource
+    rate_bps::Float64
+    calls::Vector{Any}
+end
+function SpaceAGORA.data_production_bps(source::BacklogProbeSource, x, ctx, t)
+    push!(source.calls, (x, ctx, t))
+    return t < 5.0 ? source.rate_bps * x.mass_kg / 100.0 : 0.0
+end
+
 # A 100 kg bus `arc_m` along a circular orbit, with `n_terminal` virtual
 # terminals, and a data store and sources when given.
 function data_sat(index, arc_m; n_terminal=1, store=nothing, sources=())
@@ -292,9 +302,11 @@ end
 
     @testset "scheduling by backlog" begin
         # Three spacecraft at a point: two senders, one receiver, links from each sender.
-        function backlog_fixture(; held=(8e6, 1e6), room_capacity=1e8, room_held=0.0, rate=2e6)
-            spacecraft = [data_sat(1, 0.0; store=DataStore(capacity_bits=1e9, initial_bits=held[1])),
-                          data_sat(2, 50e3; store=DataStore(capacity_bits=1e9, initial_bits=held[2])),
+        function backlog_fixture(; held=(8e6, 1e6), production=(0.0, 0.0), room_capacity=1e8, room_held=0.0, rate=2e6)
+            spacecraft = [data_sat(1, 0.0; store=DataStore(capacity_bits=1e9, initial_bits=held[1]),
+                sources=(DataSource(rate_bps=production[1]),)),
+                          data_sat(2, 50e3; store=DataStore(capacity_bits=1e9, initial_bits=held[2]),
+                sources=(DataSource(rate_bps=production[2]),)),
                           data_sat(3, 100e3; store=DataStore(capacity_bits=room_capacity, initial_bits=room_held))]
             model = data_model(spacecraft, [(1, 3, rate), (2, 3, rate)])
             state = (sc=[(pos=collect(sc.initial_condition.pos), vel=collect(sc.initial_condition.vel), mass=100.0,
@@ -302,9 +314,9 @@ end
             update_availability!(model, spacecraft, state)
             return spacecraft, model, state
         end
-        function scores(policy, spacecraft, model, state)
+        function scores(policy, spacecraft, model, state; context=LinkContext())
             scheduler = SchedulingPolicyModel(policy)
-            score_candidates!(model, scheduler, state, PLANET.μ; spacecraft)
+            score_candidates!(model, scheduler, state, PLANET.μ; spacecraft, context)
             return copy(SM.SchedulingPolicies.matching_workspace!(model, scheduler).score), select_interlinks!(model, scheduler)
         end
         # The accessors.
@@ -334,6 +346,38 @@ end
         @test values == [0.0, 0.0] && isempty(selected)
         values, selected = scores(policy, backlog_fixture(held=(0.0, 3e6))...)
         @test values[1] == 0.0 && selected == [((2, 1), (3, 1))]
+        # Current production adds to held-data/horizon, including at an empty store.
+        values, _ = scores(policy, backlog_fixture(production=(2e5, 0.0))...)
+        @test values == [1e6, 1e5]
+        values, selected = scores(policy, backlog_fixture(held=(0.0, 0.0), production=(2e5, 0.0))...)
+        @test values == [2e5, 0.0] && selected == [((1, 1), (3, 1))]
+        values, _ = scores(policy, backlog_fixture(production=(3e6, 0.0))...)
+        @test values[1] == 2e6
+        values, _ = scores(policy, backlog_fixture(production=(3e6, 0.0), room_held=99e6)...)
+        @test values == [1e5, 1e5]
+        values, selected = scores(policy, backlog_fixture(production=(3e6, 0.0), room_held=1e8)...)
+        @test values == [0.0, 0.0] && isempty(selected)
+
+        # Directed sender 2 is sampled with its own state and both current sources.
+        calls = Any[]
+        reversed = [data_sat(1, 0.0; store=DataStore(capacity_bits=1e8),
+                        sources=(DataSource(rate_bps=9e6),)),
+                    data_sat(2, 50e3; store=DataStore(capacity_bits=1e8),
+                        sources=(BacklogProbeSource(2e5, calls), BacklogProbeSource(5e4, calls)))]
+        reverse_model = data_model(reversed, [(2, 1, 2e6)])
+        reverse_state = (sc=[(pos=collect(sc.initial_condition.pos), vel=collect(sc.initial_condition.vel),
+                             mass=100.0, data_stored_bits=0.0) for sc in reversed],)
+        update_availability!(reverse_model, reversed, reverse_state)
+        context = LinkContext(time_s=2.0, planet=PLANET)
+        values, selected = scores(policy, reversed, reverse_model, reverse_state; context)
+        @test values == [2.5e5] && selected == [((2, 1), (1, 1))]
+        @test length(calls) == 2
+        @test all(call -> call[1].spacecraft_index == 2 && call[1].spacecraft === reversed[2] &&
+            call[1].pos_ii == reversed[2].initial_condition.pos && call[2] === context && call[3] == 2.0, calls)
+        values, selected = scores(policy, reversed, reverse_model, reverse_state;
+            context=LinkContext(time_s=6.0, planet=PLANET))
+        @test values == [0.0] && isempty(selected)
+
         # A sender without a store always holds data, and a receiver without one has room.
         open_ends = [data_sat(1, 0.0), data_sat(2, 50e3)]
         open_model = data_model(open_ends, [(1, 2, 2e6)])
@@ -360,6 +404,26 @@ end
         @test first(history).active == [((1, 1), (2, 1))]
         @test isempty(last(history).active)
         @test solution.u[end].sc[2].data_received_bits ≈ 1e7 rtol=1e-6
+    end
+
+    @testset "backlog keeps current production connected" begin
+        for initial in (0.0, 1e7)
+            args = run_args(one_link(; production=1e5, initial)...)
+            args = SM.SimConfig._with_configuration(args;
+                scheduling_policy_model=DataBacklogPolicy(horizon_s=5.0))
+            result = run_simulation(args; return_results=true, return_solution=true)
+            history = result.configuration.interlink_model.history
+            @test length(history) > 1
+            @test all(sample -> sample.active == [((1, 1), (2, 1))], history)
+            final = result.solution.u[end]
+            @test final.sc[1].data_produced_bits ≈ 6e6 rtol=1e-9
+            @test final.sc[1].data_sent_bits ≈ initial + 6e6 rtol=1e-9
+            @test final.sc[2].data_received_bits ≈ initial + 6e6 rtol=1e-9
+            @test final.sc[1].data_stored_bits ≈ 0.0 atol=1e-6
+            @test final.sc[1].data_lost_bits ≈ 0.0 atol=1e-6
+            @test balanced(result.table, 1, initial; atol=1e-6)
+            @test balanced(result.table, 2, 0.0; atol=1e-6)
+        end
     end
 
     @testset "backlog score units survive saved results" begin

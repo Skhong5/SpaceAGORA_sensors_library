@@ -484,8 +484,8 @@ end
         backlog = SchedulingPolicyModel(DataBacklogPolicy(horizon_s=100.0))
         update_availability!(model, spacecraft, state; context=LinkContext(planet=planet))
         score_candidates!(model, backlog, state, planet.μ; spacecraft, context=LinkContext(planet=planet))
-        # An empty sender scores 0; a sender holding data scores its rate; the station sends to a store with room.
-        @test backlog.matching.score ≈ [0.0, 4e3, 4e3]
+        # An empty producer scores its production; stored data reaches the rate cap; the station is unlimited.
+        @test backlog.matching.score ≈ [1e3, 4e3, 4e3]
 
         # A run: a full store drains to the station under the backlog policy, which never limits it, and the
         # link drops once the store is empty.
@@ -706,13 +706,13 @@ end
 
     @testset "station and store checkpoints continue together" begin
         # The same checkpoint boundaries make the reference and resumed runs
-        # comparable bit for bit. Exercise the store's boundary events as well
-        # as the station counters, in both link directions.
+        # comparable bit for bit. An empty producer stays selected on downlink;
+        # the station remains an unlimited sender on uplink until the store fills.
         function stored_pass(uplink)
             spacecraft, model = pass_fixture(lead_deg=10.0; uplink)
             sc = only(spacecraft)
             add_data!(sc, sc.root, DataStore(capacity_bits=2e6,
-                initial_bits=uplink ? 0.0 : 2e6))
+                initial_bits=0.0))
             uplink || add_data!(sc, sc.root, DataSource(rate_bps=2e3))
             return spacecraft, model
         end
@@ -722,13 +722,13 @@ end
         for uplink in (false, true)
             mktempdir() do reference_dir
                 whole = run(stored_pass(uplink)...; duration=450.0, dt_max=30.0,
-                    settings=settings(reference_dir))
+                    policy=DataBacklogPolicy(horizon_s=60.0), settings=settings(reference_dir))
                 mktempdir() do split_dir
                     # Interrupt the same mission just after the 200 s checkpoint.
                     # Shortening its configured horizon to 200 s would test
                     # a changed mission as well as checkpoint restart.
                     interrupted_args = run_args(stored_pass(uplink)...; duration=450.0,
-                        dt_max=30.0, settings=settings(split_dir))
+                        dt_max=30.0, policy=DataBacklogPolicy(horizon_s=60.0), settings=settings(split_dir))
                     stop = SM.SimulationCallbacks.PresetTimeCallback([201.0],
                         i -> throw(StationStoreInterrupted()); save_positions=(false, false))
                     @test_throws StationStoreInterrupted run_simulation(interrupted_args;
@@ -738,19 +738,33 @@ end
                     first_counter = uplink ? saved.u.gs[1].sent_bits : saved.u.gs[1].received_bits
                     @test first_counter > 0.0
                     resumed = run(stored_pass(uplink)...; duration=450.0, dt_max=30.0,
-                        settings=settings(split_dir, true))
+                        policy=DataBacklogPolicy(horizon_s=60.0), settings=settings(split_dir, true))
                     @test resumed.solution.t == whole.solution.t
                     @test all(isequal(collect(a), collect(b)) for
                         (a, b) in zip(resumed.solution.u, whole.solution.u))
                     final = resumed.solution.u[end]
                     @test final.gs[1].sent_bits ≈ final.sc[1].data_received_bits rtol=1e-14
                     @test final.gs[1].received_bits ≈ final.sc[1].data_sent_bits rtol=1e-14
-                    initial = uplink ? 0.0 : 2e6
+                    initial = 0.0
                     @test initial + final.sc[1].data_produced_bits + final.gs[1].sent_bits ≈
                         final.sc[1].data_stored_bits + final.sc[1].data_lost_bits +
                         final.gs[1].received_bits atol=1e-2
                     @test resumed.table.gs1_received_bits[end] == final.gs[1].received_bits
                     @test resumed.table.gs1_sent_bits[end] == final.gs[1].sent_bits
+                    if !uplink
+                        key = [((1, 1), (-1, 1))]
+                        whole_history = whole.configuration.interlink_model.history
+                        resumed_history = resumed.configuration.interlink_model.history
+                        @test first(whole_history).active == key
+                        @test all(sample -> sample.active == key, whole_history)
+                        @test first(resumed_history).active == key
+                        @test all(sample -> sample.active == key, resumed_history)
+                        @test saved.u.sc[1].data_stored_bits ≈ 0.0 atol=1e-6
+                        @test final.sc[1].data_stored_bits ≈ 0.0 atol=1e-6
+                        @test final.sc[1].data_produced_bits ≈ 2e3 * 450.0 rtol=1e-9
+                        @test final.sc[1].data_sent_bits ≈ final.sc[1].data_produced_bits rtol=1e-9
+                        @test final.gs[1].received_bits > first_counter
+                    end
                 end
             end
         end

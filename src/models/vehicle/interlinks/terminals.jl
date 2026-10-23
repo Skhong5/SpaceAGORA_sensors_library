@@ -15,7 +15,7 @@ using ..InterLinkModels: InterlinkModel, LinkContext, link_terminal, link_termin
     _endpoint_sample, _node_active, _station_antenna
 import ..InterLinkModels: terminal_count, _terminal_device, _terminal_devices, _terminal_number, _battery_capacity_wh,
     _battery_within_full, terminal_pose, _data_store_capacity_bits, _data_store_within_empty,
-    _data_store_within_full
+    _data_store_within_full, _data_store_production_bps
 using ..ActuatorMounting: mounted_actuators, actuator_context
 using ..Actuators: actuator_consumption, actuator_limits
 using ..PowerSystems: battery, within_full_tolerance
@@ -106,6 +106,9 @@ function _data_store_capacity_bits(spacecraft::SpacecraftModel)
     store = data_store(spacecraft)
     return store === nothing ? NaN : store.capacity_bits
 end
+
+_data_store_production_bps(spacecraft::SpacecraftModel, sample, context, t::Float64) =
+    _production_bps(spacecraft, sample, context, t)
 
 function _data_store_within_empty(spacecraft::SpacecraftModel, bits::Real)
     store = data_store(spacecraft)
