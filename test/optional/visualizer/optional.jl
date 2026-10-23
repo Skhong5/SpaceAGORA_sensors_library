@@ -18,7 +18,7 @@ const V=SpaceAGORAVisualizer
     @test Base.get_extension(SpaceAGORA,:SpaceAGORAVisualizerExt) !== nothing
     @test Base.PkgId(V).uuid == Base.UUID("a4677e92-0b7f-4d10-9ebd-8cde6a49f03a")
     dependency=Pkg.dependencies()[Base.PkgId(V).uuid]
-    @test dependency.version == v"0.1.0"
+    @test dependency.version == v"0.2.0"
     override=get(ENV,"SPACEAGORA_VISUALIZER_PATH","")
     if isempty(override)
         pin=TOML.parsefile(joinpath(@__DIR__,"..","..","..","packages","VisualizerSource.toml"))
