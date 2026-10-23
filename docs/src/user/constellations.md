@@ -232,19 +232,61 @@ Filter the members with the selection you scoped effectors with:
 `res.members[coalesce.(res.members.plane .== 2, false), :]` holds plane 2.
 
 The member runs, their files and the `value` of each sample are what they are
-without the keyword. The merged tables hold every saved row in memory; for a
-large campaign, `SPACEAGORA_RESULTS_THIN_STRIDE` and
-`SPACEAGORA_RESULTS_FINAL_ONLY` thin each member's rows. `merge_results=true`
-with `return_solver_metadata=true` is refused before any member runs. So is a
-run-wide save field whose `column_prefix` is a per-spacecraft field's, since
-both would sit in the same table.
+without the keyword. When the ensemble writes `constellation_members.feather`,
+it writes it one member at a time and `res.members` reads it in place, with
+read-only columns (`DataFrame(res.members)` copies it). Each member's rows are
+in memory until the merge; for a large campaign,
+`SPACEAGORA_RESULTS_THIN_STRIDE` and `SPACEAGORA_RESULTS_FINAL_ONLY` thin them.
+`merge_results=true` with `return_solver_metadata=true` is refused before any
+member runs. So is a run-wide save field whose `column_prefix` is a
+per-spacecraft field's, since both would sit in the same table.
 
 Save fields passed to an ensemble with `save_fields` run in each member, which
 has one spacecraft: build them from a member's configuration, since the default
 fields built from the whole constellation are sized for all its spacecraft.
 
+To merge member folders already written, without running anything again, use
+`read_constellation_results`:
+
+```julia
+merged = read_constellation_results("output/fleet")
+merged.members         # as res.members, read in place
+merged.constellation   # as res.constellation
+```
+
+It reads one member at a time, writes `constellation_members.feather` and
+`constellation_summary.csv` there, and returns them with `files`. When the
+folder already holds them (the ensemble ran with `merge_results=true`), it
+refuses unless you pass `overwrite=true`.
+
+- **Which members.** Every member folder found and, when
+  `constellation_summary.csv` is there, every member it lists, so a member whose
+  folder is gone keeps its row.
+- **Their status.** `success`, `error` and `elapsed_s` come from that summary,
+  and are `missing` without it. A `read_status` column says whether each
+  member's rows were read, and if not, why: `member failed`, `folder missing`,
+  `no results bundle`, `unfinished run` (a streamed run that did not finish) or
+  `files differ from manifest`. Members not read are named in a warning.
+- **Their rows.** A member written in the long layout gives its tables as they
+  are. A member written in the wide layout has one spacecraft, so its
+  per-spacecraft columns are its `sc1_` ones, renamed; its plane and slot come
+  from the summary. A results bundle of another version, or a wide bundle of
+  more than one spacecraft, is refused.
+
+The viewer's ensemble page (`export_ensemble_visualization`) labels the
+members of a folder with `constellation_summary.csv` by id, plane and slot
+(`id 7, plane 2, slot 3`), colours them by plane, and reads one member's
+results at a time.
 
 Merged summaries reserve `member_tag`, `success`, `error`, `elapsed_s` and `rows`
 for campaign metadata. If a saved field flattens to one of these names, the merge
 raises an `ArgumentError`; give that field a different `column_prefix`. This
 applies to both per-spacecraft and run-wide fields.
+
+Merged summaries also record `results_subdirectory`, the member's actual output
+folder relative to its `member_tag` folder (`.` normally, `resumed_at_<t>s` after
+recovery without usable earlier rows). Disk merging follows this destination;
+an older summary with several possible recovery bundles is refused because it
+cannot identify the intended results. `results_subdirectory` is reserved for
+this metadata, and disk summaries additionally reserve `read_status`. Summary
+validation happens before either existing merged file is replaced.

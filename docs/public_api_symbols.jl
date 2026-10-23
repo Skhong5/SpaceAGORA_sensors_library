@@ -258,7 +258,8 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SimulationCampaigns, symbol = :MonteCarloResult, rendered = "SpaceAGORA.MonteCarloResult"),
             (owner = :SimulationCampaigns, symbol = :run_monte_carlo, rendered = "SpaceAGORA.run_monte_carlo"),
             (owner = :SimulationCampaigns, symbol = :run_constellation_ensemble, rendered = "SpaceAGORA.run_constellation_ensemble"),
-            (owner = :SimulationCampaigns, symbol = :ConstellationEnsembleResult, rendered = "SpaceAGORA.ConstellationEnsembleResult")
+            (owner = :SimulationCampaigns, symbol = :ConstellationEnsembleResult, rendered = "SpaceAGORA.ConstellationEnsembleResult"),
+            (owner = :SimulationCampaigns, symbol = :read_constellation_results, rendered = "SpaceAGORA.read_constellation_results")
         ]
     ),
     (
