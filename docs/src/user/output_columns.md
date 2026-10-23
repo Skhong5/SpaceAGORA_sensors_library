@@ -290,6 +290,14 @@ These columns are written with the default save-field list in a run with a
 
 With data stores, the rates are those the links carry as the stores limit them.
 
+With ground stations (see [Interlinks](interlinks.md#Ground-stations)), each
+station `s` adds two columns after the spacecraft's:
+
+| Column | Unit | Description |
+|---|---|---|
+| `gs1_received_bits` | bit | Bits station 1 has received since the run started (an integrated state) |
+| `gs1_sent_bits` | bit | Bits station 1 has sent since the run started (an integrated state) |
+
 ### Data storage
 
 These columns are written with the default save-field list when a spacecraft

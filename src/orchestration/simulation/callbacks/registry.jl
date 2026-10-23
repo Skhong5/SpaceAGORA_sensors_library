@@ -16,7 +16,7 @@ using ..SimulationModel: PlanetFrameEphemerisCache, rot
 using ..SimulationModel: ExternalPropagation
 using ..ArticulatedBody: articulated_forward_kinematics, articulated_link_poses, articulated_has_moving_joints
 using ..SimulationModel: ephemerides_requires_spice
-using ..InterLinkModels: has_ground_stations
+using ..InterLinkModels: has_ground_stations, has_station_counters
 using ..SimulationModel.EphemeridesModels: ephemerides_epoch_seconds, ephemerides_frame_lpi, ephemerides_sun_ii
 using ..ParallelPolicy
 using ..EnvironmentModels

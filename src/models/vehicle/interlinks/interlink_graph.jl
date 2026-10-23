@@ -305,6 +305,10 @@ module InterLinkModels
 	# Whether `model` (or `nothing`) has ground stations.
 	has_ground_stations(model) = model !== nothing && !isempty(model.ground_stations)
 
+	# Whether a run with interlink model `model` counts each ground station's bits
+	# received and sent: with stations and data links, as the spacecraft's counters.
+	has_station_counters(model) = has_ground_stations(model) && has_data_links(model)
+
 	# Whether the link end at node `node` is active: a spacecraft's flag, and always for a station.
 	@inline _node_active(is_active, node::Int) = node < 0 || is_active[node]
 

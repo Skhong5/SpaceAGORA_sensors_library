@@ -4,7 +4,8 @@ module InterlinkGroundStationTests
 # elevation mask, the station and its refusals, registration, pairs, the
 # policies at a station end, a pass against the closed-form elevation, the
 # planet's frame inside a step, an uplink, the setup checks, the viewer block,
-# checkpoints, and a negative control.
+# checkpoints, the stations' data counters and the stations with data stores,
+# and a negative control.
 
 using Test
 using LinearAlgebra
@@ -120,14 +121,15 @@ pass_elevation(solution, t) = (d = frame(t) * SVector{3, Float64}(solution(t).sc
 # The data the link `key` of a `pass_fixture` run carried, by quadrature: from each
 # history sample that selects it to the next one, at the closed-form rate between
 # the spacecraft of the solution and the station under the planet's frame at each
-# time, or, with `held`, under the frame at each step's start.
-function carried(solution, key; held::Bool=false)
+# time, or, with `held`, under the frame at each step's start; up to `until`.
+function carried(solution, key; held::Bool=false, until::Float64=Inf)
     history = solution.prob.p.args.interlink_model.history
     rate(t, L) = shannon(norm(SVector{3, Float64}(solution(t).sc[1].pos) - transpose(L) * SITE))
     total = 0.0
     for k in 1:length(history) - 1
         key in history[k].active || continue
-        t0, t1 = history[k].time, history[k + 1].time
+        t0, t1 = history[k].time, min(history[k + 1].time, until)
+        t0 < t1 || continue
         total += simpson(t -> rate(t, held ? frame(t0) : frame(t)), t0, t1, 64)
     end
     return total
@@ -350,6 +352,99 @@ end
         @test solution.u[end].sc[1].data_sent_bits > 0 && solution.u[end].sc[1].data_received_bits == 0
     end
 
+    @testset "the stations' counters" begin
+        # A downlink over the pass: the station receives what the spacecraft sends, at the closed-form rate.
+        spacecraft, model = pass_fixture()
+        result = run(spacecraft, model; duration=900.0, dt_max=30.0)
+        final = result.solution.u[end]
+        @test propertynames(final.gs[1]) == (:received_bits, :sent_bits) && length(final.gs) == 1
+        @test final.gs[1].received_bits ≈ final.sc[1].data_sent_bits rtol=1e-14
+        @test final.gs[1].sent_bits == 0.0
+        @test final.gs[1].received_bits ≈ carried(result.solution, ((1, 1), (-1, 1))) rtol=1e-7
+        # The columns, from the integrated counters.
+        table = result.table
+        @test table.gs1_received_bits ≈ table.sc1_data_sent_bits rtol=1e-14
+        @test all(iszero, table.gs1_sent_bits) && issorted(table.gs1_received_bits)
+        @test table.gs1_received_bits[end] == final.gs[1].received_bits
+        # An uplink: the station sends what the spacecraft receives.
+        up = run(pass_fixture(uplink=true)...; duration=430.0, dt_max=30.0).solution.u[end]
+        @test up.gs[1].sent_bits ≈ up.sc[1].data_received_bits rtol=1e-14
+        @test up.gs[1].sent_bits > 0 && up.gs[1].received_bits == 0.0
+        # Each station counts its own links: two stations, one spacecraft sending to the first only.
+        two = pass_fixture()[2]
+        add_ground_station!(two, station(name="south", lat_deg=-60.0))
+        @test length(SE.build_initial_conditions(run_args(pass_fixture()[1], two)).gs) == 2
+        # Without data links, or without stations, there are no counters.
+        laser = InterlinkModel()
+        add_ground_station!(laser, station())
+        register_link!(laser, [radio_sat(1; terminal=nothing, n_terminal=1), radio_sat(2; terminal=nothing, n_terminal=1)],
+            (1, 1), (2, 1), LaserMomentumLink())
+        @test !IM.has_station_counters(laser) && IM.has_station_counters(model)
+        plain = InterlinkModel()
+        pair = [radio_sat(1), radio_sat(2)]
+        register_link!(plain, pair, (1, 1), (2, 1), LINK)
+        @test !hasproperty(SE.build_initial_conditions(run_args(pair, plain)), :gs)
+    end
+
+    @testset "stations with data stores" begin
+        # The flows at one state: a station neither limits a link nor is limited.
+        planet = turned_planet(0.2)
+        st = station(lat_deg=20.0, lon_deg=40.0)
+        fixed(rate) = DataLink(transmit_power_w=0.0, budget=FixedRateBudget(rate_bps=rate), range_m=3e6)
+        stored(capacity, held) = (sc = radio_sat(1; terminal=nothing, n_terminal=1);
+            add_data!(sc, sc.root, DataStore(capacity_bits=capacity, initial_bits=held)); sc)
+        spacecraft = [stored(1e9, 0.0), stored(1e9, 5e8), stored(2e9, 1e9)]
+        add_data!(spacecraft[1], spacecraft[1].root, DataSource(rate_bps=1e3))
+        SM.data_store(spacecraft[1]).empty = true
+        SM.data_store(spacecraft[3]).full = true
+        model = InterlinkModel()
+        add_ground_station!(model, station(lat_deg=20.0, lon_deg=40.0, antennas=[radio(), radio(gain_dbi=1.0), radio(gain_dbi=2.0)]))
+        register_link!(model, spacecraft, (1, 1), (-1, 1), fixed(4e3))   # out of an empty store: its production
+        register_link!(model, spacecraft, (2, 1), (-1, 2), fixed(4e3))   # out of a store with data: the link's rate
+        register_link!(model, spacecraft, (-1, 3), (3, 1), fixed(4e3))   # into a full store sending nothing: nothing
+        model.graph.active .= true
+        state = (sc=[(pos=seen_from(st, planet, 1.0, 0.0, 900e3), vel=SVector(0.0, 7.5e3, 0.0), mass=100.0,
+                      data_stored_bits=SM.data_store(sc).initial_bits) for sc in spacecraft],)
+        flows = SM.InterlinkTerminals._data_flows(model, spacecraft, state; context=LinkContext(time_s=0.0, planet=planet))
+        @test flows.sent ≈ [1e3, 4e3, 0.0] && flows.received == [0.0, 0.0, 0.0]
+        @test flows.station_received ≈ [5e3] && flows.station_sent == [0.0]
+        # With room in the third store, the station's uplink carries its rate.
+        SM.data_store(spacecraft[3]).full = false
+        flows = SM.InterlinkTerminals._data_flows(model, spacecraft, state; context=LinkContext(time_s=0.0, planet=planet))
+        @test flows.received ≈ [0.0, 0.0, 4e3] && flows.station_sent ≈ [4e3]
+        # A station holds and has room without limit, for the backlog policy.
+        ctx = SchedulingContext(planet.μ, LinkContext(planet=planet), spacecraft, state, nothing)
+        @test stored_bits(ctx, -1) == Inf && store_room_bits(ctx, -1) == Inf
+        @test stored_bits(SchedulingContext(planet.μ, LinkContext(planet=planet), nothing, state, nothing), -1) == Inf
+        backlog = SchedulingPolicyModel(DataBacklogPolicy(horizon_s=100.0))
+        update_availability!(model, spacecraft, state; context=LinkContext(planet=planet))
+        score_candidates!(model, backlog, state, planet.μ; spacecraft, context=LinkContext(planet=planet))
+        # An empty sender scores 0; a sender holding data scores its rate; the station sends to a store with room.
+        @test backlog.matching.score ≈ [0.0, 4e3, 4e3]
+
+        # A run: a full store drains to the station under the backlog policy, which never limits it, and the
+        # link drops once the store is empty.
+        sc = radio_sat(1; pos=pass_fixture(lead_deg=10.0)[1][1].initial_condition.pos,
+            vel=pass_fixture(lead_deg=10.0)[1][1].initial_condition.vel)
+        add_data!(sc, sc.root, DataStore(capacity_bits=2e6, initial_bits=2e6))
+        drain = InterlinkModel()
+        add_ground_station!(drain, station())
+        register_link!(drain, [sc], (1, 1), (-1, 1), LINK)
+        result = run([sc], drain; duration=450.0, dt_max=30.0, policy=DataBacklogPolicy(horizon_s=60.0))
+        final = result.solution.u[end]
+        history = result.solution.prob.p.args.interlink_model.history
+        @test final.sc[1].data_stored_bits < 1e-2
+        @test final.gs[1].received_bits ≈ 2e6 atol=1e-2
+        @test final.gs[1].received_bits ≈ final.sc[1].data_sent_bits rtol=1e-14
+        @test history[1].active == [((1, 1), (-1, 1))] && isempty(history[end].active)
+        # While the store held data, the link carried its full rate: the station did not limit it.
+        before = findlast(sample -> result.solution(sample.time).sc[1].data_stored_bits > 1e5, history)
+        t_before = history[before].time
+        @test 60.0 < t_before < 440.0
+        @test result.solution(t_before).sc[1].data_sent_bits ≈
+            carried(result.solution, ((1, 1), (-1, 1)); until=t_before) rtol=1e-7
+    end
+
     @testset "the planet's frame inside a step" begin
         # The rising half of the pass, before culmination: the station moves away from the spacecraft.
         spacecraft, model = pass_fixture()
@@ -410,10 +505,20 @@ end
         end
         @test isequal(SE._interlink_checkpoint_configuration(run_args(pass_fixture(st=station(name="renamed"))...)),
             configuration)
+        # A checkpoint whose state lacks the station's counters is refused.
+        args = run_args(pass_fixture()...)
+        saved = (runtime_state=SE._interlink_checkpoint_runtime_state(args, [true]),
+            u=(sc=[(pos=zeros(3), vel=zeros(3), mass=100.0)],))
+        err = refusal(() -> SE._restore_interlink_checkpoint_state!(args, saved, [true]))
+        @test err isa ArgumentError && occursin("one data counter pair per ground station (1 in this run)", err.msg)
+        # The state's renaming for a checkpoint keeps the counters.
+        u = SE.build_initial_conditions(args)
+        u.gs[1].received_bits = 3.0
+        @test SE._checkpoint_state(args, u).gs[1].received_bits == 3.0
         # A resumed run continues; one with a changed station is refused. The spacecraft is in view
         # from the start to the end, so the selection does not depend on the steps.
         overhead() = pass_fixture(lead_deg=10.0)
-        straight = run(overhead()...; duration=450.0, dt_max=30.0).solution.u[end].sc[1]
+        straight = run(overhead()...; duration=450.0, dt_max=30.0).solution.u[end]
         mktempdir() do directory
             segments(resume) = SimulationSettings(results=resume, results_directory=directory, generate_plots=false,
                 checkpoint_enabled=true, checkpoint_interval_s=100.0, checkpoint_directory=directory,
@@ -424,8 +529,11 @@ end
             @test err isa ArgumentError && occursin("ground stations", err.msg)
             resumed = run(overhead()...; duration=450.0, dt_max=30.0, settings=segments(true))
             @test all(sample -> ((1, 1), (-1, 1)) in sample.active, resumed.solution.prob.p.args.interlink_model.history)
-            @test resumed.solution.u[end].sc[1].data_sent_bits ≈ straight.data_sent_bits rtol=1e-8
-            @test resumed.table.sc1_data_sent_bits[end] ≈ straight.data_sent_bits rtol=1e-8
+            @test resumed.solution.u[end].sc[1].data_sent_bits ≈ straight.sc[1].data_sent_bits rtol=1e-8
+            @test resumed.table.sc1_data_sent_bits[end] ≈ straight.sc[1].data_sent_bits rtol=1e-8
+            # The station's counters continue too.
+            @test resumed.solution.u[end].gs[1].received_bits ≈ straight.gs[1].received_bits rtol=1e-8
+            @test resumed.table.gs1_received_bits[end] ≈ straight.gs[1].received_bits rtol=1e-8
         end
     end
 

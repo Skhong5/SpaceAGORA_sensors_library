@@ -311,6 +311,11 @@ function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
         throw(ArgumentError("Interlink checkpoint activity flags must match the spacecraft count."))
     hasproperty(checkpoint.u, :sc) && length(checkpoint.u.sc) == count ||
         throw(ArgumentError("Interlink checkpoint state must match the spacecraft count."))
+    stations = SimulationModel.InterLinkModels.has_station_counters(args.interlink_model) ?
+        length(args.interlink_model.ground_stations) : 0
+    (hasproperty(checkpoint.u, :gs) ? length(checkpoint.u.gs) : 0) == stations ||
+        throw(ArgumentError("Interlink checkpoint state must hold one data counter pair per ground station " *
+            "($(stations) in this run)."))
     copyto!(is_active, snapshot.is_active)
     return nothing
 end
@@ -356,10 +361,14 @@ _resumed_checkpoint_state(args, u) = args.interlink_model !== nothing && _interl
     _renamed_spacecraft_state(u, map(reverse, _INTERLINK_STATE_NAMES)) : u
 
 # A copy of the state `u` with the spacecraft components renamed by `names` (old =>
-# new pairs). Every other component, every shape and every value stay; the copy's
-# values are checked bit for bit against `u`'s.
+# new pairs). Every other component, every shape and every value stay (the ground
+# stations' counters, `gs`, as they are); the copy's values are checked bit for bit
+# against `u`'s.
 function _renamed_spacecraft_state(u::ComponentVector, names)
-    state = ComponentVector(sc=[_renamed_components(u.sc[i], names) for i in eachindex(u.sc)])
+    spacecraft = [_renamed_components(u.sc[i], names) for i in eachindex(u.sc)]
+    state = hasproperty(u, :gs) ?
+        ComponentVector(sc=spacecraft, gs=[_renamed_components(u.gs[s], ()) for s in eachindex(u.gs)]) :
+        ComponentVector(sc=spacecraft)
     old, new = ComponentArrays.getdata(u), ComponentArrays.getdata(state)
     length(old) == length(new) && all(index -> old[index] === new[index], eachindex(old, new)) ||
         error("Renaming the interlink states changed the state's values; this is a SpaceAGORA bug.")

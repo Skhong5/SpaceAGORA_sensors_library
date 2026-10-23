@@ -390,7 +390,16 @@ register_links!(model, spacecraft, station_pairs(spacecraft, model), link)
   nothing and are never shed.
 - **Data.** A downlink counts in its spacecraft's `data_sent_bits`. An uplink, a
   link from `(-s, k)` to a spacecraft's radio, counts in that spacecraft's
-  `data_received_bits`. A station keeps no counters of its own yet.
+  `data_received_bits`. In a run with data links, each station also counts the
+  bits it has received and sent, two integrated states (`u.gs[s].received_bits`
+  and `u.gs[s].sent_bits`) written as the `gs{s}_received_bits` and
+  `gs{s}_sent_bits` columns (see [the data columns](output_columns.md#Data-links)).
+  They continue across a checkpoint resume.
+- **With data stores.** A station is a store with unbounded capacity and supply,
+  so it never limits a link: a downlink carries what its spacecraft's store
+  sends, and an uplink what its spacecraft's store can take in.
+  `stored_bits(ctx, -s)` and `store_room_bits(ctx, -s)` are Inf, so
+  `DataBacklogPolicy` drains the fullest stores to the ground first.
 - **Scheduling.** Station links are candidates like any other. A station is never
   an orbital policy's target. It has no battery, so its `state_of_charge` is NaN
   and `EnergyBalancingPolicy` scores a link to it 0.

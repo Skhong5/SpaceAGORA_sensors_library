@@ -23,6 +23,10 @@ then the link endpoint `(-s, k)`.
 - **The antennas** steer freely above the mask, so their `boresight` is not
   read. A station has no power budget: its antennas draw nothing and are never
   shed.
+- **Its data.** In a run with data links, the station counts the bits it
+  receives and sends (`gs{s}_received_bits` and `gs{s}_sent_bits`). With data
+  stores, it is a store of unbounded capacity and supply: it never limits a
+  link.
 - **Its motion.** The station turns with the planet's frame (`L_PI`, the
   rotation from J2000 to planet-fixed axes) and spin `ω`: its inertial
   position is `L_PIᵀ r` and its velocity `L_PIᵀ (ω × r)`, with `r` its

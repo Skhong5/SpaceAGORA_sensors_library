@@ -449,8 +449,11 @@ end
 The data (bit) spacecraft `spacecraft_index`'s data store holds at the
 scheduling state, the `data_stored_bits` column's value. NaN without a store,
 without the run's spacecraft models, or for a state without `data_stored_bits`.
+Inf for a ground station (a negative index), an unbounded store that always
+has data to send.
 """
 function stored_bits(ctx::SchedulingContext, spacecraft_index::Integer)
+    spacecraft_index < 0 && return Inf
     ctx.spacecraft === nothing && return NaN
     isnan(_data_store_capacity_bits(ctx.spacecraft[spacecraft_index])) && return NaN
     view = ctx._state.sc[spacecraft_index]
@@ -464,9 +467,11 @@ end
 The room (bit) left in spacecraft `spacecraft_index`'s data store at the
 scheduling state: its capacity less `stored_bits`. Inf without a store or
 without the run's spacecraft models, since nothing then limits what the
-spacecraft takes in; NaN for a state without `data_stored_bits`.
+spacecraft takes in; NaN for a state without `data_stored_bits`. Inf for a
+ground station (a negative index), an unbounded store that always has room.
 """
 function store_room_bits(ctx::SchedulingContext, spacecraft_index::Integer)
+    spacecraft_index < 0 && return Inf
     ctx.spacecraft === nothing && return Inf
     capacity = _data_store_capacity_bits(ctx.spacecraft[spacecraft_index])
     isnan(capacity) && return Inf
@@ -485,7 +490,8 @@ fuller stores and into emptier ones, and never selects a link with nothing to
 send or nowhere to put it: a store the engine counts as empty (within `1e-9` of
 its capacity of nothing) holds nothing here, and one it counts as full has no
 room. A transmitter without a store counts as always holding data, and a
-receiver without one as always having room. Undirected
+receiver without one as always having room; so does a ground station, which
+never limits a link: the policy drains fuller stores to the ground first. Undirected
 links score 0, and so does every link when the run's spacecraft models are not
 given. The unit is that of `DataThroughputPolicy`, so the two mix without
 rescaling.
@@ -515,13 +521,15 @@ end
 
 # The data a transmitter holds and the room a receiver has, for the backlog
 # score: as the store's own events count it, so the hair a full or empty event
-# leaves does not count; Inf without a store.
+# leaves does not count; Inf without a store and at a ground station.
 function _backlog_held_bits(ctx::SchedulingContext, i::Int)
+    i < 0 && return Inf
     held = stored_bits(ctx, i)
     isnan(held) && return Inf
     return _data_store_within_empty(ctx.spacecraft[i], held) ? 0.0 : held
 end
 function _backlog_room_bits(ctx::SchedulingContext, i::Int)
+    i < 0 && return Inf
     room = store_room_bits(ctx, i)
     isnan(room) && return Inf
     return _data_store_within_full(ctx.spacecraft[i], stored_bits(ctx, i)) ? 0.0 : room

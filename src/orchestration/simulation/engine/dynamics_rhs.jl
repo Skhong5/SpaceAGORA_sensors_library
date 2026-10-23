@@ -3644,12 +3644,24 @@ function _apply_data_rhs!(du, u, p, t::Float64)
     any(SimulationModel.has_data_store, spacecraft) && return _apply_data_storage_rhs!(du, u, p, t)
     isempty(u.sc) || hasproperty(u.sc[1], :data_sent_bits) || return nothing
     planet = p.args.environment_model.planet
-    sent, received = SimulationModel.data_link_rates_bps(p.args.interlink_model, spacecraft, u;
+    rates = SimulationModel.InterlinkTerminals._data_link_rates(p.args.interlink_model, spacecraft, u;
         is_active=p.is_active, context=SimulationModel.LinkContext(time_s=t, planet=planet),
         planet_frame=SimulationModel.SimulationCallbacks._station_planet_frame(p, t))
     @inbounds for i in eachindex(spacecraft)
-        du.sc[i].data_sent_bits = p.is_active[i] ? sent[i] : 0.0
-        du.sc[i].data_received_bits = p.is_active[i] ? received[i] : 0.0
+        du.sc[i].data_sent_bits = p.is_active[i] ? rates.sent[i] : 0.0
+        du.sc[i].data_received_bits = p.is_active[i] ? rates.received[i] : 0.0
+    end
+    _apply_station_data_rhs!(du, u, rates)
+    return nothing
+end
+
+# The ground stations' counters, in a run with them: the bits each station has
+# received and sent grow at the rates its active links carry.
+function _apply_station_data_rhs!(du, u, rates)
+    hasproperty(u, :gs) || return nothing
+    @inbounds for s in eachindex(rates.station_received)
+        du.gs[s].received_bits = rates.station_received[s]
+        du.gs[s].sent_bits = rates.station_sent[s]
     end
     return nothing
 end
@@ -3662,7 +3674,8 @@ function _apply_data_storage_rhs!(du, u, p, t::Float64)
     spacecraft = p.args.dynamics_model.spacecraft
     planet = p.args.environment_model.planet
     flows = SimulationModel.InterlinkTerminals._data_flows(p.args.interlink_model, spacecraft, u;
-        is_active=p.is_active, context=SimulationModel.LinkContext(time_s=t, planet=planet))
+        is_active=p.is_active, context=SimulationModel.LinkContext(time_s=t, planet=planet),
+        planet_frame=SimulationModel.SimulationCallbacks._station_planet_frame(p, t))
     counters = hasproperty(u.sc[1], :data_sent_bits)
     @inbounds for i in eachindex(spacecraft)
         active = p.is_active[i]
@@ -3674,6 +3687,7 @@ function _apply_data_storage_rhs!(du, u, p, t::Float64)
         du.sc[i].data_produced_bits = active ? flows.produced[i] : 0.0
         du.sc[i].data_lost_bits = active ? flows.lost[i] : 0.0
     end
+    _apply_station_data_rhs!(du, u, flows)
     return nothing
 end
 
@@ -4342,7 +4356,13 @@ function build_initial_conditions(args)::ComponentVector
         return merge(base_shape, SimulationModel.coupled_cloth_robot_arm_state_shape(coupling.plan))
     end
 
-    state = ComponentVector(sc = sc_shapes)
+    # Each ground station's bits received and sent, in a run that counts them.
+    state = if SimulationModel.InterLinkModels.has_station_counters(args.interlink_model)
+        ComponentVector(sc = sc_shapes,
+            gs = [(received_bits = 0.0, sent_bits = 0.0) for _ in args.interlink_model.ground_stations])
+    else
+        ComponentVector(sc = sc_shapes)
+    end
 
     for i in eachindex(args.dynamics_model.spacecraft)
         spacecraft = args.dynamics_model.spacecraft[i]
