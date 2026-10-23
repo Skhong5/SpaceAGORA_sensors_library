@@ -171,7 +171,7 @@ engine settings at call time, so `SPACEAGORA_SOLVER_MODE` (or a
 `SimulationEngineConfig` override) applies. The mode chosen this way decides
 both the integrator and the callbacks the run installs. Accepted modes are `:tsit5`,
 `:gravity_backbone_split`, `:dp8`, `:auto_stiff`, `:rodas5p`, `:split_imex`
-and `:multirate`. IMEX (`:split_imex`) and multirate integration run only when
+`:multirate` and `:multirate_mri`. IMEX (`:split_imex`) and multirate integration run only when
 selected this way; nothing in the dynamics model or routing profile switches a
 run to them.
 
@@ -207,3 +207,40 @@ limitation. Validate the chosen method and tolerances for the intended
 trajectory. KenCarp47, KenCarp58 and other solver modes retain their existing
 nonlinear-solver policy. Refreshing Jacobians and their factorizations adds work;
 the runtime cost for large constellations has not been measured.
+
+
+## Coupled multirate integration
+
+For rigid spacecraft connected by interlinks, select `:multirate_mri`:
+
+```julia
+solver = SolverConfig(
+    solver_mode=:multirate_mri,
+    multirate_slow_dt_s=0.5,
+    multirate_fast_substeps=8,
+)
+args = SimulationConfiguration(...; solver_config=solver)
+```
+
+This opt-in route uses OrdinaryDiffEq's explicit MRI-GARK45a method. Orbit
+and environmental forces form the slow component. Control, interlink forces,
+power and data transfer form the fast component. Both components act on the
+same spacecraft states. One integrator owns the callbacks, so a guidance tick,
+sensor sample, store boundary or other event is processed on one physical
+timeline.
+
+`multirate_slow_dt_s` limits the outer step; the orbital and atmospheric step
+limits can shorten it further. `multirate_fast_substeps` is the number of RK4
+microsteps **per MRI stage**, not per outer step. The outer method adapts its
+step using the configured tolerances. The `multirate_slow_solver` and
+`multirate_fast_solver` fields configure only the original `:multirate` Strang
+route. They do not change MRI's internal methods or enable automatic switching
+to a stiff solver. Use a full-state stiff solver such as `:rodas5p` or
+`:auto_stiff` for stiff problems; validate step convergence for your model.
+
+The MRI route supports rigid-spacecraft interlinks, batteries, data stores,
+mounted sensors and normal checkpoint continuation. Articulated spacecraft,
+compliant attachments, coupled robot-arm effectors and external propagation
+retain their setup refusals. The existing `:multirate` route and default
+`:tsit5` behavior are unchanged. This is a numerical option, not a promise that
+coupled runs will be faster; measure accuracy and runtime on the intended case.
