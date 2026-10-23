@@ -243,6 +243,10 @@ member's rows. `merge_results=true` with `return_solver_metadata=true` is
 refused before any member runs, and so is a run-wide save field whose column
 prefix is a per-spacecraft field's.
 
+Save fields passed with `save_fields` run in each member, which has one
+spacecraft: build them from a member's configuration, not from the whole
+constellation's, whose default fields are sized for every spacecraft.
+
 ```julia
 res = run_constellation_ensemble(args; merge_results=true)
 plane_two = res.members[coalesce.(res.members.plane .== 2, false), :]
@@ -274,6 +278,9 @@ function run_constellation_ensemble(
     # effectors whose scope holds its position, unscoped.
     args = SimulationEngine._resolve_effector_scopes(args)
     _validate_ensemble_uncoupled(args, allow_gnc_effectors)
+    # Refused here rather than by every member.
+    args.simulation_settings.results_layout in (:wide, :long) || throw(ArgumentError(
+        "SimulationSettings.results_layout must be :wide or :long; got :$(args.simulation_settings.results_layout)."))
     if merge_results
         # run_simulation refuses this pair with return_results, which every
         # member of a merged ensemble runs with.

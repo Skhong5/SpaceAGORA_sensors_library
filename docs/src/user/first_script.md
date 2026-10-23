@@ -13,7 +13,13 @@ What to read next:
 
 ## Your own script
 
-Every type needed to set up a run is exported from the root module, so
+Save the following code as `first_orbit.jl` in your SpaceAGORA checkout.
+It runs in the root environment that the [Quickstart](quickstart.md)'s
+`Pkg.instantiate` step prepared: the script loads only SpaceAGORA, so it does
+not need the examples environment. This example needs no GRAM installation or
+SPICE kernels.
+
+Every type needed for this example is exported from the root module, so
 `using SpaceAGORA` is the only import. `make_example_config` and
 `make_three_body_spacecraft` build a complete configuration from a planet, a
 spacecraft, and an initial condition. `make_example_config` defaults to SPICE
@@ -35,8 +41,24 @@ config = make_example_config(
     dynamic_effectors=(InverseSquaredGravityModel(),),
     ephemerides_model=SimpleEphemeridesModel(), results=false,
 )
-run_simulation(config)
+solution = run_simulation(config; return_solution=true)
+println("Final simulated time: $(solution.t[end]) seconds")
 ```
+
+From the checkout directory, run:
+
+```text
+julia --project=. first_orbit.jl
+```
+
+The final simulated time should be `300.0` seconds. The solver solution is
+returned to the script; `results=false` means this example does not write result
+files. To save tables and inspect their columns, follow
+[Simulation Outputs](outputs.md).
+
+For a first change, set `mission_time=600.0` and rerun the script. Then change
+the initial orbit in `InitialCondition`; the radii `ra` and `rp` are measured
+from the planet's centre, in metres, rather than from its surface.
 
 ## When to pick a different path
 

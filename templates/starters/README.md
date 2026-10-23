@@ -10,7 +10,9 @@ runs it through `.github/workflows/contributor-ci.yml`):
 | `package` | an algorithm package for an existing family | an RPO reference planner |
 | `companion` | a companion that serves a core service facade | an external propagator (`ExternalPropagationServices`) |
 
-Create one from a clean checkout of the SpaceAGORA commit to build on:
+Use Julia 1.12 and run the generator from the root of a clean SpaceAGORA
+checkout at the commit you want to build on. The output directory must not
+already contain files:
 
 ```bash
 julia --startup-file=no scripts/new_contributor_repository.jl package ../MyPlanner --name MyPlanner --holder "Your Lab"
@@ -23,7 +25,7 @@ changes, a non-empty or in-checkout directory, and a name that is not a package 
 |---|---|
 | `StarterName` (in text and file names) | the `--name` |
 | `00000000-0000-0000-0000-000000000000` | a fresh UUID |
-| `0000000000000000000000000000000000000000` | the checkout's `HEAD` commit (pin file and workflow call) |
+| `0000000000000000000000000000000000000000` | the checkout's `HEAD` commit (pin file, README checkout command and workflow call) |
 | `SpaceAGORA = "0.0"` | the core's release series in `[compat]` |
 | `version = "0.0.0"` (pin file) | the core's version at that commit |
 | `CORE_CONTRACT_VERSION = v"0.0.0"` | the facade's current contract version |

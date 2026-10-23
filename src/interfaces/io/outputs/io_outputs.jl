@@ -231,9 +231,29 @@ end
 
 function _append_long_field_columns!(results_df::DataFrame, field, saved_data::Vector, num_sats::Int)
     values = [snapshot[field.name] for snapshot in saved_data]
-    !isempty(values) && num_sats > 0 && _fill_long_columns!(results_df, field.column_prefix, values, num_sats) &&
+    if isempty(values) || num_sats == 0
+        _append_series_columns!(results_df, field.column_prefix, [value[sat] for value in values for sat in 1:num_sats])
         return nothing
-    _append_series_columns!(results_df, field.column_prefix, [value[sat] for value in values for sat in 1:num_sats])
+    end
+    _fill_long_columns!(results_df, field.column_prefix, values, num_sats) && return nothing
+    # Each spacecraft's series is flattened on its own, as the wide table flattens
+    # it, so that spacecraft whose values have different shapes (their thruster
+    # counts, the keys of a NamedTuple) each keep their columns. The long columns
+    # are the union, in the order first seen, with `missing` for a spacecraft
+    # without the column.
+    per_sat = [DataFrame() for _ in 1:num_sats]
+    for sat in 1:num_sats
+        _append_series_columns!(per_sat[sat], field.column_prefix, [value[sat] for value in values])
+    end
+    order = String[]
+    for flat in per_sat, name in names(flat)
+        name in order || push!(order, name)
+    end
+    for name in order
+        columns = [name in names(flat) ? flat[!, name] : nothing for flat in per_sat]
+        results_df[!, name] = [columns[sat] === nothing ? missing : columns[sat][row]
+                               for row in eachindex(values) for sat in 1:num_sats]
+    end
     return nothing
 end
 

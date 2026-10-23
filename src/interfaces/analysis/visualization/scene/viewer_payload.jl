@@ -863,7 +863,11 @@ function _wide_view(long::DataFrame, run::Union{Nothing, DataFrame}, num_sats::I
         name in _LONG_IDENTITY_COLUMNS && continue
         column = long[!, name]
         for i in 1:num_sats
-            wide[!, "sc$(i)_$(name)"] = view(column, rows[i])
+            spacecraft_column = view(column, rows[i])
+            # A column a spacecraft lacks (thruster levels of one without
+            # thrusters) is `missing` throughout for it; its wide table has none.
+            Missing <: eltype(column) && all(ismissing, spacecraft_column) && continue
+            wide[!, "sc$(i)_$(name)"] = spacecraft_column
         end
     end
     if run !== nothing
