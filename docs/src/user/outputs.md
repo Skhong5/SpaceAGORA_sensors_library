@@ -355,10 +355,12 @@ ends.
   `missing`, say), or run it without checkpoints or in the wide layout.
 - **A resumed run** cuts the streams and CSVs back to its checkpoint, so rows
   written after it by a run that crashed are dropped, and goes on appending. Its
-  files then hold the whole run. A resume that solves nothing leaves the files
-  as they are, unless the run was killed while writing its Feather files: then
-  it writes them from the streams. A resume that cannot include the earlier rows
-  keeps the streams beside the checkpoint under other names
+  files then hold the whole run. A resume that solves nothing (its checkpoint
+  is at the mission's end) leaves the files and the streams as they are, unless
+  the run was killed while writing its Feather files: then a resume with the
+  run's save fields writes them from the streams, whether or not it returns
+  results. A resume that solves and cannot include the earlier rows keeps the
+  streams beside the checkpoint under other names
   (`...before_resume_at_<t>s.arrows`), as it keeps the rows file.
 
 A run without checkpoints, a run that returns results without writing them, and

@@ -866,13 +866,19 @@ function _start_results_rows!(args, recording::Bool, save_fields, resumed::Bool,
     # A resumed run that saves no rows would remove the earlier rows file at its
     # first checkpoint; it keeps it instead.
     resumed && solves && !recording && _keep_earlier_rows!(path, t_start)
-    (resumed && recording && (solves || returns_table)) || return log
+    # The checkpoint's run writes its results where its rows start: its results
+    # directory, or `resumed_at_<start>s` for a run that was itself a resume
+    # without the earlier rows. A resume that solves nothing takes the rows back
+    # even without returning a table when that run was killed while writing its
+    # streamed files: it finishes them (`_save_streamed_results!`).
+    streamed = log.stream !== nothing && entry !== nothing && hasproperty(entry, :version) && entry.version === 2
+    own_args = streamed ? _results_destination(args, (start_s=entry.start_s,)) : args
+    unfinished = !solves && streamed && _streamed_results_unfinished(own_args)
+    (resumed && recording && (solves || returns_table || unfinished)) || return log
     rows, reason = _checkpoint_results_rows(entry, path, header, t_start)
     if rows !== nothing && entry.version === 2
-        # A resume that solves nothing still finishes the files of a run that was
-        # killed while writing them (`_streamed_results_unfinished`), from the
-        # streams cut back to the checkpoint.
-        reason = _resume_results_stream!(log.stream, entry, args; cut=solves || _streamed_results_unfinished(args))
+        # A resume that solves nothing cuts the streams back only to finish them.
+        reason = _resume_results_stream!(log.stream, entry, own_args; cut=solves || unfinished)
         reason === nothing || (rows = nothing)
     end
     if rows === nothing
@@ -948,9 +954,10 @@ end
 
 # The results streams a version-2 entry recorded, taken back for a resumed run
 # that streams too, after checking that each reaches the checkpoint's length and
-# is that run's. A resume that solves cuts each back to that length (`cut`); one
-# that solves nothing leaves the files as the run left them. Returns why they
-# cannot be taken back, or `nothing`.
+# is that run's. `args` are those the checkpoint's run wrote its results with, so
+# its CSVs are the ones checked and cut. A resume that solves cuts each back to
+# that length (`cut`); one that solves nothing leaves the files as the run left
+# them, unless it finishes them. Returns why they cannot be taken back, or `nothing`.
 function _resume_results_stream!(stream::Union{Nothing, _ResultsStream}, entry, args; cut::Bool=true)
     stream === nothing && return "they were written to a long-layout run's streamed results files, and this run " *
         "does not stream its results (it writes another layout, no results, or no results bundle)"

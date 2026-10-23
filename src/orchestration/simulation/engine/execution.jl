@@ -407,14 +407,15 @@ end
 # them, and the returned tables read the feathers without copying them. A resume
 # that solves nothing writes nothing: it returns the rows its checkpoint records
 # in the streams (the first `written` saved times) and the ones it keeps, read
-# into memory.
+# into memory. The one exception is a resume that took back the streams of a run
+# killed while writing its files (`_start_results_rows!`; `args` are then that
+# run's): it writes them.
 function _save_streamed_results!(args, log, save_fields, times_acc::Vector{Float64}, data_acc::Vector,
                                  resumed_from_s::Union{Nothing, Float64}; return_table::Bool, write_files::Bool)
     stream = log.stream
     sink = return_table ? _LONG_TABLES_SINK[] : nothing
     in_memory(df) = DataFrame([name => collect(df[!, name]) for name in names(df)])
-    # A resume that solves nothing writes the files of a run killed while writing them.
-    if !write_files && !_streamed_results_unfinished(args)
+    if !write_files && (stream.fresh || !_streamed_results_unfinished(args))
         keep = Int[i for i in eachindex(times_acc) if _results_row_written(stream.released + i, i == length(times_acc))]
         kept = _build_long_results_tables(times_acc[keep], data_acc[keep], save_fields, args)
         per_time = (length(args.dynamics_model.spacecraft), 1)

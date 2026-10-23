@@ -236,6 +236,85 @@ end
         @test !haskey(TOML.parsefile(manifest_path), "streaming")
     end
 
+    @testset "a resume that solves nothing changes nothing it should not" begin
+        with_csv(args, save_csv) = SM.SimConfig._with_configuration(args;
+            simulation_settings=SM.SimConfig._with_fields(args.simulation_settings; save_csv=save_csv))
+        streams(ck) = (read(ck.stream_spacecraft), read(ck.stream_run))
+        feathers(dir) = read.(joinpath.(dir, ["simulation_results_spacecraft.feather", "simulation_results_run.feather"]))
+        # As a kill during the final write leaves a run: no Feather files, the manifest still streaming.
+        function kill_final_write!(dir)
+            rm.(joinpath.(dir, ["simulation_results_spacecraft.feather", "simulation_results_run.feather"]))
+            manifest_path = joinpath(dir, "simulation_results.manifest.toml")
+            manifest = TOML.parsefile(manifest_path)
+            manifest["streaming"] = true
+            open(io -> TOML.print(io, manifest), manifest_path, "w")
+        end
+        straight = run(config(mktempdir()))
+
+        # A finished run resumed again, without returning results: nothing changes,
+        # and a later resume that returns results returns the whole run.
+        dir = mktempdir()
+        run(config(dir))
+        ck = SM.IOConfig._checkpoint_paths(config(dir))
+        before = (streams(ck), feathers(dir), csvs(dir))
+        quiet(() -> run_simulation(config(dir; resume=true); save_fields=fields(config(dir))))
+        @test (streams(ck), feathers(dir), csvs(dir)) == before
+        @test !isdir(joinpath(dir, "resumed_at_500.0s"))
+        again = run(config(dir; resume=true))
+        @test isequal(again.table, straight.table) && isequal(run_table(again), run_table(straight))
+
+        # A run killed while writing its files, resumed without returning results,
+        # with and without CSVs: the resume writes its files from the streams.
+        for save_csv in (true, false)
+            dir, straight_dir = mktempdir(), mktempdir()
+            run(with_csv(config(straight_dir), save_csv))
+            run(with_csv(config(dir), save_csv))
+            kill_final_write!(dir)
+            quiet(() -> run_simulation(with_csv(config(dir; resume=true), save_csv); save_fields=fields(config(dir))))
+            @test isequal(feather(dir, "spacecraft"), straight.table) && isequal(feather(dir, "run"), run_table(straight))
+            @test !haskey(TOML.parsefile(joinpath(dir, "simulation_results.manifest.toml")), "streaming")
+            @test !isdir(joinpath(dir, "resumed_at_500.0s"))
+            save_csv && @test csvs(dir) == csvs(straight_dir)
+        end
+
+        # The same kill, resumed with other save fields: the resume cannot take the
+        # rows, writes nothing, and leaves the streams for a resume that can.
+        dir = mktempdir()
+        run(config(dir))
+        kill_final_write!(dir)
+        ck = SM.IOConfig._checkpoint_paths(config(dir))
+        kept = streams(ck)
+        other = @test_logs (:warn, r"solves nothing, so it returns an empty table and writes no files") match_mode=:any run_simulation(
+            config(dir; resume=true); return_results=true, save_fields=SM.default_save_fields(config(dir)))
+        @test nrow(other.table) == 0
+        @test streams(ck) == kept && !isdir(joinpath(dir, "resumed_at_500.0s"))
+        finished = run(config(dir; resume=true))
+        @test isequal(finished.table, straight.table) && isequal(feather(dir, "spacecraft"), straight.table)
+    end
+
+    @testset "a resume of a run that wrote beside the earlier results" begin
+        # A crashes after the checkpoint at 300 s; B resumes it with other save
+        # fields, so it writes to resumed_at_300.0s, and crashes after 400 s; C
+        # resumes B. C continues B's files, as B would have written them uninterrupted,
+        # and leaves A's as they are.
+        crash(at) = DiscreteCallback((u, t, integrator) -> t > at, integrator -> error("crashed"); save_positions=(false, false))
+        other_fields(args) = vcat(SM.default_save_fields(args), [SM.SaveField(:tock, (u, t, integrator) -> 2t)])
+        dir, plain_dir = mktempdir(), mktempdir()
+        for d in (dir, plain_dir)
+            @test_throws Exception run(config(d); extra_callbacks=(crash(350.0),))
+        end
+        first_leg = csvs(dir)
+        @test_throws Exception quiet(() -> run_simulation(config(dir; resume=true); save_fields=other_fields(config(dir)),
+            extra_callbacks=(crash(450.0),)))
+        resumed = quiet(() -> run_simulation(config(dir; resume=true); return_results=true, save_fields=other_fields(config(dir))))
+        uninterrupted = quiet(() -> run_simulation(config(plain_dir; resume=true); return_results=true,
+            save_fields=other_fields(config(plain_dir))))
+        @test csvs(dir) == first_leg
+        @test isequal(resumed.table, uninterrupted.table) && isequal(run_table(resumed), run_table(uninterrupted))
+        @test csvs(joinpath(dir, "resumed_at_300.0s")) == csvs(joinpath(plain_dir, "resumed_at_300.0s"))
+        @test isequal(feather(joinpath(dir, "resumed_at_300.0s"), "spacecraft"), uninterrupted.table)
+    end
+
     @testset "what does not stream" begin
         # Without checkpoints, or in the wide layout, nothing streams.
         dir = mktempdir()
