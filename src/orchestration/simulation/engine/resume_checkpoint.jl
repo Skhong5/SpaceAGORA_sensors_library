@@ -3,9 +3,9 @@
 # in the order a resumed run uses them (see "Run state: owners, resets and
 # restores" in docs/contributing/architecture.md):
 #
-# - `activity`, `interlinks` and `callbacks`: the engine's and the callbacks' run
-#   state, restored by `_resume_engine_state!` (execution.jl) before the models
-#   start and before the callbacks initialize;
+# - `activity`, `interlinks`, `callbacks`, `maneuver_buffers`, `orbits` and `entries`: the
+#   engine's and the callbacks' run state, restored by `_resume_engine_state!`
+#   (execution.jl) before the models start and before the callbacks initialize;
 # - `models`: the models' own run state, checked when the checkpoint is read and
 #   restored by `_start_run_models!` after the models' initializers;
 # - `gnc_scopes`: the spacecraft each guidance, navigation and control model acts
@@ -47,6 +47,84 @@ function _restore_activity_checkpoint_state!(args, checkpoint, is_active)
     interlinks === nothing || !hasproperty(interlinks, :is_active) || interlinks.is_active == entry.is_active ||
         throw(ArgumentError("The checkpoint's spacecraft activity flags differ from its interlink entry's."))
     copyto!(is_active, entry.is_active)
+    return nothing
+end
+
+# The burn scheduler's command channel (`SharedBuffers`): the maneuver command each
+# spacecraft's maneuver guidance last issued, and the burn plan installed for it.
+# A run carries both from one checkpoint segment to the next, so a resumed run
+# takes them from its checkpoint: a command issued before the checkpoint and not
+# yet planned, or a plan not yet flown, is then planned and flown as in the run
+# without the break. Written only when some entry differs from its default, so the
+# checkpoints of other runs do not change, and a checkpoint without the entry,
+# written by an earlier SpaceAGORA, resumes with the defaults, as before.
+function _maneuver_buffer_checkpoint_state(p)
+    buffers = p.shared_buffers
+    commands, plans = buffers.maneuver_commands, buffers.maneuver_burn_plans
+    all(c -> isequal(c, SimulationModel.PropulsiveManeuverCommand()), commands) &&
+        all(b -> isequal(b, SimulationModel.PropulsiveBurnPlan()), plans) && return nothing
+    return (version=1, commands=copy(commands), plans=copy(plans))
+end
+
+function _restore_maneuver_buffer_checkpoint_state!(checkpoint, p)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    entry = runtime !== nothing && hasproperty(runtime, :maneuver_buffers) ? runtime.maneuver_buffers : nothing
+    entry === nothing && return nothing
+    hasproperty(entry, :version) && entry.version === 1 ||
+        throw(ArgumentError("Maneuver command checkpoint state version 1 is required to resume this run."))
+    buffers = p.shared_buffers
+    length(entry.commands) == length(buffers.maneuver_commands) &&
+        length(entry.plans) == length(buffers.maneuver_burn_plans) ||
+        throw(ArgumentError("The checkpoint's maneuver commands and burn plans must match the spacecraft count."))
+    copyto!(buffers.maneuver_commands, entry.commands)
+    copyto!(buffers.maneuver_burn_plans, entry.plans)
+    return nothing
+end
+
+# The orbit each spacecraft is on (`p.orbit_counter`, from 1; the apoapsis callback
+# adds one at each apoapsis). The orbit-count mission end, the campaign maneuver
+# guidance, pass-indexed density models and periapsis pulses read it, so a resumed
+# run continues the count. Written once some spacecraft is past its first orbit, so
+# the checkpoints of shorter runs do not change, and a checkpoint without the
+# entry, written by an earlier SpaceAGORA, resumes from the first orbit, as before.
+function _orbit_counter_checkpoint_state(p)
+    all(==(1), p.orbit_counter) && return nothing
+    return (version=1, orbit_counter=copy(p.orbit_counter))
+end
+
+function _restore_orbit_counter_checkpoint_state!(checkpoint, p)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    entry = runtime !== nothing && hasproperty(runtime, :orbits) ? runtime.orbits : nothing
+    entry === nothing && return nothing
+    hasproperty(entry, :version) && entry.version === 1 ||
+        throw(ArgumentError("Orbit counter checkpoint state version 1 is required to resume this run."))
+    length(entry.orbit_counter) == length(p.orbit_counter) ||
+        throw(ArgumentError("The checkpoint's orbit counters must match the spacecraft count."))
+    copyto!(p.orbit_counter, entry.orbit_counter)
+    return nothing
+end
+
+# Atmosphere entries counted by the entry-end callback. These used to live only
+# in its closure, which survived solve segments but was rebuilt on resume. Keep
+# them with the run buffers so a checkpoint can restore them before callbacks run.
+# An older checkpoint without this entry retains the historical zero-count start.
+function _entry_counter_checkpoint_state(p)
+    counts = p.shared_buffers.entry_counter
+    all(iszero, counts) && return nothing
+    return (version=1, entry_counter=copy(counts))
+end
+
+function _restore_entry_counter_checkpoint_state!(checkpoint, p)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    entry = runtime !== nothing && hasproperty(runtime, :entries) ? runtime.entries : nothing
+    entry === nothing && return nothing
+    hasproperty(entry, :version) && entry.version === 1 ||
+        throw(ArgumentError("Atmosphere entry counter checkpoint state version 1 is required to resume this run."))
+    counts = p.shared_buffers.entry_counter
+    hasproperty(entry, :entry_counter) && entry.entry_counter isa AbstractVector{<:Integer} &&
+        length(entry.entry_counter) == length(counts) && all(>=(0), entry.entry_counter) ||
+        throw(ArgumentError("The checkpoint's atmosphere entry counters must be nonnegative and match the spacecraft count."))
+    copyto!(counts, entry.entry_counter)
     return nothing
 end
 
@@ -817,6 +895,7 @@ mutable struct _ResultsRowsLog
     fresh::Bool  # the next append starts a new stream
     drop::Int  # rows the next record drops from the end of the stream's rows
     retake::Bool  # the restored last row is saved again by the first segment
+    keep_earlier::Bool  # preserve an abandoned stream when the first checkpoint replaces it
 end
 
 # What the rows were saved with: a resumed run can include them only if it saves
@@ -871,7 +950,7 @@ function _start_results_rows!(args, recording::Bool, save_fields, resumed::Bool,
     path = _checkpoint_paths(args).rows
     header = _results_rows_header(save_fields, length(args.dynamics_model.spacecraft))
     log = _ResultsRowsLog(path, header, _results_rows_token(path), recording, resumed ? t_start : 0.0, 0, 0, true,
-        0, false)
+        0, false, resumed && solves)
     (resumed && recording && (solves || returns_table)) || return log
     rows, reason = _checkpoint_results_rows(entry, path, header, t_start)
     if rows === nothing
@@ -891,8 +970,28 @@ function _start_results_rows!(args, recording::Bool, save_fields, resumed::Bool,
     log.logged = length(times_acc)
     log.bytes = entry.bytes
     log.fresh = false
+    log.keep_earlier = false
     log.retake = retake_last_row
     return log
+end
+
+# A resumed run that does not continue the rows file beside its checkpoint (it
+# cannot include the rows there, or it saves none) starts a new one, or removes
+# it, at its first checkpoint. The earlier file can hold the only copy of the
+# earlier run's rows (a run that was killed writes no results files), so it is
+# renamed instead: `<rows file>.before_resume_at_<t>s.bin`, numbered when that
+# name is taken. Returns the new name, or `nothing` without a file.
+function _keep_earlier_rows!(path::String, t_start::Float64)
+    isfile(path) || return nothing
+    stem = replace(path, r"\.bin$" => "") * ".before_resume_at_$(t_start)s"
+    kept = stem * ".bin"
+    n = 1
+    while ispath(kept)
+        n += 1
+        kept = stem * "_$(n).bin"
+    end
+    mv(path, kept)
+    return kept
 end
 
 # Before a segment's rows join the run's: when the restored last row is to be
@@ -913,6 +1012,16 @@ end
 # checkpoint's entry. A run that records no rows removes a stream an earlier run
 # left, which is not its own.
 function _append_results_rows!(log::_ResultsRowsLog, times_acc::Vector{Float64}, data_acc::Vector)
+    # Leave the old checkpoint's rows at their original path until this resume
+    # actually reaches a replacement checkpoint. A failed first segment must not
+    # strand the only readable history under a name the old checkpoint cannot find.
+    if log.fresh && log.keep_earlier
+        kept = _keep_earlier_rows!(log.path, log.start_s)
+        log.keep_earlier = false
+        if log.recording && kept !== nothing
+            @warn "The rows file beside the checkpoint is kept as $(kept)."
+        end
+    end
     if log.recording
         new = (log.logged + 1):length(times_acc)
         log.bytes = SimulationModel.IOSerialization._append_checkpoint_rows!(log.path, view(times_acc, new),
@@ -954,10 +1063,20 @@ end
 
 @inline function _write_checkpoint!(args, t::Float64, u_state, solver_mode::String; is_active=nothing, callback_state=nothing,
                                      model_state=nothing, periodic_ticks=nothing, gnc_scopes=nothing,
-                                     results_rows=nothing)
+                                     results_rows=nothing, maneuver_buffers=nothing, orbits=nothing, entries=nothing)
     runtime = _interlink_checkpoint_runtime_state(args, is_active)
     if callback_state !== nothing
         runtime = runtime === nothing ? (callbacks=callback_state,) : merge(runtime, (callbacks=callback_state,))
+    end
+    if orbits !== nothing
+        runtime = runtime === nothing ? (orbits=orbits,) : merge(runtime, (orbits=orbits,))
+    end
+    if entries !== nothing
+        runtime = runtime === nothing ? (entries=entries,) : merge(runtime, (entries=entries,))
+    end
+    if maneuver_buffers !== nothing
+        runtime = runtime === nothing ? (maneuver_buffers=maneuver_buffers,) :
+            merge(runtime, (maneuver_buffers=maneuver_buffers,))
     end
     if is_active !== nothing
         activity = _activity_checkpoint_state(is_active)

@@ -214,11 +214,11 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "navigation", "hoo
 @reexport using .NavigationHooks
 # --- Typed EDG platform services ---
 include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "guidance", "aerobraking", "typed_edg", "services.jl"))
+# --- Typed EDG decisions, which guidance and control call ---
+include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "guidance", "aerobraking", "typed_edg", "algorithms.jl"))
 # --- Guidance Effectors ---
 include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "guidance", "hooks.jl"))
 @reexport using .GuidanceHooks
-# --- Typed EDG prediction and decisions ---
-include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "guidance", "aerobraking", "typed_edg", "algorithms.jl"))
 # --- Control Effectors ---
 include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "control", "hooks.jl"))
 @reexport using .ControlHooks
