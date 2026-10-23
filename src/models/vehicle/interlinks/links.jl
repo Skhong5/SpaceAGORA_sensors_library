@@ -99,8 +99,9 @@ link_terminal(::LaserTerminal) = true
 
 Whether the terminal hardware `terminal` (a mounted actuator with
 `link_terminal`) can carry `link`. `register_link!` refuses a link that either
-endpoint's terminal cannot carry. A virtual terminal carries every kind, except
-a `DataLink` whose `ShannonBudget` reads the radios at both ends.
+endpoint's terminal cannot carry. A virtual terminal is refused when the link
+requires hardware at both ends: a `DataLink` with a `ShannonBudget`, or a
+`LaserBeamLink` with mounted recoil or terminal pointing.
 
 - `side` is the end the terminal would take: `:transmitter` or `:receiver` for a
   directed link, `:either` for an undirected one. A kind whose terminals work
