@@ -10,6 +10,7 @@ using Logging
 using DataFrames
 using Arrow
 using CSV
+using TOML
 import OrdinaryDiffEq
 using SpaceAGORA
 using SpaceAGORA.SimulationModel
@@ -289,12 +290,17 @@ same_columns(a::DataFrame, b::DataFrame) =
         @test isequal(res.members, in_memory.members)
         @test isequal(select(res.constellation, Not(:elapsed_s)), select(in_memory.constellation, Not(:elapsed_s)))
         @test in_memory.members.pos_1 isa Vector
+        # The merged files the ensemble wrote are not replaced unless asked.
+        before = read(joinpath(dir, "constellation_summary.csv"))
+        @test_throws "already holds merged constellation results" read_constellation_results(dir)
+        @test read(joinpath(dir, "constellation_summary.csv")) == before
         # The same tables from the member folders, without running anything; the
         # members' status comes from the summary the ensemble wrote.
-        merged = read_constellation_results(dir)
+        merged = read_constellation_results(dir; overwrite=true)
         @test isequal(merged.members, in_memory.members)
-        @test isequal(select(merged.constellation, Not(:elapsed_s)), select(res.constellation, Not(:elapsed_s)))
+        @test isequal(select(merged.constellation, Not([:elapsed_s, :read_status])), select(res.constellation, Not(:elapsed_s)))
         @test merged.constellation.elapsed_s ≈ res.constellation.elapsed_s
+        @test all(==("read"), merged.constellation.read_status)
         @test merged.files == joinpath.(dir, ["constellation_members.feather", "constellation_summary.csv"])
         @test isequal(DataFrame(Arrow.Table(merged.files[1])), in_memory.members)
         # Members written in the long layout give the same table.
@@ -303,13 +309,13 @@ same_columns(a::DataFrame, b::DataFrame) =
             results_layout=:long)))
         @test isequal(read_constellation_results(long_dir).members, in_memory.members)
         # Without a summary, wide members have no plane or slot, and their status
-        # says only that they wrote results.
+        # is not known.
         rm(joinpath(dir, "constellation_summary.csv"))
-        bare = read_constellation_results(dir)
+        bare = read_constellation_results(dir; overwrite=true)
         @test all(ismissing, bare.members.plane) && all(ismissing, bare.members.slot)
         @test isequal(select(bare.members, Not([:plane, :slot])), select(in_memory.members, Not([:plane, :slot])))
-        @test all(bare.constellation.success) && all(ismissing, bare.constellation.error)
-        @test all(ismissing, bare.constellation.elapsed_s)
+        @test all(ismissing, bare.constellation.success) && all(ismissing, bare.constellation.error)
+        @test all(ismissing, bare.constellation.elapsed_s) && all(==("read"), bare.constellation.read_status)
         # A member the summary records as failed has no rows, although it left
         # partial results.
         failed_dir = mktempdir()
@@ -317,10 +323,52 @@ same_columns(a::DataFrame, b::DataFrame) =
         quiet(() -> run_constellation_ensemble(configuration(spacecraft; dir=failed_dir,
             effectors=(SM.InverseSquaredJ2GravityModel(), scoped(Fails(), BoundSpacecraft((2,))))); merge_results=true))
         @test isfile(joinpath(failed_dir, "sat_2_id_2", "simulation_results.feather"))
-        partial = read_constellation_results(failed_dir)
+        partial = read_constellation_results(failed_dir; overwrite=true)
         @test sort(unique(partial.members.spacecraft)) == Int32[1, 3] && partial.constellation.rows[2] == 0
         @test !partial.constellation.success[2] && occursin("this member's model failed", partial.constellation.error[2])
+        @test partial.constellation.read_status == ["read", "member failed", "read"]
         @test_throws "No constellation member folders" read_constellation_results(mktempdir())
+    end
+
+    @testset "members merged from disk keep every member, and read only what they can" begin
+        dir = mktempdir()
+        res = quiet(() -> run_constellation_ensemble(configuration(fleet()[1:4]; dir=dir); merge_results=true))
+        tags = res.constellation.member_tag
+        # A member whose folder is gone keeps its row; a member whose results file
+        # is gone is not read. Both are named in a warning.
+        rm(joinpath(dir, tags[2]); recursive=true)
+        rm(joinpath(dir, tags[3], "simulation_results.feather"))
+        merged = @test_logs (:warn, Regex("$(tags[2]) \\(folder missing\\).*$(tags[3]) \\(files differ from manifest\\)")) match_mode=:any read_constellation_results(dir; overwrite=true)
+        @test merged.constellation.member_tag == tags && merged.constellation.rows == [res.constellation.rows[1], 0, 0, res.constellation.rows[4]]
+        @test merged.constellation.read_status == ["read", "folder missing", "files differ from manifest", "read"]
+        @test merged.constellation.success == res.constellation.success
+        @test merged.constellation.spacecraft_id == res.constellation.spacecraft_id
+        @test sort(unique(merged.members.spacecraft)) == Int32[1, 4]
+        # The summary written keeps the member whose folder is gone.
+        @test nrow(CSV.read(joinpath(dir, "constellation_summary.csv"), DataFrame)) == 4
+        # A bundle of another version or layout is refused, naming its folder.
+        manifest_of(tag) = joinpath(dir, tag, "simulation_results.manifest.toml")
+        edited(tag, changes) = (m = TOML.parsefile(manifest_of(tag)); merge!(m, changes);
+            open(io -> TOML.print(io, m), manifest_of(tag), "w"))
+        original = read(manifest_of(tags[4]))
+        edited(tags[4], Dict("schema_version" => "9", "layout" => "columnar"))
+        @test_throws Regex("$(tags[4]).*schema version \"9\"") read_constellation_results(dir; overwrite=true)
+        # So is a wide bundle of more than one spacecraft.
+        write(manifest_of(tags[4]), original)
+        edited(tags[4], Dict("spacecraft_count" => 2))
+        @test_throws "wide results bundle of 2 spacecraft" read_constellation_results(dir; overwrite=true)
+        # A run that streamed its results and did not finish has no rows.
+        write(manifest_of(tags[4]), original)
+        edited(tags[4], Dict("streaming" => true))
+        unfinished = quiet(() -> read_constellation_results(dir; overwrite=true))
+        @test unfinished.constellation.read_status[4] == "unfinished run" && unfinished.constellation.rows[4] == 0
+        # Members without a results bundle are not read, with a warning.
+        bundle_off = mktempdir()
+        withenv("SPACEAGORA_SAVE_BUNDLE" => "0") do
+            quiet(() -> run_constellation_ensemble(configuration(fleet()[1:2]; dir=bundle_off)))
+        end
+        none = @test_logs (:warn, r"no results bundle") match_mode=:any read_constellation_results(bundle_off)
+        @test none.constellation.read_status == ["no results bundle", "no results bundle"] && nrow(none.members) == 0
     end
 
     @testset "the viewer labels members by identity" begin

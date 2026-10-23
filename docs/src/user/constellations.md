@@ -245,13 +245,23 @@ merged.constellation   # as res.constellation
 ```
 
 It reads one member at a time, writes `constellation_members.feather` and
-`constellation_summary.csv` there, and returns them with `files`. Members
-written in the long layout give their tables as they are. A member written in
-the wide layout has one spacecraft, so its per-spacecraft columns are its
-`sc1_` ones, renamed; its plane and slot come from `constellation_summary.csv`,
-when an earlier merge wrote one. The members' status (`success`, `error`,
-`elapsed_s`) also comes from that summary, or says only whether a member wrote
-results.
+`constellation_summary.csv` there, and returns them with `files`. When the
+folder already holds them (the ensemble ran with `merge_results=true`), it
+refuses unless you pass `overwrite=true`.
+
+- **Which members.** Every member folder found and, when
+  `constellation_summary.csv` is there, every member it lists, so a member whose
+  folder is gone keeps its row.
+- **Their status.** `success`, `error` and `elapsed_s` come from that summary,
+  and are `missing` without it. A `read_status` column says whether each
+  member's rows were read, and if not, why: `member failed`, `folder missing`,
+  `no results bundle`, `unfinished run` (a streamed run that did not finish) or
+  `files differ from manifest`. Members not read are named in a warning.
+- **Their rows.** A member written in the long layout gives its tables as they
+  are. A member written in the wide layout has one spacecraft, so its
+  per-spacecraft columns are its `sc1_` ones, renamed; its plane and slot come
+  from the summary. A results bundle of another version, or a wide bundle of
+  more than one spacecraft, is refused.
 
 The viewer's ensemble page (`export_ensemble_visualization`) labels the
 members of a folder with `constellation_summary.csv` by id, plane and slot

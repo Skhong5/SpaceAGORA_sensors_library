@@ -286,7 +286,7 @@ end
 const _MEMBER_FOLDER = r"^sat_(\d+)_id_(-?\d+)$"
 
 """
-    read_constellation_results(results_directory) -> (members, constellation, files)
+    read_constellation_results(results_directory; overwrite=false) -> (members, constellation, files)
 
 Merge the member folders a constellation ensemble wrote under
 `results_directory` (`sat_<i>_id_<id>`, each with its results bundle) into the
@@ -299,109 +299,156 @@ Nothing is run again.
   per-spacecraft fields without a prefix and its run-wide fields. It is written
   to `constellation_members.feather`, one record batch per member, and read in
   place: only one member's rows are in memory at a time.
-- `constellation` has one row per member folder, as the ensemble's
-  `constellation` table: when `constellation_summary.csv` is there, the members'
-  `success`, `error` and `elapsed_s` come from it; otherwise `success` says
-  whether the member wrote results, and the other two are `missing`. It is
+- `constellation` has one row per member, as the ensemble's `constellation`
+  table, and a `read_status` column: `"read"`, or why the member's rows were not
+  read (`"member failed"`, `"folder missing"`, `"no results bundle"`,
+  `"unfinished run"`, `"files differ from manifest"`). The members are the
+  folders found and, when `constellation_summary.csv` is there, the members it
+  lists, so a member whose folder is gone keeps its row. Its `success`, `error`
+  and `elapsed_s` come from that summary; without one they are `missing`. It is
   written to `constellation_summary.csv`.
 - `files` lists the two files written.
+
+The two files are not replaced when they exist already (an ensemble run with
+`merge_results=true` wrote them): pass `overwrite=true` to replace them.
 
 A member written in the long layout (`results_layout=:long`) gives its tables as
 they are, with its position set. A member written in the wide layout has one
 spacecraft, so its per-spacecraft columns are its `sc1_` ones, renamed without
 the prefix; its plane and slot come from `constellation_summary.csv`, or are
-`missing` without it. A member without a results bundle has no rows, and so has
-one that `constellation_summary.csv` records as failed, whose files are partial.
+`missing` without it. A member's bundle is read only if its manifest has a known
+version and layout (`"1"` wide, `"2"` long) and its files have the sizes the
+manifest records; a bundle of another version, or a wide bundle of more than one
+spacecraft, is refused. A member that the summary records as failed, or whose
+run streamed its results and did not finish, has no rows. Members not read are
+named in a warning.
 """
-function read_constellation_results(results_directory::AbstractString)
+function read_constellation_results(results_directory::AbstractString; overwrite::Bool=false)
     directory = String(results_directory)
     isdir(directory) || throw(ArgumentError("No results directory at $(directory)."))
-    folders = Tuple{Int, Int, String}[]
+    members_path = joinpath(directory, "constellation_members.feather")
+    summary_path = joinpath(directory, "constellation_summary.csv")
+    summary = isfile(summary_path) ? CSV.read(summary_path, DataFrame) : nothing
+    overwrite || !(isfile(members_path) || summary !== nothing) || throw(ArgumentError(
+        "$(directory) already holds merged constellation results (constellation_members.feather or " *
+        "constellation_summary.csv). Pass overwrite=true to replace them with the ones read from the member folders."))
+    # The members: every folder found and every member the summary lists.
+    found = Dict{String, Tuple{Int, Int}}()
     for name in readdir(directory)
         m = match(_MEMBER_FOLDER, name)
         (m === nothing || !isdir(joinpath(directory, name))) && continue
-        push!(folders, (parse(Int, m[1]), parse(Int, m[2]), name))
+        found[name] = (parse(Int, m[1]), parse(Int, m[2]))
     end
-    isempty(folders) && throw(ArgumentError("No constellation member folders (sat_<i>_id_<id>) under $(directory)."))
-    sort!(folders)
-    summary_path = joinpath(directory, "constellation_summary.csv")
-    earlier = isfile(summary_path) ? CSV.read(summary_path, DataFrame) : nothing
-    earlier_row(tag) = earlier === nothing ? nothing :
-        (k = findfirst(==(tag), string.(earlier.member_tag)); k === nothing ? nothing : earlier[k, :])
+    listed = Dict{String, Any}()
+    if summary !== nothing
+        for row in eachrow(summary)
+            listed[String(row.member_tag)] = row
+        end
+    end
+    tags = union(keys(found), keys(listed))
+    isempty(tags) && throw(ArgumentError("No constellation member folders (sat_<i>_id_<id>) under $(directory)."))
+    position_of(tag) = haskey(found, tag) ? found[tag] : (Int(listed[tag].spacecraft), Int(listed[tag].spacecraft_id))
+    members_list = sort!([(position_of(tag)..., tag) for tag in tags])
     as_int16(v) = v === nothing || ismissing(v) ? missing : Int16(v)
-    rows_of(folder) = begin
-        position, id, tag = folder
-        row = earlier_row(tag)
-        # A member the summary records as failed has no rows, as in the ensemble's merge.
-        row === nothing || row.success || return nothing
-        located = (plane=as_int16(row === nothing ? nothing : row.plane), slot=as_int16(row === nothing ? nothing : row.slot))
+    recorded(tag, name) = haskey(listed, tag) ? listed[tag][name] : missing
+
+    # Why a member's rows are not read, or "read".
+    function status_of(member)
+        _, _, tag = member
+        haskey(listed, tag) && !coalesce(listed[tag].success, true) && return "member failed"
+        haskey(found, tag) || return "folder missing"
+        return _disk_member_status(joinpath(directory, tag))
+    end
+    rows_of(member) = begin
+        position, id, tag = member
+        located = (plane=as_int16(recorded(tag, "plane")), slot=as_int16(recorded(tag, "slot")))
         _disk_member_rows(joinpath(directory, tag), position, id, located)
     end
+    statuses = String[status_of(member) for member in members_list]
+    readable = [status == "read" for status in statuses]
+    unread = [(member[3], status) for (member, status) in zip(members_list, statuses) if status ∉ ("read", "member failed")]
+    isempty(unread) || @warn "read_constellation_results did not read the rows of $(length(unread)) member(s): " *
+        join(("$(tag) ($(status))" for (tag, status) in unread), ", ") * "."
+
     # A first pass for the columns, the row counts and the last rows; the second
     # writes the members, reading each again.
-    row_counts = Int[]
-    last_rows = Union{Nothing, DataFrame}[]
-    planes = Union{Missing, Int16}[]
-    slots = Union{Missing, Int16}[]
+    row_counts = zeros(Int, length(members_list))
+    last_rows = Union{Nothing, DataFrame}[nothing for _ in members_list]
+    planes = Union{Missing, Int16}[as_int16(recorded(member[3], "plane")) for member in members_list]
+    slots = Union{Missing, Int16}[as_int16(recorded(member[3], "slot")) for member in members_list]
     schema_tables = DataFrame[]
-    for folder in folders
-        rows = rows_of(folder)
-        if rows === nothing
-            push!(row_counts, 0); push!(last_rows, nothing)
-            row = earlier_row(folder[3])
-            push!(planes, as_int16(row === nothing ? nothing : row.plane))
-            push!(slots, as_int16(row === nothing ? nothing : row.slot))
-            continue
+    for (k, member) in enumerate(members_list)
+        readable[k] || continue
+        rows = rows_of(member)
+        row_counts[k] = nrow(rows)
+        if nrow(rows) > 0
+            last_rows[k] = DataFrame(rows[nrow(rows):nrow(rows), :])
+            planes[k], slots[k] = rows[1, "plane"], rows[1, "slot"]
         end
-        push!(row_counts, nrow(rows))
-        push!(last_rows, nrow(rows) == 0 ? nothing : DataFrame(rows[nrow(rows):nrow(rows), :]))
-        first_row = nrow(rows) == 0 ? nothing : rows[1, :]
-        row = earlier_row(folder[3])
-        push!(planes, first_row === nothing ? as_int16(row === nothing ? nothing : row.plane) : first_row.plane)
-        push!(slots, first_row === nothing ? as_int16(row === nothing ? nothing : row.slot) : first_row.slot)
         # Only the names and types are kept.
         push!(schema_tables, rows[1:0, :])
     end
     columns = _members_columns(schema_tables)
-    members_path = _write_members_feather!(joinpath(directory, "constellation_members.feather"), columns,
-        (rows for rows in Iterators.map(rows_of, folders) if rows !== nothing))
+    _write_members_feather!(members_path, columns,
+        (rows_of(member) for (k, member) in enumerate(members_list) if readable[k]))
     members = DataFrame(Arrow.Table(members_path); copycols=false)
 
     identity = DataFrame(
-        spacecraft=Int32[folder[1] for folder in folders],
-        spacecraft_id=Int64[folder[2] for folder in folders],
+        spacecraft=Int32[member[1] for member in members_list],
+        spacecraft_id=Int64[member[2] for member in members_list],
         plane=planes,
         slot=slots,
-        member_tag=String[folder[3] for folder in folders],
+        member_tag=String[member[3] for member in members_list],
     )
-    status(tag, name, otherwise) = (row = earlier_row(tag); row === nothing ? otherwise : row[name])
     constellation = _constellation_summary(identity,
-        Bool[status(folder[3], "success", row_counts[k] > 0) for (k, folder) in enumerate(folders)],
-        Union{Missing, String}[status(folder[3], "error", missing) for folder in folders],
-        Union{Missing, Float64}[status(folder[3], "elapsed_s", missing) for folder in folders],
+        Union{Missing, Bool}[recorded(member[3], "success") for member in members_list],
+        Union{Missing, String}[recorded(member[3], "error") for member in members_list],
+        Union{Missing, Float64}[recorded(member[3], "elapsed_s") for member in members_list],
         row_counts, last_rows)
-    summary = SimulationModel.IOSerialization._atomic_write_file(summary_path, tmp -> CSV.write(tmp, constellation))
-    return (members=members, constellation=constellation, files=[members_path, summary])
+    constellation[!, "read_status"] = statuses
+    written = SimulationModel.IOSerialization._atomic_write_file(summary_path, tmp -> CSV.write(tmp, constellation))
+    return (members=members, constellation=constellation, files=[members_path, written])
 end
 
-# A member folder's rows in the members table, from its results bundle, or
-# `nothing` when it has none. `located` gives the plane and slot of a member
-# written in the wide layout.
-function _disk_member_rows(folder::String, position::Int, id::Int, located)
+# Whether a member folder's results bundle can be read ("read"), or why not. A
+# bundle of an unknown version or layout, or a wide bundle of more than one
+# spacecraft, is refused.
+function _disk_member_status(folder::String)::String
     manifest_path = joinpath(folder, "simulation_results.manifest.toml")
-    long_path = joinpath(folder, "simulation_results_spacecraft.feather")
-    wide_path = joinpath(folder, "simulation_results.feather")
-    layout = isfile(manifest_path) ? get(TOML.parsefile(manifest_path), "layout", "wide") :
-        isfile(long_path) ? "long" : "wide"
-    if layout == "long"
-        isfile(long_path) || return nothing
+    isfile(manifest_path) || return "no results bundle"
+    manifest = TOML.parsefile(manifest_path)
+    get(manifest, "streaming", false) === true && return "unfinished run"
+    version, layout = get(manifest, "schema_version", nothing), get(manifest, "layout", "wide")
+    (version, layout) in (("1", "wide"), ("2", "long")) || throw(ArgumentError(
+        "$(folder) holds a results bundle of schema version $(repr(version)) and layout $(repr(layout)); " *
+        "read_constellation_results reads version \"1\" (wide) and \"2\" (long)."))
+    count = get(manifest, "spacecraft_count", 1)
+    layout == "wide" && count != 1 && throw(ArgumentError(
+        "$(folder) holds a wide results bundle of $(count) spacecraft; a constellation member runs one."))
+    parts = layout == "long" ? ("spacecraft_feather", "run_feather") : ("feather",)
+    files = get(manifest, "files", Dict{String, Any}())
+    layout == "long" && !haskey(files, "spacecraft_feather") && return "no results bundle"
+    for part in parts
+        haskey(files, part) || continue
+        path = joinpath(folder, basename(files[part]["path"]))
+        isfile(path) && filesize(path) == files[part]["size_bytes"] || return "files differ from manifest"
+    end
+    layout == "wide" && !isfile(joinpath(folder, "simulation_results.feather")) && return "no results bundle"
+    return "read"
+end
+
+# A member folder's rows in the members table, from its results bundle, which
+# `_disk_member_status` found readable. `located` gives the plane and slot of a
+# member written in the wide layout.
+function _disk_member_rows(folder::String, position::Int, id::Int, located)
+    manifest = TOML.parsefile(joinpath(folder, "simulation_results.manifest.toml"))
+    if get(manifest, "layout", "wide") == "long"
         run_path = joinpath(folder, "simulation_results_run.feather")
-        spacecraft = DataFrame(Arrow.Table(long_path); copycols=false)
-        run = isfile(run_path) ? DataFrame(Arrow.Table(run_path); copycols=false) : nothing
+        spacecraft = DataFrame(Arrow.Table(joinpath(folder, "simulation_results_spacecraft.feather")); copycols=false)
+        run = haskey(manifest["files"], "run_feather") ? DataFrame(Arrow.Table(run_path); copycols=false) : nothing
         return _constellation_member_rows(position, (spacecraft=spacecraft, run=run))
     end
-    isfile(wide_path) || return nothing
-    wide = DataFrame(Arrow.Table(wide_path); copycols=false)
+    wide = DataFrame(Arrow.Table(joinpath(folder, "simulation_results.feather")); copycols=false)
     n = nrow(wide)
     spacecraft = DataFrame(spacecraft=fill(Int32(position), n), spacecraft_id=fill(Int64(id), n),
         plane=Vector{Union{Missing, Int16}}(fill(located.plane, n)),
