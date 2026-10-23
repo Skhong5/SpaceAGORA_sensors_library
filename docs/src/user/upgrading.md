@@ -8,7 +8,52 @@ Renamed and retired extension hooks have their own page,
 [Public API and Compatibility](../public_api_policy.md) describes the
 deprecation rules.
 
-## 0.7.0
+## 0.7.0 (unreleased)
+
+### A GNC model's hooks follow its spacecraft scope
+
+During the run, a guidance, navigation or control model's output hooks
+(`control_wrench`, `control_propellant_rate`, `control_wheel_torque`), its levels
+(`actuator_levels`, `control_thruster_levels`) and `atmosphere_transition!` are
+called only for the spacecraft its `spacecraft_scope` names, as its ticks already
+were. Before the run, `control_thruster_levels` is still asked for every
+spacecraft, to size the result columns (see the table). A model that returns zeros
+or `nothing` outside its scope, as the docs asked, runs as before.
+
+- A model that acts on a spacecraft outside its declared scope, such as a
+  `CoupledSpacecraft` model that pushes its partners, declares a scope that names
+  it, or `AllSpacecraft()`.
+- The scope is fixed once the run-start initializers ran, and a scope that changes
+  during the run stops it with an `ArgumentError`. Set a model's spacecraft before
+  the run: in the model, in `bind_spacecraft` or in an initializer.
+- A `SpacecraftSelection` scopes guidance, navigation and control models too. Keep
+  it in the model and return that object at every call.
+- The conformance kit's advisory `outputs_in_scope` check reports a control model
+  whose output reaches a spacecraft outside its scope.
+
+[Migrating Extension Hooks](../reference/migrating_extension_hooks.md#Changed-in-0.7.0)
+has the table of hooks.
+
+### Ensembles refuse configuration-level GNC bound to run positions
+
+`run_constellation_ensemble(args; allow_gnc_effectors=true)` now refuses, with an
+`ArgumentError`, a configuration-level guidance, navigation or control model whose
+`spacecraft_scope` is a `BoundSpacecraft`, a `CoupledSpacecraft` or a
+`SpacecraftSelection`. Each member runs its spacecraft alone, at run position 1,
+so such a model acted on every member or failed in some. Declare the model on the
+spacecraft it acts on (`SpacecraftModel(...; control=...)`), which each member
+binds to its own spacecraft.
+
+### Bound copies that act on every spacecraft warn
+
+A model declared on a spacecraft whose `bind_spacecraft` copy still declares
+`AllSpacecraft()` acts on every spacecraft; each run now warns once for each such
+type, naming the run position and id of the spacecraft (in an ensemble, each
+member's run warns). Return `BoundSpacecraft((k,))` from the copy's
+`spacecraft_scope`, for the copy bound to run position `k`. The two
+maneuver guidance models, `ApoapsisTargetPeriapsisRaiseGuidanceModel` and
+`AerobrakingCampaignPropulsiveManeuverGuidanceModel`, can now be declared on a
+spacecraft.
 
 ### Load HYPR directly
 
@@ -59,14 +104,33 @@ Constants saved by SpaceAGORA 0.6.0 or earlier are no longer read:
   that planner runs without machine constants.
 - If you calibrated with the script at a job's thread count, rerun it as well:
   otherwise the first `parallel=true` session in that working directory measures
-  with its own thread count. Terminal, from the repository root:
+  with its own thread count.
 
-  ```text
-  julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl
-  ```
+To rerun the calibration, replace `<T>` with the thread count you run with.
+Terminal, from the repository root:
+
+```text
+julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl
+```
 
 [Parallel Execution](parallel_execution.md#Turning-on-parallel-execution) says
 where the constants are kept.
+
+### SpaceAGORA calls the EDG companion only through its two decisions
+
+SpaceAGORA reaches SpaceAGORAEDG only through `guidance_decision!` and
+`control_decision!`, as before at run time. The EDG helpers it also forwarded,
+only for tests, are gone: their forwarders in the internal
+`SimulationModel.EDGAlgorithms`, the eight model-typed EDG wrappers and the helper
+bindings in `ControlHooks` and `GuidanceHooks`, and the private list
+`EDGServices.COMPATIBILITY_FUNCTIONS`. None of them was exported or part of the
+`EDGServices` contract, which stays at 3.0.0, and EDG results do not change.
+
+- Code that called an EDG helper through one of those modules stops with an
+  `UndefVarError`. The helper's tests now live in SpaceAGORAEDG.
+- This release installs SpaceAGORAEDG 0.5.1, whose tests use the decision route.
+  SpaceAGORAEDG 0.5.0 runs unchanged with it, but its own lease test calls a
+  removed helper.
 
 ## 0.6.0
 

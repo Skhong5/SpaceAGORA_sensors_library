@@ -466,8 +466,21 @@ end
     p.args.control_model isa SimulationModel.ControlModel{Tuple{}} && return 0.0
     return _accumulate_control_effectors_from_model!(
         forces, torques, rw_torque_body, sc_view, p, sat_idx, t, debug_control,
-        p.args.control_model,
+        p.args.control_model, _control_members(p, sat_idx),
     )
+end
+
+# The control models acting on spacecraft `sat_idx` (positions in the control
+# tuple, in configuration order), from the run's GNC scopes; `nothing` when every
+# control model acts on every spacecraft, or before the run starts. A model left
+# out returns zeros or `nothing` from its output hooks there, so leaving it out
+# adds nothing to the sums, which start at +0.0 and are never -0.0.
+@inline function _control_members(p, sat_idx::Int)
+    (hasproperty(p, :shared_buffers) && hasproperty(p.shared_buffers, :gnc_scopes)) || return nothing
+    scopes = p.shared_buffers.gnc_scopes[]
+    scopes === nothing && return nothing
+    members = scopes.control_members
+    return members === nothing ? nothing : members[sat_idx]
 end
 
 # Control effectors for one spacecraft of the RHS assembly: the mass rate and
@@ -498,10 +511,10 @@ end
 
 _accumulate_control_effectors_from_model!(
     forces, torques, rw_torque_body, sc_view, p, sat_idx::Int, t::Float64, debug_control::Bool,
-    control_model::SimulationModel.ControlModel,
+    control_model::SimulationModel.ControlModel, members,
 )::Float64 = _accumulate_control_effectors_from_tuple!(
     forces, torques, rw_torque_body, sc_view, p, sat_idx, t, debug_control,
-    control_model.control_effectors,
+    control_model.control_effectors, members,
 )
 
 function _accumulate_control_effectors_from_tuple!(
@@ -514,12 +527,67 @@ function _accumulate_control_effectors_from_tuple!(
     t::Float64,
     debug_control::Bool,
     control_effectors::CE,
+    ::Nothing,
 )::Float64 where {CE <: Tuple}
     mass_rate = 0.0
     # The mounted wheels' momentum rates and the CMGs' gimbal rates are rebuilt by every evaluation.
     wheels = p.args.dynamics_model.spacecraft[sat_idx].root.rw_assembly
     _clear_mounted_rates!(wheels)
     @inbounds for control_effector in control_effectors
+        mounted = SimulationModel.actuation_mode(control_effector) === :mounted
+        # Each hook is called through a call-site `@noinline`, so it is compiled
+        # on its own, as a run-time-dispatched hook is, and LLVM fuses its
+        # StaticArrays arithmetic the same way in every caller (see
+        # `_evaluate_dynamic_effector`). A mounted effector's own checks of the
+        # state run before the sample is built.
+        if mounted
+            control_force, control_torque, control_mass_rate, _ = _mounted_control_effect(control_effector, sc_view, p, sat_idx, t)
+            x = _control_state_sample(sc_view, p, sat_idx)
+        else
+            x = _control_state_sample(sc_view, p, sat_idx)
+            control_force, control_torque = @noinline SimulationModel.control_wrench(control_effector, x, p, t)
+            control_mass_rate = @noinline SimulationModel.control_propellant_rate(control_effector, x, p, t)
+        end
+        rw_torque = @noinline SimulationModel.control_wheel_torque(control_effector, x, p, t)
+        # A mounted wrench holds only the mounted actuators; a wheel torque the
+        # effector reports is still applied to the body, as in ideal actuation.
+        (mounted && rw_torque !== nothing) && (control_torque = control_torque + SVector{3, Float64}(rw_torque))
+        if debug_control && (norm(control_force) > 0.0 || norm(control_torque) > 0.0)
+            println("Applying control effect for spacecraft $sat_idx at time $t seconds:")
+            println("  Control force: $control_force")
+        end
+        forces .+= control_force
+        torques .+= control_torque
+        rw_torque === nothing || (rw_torque_body .+= rw_torque)
+        # The hooks return the propellant used; the mass derivative is its negative.
+        mass_rate -= isfinite(control_mass_rate) ? control_mass_rate : 0.0
+    end
+    return mass_rate
+end
+
+# The control models acting on the spacecraft only (`members`), in configuration
+# order. The loop body is the one above, statement for statement, and written out
+# again rather than shared: a shared helper changes how LLVM fuses the mounted
+# wrench's StaticArrays arithmetic once inlined, and with it the last bits of a
+# mounted run.
+function _accumulate_control_effectors_from_tuple!(
+    forces::MVector{3, Float64},
+    torques::MVector{3, Float64},
+    rw_torque_body::MVector{3, Float64},
+    sc_view,
+    p,
+    sat_idx::Int,
+    t::Float64,
+    debug_control::Bool,
+    control_effectors::CE,
+    members::Vector{Int},
+)::Float64 where {CE <: Tuple}
+    mass_rate = 0.0
+    # The mounted wheels' momentum rates and the CMGs' gimbal rates are rebuilt by every evaluation.
+    wheels = p.args.dynamics_model.spacecraft[sat_idx].root.rw_assembly
+    _clear_mounted_rates!(wheels)
+    @inbounds for j in members
+        control_effector = control_effectors[j]
         mounted = SimulationModel.actuation_mode(control_effector) === :mounted
         # Each hook is called through a call-site `@noinline`, so it is compiled
         # on its own, as a run-time-dispatched hook is, and LLVM fuses its
@@ -3156,11 +3224,14 @@ end
 """
 Find the active robot-arm coupling configuration for one spacecraft. With
 `run_start=true` (building the initial state), a plan buffer gives the plan it
-starts each run from.
+starts each run from. `members` (`_control_members`) limits the control effectors
+looked at to those acting on the spacecraft; `nothing` looks at every one.
 """
-function _robot_arm_coupling(args, sat_idx::Int, t::Float64; run_start::Bool=false)
+function _robot_arm_coupling(args, sat_idx::Int, t::Float64; run_start::Bool=false, members=nothing)
     if hasproperty(args, :control_model) && hasproperty(args.control_model, :control_effectors)
-        @inbounds for effector in args.control_model.control_effectors
+        effectors = args.control_model.control_effectors
+        @inbounds for j in (members === nothing ? eachindex(effectors) : members)
+            effector = effectors[j]
             _robot_arm_effector_matches(effector, sat_idx; run_start) &&
                 return _robot_arm_coupling_from_effector(effector, t; run_start)
         end
@@ -3188,7 +3259,7 @@ end
     # Fast path: skip the per-satellite effector-tuple scan when the run has no
     # robot-arm effector anywhere (cached in shared_buffers on first use).
     _robot_arm_present(p) || return nothing
-    coupling = _robot_arm_coupling(p.args, sat_idx, t)
+    coupling = _robot_arm_coupling(p.args, sat_idx, t; members=_control_members(p, sat_idx))
     coupling === nothing && return nothing
     SimulationModel.assign_coupled_cloth_robot_arm_rhs!(
         du_view,
@@ -3557,7 +3628,11 @@ end
     return nothing
 end
 
-# The forces of the selected interlinks, each from its link's `link_force`.
+# What the selected interlinks do, each from its link's `interlink_wrench`: their
+# forces, and, for links that turn their endpoints, their body torques, added to
+# the attitude equation's angular acceleration as `I⁻¹ τ`. That is exact for the
+# rigid spacecraft interlinks allow, whose `ω̇` is linear in the torque. A
+# spacecraft whose links apply no torque keeps its `ω̇` as it is.
 _apply_interlink_rhs!(derivative, state, parameters) = _apply_interlink_rhs!(derivative, state, parameters, NaN)
 function _apply_interlink_rhs!(derivative, state, parameters, t)
     model = parameters.args.interlink_model
@@ -3570,14 +3645,23 @@ function _apply_interlink_rhs!(derivative, state, parameters, t)
         parameters.is_active[satellite] || continue
         current = state.sc[satellite]
         current_derivative = derivative.sc[satellite]
-        force = SimulationModel.interlink_force_on_spacecraft(model, state, satellite;
+        force, torque, turned = SimulationModel.InterLinkModels.interlink_wrench_on_spacecraft(model, state, satellite;
             is_active=parameters.is_active, spacecraft, context)
         acceleration = force / current.mass
         current_derivative.vel .+= acceleration
         current_derivative.interlink_dv .= acceleration
         semimajor_axis = inv(2 / norm(current.pos) - dot(current.vel, current.vel) / mu)
         current_derivative.interlink_delta_sma = 2 * semimajor_axis^2 / mu * dot(current.vel, force) / current.mass
+        turned && _apply_interlink_torque!(current_derivative, parameters.args, spacecraft[satellite], satellite, torque)
     end
+    return nothing
+end
+
+function _apply_interlink_torque!(current_derivative, args, spacecraft, satellite::Int, torque)
+    args.mission_configuration.orientation_sim || throw(ArgumentError(
+        "An interlink applied a torque to spacecraft $satellite in a run without attitude (orientation_sim=false). " *
+        "A link kind whose interlink_wrench returns torques declares link_applies_torque, and its runs need orientation_sim."))
+    current_derivative.ω .+= SVector{3, Float64}(spacecraft.inertia_tensor \ torque)
     return nothing
 end
 
@@ -3635,16 +3719,41 @@ end
 
 # The data counters of a run with data links, after every route: the bits each
 # spacecraft has sent and received grow at the rates its active links carry,
-# each link's `link_data_rate_bps` at the current state.
+# each link's `link_data_rate_bps` at the current state. A run with data stores
+# integrates the stores too, with the rates limited at the stores.
 function _apply_data_rhs!(du, u, p, t::Float64)
-    isempty(u.sc) || hasproperty(u.sc[1], :data_sent_bits) || return nothing
     spacecraft = p.args.dynamics_model.spacecraft
+    any(SimulationModel.has_data_store, spacecraft) && return _apply_data_storage_rhs!(du, u, p, t)
+    isempty(u.sc) || hasproperty(u.sc[1], :data_sent_bits) || return nothing
     planet = p.args.environment_model.planet
     sent, received = SimulationModel.data_link_rates_bps(p.args.interlink_model, spacecraft, u;
         is_active=p.is_active, context=SimulationModel.LinkContext(time_s=t, planet=planet))
     @inbounds for i in eachindex(spacecraft)
         du.sc[i].data_sent_bits = p.is_active[i] ? sent[i] : 0.0
         du.sc[i].data_received_bits = p.is_active[i] ? received[i] : 0.0
+    end
+    return nothing
+end
+
+# A run with data stores: the counters grow at the rates the links carry, and
+# each store's held, produced and lost data at its rates, as `_data_flows` gives
+# them (zero for a spacecraft without a store). An inactive spacecraft's data
+# does not change.
+function _apply_data_storage_rhs!(du, u, p, t::Float64)
+    spacecraft = p.args.dynamics_model.spacecraft
+    planet = p.args.environment_model.planet
+    flows = SimulationModel.InterlinkTerminals._data_flows(p.args.interlink_model, spacecraft, u;
+        is_active=p.is_active, context=SimulationModel.LinkContext(time_s=t, planet=planet))
+    counters = hasproperty(u.sc[1], :data_sent_bits)
+    @inbounds for i in eachindex(spacecraft)
+        active = p.is_active[i]
+        if counters
+            du.sc[i].data_sent_bits = active ? flows.sent[i] : 0.0
+            du.sc[i].data_received_bits = active ? flows.received[i] : 0.0
+        end
+        du.sc[i].data_stored_bits = active ? flows.stored[i] : 0.0
+        du.sc[i].data_produced_bits = active ? flows.produced[i] : 0.0
+        du.sc[i].data_lost_bits = active ? flows.lost[i] : 0.0
     end
     return nothing
 end
@@ -4296,6 +4405,12 @@ function build_initial_conditions(args)::ComponentVector
         if SimulationModel.has_data_links(args.interlink_model)
             base_shape = merge(base_shape, (data_sent_bits = 0.0, data_received_bits = 0.0))
         end
+        # The data a data store holds, and the data produced and lost, in a run with
+        # a data store: every spacecraft carries them, as the state needs one shape,
+        # and they stay zero for a spacecraft without a store.
+        if any(SimulationModel.has_data_store, args.dynamics_model.spacecraft)
+            base_shape = merge(base_shape, (data_stored_bits = 0.0, data_produced_bits = 0.0, data_lost_bits = 0.0))
+        end
         if SimulationModel.articulated_has_moving_joints(sc)
             tree = SimulationModel.build_articulated_tree(sc; prop_mass=sc.prop_mass)
             base_shape = merge(base_shape, (joint_q = zeros(tree.nq), joint_qd = zeros(tree.nv)))
@@ -4337,6 +4452,9 @@ function build_initial_conditions(args)::ComponentVector
         end
         if SimulationModel.has_battery(spacecraft)
             sc_view.battery_wh = SimulationModel.initial_battery_wh(spacecraft)
+        end
+        if SimulationModel.has_data_store(spacecraft)
+            sc_view.data_stored_bits = SimulationModel.data_store(spacecraft).initial_bits
         end
         init_tree = nothing
         if SimulationModel.articulated_has_moving_joints(spacecraft)

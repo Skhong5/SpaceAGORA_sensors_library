@@ -246,7 +246,7 @@ the file that performs each step.
    geometry lives in `planning/rpo/geometry/`, retaining its historical
    `NavigationHooks` bindings. That geometry is not itself a sensor or estimator.
    Core typed EDG models,
-   services and compatibility bindings live in `guidance/aerobraking/typed_edg/`;
+   services and the forwarders of its two decisions live in `guidance/aerobraking/typed_edg/`;
    the optional SpaceAGORAEDG companion owns the numerical kernels and is the
    only EDG implementation. Configured HYPR
    execution is provided by the external
@@ -366,8 +366,10 @@ and keeps each kind in the order below.
     5. actuator faults switch;
     6. the power budget: the battery boundary (continuous) and the step-end
        update, which sheds by the load the switched faults leave;
-    7. CMG gimbals stop at their limits (continuous);
-    8. the remaining guidance ticks.
+    7. the data stores: the full and empty boundary (continuous) and the
+       step-end update of their flags;
+    8. CMG gimbals stop at their limits (continuous);
+    9. the remaining guidance ticks.
 11. The quaternion projection, when attitude is integrated.
 12. Plume interaction.
 13. The initial force output.
@@ -391,7 +393,7 @@ interlinks.
 
 - **At one time: sensors, navigation, control, guidance.** Sensors sample
   before navigation reads them. Guidance that does not feed the same tick's
-  control ticks after control, faults, power and CMGs; energy depletion
+  control ticks after control, faults, power, the data stores and CMGs; energy depletion
   guidance with targeting ticks before control, so the panel command uses the
   plan made at the same tick.
 - **The hardware starts the run before anything reads it.** Hinge and gimbal
@@ -419,13 +421,34 @@ interlinks.
   ascending order (`_tick_positions` in `callbacks/gnc_scope.jl`), so a tick
   costs the size of the scope, not the number of spacecraft. A control model
   that consumes a link has its scope read once more, first, to decide whether
-  its producers prepare it (`_ticks_any`). The tick reads the scope after they
-  have, so it follows a scope a producer changed. When the model
+  its producers prepare it (`_ticks_any`). The tick reads the scope again after
+  they have, and a producer that changed it stops the run (see the run's GNC
+  scopes below). When the model
   declares `skip_inactive`, an inactive spacecraft gets `release_command!`
   instead of the tick (`_gnc_tick_in_scope!`). The
   mounted actuators then apply the levels the model holds. An event-driven
   model's own callbacks do this themselves; the burn scheduler keeps a released
   command released at its scheduling passes and burn edges.
+- **The run's GNC scopes.** When the run starts, after the run-start
+  initializers (`_start_run_models!`), the engine takes each guidance,
+  navigation and control model's scope (`_gnc_run_scopes` in
+  `engine/gnc_run_scopes.jl`, held in `SharedBuffers.gnc_scopes`). A checkpoint
+  records the same scopes in its `gnc_scopes` entry, and a resumed run compares
+  that entry before restoring any model's state.
+  - **Fixed for the run.** Each tick compares the scope it reads with the run's
+    (`_check_run_scope`), and one callback after the event-driven models' own
+    compares theirs once per accepted step. A difference stops the run. A
+    `SpacecraftSelection` is resolved once, here, and compared with the run's
+    own copy of its criteria.
+  - **Hooks follow the scope.** For each spacecraft the run lists the control
+    and guidance models whose scope names it, in configuration order, when some
+    model acts on fewer than every spacecraft. The right-hand side
+    (`_accumulate_control_effectors!`), the robot-arm coupling, the power, fault
+    and result readers, the burn scheduler's passes and the atmosphere
+    crossings call only those models' hooks (`_scope_members`). Without the
+    lists every model is called, as before. A model left out returns zeros or
+    `nothing` there, and the sums it would add to start at +0.0 and are never
+    -0.0, so leaving it out changes no bit.
 - **Stops after the ticks, one spacecraft at a time.** The ticks of one control
   model may run on several threads. The solver's stop list belongs to the
   integrator they share, so `register_tstops!` runs afterwards, on the
@@ -447,10 +470,10 @@ building the run's buffers and callbacks:
 
 1. `_resume_engine_state!`. On a run resumed from a checkpoint file, it checks
    the checkpoint against the run and restores the engine's and the callbacks'
-   run state: the `activity`, `interlinks` and `callbacks` entries, and the
-   periodic ticks still pending. It also sets the resume flags
-   (`callback_resume`, `model_resume`). The models' own state and the form of
-   their `gnc_scopes` entry are only checked here; a run with guidance,
+   run state: the `activity`, `interlinks`, `callbacks`, `maneuver_buffers` and
+   `orbits` and `entries` entries, and the periodic ticks still pending. It also sets the
+   resume flags (`callback_resume`, `model_resume`). The models' own state and
+   the form of their `gnc_scopes` entry are only checked here; a run with guidance,
    navigation or control models refuses a checkpoint without that entry here,
    before anything is restored.
 2. `_start_run_clock!`: the run clock of the periodic ticks, for a checkpointed
@@ -483,8 +506,12 @@ calls them at the top of `src/models/gnc/contracts/simulation_lifecycle.jl`.
 | Which spacecraft are active | `ODEParams.is_active` | a new `ODEParams`, all active | `activity` (also in `interlinks`) | `_restore_activity_checkpoint_state!` | phase 1 |
 | Interlink selection and history | the `InterlinkModel` | `run_simulation` empties the history and clears the graph's flags and the matching | `interlinks`: the configuration's identity and the activity flags | the identity is checked; the scheduler's initialization rebuilds the selection | phase 1; the scheduler at the solve's start |
 | Battery flags, fault activity | the batteries and the actuator faults | the power and fault callbacks' first initialization | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume` so that those initializations keep it | phase 1 |
+| Data store flags | the data stores | the data callbacks' first initialization | `callbacks`, only in a run with a data store | `_restore_callback_checkpoint_state!`, as the battery flags | phase 1 |
 | Sensor streams, latest measurements, biases, sample times | the mounted sensors and the sensor callbacks | `reset_sensors!` at the first solve's start | `callbacks`, and the sensor's own `checkpoint_state` in `models` | the records in phase 1; the sensor's own state in phase 3. A resumed run does not call `initialize_sensor!` | phases 1 and 3 |
 | Hinge and gimbal angles, mounted thrusters' firing state (`κ`, `thrust`) | the link hardware: `PanelHinge`, `ThrusterGimbal` and `Thruster`, which keep the state a run starts from (`run_start`, first the configured one) and the last tick's write (`run_written`) | the run-state callback's first initialization (`get_run_state_callbacks`): a value still equal to the last mounted tick's write returns to the previous run's start; a value a user changed between runs is kept | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume`: the run-state callback's initialization then keeps the restored state and records it as the latest write | phase 1 |
+| Maneuver commands and burn plans | `SharedBuffers.maneuver_commands` and `maneuver_burn_plans`: the maneuver guidance models write the commands, the burn scheduler (`BaseThrusterModel`) the plans | a new `SharedBuffers`, every command and plan unset | `maneuver_buffers`, written while a command or plan is set | `_restore_maneuver_buffer_checkpoint_state!` | phase 1 |
+| The orbit each spacecraft is on | `ODEParams.orbit_counter`: the apoapsis callback counts the orbits, and a state anchor with an `orbit_count` sets it | a new `ODEParams`, the first orbit for every spacecraft | `orbits`, written once a spacecraft is past its first orbit | `_restore_orbit_counter_checkpoint_state!` | phase 1 |
+| Completed atmosphere entries | `SharedBuffers.entry_counter`: the entry-end callback counts downward interface crossings | new run buffers, zero for every spacecraft | `entries`, written once a spacecraft has entered | `_restore_entry_counter_checkpoint_state!` | phase 1 |
 | Periodic tick clocks | each run-clock callback, and the run clock in the shared buffers | each solve's start; the run clock in phase 2 | `periodic_ticks` | `_pending_periodic_ticks`, taken at the first solve's start | phases 1 and 2 |
 | Saved results rows | the run's row lists in `run_simulation` | empty | `results_rows`: how much of `simulation_checkpoint.results.bin`, beside the checkpoint, is its own | `_start_results_rows!` puts the rows back before the first segment, or warns when it cannot | before the solve |
 | GNC links | the shared object | `link_initialize!`, once per run | none of their own: the models save what they need | — | phase 3 |
@@ -494,12 +521,20 @@ calls them at the top of `src/models/gnc/contracts/simulation_lifecycle.jl`.
 | Plume interaction integral | the plume model's state | the plume callback's first initialization | none: a resumed run starts a new integral | — | the solve's start |
 | GRAM density perturbation walk | the perturbation callback | its initialization | none: a resume is refused | — | the solve's start |
 | Density model histories | the density models | `_reset_density_model_histories!`, after the pre-solve probes | none | — | before the solve |
+| GRAM track and vacuum-prediction caches, when enabled (`SPACEAGORA_GRAM_TRACK_CACHE`, `SPACEAGORA_VACUUM_GRAM_CACHE`; both off by default) | the shared buffers | emptied before the solve | none: a resumed run builds them again, so its interpolated densities can differ from those of a run never interrupted, within the caches' tolerances | — | before the solve |
 
 Current behaviour to know:
 
 - **Runs that cannot resume.** EDG, `AlgorithmGuidance`, the GRAM density
   perturbation and externally propagated spacecraft refuse checkpoints or a
   resume, because the checkpoint does not hold their run state.
+- **State a checkpoint does not need.** Some run state changes during a run
+  and is not in the checkpoint because it comes back by itself, as it does at a
+  checkpoint segment's start: the atmosphere flags (`in_atmosphere`), from the
+  state at each solve's start; the sampled densities, winds and heat rates, when
+  they are next sampled; the state anchors' next anchor and the periapsis
+  pulses' last pass, at each solve's start. The ephemeris memos, workspaces and
+  execution plans change only how fast a run goes.
 
 ## Map of the repository
 
@@ -605,7 +640,7 @@ and result types, geometry, metrics, RRT and retiming services, and compatibilit
 entry points. `SpaceAGORA.HYPRServices` exposes the adapter contract without
 changing the original owners of those bindings. Only the explicitly listed
 services and extension points are supported; arbitrary internal-module access is
-not the integration API. The current supported pair is SpaceAGORA 0.6.0 with
+not the integration API. The current supported pair is SpaceAGORA 0.6.1 with
 HYPR 0.5.0 and service contract 3.0.0. Install the pinned pair and explicitly
 load `SpaceAGORA` and `HYPR` using the
 [RPO planner guide](../src/user/rpo_planner_pilot.md#installing-optional-hypr).

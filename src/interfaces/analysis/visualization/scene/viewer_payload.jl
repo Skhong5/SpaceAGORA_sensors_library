@@ -679,10 +679,19 @@ function viewer_payload(
     terrain=nothing,
     terrain_max_grid=512,
     mission=nothing,
-    position_precision=:auto
+    position_precision=:auto,
+    link_schedule=nothing
 )::Dict{String, Any}
     _checked_position_precision(position_precision)
     mission = _validated_mission_history(mission)
+    # The links' windows share the data budget with the frames.
+    interlinks = link_schedule === nothing ? nothing : interlink_payload(link_schedule, length(scene.spacecraft))
+    if interlinks !== nothing
+        link_mb = _interlink_payload_bytes(interlinks) / 1.0e6
+        link_mb < data_budget_mb || throw(ArgumentError("The interlink windows ($(round(link_mb; digits=3)) MB) " *
+            "exceed the viewer's data budget; increase data_budget_mb, or pass interlinks=false to leave the links out."))
+        data_budget_mb -= link_mb
+    end
     textures = Dict{String, Any}()
     if include_textures
         entry = texture_payload(scene.planet.texture; resolution=texture_resolution, dir=textures_dir)
@@ -701,8 +710,49 @@ function viewer_payload(
         "options" => Dict{String, Any}(options),
     )
     mission === nothing || (payload["mission"] = deepcopy(mission))
+    interlinks === nothing || (payload["interlinks"] = interlinks)
     return payload
 end
+
+"""
+    interlink_payload(schedule::DataFrame, spacecraft_count) -> Dict{String, Any}
+
+The `interlinks` block of the viewer payload, from a run's link schedule (see
+`link_schedule`): `schema` 1; `links`, one entry per link that appears in a
+window, in link order, with `link`, `kind`, `directed`, the spacecraft `a` and
+`b` (numbered from 1, as `paths[].target`) and their terminals; `active`, the
+spans over which each link was selected, as `count`, `index` (0-based positions
+in `links`) and Float64 `start_s` and `end_s` on the clock of `frames.t_s`; and
+`contact`, the same for the spans over which a link was available, or `nothing`
+when the run did not record them. A link is drawn at playback time `t` when
+`start_s <= t < end_s`, and at `t == end_s` when that is its schedule's last time.
+"""
+function interlink_payload(schedule::DataFrame, spacecraft_count::Integer)::Dict{String, Any}
+    for column in ("window", "link", "kind", "directed", "a_spacecraft", "a_terminal", "b_spacecraft", "b_terminal",
+                   "start_s", "end_s")
+        column in names(schedule) || throw(ArgumentError("The link schedule has no `$(column)` column."))
+    end
+    for spacecraft in Iterators.flatten((schedule.a_spacecraft, schedule.b_spacecraft))
+        1 <= spacecraft <= spacecraft_count || throw(ArgumentError(
+            "The link schedule names spacecraft $(spacecraft), but the scene has $(spacecraft_count)."))
+    end
+    numbers = sort!(unique(schedule.link))
+    position = Dict(number => k - 1 for (k, number) in enumerate(numbers))
+    first_row = Dict(number => findfirst(==(number), schedule.link) for number in numbers)
+    links = Any[Dict{String, Any}("link" => number, "kind" => String(schedule.kind[row]),
+        "directed" => Bool(schedule.directed[row]), "a" => Int(schedule.a_spacecraft[row]),
+        "a_terminal" => Int(schedule.a_terminal[row]), "b" => Int(schedule.b_spacecraft[row]),
+        "b_terminal" => Int(schedule.b_terminal[row])) for (number, row) in ((n, first_row[n]) for n in numbers)]
+    windows(kind) = (rows = findall(==(kind), schedule.window); Dict{String, Any}("count" => length(rows),
+        "index" => Int[position[schedule.link[row]] for row in rows],
+        "start_s" => _float64_base64(Float64[schedule.start_s[row] for row in rows]),
+        "end_s" => _float64_base64(Float64[schedule.end_s[row] for row in rows])))
+    return Dict{String, Any}("schema" => 1, "links" => links, "active" => windows("active"),
+        "contact" => any(==("contact"), schedule.window) ? windows("contact") : nothing)
+end
+
+# The bytes the block adds to the payload, as JSON text.
+_interlink_payload_bytes(block) = sizeof(JSON.json(block))
 
 """
     path_payloads(paths) -> Vector{Dict{String, Any}}
@@ -824,6 +874,92 @@ function _mission_file_sha256(path::AbstractString)
     end
 end
 
+# The manifest's entry for the results feather a scene names.
+_manifest_feather_key(scene::VisualizationScene) = scene.results_layout === :long ? "spacecraft_feather" : "feather"
+
+# The results a saved scene's viewer reads, as the wide table. A wide run's
+# feather is read as it is. A long run's spacecraft table is opened memory-mapped
+# and its columns become the wide `sc{i}_<column>` columns as views of the rows
+# of spacecraft `i` (and the run table's columns are added), so no row is copied:
+# the viewer then reads only the rows it keeps.
+function _saved_results_table(scene::VisualizationScene, feather_path::AbstractString)::DataFrame
+    scene.results_layout === :long || return DataFrame(Arrow.Table(feather_path))
+    run_path = replace(String(feather_path), r"_spacecraft\.feather$" => "_run.feather")
+    run = run_path != feather_path && isfile(run_path) ? DataFrame(Arrow.Table(run_path); copycols=false) : nothing
+    arrow_table = Arrow.Table(feather_path)
+    long = DataFrame(arrow_table; copycols=false)
+    arrow_metadata = Arrow.getmetadata(arrow_table)
+    key = "spaceagora.long_column_spacecraft.v1"
+    if arrow_metadata !== nothing && haskey(arrow_metadata, key)
+        metadata!(long, key, arrow_metadata[key]; style=:note)
+    end
+    return _wide_view(long, run, length(scene.spacecraft))
+end
+
+const _LONG_IDENTITY_COLUMNS = ("spacecraft", "spacecraft_id", "plane", "slot", "time")
+
+"""
+    _wide_view(spacecraft_table, run_table, num_sats) -> DataFrame
+
+The wide table of a long spacecraft table (one row per spacecraft and time), as
+views: `time`, then `sc{i}_<column>` for each spacecraft `i` and column, then the
+run table's columns. The rows may come in any order but must hold every
+spacecraft at every time once.
+"""
+function _wide_view(long::DataFrame, run::Union{Nothing, DataFrame}, num_sats::Integer)::DataFrame
+    raw_presence = metadata(long, "spaceagora.long_column_spacecraft.v1", nothing)
+    presence = if raw_presence === nothing
+        nothing
+    else
+        parsed = try
+            JSON.parse(raw_presence)
+        catch
+            throw(ArgumentError("Invalid long-results column-presence metadata."))
+        end
+        parsed isa AbstractDict || throw(ArgumentError("Invalid long-results column-presence metadata."))
+        for name in names(long)
+            name in _LONG_IDENTITY_COLUMNS && continue
+            members = get(parsed, name, nothing)
+            members isa AbstractVector && all(i -> i isa Integer && !(i isa Bool) && 1 <= i <= num_sats, members) &&
+                length(unique(members)) == length(members) ||
+                throw(ArgumentError("Invalid long-results column-presence metadata for column $(name)."))
+        end
+        parsed
+    end
+    spacecraft, times = long[!, "spacecraft"], long[!, "time"]
+    n = length(spacecraft)
+    n % num_sats == 0 || throw(ArgumentError("The long results table does not hold every spacecraft at every time."))
+    in_order = all(r -> spacecraft[r] == mod1(r, num_sats) && times[r] == times[r - mod1(r, num_sats) + 1], 1:n)
+    order = in_order ? collect(1:n) : sortperm(1:n; by=r -> (times[r], spacecraft[r]))
+    all(r -> spacecraft[order[r]] == mod1(r, num_sats) && times[order[r]] == times[order[r - mod1(r, num_sats) + 1]], 1:n) ||
+        throw(ArgumentError("The long results table does not hold every spacecraft at every time."))
+    rows = [view(order, i:num_sats:n) for i in 1:num_sats]
+    wide = DataFrame("time" => view(times, rows[1]); copycols=false)
+    for name in names(long)
+        name in _LONG_IDENTITY_COLUMNS && continue
+        column = long[!, name]
+        for i in 1:num_sats
+            spacecraft_column = view(column, rows[i])
+            if presence === nothing
+                # Compatibility with older draft bundles: their all-missing columns
+                # cannot distinguish absent fields from present measurement gaps.
+                Missing <: eltype(column) && all(ismissing, spacecraft_column) && continue
+            else
+                i in presence[name] || continue
+            end
+            wide[!, "sc$(i)_$(name)"] = spacecraft_column
+        end
+    end
+    if run !== nothing
+        nrow(run) == nrow(wide) && run[!, "time"] == wide[!, "time"] ||
+            throw(ArgumentError("The run table's times differ from the spacecraft table's."))
+        for name in names(run)
+            name == "time" || (wide[!, name] = run[!, name])
+        end
+    end
+    return wide
+end
+
 function _bind_mission_history!(prefix::AbstractString)
     manifest_path = String(prefix) * ".manifest.toml"
     scene_path = String(prefix) * "_scene.json"
@@ -833,7 +969,7 @@ function _bind_mission_history!(prefix::AbstractString)
     _validated_mission_history(JSON.parsefile(history_path))
     manifest = TOML.parsefile(manifest_path)
     feather_hash = _mission_file_sha256(feather_path)
-    get(get(get(manifest, "files", Dict()), "feather", Dict()), "sha256", nothing) == feather_hash ||
+    get(get(get(manifest, "files", Dict()), _manifest_feather_key(scene), Dict()), "sha256", nothing) == feather_hash ||
         throw(ArgumentError("Cannot associate mission history with a different saved results bundle."))
     manifest["mission_history"] = Dict(
         "schema" => 1, "path" => basename(history_path),
@@ -894,7 +1030,8 @@ function _saved_viewer_payload(
     terrain_max_grid=512,
     textures_dir::AbstractString=TEXTURES_DIR,
     mission=nothing,
-    position_precision=:auto
+    position_precision=:auto,
+    interlinks::Bool=true
 )
     _checked_position_precision(position_precision)
     prefix = String(prefix)
@@ -903,10 +1040,11 @@ function _saved_viewer_payload(
     scene = read_visualization_scene(scene_path)
     feather_path = joinpath(dirname(scene_path), scene.results_feather)
     isfile(feather_path) || throw(ArgumentError("Results file $(feather_path) referenced by the sidecar does not exist."))
-    df = DataFrame(Arrow.Table(feather_path))
+    df = _saved_results_table(scene, feather_path)
     mission === nothing && (mission = _saved_mission_history(prefix, scene_path, feather_path))
+    link_schedule = interlinks ? _saved_link_schedule(prefix, scene) : nothing
     payload = viewer_payload(
-        scene, df;
+        scene, df; link_schedule=link_schedule,
         textures_dir=textures_dir, include_textures=textures, texture_resolution=texture_resolution,
         options=_viewer_options(; trail_s=trail_s, trail_orbits=trail_orbits, frame=frame, speed=speed, title=title, ground_tracks=ground_tracks),
         max_frames=max_frames, data_budget_mb=data_budget_mb, position_precision=position_precision,
@@ -915,6 +1053,24 @@ function _saved_viewer_payload(
     )
     page_title = title === nothing ? "SpaceAGORA · $(scene.planet.name) · $(basename(prefix))" : String(title)
     return payload, page_title
+end
+
+# The link schedule the scene names, checked against the hash the results manifest
+# recorded for it, so a schedule written by another run is never drawn; `nothing`
+# when the scene names none.
+function _saved_link_schedule(prefix::AbstractString, scene::VisualizationScene)
+    scene.link_schedule === nothing && return nothing
+    path = joinpath(dirname(String(prefix)), scene.link_schedule)
+    manifest_path = String(prefix) * ".manifest.toml"
+    files = isfile(manifest_path) ? get(TOML.parsefile(manifest_path), "files", Dict()) : Dict()
+    trajectory_path = joinpath(dirname(String(prefix)), scene.results_feather)
+    for (file, entry) in ((path, "link_schedule_feather"), (trajectory_path, _manifest_feather_key(scene)))
+        recorded = get(get(files, entry, Dict()), "sha256", nothing)
+        isfile(file) && recorded !== nothing && recorded == IOSerialization._sha256_hex(file) ||
+            throw(ArgumentError("The interlink input $(file) is missing or no longer matches its results manifest; export the " *
+                "matching saved bundle, or pass interlinks=false to leave the links out."))
+    end
+    return DataFrame(Arrow.Table(path))
 end
 
 function _check_viewer_output(path::AbstractString, protected)
@@ -928,8 +1084,10 @@ end
 
 function _viewer_output_path(prefix::AbstractString, payload::AbstractDict, out, suffix::String)
     path = out === nothing ? String(prefix) * suffix : String(out)
+    schedule = get(payload["scene"]["results"], "link_schedule", nothing)
     protected = (String(prefix) * "_scene.json", String(prefix) * "_mission.json", String(prefix) * ".manifest.toml",
-        joinpath(dirname(String(prefix)), String(payload["scene"]["results"]["feather"])))
+        joinpath(dirname(String(prefix)), String(payload["scene"]["results"]["feather"])),
+        (schedule === nothing ? () : (joinpath(dirname(String(prefix)), String(schedule["file"])),))...)
     return _check_viewer_output(path, protected)
 end
 
@@ -945,7 +1103,9 @@ verified association is carried into the optional `mission` block; an unbound
 sidecar is never attached automatically. Move the complete saved folder to
 preserve that association, or supply a deliberate `mission` keyword value.
 Exact saved boundary rows are retained within the frame budget; missing boundary
-states are never reconstructed. No renderer package, browser, download or simulation is needed. Load
+states are never reconstructed. A run with interlinks adds its link schedule's
+windows as the `interlinks` block (see `interlink_payload`), checked against the
+results manifest; `interlinks=false` leaves them out. No renderer package, browser, download or simulation is needed. Load
 SpaceAGORAVisualizer to turn this portable payload into an HTML page.
 """
 function export_viewer_payload(prefix::AbstractString; out::Union{Nothing, AbstractString}=nothing, kwargs...)::String
@@ -997,7 +1157,9 @@ A channel missing from any spacecraft is omitted. Samples are Float32;
 `missing`/NaN are gaps and infinities/overflow are rejected. Channels use the
 same decimated rows and budget as positions. `terrain` names a local site.json;
 `terrain_max_grid` (default 512) limits its exported DEM dimensions (see
-`terrain_payload`). `viewer_dir` overrides the optional visualizer package assets; `textures_dir`
+`terrain_payload`). A run with interlinks draws its active links from its link
+schedule, which shares `data_budget_mb` with the frames; `interlinks=false`
+leaves them out. `viewer_dir` overrides the optional visualizer package assets; `textures_dir`
 overrides the local texture directory. Load `SpaceAGORAVisualizer` before
 requesting an HTML page, or use `export_viewer_payload` to save portable JSON.
 """
@@ -1030,14 +1192,15 @@ Write `window.SPACEAGORA_VIEWER = {...};` for `viewer/dev.html` in the
 SpaceAGORAVisualizer.jl companion repository, so its viewer modules can be
 edited and reloaded without rebundling.
 """
-function write_viewer_dev_payload(prefix::AbstractString, out_js::AbstractString; textures::Bool=true, textures_dir::AbstractString=TEXTURES_DIR, mission=nothing, kwargs...)::String
+function write_viewer_dev_payload(prefix::AbstractString, out_js::AbstractString; textures::Bool=true, textures_dir::AbstractString=TEXTURES_DIR, mission=nothing, interlinks::Bool=true, kwargs...)::String
     _checked_position_precision(get(kwargs, :position_precision, :auto))
     scene_path = String(prefix) * "_scene.json"
     scene = read_visualization_scene(scene_path)
     feather_path = joinpath(dirname(scene_path), scene.results_feather)
-    df = DataFrame(Arrow.Table(feather_path))
+    df = _saved_results_table(scene, feather_path)
     mission === nothing && (mission = _saved_mission_history(prefix, scene_path, feather_path))
-    payload = viewer_payload(scene, df; textures_dir=textures_dir, include_textures=textures, mission=mission, kwargs...)
+    payload = viewer_payload(scene, df; textures_dir=textures_dir, include_textures=textures, mission=mission,
+        link_schedule=interlinks ? _saved_link_schedule(prefix, scene) : nothing, kwargs...)
     path = _viewer_output_path(prefix, payload, out_js, "_viewer.js")
     _check_viewer_output(path, (String(prefix) * "_viewer.json",))
     return IOSerialization._atomic_write_file(path, tmp -> write(tmp, "window.SPACEAGORA_VIEWER = " * _script_safe_json(payload) * ";\n"))

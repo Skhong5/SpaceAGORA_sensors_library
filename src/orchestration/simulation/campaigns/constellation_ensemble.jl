@@ -135,11 +135,51 @@ function _validate_ensemble_dynamic_effectors(args::SimulationConfiguration)
     return nothing
 end
 
+# With allow_gnc_effectors, every member receives the configuration-level guidance,
+# navigation and control models unchanged and runs its spacecraft alone at run
+# position 1. A model whose scope names run positions (a BoundSpacecraft, a
+# CoupledSpacecraft or a SpacecraftSelection) would then act on every member, or
+# fail in some, so it is refused, pointing to declaring it on its spacecraft. An
+# ensemble of one runs its spacecraft at position 1 as the whole run would, so there
+# a scope that names that position alone is kept, as for the dynamic effectors.
+function _validate_ensemble_gnc_scopes(args::SimulationConfiguration)
+    GNC = SimulationEngine.GNCRuntime
+    spacecraft = args.dynamics_model.spacecraft
+    groups = ((:guidance, args.guidance_model.guidance_effectors),
+        (:navigation, args.navigation_model.navigation_effectors), (:control, args.control_model.control_effectors))
+    for (group, models) in groups, (j, model) in enumerate(models)
+        scope = GNC.spacecraft_scope(model)
+        scope isa GNC.AllSpacecraft && continue
+        length(spacecraft) == 1 && _ensemble_scope_positions(scope, spacecraft) == [1] && continue
+        throw(ArgumentError(
+            "run_constellation_ensemble: the configuration's $(SimulationEngine._gnc_scope_owner(group, j, model)) " *
+            "declares spacecraft_scope $(SimulationModel.SimulationCallbacks._scope_text(scope)), but each " *
+            "ensemble member runs its spacecraft alone, at run " *
+            "position 1, with the configuration-level models unchanged, so it would act on every member or fail in " *
+            "some. Declare it on the spacecraft it acts on (the SpacecraftModel's $(group) keyword), where each " *
+            "member binds it to its own spacecraft, or give it AllSpacecraft() to act on every member."))
+    end
+    return nothing
+end
+
+# The run positions a GNC scope names among `spacecraft`, or `nothing` when it names
+# one the run does not have.
+_ensemble_scope_positions(scope::SimulationEngine.GNCRuntime.CoupledSpacecraft, spacecraft) =
+    sort!(unique!([scope.primary; collect(scope.partners)]))
+function _ensemble_scope_positions(scope, spacecraft)
+    try
+        return SimulationModel.resolve_spacecraft_scope(scope, spacecraft)
+    catch err
+        err isa ArgumentError || rethrow()
+        return nothing
+    end
+end
+
 function _validate_ensemble_uncoupled(args::SimulationConfiguration, allow_gnc_effectors::Bool)
     args.interlink_model === nothing || throw(ArgumentError(
         "run_constellation_ensemble cannot split an interlinked constellation into independent spacecraft. Use run_simulation instead."))
     _validate_ensemble_dynamic_effectors(args)
-    allow_gnc_effectors && return nothing
+    allow_gnc_effectors && return _validate_ensemble_gnc_scopes(args)
     coupled_surfaces = String[]
     isempty(args.guidance_model.guidance_effectors) || push!(coupled_surfaces, "guidance_effectors")
     isempty(args.navigation_model.navigation_effectors) || push!(coupled_surfaces, "navigation_effectors")
@@ -149,14 +189,16 @@ function _validate_ensemble_uncoupled(args::SimulationConfiguration, allow_gnc_e
         "run_constellation_ensemble requires an uncoupled constellation, but the configuration has " *
         "non-empty $(join(coupled_surfaces, ", ")). GNC effectors may couple satellites (for example " *
         "RPO planners or coordinated maneuvers), and each ensemble member propagates alone. If every " *
-        "effector acts on a single satellite only, opt in with allow_gnc_effectors=true; otherwise use " *
-        "the monolithic run_simulation path."
+        "configuration-level effector acts on each satellite on its own (spacecraft_scope AllSpacecraft()), " *
+        "opt in with allow_gnc_effectors=true. Declare GNC for one satellite on its SpacecraftModel instead, " *
+        "which needs no flag; otherwise use the monolithic run_simulation path."
     ))
 end
 
 """
     run_constellation_ensemble(args::SimulationConfiguration; threads=1, fail_fast=false,
-                               allow_gnc_effectors=false, run_kwargs...) -> MonteCarloResult
+                               allow_gnc_effectors=false, merge_results=false,
+                               run_kwargs...) -> MonteCarloResult or ConstellationEnsembleResult
 
 Propagate each spacecraft of a multi-satellite `SimulationConfiguration` as an
 independent single-satellite simulation, parallelized across satellites with the
@@ -212,9 +254,15 @@ supported way to parallelize an ensemble.
 
 The configuration must be uncoupled: `interlink_model` must be `nothing`, and configuration-level guidance, navigation, and control
 effector tuples must be empty, because effectors that coordinate several satellites cannot
-act across ensemble members. If every configured effector acts on one satellite only, pass
-`allow_gnc_effectors=true` to opt in; the effectors are passed to every member unchanged,
-so spacecraft indices are not remapped. GNC declared on a `SpacecraftModel` (its `guidance`,
+act across ensemble members. If every configuration-level effector acts on each satellite on
+its own, with `spacecraft_scope` `AllSpacecraft()`, pass `allow_gnc_effectors=true` to opt in;
+the effectors are passed to every member unchanged, so spacecraft indices are not remapped,
+and a configuration-level model whose `spacecraft_scope` names run positions
+(`BoundSpacecraft`, `CoupledSpacecraft` or a `SpacecraftSelection`) is refused with an
+`ArgumentError` (since SpaceAGORA 0.7.0): it would act on every member, or fail in some,
+unless the ensemble has one member and the scope names position 1 alone. A model that
+picks its spacecraft by an index field of its own without declaring `spacecraft_scope`
+is not detected. GNC declared on a `SpacecraftModel` (its `guidance`,
 `navigation` and `control` keywords) always travels with that spacecraft, is bound to index 1
 in its member run, and needs no flag.
 
@@ -226,6 +274,32 @@ one with a `spacecraft_index`, `chaser_index` or `target_index` (such as
 `ArgumentError` naming it and the member, with or without `allow_gnc_effectors`, unless
 the ensemble has one member and the effector is bound to position 1.
 
+# Merged results
+
+With `merge_results=true` the call returns a [`ConstellationEnsembleResult`](@ref):
+the `MonteCarloResult` as `campaign`, plus a `members` table with every member's
+saved rows and its identity (`spacecraft`, `spacecraft_id`, `plane`, `slot`, in
+the long layout's columns, see [`long_table`](@ref)) and a `constellation` table
+with one row per member: its identity, folder, status and last saved row. With
+`results=true` it also writes `constellation_members.feather` (and `.csv` with
+`save_csv`) and `constellation_summary.csv` in `results_directory`, beside the
+member folders. Each member's own files, solve and sample `value` are what they
+are without the keyword. The merged tables hold every saved row in memory;
+`SPACEAGORA_RESULTS_THIN_STRIDE` and `SPACEAGORA_RESULTS_FINAL_ONLY` thin each
+member's rows. `merge_results=true` with `return_solver_metadata=true` is
+refused before any member runs, and so is a run-wide save field whose column
+prefix is a per-spacecraft field's.
+
+Save fields passed with `save_fields` run in each member, which has one
+spacecraft: build them from a member's configuration, not from the whole
+constellation's, whose default fields are sized for every spacecraft.
+
+```julia
+res = run_constellation_ensemble(args; merge_results=true)
+plane_two = res.members[coalesce.(res.members.plane .== 2, false), :]
+res.constellation[:, [:spacecraft, :spacecraft_id, :success, :time]]
+```
+
 Remaining keyword arguments are forwarded to [`run_simulation`](@ref) (for example
 `return_solution=true`).
 """
@@ -234,6 +308,7 @@ function run_constellation_ensemble(
     threads::Union{Nothing, Integer, Symbol}=nothing,
     fail_fast::Bool=false,
     allow_gnc_effectors::Bool=false,
+    merge_results::Bool=false,
     route_state::Union{Nothing, OuterRouteState}=nothing,
     route_tuning::Union{Nothing, OuterRouteTuning}=nothing,
     run_kwargs...
@@ -250,6 +325,17 @@ function run_constellation_ensemble(
     # effectors whose scope holds its position, unscoped.
     args = SimulationEngine._resolve_effector_scopes(args)
     _validate_ensemble_uncoupled(args, allow_gnc_effectors)
+    # Refused here rather than by every member.
+    args.simulation_settings.results_layout in (:wide, :long) || throw(ArgumentError(
+        "SimulationSettings.results_layout must be :wide or :long; got :$(args.simulation_settings.results_layout)."))
+    if merge_results
+        # run_simulation refuses this pair with return_results, which every
+        # member of a merged ensemble runs with.
+        get(run_kwargs, :return_solver_metadata, false) === true && throw(ArgumentError(
+            "run_constellation_ensemble with merge_results=true cannot return solver metadata: each member runs " *
+            "with return_results=true, which run_simulation refuses with return_solver_metadata=true."))
+        _validate_merged_save_fields(run_kwargs)
+    end
     SimulationEngine._warn_repeated_spacecraft_ids(args)
 
     member_configs = [
@@ -261,16 +347,15 @@ function run_constellation_ensemble(
     # the flag's scope with the planner choosing the route (threads=:auto).
     parallel = _campaign_parallel_flag(member_configs)
     threads_resolved = _campaign_threads(threads, parallel, "run_constellation_ensemble")
-    parallel || return _run_constellation_members(args, member_configs, threads_resolved, fail_fast,
-                                                  route_state, route_tuning, run_kwargs)
-    return SimulationEngine._with_parallel_flag(true) do
-        _run_constellation_members(args, member_configs, threads_resolved, fail_fast,
-                                   route_state, route_tuning, run_kwargs)
-    end
+    run_members() = _run_constellation_members(args, member_configs, threads_resolved, fail_fast,
+                                               route_state, route_tuning, run_kwargs, merge_results)
+    campaign = parallel ? SimulationEngine._with_parallel_flag(run_members, true) : run_members()
+    merge_results || return campaign
+    return _constellation_ensemble_result(args, member_configs, campaign)
 end
 
 function _run_constellation_members(args::SimulationConfiguration, member_configs, threads, fail_fast::Bool,
-                                    route_state, route_tuning, run_kwargs)
+                                    route_state, route_tuning, run_kwargs, merge_results::Bool=false)
     if threads isa Symbol
         threads === :auto || throw(ArgumentError(
             "run_constellation_ensemble threads must be a positive integer or :auto; got :$(threads)."
@@ -282,8 +367,8 @@ function _run_constellation_members(args::SimulationConfiguration, member_config
         # when it is threaded).
         adaptive_kwargs = Dict{Symbol, Any}(pairs(run_kwargs))
         adaptive_kwargs[:isolate_state] = false
-        run_member_isolated = idx -> SimulationEngine.run_simulation(
-            deepcopy(member_configs[idx]); adaptive_kwargs...
+        run_member_isolated = idx -> _constellation_member_run(
+            deepcopy(member_configs[idx]), adaptive_kwargs, merge_results
         )
         # Each ensemble member propagates one satellite, so the routed workload
         # is single-sat per sample regardless of the constellation size.
@@ -314,14 +399,14 @@ function _run_constellation_members(args::SimulationConfiguration, member_config
         # run_simulation's own isolate_state copy so isolation is paid exactly once.
         parallel_kwargs = Dict{Symbol, Any}(pairs(run_kwargs))
         parallel_kwargs[:isolate_state] = false
-        run_member = idx -> SimulationEngine.run_simulation(
-            deepcopy(member_configs[idx]); parallel_kwargs...
+        run_member = idx -> _constellation_member_run(
+            deepcopy(member_configs[idx]), parallel_kwargs, merge_results
         )
         return withenv("SPACEAGORA_OUTER_PARALLEL_ACTIVE" => "1") do
             run_monte_carlo(run_member, spec)
         end
     end
 
-    run_member = idx -> SimulationEngine.run_simulation(member_configs[idx]; run_kwargs...)
+    run_member = idx -> _constellation_member_run(member_configs[idx], run_kwargs, merge_results)
     return run_monte_carlo(run_member, spec)
 end

@@ -15,6 +15,11 @@ one-based position in the spacecraft list passed to `DynamicsModel`.
 `SpacecraftModel.id` does not set this prefix. A single-spacecraft run
 produces `sc1_*` columns even when its spacecraft has a different `id`.
 
+With `results_layout = :long`, the spacecraft table has the same columns
+without the prefix (`pos_1` for `sc{N}_pos_1`), one row per spacecraft, and
+the run-wide columns (those without a prefix) are in the run table. See
+[Long layout for many spacecraft](outputs.md#Long-layout-for-many-spacecraft).
+
 ### Time
 
 | Column | Unit | Description |
@@ -288,6 +293,21 @@ These columns are written with the default save-field list in a run with a
 | `sc1_data_sent_bits` | bit | Bits sent since the run started (an integrated state) |
 | `sc1_data_received_bits` | bit | Bits received since the run started (an integrated state) |
 
+With data stores, the rates are those the links carry as the stores limit them.
+
+### Data storage
+
+These columns are written with the default save-field list when a spacecraft
+of the run carries a `DataStore` (see [Interlinks](interlinks.md#Data-storage)).
+They are NaN for a spacecraft without a store:
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_data_stored_bits` | bit | Data the store holds (an integrated state) |
+| `sc1_data_store_fill` | — | That data over the store's capacity |
+| `sc1_data_produced_bits` | bit | Data the spacecraft's sources have produced since the run started (an integrated state) |
+| `sc1_data_lost_bits` | bit | Production a full store could not keep, since the run started (an integrated state) |
+
 ### Interlinks
 
 These columns are written with the default save-field list in a run with an
@@ -301,6 +321,35 @@ to write them:
 | `sc1_interlink_dv_1` .. `sc1_interlink_dv_3` | m/s | Δv the selected links' forces gave since the run started, inertial frame (an integrated state) |
 | `sc1_interlink_delta_sma` | m | The selected links' contribution to the osculating semimajor axis since the run started: the integral of `2a²(v·F)/(μm)` (an integrated state), not a comparison against an unforced trajectory |
 | `sc1_laser_dv_1` .. `sc1_laser_dv_3`, `sc1_laser_delta_sma` | as above | Deprecated aliases with the same values, the names before 0.6.0, removed in 1.0. A column cannot warn: leave the `laser_dv` and `laser_delta_sma` fields out of an explicit list to stop writing them |
+
+### Link schedule
+
+A run with an interlink model writes its link schedule in a table of its own,
+`simulation_results_link_schedule.csv` (with `save_csv`) and
+`simulation_results_link_schedule.feather`, beside the results; `link_schedule`
+returns the same table (see [The link schedule](interlinks.md#The-link-schedule)).
+It has one row per window, sorted by `start_s`, active rows first, then by key:
+
+| Column | Unit | Description |
+|---|---|---|
+| `window` | — | `active`: a span over which the link was selected; `contact`: a span over which it was available, only when the history records the available links |
+| `link` | — | The link's number, its position in registration order |
+| `kind` | — | The link kind's type name with its type parameters, for example `LaserMomentumLink` or `DataLink{ShannonBudget}` |
+| `directed` | — | Whether the link is directed |
+| `a_spacecraft`, `a_terminal` | — | The first endpoint of the link's key: the transmitter of a directed link, the lower `(spacecraft, terminal)` of an undirected one |
+| `b_spacecraft`, `b_terminal` | — | The second endpoint |
+| `start_s` | s | The span's first accepted step, on the clock of the results' `time` column |
+| `end_s` | s | The next accepted step without the link, or the run's last one |
+| `duration_s` | s | `end_s - start_s` |
+| `steps` | — | The accepted steps in the span |
+| `score_start`, `score_end` | the policy's | The score that selected the link at the span's first and last step; NaN for a contact row |
+| `score_min`, `score_max` | the policy's | The score's extremes over the span; NaN for a contact row |
+| `term1_start`, `term2_start`, ... | each term's | With `InterlinkModel(; record_terms=true)` and a `WeightedPolicy`: each term's own score at the span's first step |
+
+The policy's unit is m/s for `SemimajorAxisRatePolicy`, 1/s for
+`EccentricityRatePolicy`, W for `PowerDeliveryPolicy` and `EnergyBalancingPolicy`,
+bit/s for `DataThroughputPolicy` and 1 for `WeightedPolicy`. The results manifest
+names the policy and the unit under `[interlinks]`.
 
 ### Actuator faults
 

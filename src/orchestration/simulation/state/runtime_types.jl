@@ -30,6 +30,7 @@ export SRPSunEphemerisCache, NBodyEphemerisCache, PlanetFrameEphemerisCache, Spi
 export GramTrackCache, VacuumPredictedGRAMCache, GramDensityPerturbationState, AeroScratchWorkspace, NBodyScratchWorkspace, HarmonicsScratchWorkspace
 export PolicyDecisionEnvConfig, GramTrackCacheConfig, CallbackEnvConfig, RhsPlanEnvConfig, RhsRegionTuner, SpinBarrierTuner
 export AbstractPolicyContext
+export GNCScopeSlot, GNCRunScopes
 export RhsEffectorDecision, RhsExecutionPlan
     @kwdef struct Mission
         e::Int64 = 0
@@ -834,6 +835,36 @@ export RhsEffectorDecision, RhsExecutionPlan
     const PeriodicClockEntry = NamedTuple{(:key, :period_s, :origin, :index),
         Tuple{Symbol, Float64, Base.RefValue{Float64}, Base.RefValue{Int}}}
 
+    # The spacecraft one guidance, navigation or control model acts on during a
+    # run, taken when the run starts, once the run-start initializers ran
+    # (SimulationEngine._gnc_run_scopes):
+    # - `owner`: the model, as messages name it ("control model 3 (MyController)");
+    # - `declared`: its scope as declared then, a SpacecraftSelection as its own
+    #   copy, so a selection changed in place later no longer equals it;
+    # - `positions`: the run positions it acts on, in ascending order: every
+    #   position, the BoundSpacecraft indices within the run, the CoupledSpacecraft
+    #   primary, or a SpacecraftSelection's resolved positions.
+    struct GNCScopeSlot
+        owner::String
+        declared::Any
+        positions::Vector{Int}
+    end
+
+    # The run's GNC scopes, one slot per model of each group in configuration
+    # order (the configuration's models, then each spacecraft's bound copies), and,
+    # for the control and guidance models, the models whose scope names each
+    # spacecraft: `members[i]` holds their positions in the group's tuple, in
+    # configuration order. Without such lists (`nothing`) every model of the group
+    # acts on every spacecraft. A checkpoint records the same scopes as its
+    # `gnc_scopes` entry.
+    struct GNCRunScopes
+        navigation::Vector{GNCScopeSlot}
+        guidance::Vector{GNCScopeSlot}
+        control::Vector{GNCScopeSlot}
+        guidance_members::Union{Nothing, Vector{Vector{Int}}}
+        control_members::Union{Nothing, Vector{Vector{Int}}}
+    end
+
     # A struct to hold the data shared between the callback and the integrator.
     # n_sats is a plain runtime field (not a type parameter): none of these
     # buffers are StaticArrays sized by it, so making it part of the type
@@ -868,6 +899,7 @@ export RhsEffectorDecision, RhsExecutionPlan
         harmonics_lpi::Base.RefValue{SMatrix{3,3,Float64,9}} = Ref(SMatrix{3,3,Float64,9}((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)))
         maneuver_commands::Vector{PropulsiveManeuverCommand} = [PropulsiveManeuverCommand() for _ in 1:n_sats]
         maneuver_burn_plans::Vector{PropulsiveBurnPlan} = [PropulsiveBurnPlan() for _ in 1:n_sats]
+        entry_counter::Vector{Int64} = zeros(Int64, n_sats)
         spice_runtime_counters::SpiceRuntimeCounters = SpiceRuntimeCounters()
         spice_rhs_memo_enabled::Base.RefValue{Bool} = Ref(true)
         spice_rhs_memo::SpiceRhsMemo = SpiceRhsMemo()
@@ -883,6 +915,8 @@ export RhsEffectorDecision, RhsExecutionPlan
         # order of their callbacks), so a checkpoint can record which of them had
         # not taken the tick due at its time.
         periodic_clocks::Vector{PeriodicClockEntry} = PeriodicClockEntry[]
+        # The run's GNC scopes, set when the run starts (`nothing` before).
+        gnc_scopes::Base.RefValue{Union{Nothing, GNCRunScopes}} = Ref{Union{Nothing, GNCRunScopes}}(nothing)
         # A resumed run's start when ticks due there are pending, and which: the
         # clocks its checkpoint lists, as (position, period) pairs, or, for a
         # checkpoint written before that list, every clock's tick at that start

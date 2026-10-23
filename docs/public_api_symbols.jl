@@ -13,6 +13,8 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :link_range_m, rendered = "SpaceAGORA.link_range_m"),
         (owner = :SpaceAGORA, symbol = :link_available, rendered = "SpaceAGORA.link_available"),
         (owner = :SpaceAGORA, symbol = :link_force, rendered = "SpaceAGORA.link_force"),
+        (owner = :SpaceAGORA, symbol = :interlink_wrench, rendered = "SpaceAGORA.interlink_wrench"),
+        (owner = :SpaceAGORA, symbol = :link_applies_torque, rendered = "SpaceAGORA.link_applies_torque"),
         (owner = :SpaceAGORA, symbol = :InterlinkModel, rendered = "SpaceAGORA.InterlinkModel"),
         (owner = :SpaceAGORA, symbol = :InterLinkGraph, rendered = "SpaceAGORA.InterLinkGraph"),
         (owner = :SpaceAGORA, symbol = :InterLinkKey, rendered = "SpaceAGORA.InterLinkKey"),
@@ -27,6 +29,11 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :link_received_power_w, rendered = "SpaceAGORA.link_received_power_w"),
         (owner = :SpaceAGORA, symbol = :beam_spot_radius_m, rendered = "SpaceAGORA.beam_spot_radius_m"),
         (owner = :SpaceAGORA, symbol = :beam_capture_fraction, rendered = "SpaceAGORA.beam_capture_fraction"),
+        (owner = :SpaceAGORA, symbol = :LaserBeamLink, rendered = "SpaceAGORA.LaserBeamLink"),
+        (owner = :SpaceAGORA, symbol = :AbstractLaserBeam, rendered = "SpaceAGORA.AbstractLaserBeam"),
+        (owner = :SpaceAGORA, symbol = :GaussianBeam, rendered = "SpaceAGORA.GaussianBeam"),
+        (owner = :SpaceAGORA, symbol = :TerminalPointing, rendered = "SpaceAGORA.TerminalPointing"),
+        (owner = :SpaceAGORA, symbol = :beam_force_factor, rendered = "SpaceAGORA.beam_force_factor"),
         (owner = :SpaceAGORA, symbol = :DataLink, rendered = "SpaceAGORA.DataLink"),
         (owner = :SpaceAGORA, symbol = :AbstractDataBudget, rendered = "SpaceAGORA.AbstractDataBudget"),
         (owner = :SpaceAGORA, symbol = :FixedRateBudget, rendered = "SpaceAGORA.FixedRateBudget"),
@@ -35,6 +42,7 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :budget_rate_bps, rendered = "SpaceAGORA.budget_rate_bps"),
         (owner = :SpaceAGORA, symbol = :contact_windows, rendered = "SpaceAGORA.contact_windows"),
         (owner = :SpaceAGORA, symbol = :contact_time_s, rendered = "SpaceAGORA.contact_time_s"),
+        (owner = :SpaceAGORA, symbol = :link_schedule, rendered = "SpaceAGORA.link_schedule"),
         (owner = :SpaceAGORA, symbol = :link_directed, rendered = "SpaceAGORA.link_directed"),
         (owner = :SpaceAGORA, symbol = :link_terminal_levels, rendered = "SpaceAGORA.link_terminal_levels"),
         (owner = :SpaceAGORA, symbol = :link_terminal, rendered = "SpaceAGORA.link_terminal"),
@@ -43,6 +51,7 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :terminal_count, rendered = "SpaceAGORA.terminal_count"),
         (owner = :SpaceAGORA, symbol = :mounted_link_terminals, rendered = "SpaceAGORA.mounted_link_terminals"),
         (owner = :SpaceAGORA, symbol = :terminal_number, rendered = "SpaceAGORA.terminal_number"),
+        (owner = :SpaceAGORA, symbol = :terminal_pose, rendered = "SpaceAGORA.terminal_pose"),
         (owner = :SpaceAGORA, symbol = :update_availability!, rendered = "SpaceAGORA.update_availability!"),
         (owner = :SpaceAGORA, symbol = :interlink_force_on_spacecraft, rendered = "SpaceAGORA.interlink_force_on_spacecraft"),
         (owner = :SpaceAGORA, symbol = :SchedulingPolicyModel, rendered = "SpaceAGORA.SchedulingPolicyModel"),
@@ -67,6 +76,11 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :register_allowed_link!, rendered = "SpaceAGORA.register_allowed_link!"),
         (owner = :SpaceAGORA, symbol = :force_on_endpoint, rendered = "SpaceAGORA.force_on_endpoint"),
         (owner = :SpaceAGORA, symbol = :laser_force_on_spacecraft, rendered = "SpaceAGORA.laser_force_on_spacecraft"),
+        (owner = :SpaceAGORA, symbol = :DataStore, rendered = "SpaceAGORA.DataStore"),
+        (owner = :SpaceAGORA, symbol = :AbstractDataSource, rendered = "SpaceAGORA.AbstractDataSource"),
+        (owner = :SpaceAGORA, symbol = :DataSource, rendered = "SpaceAGORA.DataSource"),
+        (owner = :SpaceAGORA, symbol = :add_data!, rendered = "SpaceAGORA.add_data!"),
+        (owner = :SpaceAGORA, symbol = :data_production_bps, rendered = "SpaceAGORA.data_production_bps"),
     ]),
     (title = "RPO planner pilot", items = [
         (owner = :SpaceAGORA, symbol = :hypr_available, rendered = "SpaceAGORA.hypr_available"),
@@ -238,6 +252,8 @@ const PUBLIC_API_SECTIONS = [
         items = [
             (owner = :SpaceAGORA, symbol = :run_simulation, rendered = "SpaceAGORA.run_simulation"),
             (owner = :SpaceAGORA, symbol = :SimulationResults, rendered = "SpaceAGORA.SimulationResults"),
+            (owner = :SpaceAGORA, symbol = :run_table, rendered = "SpaceAGORA.run_table"),
+            (owner = :SpaceAGORA, symbol = :long_table, rendered = "SpaceAGORA.long_table"),
             (owner = :SpaceAGORA, symbol = :MissionPlan, rendered = "SpaceAGORA.MissionPlan"),
             (owner = :SpaceAGORA, symbol = :MissionPhase, rendered = "SpaceAGORA.MissionPhase"),
             (owner = :SpaceAGORA, symbol = :MissionSegment, rendered = "SpaceAGORA.MissionSegment"),
@@ -255,7 +271,9 @@ const PUBLIC_API_SECTIONS = [
             (owner = :SimulationCampaigns, symbol = :MonteCarloSampleResult, rendered = "SpaceAGORA.MonteCarloSampleResult"),
             (owner = :SimulationCampaigns, symbol = :MonteCarloResult, rendered = "SpaceAGORA.MonteCarloResult"),
             (owner = :SimulationCampaigns, symbol = :run_monte_carlo, rendered = "SpaceAGORA.run_monte_carlo"),
-            (owner = :SimulationCampaigns, symbol = :run_constellation_ensemble, rendered = "SpaceAGORA.run_constellation_ensemble")
+            (owner = :SimulationCampaigns, symbol = :run_constellation_ensemble, rendered = "SpaceAGORA.run_constellation_ensemble"),
+            (owner = :SimulationCampaigns, symbol = :ConstellationEnsembleResult, rendered = "SpaceAGORA.ConstellationEnsembleResult"),
+            (owner = :SimulationCampaigns, symbol = :read_constellation_results, rendered = "SpaceAGORA.read_constellation_results")
         ]
     ),
     (

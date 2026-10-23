@@ -369,6 +369,66 @@ end
     other = @test_logs (:warn, r"other save fields") match_mode=:any _resumed(dir; results=true, save_fields=fields)
     @test _files(dir) == before && other.table.time[1] == 2400.0
 
+    # A resume that cannot include the earlier rows keeps the rows file beside the
+    # checkpoint, which after a killed run is their only copy, and starts its own.
+    dir = mktempdir()
+    run_simulation(_resumable_config(dir; results=true, mission_time=2400.0))
+    rows_path = joinpath(dir, "checkpoints", "simulation_checkpoint.results.bin")
+    kept = joinpath(dir, "checkpoints", "simulation_checkpoint.results.before_resume_at_2400.0s.bin")
+    earlier = read(rows_path)
+    other = @test_logs (:warn, r"rows file beside the checkpoint is kept as .*before_resume_at_2400\.0s\.bin") match_mode=:any _resumed(
+        dir; results=true, save_fields=fields)
+    @test read(kept) == earlier && other.table.time[1] == 2400.0
+    @test isfile(rows_path) && read(rows_path) != earlier
+    kept_rows = SpaceAGORA.SimulationModel.IOSerialization._read_checkpoint_rows(kept, filesize(kept))
+    @test first(kept_rows.times) == 0.0 && last(kept_rows.times) == 2400.0
+    # A second such resume keeps the first one's rows under the next name.
+    run_simulation(_resumable_config(dir; results=true, mission_time=2400.0))
+    again = read(rows_path)
+    @test_logs (:warn, r"before_resume_at_2400\.0s_2\.bin") match_mode=:any _resumed(dir; results=true, save_fields=fields)
+    @test read(kept) == earlier && read(replace(kept, ".bin" => "_2.bin")) == again
+    # A resume that saves no results keeps the rows file rather than removing it.
+    dir = mktempdir()
+    run_simulation(_resumable_config(dir; results=true, mission_time=2400.0))
+    rows_path = joinpath(dir, "checkpoints", "simulation_checkpoint.results.bin")
+    earlier = read(rows_path)
+    run_simulation(_resumable_config(dir; results=false, resume=true))
+    @test !isfile(rows_path)
+    @test read(joinpath(dir, "checkpoints", "simulation_checkpoint.results.before_resume_at_2400.0s.bin")) == earlier
+    # A resume that continues the rows file renames nothing.
+    dir = mktempdir()
+    run_simulation(_resumable_config(dir; results=true, mission_time=2400.0))
+    _resumed(dir; results=true)
+    @test readdir(joinpath(dir, "checkpoints")) ==
+        ["simulation_checkpoint.bin", "simulation_checkpoint.manifest.toml", "simulation_checkpoint.results.bin"]
+
+    # A fallback resume can itself fail before its first checkpoint. Until it
+    # reaches that checkpoint, the old checkpoint must still find its own rows.
+    # Exercise both paths that would otherwise replace/remove the old stream.
+    for recording in (true, false)
+        dir = mktempdir()
+        run_simulation(_resumable_config(dir; results=true, mission_time=2400.0))
+        checkpoint_dir = joinpath(dir, "checkpoints")
+        before_checkpoint = _files(checkpoint_dir)
+        @test_throws Boom _quietly(() -> run_simulation(
+            _resumable_config(dir; results=recording, resume=true);
+            return_results=recording, save_fields=fields, extra_callbacks=(throws_after(2500.0),)))
+        @test _files(checkpoint_dir) == before_checkpoint
+        recovered = _resumed(dir; results=true)
+        @test recovered.table.time[1] == 0.0 && nrow(recovered.table) == 361
+        @test readdir(checkpoint_dir) == sort!(collect(basename(f) for f in keys(before_checkpoint)))
+    end
+
+    # A no-op fallback does not rename a stream even when it returns a table.
+    dir = mktempdir()
+    run_simulation(_resumable_config(dir; results=true, mission_time=2400.0))
+    checkpoint_dir = joinpath(dir, "checkpoints")
+    before_checkpoint = _files(checkpoint_dir)
+    _quietly(() -> run_simulation(
+        _resumable_config(dir; results=true, mission_time=2400.0, resume=true);
+        return_results=true, save_fields=fields))
+    @test _files(checkpoint_dir) == before_checkpoint
+
     # Ensemble members keep their rows beside their own checkpoints.
     function pair(dir; mission_time, resume=false)
         a = _resumable_config(dir; results=true, mission_time, resume)

@@ -188,7 +188,7 @@ an optional saved targeting switch time. The Odyssey example's
 position. Targeting brackets candidate switch times between the current elapsed
 simulation time and that time plus the predicted duration (with its existing
 one-second upper margin). Separately, typed heat-load prediction tracks use
-relative times, and `_edg_low_alpha_switch_window` adds the current simulation
+relative times, and SpaceAGORAEDG's `_edg_low_alpha_switch_window` adds the current simulation
 time to its selected track times. That heat-load window is not the saved
 targeting field's producer.
 The field is a **predicted switch timestamp in elapsed simulation seconds**, not lambda, time-to-go, an actual

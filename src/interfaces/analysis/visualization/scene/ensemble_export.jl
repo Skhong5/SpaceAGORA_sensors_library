@@ -120,19 +120,42 @@ end
     discover_ensemble_samples(campaign_dir) -> (samples, scalar_name)
 
 The manifest when present; otherwise every `sample_NNNN` or
-`sat_<i>_id_<id>` subdirectory holding a scene sidecar, in name order, with
-no scalar.
+`sat_<i>_id_<id>` subdirectory holding a scene sidecar, in name order. A
+constellation ensemble's folder with the `constellation_summary.csv` that
+`run_constellation_ensemble(args; merge_results=true)` writes labels each member
+by its id, plane and slot (`"id 7, plane 2, slot 3"`) and gives it its plane as
+the scalar, `"plane"`, so the page colours members by plane. Otherwise samples
+are labelled by folder name, with no scalar.
 """
 function discover_ensemble_samples(campaign_dir::AbstractString)
     isfile(joinpath(String(campaign_dir), ENSEMBLE_MANIFEST)) && return read_ensemble_manifest(campaign_dir)
+    identities = _constellation_member_identities(String(campaign_dir))
     samples = EnsembleSample[]
     for name in sort(readdir(String(campaign_dir)))
         occursin(ENSEMBLE_SAMPLE_DIR_RE, name) || continue
-        dir = joinpath(String(campaign_dir), name)
+        label, plane, destination = get(identities, name, (name, NaN, missing))
+        dir = IOSerialization._member_results_directory(joinpath(String(campaign_dir), name), destination)
         isfile(joinpath(dir, "simulation_results_scene.json")) || continue
-        push!(samples, EnsembleSample(length(samples) + 1, "", true, NaN, name, dir))
+        push!(samples, EnsembleSample(length(samples) + 1, "", true, plane, label, dir))
     end
-    return samples, ""
+    return samples, any(sample -> !isnan(sample.scalar), samples) ? "plane" : ""
+end
+
+# The members of a constellation ensemble by folder name, from its
+# `constellation_summary.csv`: a label from the member's id, plane and slot, and
+# its plane (`NaN` without one). Empty without the summary.
+function _constellation_member_identities(campaign_dir::String)
+    path = joinpath(campaign_dir, "constellation_summary.csv")
+    isfile(path) || return Dict{String, Tuple{String, Float64, Union{Missing, String}}}()
+    summary = CSV.read(path, DataFrame)
+    identities = Dict{String, Tuple{String, Float64, Union{Missing, String}}}()
+    for row in eachrow(summary)
+        located = !ismissing(row.plane) && !ismissing(row.slot)
+        label = located ? "id $(row.spacecraft_id), plane $(row.plane), slot $(row.slot)" : "id $(row.spacecraft_id)"
+        destination = :results_subdirectory in propertynames(row) ? row.results_subdirectory : missing
+        identities[String(row.member_tag)] = (label, located ? Float64(row.plane) : NaN, destination)
+    end
+    return identities
 end
 
 # ---------------------------------------------------------------------------
@@ -212,10 +235,23 @@ end
     return d > 0 ? d : 1.0
 end
 
+# A sample's results table: a `DataFrame`, or a function that reads it, so that
+# the export holds one sample's table at a time.
+_ensemble_table(table::DataFrame) = table
+_ensemble_table(read_table) = read_table()::DataFrame
+
+# What the frames need of a sample's table before its rows: its column names,
+# last saved time, cadence and row count.
+function _ensemble_table_outline(table)
+    df = _ensemble_table(table)
+    return (names=Set{String}(names(df)), last_s=Float64(df.time[end]), cadence=_table_cadence(df.time), rows=nrow(df))
+end
+
 """
     build_ensemble_frames(samples, scenes, tables; max_frames=2000, data_budget_mb=150.0, position_precision=:auto) -> (frames::Dict, scene::VisualizationScene, per_sample::Int)
 
-Merge the samples' results tables onto one time axis. Every sample must have
+Merge the samples' results tables onto one time axis; each entry of `tables`
+is a `DataFrame` or a function that reads one. Every sample must have
 the same number of spacecraft; sample `i`, spacecraft `k` becomes
 pseudo-spacecraft `(i-1)*per_sample + k`. Rows outside a sample's own span are
 `NaN`, which the viewer treats as "not present". Positions follow the rule of
@@ -224,7 +260,7 @@ pseudo-spacecraft `(i-1)*per_sample + k`. Rows outside a sample's own span are
 function build_ensemble_frames(
     samples::AbstractVector{EnsembleSample},
     scenes::AbstractVector{VisualizationScene},
-    tables::AbstractVector{DataFrame};
+    tables::AbstractVector;
     max_frames::Integer=DEFAULT_MAX_FRAMES,
     data_budget_mb::Real=DEFAULT_DATA_BUDGET_MB,
     position_precision=:auto
@@ -238,16 +274,20 @@ function build_ensemble_frames(
     planet = scenes[1].planet.name
     all(sc -> sc.planet.name == planet, scenes) || throw(ArgumentError("Every ensemble sample must orbit the same body."))
     S = n * per_sample
-    has_vel = all(df -> all(k -> _has_columns(df, ("sc$(k)_vel_1", "sc$(k)_vel_2", "sc$(k)_vel_3")), 1:per_sample), tables)
-    has_q = all(df -> all(k -> _has_columns(df, ("sc$(k)_q_1", "sc$(k)_q_2", "sc$(k)_q_3", "sc$(k)_q_4")), 1:per_sample), tables)
-    has_mass = all(df -> all(k -> "sc$(k)_mass" in names(df), 1:per_sample), tables)
-    has_density = all(df -> all(k -> "sc$(k)_density" in names(df), 1:per_sample), tables)
-    has_heat = all(df -> all(k -> "sc$(k)_heat_rate" in names(df), 1:per_sample), tables)
+    # A first pass reads each table for its outline; the second, below, reads
+    # each again for its rows.
+    outlines = [_ensemble_table_outline(table) for table in tables]
+    has(outline, columns) = all(column -> column in outline.names, columns)
+    has_vel = all(o -> all(k -> has(o, ("sc$(k)_vel_1", "sc$(k)_vel_2", "sc$(k)_vel_3")), 1:per_sample), outlines)
+    has_q = all(o -> all(k -> has(o, ("sc$(k)_q_1", "sc$(k)_q_2", "sc$(k)_q_3", "sc$(k)_q_4")), 1:per_sample), outlines)
+    has_mass = all(o -> all(k -> "sc$(k)_mass" in o.names, 1:per_sample), outlines)
+    has_density = all(o -> all(k -> "sc$(k)_density" in o.names, 1:per_sample), outlines)
+    has_heat = all(o -> all(k -> "sc$(k)_heat_rate" in o.names, 1:per_sample), outlines)
     stride_lp = scenes[1].link_pose_stride
     counts = Int[max(0, length(sc.links) - 1) for sc in scenes[1].spacecraft]
-    has_lp = any(>(0), counts) && all(tables) do df
+    has_lp = any(>(0), counts) && all(outlines) do o
         all(1:per_sample) do k
-            counts[k] == 0 || _has_columns(df, ["sc$(k)_link_pose_$(j)" for j in 1:(stride_lp * counts[k])])
+            counts[k] == 0 || has(o, ["sc$(k)_link_pose_$(j)" for j in 1:(stride_lp * counts[k])])
         end
     end
     lp_counts = repeat(counts, n)
@@ -260,8 +300,8 @@ function build_ensemble_frames(
     # The time axis within the budget at `position_bytes` per position.
     other_sat_bytes = (has_vel ? 12 : 0) + (has_q ? 16 : 0) + (has_mass ? 4 : 0)
     other_frame_bytes = 4 * lp_total + 8
-    ends = [Float64(df.time[end]) for df in tables]
-    cadences = [_table_cadence(df.time) for df in tables]
+    ends = [o.last_s for o in outlines]
+    cadences = [o.cadence for o in outlines]
     budget_frames(position_bytes) =
         floor(Int, Float64(data_budget_mb) * 1.0e6 / (S * (position_bytes + other_sat_bytes) + other_frame_bytes))
     time_axis(position_bytes) =
@@ -281,7 +321,7 @@ function build_ensemble_frames(
     lp = has_lp ? fill(NaN, N * lp_total) : Float64[]
     col = Vector{Float64}(undef, N)
     for i in 1:n
-        df = tables[i]
+        df = _ensemble_table(tables[i])
         t = Float64.(df.time)
         for k in 1:per_sample
             s = (i - 1) * per_sample + k
@@ -352,7 +392,7 @@ function build_ensemble_frames(
     frames = Dict{String, Any}(
         "count" => N,
         "sats" => S,
-        "source_rows" => sum(nrow, tables),
+        "source_rows" => sum(o -> o.rows, outlines),
         "stride_rows" => 1,
         "t_dtype" => "f64",
         "t_s" => _float64_base64(times),
@@ -381,7 +421,8 @@ function build_ensemble_frames(
         push!(spacecraft, SpacecraftGeometry((i - 1) * per_sample + k, "$(samples[i].label)/$(g.name)", g.links, g.thrusters, g.facets, g.joints, g.bounding_radius_m, g.stl_path, g.arm))
     end
     scene = VisualizationScene(base.schema, base.epoch_et_start_s, base.epoch_utc, base.planet, spacecraft, base.orientation_sim,
-                               base.results_feather, base.link_pose_field, base.link_pose_stride, base.atmosphere)
+                               base.results_feather, base.link_pose_field, base.link_pose_stride, base.atmosphere,
+                               base.results_layout)
     return frames, scene, per_sample
 end
 
@@ -419,7 +460,9 @@ function export_ensemble_visualization(
     finished = EnsembleSample[s for s in samples if isfile(joinpath(s.directory, "simulation_results_scene.json"))]
     isempty(finished) && throw(ArgumentError("None of the ensemble samples under $(campaign_dir) wrote a scene sidecar."))
     scenes = VisualizationScene[read_visualization_scene(joinpath(s.directory, "simulation_results_scene.json")) for s in finished]
-    tables = DataFrame[DataFrame(Arrow.Table(joinpath(s.directory, scenes[i].results_feather))) for (i, s) in enumerate(finished)]
+    # Each sample's table is read when the frames need it, one at a time.
+    tables = [() -> _saved_results_table(scenes[i], joinpath(s.directory, scenes[i].results_feather))
+              for (i, s) in enumerate(finished)]
     frames, scene, per_sample = build_ensemble_frames(finished, scenes, tables; max_frames=max_frames, data_budget_mb=data_budget_mb,
         position_precision=position_precision)
 

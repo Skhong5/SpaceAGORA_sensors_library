@@ -42,6 +42,9 @@ The built-in kinds are:
   link with the idealized central force `magnification * power_w / c`, directed
   away from the other endpoint, equal and opposite on the two spacecraft.
   `LaserMomentumLink(terminal)` takes the numbers of a `LaserTerminal`.
+- `LaserBeamLink(; power_w, magnification, range_m, ...)`: the same link, with
+  opt-in occultation, beam divergence, pointing and mounted recoil. See
+  [Laser physics](#Laser-physics).
 - `PowerBeamLink(; power_w, wavelength_m, waist_radius_m, range_m)`: a power
   beam from a `LaserTerminal` to a `PowerReceiver`. See [Power links](#Power-links).
 - `DataLink(; transmit_power_w, budget, range_m)`: a one-way data link, from a
@@ -172,6 +175,71 @@ again. A terminal kind's tier is `terminal_shed_tier(terminal)`: 1 for
 `LaserTerminal` and `RadioTerminal`, 0 (never shed) for `PowerReceiver` and by
 default. Virtual terminals draw nothing and are never shed.
 
+## Laser physics
+
+`LaserBeamLink` is the open-cavity laser link with four effects you can switch
+on. With none of them it is `LaserMomentumLink`, bit for bit.
+
+```julia
+beam = GaussianBeam(wavelength_m=1.064e-6, waist_radius_m=0.05, aperture_radius_m=0.08)
+link = LaserBeamLink(power_w=10_000.0, magnification=100.0, range_m=200e3;
+    occultation=(; min_ray_altitude_m=100e3),   # or true
+    beam,
+    pointing=TerminalPointing(field_of_regard_rad=deg2rad(30)),
+    recoil=:mounted)
+register_link!(model, spacecraft, (1, terminal_1), (2, terminal_2), link)
+```
+
+- **Line of sight** (`occultation=true`). The link cannot close while the
+  segment between the two spacecraft meets the planet, a sphere of its
+  equatorial radius. `occultation=(; min_ray_altitude_m=h)` raises that sphere
+  by `h` metres, so that a beam grazing the atmosphere counts as blocked. The
+  atmosphere's attenuation is not modelled.
+- **Divergence** (`beam`). The force is scaled by
+  `beam_force_factor(beam, link, terminal_a, terminal_b, d)` at separation `d`.
+  - For a `GaussianBeam`, this is the share of the beam that the far aperture
+    captures, `1 − exp(−2 r² / w(d)²)`, from the same beam functions as a
+    power link (`beam_spot_radius_m`, `beam_capture_fraction`).
+  - Within the Rayleigh range `π w0² / λ`, the force is close to the near-field
+    force `magnification × power_w / c`. Far beyond it, the force falls as
+    `1/d²`.
+  - This is an engineering model, not a cavity model: it takes the
+    magnification as the near-field value and scales it by one pass's
+    geometric capture.
+  - A beam model of your own subtypes `AbstractLaserBeam` and implements
+    `beam_force_factor`, for example a recycling cavity or a measured curve.
+- **Pointing** (`pointing=TerminalPointing(; field_of_regard_rad,
+  error_rad=0.0)`).
+  - The link can close only while each end's line of sight to the other lies
+    within `field_of_regard_rad` of its terminal's boresight, read in the
+    spacecraft's attitude. Within that cone the terminal points ideally: there
+    is no slew rate or gimbal state.
+  - A static pointing error `error_rad` scales the force by
+    `exp(−2 (error / θ)²)`, with `θ = λ / (π w0)` the beam's divergence. It
+    needs a `GaussianBeam`. Jitter is not modelled.
+- **Mounted recoil** (`recoil=:mounted`). Each end's force acts at its
+  terminal's mounted location (`terminal_pose`), so it turns the spacecraft with
+  the torque of the terminal's lever arm, as the terminal's own recoil would.
+  The default, `:central`, applies the force with no torque.
+
+Pointing and mounted recoil need terminal hardware at both ends (a
+`LaserTerminal` carries a `LaserBeamLink`), and attitude (`orientation_sim=true`).
+`register_link!` refuses a virtual terminal for them, and a run without attitude
+refuses them at setup. With either option, range, occultation, divergence and
+force direction all use the ray between the mounted terminals, including the
+attitude transformation of each mount offset. Other configurations retain the
+spacecraft body-reference positions. Call the terminal-aware `interlink_wrench`
+and `link_available` forms for pointing or mounted recoil; their four-argument
+force/availability forms lack the required terminal hardware.
+
+The two forces are always equal and opposite, so the link conserves the run's
+linear momentum. While the link is active, the terminals' own recoil applies
+nothing: the link's force is their recoil (see
+[Terminal hardware and power](#Terminal-hardware-and-power)). A checkpoint
+records every option, and a resume with any of them changed is refused. The
+gve example runs with a beam when given one:
+`gve_sma_configuration(beam=GaussianBeam(...))`.
+
 ## Power links
 
 A `PowerBeamLink` carries power, one way, from a `LaserTerminal` (the
@@ -283,9 +351,65 @@ args = SimulationConfiguration(...; interlink_model=model,
 - **Columns.** A run with a data link adds `data_rate_tx_bps`,
   `data_rate_rx_bps`, `data_sent_bits` and `data_received_bits` per spacecraft
   (see [the data columns](output_columns.md#Data-links)).
-- **Not yet modelled.** Onboard storage and queues, ground stations, pointing
-  and antenna patterns, Doppler, atmospheric and polarization losses,
-  interference between links and acquisition time are not modelled.
+- **Not yet modelled.** Ground stations, pointing and antenna patterns,
+  Doppler, atmospheric and polarization losses, interference between links and
+  acquisition time are not modelled. Onboard storage is below.
+
+### Data storage
+
+A spacecraft can hold data in a `DataStore` and produce it with data sources.
+The data links then carry only what the stores hold, or what passes through
+them:
+
+```julia
+add_data!(sc, bus, DataStore(capacity_bits=8e9, initial_bits=0.0))   # the root link, at most one
+add_data!(sc, bus, DataSource(rate_bps=2e5))                          # any link, any number
+```
+
+- **States.** In a run with a store, every spacecraft has three more
+  integrated states, which stay zero for a spacecraft without a store:
+  - `data_stored_bits`, the data its store holds;
+  - `data_produced_bits`, what its sources have produced;
+  - `data_lost_bits`, the production a full store could not keep.
+
+  They balance: `stored = initial + produced + received − sent − lost`. The
+  counters `data_sent_bits` and `data_received_bits` count what the links
+  actually carry.
+- **Flow control.** A link carries at most its rate (`link_data_rate_bps`),
+  and less at a store, so links lose nothing:
+  - **An empty store** passes what comes in straight on: its production and
+    what its incoming links carry, shared among its outgoing links in
+    proportion to their rates. A relay with an empty store forwards data at
+    zero stock.
+  - **A full store** takes in no more than it sends on. Its production beyond
+    that is lost and counted in `data_lost_bits`.
+  - **A spacecraft without a store** neither limits its links nor is limited,
+    as before.
+
+  The rates are found at every right-hand-side evaluation, along chains of
+  relays.
+- **Full and empty.** A store counts as full within `1e-9` of its capacity and
+  as empty within `1e-9` of its capacity of nothing. Events mark it full or
+  empty when it crosses either, as a battery's do, and the flags are checked
+  again at the end of each step. They continue across a checkpoint resume. A
+  resume with another capacity or initial content is refused.
+- **Sources.** `DataSource(; rate_bps, name="")` produces a constant rate while
+  its spacecraft is active. A source kind of your own subtypes
+  `AbstractDataSource` and implements
+  `data_production_bps(source, x::StateSample, ctx::LinkContext, t)`, its rate
+  in bit/s: for example imaging only over a region, a duty cycle, or a rate that
+  depends on the attitude. A run refuses at setup a source on a spacecraft
+  without a store, and a source kind without a method.
+- **Solvers.** As with a battery, a run with a data store needs a solver mode
+  that integrates the full right-hand side.
+- **Columns.** A run with a store adds `data_stored_bits`, `data_store_fill`
+  (the fraction of the capacity held), `data_produced_bits` and
+  `data_lost_bits` per spacecraft (see
+  [the storage columns](output_columns.md#Data-storage)). `data_rate_tx_bps` and
+  `data_rate_rx_bps` show the rates the links carry.
+- **Not yet modelled.** One store holds one stream of data: there are no
+  priority classes, no queues per destination, and no age or latency of the
+  data held.
 
 ## Scheduling
 
@@ -443,6 +567,45 @@ scheduler's. A history resumed from a checkpoint covers the resumed interval
 only, so a window that spans the resume is split at it. The results table, unlike
 the history, holds the whole run (see [Outputs](outputs.md)).
 
+### The link schedule
+
+Each history sample also records the score that selected each active link
+(`scores`), read from the scheduler after it selects. `link_schedule` turns the
+history into a table with one row per window: a span over which a link was
+selected (`window == "active"`) and, when the history records the available
+links, a span over which a link could close (`"contact"`). Each row gives the
+link (its number, kind, direction and endpoints), the span (`start_s`, `end_s`,
+`duration_s` and the number of samples, `steps`) and, for an active row, the score
+at its first and last sample and its extremes.
+
+```julia
+results = run_simulation(args; return_results=true)
+schedule = link_schedule(results)              # or link_schedule(model; policy=scheduler)
+active = schedule[schedule.window .== "active", :]
+```
+
+The scores are in the policy's unit (see [Policies](#Policies)): m/s for
+`SemimajorAxisRatePolicy`, W for the power policies, bit/s for
+`DataThroughputPolicy`, 1 for a `WeightedPolicy`. The table's metadata names the
+policy and the unit. With `InterlinkModel(; record_terms=true)` and a
+`WeightedPolicy`, each sample also records each top-level term's own score, in
+its own unit, and the table gains `term1_start`, `term2_start`, ...: each term's
+score at the span's first sample. A run with another policy refuses
+`record_terms=true`. Recording the terms leaves the mix's scores, and so the
+schedule, unchanged.
+
+A run that writes results writes the table beside them, as
+`simulation_results_link_schedule.csv` (when `save_csv` is set) and
+`simulation_results_link_schedule.feather`, and lists both in the results
+manifest with the policy and its unit (see the
+[link schedule's columns](output_columns.md#Link-schedule)). The table is not
+thinned with the results rows. A run without interlinks writes none, and
+`link_schedule(results)` returns the table's columns with no rows. Like the
+contact windows, the schedule has the scheduler's resolution and, after a resume,
+covers the resumed interval. With `save_visualization_scene`, the viewer payload
+carries the schedule's windows, so the viewer can draw each link while it is
+active (see [the viewer page](outputs.md#Interactive-viewer-page)).
+
 ### Optional matching backend
 
 Tree-shaped components are solved in Julia. Of parallel links (directed links
@@ -493,11 +656,42 @@ register_link!(model, spacecraft, (1, 1), (2, 1), PullLink(3.0, 2_000.0))
 A run refuses at setup a link whose kind has no `link_range_m` method. Links of
 different kinds can be registered in one model.
 
+### Terminals and torques
+
+A kind that reads its terminal hardware, or that turns the spacecraft it
+links, implements the terminal-aware forms of the hooks. The engine calls these
+forms, and their defaults call the ones above, so a kind written without them
+works as before, bit for bit.
+
+- `link_available(link, terminal_a, terminal_b, a, b, ctx)` decides whether the
+  link can close, given the terminal hardware at its two ends (`nothing` for a
+  virtual terminal).
+- `interlink_wrench(link, terminal_a, terminal_b, a, b, ctx)` returns
+  `(force_a_ii, torque_a_body, force_b_ii, torque_b_body)`.
+  - The forces act as `link_force`'s do, and the scheduling policies score
+    candidate links by them.
+  - Each torque is in its spacecraft's body frame, about its body reference
+    point, as a mounted actuator's torque is (see
+    [Frames](../reference/extension_conventions.md#Frames)).
+  - The engine adds each torque to its spacecraft's angular acceleration as
+    `I⁻¹ τ`, with `I` the inertia tensor. This is exact for the rigid spacecraft
+    interlinks support.
+- `link_applies_torque(link) = true` says that a kind's torques can be nonzero.
+  A run with such a link needs attitude (`orientation_sim=true`), and setup
+  refuses it otherwise. A nonzero torque from a kind that does not say so
+  stops a run without attitude.
+- `terminal_pose(spacecraft, terminal)` gives a mounted terminal's boresight and
+  location in its spacecraft's body frame. A force applied at that location has
+  the torque the terminal's own recoil would have: the cross product of the
+  location and the force, in the body frame.
+
 ### Supported scope
 
-Interlinks currently apply a translational force to rigid spacecraft, or carry
-power or data. The laser momentum link does not model terminal pointing,
-occultation, beam losses, torques or thermal dynamics. Links through hardware terminals draw battery
+Interlinks apply forces, and through `interlink_wrench` torques, to rigid
+spacecraft, or carry power or data. The laser momentum link does not model terminal pointing,
+occultation, beam losses or torques; `LaserBeamLink` adds them as options (see
+[Laser physics](#Laser-physics)). Neither models the terminals' thermal
+dynamics. Links through hardware terminals draw battery
 power and close when it is shed; links between virtual terminals draw none.
 Actuator faults on a link-driven terminal do not yet act on its link. The
 spacecraft's `battery_energy_index` and `tempurature_index` fields are
@@ -583,3 +777,17 @@ names inside, so checkpoints written before 0.6.0 resume.
 | --- | --- |
 | the state `laser_dv`, as in `solution.u[end].sc[i].laser_dv` | `interlink_dv` |
 | the state `laser_delta_sma` | `interlink_delta_sma` |
+
+Checkpointed pointing and mounted-recoil beams validate the terminal's mounting
+link as well as its hardware: changing its position, fixed attitude or hinge
+axis/limits refuses resume. A `PanelHinge` restores its moving angle from the
+checkpoint. A terminal on a panel driven by `SolarPanelAngleOfAttackControlModel`
+needs a `PanelHinge` for checkpointing; arbitrary custom changes to a mount's
+position or attitude need their own checkpoint state restoration. The root
+link's attitude remains part of the integrated spacecraft state.
+
+The schedule is also saved for long-format and checkpoint-streamed results. A
+resume that only finishes interrupted trajectory file writes has no restored
+link history: it preserves any earlier schedule file, but does not list it in
+the recovered manifest or returned files. A resume that advances the simulation
+writes the schedule for its resumed interval, as described above.

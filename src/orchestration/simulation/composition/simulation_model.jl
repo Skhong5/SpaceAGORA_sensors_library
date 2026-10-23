@@ -106,6 +106,9 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "actuators", "
 # The power budget: solar arrays, the battery, loads and load shedding (needs ActuatorMounting).
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "power", "power_system.jl"))
 @reexport using .PowerSystems
+# Onboard data: the data store, the data sources and their production (needs the spacecraft types).
+include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "data", "data_storage.jl"))
+@reexport using .DataStorage
 # Actuator failure modes (needs ActuatorMounting).
 include(joinpath(@__DIR__, "..", "..", "..", "models", "vehicle", "actuators", "faults.jl"))
 @reexport using .ActuatorFaults
@@ -211,11 +214,11 @@ include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "navigation", "hoo
 @reexport using .NavigationHooks
 # --- Typed EDG platform services ---
 include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "guidance", "aerobraking", "typed_edg", "services.jl"))
+# --- Typed EDG decisions, which guidance and control call ---
+include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "guidance", "aerobraking", "typed_edg", "algorithms.jl"))
 # --- Guidance Effectors ---
 include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "guidance", "hooks.jl"))
 @reexport using .GuidanceHooks
-# --- Typed EDG prediction and decisions ---
-include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "guidance", "aerobraking", "typed_edg", "algorithms.jl"))
 # --- Control Effectors ---
 include(joinpath(@__DIR__, "..", "..", "..", "models", "gnc", "control", "hooks.jl"))
 @reexport using .ControlHooks

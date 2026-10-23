@@ -3,9 +3,9 @@
 # in the order a resumed run uses them (see "Run state: owners, resets and
 # restores" in docs/contributing/architecture.md):
 #
-# - `activity`, `interlinks` and `callbacks`: the engine's and the callbacks' run
-#   state, restored by `_resume_engine_state!` (execution.jl) before the models
-#   start and before the callbacks initialize;
+# - `activity`, `interlinks`, `callbacks`, `maneuver_buffers`, `orbits` and `entries`: the
+#   engine's and the callbacks' run state, restored by `_resume_engine_state!`
+#   (execution.jl) before the models start and before the callbacks initialize;
 # - `models`: the models' own run state, checked when the checkpoint is read and
 #   restored by `_start_run_models!` after the models' initializers;
 # - `gnc_scopes`: the spacecraft each guidance, navigation and control model acts
@@ -47,6 +47,84 @@ function _restore_activity_checkpoint_state!(args, checkpoint, is_active)
     interlinks === nothing || !hasproperty(interlinks, :is_active) || interlinks.is_active == entry.is_active ||
         throw(ArgumentError("The checkpoint's spacecraft activity flags differ from its interlink entry's."))
     copyto!(is_active, entry.is_active)
+    return nothing
+end
+
+# The burn scheduler's command channel (`SharedBuffers`): the maneuver command each
+# spacecraft's maneuver guidance last issued, and the burn plan installed for it.
+# A run carries both from one checkpoint segment to the next, so a resumed run
+# takes them from its checkpoint: a command issued before the checkpoint and not
+# yet planned, or a plan not yet flown, is then planned and flown as in the run
+# without the break. Written only when some entry differs from its default, so the
+# checkpoints of other runs do not change, and a checkpoint without the entry,
+# written by an earlier SpaceAGORA, resumes with the defaults, as before.
+function _maneuver_buffer_checkpoint_state(p)
+    buffers = p.shared_buffers
+    commands, plans = buffers.maneuver_commands, buffers.maneuver_burn_plans
+    all(c -> isequal(c, SimulationModel.PropulsiveManeuverCommand()), commands) &&
+        all(b -> isequal(b, SimulationModel.PropulsiveBurnPlan()), plans) && return nothing
+    return (version=1, commands=copy(commands), plans=copy(plans))
+end
+
+function _restore_maneuver_buffer_checkpoint_state!(checkpoint, p)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    entry = runtime !== nothing && hasproperty(runtime, :maneuver_buffers) ? runtime.maneuver_buffers : nothing
+    entry === nothing && return nothing
+    hasproperty(entry, :version) && entry.version === 1 ||
+        throw(ArgumentError("Maneuver command checkpoint state version 1 is required to resume this run."))
+    buffers = p.shared_buffers
+    length(entry.commands) == length(buffers.maneuver_commands) &&
+        length(entry.plans) == length(buffers.maneuver_burn_plans) ||
+        throw(ArgumentError("The checkpoint's maneuver commands and burn plans must match the spacecraft count."))
+    copyto!(buffers.maneuver_commands, entry.commands)
+    copyto!(buffers.maneuver_burn_plans, entry.plans)
+    return nothing
+end
+
+# The orbit each spacecraft is on (`p.orbit_counter`, from 1; the apoapsis callback
+# adds one at each apoapsis). The orbit-count mission end, the campaign maneuver
+# guidance, pass-indexed density models and periapsis pulses read it, so a resumed
+# run continues the count. Written once some spacecraft is past its first orbit, so
+# the checkpoints of shorter runs do not change, and a checkpoint without the
+# entry, written by an earlier SpaceAGORA, resumes from the first orbit, as before.
+function _orbit_counter_checkpoint_state(p)
+    all(==(1), p.orbit_counter) && return nothing
+    return (version=1, orbit_counter=copy(p.orbit_counter))
+end
+
+function _restore_orbit_counter_checkpoint_state!(checkpoint, p)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    entry = runtime !== nothing && hasproperty(runtime, :orbits) ? runtime.orbits : nothing
+    entry === nothing && return nothing
+    hasproperty(entry, :version) && entry.version === 1 ||
+        throw(ArgumentError("Orbit counter checkpoint state version 1 is required to resume this run."))
+    length(entry.orbit_counter) == length(p.orbit_counter) ||
+        throw(ArgumentError("The checkpoint's orbit counters must match the spacecraft count."))
+    copyto!(p.orbit_counter, entry.orbit_counter)
+    return nothing
+end
+
+# Atmosphere entries counted by the entry-end callback. These used to live only
+# in its closure, which survived solve segments but was rebuilt on resume. Keep
+# them with the run buffers so a checkpoint can restore them before callbacks run.
+# An older checkpoint without this entry retains the historical zero-count start.
+function _entry_counter_checkpoint_state(p)
+    counts = p.shared_buffers.entry_counter
+    all(iszero, counts) && return nothing
+    return (version=1, entry_counter=copy(counts))
+end
+
+function _restore_entry_counter_checkpoint_state!(checkpoint, p)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    entry = runtime !== nothing && hasproperty(runtime, :entries) ? runtime.entries : nothing
+    entry === nothing && return nothing
+    hasproperty(entry, :version) && entry.version === 1 ||
+        throw(ArgumentError("Atmosphere entry counter checkpoint state version 1 is required to resume this run."))
+    counts = p.shared_buffers.entry_counter
+    hasproperty(entry, :entry_counter) && entry.entry_counter isa AbstractVector{<:Integer} &&
+        length(entry.entry_counter) == length(counts) && all(>=(0), entry.entry_counter) ||
+        throw(ArgumentError("The checkpoint's atmosphere entry counters must be nonnegative and match the spacecraft count."))
+    copyto!(counts, entry.entry_counter)
     return nothing
 end
 
@@ -108,8 +186,57 @@ function _interlink_checkpoint_configuration(args)
     # with any records each spacecraft's terminals, in order; a run without keeps
     # the configuration it had before hardware terminals.
     hardware = [_mounted_terminal_identities(spacecraft) for spacecraft in args.dynamics_model.spacecraft]
-    all(isempty, hardware) && return configuration
-    return merge(configuration, (hardware_terminals=hardware,))
+    all(isempty, hardware) || (configuration = merge(configuration, (hardware_terminals=hardware,)))
+    mounts = _interlink_terminal_mounts(args)
+    isempty(mounts) && return configuration
+    return merge(configuration, (terminal_mounts=mounts,))
+end
+
+# Geometry-aware candidates also depend on the terminal's mounting link. Keep
+# this separate from the hardware identity so center-to-center links retain their
+# historical checkpoint configuration. Only endpoints that read geometry matter.
+function _interlink_terminal_mounts(args)
+    graph = args.interlink_model.graph
+    models = SimulationModel.InterLinkModels
+    endpoints = Set{Tuple{Int, Int}}()
+    for (edge, link) in zip(graph.edges, graph.edge_properties)
+        (models._link_needs_attitude(link) || models.link_applies_torque(link)) || continue
+        for vertex in edge
+            push!(endpoints, graph.vertices[vertex])
+        end
+    end
+    mounts = Any[]
+    for (position, number) in sort!(collect(endpoints))
+        spacecraft = args.dynamics_model.spacecraft[position]
+        for entry in SimulationModel.mounted_link_terminals(spacecraft)
+            entry.number == number || continue
+            link = entry.link
+            index = findfirst(candidate -> candidate === link, spacecraft.links)
+            # Root attitude belongs to integrated spacecraft state, not the
+            # link-to-body transform. A hinge's angle is restored separately;
+            # comparing its current q would reject an unchanged moving mount.
+            rotation = if link.root
+                (kind=:body_frame,)
+            elseif isempty(link.hinges)
+                for control in args.control_model.control_effectors
+                    panel = control isa SimulationModel.AerobrakingEnergyDepletionControlModel ? control.aoa_effector : control
+                    if panel isa SimulationModel.SolarPanelAngleOfAttackControlModel && index in panel.controlled_panel_links
+                        throw(ArgumentError("Checkpointing a geometry-aware interlink on controlled panel link $(index) " *
+                            "of spacecraft $(position) requires a PanelHinge to restore its mounting attitude."))
+                    end
+                end
+                (kind=:fixed, q=_interlink_kind_parameter(Tuple(link.q)))
+            else
+                (kind=:hinged, hinges=[(axis=_interlink_kind_parameter(Tuple(h.axis)),
+                    min_angle_rad=_interlink_kind_parameter(h.min_angle_rad),
+                    max_angle_rad=_interlink_kind_parameter(h.max_angle_rad),
+                    max_rate_rad_s=_interlink_kind_parameter(h.max_rate_rad_s)) for h in link.hinges])
+            end
+            push!(mounts, (endpoint=(position, number), link=index, root=link.root,
+                r=_interlink_kind_parameter(Tuple(link.r)), rotation=rotation))
+        end
+    end
+    return mounts
 end
 
 # The scheduling policy's entry: `policy`, `target_idx` and `target_idxs`, the keys
@@ -292,7 +419,7 @@ function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
     hasproperty(snapshot, :configuration) &&
         isequal(_interlink_snapshot_configuration(snapshot), _interlink_checkpoint_configuration(args)) ||
         throw(ArgumentError("Interlink configuration differs from the checkpoint. Resume with the same " *
-            "candidate topology, link kinds and parameters, forbidden pairs, scheduling policy and terminal counts."))
+            "candidate topology, link kinds and parameters, forbidden pairs, scheduling policy, terminal counts and terminal mounting geometry."))
     count = length(args.dynamics_model.spacecraft)
     hasproperty(snapshot, :is_active) && snapshot.is_active isa AbstractVector{Bool} &&
         length(snapshot.is_active) == count && is_active isa AbstractVector{Bool} &&
@@ -367,11 +494,12 @@ _state_component_copy(value::AbstractArray) = copy(value)
 
 # The run state the callbacks keep on the spacecraft records: the batteries'
 # flags, the faults' activity and held levels, the sensors' streams, latest
-# measurements and gyro biases, the hinges' and gimbals' angles, and the firing
+# measurements and gyro biases, the hinges' and gimbals' angles, the firing
 # state of the mounted thrusters with firing dynamics (the ramp factor `κ` and
-# the average thrust `thrust` their last control tick scheduled). A plain-data
-# snapshot written with every checkpoint and restored, after checking it belongs
-# to the same configuration, before a resumed run's callbacks initialize.
+# the average thrust `thrust` their last control tick scheduled), and, in a run
+# with data stores, the stores' flags. A plain-data snapshot written with every
+# checkpoint and restored, after checking it belongs to the same configuration,
+# before a resumed run's callbacks initialize.
 _record_faults(sc) = sc.root.faults.faults
 _record_hinges(sc) = [(link, h) for link in sc.links for h in link.hinges]
 _record_gimbals(sc) = [(link, g) for link in sc.links for g in link.gimbals]
@@ -381,7 +509,11 @@ _record_firing(sc) = [(link, t) for link in sc.links for t in link.thrusters if 
 # existed, or its firing state is missing from it), and runs with articulated
 # actuators whose angles it also carries.
 _needs_callback_state(sc) = SimulationModel.battery(sc) !== nothing || !isempty(_record_faults(sc)) ||
-    !isempty(SimulationModel.mounted_sensors(sc)) || !isempty(_record_firing(sc))
+    !isempty(SimulationModel.mounted_sensors(sc)) || !isempty(_record_firing(sc)) || SimulationModel.has_data_store(sc)
+
+# A run with data stores records each spacecraft's store, `nothing` for one
+# without; a run without records none, so its snapshot is as before data stores.
+_records_data_stores(args) = any(SimulationModel.has_data_store, args.dynamics_model.spacecraft)
 _has_callback_state(sc) = _needs_callback_state(sc) || !isempty(_record_hinges(sc)) || !isempty(_record_gimbals(sc))
 
 # Version 2 added the thrusters' firing state, and the link of a faulted
@@ -413,6 +545,7 @@ end
 # thrusters, so a run with firing dynamics has none to compare (it is refused),
 # and placed a faulted actuator by its position in the mounting order alone.
 function _callback_checkpoint_configuration(args, version=CALLBACK_CHECKPOINT_STATE_VERSION)
+    stores = _records_data_stores(args)
     return [begin
         configuration = (
             battery=(b = SimulationModel.battery(sc); b === nothing ? nothing : (b.capacity_wh, b.recovery_soc)),
@@ -423,8 +556,10 @@ function _callback_checkpoint_configuration(args, version=CALLBACK_CHECKPOINT_ST
             hinges=[_link_position(sc, link) for (link, _) in _record_hinges(sc)],
             gimbals=[(_link_position(sc, link), findfirst(t -> t === g.thruster, link.thrusters)) for (link, g) in _record_gimbals(sc)],
         )
-        version === 1 ? configuration : merge(configuration, (thrusters=[(_actuator_place(sc, t), t.max_thrust,
+        configuration = version === 1 ? configuration : merge(configuration, (thrusters=[(_actuator_place(sc, t), t.max_thrust,
             t.cutoff_frequency, t.min_firing_time, t.level_on, t.level_off) for (_, t) in _record_firing(sc)],))
+        stores ? merge(configuration, (data_store=(s = SimulationModel.data_store(sc);
+            s === nothing ? nothing : (s.capacity_bits, s.initial_bits)),)) : configuration
     end for sc in args.dynamics_model.spacecraft]
 end
 
@@ -441,7 +576,7 @@ function _callback_checkpoint_state(args)
     return (
         version=CALLBACK_CHECKPOINT_STATE_VERSION,
         configuration=_callback_checkpoint_configuration(args),
-        spacecraft=[(
+        spacecraft=[merge((
             battery=(b = SimulationModel.battery(sc); b === nothing ? nothing : (full=b.full, empty=b.empty, shed_tier=b.shed_tier)),
             faults=[(active=f.active, held_level=f.held_level) for f in _record_faults(sc)],
             sensors=[(rng=(s = e.sensor; s.rng === nothing ? nothing : copy(s.rng)), latest=deepcopy(e.sensor.latest),
@@ -451,9 +586,12 @@ function _callback_checkpoint_state(args)
             gimbals=[(angle_rad=g.angle_rad, last_update_s=g.last_update_s, previous_angle_rad=g.previous_angle_rad)
                      for (_, g) in _record_gimbals(sc)],
             thrusters=[(κ=t.κ, thrust=t.thrust) for (_, t) in _record_firing(sc)],
-        ) for sc in spacecraft],
+        ), _data_store_checkpoint_state(args, sc)) for sc in spacecraft],
     )
 end
+
+_data_store_checkpoint_state(args, sc) = _records_data_stores(args) ?
+    (data_store=(s = SimulationModel.data_store(sc); s === nothing ? nothing : (full=s.full, empty=s.empty)),) : (;)
 
 function _restore_callback_checkpoint_state!(args, checkpoint, p)
     spacecraft = args.dynamics_model.spacecraft
@@ -464,7 +602,7 @@ function _restore_callback_checkpoint_state!(args, checkpoint, p)
     if snapshot === nothing
         any(_has_callback_state, spacecraft) || return nothing
         any(_needs_callback_state, spacecraft) && throw(ArgumentError(
-            "This run has batteries, actuator faults, sensors or thrusters with firing dynamics, whose run state " *
+            "This run has batteries, actuator faults, sensors, thrusters with firing dynamics or data stores, whose run state " *
             "this checkpoint does not hold (it was written by an earlier SpaceAGORA or by another configuration). " *
             "Run from the start."))
         @warn "The checkpoint holds no hinge or gimbal angles; the resumed run starts them from their current values."
@@ -474,8 +612,8 @@ function _restore_callback_checkpoint_state!(args, checkpoint, p)
     version === 1 || version === CALLBACK_CHECKPOINT_STATE_VERSION ||
         throw(ArgumentError("Callback checkpoint state version 1 or $(CALLBACK_CHECKPOINT_STATE_VERSION) is required to resume this run."))
     hasproperty(snapshot, :configuration) && isequal(snapshot.configuration, _callback_snapshot_configuration(args, version)) ||
-        throw(ArgumentError("The batteries, actuator faults, sensors, hinges, gimbals or thrusters with firing dynamics " *
-            "differ from the checkpoint's. Resume with the same configuration, or run from the start."))
+        throw(ArgumentError("The batteries, actuator faults, sensors, hinges, gimbals, thrusters with firing dynamics " *
+            "or data stores differ from the checkpoint's. Resume with the same configuration, or run from the start."))
     length(snapshot.spacecraft) == length(spacecraft) ||
         throw(ArgumentError("The callback checkpoint state must match the spacecraft count."))
     # Checked above: from here on the restore cannot fail part-way.
@@ -483,6 +621,10 @@ function _restore_callback_checkpoint_state!(args, checkpoint, p)
         b = SimulationModel.battery(sc)
         if b !== nothing
             b.full, b.empty, b.shed_tier = saved.battery.full, saved.battery.empty, saved.battery.shed_tier
+        end
+        store = SimulationModel.data_store(sc)
+        if store !== nothing
+            store.full, store.empty = saved.data_store.full, saved.data_store.empty
         end
         for (f, s) in zip(_record_faults(sc), saved.faults)
             f.active, f.held_level = s.active, s.held_level
@@ -771,6 +913,21 @@ end
 # (`bytes`, `rows`), the stream's `token`, which ties the two together, and when
 # the rows start (`start_s`): 0 for a run started from its initial conditions, the
 # resume time for a resumed run that could not include the rows before it.
+#
+# A run that streams its results (`_ResultsStream`) keeps in the stream only the
+# rows still in memory: the last saved row at each checkpoint. Its entry is
+# version 2, with the results streams' lengths beside.
+mutable struct _ResultsStream
+    spacecraft::String  # the Arrow IPC streams, beside the checkpoint
+    run::String
+    bytes::Vector{Int}  # the spacecraft and run streams, then their CSVs
+    released::Int  # rows of the run that have left memory, written or thinned away
+    written::Int  # saved times written
+    first_s::Float64  # the first written time, NaN before one
+    fresh::Bool  # the next append starts new files
+    schemas::Vector{Any}  # the spacecraft and run tables' column names and types, once written
+end
+
 mutable struct _ResultsRowsLog
     path::String
     header::NamedTuple
@@ -782,6 +939,19 @@ mutable struct _ResultsRowsLog
     fresh::Bool  # the next append starts a new stream
     drop::Int  # rows the next record drops from the end of the stream's rows
     retake::Bool  # the restored last row is saved again by the first segment
+    stream::Union{Nothing, _ResultsStream}  # the results streams of a run that streams them
+    keep_earlier::Bool  # preserve the previous run only when its checkpoint is replaced
+    preserve_paths::NTuple{3, String}  # rows and both long-result streams
+end
+
+# Whether a run streams its results: `results_layout=:long`, results written with
+# the bundle, and checkpoints (the caller's condition for a rows log at all).
+function _new_results_stream(args, recording::Bool)::Union{Nothing, _ResultsStream}
+    settings = args.simulation_settings
+    recording && settings.results_layout === :long && settings.results && _typed_save_bundle_enabled() ||
+        return nothing
+    paths = _checkpoint_paths(args)
+    return _ResultsStream(paths.stream_spacecraft, paths.stream_run, zeros(Int, 4), 0, 0, NaN, true, Any[nothing, nothing])
 end
 
 # What the rows were saved with: a resumed run can include them only if it saves
@@ -804,7 +974,7 @@ end
 function _checkpoint_results_rows(entry, path::String, header, t::Float64)
     entry === nothing &&
         return nothing, "the checkpoint holds no record of them (it was written before SpaceAGORA kept them)"
-    hasproperty(entry, :version) && entry.version === 1 ||
+    hasproperty(entry, :version) && entry.version in (1, 2) ||
         return nothing, "the checkpoint's record of them has an unknown version"
     entry.recording || return nothing, "the run that wrote the checkpoint did not save results rows"
     rows = SimulationModel.IOSerialization._read_checkpoint_rows(path, entry.bytes)
@@ -833,13 +1003,33 @@ end
 function _start_results_rows!(args, recording::Bool, save_fields, resumed::Bool, t_start::Float64, entry,
                               times_acc::Vector{Float64}, data_acc::Vector; solves::Bool=true,
                               returns_table::Bool=true, retake_last_row::Bool=false)::_ResultsRowsLog
-    path = _checkpoint_paths(args).rows
+    paths = _checkpoint_paths(args)
+    path = paths.rows
     header = _results_rows_header(save_fields, length(args.dynamics_model.spacecraft))
     log = _ResultsRowsLog(path, header, _results_rows_token(path), recording, resumed ? t_start : 0.0, 0, 0, true,
-        0, false)
-    (resumed && recording && (solves || returns_table)) || return log
+        0, false, _new_results_stream(args, recording), resumed && solves && !recording,
+        (path, paths.stream_spacecraft, paths.stream_run))
+    # A resumed run that saves no rows would remove the earlier rows file at its
+    # first checkpoint; it keeps it instead.
+    # The checkpoint's run writes its results where its rows start: its results
+    # directory, or `resumed_at_<start>s` for a run that was itself a resume
+    # without the earlier rows. A resume that solves nothing takes the rows back
+    # even without returning a table when that run was killed while writing its
+    # streamed files: it finishes them (`_save_streamed_results!`).
+    streamed = log.stream !== nothing && entry !== nothing && hasproperty(entry, :version) && entry.version === 2
+    own_args = streamed ? _results_destination(args, (start_s=entry.start_s,)) : args
+    unfinished = !solves && streamed && _streamed_results_unfinished(own_args)
+    (resumed && recording && (solves || returns_table || unfinished)) || return log
     rows, reason = _checkpoint_results_rows(entry, path, header, t_start)
+    if rows !== nothing && entry.version === 2
+        # A resume that solves nothing cuts the streams back only to finish them.
+        reason = _resume_results_stream!(log.stream, entry, own_args; cut=solves || unfinished)
+        reason === nothing || (rows = nothing)
+    end
     if rows === nothing
+        # Until a replacement checkpoint is ready, these files still belong to
+        # the old checkpoint. An interrupted first segment must leave it usable.
+        log.keep_earlier = solves
         consequence = solves ?
             "They start at the resume, and any results files are written to " *
             "$(_results_destination(args, log).simulation_settings.results_directory), so the earlier ones are kept." :
@@ -851,13 +1041,58 @@ function _start_results_rows!(args, recording::Bool, save_fields, resumed::Bool,
     append!(times_acc, rows.times)
     append!(data_acc, rows.data)
     SimulationModel.IOSerialization._truncate_checkpoint_rows!(path, entry.bytes)
+    if log.stream !== nothing && entry.version === 2
+        stream = log.stream
+        stream.bytes = collect(Int, entry.stream.bytes)
+        stream.released = entry.stream.released
+        stream.written = entry.stream.written
+        stream.first_s = entry.stream.first_s
+        stream.schemas = collect(Any, entry.stream.schemas)
+        stream.fresh = false
+    end
     log.token = rows.header.token
     log.start_s = entry.start_s
     log.logged = length(times_acc)
     log.bytes = entry.bytes
     log.fresh = false
+    log.keep_earlier = false
     log.retake = retake_last_row
     return log
+end
+
+# A resumed run that does not continue the rows file beside its checkpoint (it
+# cannot include the rows there, or it saves none) starts a new one, or removes
+# it, at its first checkpoint. The earlier file can hold the only copy of the
+# earlier run's rows (a run that was killed writes no results files), so it is
+# renamed instead: `<rows file>.before_resume_at_<t>s.bin`, numbered when that
+# name is taken. Returns the new name, or `nothing` without a file.
+function _keep_earlier_rows!(path::String, t_start::Float64)
+    isfile(path) || return nothing
+    stem, extension = splitext(path)
+    stem *= ".before_resume_at_$(t_start)s"
+    kept = stem * extension
+    n = 1
+    while ispath(kept)
+        n += 1
+        kept = stem * "_$(n)" * extension
+    end
+    mv(path, kept)
+    return kept
+end
+
+# Move the old run's files aside immediately before the first replacement
+# checkpoint writes its streams or rows, never at resume startup. The stream
+# paths matter even when the resumed run itself uses a different output layout.
+function _preserve_earlier_results!(log::_ResultsRowsLog)
+    log.keep_earlier || return nothing
+    kept = [_keep_earlier_rows!(path, log.start_s) for path in log.preserve_paths]
+    log.keep_earlier = false
+    if log.recording
+        kept[1] === nothing || @warn "The rows file beside the checkpoint is kept as $(kept[1])."
+        streams = filter(!isnothing, kept[2:3])
+        isempty(streams) || @warn "The results streams beside it are kept as $(join(streams, " and "))."
+    end
+    return nothing
 end
 
 # Before a segment's rows join the run's: when the restored last row is to be
@@ -874,10 +1109,136 @@ function _retake_restored_row!(log, times_acc::Vector{Float64}, data_acc::Vector
     return nothing
 end
 
+# The results streams a version-2 entry recorded, taken back for a resumed run
+# that streams too, after checking that each reaches the checkpoint's length and
+# is that run's. `args` are those the checkpoint's run wrote its results with, so
+# its CSVs are the ones checked and cut. A resume that solves cuts each back to
+# that length (`cut`); one that solves nothing leaves the files as the run left
+# them, unless it finishes them. Returns why they cannot be taken back, or `nothing`.
+function _resume_results_stream!(stream::Union{Nothing, _ResultsStream}, entry, args; cut::Bool=true)
+    stream === nothing && return "they were written to a long-layout run's streamed results files, and this run " *
+        "does not stream its results (it writes another layout, no results, or no results bundle)"
+    hasproperty(entry, :stream) || return "the checkpoint's record of the streamed results is incomplete"
+    bytes = entry.stream.bytes
+    prefix = _results_bundle_prefix(args)
+    paths = (stream.spacecraft, stream.run, prefix * "_spacecraft.csv", prefix * "_run.csv")
+    hasproperty(entry.stream, :schemas) || return "the checkpoint's record of the streamed results is incomplete"
+    for (path, length_bytes) in zip(paths, bytes)
+        length_bytes == 0 || (isfile(path) && filesize(path) >= length_bytes) ||
+            return "$(path) is missing or shorter than the checkpoint records"
+    end
+    # The tokens before anything is cut: a stream another run wrote is left as it is.
+    for (path, length_bytes) in zip(paths[1:2], bytes[1:2])
+        length_bytes == 0 || _long_stream_token(path) == entry.token ||
+            return "$(path) was written by another run than the checkpoint"
+    end
+    for (path, length_bytes) in zip(paths, bytes)
+        cut || break
+        length_bytes == 0 ? rm(path; force=true) :
+            SimulationModel.IOSerialization._truncate_checkpoint_rows!(path, length_bytes)
+    end
+    return nothing
+end
+
+# Whether the run's saved row `index` is written under the results thinning,
+# which counts rows over the whole run as `_thin_results_segment` does: every
+# row by default, only the run's last row with SPACEAGORA_RESULTS_FINAL_ONLY,
+# every k-th and the last with SPACEAGORA_RESULTS_THIN_STRIDE=k.
+function _results_row_written(index::Int, last::Bool)::Bool
+    _results_final_only() && return last
+    stride = _results_thin_stride()
+    return last || stride <= 1 || (index - 1) % stride == 0
+end
+
+# A run that streams its results writes the rows it no longer keeps: at a
+# checkpoint every row but the last, which the checkpoint keeps beside it (a
+# resumed run may save that row again, see `_retake_restored_row!`); at the end
+# of the run, or before the results of a failed solve, every row (`final`). The
+# rows leave memory, and the rows log then holds only the rows still kept.
+# `args` are those the run writes its results with.
+function _stream_results_rows!(log, times_acc::Vector{Float64}, data_acc::Vector, save_fields, args; final::Bool=false)
+    (log === nothing || log.stream === nothing) && return nothing
+    stream = log.stream
+    release = final ? length(times_acc) : length(times_acc) - 1
+    keep = Int[i for i in 1:max(release, 0) if _results_row_written(stream.released + i, final && i == release)]
+    if !isempty(keep) || (final && stream.written == 0)
+        tables = _build_long_results_tables(times_acc[keep], data_acc[keep], save_fields, args)
+        _append_results_stream!(stream, tables, args, log.token)
+        isempty(keep) || isnan(stream.first_s) && (stream.first_s = times_acc[first(keep)])
+        stream.written += length(keep)
+        final || _write_long_manifest!(args, Dict{String, Any}(), stream.written,
+            isnan(stream.first_s) ? nothing : stream.first_s, nothing;
+            extra=("streaming" => true, "time_reached_s" => times_acc[release]))
+    end
+    release > 0 || return nothing
+    stream.released += release
+    deleteat!(times_acc, 1:release)
+    deleteat!(data_acc, 1:release)
+    log.drop += log.logged
+    log.logged = 0
+    return nothing
+end
+
+# Append long tables to the run's streams and CSVs; the first append starts new
+# files in place of any an earlier run left.
+function _append_results_stream!(stream::_ResultsStream, tables, args, token::String)
+    prefix = _results_bundle_prefix(args)
+    csv(part) = args.simulation_settings.save_csv ? prefix * "_" * part * ".csv" : nothing
+    if stream.fresh
+        SimulationModel.IOOutputs._invalidate_mission_history!(args)
+        foreach(path -> rm(path; force=true), (stream.spacecraft, stream.run, prefix * "_spacecraft.csv", prefix * "_run.csv"))
+        stream.fresh = false
+    end
+    spacecraft = _conformed_to_stream!(stream, 1, tables.spacecraft, "spacecraft")
+    run = tables.run === nothing ? nothing : _conformed_to_stream!(stream, 2, tables.run, "run")
+    stream.bytes[1], stream.bytes[3] = _append_long_stream!(stream.spacecraft, csv("spacecraft"), spacecraft, token)
+    if run !== nothing
+        stream.bytes[2], stream.bytes[4] = _append_long_stream!(stream.run, csv("run"), run, token)
+    end
+    return nothing
+end
+
+# Rows to append to a stream must have its columns, in its order and of its
+# types, since an Arrow stream has one schema. The first rows set it. A column
+# whose stream type also holds a later batch's (`Union{Missing, Float64}` for
+# `Float64`) is converted; any other change is refused, naming the column.
+function _conformed_to_stream!(stream::_ResultsStream, part::Int, df::DataFrame, table::String)::DataFrame
+    schema = stream.schemas[part]
+    if schema === nothing
+        stream.schemas[part] = Pair{String, Any}[name => eltype(df[!, name]) for name in names(df)]
+        return df
+    end
+    advice = "A long-layout run that streams its results needs every column to keep its names and type from " *
+        "one checkpoint to the next. Make the save field return values of one type (NaN rather than missing, " *
+        "say), or run without checkpoints or in the wide layout."
+    names(df) == first.(schema) || throw(ArgumentError(
+        "The streamed $(table) table's columns were $(join(first.(schema), ", ")), and are now " *
+        "$(join(names(df), ", ")). $(advice)"))
+    for (name, T) in schema
+        S = eltype(df[!, name])
+        S === T && continue
+        S <: T || throw(ArgumentError(
+            "The streamed $(table) table's column \"$(name)\" was written as $(T), and is now $(S). $(advice)"))
+        df[!, name] = convert(Vector{T}, df[!, name])
+    end
+    return df
+end
+
+# Whether a run that streamed its results did not finish writing them: its
+# manifest still says it is streaming, or its spacecraft Feather file is missing.
+function _streamed_results_unfinished(args)::Bool
+    prefix = _results_bundle_prefix(args)
+    isfile(prefix * "_spacecraft.feather") || return true
+    manifest_path = prefix * ".manifest.toml"
+    isfile(manifest_path) || return true
+    return get(TOML.parsefile(manifest_path), "streaming", false) === true
+end
+
 # At a checkpoint: append the rows saved since the last one, and return the
 # checkpoint's entry. A run that records no rows removes a stream an earlier run
 # left, which is not its own.
 function _append_results_rows!(log::_ResultsRowsLog, times_acc::Vector{Float64}, data_acc::Vector)
+    _preserve_earlier_results!(log)
     if log.recording
         new = (log.logged + 1):length(times_acc)
         log.bytes = SimulationModel.IOSerialization._append_checkpoint_rows!(log.path, view(times_acc, new),
@@ -888,8 +1249,13 @@ function _append_results_rows!(log::_ResultsRowsLog, times_acc::Vector{Float64},
         rm(log.path; force=true)
     end
     log.fresh = false
-    return (version=1, recording=log.recording, bytes=log.bytes, rows=log.logged, start_s=log.start_s,
+    entry = (version=1, recording=log.recording, bytes=log.bytes, rows=log.logged, start_s=log.start_s,
         token=log.token)
+    stream = log.stream
+    stream === nothing && return entry
+    return merge(entry, (version=2, stream=(bytes=Tuple(stream.bytes), released=stream.released,
+        schemas=copy(stream.schemas),
+        written=stream.written, first_s=stream.first_s)))
 end
 
 # Where the run writes its results: its results directory when its rows start at
@@ -919,10 +1285,20 @@ end
 
 @inline function _write_checkpoint!(args, t::Float64, u_state, solver_mode::String; is_active=nothing, callback_state=nothing,
                                      model_state=nothing, periodic_ticks=nothing, gnc_scopes=nothing,
-                                     results_rows=nothing)
+                                     results_rows=nothing, maneuver_buffers=nothing, orbits=nothing, entries=nothing)
     runtime = _interlink_checkpoint_runtime_state(args, is_active)
     if callback_state !== nothing
         runtime = runtime === nothing ? (callbacks=callback_state,) : merge(runtime, (callbacks=callback_state,))
+    end
+    if orbits !== nothing
+        runtime = runtime === nothing ? (orbits=orbits,) : merge(runtime, (orbits=orbits,))
+    end
+    if entries !== nothing
+        runtime = runtime === nothing ? (entries=entries,) : merge(runtime, (entries=entries,))
+    end
+    if maneuver_buffers !== nothing
+        runtime = runtime === nothing ? (maneuver_buffers=maneuver_buffers,) :
+            merge(runtime, (maneuver_buffers=maneuver_buffers,))
     end
     if is_active !== nothing
         activity = _activity_checkpoint_state(is_active)

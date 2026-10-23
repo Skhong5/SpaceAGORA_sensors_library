@@ -21,6 +21,8 @@ using TOML
 
 const _normalize_warning_emitted = Ref(false)
 const RESULTS_BUNDLE_SCHEMA_VERSION = "1"
+# The long layout's bundle (`results_layout=:long`): its own files and `layout` key.
+const LONG_RESULTS_BUNDLE_SCHEMA_VERSION = "2"
 const CHECKPOINT_SCHEMA_VERSION = "1"
 const NBODY_EPHEMERIS_CACHE_SCHEMA_VERSION = "1"
 const _EPHEMERIS_REUSE_LOCK = ReentrantLock()
@@ -2588,8 +2590,19 @@ function _validate_interlinks!(args, solver_mode::Symbol)
         hasmethod(SimulationModel.link_range_m, Tuple{typeof(link)}) || throw(ArgumentError(
             "The interlink kind $(nameof(typeof(link))) has no link_range_m method; implement " *
             "SpaceAGORA.link_range_m(::$(nameof(typeof(link)))), the maximum range in metres."))
+        # A link that turns its endpoints, or points its terminals, needs their attitude.
+        SimulationModel.link_applies_torque(link) && !args.mission_configuration.orientation_sim && throw(ArgumentError(
+            "This $(nameof(typeof(link))) applies torques to its endpoints (link_applies_torque), which needs " *
+            "attitude: set orientation_sim=true, or use options without torques."))
+        SimulationModel.InterLinkModels._link_needs_attitude(link) && !args.mission_configuration.orientation_sim &&
+            throw(ArgumentError("This $(nameof(typeof(link))) reads its endpoints' attitude (its pointing), which " *
+                "needs orientation_sim=true."))
     end
     SimulationModel.SchedulingPolicies._check_candidate_score(args.scheduling_policy_model.objective)
+    # Only a weighted policy has terms for the history to record.
+    model.record_terms && !(args.scheduling_policy_model.objective isa SimulationModel.SchedulingPolicies.WeightedPolicy) &&
+        throw(ArgumentError("InterlinkModel(record_terms=true) records the terms of a WeightedPolicy; this run's " *
+            "scheduling policy is a $(nameof(typeof(args.scheduling_policy_model.objective))), which has none."))
     # A checkpointed run's policy must be one its checkpoints can record.
     _typed_checkpoint_enabled(args) && _scheduling_policy_entry(args.scheduling_policy_model.objective)
     solver_mode in (:gravity_backbone_split, :split_imex, :multirate) &&
@@ -2609,6 +2622,24 @@ function _validate_interlinks!(args, solver_mode::Symbol)
             "Interlinks currently apply a net translational force to rigid spacecraft; articulated or compliant spacecraft $satellite is not supported."))
     end
     _prepare_interlink_terminals!(args)
+    return nothing
+end
+
+# Onboard data parts: a spacecraft with a data source needs a data store to put
+# its data in, and each source kind needs a production rate.
+function _validate_data_parts!(args)
+    for (i, sc) in enumerate(args.dynamics_model.spacecraft)
+        sc isa SimulationModel.SpacecraftModel || continue
+        for link in sc.links, source in link.data_sources
+            SimulationModel.has_data_store(sc) || throw(ArgumentError(
+                "Spacecraft $i has a data source but no data store to hold its data; mount one with " *
+                "add_data!(spacecraft, spacecraft.root, DataStore(capacity_bits=...))."))
+            hasmethod(SimulationModel.data_production_bps,
+                Tuple{typeof(source), SimulationModel.StateSample, SimulationModel.LinkContext, Float64}) || throw(ArgumentError(
+                "The data source kind $(nameof(typeof(source))) has no data_production_bps method; implement " *
+                "SpaceAGORA.data_production_bps(source::$(nameof(typeof(source))), x, ctx, t), its production rate in bit/s."))
+        end
+    end
     return nothing
 end
 

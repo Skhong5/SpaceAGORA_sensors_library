@@ -11,6 +11,12 @@ end
     return joinpath(args.simulation_settings.results_directory, "simulation_results.csv")
 end
 
+# The link schedule of a run with interlinks, written beside its results.
+@inline function _link_schedule_paths(args)
+    prefix = _results_bundle_prefix(args)
+    return (csv=prefix * "_link_schedule.csv", feather=prefix * "_link_schedule.feather")
+end
+
 @inline function _collision_results_csv_path(args)::String
     stamp = Dates.format(now(UTC), dateformat"yyyymmddTHHMMSSsss")
     token = string(stamp, ".", getpid(), ".", rand(UInt))
@@ -29,13 +35,17 @@ end
     return (
         data=joinpath(ckpt_dir, "simulation_checkpoint.bin"),
         manifest=joinpath(ckpt_dir, "simulation_checkpoint.manifest.toml"),
-        rows=joinpath(ckpt_dir, "simulation_checkpoint.results.bin")
+        rows=joinpath(ckpt_dir, "simulation_checkpoint.results.bin"),
+        # A long-layout run's streamed results tables (Arrow IPC streams).
+        stream_spacecraft=joinpath(ckpt_dir, "simulation_checkpoint.results_spacecraft.arrows"),
+        stream_run=joinpath(ckpt_dir, "simulation_checkpoint.results_run.arrows")
     )
 end
 
 export _results_bundle_prefix
 export _results_csv_path
 export _collision_results_csv_path
+export _link_schedule_paths
 export _checkpoint_directory
 export _checkpoint_paths
 

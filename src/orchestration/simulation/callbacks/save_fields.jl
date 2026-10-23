@@ -331,7 +331,8 @@ end
     @inbounds for i in 1:num_sats
         levels = zeros(Float64, counts[i])
         if counts[i] > 0
-            for effector in effectors
+            for j in _scope_members(integrator.p, :control, effectors, i)
+                effector = effectors[j]
                 reported = _effector_thruster_levels(effector, i, spacecraft[i], t)
                 reported === nothing && continue
                 for k in 1:min(counts[i], length(reported))
@@ -386,9 +387,11 @@ end
 
 # Mounted actuation: the level every mounted actuator applies and the power the
 # mounted actuators draw, per spacecraft. A spacecraft's levels come from the
-# first control effector in `:mounted` actuation that holds levels for it.
-@inline function _mounted_effector_levels(effectors, i::Int, n::Int)
-    for effector in effectors
+# first control effector in `:mounted` actuation that holds levels for it, among
+# `members`, the effectors acting on it (`_scope_members`).
+@inline function _mounted_effector_levels(effectors, members, i::Int, n::Int)
+    for j in members
+        effector = effectors[j]
         actuation_mode(effector) === :mounted || continue
         levels = actuator_levels(effector, i)
         (levels === nothing || length(levels) != n) && continue
@@ -421,7 +424,8 @@ function _save_actuator_levels(num_sats::Int, counts::Vector{Int}, u, t, integra
     spacecraft = integrator.p.args.dynamics_model.spacecraft
     out = Vector{Vector{Float64}}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        levels = counts[i] == 0 ? nothing : without_link_driven(_mounted_effector_levels(effectors, i, counts[i]), interlinks, i)
+        levels = counts[i] == 0 ? nothing : without_link_driven(_mounted_effector_levels(effectors,
+            _scope_members(integrator.p, :control, effectors, i), i, counts[i]), interlinks, i)
         applied = levels === nothing ? nothing :
             applied_actuator_levels(spacecraft[i], shed_levels(spacecraft[i], faulted_levels(spacecraft[i], levels));
                 wheel_momentum=_saved_wheel_momentum(u, i), cmg_angles=_saved_cmg_angles(u, i))
@@ -437,7 +441,8 @@ function _save_actuator_power(num_sats::Int, counts::Vector{Int}, u, t, integrat
     spacecraft = integrator.p.args.dynamics_model.spacecraft
     out = Vector{Float64}(undef, num_sats)
     @inbounds for i in 1:num_sats
-        levels = counts[i] == 0 ? nothing : without_link_driven(_mounted_effector_levels(effectors, i, counts[i]), interlinks, i)
+        levels = counts[i] == 0 ? nothing : without_link_driven(_mounted_effector_levels(effectors,
+            _scope_members(integrator.p, :control, effectors, i), i, counts[i]), interlinks, i)
         out[i] = levels === nothing ? 0.0 :
             mounted_power(spacecraft[i], shed_levels(spacecraft[i], faulted_levels(spacecraft[i], levels)); wheel_momentum=_saved_wheel_momentum(u, i))
         link_driven(interlinks, i) && (out[i] += last(link_terminal_power(interlinks, i, spacecraft[i])))
@@ -446,11 +451,16 @@ function _save_actuator_power(num_sats::Int, counts::Vector{Int}, u, t, integrat
 end
 
 # Per spacecraft, the data rate its active links carry out (`which === :sent`)
-# or in.
+# or in: with data stores, as the stores limit them.
 function _save_data_rates(u, t, integrator, which::Symbol)
     p = integrator.p
+    context = LinkContext(time_s=Float64(t), planet=p.args.environment_model.planet)
+    if any(has_data_store, p.args.dynamics_model.spacecraft)
+        flows = _data_flows(p.args.interlink_model, p.args.dynamics_model.spacecraft, u; is_active=p.is_active, context)
+        return which === :sent ? flows.sent : flows.received
+    end
     sent, received = data_link_rates_bps(p.args.interlink_model, p.args.dynamics_model.spacecraft, u;
-        is_active=p.is_active, context=LinkContext(time_s=Float64(t), planet=p.args.environment_model.planet))
+        is_active=p.is_active, context=context)
     return which === :sent ? sent : received
 end
 
@@ -485,8 +495,9 @@ end
 
 The data columns, in a run with data links (`DataLink`): per spacecraft
 `data_rate_tx_bps` and `data_rate_rx_bps`, the rates its active links carry out
-and in (bits per second), and `data_sent_bits` and `data_received_bits`, the
-bits sent and received since the run started. Empty otherwise.
+and in (bits per second; with data stores, as the stores limit them), and
+`data_sent_bits` and `data_received_bits`, the bits sent and received since the
+run started. Empty otherwise.
 """
 function data_save_fields(args::SimulationConfiguration)
     has_data_links(args.interlink_model) || return SaveField[]
@@ -763,6 +774,7 @@ function default_save_fields(args::SimulationConfiguration)
     end
     append!(fields, interlink_save_fields(args))
     append!(fields, data_save_fields(args))
+    append!(fields, data_storage_save_fields(args))
     append!(fields, articulated_save_fields(args))
     append!(fields, attachment_save_fields(args))
     append!(fields, plume_save_fields(args))

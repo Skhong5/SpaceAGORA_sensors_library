@@ -82,11 +82,13 @@ export AerodynamicCoefficientfM
 using .SimulationModel: SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, GravitationalHarmonicsModel, make_example_config, make_three_body_spacecraft
 export SimulationConfiguration, MissionConfiguration, MissionType, MissionTime, MissionOrbits, EnvironmentModel, DynamicsModel, GuidanceModel, NavigationModel, ControlModel, SpacecraftModel, Link, Joint, InitialCondition, CartesianInitialCondition, InitialTime, IntegrationTolerances, SaveField, default_save_fields, MaxwellianHeat, InverseSquaredGravityModel, InverseSquaredJ2GravityModel, NBodyGravityModel, GravitationalHarmonicsModel, make_example_config, make_three_body_spacecraft
 using .SimulationModel: AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
+using .SimulationModel: interlink_wrench, link_applies_torque
 using .SimulationModel: InterlinkModel, InterLinkGraph, InterLinkKey, InterLinkHistory, register_link!, interlink_force_on_spacecraft
 using .SimulationModel: link_directed, link_terminal_levels, link_terminal, terminal_supports, terminal_count
-using .SimulationModel: register_links!, all_pairs, mounted_link_terminals, terminal_number
+using .SimulationModel: register_links!, all_pairs, mounted_link_terminals, terminal_number, terminal_pose
 using .SimulationModel: same_plane_pairs, ring_pairs, grid_pairs
 using .SimulationModel: PowerBeamLink, link_received_power_w, beam_spot_radius_m, beam_capture_fraction
+using .SimulationModel: LaserBeamLink, AbstractLaserBeam, GaussianBeam, TerminalPointing, beam_force_factor
 using .SimulationModel: DataLink, AbstractDataBudget, FixedRateBudget, ShannonBudget, link_data_rate_bps, budget_rate_bps
 using .SimulationModel: terminal_shed_tier, contact_windows, contact_time_s
 using .SimulationModel: SchedulingPolicyModel, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
@@ -95,11 +97,13 @@ using .SimulationModel: SemimajorAxisRatePolicy, EccentricityRatePolicy, PowerDe
 using .SimulationModel: EnergyBalancingPolicy, WeightedPolicy, PolicyTerm, state_of_charge
 using .SimulationModel: ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!, force_on_endpoint, laser_force_on_spacecraft
 export AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
+export interlink_wrench, link_applies_torque
 export InterlinkModel, InterLinkGraph, InterLinkKey, InterLinkHistory, register_link!, interlink_force_on_spacecraft
 export link_directed, link_terminal_levels, link_terminal, terminal_supports, terminal_count
-export register_links!, all_pairs, mounted_link_terminals, terminal_number
+export register_links!, all_pairs, mounted_link_terminals, terminal_number, terminal_pose
 export same_plane_pairs, ring_pairs, grid_pairs
 export PowerBeamLink, link_received_power_w, beam_spot_radius_m, beam_capture_fraction
+export LaserBeamLink, AbstractLaserBeam, GaussianBeam, TerminalPointing, beam_force_factor
 export DataLink, AbstractDataBudget, FixedRateBudget, ShannonBudget, link_data_rate_bps, budget_rate_bps
 export terminal_shed_tier, contact_windows, contact_time_s
 export SchedulingPolicyModel, update_availability!, score_candidates!, select_interlinks!, schedule_interlinks!, interlink_scheduler_callback
@@ -113,6 +117,8 @@ export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!,
 @doc (@doc SimulationModel.InterLinkModels.link_range_m) link_range_m
 @doc (@doc SimulationModel.InterLinkModels.link_available) link_available
 @doc (@doc SimulationModel.InterLinkModels.link_force) link_force
+@doc (@doc SimulationModel.InterLinkModels.interlink_wrench) interlink_wrench
+@doc (@doc SimulationModel.InterLinkModels.link_applies_torque) link_applies_torque
 @doc (@doc SimulationModel.InterLinkModels.InterlinkModel) InterlinkModel
 @doc (@doc SimulationModel.InterLinkModels.register_link!) register_link!
 @doc (@doc SimulationModel.InterLinkModels.interlink_force_on_spacecraft) interlink_force_on_spacecraft
@@ -132,6 +138,11 @@ export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!,
 @doc (@doc SimulationModel.InterLinkModels.link_received_power_w) link_received_power_w
 @doc (@doc SimulationModel.InterLinkModels.beam_spot_radius_m) beam_spot_radius_m
 @doc (@doc SimulationModel.InterLinkModels.beam_capture_fraction) beam_capture_fraction
+@doc (@doc SimulationModel.InterLinkModels.LaserBeamLink) LaserBeamLink
+@doc (@doc SimulationModel.InterLinkModels.AbstractLaserBeam) AbstractLaserBeam
+@doc (@doc SimulationModel.InterLinkModels.GaussianBeam) GaussianBeam
+@doc (@doc SimulationModel.InterLinkModels.TerminalPointing) TerminalPointing
+@doc (@doc SimulationModel.InterLinkModels.beam_force_factor) beam_force_factor
 @doc (@doc SimulationModel.InterLinkModels.DataLink) DataLink
 @doc (@doc SimulationModel.InterLinkModels.AbstractDataBudget) AbstractDataBudget
 @doc (@doc SimulationModel.InterLinkModels.FixedRateBudget) FixedRateBudget
@@ -145,9 +156,10 @@ export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!,
 @doc (@doc SimulationModel.InterLinkModels.grid_pairs) grid_pairs
 @doc (@doc SimulationModel.InterlinkTerminals.mounted_link_terminals) mounted_link_terminals
 @doc (@doc SimulationModel.InterlinkTerminals.terminal_number) terminal_number
+@doc (@doc SimulationModel.InterLinkModels.terminal_pose) terminal_pose
 @doc """Indexed terminal vertices, candidate edges, the link of each edge (`edge_properties`) and availability/selection flags. Register candidates with `register_link!`.""" InterLinkGraph
 @doc """Canonically ordered pair of `(spacecraft array index, terminal number)` endpoints.""" InterLinkKey
-@doc """One accepted-step schedule sample: time in seconds, the selected `InterLinkKey` values (`active`) and the available ones (`available`, recorded in a run with a data link or with `InterlinkModel(; record_available=true)`, and empty for a sample built from a time and the selected keys). `contact_windows` reads a run's samples.""" InterLinkHistory
+@doc """One accepted-step schedule sample: time in seconds, the selected `InterLinkKey` values (`active`), the available ones (`available`, recorded in a run with a data link or with `InterlinkModel(; record_available=true)`), the score that selected each active link (`scores`), and, with `InterlinkModel(; record_terms=true)` and a `WeightedPolicy`, each top-level term's score for each active link (`terms`, one row per term, one column per active link). A sample built from a time and the selected keys records neither scores nor available links. `contact_windows` and `link_schedule` read a run's samples.""" InterLinkHistory
 @doc (@doc SimulationModel.SchedulingPolicies.SchedulingPolicyModel) SchedulingPolicyModel
 @doc (@doc SimulationModel.SchedulingPolicies.score_candidates!) score_candidates!
 @doc (@doc SimulationModel.SchedulingPolicies.AbstractSchedulingPolicy) AbstractSchedulingPolicy
@@ -281,13 +293,13 @@ using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_worke
 ## 2.3. Simulation Engine
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
-using .SimulationEngine: SimulationResults
+using .SimulationEngine: SimulationResults, link_schedule, run_table, long_table
 using .SimulationEngine: prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kwargs...)
 
 ## 2.4. Simulation Campaigns
 using .SimulationCampaigns: MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
-using .SimulationCampaigns: run_constellation_ensemble
+using .SimulationCampaigns: run_constellation_ensemble, ConstellationEnsembleResult, read_constellation_results
 using .SimulationCampaigns: run_monte_carlo_visualization
 
 ## 2.5. Simulation Model
@@ -392,6 +404,7 @@ using .SimulationModel: actuator_wrench, actuator_limits, actuator_saturate, act
 using .SimulationModel: add_actuator!, mounted_actuators, actuator_context, allocation_matrix, mounted_wrench, six_axis_thrusters
 using .SimulationModel: propellant_mass_rate, ActuatorRequirements, actuator_requirements, applied_actuator_levels, mounted_power
 using .SimulationModel: SolarArray, Battery, PowerLoad, add_power!
+using .SimulationModel: AbstractDataSource, DataStore, DataSource, add_data!, data_production_bps
 using .SimulationModel: ActuatorFault, add_fault!
 using .SimulationModel: RateGyro, StarTracker, Magnetometer, SensorTruth, sensor_measure, sensor_dimension, sensor_requirements, sensor_period_s, initialize_sensor!
 using .SimulationModel: GNSSReceiver, SunSensor, Accelerometer, sensor_needs_specific_force, is_gravitational
@@ -481,6 +494,9 @@ end
 @doc (@doc SimulationEngine.SimulationEngineConfig) SimulationEngineConfig
 @doc (@doc SimulationEngine.simulation_engine_config_from_env) simulation_engine_config_from_env
 @doc (@doc SimulationEngine.SimulationResults) SimulationResults
+@doc (@doc SimulationEngine.link_schedule) link_schedule
+@doc (@doc SimulationEngine.run_table) run_table
+@doc (@doc SimulationEngine.long_table) long_table
 @doc (@doc SimulationEngine.run_simulation) run_simulation
 @doc (@doc SimulationEngine.prewarm_nbody_ephemeris_cache) prewarm_nbody_ephemeris_cache
 @doc (@doc SimulationEngine.load_nbody_ephemeris_cache!) load_nbody_ephemeris_cache!
@@ -491,6 +507,8 @@ end
 @doc (@doc SimulationCampaigns.MonteCarloResult) MonteCarloResult
 @doc (@doc SimulationCampaigns.run_monte_carlo) run_monte_carlo
 @doc (@doc SimulationCampaigns.run_constellation_ensemble) run_constellation_ensemble
+@doc (@doc SimulationCampaigns.ConstellationEnsembleResult) ConstellationEnsembleResult
+@doc (@doc SimulationCampaigns.read_constellation_results) read_constellation_results
 
 # 3.3. Simulation Model
 @doc (@doc SimulationModel.AerobrakingEnergyDepletionConfig) AerobrakingEnergyDepletionConfig
@@ -550,6 +568,11 @@ end
 @doc (@doc SimulationModel.Battery) Battery
 @doc (@doc SimulationModel.PowerLoad) PowerLoad
 @doc (@doc SimulationModel.add_power!) add_power!
+@doc (@doc SimulationModel.AbstractDataSource) AbstractDataSource
+@doc (@doc SimulationModel.DataStore) DataStore
+@doc (@doc SimulationModel.DataSource) DataSource
+@doc (@doc SimulationModel.add_data!) add_data!
+@doc (@doc SimulationModel.data_production_bps) data_production_bps
 @doc (@doc SimulationModel.ActuatorFault) ActuatorFault
 @doc (@doc SimulationModel.add_fault!) add_fault!
 @doc (@doc SimulationModel.RateGyro) RateGyro
@@ -800,7 +823,7 @@ export ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, Simula
 export simulation_engine_config_from_env
 export prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 export MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
-export run_constellation_ensemble
+export run_constellation_ensemble, ConstellationEnsembleResult, read_constellation_results
 export StateAnchor, get_state_anchor_callback
 export AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractControlEffectorModel
 export AbstractEphemeridesModel, AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
@@ -860,6 +883,7 @@ export actuator_wrench, actuator_limits, actuator_saturate, actuator_consumption
 export add_actuator!, mounted_actuators, actuator_context, allocation_matrix, mounted_wrench, six_axis_thrusters
 export propellant_mass_rate, ActuatorRequirements, actuator_requirements, applied_actuator_levels, mounted_power
 export SolarArray, Battery, PowerLoad, add_power!
+export AbstractDataSource, DataStore, DataSource, add_data!, data_production_bps
 export ActuatorFault, add_fault!
 export AbstractSensor, RateGyro, StarTracker, Magnetometer, SensorTruth, sensor_measure, sensor_dimension, sensor_requirements, sensor_period_s, initialize_sensor!
 export GNSSReceiver, SunSensor, Accelerometer, sensor_needs_specific_force, is_gravitational
@@ -869,7 +893,7 @@ export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionContro
 export SolarPanelAngleOfAttackControlModel
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
-export run_verification, run_verification_cli, run_study, run_simulation, SimulationResults
+export run_verification, run_verification_cli, run_study, run_simulation, SimulationResults, link_schedule, run_table, long_table
 export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 export RPOStationGeometry, RPOCubeSatGeometry
 export VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec, ArmGeometry, arm_geometry

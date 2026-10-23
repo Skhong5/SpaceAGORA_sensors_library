@@ -120,10 +120,11 @@ const RETIRED_PATHS = (
     joinpath("src", "models", "gnc", "control", "aerobraking", "constraint_tracking.jl"),
     joinpath("src", "models", "gnc", "control", "aerobraking", "control_commands.jl"),
     joinpath("src", "models", "gnc", "control", "aerobraking", "tracking_executor.jl"),
-    # the EDG compatibility bindings, now in control/aerobraking/edg_compatibility.jl
+    # the EDG compatibility bindings; SpaceAGORA forwards only the two EDG decisions
     joinpath("src", "models", "gnc", "control", "aerobraking", "heat_rate_control.jl"),
     joinpath("src", "models", "gnc", "control", "aerobraking", "heat_load_control.jl"),
     joinpath("src", "models", "gnc", "control", "aerobraking", "struct_load_control.jl"),
+    joinpath("src", "models", "gnc", "control", "aerobraking", "edg_compatibility.jl"),
     joinpath("src", "orchestration", "mission", "campaigns", "run.jl"),
     joinpath("src", "orchestration", "mission", "campaigns", "set_and_run.jl"),
     joinpath("src", "orchestration", "mission", "campaigns", "define_mission.jl"),
