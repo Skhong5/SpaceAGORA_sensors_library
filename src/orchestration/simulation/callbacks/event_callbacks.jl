@@ -205,7 +205,6 @@ function get_entry_end_callback(num_sats::Int, args::SimulationConfiguration)
     target_entries = _entry_target_count()
     target_entries > 0 || throw(ArgumentError("Entry target callback requires SPACEAGORA_ENTRY_TARGET_COUNT > 0"))
     entry_interface_m = args.environment_model.EI * 1e3
-    entry_counter = zeros(Int64, num_sats)
 
     function condition!(out, u, t, integrator)
         p = integrator.p
@@ -220,39 +219,28 @@ function get_entry_end_callback(num_sats::Int, args::SimulationConfiguration)
         end
     end
 
-    function affect_downcrossing!(integrator, idx::Int64)
-        p = integrator.p
-        if !p.is_active[idx]
-            return nothing
-        end
-
-        entry_counter[idx] += 1
-        completed_entries = entry_counter[idx]
-        if callback_verbose(integrator)
-            println("Entry $(completed_entries) detected for Satellite $idx at time $(integrator.t) seconds!")
-        end
-
-        if completed_entries >= target_entries
-            all_active_reached_target = true
-            @inbounds for sat_idx in eachindex(entry_counter)
-                if p.is_active[sat_idx] && entry_counter[sat_idx] < target_entries
-                    all_active_reached_target = false
-                    break
-                end
-            end
-            if all_active_reached_target
-                if callback_verbose(integrator)
-                    println("Target entry count reached for all active satellites. Stopping simulation.")
-                end
-                if applicable(terminate!, integrator)
-                    terminate!(integrator)
-                end
-            end
-        end
-        return nothing
-    end
-
+    affect_downcrossing!(integrator, idx::Int64) = _record_atmosphere_entry!(integrator, idx, target_entries)
     return _directional_vector_callback(condition!, nothing, affect_downcrossing!, num_sats)
+end
+
+# Shared by the standalone entry limit and the combined atmosphere crossing.
+# The counter changes only for an active spacecraft's downward crossing.
+function _record_atmosphere_entry!(integrator, idx::Int, target_entries::Int)
+    p = integrator.p
+    p.is_active[idx] || return nothing
+    counts = p.shared_buffers.entry_counter
+    counts[idx] += 1
+    if callback_verbose(integrator)
+        println("Entry $(counts[idx]) detected for Satellite $idx at time $(integrator.t) seconds!")
+    end
+    if counts[idx] >= target_entries &&
+            all(i -> !p.is_active[i] || counts[i] >= target_entries, eachindex(counts))
+        if callback_verbose(integrator)
+            println("Target entry count reached for all active satellites. Stopping simulation.")
+        end
+        applicable(terminate!, integrator) && terminate!(integrator)
+    end
+    return nothing
 end
 
 # Reconcile the whole simultaneous-event mask once. Delivered directions are
@@ -303,7 +291,7 @@ function get_edg_heat_callback(num_sats::Int; drag_callback=nothing)
     return _edg_observe_heat_callbacks(original, num_sats)
 end
 
-function get_drag_state_callback(num_sats::Int)
+function get_drag_state_callback(num_sats::Int; entry_target::Int=0)
     condition!(out, u, t, integrator) = begin
         @inbounds for i in 1:num_sats
             alt = norm(CallbackServices._state_position_ii(u, i)) - integrator.p.args.environment_model.planet.Rp_e
@@ -316,6 +304,15 @@ function get_drag_state_callback(num_sats::Int)
                 DiffEqBase.derivative_discontinuity!(integrator, false)
             end
             return nothing
+        end
+        # When an entry limit is enabled, this is also its root. Two continuous
+        # callbacks for the same interface can repeatedly relocate an exit at
+        # the current time, reducing the next step to zero. Count entries first,
+        # preserving the old entry-before-phase-update ordering, on one mask.
+        if entry_target > 0
+            for idx in eachindex(events)
+                events[idx] < 0 && _record_atmosphere_entry!(integrator, idx, entry_target)
+            end
         end
         _refresh_crossing_atmosphere_flags!(integrator, events)
         _apply_active_phase_solver_settings!(integrator)
