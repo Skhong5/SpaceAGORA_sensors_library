@@ -280,9 +280,61 @@ args = SimulationConfiguration(...; interlink_model=model,
 - **Columns.** A run with a data link adds `data_rate_tx_bps`,
   `data_rate_rx_bps`, `data_sent_bits` and `data_received_bits` per spacecraft
   (see [the data columns](output_columns.md#Data-links)).
-- **Not yet modelled.** Onboard storage and queues, ground stations, pointing
-  and antenna patterns, Doppler, atmospheric and polarization losses,
-  interference between links and acquisition time are not modelled.
+- **Not yet modelled.** Onboard storage and queues, pointing and antenna
+  patterns, Doppler, atmospheric and polarization losses, interference between
+  links and acquisition time are not modelled.
+
+### Ground stations
+
+A ground station is a fixed point on the rotating planet. Its antennas are link
+terminals:
+
+```julia
+dish = RadioTerminal(boresight=[0.0, 0.0, 1.0], max_power_w=20.0, gain_dbi=30.0, efficiency=0.5,
+    noise_temperature_k=150.0)
+station = GroundStation(name="north", lat_deg=42.3, lon_deg=-83.7, alt_m=270.0, min_elevation_deg=10.0,
+    antennas=[dish])
+s = add_ground_station!(model, station)                      # 1 for the first station
+register_link!(model, spacecraft, (1, sender), (-s, 1), link)  # a downlink
+# or a link from every spacecraft to every station:
+register_links!(model, spacecraft, station_pairs(spacecraft, model), link)
+```
+
+- **Nodes.** Station `s` is the node `-s`, so its antenna `k` is the endpoint
+  `(-s, k)` in link keys, the history, the contact windows and the link
+  schedule. A link joins a spacecraft and a station; two stations cannot link.
+  `forbidden_pairs` may name `(i, -s)`.
+- **Where it is.** The station sits at its geodetic latitude, longitude and
+  altitude on the planet's ellipsoid, and turns with the planet. Its inertial
+  position is `L_PIᵀ r` and its velocity `L_PIᵀ (ω × r)`, with `r` its
+  planet-fixed position, `L_PI` the planet's frame and `ω` its spin.
+  - Availability and the scheduling policies read the frame at each accepted
+    step.
+  - The rates read it at the time of each right-hand-side evaluation, so a
+    station moves through a step instead of holding its place at the step's
+    start.
+- **Availability.** A link to a station is available while the spacecraft is at
+  least `min_elevation_deg` above the station's local horizon, the plane normal
+  to its geodetic up direction, and within the link's `range_m`. The mask is the
+  line of sight: a `DataLink` does not test the segment to a station against
+  the planet.
+- **Antennas.** They are `RadioTerminal`s, numbered `1:length(antennas)`, and
+  carry one active link at a time. They steer freely above the mask, so their
+  `boresight` is not read. A station has no power budget: its antennas draw
+  nothing and are never shed.
+- **Data.** A downlink counts in its spacecraft's `data_sent_bits`. An uplink, a
+  link from `(-s, k)` to a spacecraft's radio, counts in that spacecraft's
+  `data_received_bits`. A station keeps no counters of its own yet.
+- **Scheduling.** Station links are candidates like any other. A station is never
+  an orbital policy's target. It has no battery, so its `state_of_charge` is NaN
+  and `EnergyBalancingPolicy` scores a link to it 0.
+- **Outputs.** In the link schedule, a station end shows as `-s` in
+  `a_spacecraft` or `b_spacecraft`. The viewer does not draw stations yet and
+  leaves their links out.
+- **Checkpoints.** A run with stations records each station's site, mask and
+  antennas, and refuses to resume when any of them has changed.
+- **Not yet modelled.** Terrain and horizon masks, antenna steering limits and
+  patterns, and atmospheric losses.
 
 ## Scheduling
 

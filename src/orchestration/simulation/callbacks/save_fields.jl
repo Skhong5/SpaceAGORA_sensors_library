@@ -450,7 +450,8 @@ end
 function _save_data_rates(u, t, integrator, which::Symbol)
     p = integrator.p
     sent, received = data_link_rates_bps(p.args.interlink_model, p.args.dynamics_model.spacecraft, u;
-        is_active=p.is_active, context=LinkContext(time_s=Float64(t), planet=p.args.environment_model.planet))
+        is_active=p.is_active, context=LinkContext(time_s=Float64(t), planet=p.args.environment_model.planet),
+        planet_frame=_station_planet_frame(p, t))
     return which === :sent ? sent : received
 end
 

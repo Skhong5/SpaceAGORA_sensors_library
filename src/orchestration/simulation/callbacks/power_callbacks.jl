@@ -32,7 +32,7 @@ function _power_snapshot(sc_view, spacecraft, p, sat_idx::Int, t::Float64; state
     end
     if state !== nothing && link_receives(args.interlink_model, sat_idx)
         generation += received_link_power_w(args.interlink_model, sat_idx, args.dynamics_model.spacecraft, state;
-            context=LinkContext(time_s=t, planet=planet))
+            context=LinkContext(time_s=t, planet=planet), planet_frame=_station_planet_frame(p, t))
     end
     wheel_momentum = hasproperty(sc_view, :h_wheels) ? sc_view.h_wheels : nothing
     balance = _mounted_power_balance(spacecraft, args.control_model.control_effectors, sat_idx, generation, wheel_momentum;
@@ -176,7 +176,8 @@ function _save_power(num_sats::Int, u, t, integrator, which::Symbol)
             out[i] = NaN
         elseif which === :power_received_w
             out[i] = received_link_power_w(integrator.p.args.interlink_model, i, spacecraft, u;
-                context=LinkContext(time_s=Float64(t), planet=integrator.p.args.environment_model.planet))
+                context=LinkContext(time_s=Float64(t), planet=integrator.p.args.environment_model.planet),
+                planet_frame=_station_planet_frame(integrator.p, t))
         elseif which === :power_beamed_w
             out[i] = beamed_link_power_w(integrator.p.args.interlink_model, i)
         elseif which === :battery_wh || which === :battery_soc

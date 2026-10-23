@@ -108,9 +108,19 @@ function _interlink_checkpoint_configuration(args)
     # with any records each spacecraft's terminals, in order; a run without keeps
     # the configuration it had before hardware terminals.
     hardware = [_mounted_terminal_identities(spacecraft) for spacecraft in args.dynamics_model.spacecraft]
-    all(isempty, hardware) && return configuration
-    return merge(configuration, (hardware_terminals=hardware,))
+    all(isempty, hardware) || (configuration = merge(configuration, (hardware_terminals=hardware,)))
+    # Likewise, a run with ground stations records each station's site, mask and
+    # antennas, in order.
+    isempty(model.ground_stations) && return configuration
+    return merge(configuration, (ground_stations=map(_ground_station_identity, model.ground_stations),))
 end
+
+# A ground station's identity: its site and mask, each float with its bits, and
+# each antenna as a terminal's identity. Its name is a label, not part of it.
+_ground_station_identity(station) = (
+    site=map(_interlink_kind_parameter, (lat_deg=station.lat_deg, lon_deg=station.lon_deg, alt_m=station.alt_m,
+        min_elevation_deg=station.min_elevation_deg)),
+    antennas=Any[_interlink_terminal_identity(antenna) for antenna in station.antennas])
 
 # The scheduling policy's entry: `policy`, `target_idx` and `target_idxs`, the keys
 # checkpoints have always been written with. A policy that 0.5 chose by a symbol
@@ -292,7 +302,8 @@ function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
     hasproperty(snapshot, :configuration) &&
         isequal(_interlink_snapshot_configuration(snapshot), _interlink_checkpoint_configuration(args)) ||
         throw(ArgumentError("Interlink configuration differs from the checkpoint. Resume with the same " *
-            "candidate topology, link kinds and parameters, forbidden pairs, scheduling policy and terminal counts."))
+            "candidate topology, link kinds and parameters, forbidden pairs, scheduling policy, terminal counts and " *
+            "ground stations."))
     count = length(args.dynamics_model.spacecraft)
     hasproperty(snapshot, :is_active) && snapshot.is_active isa AbstractVector{Bool} &&
         length(snapshot.is_active) == count && is_active isa AbstractVector{Bool} &&

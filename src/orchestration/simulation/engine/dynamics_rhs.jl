@@ -3566,12 +3566,13 @@ function _apply_interlink_rhs!(derivative, state, parameters, t)
     mu = planet.μ
     spacecraft = parameters.args.dynamics_model.spacecraft
     context = SimulationModel.LinkContext(time_s=Float64(t), planet=planet)
+    planet_frame = SimulationModel.SimulationCallbacks._station_planet_frame(parameters, t)
     for satellite in eachindex(state.sc)
         parameters.is_active[satellite] || continue
         current = state.sc[satellite]
         current_derivative = derivative.sc[satellite]
         force = SimulationModel.interlink_force_on_spacecraft(model, state, satellite;
-            is_active=parameters.is_active, spacecraft, context)
+            is_active=parameters.is_active, spacecraft, context, planet_frame)
         acceleration = force / current.mass
         current_derivative.vel .+= acceleration
         current_derivative.interlink_dv .= acceleration
@@ -3635,13 +3636,15 @@ end
 
 # The data counters of a run with data links, after every route: the bits each
 # spacecraft has sent and received grow at the rates its active links carry,
-# each link's `link_data_rate_bps` at the current state.
+# each link's `link_data_rate_bps` at the current state, with ground stations
+# where the planet's frame puts them at `t`.
 function _apply_data_rhs!(du, u, p, t::Float64)
     isempty(u.sc) || hasproperty(u.sc[1], :data_sent_bits) || return nothing
     spacecraft = p.args.dynamics_model.spacecraft
     planet = p.args.environment_model.planet
     sent, received = SimulationModel.data_link_rates_bps(p.args.interlink_model, spacecraft, u;
-        is_active=p.is_active, context=SimulationModel.LinkContext(time_s=t, planet=planet))
+        is_active=p.is_active, context=SimulationModel.LinkContext(time_s=t, planet=planet),
+        planet_frame=SimulationModel.SimulationCallbacks._station_planet_frame(p, t))
     @inbounds for i in eachindex(spacecraft)
         du.sc[i].data_sent_bits = p.is_active[i] ? sent[i] : 0.0
         du.sc[i].data_received_bits = p.is_active[i] ? received[i] : 0.0

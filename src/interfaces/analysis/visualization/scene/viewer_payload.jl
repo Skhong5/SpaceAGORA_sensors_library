@@ -726,12 +726,16 @@ in `links`) and Float64 `start_s` and `end_s` on the clock of `frames.t_s`; and
 `contact`, the same for the spans over which a link was available, or `nothing`
 when the run did not record them. A link is drawn at playback time `t` when
 `start_s <= t < end_s`, and at `t == end_s` when that is its schedule's last time.
+Links with a ground station end (a negative `a_spacecraft` or `b_spacecraft`)
+are left out: the viewer does not draw stations yet.
 """
 function interlink_payload(schedule::DataFrame, spacecraft_count::Integer)::Dict{String, Any}
     for column in ("window", "link", "kind", "directed", "a_spacecraft", "a_terminal", "b_spacecraft", "b_terminal",
                    "start_s", "end_s")
         column in names(schedule) || throw(ArgumentError("The link schedule has no `$(column)` column."))
     end
+    stations = (schedule.a_spacecraft .< 0) .| (schedule.b_spacecraft .< 0)
+    any(stations) && (schedule = schedule[.!stations, :])
     for spacecraft in Iterators.flatten((schedule.a_spacecraft, schedule.b_spacecraft))
         1 <= spacecraft <= spacecraft_count || throw(ArgumentError(
             "The link schedule names spacecraft $(spacecraft), but the scene has $(spacecraft_count)."))
