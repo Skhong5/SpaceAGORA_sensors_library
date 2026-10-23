@@ -735,6 +735,60 @@ function get_trajectory_recorder_callback(rec::TrajectoryRecorder)
     return SavingCallback(save_func, saved_values; saveat=rec.data_rate, save_everystep=false)
 end
 
+# A continuous event truncates the accepted step. Its effect can change the
+# state or the RHS, after which the integrator's live interpolant no longer
+# describes the portion before the event. Drain strictly earlier output times
+# while that interpolant still belongs to the incoming trajectory. The ordinary
+# saving callback retains ownership of a sample exactly at the event time.
+function _save_before_continuous_event!(savers, integrator)
+    for saver in savers
+        while !isempty(saver.saveat) &&
+                integrator.tdir * first(saver.saveat) < integrator.tdir * integrator.t
+            t = pop!(saver.saveat)
+            DiffEqBase.addsteps!(integrator)
+            u = integrator(t)
+            value = saver.save_func(u, t, integrator)
+            saver.saveiter += 1
+            k = saver.saveiter
+            if k <= length(saver.saved_values.t)
+                saver.saved_values.t[k] = t
+                saver.saved_values.saveval[k] = value
+            else
+                push!(saver.saved_values.t, t)
+                push!(saver.saved_values.saveval, value)
+            end
+        end
+    end
+    return nothing
+end
+
+function _save_before_continuous_events(callbacks::CallbackSet, savers)
+    (isempty(savers) || isempty(callbacks.continuous_callbacks)) && return callbacks
+    wrap_effect(::Nothing) = nothing
+    wrap_effect(effect!) = (integrator, event...) -> begin
+        _save_before_continuous_event!(savers, integrator)
+        effect!(integrator, event...)
+    end
+    continuous = map(callbacks.continuous_callbacks) do cb
+        # Lifecycle hooks receive their original callback, as they may inspect
+        # or invoke its affect object. Preserve every other callback option.
+        initialize = (wrapped, u, t, i) -> cb.initialize(cb, u, t, i)
+        finalize = (wrapped, u, t, i) -> cb.finalize(cb, u, t, i)
+        if cb isa ContinuousCallback
+            options = (; (name => getfield(cb, name) for name in fieldnames(typeof(cb))
+                if name ∉ (:condition, :affect!, :affect_neg!, :initialize, :finalize))...)
+            ContinuousCallback(cb.condition, wrap_effect(cb.affect!), wrap_effect(cb.affect_neg!);
+                initialize, finalize, options...)
+        else
+            options = (; (name => getfield(cb, name) for name in fieldnames(typeof(cb))
+                if name ∉ (:condition, :affect!, :len, :initialize, :finalize))...)
+            VectorContinuousCallback(cb.condition, wrap_effect(cb.affect!), cb.len;
+                initialize, finalize, options...)
+        end
+    end
+    return CallbackSet(continuous, callbacks.discrete_callbacks)
+end
+
 """Return a view of the recorded sample times."""
 trajectory_times(rec::TrajectoryRecorder) = @view rec.t[1:rec.count]
 
