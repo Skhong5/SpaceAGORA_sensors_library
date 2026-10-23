@@ -113,10 +113,8 @@ end
         clock = SM.SaveField(:clock, (u, t, integrator) -> t)
         result = quiet(() -> run_constellation_ensemble(args; merge_results=true, return_results=true, fail_fast=true,
             save_fields=vcat(SM.default_save_fields(member(args, 1)), [gap, ragged, clock])))
-        arrow = Arrow.Table(joinpath(args.simulation_settings.results_directory, "constellation_members.feather"))
-        saved = DataFrame(arrow)
-        key = SM.IOOutputs._LONG_COLUMN_SPACECRAFT_KEY
-        metadata!(saved, key, Arrow.getmetadata(arrow)[key]; style=:note)
+        saved = SM.IOOutputs._read_long_results_table(joinpath(args.simulation_settings.results_directory,
+            "constellation_members.feather"))
         for table in (result.members, saved)
             wide = try SM.SceneVisualization._wide_view(table, nothing, 2) catch; DataFrame() end
             @test "sc1_gap" in names(wide) && "sc2_gap" in names(wide)

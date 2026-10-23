@@ -7,7 +7,9 @@ What `run_simulation(args; return_results=true)` returns.
   CSV, built in memory even when `simulation_settings.results=false`. A resumed
   run's table holds the whole run, from the rows kept beside its checkpoint.
   With `results_layout=:long` it is the spacecraft table: one row per spacecraft
-  and saved time (see [`long_table`](@ref)).
+  and saved time (see [`long_table`](@ref)). A long-layout run that streams its
+  results at each checkpoint reads it from its Feather file in place, with
+  read-only columns; `DataFrame(results.table)` copies it.
 - `configuration`: the configuration that ran. Under the default
   `isolate_state=true` this is the deep copy, so mutated controller state and
   logs (for example the RPO command log) are reachable here and not on the
