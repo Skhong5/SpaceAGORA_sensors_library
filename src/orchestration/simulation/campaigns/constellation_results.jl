@@ -199,6 +199,9 @@ function _constellation_ensemble_result(args::SimulationConfiguration, member_co
         end
     end
     for name in last_names
+        name in names(constellation) && throw(ArgumentError(
+            "merged constellation summary reserves column '$name' for campaign metadata; " *
+            "choose a different SaveField column_prefix"))
         constellation[!, name] = [last === nothing || !(name in names(last)) ? missing : last[1, name]
                                   for last in last_rows]
     end

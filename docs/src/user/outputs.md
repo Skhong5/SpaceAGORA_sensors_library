@@ -320,6 +320,12 @@ levels of a spacecraft with thrusters beside one without, has the columns of
 every spacecraft, `missing` where a spacecraft has none. The default stays
 `results_layout = :wide`, whose files are unchanged.
 
+Long output reserves `spacecraft`, `spacecraft_id`, `plane`, `slot` and `time`
+for spacecraft row identities, and `time` in the run table. A custom field whose
+flattened name collides with one of these columns is refused with an
+`ArgumentError`; choose another `column_prefix` or keep the wide layout.
+This also applies when converting wide results with `long_table`.
+
 The long table and its Arrow file retain which spacecraft own each column,
 separately from its values. A present channel whose measurements are all `missing`
 remains a channel with gaps; an absent field does not become a channel. This

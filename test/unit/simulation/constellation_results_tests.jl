@@ -89,6 +89,20 @@ end
 same_columns(a::DataFrame, b::DataFrame) =
     names(a) == names(b) && all(name -> isequal(a[!, name], b[!, name]), names(a))
 
+@testset "summary status cannot be overwritten by saved fields" begin
+    args = configuration([three_body(1)]; results=false)
+    for name in ("success", "error", "elapsed_s", "rows", "member_tag"), per_satellite in (false, true)
+        field = SM.SaveField(:custom, (u, t, i) -> nothing; per_satellite, column_prefix=name)
+        value = per_satellite ? [999.0] : 999.0
+        tables = SM.IOOutputs._build_long_results_tables([0.0, 10.0],
+            [Dict(:custom => value), Dict(:custom => value)], [field], args)
+        outcome = (value=nothing, spacecraft=tables.spacecraft, run=tables.run)
+        sample = SC.MonteCarloSampleResult(index=1, seed=1, success=true, elapsed_s=0.5, value=outcome)
+        campaign = SC.MonteCarloResult([sample], 0.5, 1)
+        @test_throws ArgumentError SC._constellation_ensemble_result(args, [args], campaign)
+    end
+end
+
 @testset "merged field ownership follows constellation positions" begin
     for checkpoints in (false, true)
         args = configuration([three_body(1), one_link(2)]; results_layout=:long,

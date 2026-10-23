@@ -282,4 +282,34 @@ end
     @test occursin("needs results_layout=:wide", refusal)
 end
 
+@testset "long output refuses fields that replace row identities" begin
+    args = (dynamics_model=(spacecraft=[(id=11, constellation_slot=nothing), (id=22, constellation_slot=nothing)],),
+            simulation_settings=(results_layout=:wide,))
+    times = [0.0, 10.0]
+    cases = Any[(name, [[100.0, 200.0], [110.0, 210.0]]) for name in
+             ("spacecraft", "spacecraft_id", "plane", "slot", "time")]
+    push!(cases, ("spacecraft", [[(id=100.0,), (id=200.0,)], [(id=110.0,), (id=210.0,)]]))
+    push!(cases, ("spacecraft", [[Dict("id" => 100.0), Dict("id" => 200.0)],
+                                [Dict("id" => 110.0), Dict("id" => 210.0)]]))
+    for (prefix, values) in cases
+        field = SM.SaveField(:custom, (u, t, i) -> nothing; per_satellite=true, column_prefix=prefix)
+        rows = [Dict(:custom => value) for value in values]
+        wide = SM.IOOutputs._build_results_dataframe(times, rows, [field], args)
+        before = deepcopy(wide)
+        @test wide.time == times
+        @test_throws ArgumentError SM.IOOutputs._build_long_results_tables(times, rows, [field], args)
+        @test_throws ArgumentError long_table(SimulationResults(wide, args, String[], nothing))
+        @test isequal(wide, before)
+    end
+    # The flattened name, not the prefix, determines whether a collision exists.
+    field = SM.SaveField(:custom, (u, t, i) -> nothing; per_satellite=true, column_prefix="spacecraft")
+    rows = [Dict(:custom => [(temperature=2.0,), (temperature=3.0,)]) for _ in times]
+    safe = SM.IOOutputs._build_long_results_tables(times, rows, [field], args).spacecraft
+    @test safe.spacecraft == Int32[1, 2, 1, 2]
+    @test safe.spacecraft_temperature == [2.0, 3.0, 2.0, 3.0]
+    run_field = SM.SaveField(:custom, (u, t, i) -> nothing; column_prefix="time")
+    @test_throws ArgumentError SM.IOOutputs._build_long_results_tables(times,
+        [Dict(:custom => 100.0), Dict(:custom => 110.0)], [run_field], args)
+end
+
 end # module LongLayoutTests
