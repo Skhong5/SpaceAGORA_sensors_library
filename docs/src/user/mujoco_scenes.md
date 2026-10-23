@@ -12,7 +12,7 @@ responsibility for selected spacecraft during a SpaceAGORA run.
 
 The implementation lives in the separate
 [SpaceAGORAMuJoCo.jl repository](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl).
-Its [user guide](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl/blob/988bd957de44799f8aacb0ef87f6bedf4fab16c6/docs/user_guide.md)
+Its [user guide at the v0.5.0 release](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl/blob/3d77f512920a7af0714d262a5f3857ea59676b84/docs/user_guide.md)
 contains a complete two-spacecraft example, its extension into a SpaceAGORA
 configuration, and explanations of resetting, forcing and reading scene states.
 The companion owns these examples and the native implementation, so the
@@ -26,10 +26,14 @@ to create a separate environment, then load `SpaceAGORA` and
 and Linux x86_64, using the pinned MuJoCo 3.11.0 artifact. Importing SpaceAGORA
 alone does not load the native library.
 
-Use the source revisions recorded by the companion's installer and
-[release preparation notes](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl/blob/988bd957de44799f8aacb0ef87f6bedf4fab16c6/docs/releases/v0.1.0.md).
-The core and companion are qualified as a pair; a matching version-family
-constraint is insufficient to establish compatibility. The connection follows
+Use the source revisions recorded by the companion's installer and its
+[v0.5.0 release](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl/releases/tag/v0.5.0),
+which pairs it with SpaceAGORA 0.6.0. Releases from v0.2.0 on use
+`ExternalPropagationServices` contract 2.0.0; the first release, v0.1.0, uses
+contract 1.0.0 with its own pinned core, so do not combine it or its guide with
+this version of SpaceAGORA. The core
+and companion are qualified as a pair; a matching version-family constraint is
+insufficient to establish compatibility. The connection follows
 the shared [adapter standard](../reference/adapter_contract.md) and version 2.0.0
 of [ExternalPropagationServices](../reference/external_propagation_services.md).
 

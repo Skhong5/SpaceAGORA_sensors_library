@@ -15,12 +15,15 @@ Replace this paragraph with the study's question.
 ## Set up and test
 
 The study is tested in a separate environment that develops the pinned SpaceAGORA
-commit by path. Once:
+commit by path. Use Julia 1.12, matching the pinned core. Run the setup commands
+from this generated repository's root, beside `SpaceAGORASource.toml`.
+The sibling directories `../StarterName-core` and `../StarterName-env` must be
+new; these commands do not reuse or change another SpaceAGORA checkout:
 
 ```bash
-git clone --filter=blob:none -c lfs.fetchexclude="*" https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../SpaceAGORA.jl
-git -C ../SpaceAGORA.jl checkout <the rev in SpaceAGORASource.toml>
-julia --startup-file=no ../SpaceAGORA.jl/scripts/contributor_environment.jl project . ../StarterName-env --manifest committed
+git clone --filter=blob:none -c lfs.fetchexclude="*" https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git ../StarterName-core
+git -C ../StarterName-core checkout 0000000000000000000000000000000000000000
+julia --startup-file=no ../StarterName-core/scripts/contributor_environment.jl project . ../StarterName-env --manifest committed
 ```
 
 `--filter=blob:none` skips the contents of old file versions: Git downloads the
@@ -30,6 +33,11 @@ files (Git LFS), which a contributor repository does not use. Without Git LFS
 installed the setting does nothing, and nothing is downloaded either. These
 commands, and the test command below, run as written in bash or zsh, PowerShell
 and Command Prompt.
+
+The generated checkout command contains the same exact revision as
+`SpaceAGORASource.toml`. SpaceAGORA's `repin` does not rewrite this README:
+after a repin, use the new `rev` from `SpaceAGORASource.toml` in the checkout
+command. Setup writes the separate environment and can access package servers.
 
 Then, from `test/`:
 

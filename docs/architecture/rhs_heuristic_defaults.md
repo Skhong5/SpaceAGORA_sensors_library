@@ -35,7 +35,7 @@ effectors retains the floor.
 
 At allotment one, supported pre-pass-only stacks can reuse batched kernels
 without spawning tasks. See [third-body and SRP paths](third_body_cost.md) and
-[aerodynamic batching](aero_batch.md) for the associated ownership constraints.
+[aerodynamic batching](../../benchmarks/studies/aero_batch/FINDINGS.md) for the associated ownership constraints.
 
 ## Comparing plans
 

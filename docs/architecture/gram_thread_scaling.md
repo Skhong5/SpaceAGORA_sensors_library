@@ -133,5 +133,5 @@ must be accounted for when interpreting its measurements. The tests in
 `test/unit/environment/gram_native_collect_tests.jl` and
 `gram_isolated_pool_tests.jl` cover the corresponding contracts; native memory
 and trajectory claims require the actual wrapper, inputs and scenarios under
-test. See [Collector settings](heap_contention.md#collector-settings) for the
+test. See [Collector settings](../../benchmarks/studies/heap_contention/FINDINGS.md#collector-settings) for the
 separate Julia heap controls.

@@ -570,6 +570,64 @@ end
         end
     end
 
+    @testset "checkpoints preserve terminal mounting geometry" begin
+        function mounted_pair(; hinged=false, offset=ZERO3, attitude=SVector(0.0, 0.0, 0.0, 1.0),
+                              axis=SVector(0.0, 0.0, 1.0), rate=1.0)
+            link = LaserBeamLink(power_w=40.0, magnification=100.0, range_m=200e3, recoil=:mounted)
+            spacecraft, model = beam_pair(link)
+            for (index, sc) in enumerate(spacecraft)
+                mount = Link(r=index == 1 ? offset : ZERO3,
+                    q=index == 1 ? attitude : SVector(0.0, 0.0, 0.0, 1.0))
+                push!(sc.links, mount)
+                terminal = pop!(sc.root.laser_terminals)
+                add_actuator!(sc, mount, terminal)
+                hinged && add_actuator!(sc, mount, PanelHinge(; axis, max_rate_rad_s=rate))
+            end
+            return spacecraft, model
+        end
+        for hinged in (false, true)
+            mktempdir() do directory
+                settings(resume) = SimulationSettings(results=false, generate_plots=false, checkpoint_enabled=true,
+                    checkpoint_interval_s=1.0, checkpoint_directory=directory, resume_from_checkpoint=resume)
+                control() = hinged ? ControlModel((HoldLevels([0.0, 0.3]),), [1.0]) : ControlModel((), Float64[])
+                args(; resume=false, duration=3.0, changes...) = run_args(mounted_pair(; hinged, changes...)...;
+                    duration, orientation=true, control=control(), settings=settings(resume))
+                partial = run_simulation(args(); return_solution=true)
+                if hinged
+                    saved_sc = partial.prob.p.args.dynamics_model.spacecraft[1]
+                    @test only(saved_sc.links[2].hinges).angle_rad ≈ 0.3
+                end
+                @test_throws ArgumentError run_simulation(args(; resume=true, duration=3.0, offset=SVector(1.0, 0.0, 0.0)))
+                if hinged
+                    @test_throws ArgumentError run_simulation(args(; resume=true, duration=3.0, axis=SVector(0.0, 1.0, 0.0)))
+                    @test_throws ArgumentError run_simulation(args(; resume=true, duration=3.0, rate=0.5))
+                else
+                    @test_throws ArgumentError run_simulation(args(; resume=true, duration=3.0,
+                        attitude=SVector(0.0, 0.0, sin(0.1), cos(0.1))))
+                end
+                resumed = run_simulation(args(; resume=true, duration=5.0); return_solution=true)
+                @test first(resumed.prob.p.args.interlink_model.history).time == 3.0
+                @test last(resumed.t) == 5.0
+                if hinged
+                    saved_sc = resumed.prob.p.args.dynamics_model.spacecraft[1]
+                    @test only(saved_sc.links[2].hinges).angle_rad ≈ 0.3
+                end
+            end
+        end
+        root_args = run_args(beam_pair(LaserBeamLink(power_w=40.0, magnification=100.0, range_m=200e3, recoil=:mounted))...)
+        original = SE._interlink_checkpoint_configuration(root_args)
+        root_args.dynamics_model.spacecraft[1].root.q .= SVector(0.0, 0.0, sin(0.2), cos(0.2))
+        @test isequal(SE._interlink_checkpoint_configuration(root_args), original)
+        root_args.dynamics_model.spacecraft[1].root.r[1] += 1.0
+        @test !isequal(SE._interlink_checkpoint_configuration(root_args), original)
+        panel_args = run_args(mounted_pair()...; control=ControlModel(
+            (SolarPanelAngleOfAttackControlModel(controlled_panel_links=(2,)),), [1.0]))
+        @test_throws ArgumentError SE._interlink_checkpoint_configuration(panel_args)
+        # Legacy/default center-to-center beams keep the pre-geometry payload.
+        default_args = run_args(beam_pair(LaserBeamLink(power_w=40.0, magnification=100.0, range_m=200e3))...)
+        @test !hasproperty(SE._interlink_checkpoint_configuration(default_args), :terminal_mounts)
+    end
+
     @testset "the gve example with a beam" begin
         example = GveExample
         beam = GaussianBeam(waist_radius_m=0.05, aperture_radius_m=0.08)

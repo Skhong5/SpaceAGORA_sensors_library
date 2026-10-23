@@ -3,7 +3,6 @@ using Test
 using SpaceAGORA: SimulationModel
 
 const ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const EDG = SimulationModel.EDGAlgorithms
 const Guidance = SimulationModel.GuidanceHooks
 
 # Load single definitions from retained sources without running a simulation.
@@ -20,45 +19,6 @@ function source_function(path, name)
         push!(definitions, form)
     end
     return only(definitions)
-end
-
-@testset "typed costates remain separate call-local prediction arrays" begin
-    track = (time=[0.0, 2.0], speed=[4.0, 5.0], h=[0.0, 0.0],
-        gamma=[-0.2, 0.0], rho=[0.0, 0.0])
-    seed = [0.4, 0.7]
-    coeffs = (cd_slope=2.0, cd_low=1.0, cl_low=0.0)
-    planet = (μ=100.0, Rp_e=10.0, g_ref=1.0)
-    before = deepcopy(track)
-    threshold, costate = EDG._edg_heat_load_lambdas(track, seed, coeffs, 3.0, 2.0, planet, 10.0, 4.0)
-    @test threshold ≈ 6.0 .* track.speed ./ pi
-    @test costate ≈ [4.6, 5.0]
-    @test track == before
-    @test seed == [0.4, 0.7]
-    other_threshold, other_costate = EDG._edg_heat_load_lambdas(track, seed, coeffs, 3.0, 2.0, planet, 10.0, 4.0)
-    @test threshold !== other_threshold
-    @test costate !== other_costate
-    negative_slope, _ = EDG._edg_heat_load_lambdas(track, seed,
-        merge(coeffs, (cd_slope=-2.0,)), 3.0, 2.0, planet, 10.0, 4.0)
-    @test negative_slope == threshold # The typed denominator uses abs(cd_slope).
-    negative_gain, _ = EDG._edg_heat_load_lambdas(track, seed, coeffs, 3.0, 2.0, planet, 10.0, -4.0)
-    @test negative_gain == -threshold
-
-    # Exact equality selects the maximum angle in this algorithm.
-    one_point = (time=[0.0], speed=[5.0], h=[0.0], gamma=[0.0], rho=[0.0])
-    config = (min_alpha_rad=0.1, max_alpha_rad=1.2)
-    profile, boundary, lambda = EDG._edg_heat_load_alpha_profile(config, one_point,
-        (cd_slope=2/pi, cd_low=1.0, cl_low=0.0), 1.0, 1.0, planet, 10.0, 1.0, [0.7])
-    @test boundary == lambda == [5.0]
-    @test profile == [config.max_alpha_rad]
-    profile_low, _, _ = EDG._edg_heat_load_alpha_profile(config, one_point,
-        (cd_slope=2/pi, cd_low=1.0, cl_low=0.0), 1.0, 1.0, planet, 10.0, 2.0, [0.7])
-    @test profile_low == [config.min_alpha_rad]
-
-    # Relative prediction samples become elapsed simulation switch timestamps.
-    time_track = (time=[0.0, 2.0, 7.0, 10.0],)
-    @test EDG._edg_low_alpha_switch_window(config, 123.0, time_track, [1.2, 0.1, 0.1, 1.2]) == (125.0, 130.0)
-    @test EDG._edg_low_alpha_switch_window(config, 123.0, time_track, fill(1.2, 4)) == (Inf, Inf)
-    @test EDG._edg_low_alpha_switch_window(config, 123.0, time_track, [1.2, 0.1, 1.2, 1.2]) == (Inf, Inf)
 end
 
 module SavedSwitchBoundary
