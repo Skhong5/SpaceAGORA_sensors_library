@@ -1,9 +1,9 @@
 # HyPR paper reconstruction
 
 The final iSpaRo reconstruction and its saved inputs now live in
-[SpaceAGORARPOStudies](https://github.com/Space-FALCON-Lab/SpaceAGORARPOStudies).
+SpaceAGORARPOStudies.
 Use that project's pinned environment and
-[reconstruction guide](https://github.com/Space-FALCON-Lab/SpaceAGORARPOStudies/blob/76d12285689b339807c648fabe2f2cdddeae6828/docs/hypr_paper.md)
+reconstruction guide (SpaceAGORARPOStudies)
 for the scientific assumptions, commands, retained failures and historical
 v0.4.0 results. The historical rerun remains unverified.
 

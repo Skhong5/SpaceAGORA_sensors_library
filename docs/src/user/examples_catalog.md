@@ -144,7 +144,7 @@ synthetic maneuver schedule. A successful smoke run therefore does not establish
 that the full mission's inputs are installed. See [Assets & Modes](../assets.md).
 
 The Mars RAAN campaign, `AGORA_Mars_RAAN_Scenario.jl`, lives in
-[SpaceAGORAMissionReconstructions](https://github.com/Space-FALCON-Lab/SpaceAGORAMissionReconstructions/blob/a14f6e9cdc20ac30fbf7f74396484a25f683e5e8/README.md).
+SpaceAGORAMissionReconstructions.
 Use that project's pinned environment and input instructions; it is no longer a
 core example or a core CLI `--example` target.
 

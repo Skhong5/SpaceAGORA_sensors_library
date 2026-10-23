@@ -110,15 +110,17 @@ running a script; core's examples environment does not prepare a research projec
 
 | Research project | What it contains |
 |---|---|
-| [Atmosphere studies](https://github.com/Space-FALCON-Lab/SpaceAGORAAtmosphereStudies) | GRAM fidelity comparisons, aerobraking perturbation Monte Carlo and historical entry-density investigations |
-| [Parallelization studies](https://github.com/Space-FALCON-Lab/SpaceAGORAParallelizationStudies) | Paper protocols, constellation and Monte Carlo scaling investigations, cross-machine comparisons and paper-result tooling |
-| [Mission reconstructions](https://github.com/Space-FALCON-Lab/SpaceAGORAMissionReconstructions) | CYGNSS reconstruction, telemetry fitting, mission-specific scenario sweeps and dispersed propagation investigations |
-| [RPO studies](https://github.com/Space-FALCON-Lab/SpaceAGORARPOStudies) | The final iSpaRo HyPR reconstruction, its saved inputs and study-specific checks |
+| Atmosphere studies (SpaceAGORAAtmosphereStudies) | GRAM fidelity comparisons, aerobraking perturbation Monte Carlo and historical entry-density investigations |
+| Parallelization studies (SpaceAGORAParallelizationStudies) | Paper protocols, constellation and Monte Carlo scaling investigations, cross-machine comparisons and paper-result tooling |
+| Mission reconstructions (SpaceAGORAMissionReconstructions) | CYGNSS reconstruction, telemetry fitting, mission-specific scenario sweeps and dispersed propagation investigations |
+| RPO studies (SpaceAGORARPOStudies) | The final iSpaRo HyPR reconstruction, its saved inputs and study-specific checks |
 
 A completed run is not by itself evidence of physical agreement or reproduction
 of a publication. Read each project's interpretation limits. Some studies need
 licensed native libraries, existing spacecraft assets or separately obtained
-telemetry. Public source does not imply that every underlying dataset is public.
+telemetry. The study repositories are private. Lab members retain access; outside
+collaborators and students need an invitation. Dataset access and licensing
+requirements still apply independently.
 
 The former `SpaceAGORACalibration.jl/` campaign package and its `bin/` drivers
 remain retired. Use the mission repository for historical telemetry fitting, or

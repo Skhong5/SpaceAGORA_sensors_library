@@ -458,11 +458,13 @@ jobs:
       - name: Example suite smoke shard
         run: julia --startup-file=no --project=. .github/scripts/ci_example_shard.jl
 
-      # Keep the removed Mars RAAN study automatic and mandatory exactly once.
-      # Native inputs already exist from this job's setup; the helper fetches
-      # only immutable public sources and links the existing licensed inputs.
+      # Qualify the private Mars RAAN study once when a read credential is available.
+      # Missing credentials explicitly skip native coverage; supplied credentials
+      # make fetch/setup/native failures fatal. Existing licensed inputs are linked.
       - name: Extracted pinned Mars RAAN native smoke
         if: matrix.shard == 'examples-1'
+        env:
+          SPACEAGORA_RESEARCH_READ_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN }}
         run: >-
           python3 -B scripts/ci/run_mission_native_smoke.py
           --workspace "$GITHUB_WORKSPACE"

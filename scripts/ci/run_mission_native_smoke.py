@@ -8,6 +8,7 @@ GRAM pin; only Build, SPICE and planet data are linked from existing CI inputs.
 from __future__ import annotations
 
 import argparse
+import base64
 import os
 from pathlib import Path
 import re
@@ -24,6 +25,7 @@ CORE_URL = "https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git"
 CORE_REV = "bfa32f6a44c5f242714b8cf182a451e863119a05"
 GRAM_URL = "https://github.com/Space-FALCON-Lab/GRAMSuite.jl.git"
 GRAM_REV = "b6675517b2f7080044d7bd40ba5502dc463710f2"
+READ_TOKEN_ENV = "SPACEAGORA_RESEARCH_READ_TOKEN"
 NAN_MARKERS = ("init_NaN", "First function call produced NaNs")
 
 
@@ -42,15 +44,34 @@ def native_assets(workspace: Path) -> Path:
     return root.resolve()
 
 
-def checkout(url: str, revision: str, destination: Path, environment: dict[str, str]) -> None:
+def study_fetch_environment(url: str, environment: dict[str, str], token: str) -> dict[str, str]:
+    if url != STUDY_URL:
+        raise ValueError("Research credentials are restricted to the pinned Mission repository")
+    result = {key: value for key, value in environment.items()
+              if key != READ_TOKEN_ENV and not key.startswith("GIT_TRACE")
+              and key != "GIT_CURL_VERBOSE"}
+    count = int(result.get("GIT_CONFIG_COUNT", "0"))
+    if count < 0:
+        raise ValueError("Invalid inherited Git configuration count")
+    result["GIT_CONFIG_COUNT"] = str(count + 1)
+    result[f"GIT_CONFIG_KEY_{count}"] = f"http.{STUDY_URL}.extraheader"
+    encoded = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+    result[f"GIT_CONFIG_VALUE_{count}"] = f"AUTHORIZATION: basic {encoded}"
+    return result
+
+
+def checkout(url: str, revision: str, destination: Path, environment: dict[str, str],
+             read_token: str | None = None) -> None:
     require_pin(revision)
+    fetch_environment = (study_fetch_environment(url, environment, read_token)
+                         if read_token else environment)
     if destination.exists():
         raise ValueError(f"Checkout destination must be new: {destination}")
     git = ["git", "-c", "credential.helper=", "-c", "filter.lfs.smudge=cat",
            "-c", "filter.lfs.required=false"]
     subprocess.run(git + ["init", str(destination)], check=True, env=environment)
     subprocess.run(git + ["-C", str(destination), "remote", "add", "origin", url], check=True, env=environment)
-    subprocess.run(git + ["-C", str(destination), "fetch", "--depth=1", "--no-tags", "origin", revision], check=True, env=environment)
+    subprocess.run(git + ["-C", str(destination), "fetch", "--depth=1", "--no-tags", "origin", revision], check=True, env=fetch_environment)
     subprocess.run(git + ["-C", str(destination), "checkout", "--detach", revision], check=True, env=environment)
     actual = subprocess.run(git + ["-C", str(destination), "rev-parse", "HEAD"],
                             check=True, env=environment, text=True, capture_output=True).stdout.strip()
@@ -130,19 +151,28 @@ def run_smoke(julia: str, study: Path, environment: Path, variables: dict[str, s
 
 
 def run(workspace: Path, scratch: Path, julia: str) -> None:
+    base = dict(os.environ, GIT_LFS_SKIP_SMUDGE="1", GIT_TERMINAL_PROMPT="0",
+                JULIA_PKG_PRECOMPILE_AUTO="0")
+    read_token = base.pop(READ_TOKEN_ENV, "")
+    if not read_token:
+        message = ("SKIP: pinned Mars RAAN native coverage not exercised; "
+                   "private study read credential is unavailable.")
+        print(message, flush=True)
+        if summary := base.get("GITHUB_STEP_SUMMARY"):
+            with Path(summary).open("a") as stream:
+                stream.write(message + "\n")
+        return
     workspace = workspace.resolve()
-    # Refuse missing licensed inputs before any public fetch or environment setup.
+    # With credentials supplied, missing inputs and all later failures are errors.
     assets = native_assets(workspace)
     if scratch.exists():
         raise ValueError(f"Choose a new scratch directory: {scratch}")
     scratch.mkdir(parents=True)
     scratch = scratch.resolve()
-    base = dict(os.environ, GIT_LFS_SKIP_SMUDGE="1", GIT_TERMINAL_PROMPT="0",
-                JULIA_PKG_PRECOMPILE_AUTO="0")
     study, core, gram = (scratch / name for name in ("study", "core", "public-gram"))
     for url, revision, destination in ((STUDY_URL, STUDY_REV, study), (CORE_URL, CORE_REV, core),
                                        (GRAM_URL, GRAM_REV, gram)):
-        checkout(url, revision, destination, base)
+        checkout(url, revision, destination, base, read_token if url == STUDY_URL else None)
     verify_study_pins(study)
     gravity = core / "data/planets/gravity/Mars50c.csv"
     if not gravity.is_file() or gravity.read_bytes().startswith(b"version https://git-lfs.github.com/spec/v1"):
@@ -174,11 +204,108 @@ class RouteControls(unittest.TestCase):
 
     def test_missing_assets_refuse_before_fetch(self):
         (self.assets / "Build/lib/libGRAM.so").unlink()
-        with patch.object(sys.modules[__name__], "checkout") as fetch:
+        with patch.dict(os.environ, {READ_TOKEN_ENV: "dummy"}), \
+                patch.object(sys.modules[__name__], "checkout") as fetch:
             with self.assertRaisesRegex(ValueError, "Existing native CI input"):
                 run(self.root, self.root / "new-scratch", "julia")
             fetch.assert_not_called()
         self.assertFalse((self.root / "new-scratch").exists())
+
+    def test_absent_or_empty_credentials_skip_before_work(self):
+        summary = self.root / "summary"
+        for token in (None, ""):
+            variables = {"GITHUB_STEP_SUMMARY": str(summary)}
+            if token is not None:
+                variables[READ_TOKEN_ENV] = token
+            with patch.dict(os.environ, variables, clear=True), \
+                    patch.object(sys.modules[__name__], "native_assets") as assets, \
+                    patch.object(sys.modules[__name__], "checkout") as fetch:
+                run(self.root / "missing", self.root / "new-scratch", "julia")
+                assets.assert_not_called()
+                fetch.assert_not_called()
+            self.assertFalse((self.root / "new-scratch").exists())
+        self.assertEqual(summary.read_text().count("native coverage not exercised"), 2)
+
+    def test_auth_is_scoped_to_one_fetch_and_never_arguments(self):
+        token = "dummy-read-token"
+        encoded = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+        base = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.autocrlf",
+                "GIT_CONFIG_VALUE_0": "false", "GIT_TRACE": "1",
+                "GIT_TRACE_CURL": "1", "GIT_CURL_VERBOSE": "1"}
+        original = dict(base)
+        for url, revision in ((STUDY_URL, STUDY_REV), (CORE_URL, CORE_REV), (GRAM_URL, GRAM_REV)):
+            fake = subprocess.CompletedProcess([], 0, stdout=revision + "\n")
+            with patch("subprocess.run", return_value=fake) as call:
+                checkout(url, revision, self.root / "checkout", base,
+                         token if url == STUDY_URL else None)
+            authenticated = 0
+            for invocation in call.call_args_list:
+                command, = invocation.args
+                variables = invocation.kwargs["env"]
+                self.assertNotIn(token, str(command))
+                self.assertNotIn(encoded, str(command))
+                self.assertNotIn(READ_TOKEN_ENV, variables)
+                if url == STUDY_URL and "fetch" in command:
+                    authenticated += 1
+                    self.assertEqual(variables["GIT_CONFIG_COUNT"], "2")
+                    self.assertEqual(variables["GIT_CONFIG_KEY_1"], f"http.{STUDY_URL}.extraheader")
+                    self.assertEqual(variables["GIT_CONFIG_VALUE_1"], f"AUTHORIZATION: basic {encoded}")
+                    self.assertEqual(variables["GIT_CONFIG_VALUE_0"], "false")
+                    self.assertFalse(any(key.startswith("GIT_TRACE") or key == "GIT_CURL_VERBOSE"
+                                         for key in variables))
+                else:
+                    self.assertNotIn(encoded, str(variables))
+                    self.assertEqual(variables, original)
+            self.assertEqual(authenticated, int(url == STUDY_URL))
+        self.assertEqual(base, original)
+        with self.assertRaisesRegex(ValueError, "restricted"):
+            study_fetch_environment(CORE_URL, {}, token)
+
+    def test_git_url_matching_does_not_authenticate_other_repositories(self):
+        variables = study_fetch_environment(STUDY_URL, dict(os.environ), "dummy-read-token")
+        for url in (STUDY_URL, CORE_URL, GRAM_URL,
+                    "https://github.com/Space-FALCON-Lab/SpaceAGORAMissionReconstructionsSibling.git"):
+            result = subprocess.run(["git", "config", "--get-urlmatch", "http.extraheader", url],
+                                    env=variables, text=True, capture_output=True)
+            if url == STUDY_URL:
+                self.assertEqual(result.returncode, 0)
+                self.assertIn("AUTHORIZATION: basic ", result.stdout)
+            else:
+                self.assertNotIn("AUTHORIZATION: basic ", result.stdout)
+
+    def test_run_removes_token_from_setup_and_runtime_environments(self):
+        token = "dummy-read-token"
+        seen = []
+        def fake_checkout(url, revision, destination, environment, read_token=None):
+            seen.append((url, read_token, dict(environment)))
+            destination.mkdir()
+            if url == CORE_URL:
+                gravity = destination / "data/planets/gravity/Mars50c.csv"
+                gravity.parent.mkdir(parents=True)
+                gravity.write_text("gravity fixture")
+        with patch.dict(os.environ, {READ_TOKEN_ENV: token}), \
+                patch.object(sys.modules[__name__], "checkout", side_effect=fake_checkout), \
+                patch.object(sys.modules[__name__], "verify_study_pins"), \
+                patch.object(sys.modules[__name__], "make_overlay", return_value=self.root / "overlay"), \
+                patch.object(sys.modules[__name__], "link_core_asset_root"), \
+                patch("subprocess.run") as setup, \
+                patch.object(sys.modules[__name__], "run_smoke") as smoke:
+            run(self.root, self.root / "scratch", "julia")
+        self.assertEqual([(url, credential) for url, credential, _ in seen],
+                         [(STUDY_URL, token), (CORE_URL, None), (GRAM_URL, None)])
+        environments = [env for _, _, env in seen] + [setup.call_args.kwargs["env"], smoke.call_args.args[3]]
+        for environment in environments:
+            self.assertNotIn(READ_TOKEN_ENV, environment)
+            self.assertNotIn(token, str(environment))
+
+    def test_supplied_credential_failure_is_not_a_skip(self):
+        summary = self.root / "summary"
+        failure = subprocess.CalledProcessError(128, ["git", "fetch"])
+        with patch.dict(os.environ, {READ_TOKEN_ENV: "dummy", "GITHUB_STEP_SUMMARY": str(summary)}), \
+                patch.object(sys.modules[__name__], "checkout", side_effect=failure):
+            with self.assertRaises(subprocess.CalledProcessError):
+                run(self.root, self.root / "failed-scratch", "julia")
+        self.assertFalse(summary.exists())
 
     def test_each_required_asset_is_mandatory(self):
         for relative in ("SPICE", "Mars/data", "Earth/data"):
