@@ -80,7 +80,10 @@ function _flight_apoapsis_ratio_scale(
     return _flight_ratio_scale(Float64(flight[maneuver_idx]), r_a_sim_m)
 end
 
+# A copy bound to a spacecraft acts on that spacecraft only, also for a direct
+# caller; the engine calls it only there.
 function update_guidance!(guidanceAlg::AerobrakingCampaignPropulsiveManeuverGuidanceModel, u::ComponentVector, p::ODEParams, t::Float64, i::Int64)
+    guidanceAlg.spacecraft_index == 0 || guidanceAlg.spacecraft_index == i || return nothing
     if i < 1 || i > length(p.shared_buffers.maneuver_commands)
         return nothing
     end
@@ -108,6 +111,7 @@ function update_guidance!(guidanceAlg::AerobrakingCampaignPropulsiveManeuverGuid
 end
 
 function update_guidance!(guidanceAlg::ApoapsisTargetPeriapsisRaiseGuidanceModel, u::ComponentVector, p::ODEParams, t::Float64, i::Int64)
+    guidanceAlg.spacecraft_index == 0 || guidanceAlg.spacecraft_index == i || return nothing
     if i < 1 || i > length(p.shared_buffers.maneuver_commands)
         return nothing
     end
