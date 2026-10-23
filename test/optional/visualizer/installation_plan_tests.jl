@@ -9,13 +9,13 @@ const VI = VisualizerInstallation
         write(joinpath(root, "Manifest.toml"), "# unchanged sentinel\n")
         pin = joinpath(root, "packages", "VisualizerSource.toml")
         values = Dict("url"=>"https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl.git",
-            "rev"=>repeat("a",40), "uuid"=>string(VI.VISUALIZER_UUID), "version"=>"0.1.0")
+            "rev"=>repeat("a",40), "uuid"=>string(VI.VISUALIZER_UUID), "version"=>"0.2.0")
         writepin(d) = open(io -> TOML.print(io, d), pin, "w")
         writepin(values)
         spec = VI.source_spec(root; local_path="")
         @test spec.rev == repeat("a",40)
         @test spec.url == values["url"]
-        for (key, bad) in (("rev","main"),("rev","v0.1.0"),("rev",repeat("g",40)),
+        for (key, bad) in (("rev","main"),("rev","v0.2.0"),("rev",repeat("g",40)),
                 ("uuid","wrong"),("version","0.9.0"),("url","https://example.com/repo.git"))
             writepin(merge(values, Dict(key=>bad)))
             @test_throws ErrorException VI.source_spec(root; local_path="")
@@ -33,11 +33,11 @@ const VI = VisualizerInstallation
         @test core.spec === nothing
         dev=joinpath(parent,"renderer");mkpath(dev)
         devproject=joinpath(dev,"Project.toml")
-        write(devproject,"name = \"SpaceAGORAVisualizer\"\nuuid = \"$(VI.VISUALIZER_UUID)\"\nversion = \"0.1.0\"\n")
+        write(devproject,"name = \"SpaceAGORAVisualizer\"\nuuid = \"$(VI.VISUALIZER_UUID)\"\nversion = \"0.2.0\"\n")
         @test VI.source_spec(root; local_path=dev).path == dev
         @test VI.installation_plan(env; root,local_path=dev).project["sources"]["SpaceAGORAVisualizer"] == Dict("path"=>dev)
         @test_throws ErrorException VI.setup(dev;root,local_path=dev)
-        write(devproject,replace(read(devproject,String),"0.1.0"=>"0.9.0"))
+        write(devproject,replace(read(devproject,String),"0.2.0"=>"0.9.0"))
         @test_throws ErrorException VI.source_spec(root;local_path=dev)
         before=(read(project),read(joinpath(root,"Manifest.toml")),readdir(root))
         alias=joinpath(parent,"alias");symlink(root,alias;dir_target=true)
