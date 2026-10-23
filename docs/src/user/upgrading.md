@@ -88,6 +88,56 @@ standalone pin has moved to `packages/HYPRSource.toml`.
   the documented `HYPRServices` contract. This removal does not narrow that
   service contract.
 
+### Set up the companion sources recorded by the updated core
+
+After updating core, run the optional-package setup again for each companion you
+use (`hypr`, `edg` or `mujoco`), from that core checkout, into a new environment
+outside the source directories. For example:
+
+```text
+julia --startup-file=no scripts/optional_packages.jl setup edg /path/to/edg-07-env
+```
+
+Setup verifies an existing companion checkout and refuses an older or modified
+one; it does not update or reset it. If you already initialized that submodule,
+preserve any local work and update the selected clean checkout to the revision
+recorded by core before setup. For EDG:
+
+```text
+git submodule update --init --checkout -- packages/gnc/SpaceAGORAEDG.jl
+```
+
+Use `packages/robotics/HYPR.jl` or `packages/robotics/SpaceAGORAMuJoCo.jl` for
+the other companions. The [optional-package commands](installation_environment.md#Optional-package-commands)
+describe source checks and environment ownership.
+
+The [candidate source table](installation_environment.md#0.7-candidate-companion-sources)
+records the exact revisions. Their package versions remain HYPR 0.5.0,
+SpaceAGORAEDG 0.5.1 and SpaceAGORAMuJoCo 0.5.0; the existing tags at those
+versions do not contain the new core-0.7 compatibility metadata. Use the core
+checkout's recorded sources to build its paired environment. A companion's own
+default core pin still identifies its earlier verification pair.
+
+### Research studies moved out of core
+
+Paper and mission campaign scripts moved out of core, so commands using their
+old core paths need updating. The [research repository mapping](studies_benchmarks.md#Research-repositories)
+names the Atmosphere, Parallelization, Mission Reconstructions and RPO projects.
+Use the appropriate project's setup instructions, environment and recorded core
+pin; core's examples environment does not prepare it. These repositories remain
+private, and collaborators or students without access need an invitation.
+Moving a study does not establish scientific equivalence or require changing its
+recorded historical core pin to 0.7.
+
+### Update readers when selecting long output
+
+The default remains `results_layout=:wide`. If you select `:long`, update readers
+for manifest schema 2 and the separate spacecraft and run tables, with their
+new filenames and spacecraft identity columns. Follow the current manifest's
+file list: wide files left by an earlier run in the same directory do not belong
+to the new long-layout result. [Long layout for many spacecraft](outputs.md#Long-layout-for-many-spacecraft)
+describes the tables, reserved columns and checkpoint streams.
+
 ## 0.6.1
 
 ### Resume checkpoints with the matching release or newer
