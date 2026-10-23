@@ -783,6 +783,7 @@ mutable struct _ResultsStream
     written::Int  # saved times written
     first_s::Float64  # the first written time, NaN before one
     fresh::Bool  # the next append starts new files
+    schemas::Vector{Any}  # the spacecraft and run tables' column names and types, once written
 end
 
 mutable struct _ResultsRowsLog
@@ -806,7 +807,7 @@ function _new_results_stream(args, recording::Bool)::Union{Nothing, _ResultsStre
     recording && settings.results_layout === :long && settings.results && _typed_save_bundle_enabled() ||
         return nothing
     paths = _checkpoint_paths(args)
-    return _ResultsStream(paths.stream_spacecraft, paths.stream_run, zeros(Int, 4), 0, 0, NaN, true)
+    return _ResultsStream(paths.stream_spacecraft, paths.stream_run, zeros(Int, 4), 0, 0, NaN, true, Any[nothing, nothing])
 end
 
 # What the rows were saved with: a resumed run can include them only if it saves
@@ -868,15 +869,21 @@ function _start_results_rows!(args, recording::Bool, save_fields, resumed::Bool,
     (resumed && recording && (solves || returns_table)) || return log
     rows, reason = _checkpoint_results_rows(entry, path, header, t_start)
     if rows !== nothing && entry.version === 2
-        reason = _resume_results_stream!(log.stream, entry, args; cut=solves)
+        # A resume that solves nothing still finishes the files of a run that was
+        # killed while writing them (`_streamed_results_unfinished`), from the
+        # streams cut back to the checkpoint.
+        reason = _resume_results_stream!(log.stream, entry, args; cut=solves || _streamed_results_unfinished(args))
         reason === nothing || (rows = nothing)
     end
     if rows === nothing
-        kept = solves ? _keep_earlier_rows!(path, t_start) : nothing
+        # The rows file and, for a run that streamed, its results streams can hold
+        # the only copy of the earlier rows: they are kept under other names.
+        earlier = (path, _checkpoint_paths(args).stream_spacecraft, _checkpoint_paths(args).stream_run)
+        kept = solves ? filter(!isnothing, [_keep_earlier_rows!(file, t_start) for file in earlier]) : String[]
         consequence = solves ?
             "They start at the resume, and any results files are written to " *
             "$(_results_destination(args, log).simulation_settings.results_directory), so the earlier ones are kept." *
-            (kept === nothing ? "" : " The rows file beside the checkpoint is kept as $(kept).") :
+            (isempty(kept) ? "" : " The rows kept beside the checkpoint are kept as $(join(kept, ", ")).") :
             "This resume solves nothing, so it returns an empty table and writes no files."
         @warn "The resumed run's results cannot include the rows before its checkpoint at t = $(t_start) s: " *
               "$(reason). $(consequence)"
@@ -891,6 +898,7 @@ function _start_results_rows!(args, recording::Bool, save_fields, resumed::Bool,
         stream.released = entry.stream.released
         stream.written = entry.stream.written
         stream.first_s = entry.stream.first_s
+        stream.schemas = collect(Any, entry.stream.schemas)
         stream.fresh = false
     end
     log.token = rows.header.token
@@ -910,12 +918,13 @@ end
 # name is taken. Returns the new name, or `nothing` without a file.
 function _keep_earlier_rows!(path::String, t_start::Float64)
     isfile(path) || return nothing
-    stem = replace(path, r"\.bin$" => "") * ".before_resume_at_$(t_start)s"
-    kept = stem * ".bin"
+    stem, extension = splitext(path)
+    stem *= ".before_resume_at_$(t_start)s"
+    kept = stem * extension
     n = 1
     while ispath(kept)
         n += 1
-        kept = stem * "_$(n).bin"
+        kept = stem * "_$(n)" * extension
     end
     mv(path, kept)
     return kept
@@ -947,18 +956,20 @@ function _resume_results_stream!(stream::Union{Nothing, _ResultsStream}, entry, 
     bytes = entry.stream.bytes
     prefix = _results_bundle_prefix(args)
     paths = (stream.spacecraft, stream.run, prefix * "_spacecraft.csv", prefix * "_run.csv")
+    hasproperty(entry.stream, :schemas) || return "the checkpoint's record of the streamed results is incomplete"
     for (path, length_bytes) in zip(paths, bytes)
         length_bytes == 0 || (isfile(path) && filesize(path) >= length_bytes) ||
             return "$(path) is missing or shorter than the checkpoint records"
+    end
+    # The tokens before anything is cut: a stream another run wrote is left as it is.
+    for (path, length_bytes) in zip(paths[1:2], bytes[1:2])
+        length_bytes == 0 || _long_stream_token(path) == entry.token ||
+            return "$(path) was written by another run than the checkpoint"
     end
     for (path, length_bytes) in zip(paths, bytes)
         cut || break
         length_bytes == 0 ? rm(path; force=true) :
             SimulationModel.IOSerialization._truncate_checkpoint_rows!(path, length_bytes)
-    end
-    for (path, length_bytes) in zip(paths[1:2], bytes[1:2])
-        length_bytes == 0 || _long_stream_token(path) == entry.token ||
-            return "$(path) was written by another run than the checkpoint"
     end
     return nothing
 end
@@ -1012,11 +1023,49 @@ function _append_results_stream!(stream::_ResultsStream, tables, args, token::St
         foreach(path -> rm(path; force=true), (stream.spacecraft, stream.run, prefix * "_spacecraft.csv", prefix * "_run.csv"))
         stream.fresh = false
     end
-    stream.bytes[1], stream.bytes[3] = _append_long_stream!(stream.spacecraft, csv("spacecraft"), tables.spacecraft, token)
-    if tables.run !== nothing
-        stream.bytes[2], stream.bytes[4] = _append_long_stream!(stream.run, csv("run"), tables.run, token)
+    spacecraft = _conformed_to_stream!(stream, 1, tables.spacecraft, "spacecraft")
+    run = tables.run === nothing ? nothing : _conformed_to_stream!(stream, 2, tables.run, "run")
+    stream.bytes[1], stream.bytes[3] = _append_long_stream!(stream.spacecraft, csv("spacecraft"), spacecraft, token)
+    if run !== nothing
+        stream.bytes[2], stream.bytes[4] = _append_long_stream!(stream.run, csv("run"), run, token)
     end
     return nothing
+end
+
+# Rows to append to a stream must have its columns, in its order and of its
+# types, since an Arrow stream has one schema. The first rows set it. A column
+# whose stream type also holds a later batch's (`Union{Missing, Float64}` for
+# `Float64`) is converted; any other change is refused, naming the column.
+function _conformed_to_stream!(stream::_ResultsStream, part::Int, df::DataFrame, table::String)::DataFrame
+    schema = stream.schemas[part]
+    if schema === nothing
+        stream.schemas[part] = Pair{String, Any}[name => eltype(df[!, name]) for name in names(df)]
+        return df
+    end
+    advice = "A long-layout run that streams its results needs every column to keep its names and type from " *
+        "one checkpoint to the next. Make the save field return values of one type (NaN rather than missing, " *
+        "say), or run without checkpoints or in the wide layout."
+    names(df) == first.(schema) || throw(ArgumentError(
+        "The streamed $(table) table's columns were $(join(first.(schema), ", ")), and are now " *
+        "$(join(names(df), ", ")). $(advice)"))
+    for (name, T) in schema
+        S = eltype(df[!, name])
+        S === T && continue
+        S <: T || throw(ArgumentError(
+            "The streamed $(table) table's column \"$(name)\" was written as $(T), and is now $(S). $(advice)"))
+        df[!, name] = convert(Vector{T}, df[!, name])
+    end
+    return df
+end
+
+# Whether a run that streamed its results did not finish writing them: its
+# manifest still says it is streaming, or its spacecraft Feather file is missing.
+function _streamed_results_unfinished(args)::Bool
+    prefix = _results_bundle_prefix(args)
+    isfile(prefix * "_spacecraft.feather") || return true
+    manifest_path = prefix * ".manifest.toml"
+    isfile(manifest_path) || return true
+    return get(TOML.parsefile(manifest_path), "streaming", false) === true
 end
 
 # At a checkpoint: append the rows saved since the last one, and return the
@@ -1038,6 +1087,7 @@ function _append_results_rows!(log::_ResultsRowsLog, times_acc::Vector{Float64},
     stream = log.stream
     stream === nothing && return entry
     return merge(entry, (version=2, stream=(bytes=Tuple(stream.bytes), released=stream.released,
+        schemas=copy(stream.schemas),
         written=stream.written, first_s=stream.first_s)))
 end
 

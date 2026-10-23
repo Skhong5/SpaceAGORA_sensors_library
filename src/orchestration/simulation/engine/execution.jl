@@ -413,7 +413,8 @@ function _save_streamed_results!(args, log, save_fields, times_acc::Vector{Float
     stream = log.stream
     sink = return_table ? _LONG_TABLES_SINK[] : nothing
     in_memory(df) = DataFrame([name => collect(df[!, name]) for name in names(df)])
-    if !write_files
+    # A resume that solves nothing writes the files of a run killed while writing them.
+    if !write_files && !_streamed_results_unfinished(args)
         keep = Int[i for i in eachindex(times_acc) if _results_row_written(stream.released + i, i == length(times_acc))]
         kept = _build_long_results_tables(times_acc[keep], data_acc[keep], save_fields, args)
         per_time = (length(args.dynamics_model.spacecraft), 1)

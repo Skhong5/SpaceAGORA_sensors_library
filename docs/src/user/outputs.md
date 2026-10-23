@@ -334,7 +334,8 @@ ends.
   beside the checkpoint (`simulation_checkpoint.results_spacecraft.arrows` and
   `simulation_checkpoint.results_run.arrows`) and to the CSVs. The manifest
   shows `streaming = true`, the number of saved times written and the time
-  reached.
+  reached. Until the run finishes, `Arrow.Table` reads its rows from the
+  streams.
 - **When the run ends, or a solve fails,** the last rows are appended and the
   Feather files and the manifest are written from the streams, as for a run that
   does not stream. The files hold the same rows, values and column types, and
@@ -345,10 +346,20 @@ ends.
 - **Thinning** (`SPACEAGORA_RESULTS_THIN_STRIDE`, `SPACEAGORA_RESULTS_FINAL_ONLY`)
   counts rows over the whole run, so it keeps the rows a run that does not
   stream keeps.
+- **Column types.** Each column keeps the type its first checkpoint's rows gave
+  it. Later rows may bring `missing` into a column that already allows it, but
+  a column whose type changes otherwise (a field that is `missing` until some
+  time and a number after it, or whose flattened columns change) stops the run
+  with an error naming the column. Make such a field return values of one type
+  (NaN rather than `missing`, say), or run it without checkpoints or in the
+  wide layout.
 - **A resumed run** cuts the streams and CSVs back to its checkpoint, so rows
   written after it by a run that crashed are dropped, and goes on appending. Its
   files then hold the whole run. A resume that solves nothing leaves the files
-  as they are.
+  as they are, unless the run was killed while writing its Feather files: then
+  it writes them from the streams. A resume that cannot include the earlier rows
+  keeps the streams beside the checkpoint under other names
+  (`...before_resume_at_<t>s.arrows`), as it keeps the rows file.
 
 A run without checkpoints, a run that returns results without writing them, and
 a run with `SPACEAGORA_SAVE_BUNDLE=0` keep their rows in memory, as a wide run
