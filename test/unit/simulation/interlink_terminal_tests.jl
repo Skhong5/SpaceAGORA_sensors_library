@@ -140,6 +140,74 @@ end
         @test_throws ArgumentError register_links!(InterlinkModel(), spacecraft, [(1, 2)], (i, j) -> 1.0)
     end
 
+    @testset "automatic registration skips virtual hardware endpoints" begin
+        for (label, link) in (("mounted recoil", LaserBeamLink(power_w=5.0, magnification=1.0, range_m=1e6, recoil=:mounted)),
+                              ("pointing", LaserBeamLink(power_w=5.0, magnification=1.0, range_m=1e6,
+                                  pointing=TerminalPointing(field_of_regard_rad=pi / 2))))
+            @testset "$label" begin
+                spacecraft = [terminal_sat(i; terminals=2, n_terminal=1) for i in 1:4]
+                model = InterlinkModel()
+                keys = register_links!(model, spacecraft, [(1, 2), (1, 3), (1, 4)], link)
+                @test keys == [((1, 2), (2, 2)), ((1, 3), (3, 2)), ((1, 2), (4, 2))]
+                @test length(model.graph.edges) == 3
+                @test all(pair -> all(endpoint -> endpoint[2] > 1, pair), keys)
+                @test_throws ArgumentError register_links!(InterlinkModel(),
+                    [(n_terminal=1,), (n_terminal=1,)], [(1, 2)], link)
+                # Explicit endpoint selection keeps its existing validation.
+                @test_throws ArgumentError register_links!(InterlinkModel(), spacecraft,
+                    [(1, 2)], link; terminals=(i, j) -> (1, 1))
+            end
+        end
+        @testset "Shannon radio budget" begin
+            spacecraft = [terminal_sat(i; terminals=1, n_terminal=1) for i in 1:2]
+            for sc in spacecraft
+                add_actuator!(sc, sc.root, RadioTerminal(boresight=[0.0, 1.0, 0.0],
+                                                       max_power_w=5.0, gain_dbi=6.0, efficiency=0.5))
+            end
+            link = DataLink(transmit_power_w=1.0,
+                budget=ShannonBudget(bandwidth_hz=1e6, frequency_hz=2.2e9), range_m=1e6)
+            model = InterlinkModel()
+            # Skip both the virtual endpoint and the incompatible laser hardware.
+            @test register_links!(model, spacecraft, [(2, 1)], link) == [((2, 3), (1, 3))]
+            @test length(model.graph.edges) == 1
+            @test_throws ArgumentError register_links!(InterlinkModel(),
+                [(n_terminal=1,), (n_terminal=1,)], [(1, 2)], link)
+        end
+        # Links without hardware requirements retain virtual terminal numbering.
+        virtual = [(n_terminal=1,), (n_terminal=1,)]
+        @test register_links!(InterlinkModel(), virtual, [(1, 2)], LaserBeamLink(power_w=5.0, magnification=1.0, range_m=1e6)) == [((1, 1), (2, 1))]
+    end
+
+    @testset "automatic registration respects directed hardware roles" begin
+        spacecraft = [terminal_sat(i) for i in 1:2]
+        for sc in spacecraft
+            add_actuator!(sc, sc.root, PowerReceiver(normal=[0.0, -1.0, 0.0],
+                                                   radius_m=0.25, efficiency=0.4))
+        end
+        link = PowerBeamLink(power_w=5.0, range_m=1e6)
+        for pair in ((1, 2), (2, 1))
+            @testset "direction $pair" begin
+                model = InterlinkModel()
+                @test register_links!(model, spacecraft, [pair], link) ==
+                    [((pair[1], 1), (pair[2], 2))]
+                @test length(model.graph.edges) == 1
+            end
+        end
+        # A factory uses the same role-aware selection for each pair.
+        @test register_links!(InterlinkModel(), spacecraft, [(1, 2), (2, 1)],
+            (i, j) -> link) == [((1, 1), (2, 2)), ((2, 1), (1, 2))]
+        @test_throws ArgumentError register_links!(InterlinkModel(), spacecraft,
+            [(1, 2)], link; terminals=(i, j) -> (2, 1))
+        lasers = [terminal_sat(i) for i in 1:2]
+        @test_throws ArgumentError register_links!(InterlinkModel(), lasers, [(1, 2)], link)
+        receivers = [terminal_sat(i; terminals=0) for i in 1:2]
+        for sc in receivers
+            add_actuator!(sc, sc.root, PowerReceiver(normal=[0.0, -1.0, 0.0],
+                                                   radius_m=0.25, efficiency=0.4))
+        end
+        @test_throws ArgumentError register_links!(InterlinkModel(), receivers, [(1, 2)], link)
+    end
+
     @testset "pairs by plane and slot" begin
         factory(plane, slot, index) = (bus = Link(root=true, m=100.0);
             SpacecraftModel(root=bus, links=[bus], inertia_tensor=bus.inertia, n_terminal=4))
