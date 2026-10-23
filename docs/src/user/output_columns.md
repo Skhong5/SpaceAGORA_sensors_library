@@ -345,7 +345,8 @@ It has one row per window, sorted by `start_s`, active rows first, then by key:
 | `kind` | — | The link kind's type name with its type parameters, for example `LaserMomentumLink` or `DataLink{ShannonBudget}` |
 | `directed` | — | Whether the link is directed |
 | `a_spacecraft`, `a_terminal` | — | The first endpoint of the link's key: the transmitter of a directed link, the lower `(spacecraft, terminal)` of an undirected one |
-| `b_spacecraft`, `b_terminal` | — | The second endpoint |
+| `b_spacecraft`, `b_terminal` | — | The second endpoint; a ground station uses its negative node number |
+| `a_name`, `b_name` | — | Only in runs with stations: the registered station name or `spacecraft N` for each endpoint |
 | `start_s` | s | The span's first accepted step, on the clock of the results' `time` column |
 | `end_s` | s | The next accepted step without the link, or the run's last one |
 | `duration_s` | s | `end_s - start_s` |
