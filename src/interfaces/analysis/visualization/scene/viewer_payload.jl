@@ -976,12 +976,14 @@ function _saved_link_schedule(prefix::AbstractString, scene::VisualizationScene)
     scene.link_schedule === nothing && return nothing
     path = joinpath(dirname(String(prefix)), scene.link_schedule)
     manifest_path = String(prefix) * ".manifest.toml"
-    recorded = isfile(manifest_path) ?
-        get(get(get(TOML.parsefile(manifest_path), "files", Dict()), "link_schedule_feather", Dict()), "sha256", nothing) :
-        nothing
-    isfile(path) && recorded !== nothing && recorded == IOSerialization._sha256_hex(path) ||
-        throw(ArgumentError("The link schedule $(path) is missing or no longer matches its results manifest; export the " *
-            "matching saved bundle, or pass interlinks=false to leave the links out."))
+    files = isfile(manifest_path) ? get(TOML.parsefile(manifest_path), "files", Dict()) : Dict()
+    trajectory_path = joinpath(dirname(String(prefix)), scene.results_feather)
+    for (file, entry) in ((path, "link_schedule_feather"), (trajectory_path, "feather"))
+        recorded = get(get(files, entry, Dict()), "sha256", nothing)
+        isfile(file) && recorded !== nothing && recorded == IOSerialization._sha256_hex(file) ||
+            throw(ArgumentError("The interlink input $(file) is missing or no longer matches its results manifest; export the " *
+                "matching saved bundle, or pass interlinks=false to leave the links out."))
+    end
     return DataFrame(Arrow.Table(path))
 end
 
