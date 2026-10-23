@@ -68,7 +68,7 @@ JULIA_LOAD_PATH='@:@stdlib' julia --startup-file=no --project=/path/to/hypr-env 
 
 The setup helper uses the verified submodule at `packages/robotics/HYPR.jl`.
 Its recorded revision agrees with
-[`packages/SpaceAGORAHYPR/HYPRSource.toml`](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/blob/main/packages/SpaceAGORAHYPR/HYPRSource.toml).
+`packages/SpaceAGORAHYPR/HYPRSource.toml`.
 The robotics folder is a source organization choice; HYPR supports spacecraft
 RPO as well as robot arms. The [installation guide](installation_environment.md#Optional-package-commands)
 describes source checks, and the [RPO guide](rpo_planner_pilot.md#Installing-optional-HYPR)
