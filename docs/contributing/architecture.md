@@ -469,10 +469,10 @@ building the run's buffers and callbacks:
 
 1. `_resume_engine_state!`. On a run resumed from a checkpoint file, it checks
    the checkpoint against the run and restores the engine's and the callbacks'
-   run state: the `activity`, `interlinks` and `callbacks` entries, and the
-   periodic ticks still pending. It also sets the resume flags
-   (`callback_resume`, `model_resume`). The models' own state and the form of
-   their `gnc_scopes` entry are only checked here; a run with guidance,
+   run state: the `activity`, `interlinks`, `callbacks`, `maneuver_buffers` and
+   `orbits` and `entries` entries, and the periodic ticks still pending. It also sets the
+   resume flags (`callback_resume`, `model_resume`). The models' own state and
+   the form of their `gnc_scopes` entry are only checked here; a run with guidance,
    navigation or control models refuses a checkpoint without that entry here,
    before anything is restored.
 2. `_start_run_clock!`: the run clock of the periodic ticks, for a checkpointed
@@ -507,6 +507,9 @@ calls them at the top of `src/models/gnc/contracts/simulation_lifecycle.jl`.
 | Battery flags, fault activity | the batteries and the actuator faults | the power and fault callbacks' first initialization | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume` so that those initializations keep it | phase 1 |
 | Sensor streams, latest measurements, biases, sample times | the mounted sensors and the sensor callbacks | `reset_sensors!` at the first solve's start | `callbacks`, and the sensor's own `checkpoint_state` in `models` | the records in phase 1; the sensor's own state in phase 3. A resumed run does not call `initialize_sensor!` | phases 1 and 3 |
 | Hinge and gimbal angles, mounted thrusters' firing state (`κ`, `thrust`) | the link hardware: `PanelHinge`, `ThrusterGimbal` and `Thruster`, which keep the state a run starts from (`run_start`, first the configured one) and the last tick's write (`run_written`) | the run-state callback's first initialization (`get_run_state_callbacks`): a value still equal to the last mounted tick's write returns to the previous run's start; a value a user changed between runs is kept | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume`: the run-state callback's initialization then keeps the restored state and records it as the latest write | phase 1 |
+| Maneuver commands and burn plans | `SharedBuffers.maneuver_commands` and `maneuver_burn_plans`: the maneuver guidance models write the commands, the burn scheduler (`BaseThrusterModel`) the plans | a new `SharedBuffers`, every command and plan unset | `maneuver_buffers`, written while a command or plan is set | `_restore_maneuver_buffer_checkpoint_state!` | phase 1 |
+| The orbit each spacecraft is on | `ODEParams.orbit_counter`: the apoapsis callback counts the orbits, and a state anchor with an `orbit_count` sets it | a new `ODEParams`, the first orbit for every spacecraft | `orbits`, written once a spacecraft is past its first orbit | `_restore_orbit_counter_checkpoint_state!` | phase 1 |
+| Completed atmosphere entries | `SharedBuffers.entry_counter`: the entry-end callback counts downward interface crossings | new run buffers, zero for every spacecraft | `entries`, written once a spacecraft has entered | `_restore_entry_counter_checkpoint_state!` | phase 1 |
 | Periodic tick clocks | each run-clock callback, and the run clock in the shared buffers | each solve's start; the run clock in phase 2 | `periodic_ticks` | `_pending_periodic_ticks`, taken at the first solve's start | phases 1 and 2 |
 | Saved results rows | the run's row lists in `run_simulation` | empty | `results_rows`: how much of `simulation_checkpoint.results.bin`, beside the checkpoint, is its own | `_start_results_rows!` puts the rows back before the first segment, or warns when it cannot | before the solve |
 | GNC links | the shared object | `link_initialize!`, once per run | none of their own: the models save what they need | — | phase 3 |
@@ -516,12 +519,20 @@ calls them at the top of `src/models/gnc/contracts/simulation_lifecycle.jl`.
 | Plume interaction integral | the plume model's state | the plume callback's first initialization | none: a resumed run starts a new integral | — | the solve's start |
 | GRAM density perturbation walk | the perturbation callback | its initialization | none: a resume is refused | — | the solve's start |
 | Density model histories | the density models | `_reset_density_model_histories!`, after the pre-solve probes | none | — | before the solve |
+| GRAM track and vacuum-prediction caches, when enabled (`SPACEAGORA_GRAM_TRACK_CACHE`, `SPACEAGORA_VACUUM_GRAM_CACHE`; both off by default) | the shared buffers | emptied before the solve | none: a resumed run builds them again, so its interpolated densities can differ from those of a run never interrupted, within the caches' tolerances | — | before the solve |
 
 Current behaviour to know:
 
 - **Runs that cannot resume.** EDG, `AlgorithmGuidance`, the GRAM density
   perturbation and externally propagated spacecraft refuse checkpoints or a
   resume, because the checkpoint does not hold their run state.
+- **State a checkpoint does not need.** Some run state changes during a run
+  and is not in the checkpoint because it comes back by itself, as it does at a
+  checkpoint segment's start: the atmosphere flags (`in_atmosphere`), from the
+  state at each solve's start; the sampled densities, winds and heat rates, when
+  they are next sampled; the state anchors' next anchor and the periapsis
+  pulses' last pass, at each solve's start. The ephemeris memos, workspaces and
+  execution plans change only how fast a run goes.
 
 ## Map of the repository
 
@@ -629,7 +640,7 @@ and result types, geometry, metrics, RRT and retiming services, and compatibilit
 entry points. `SpaceAGORA.HYPRServices` exposes the adapter contract without
 changing the original owners of those bindings. Only the explicitly listed
 services and extension points are supported; arbitrary internal-module access is
-not the integration API. The current supported pair is SpaceAGORA 0.6.0 with
+not the integration API. The current supported pair is SpaceAGORA 0.6.1 with
 HYPR 0.5.0, service contract 3.0.0 and compatibility package 0.2.0. Install the
 pinned pair and explicitly load `SpaceAGORAHYPR` using the
 [RPO planner guide](../src/user/rpo_planner_pilot.md#installing-optional-hypr).

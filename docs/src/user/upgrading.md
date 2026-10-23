@@ -34,7 +34,7 @@ or `nothing` outside its scope, as the docs asked, runs as before.
 [Migrating Extension Hooks](../reference/migrating_extension_hooks.md#Changed-in-0.7.0)
 has the table of hooks.
 
-## 0.6.1 (unreleased)
+## 0.6.1
 
 ### Machine calibration constants are measured again
 
@@ -50,11 +50,14 @@ Constants saved by SpaceAGORA 0.6.0 or earlier are no longer read:
   that planner runs without machine constants.
 - If you calibrated with the script at a job's thread count, rerun it as well:
   otherwise the first `parallel=true` session in that working directory measures
-  with its own thread count. Terminal, from the repository root:
+  with its own thread count.
 
-  ```text
-  julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl
-  ```
+To rerun the calibration, replace `<T>` with the thread count you run with.
+Terminal, from the repository root:
+
+```text
+julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl
+```
 
 [Parallel Execution](parallel_execution.md#Turning-on-parallel-execution) says
 where the constants are kept.

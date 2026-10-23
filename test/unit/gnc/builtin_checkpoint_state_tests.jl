@@ -1,7 +1,8 @@
 # The built-in guidance and control models' run state in checkpoint files
-# (checkpoint_state / restore_checkpoint_state!): a run resumed from a checkpoint
-# ends as an uninterrupted run with the same checkpoints, bit for bit, in
-# configurations where each model's state changes (the kit's
+# (checkpoint_state / restore_checkpoint_state!), the burn scheduler's commands and
+# plans and the orbit counters: a run resumed from a checkpoint ends as an
+# uninterrupted run with the same checkpoints, bit for bit, in configurations where
+# each model's state changes (the kit's
 # `checkpoint_round_trip`, on runs it cannot make with its own fixture); the RPO
 # planner binding resumes without planning again and refuses a planner whose own
 # state a checkpoint cannot hold; the RPO MPC solver continues from its saved
@@ -146,6 +147,41 @@ function apollo_configuration()
     return args, guidance, control
 end
 
+# Three spacecraft on 400 km by 2000 km orbits with a maneuver guidance model and one
+# burn scheduler for all of them, for 14000 s (about two orbits). The periapsis-raise
+# guidance issues its commands before apoapsis, and the scheduler plans them at the
+# next scheduling pass, the start of the segment after the halfway checkpoint: the
+# commands and plans waiting there must survive the checkpoint. The campaign
+# guidance, with an atmosphere interface above the periapsis (no atmosphere, so no
+# drag) whose exits are scheduling passes, plans each orbit's maneuver from the
+# orbit counter, which must survive it too.
+function maneuver_configuration(guidance=nothing; EI=120.0, mission=(;))
+    planet = SM.make_no_gram_planet(:earth)
+    sats = map(1:3) do k
+        root = SM.Link(root=true, m=100.0, ref_area=2.0)
+        ic = SM.InitialCondition(ra=planet.Rp_e + 2000e3, rp=planet.Rp_e + 400e3, i=30.0, ω=0.0, Ω=40.0k, ν=10.0 + 30.0k)
+        SM.SpacecraftModel(joints=SM.Joint[], links=[root], root=root, prop_mass=50.0, inertia_tensor=root.inertia,
+            initial_condition=ic, id=k)
+    end
+    guidance = guidance !== nothing ? guidance : SM.ApoapsisTargetPeriapsisRaiseGuidanceModel(
+        target_apoapsis_radius_m=planet.Rp_e + 3000e3, target_periapsis_altitude_m=500e3)
+    scheduler = SM.ThrusterModels.BaseThrusterModel(thrust=fill(50.0, 3), direction=zeros(3), Δv=zeros(3),
+        start_burn_time=fill(-1.0, 3), stop_burn_time=fill(-1.0, 3), Isp=fill(300.0, 3))
+    env = SM.EnvironmentModel(planet=planet, EI=EI, density_model=SM.NoAtmosphereModel(),
+        ephemerides_model=SM.SimpleEphemeridesModel(),
+        thermal_model=SM.MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet), topography=false, wind=false)
+    args = SM.SimulationConfiguration(
+        simulation_settings=SM.SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+        mission_configuration=SM.MissionConfiguration(; mission_type=SM.MissionTime, keplerian=true, number_of_orbits=1,
+            mission_time=14000.0, orientation_sim=false, num_steps_to_save=1000, mission...),
+        environment_model=env,
+        dynamics_model=SM.DynamicsModel(SM.SpacecraftModel[sats...], (SM.InverseSquaredGravityModel(),)),
+        guidance_model=SM.GuidanceModel((guidance,), [30.0]),
+        control_model=SM.ControlModel(control_effectors=(scheduler,), control_rates=[1.0]),
+        initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0))
+    return args, guidance, scheduler
+end
+
 @testset "Built-in models' run state survives a checkpoint" begin
     @testset "a resumed run ends as an uninterrupted one" begin
         # The momentum manager with its command and field callables: it accumulates
@@ -163,6 +199,16 @@ end
         # The Apollo descent guidance and control.
         apollo, guidance, control = apollo_configuration()
         push!(cases, (:guidance_model, guidance, apollo), (:control_model, control, apollo))
+        # The periapsis-raise guidance and the burn scheduler, with commands and plans
+        # waiting at the halfway checkpoint.
+        raise, raise_guidance, raise_scheduler = maneuver_configuration()
+        push!(cases, (:guidance_model, raise_guidance, raise), (:control_model, raise_scheduler, raise))
+        # The campaign guidance and the burn scheduler, past the first orbit at the
+        # halfway checkpoint.
+        campaign, campaign_guidance, campaign_scheduler = maneuver_configuration(
+            SM.AerobrakingCampaignPropulsiveManeuverGuidanceModel(maneuver_orbit_number=[1, 2], maneuver_Δv=[2.0, -1.0]);
+            EI=500.0)
+        push!(cases, (:guidance_model, campaign_guidance, campaign), (:control_model, campaign_scheduler, campaign))
         for (kind, model, configuration) in cases
             check = round_trip(model, kind, configuration)
             @testset let model = nameof(typeof(model)), status = check.status, detail = check.detail
@@ -172,6 +218,115 @@ end
         check = mpc_round_trip(rpo)
         @testset let model = :RPOMPCControlModel, status = check.status, detail = check.detail
             @test status === :pass
+        end
+        # Their checkpoint holds the commands and plans only when one is set.
+        buffers(p) = SpaceAGORA.SimulationEngine._maneuver_buffer_checkpoint_state(p)
+        p = SM.ODEParams(n_sats=3, args=raise)
+        @test buffers(p) === nothing
+        p.shared_buffers.maneuver_commands[2] = SM.PropulsiveManeuverCommand(valid=true, delta_v_mps=1.5)
+        @test buffers(p).commands[2].delta_v_mps == 1.5
+        p.shared_buffers.maneuver_burn_plans[3] = SM.PropulsiveBurnPlan(valid=true, delta_v_mps=1.5, start_burn_s=8.0,
+            stop_burn_s=9.0)
+        entry = buffers(p)
+        @test entry.version == 1 && entry.plans[3].valid && !entry.plans[1].valid
+        q = SM.ODEParams(n_sats=3, args=raise)
+        SpaceAGORA.SimulationEngine._restore_maneuver_buffer_checkpoint_state!(
+            (runtime_state=(maneuver_buffers=from_file(entry),),), q)
+        @test q.shared_buffers.maneuver_commands == p.shared_buffers.maneuver_commands
+        @test q.shared_buffers.maneuver_burn_plans == p.shared_buffers.maneuver_burn_plans
+        @test_throws "spacecraft count" SpaceAGORA.SimulationEngine._restore_maneuver_buffer_checkpoint_state!(
+            (runtime_state=(maneuver_buffers=entry,),), SM.ODEParams(n_sats=2, args=raise))
+        # The orbit counters, once some spacecraft is past its first orbit.
+        orbits(p) = SpaceAGORA.SimulationEngine._orbit_counter_checkpoint_state(p)
+        p = SM.ODEParams(n_sats=3, args=raise)
+        @test orbits(p) === nothing
+        p.orbit_counter[2] = 3
+        q = SM.ODEParams(n_sats=3, args=raise)
+        SpaceAGORA.SimulationEngine._restore_orbit_counter_checkpoint_state!((runtime_state=(orbits=from_file(orbits(p)),),), q)
+        @test q.orbit_counter == [1, 3, 1]
+        @test_throws "spacecraft count" SpaceAGORA.SimulationEngine._restore_orbit_counter_checkpoint_state!(
+            (runtime_state=(orbits=orbits(p),),), SM.ODEParams(n_sats=2, args=raise))
+        # A run that ends after two orbits, resumed after its first checkpoint, ends
+        # where it ends without the break, not an orbit later.
+        checkpointed(dir; resume=false) = (checkpoint_enabled=true, checkpoint_interval_s=4000.0,
+            checkpoint_directory=dir, resume_from_checkpoint=resume)
+        two_orbits(mission_time, settings) = with_settings(first(maneuver_configuration(nothing; EI=500.0,
+            mission=(mission_type=SM.MissionOrbits, number_of_orbits=2, mission_time=mission_time))); settings...)
+        whole = run_simulation(two_orbits(30000.0, checkpointed(mktempdir())); return_solution=true)
+        split = mktempdir()
+        run_simulation(two_orbits(4000.0, checkpointed(split)))
+        resumed = run_simulation(two_orbits(30000.0, checkpointed(split; resume=true)); return_solution=true)
+        @test whole.t[end] < 30000.0 && resumed.t[end] == whole.t[end]
+        @test isequal(collect(resumed.u[end]), collect(whole.u[end]))
+        # The same checkpoint without the new entries, as an earlier SpaceAGORA wrote
+        # it, resumes with no error and counts from the first orbit, as it did then:
+        # the run ends late.
+        earlier = mktempdir()
+        run_simulation(two_orbits(4000.0, checkpointed(earlier)))
+        paths = SpaceAGORA.SimulationEngine._checkpoint_paths(two_orbits(4000.0, checkpointed(earlier)))
+        payload = deserialize(paths.data)
+        @test hasproperty(payload.runtime_state, :orbits)
+        runtime = Base.structdiff(payload.runtime_state, NamedTuple{(:orbits, :maneuver_buffers)})
+        payload = isempty(runtime) ? Base.structdiff(payload, NamedTuple{(:runtime_state,)}) :
+            merge(payload, (runtime_state=runtime,))
+        open(io -> serialize(io, payload), paths.data, "w")
+        late = run_simulation(two_orbits(30000.0, checkpointed(earlier; resume=true)); return_solution=true)
+        @test late.t[end] > whole.t[end]
+        # The entry-end counter is owned by the run, not a fresh callback closure.
+        entries(p) = SpaceAGORA.SimulationEngine._entry_counter_checkpoint_state(p)
+        restore_entries!(entry, p) = SpaceAGORA.SimulationEngine._restore_entry_counter_checkpoint_state!(
+            (runtime_state=(entries=entry,),), p)
+        p = SM.ODEParams(n_sats=3, args=raise)
+        @test entries(p) === nothing
+        p.shared_buffers.entry_counter[2] = 1
+        saved_entries = from_file(entries(p))
+        p.shared_buffers.entry_counter[2] = 2
+        q = SM.ODEParams(n_sats=3, args=raise)
+        restore_entries!(saved_entries, q)
+        @test q.shared_buffers.entry_counter == [0, 1, 0]
+        @test_throws "spacecraft count" restore_entries!(saved_entries, SM.ODEParams(n_sats=2, args=raise))
+        @test_throws "version 1" restore_entries!(merge(saved_entries, (version=2,)), q)
+        @test_throws "nonnegative" restore_entries!(merge(saved_entries, (entry_counter=[0, -1, 0],)), q)
+        @test_throws "spacecraft count" restore_entries!((version=1,), q)
+        fresh = SM.ODEParams(n_sats=3, args=raise)
+        SpaceAGORA.SimulationEngine._restore_entry_counter_checkpoint_state!((;), fresh)
+        @test fresh.shared_buffers.entry_counter == [0, 0, 0]
+
+        # Three unpowered spacecraft cross a 500 km interface on eccentric
+        # orbits. Drag is present to enable the entry-end callback, but density
+        # is zero. Resume after each has entered once, before the second entry.
+        function two_entries(mission_time, settings)
+            base = first(maneuver_configuration(nothing; EI=500.0, mission=(mission_time=mission_time,)))
+            config = SM.SimConfig._with_configuration(base;
+                dynamics_model=SM.DynamicsModel(base.dynamics_model.spacecraft,
+                    (SM.InverseSquaredGravityModel(), SM.AerodynamicCoefficientConstant())),
+                guidance_model=SM.GuidanceModel(), control_model=SM.ControlModel(),
+                solver_config=SM.SolverConfig(solver_mode=:tsit5))
+            return with_settings(config; settings...)
+        end
+        entry_settings(dir; resume=false) = (checkpoint_enabled=true, checkpoint_interval_s=7000.0,
+            checkpoint_directory=dir, resume_from_checkpoint=resume)
+        withenv("SPACEAGORA_ENTRY_TARGET_COUNT" => "2") do
+            whole_entries = run_simulation(two_entries(30000.0, entry_settings(mktempdir())); return_solution=true)
+            split_entries = mktempdir()
+            part = two_entries(7000.0, entry_settings(split_entries))
+            run_simulation(part)
+            entry_paths = SpaceAGORA.SimulationEngine._checkpoint_paths(part)
+            payload = deserialize(entry_paths.data)
+            @test payload.runtime_state.entries.entry_counter == [1, 1, 1]
+            # Retain the old-format checkpoint for a compatibility comparison.
+            legacy_payload = merge(payload, (runtime_state=Base.structdiff(payload.runtime_state, NamedTuple{(:entries,)}),))
+            continued = run_simulation(two_entries(30000.0, entry_settings(split_entries; resume=true)); return_solution=true)
+            @test whole_entries.t[end] < 30000.0 && continued.t[end] == whole_entries.t[end]
+            @test isequal(collect(continued.u[end]), collect(whole_entries.u[end]))
+            # No count in old checkpoints: preserve the old zero-count behavior.
+            # Run past the new checkpoint's second-entry end and inspect the
+            # saved counters, rather than assuming a complete third orbit.
+            serialize(entry_paths.data, legacy_payload)
+            legacy_horizon = whole_entries.t[end] + 1.0
+            legacy = run_simulation(two_entries(legacy_horizon, entry_settings(split_entries; resume=true)); return_solution=true)
+            @test legacy.t[end] == legacy_horizon
+            @test deserialize(entry_paths.data).runtime_state.entries.entry_counter == [1, 1, 1]
         end
         # A run's random stream compares by its state.
         @test C._same_state(MersenneTwister(3), from_file(MersenneTwister(3)))

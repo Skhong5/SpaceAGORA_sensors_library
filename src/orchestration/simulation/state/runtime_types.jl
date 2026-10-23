@@ -899,6 +899,7 @@ export RhsEffectorDecision, RhsExecutionPlan
         harmonics_lpi::Base.RefValue{SMatrix{3,3,Float64,9}} = Ref(SMatrix{3,3,Float64,9}((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)))
         maneuver_commands::Vector{PropulsiveManeuverCommand} = [PropulsiveManeuverCommand() for _ in 1:n_sats]
         maneuver_burn_plans::Vector{PropulsiveBurnPlan} = [PropulsiveBurnPlan() for _ in 1:n_sats]
+        entry_counter::Vector{Int64} = zeros(Int64, n_sats)
         spice_runtime_counters::SpiceRuntimeCounters = SpiceRuntimeCounters()
         spice_rhs_memo_enabled::Base.RefValue{Bool} = Ref(true)
         spice_rhs_memo::SpiceRhsMemo = SpiceRhsMemo()
