@@ -15,8 +15,8 @@ What to read next:
 The effector tuple accepts any combination of `AbstractForceTorqueModel`
 implementations. The built-in gravity models:
 
-- `SM.InverseSquaredGravityModel()` — inverse-square point-mass gravity
-- `SM.InverseSquaredJ2GravityModel()` — point-mass gravity with J2 oblateness
+- `InverseSquaredGravityModel()`: inverse-square point-mass gravity
+- `InverseSquaredJ2GravityModel()`: point-mass gravity with J2 oblateness
 - `GravitationalHarmonicsModel(L, M, coefficients_file, planet)` — spherical-harmonic gravity to degree `L` and order `M`
 - `NBodyGravityModel(body_names=..., primary_body_name=..., planet=planet)` — third-body gravity from ephemerides for the listed bodies, for example `NBodyGravityModel(body_names=("Sun", "Moon"), primary_body_name="Earth", planet=planet)`
 
