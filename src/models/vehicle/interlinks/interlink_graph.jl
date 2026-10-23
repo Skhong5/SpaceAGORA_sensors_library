@@ -181,8 +181,8 @@ module InterLinkModels
 	is a terminal number or a terminal mounted on that `SpacecraftModel`. The
 	terminals must be on different spacecraft, numbered within each spacecraft's
 	`terminal_count`, and able to carry the link (`terminal_supports`); a link
-	that reads the terminal hardware at both ends (a `DataLink` with a
-	`ShannonBudget`) refuses a virtual terminal. A link registers once. Its key lists the lower `(spacecraft, terminal)` first, or,
+	that requires hardware at both ends (a `DataLink` with a `ShannonBudget`, or
+	a `LaserBeamLink` with mounted recoil or terminal pointing) refuses a virtual terminal. A link registers once. Its key lists the lower `(spacecraft, terminal)` first, or,
 	for a directed link (`link_directed`), the endpoints in the order given. The
 	link is available only when `link_available` allows it, and active only when
 	the scheduler selects it.
@@ -384,8 +384,10 @@ module InterLinkModels
 			pair_link = link isa AbstractInterlink ? link : link(i, j)
 			pair_link isa AbstractInterlink || throw(ArgumentError(
 				"register_links!: the link for pair ($i, $j) is a $(typeof(pair_link)), not a link kind (AbstractInterlink)."))
+			sides = link_directed(pair_link) ? (:transmitter, :receiver) : (:either, :either)
 			ends = terminals === nothing ?
-				(_next_terminal!(turn, spacecraft, i, pair_link), _next_terminal!(turn, spacecraft, j, pair_link)) :
+				(_next_terminal!(turn, spacecraft, i, pair_link, sides[1]),
+				 _next_terminal!(turn, spacecraft, j, pair_link, sides[2])) :
 				terminals(i, j)
 			push!(keys, register_link!(model, spacecraft, (i, ends[1]), (j, ends[2]), pair_link))
 		end
@@ -393,11 +395,11 @@ module InterLinkModels
 	end
 
 	# The next terminal of spacecraft `satellite` that can carry `link`, in turn.
-	function _next_terminal!(turn::Vector{Int}, spacecraft, satellite::Integer, link)
+	function _next_terminal!(turn::Vector{Int}, spacecraft, satellite::Integer, link, side::Symbol)
 		1 <= satellite <= length(spacecraft) || throw(ArgumentError("Invalid spacecraft vector index $satellite."))
 		usable = filter(1:terminal_count(spacecraft[satellite])) do number
 			device = _terminal_device(spacecraft[satellite], number)
-			device === nothing || terminal_supports(device, link)
+			device === nothing ? !_link_needs_terminals(link) : terminal_supports(device, link, side)
 		end
 		isempty(usable) && throw(ArgumentError(
 			"Spacecraft $satellite has no terminal that can carry a $(nameof(typeof(link)))."))
