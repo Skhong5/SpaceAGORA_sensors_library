@@ -3,9 +3,9 @@
 # in the order a resumed run uses them (see "Run state: owners, resets and
 # restores" in docs/contributing/architecture.md):
 #
-# - `activity`, `interlinks`, `callbacks` and `maneuver_buffers`: the engine's and
-#   the callbacks' run state, restored by `_resume_engine_state!` (execution.jl)
-#   before the models start and before the callbacks initialize;
+# - `activity`, `interlinks`, `callbacks`, `maneuver_buffers` and `orbits`: the
+#   engine's and the callbacks' run state, restored by `_resume_engine_state!`
+#   (execution.jl) before the models start and before the callbacks initialize;
 # - `models`: the models' own run state, checked when the checkpoint is read and
 #   restored by `_start_run_models!` after the models' initializers;
 # - `gnc_scopes`: the spacecraft each guidance, navigation and control model acts
@@ -78,6 +78,29 @@ function _restore_maneuver_buffer_checkpoint_state!(checkpoint, p)
         throw(ArgumentError("The checkpoint's maneuver commands and burn plans must match the spacecraft count."))
     copyto!(buffers.maneuver_commands, entry.commands)
     copyto!(buffers.maneuver_burn_plans, entry.plans)
+    return nothing
+end
+
+# The orbit each spacecraft is on (`p.orbit_counter`, from 1; the apoapsis callback
+# adds one at each apoapsis). The orbit-count mission end, the campaign maneuver
+# guidance, pass-indexed density models and periapsis pulses read it, so a resumed
+# run continues the count. Written once some spacecraft is past its first orbit, so
+# the checkpoints of shorter runs do not change, and a checkpoint without the
+# entry, written by an earlier SpaceAGORA, resumes from the first orbit, as before.
+function _orbit_counter_checkpoint_state(p)
+    all(==(1), p.orbit_counter) && return nothing
+    return (version=1, orbit_counter=copy(p.orbit_counter))
+end
+
+function _restore_orbit_counter_checkpoint_state!(checkpoint, p)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    entry = runtime !== nothing && hasproperty(runtime, :orbits) ? runtime.orbits : nothing
+    entry === nothing && return nothing
+    hasproperty(entry, :version) && entry.version === 1 ||
+        throw(ArgumentError("Orbit counter checkpoint state version 1 is required to resume this run."))
+    length(entry.orbit_counter) == length(p.orbit_counter) ||
+        throw(ArgumentError("The checkpoint's orbit counters must match the spacecraft count."))
+    copyto!(p.orbit_counter, entry.orbit_counter)
     return nothing
 end
 
@@ -950,10 +973,13 @@ end
 
 @inline function _write_checkpoint!(args, t::Float64, u_state, solver_mode::String; is_active=nothing, callback_state=nothing,
                                      model_state=nothing, periodic_ticks=nothing, gnc_scopes=nothing,
-                                     results_rows=nothing, maneuver_buffers=nothing)
+                                     results_rows=nothing, maneuver_buffers=nothing, orbits=nothing)
     runtime = _interlink_checkpoint_runtime_state(args, is_active)
     if callback_state !== nothing
         runtime = runtime === nothing ? (callbacks=callback_state,) : merge(runtime, (callbacks=callback_state,))
+    end
+    if orbits !== nothing
+        runtime = runtime === nothing ? (orbits=orbits,) : merge(runtime, (orbits=orbits,))
     end
     if maneuver_buffers !== nothing
         runtime = runtime === nothing ? (maneuver_buffers=maneuver_buffers,) :

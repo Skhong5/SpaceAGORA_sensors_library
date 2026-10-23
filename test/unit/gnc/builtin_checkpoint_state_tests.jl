@@ -1,8 +1,8 @@
 # The built-in guidance and control models' run state in checkpoint files
-# (checkpoint_state / restore_checkpoint_state!), and the burn scheduler's commands
-# and plans: a run resumed from a checkpoint ends as an uninterrupted run with the
-# same checkpoints, bit for bit, in configurations where each model's state changes
-# (the kit's
+# (checkpoint_state / restore_checkpoint_state!), the burn scheduler's commands and
+# plans and the orbit counters: a run resumed from a checkpoint ends as an
+# uninterrupted run with the same checkpoints, bit for bit, in configurations where
+# each model's state changes (the kit's
 # `checkpoint_round_trip`, on runs it cannot make with its own fixture); the RPO
 # planner binding resumes without planning again and refuses a planner whose own
 # state a checkpoint cannot hold; the RPO MPC solver continues from its saved
@@ -147,12 +147,15 @@ function apollo_configuration()
     return args, guidance, control
 end
 
-# Three spacecraft on 400 km by 2000 km orbits with the periapsis-raise guidance and
-# one burn scheduler for all of them, for 14000 s: the guidance issues its commands
-# before apoapsis, and the scheduler plans them at the next scheduling pass, the
-# start of the segment after the halfway checkpoint. The commands and plans waiting
-# there must survive the checkpoint.
-function raise_configuration()
+# Three spacecraft on 400 km by 2000 km orbits with a maneuver guidance model and one
+# burn scheduler for all of them, for 14000 s (about two orbits). The periapsis-raise
+# guidance issues its commands before apoapsis, and the scheduler plans them at the
+# next scheduling pass, the start of the segment after the halfway checkpoint: the
+# commands and plans waiting there must survive the checkpoint. The campaign
+# guidance, with an atmosphere interface above the periapsis (no atmosphere, so no
+# drag) whose exits are scheduling passes, plans each orbit's maneuver from the
+# orbit counter, which must survive it too.
+function maneuver_configuration(guidance=nothing; EI=120.0, mission=(;))
     planet = SM.make_no_gram_planet(:earth)
     sats = map(1:3) do k
         root = SM.Link(root=true, m=100.0, ref_area=2.0)
@@ -160,17 +163,17 @@ function raise_configuration()
         SM.SpacecraftModel(joints=SM.Joint[], links=[root], root=root, prop_mass=50.0, inertia_tensor=root.inertia,
             initial_condition=ic, id=k)
     end
-    guidance = SM.ApoapsisTargetPeriapsisRaiseGuidanceModel(target_apoapsis_radius_m=planet.Rp_e + 3000e3,
-        target_periapsis_altitude_m=500e3)
+    guidance = guidance !== nothing ? guidance : SM.ApoapsisTargetPeriapsisRaiseGuidanceModel(
+        target_apoapsis_radius_m=planet.Rp_e + 3000e3, target_periapsis_altitude_m=500e3)
     scheduler = SM.ThrusterModels.BaseThrusterModel(thrust=fill(50.0, 3), direction=zeros(3), Δv=zeros(3),
         start_burn_time=fill(-1.0, 3), stop_burn_time=fill(-1.0, 3), Isp=fill(300.0, 3))
-    env = SM.EnvironmentModel(planet=planet, EI=120.0, density_model=SM.NoAtmosphereModel(),
+    env = SM.EnvironmentModel(planet=planet, EI=EI, density_model=SM.NoAtmosphereModel(),
         ephemerides_model=SM.SimpleEphemeridesModel(),
         thermal_model=SM.MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet), topography=false, wind=false)
     args = SM.SimulationConfiguration(
         simulation_settings=SM.SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
-        mission_configuration=SM.MissionConfiguration(mission_type=SM.MissionTime, keplerian=true, number_of_orbits=1,
-            mission_time=14000.0, orientation_sim=false, num_steps_to_save=1000),
+        mission_configuration=SM.MissionConfiguration(; mission_type=SM.MissionTime, keplerian=true, number_of_orbits=1,
+            mission_time=14000.0, orientation_sim=false, num_steps_to_save=1000, mission...),
         environment_model=env,
         dynamics_model=SM.DynamicsModel(SM.SpacecraftModel[sats...], (SM.InverseSquaredGravityModel(),)),
         guidance_model=SM.GuidanceModel((guidance,), [30.0]),
@@ -198,8 +201,14 @@ end
         push!(cases, (:guidance_model, guidance, apollo), (:control_model, control, apollo))
         # The periapsis-raise guidance and the burn scheduler, with commands and plans
         # waiting at the halfway checkpoint.
-        raise, raise_guidance, raise_scheduler = raise_configuration()
+        raise, raise_guidance, raise_scheduler = maneuver_configuration()
         push!(cases, (:guidance_model, raise_guidance, raise), (:control_model, raise_scheduler, raise))
+        # The campaign guidance and the burn scheduler, past the first orbit at the
+        # halfway checkpoint.
+        campaign, campaign_guidance, campaign_scheduler = maneuver_configuration(
+            SM.AerobrakingCampaignPropulsiveManeuverGuidanceModel(maneuver_orbit_number=[1, 2], maneuver_Δv=[2.0, -1.0]);
+            EI=500.0)
+        push!(cases, (:guidance_model, campaign_guidance, campaign), (:control_model, campaign_scheduler, campaign))
         for (kind, model, configuration) in cases
             check = round_trip(model, kind, configuration)
             @testset let model = nameof(typeof(model)), status = check.status, detail = check.detail
@@ -227,6 +236,28 @@ end
         @test q.shared_buffers.maneuver_burn_plans == p.shared_buffers.maneuver_burn_plans
         @test_throws "spacecraft count" SpaceAGORA.SimulationEngine._restore_maneuver_buffer_checkpoint_state!(
             (runtime_state=(maneuver_buffers=entry,),), SM.ODEParams(n_sats=2, args=raise))
+        # The orbit counters, once some spacecraft is past its first orbit.
+        orbits(p) = SpaceAGORA.SimulationEngine._orbit_counter_checkpoint_state(p)
+        p = SM.ODEParams(n_sats=3, args=raise)
+        @test orbits(p) === nothing
+        p.orbit_counter[2] = 3
+        q = SM.ODEParams(n_sats=3, args=raise)
+        SpaceAGORA.SimulationEngine._restore_orbit_counter_checkpoint_state!((runtime_state=(orbits=from_file(orbits(p)),),), q)
+        @test q.orbit_counter == [1, 3, 1]
+        @test_throws "spacecraft count" SpaceAGORA.SimulationEngine._restore_orbit_counter_checkpoint_state!(
+            (runtime_state=(orbits=orbits(p),),), SM.ODEParams(n_sats=2, args=raise))
+        # A run that ends after two orbits, resumed after its first checkpoint, ends
+        # where it ends without the break, not an orbit later.
+        checkpointed(dir; resume=false) = (checkpoint_enabled=true, checkpoint_interval_s=4000.0,
+            checkpoint_directory=dir, resume_from_checkpoint=resume)
+        two_orbits(mission_time, settings) = with_settings(first(maneuver_configuration(nothing; EI=500.0,
+            mission=(mission_type=SM.MissionOrbits, number_of_orbits=2, mission_time=mission_time))); settings...)
+        whole = run_simulation(two_orbits(30000.0, checkpointed(mktempdir())); return_solution=true)
+        split = mktempdir()
+        run_simulation(two_orbits(4000.0, checkpointed(split)))
+        resumed = run_simulation(two_orbits(30000.0, checkpointed(split; resume=true)); return_solution=true)
+        @test whole.t[end] < 30000.0 && resumed.t[end] == whole.t[end]
+        @test isequal(collect(resumed.u[end]), collect(whole.u[end]))
         # A run's random stream compares by its state.
         @test C._same_state(MersenneTwister(3), from_file(MersenneTwister(3)))
         @test !C._same_state(MersenneTwister(3), MersenneTwister(4))

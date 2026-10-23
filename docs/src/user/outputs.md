@@ -370,6 +370,13 @@ in a run never interrupted. A checkpoint written by an earlier SpaceAGORA
 holds no such record, and a run resumed from it starts with no command or plan
 waiting, as before.
 
+The checkpoint also records the orbit each spacecraft is on, once one is past its
+first, so a resumed run continues the count: a `MissionOrbits` run ends after the
+same number of orbits, and the campaign maneuver guidance, the pass-indexed
+density models and the periapsis pulses see the orbits they would have seen. A
+checkpoint written by an earlier SpaceAGORA holds no count, and a run resumed from
+it counts from the first orbit again, as before.
+
 The checkpoint also records which spacecraft are active. A spacecraft lost to
 an impact or a touchdown before the checkpoint stays inactive in the resumed
 run, as it would in a run that was never interrupted: it is not propagated, its
