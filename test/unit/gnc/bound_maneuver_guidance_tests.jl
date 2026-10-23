@@ -233,16 +233,15 @@ end
                 settings=checkpointed(mktempdir(), interval)))
             @test isequal(collect(shared.u[end]), collect(whole.u[end]))
         end
-        # A campaign run past its first orbit at the 7000 s checkpoint: until the
-        # checkpoint holds the burn scheduler's commands and plans and the orbit
-        # counter, its resumed run does not end where the run without the break ends
-        # (the fix for main is a PR of its own; with it, this check passes).
+        # A campaign run past its first orbit at the 7000 s checkpoint preserves
+        # the scheduler's waiting commands and plans and the orbit counter.
+        # The #509 checkpoint repair makes the resumed final state exact.
         g = () -> campaign([1, 2], [2.0, -1.0])
         whole = solve(maneuver_args(:campaign; shared=(g(),), settings=checkpointed(mktempdir(), 7000.0)))
         split = mktempdir()
         solve(maneuver_args(:campaign; shared=(g(),), mission_time=7000.0, settings=checkpointed(split, 7000.0)))
         late = solve(maneuver_args(:campaign; shared=(g(),), settings=checkpointed(split, 7000.0; resume=true)))
-        @test_broken isequal(collect(late.u[end]), collect(whole.u[end]))
+        @test isequal(collect(late.u[end]), collect(whole.u[end]))
     end
 
     @testset "the burn scheduler cannot be declared on a spacecraft" begin
