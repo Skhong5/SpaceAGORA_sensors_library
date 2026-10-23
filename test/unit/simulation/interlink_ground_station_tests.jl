@@ -19,6 +19,7 @@ const PLANET = make_no_gram_planet(:earth)
 const RADIUS = PLANET.Rp_e + 700e3
 const BUDGET = ShannonBudget(bandwidth_hz=1e6, frequency_hz=2.2e9)
 const LINK = DataLink(transmit_power_w=1.0, budget=BUDGET, range_m=3000e3)
+struct StationStoreInterrupted <: Exception end
 
 radio(; kwargs...) = RadioTerminal(; boresight=[0.0, 0.0, 1.0], max_power_w=5.0, gain_dbi=0.0, efficiency=0.5, kwargs...)
 station(; name="north", lat_deg=0.0, lon_deg=0.0, alt_m=0.0, min_elevation_deg=10.0, antennas=[radio()]) =
@@ -534,6 +535,58 @@ end
             # The station's counters continue too.
             @test resumed.solution.u[end].gs[1].received_bits ≈ straight.gs[1].received_bits rtol=1e-8
             @test resumed.table.gs1_received_bits[end] ≈ straight.gs[1].received_bits rtol=1e-8
+        end
+    end
+
+    @testset "station and store checkpoints continue together" begin
+        # The same checkpoint boundaries make the reference and resumed runs
+        # comparable bit for bit. Exercise the store's boundary events as well
+        # as the station counters, in both link directions.
+        function stored_pass(uplink)
+            spacecraft, model = pass_fixture(lead_deg=10.0; uplink)
+            sc = only(spacecraft)
+            add_data!(sc, sc.root, DataStore(capacity_bits=2e6,
+                initial_bits=uplink ? 0.0 : 2e6))
+            uplink || add_data!(sc, sc.root, DataSource(rate_bps=2e3))
+            return spacecraft, model
+        end
+        settings(directory, resume=false) = SimulationSettings(results=false,
+            generate_plots=false, checkpoint_enabled=true, checkpoint_interval_s=100.0,
+            checkpoint_directory=directory, resume_from_checkpoint=resume)
+        for uplink in (false, true)
+            mktempdir() do reference_dir
+                whole = run(stored_pass(uplink)...; duration=450.0, dt_max=30.0,
+                    settings=settings(reference_dir))
+                mktempdir() do split_dir
+                    # Interrupt the same mission just after the 200 s checkpoint.
+                    # Shortening its configured horizon to 200 s would test
+                    # a changed mission as well as checkpoint restart.
+                    interrupted_args = run_args(stored_pass(uplink)...; duration=450.0,
+                        dt_max=30.0, settings=settings(split_dir))
+                    stop = SM.SimulationCallbacks.PresetTimeCallback([201.0],
+                        i -> throw(StationStoreInterrupted()); save_positions=(false, false))
+                    @test_throws StationStoreInterrupted run_simulation(interrupted_args;
+                        extra_callbacks=(stop,), return_results=true, return_solution=true)
+                    saved = SE._load_checkpoint(interrupted_args)
+                    @test saved.t == 200.0
+                    first_counter = uplink ? saved.u.gs[1].sent_bits : saved.u.gs[1].received_bits
+                    @test first_counter > 0.0
+                    resumed = run(stored_pass(uplink)...; duration=450.0, dt_max=30.0,
+                        settings=settings(split_dir, true))
+                    @test resumed.solution.t == whole.solution.t
+                    @test all(isequal(collect(a), collect(b)) for
+                        (a, b) in zip(resumed.solution.u, whole.solution.u))
+                    final = resumed.solution.u[end]
+                    @test final.gs[1].sent_bits ≈ final.sc[1].data_received_bits rtol=1e-14
+                    @test final.gs[1].received_bits ≈ final.sc[1].data_sent_bits rtol=1e-14
+                    initial = uplink ? 0.0 : 2e6
+                    @test initial + final.sc[1].data_produced_bits + final.gs[1].sent_bits ≈
+                        final.sc[1].data_stored_bits + final.sc[1].data_lost_bits +
+                        final.gs[1].received_bits atol=1e-2
+                    @test resumed.table.gs1_received_bits[end] == final.gs[1].received_bits
+                    @test resumed.table.gs1_sent_bits[end] == final.gs[1].sent_bits
+                end
+            end
         end
     end
 

@@ -150,8 +150,7 @@ const ANCHOR_STATE = [7.0e6, 0.0, 0.0, 0.0, 7500.0, 0.0]
             end
         end
         # An interlink checkpoint keeps its stored keys, so older checkpoints resume.
-        stub = (interlink_model=(graph=(vertices=Any[], edges=Any[], edge_properties=Any[]),
-                forbidden_pairs=Set{Any}(), constellation_link_type=:laser),
+        stub = (interlink_model=InterlinkModel(),
             scheduling_policy_model=T(SemimajorAxisRatePolicy(targets=[2, 1])), dynamics_model=(spacecraft=Any[],))
         snapshot = SE._interlink_checkpoint_configuration(stub)
         @test snapshot.target_idx == 1 && snapshot.target_idxs == [1, 2]
