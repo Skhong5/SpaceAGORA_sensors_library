@@ -42,6 +42,9 @@ The built-in kinds are:
   link with the idealized central force `magnification * power_w / c`, directed
   away from the other endpoint, equal and opposite on the two spacecraft.
   `LaserMomentumLink(terminal)` takes the numbers of a `LaserTerminal`.
+- `LaserBeamLink(; power_w, magnification, range_m, ...)`: the same link, with
+  opt-in occultation, beam divergence, pointing and mounted recoil. See
+  [Laser physics](#Laser-physics).
 - `PowerBeamLink(; power_w, wavelength_m, waist_radius_m, range_m)`: a power
   beam from a `LaserTerminal` to a `PowerReceiver`. See [Power links](#Power-links).
 - `DataLink(; transmit_power_w, budget, range_m)`: a one-way data link, from a
@@ -171,6 +174,71 @@ asking for its link's power, so the tier clears when the battery can supply it
 again. A terminal kind's tier is `terminal_shed_tier(terminal)`: 1 for
 `LaserTerminal` and `RadioTerminal`, 0 (never shed) for `PowerReceiver` and by
 default. Virtual terminals draw nothing and are never shed.
+
+## Laser physics
+
+`LaserBeamLink` is the open-cavity laser link with four effects you can switch
+on. With none of them it is `LaserMomentumLink`, bit for bit.
+
+```julia
+beam = GaussianBeam(wavelength_m=1.064e-6, waist_radius_m=0.05, aperture_radius_m=0.08)
+link = LaserBeamLink(power_w=10_000.0, magnification=100.0, range_m=200e3;
+    occultation=(; min_ray_altitude_m=100e3),   # or true
+    beam,
+    pointing=TerminalPointing(field_of_regard_rad=deg2rad(30)),
+    recoil=:mounted)
+register_link!(model, spacecraft, (1, terminal_1), (2, terminal_2), link)
+```
+
+- **Line of sight** (`occultation=true`). The link cannot close while the
+  segment between the two spacecraft meets the planet, a sphere of its
+  equatorial radius. `occultation=(; min_ray_altitude_m=h)` raises that sphere
+  by `h` metres, so that a beam grazing the atmosphere counts as blocked. The
+  atmosphere's attenuation is not modelled.
+- **Divergence** (`beam`). The force is scaled by
+  `beam_force_factor(beam, link, terminal_a, terminal_b, d)` at separation `d`.
+  - For a `GaussianBeam`, this is the share of the beam that the far aperture
+    captures, `1 − exp(−2 r² / w(d)²)`, from the same beam functions as a
+    power link (`beam_spot_radius_m`, `beam_capture_fraction`).
+  - Within the Rayleigh range `π w0² / λ`, the force is close to the near-field
+    force `magnification × power_w / c`. Far beyond it, the force falls as
+    `1/d²`.
+  - This is an engineering model, not a cavity model: it takes the
+    magnification as the near-field value and scales it by one pass's
+    geometric capture.
+  - A beam model of your own subtypes `AbstractLaserBeam` and implements
+    `beam_force_factor`, for example a recycling cavity or a measured curve.
+- **Pointing** (`pointing=TerminalPointing(; field_of_regard_rad,
+  error_rad=0.0)`).
+  - The link can close only while each end's line of sight to the other lies
+    within `field_of_regard_rad` of its terminal's boresight, read in the
+    spacecraft's attitude. Within that cone the terminal points ideally: there
+    is no slew rate or gimbal state.
+  - A static pointing error `error_rad` scales the force by
+    `exp(−2 (error / θ)²)`, with `θ = λ / (π w0)` the beam's divergence. It
+    needs a `GaussianBeam`. Jitter is not modelled.
+- **Mounted recoil** (`recoil=:mounted`). Each end's force acts at its
+  terminal's mounted location (`terminal_pose`), so it turns the spacecraft with
+  the torque of the terminal's lever arm, as the terminal's own recoil would.
+  The default, `:central`, applies the force with no torque.
+
+Pointing and mounted recoil need terminal hardware at both ends (a
+`LaserTerminal` carries a `LaserBeamLink`), and attitude (`orientation_sim=true`).
+`register_link!` refuses a virtual terminal for them, and a run without attitude
+refuses them at setup. With either option, range, occultation, divergence and
+force direction all use the ray between the mounted terminals, including the
+attitude transformation of each mount offset. Other configurations retain the
+spacecraft body-reference positions. Call the terminal-aware `interlink_wrench`
+and `link_available` forms for pointing or mounted recoil; their four-argument
+force/availability forms lack the required terminal hardware.
+
+The two forces are always equal and opposite, so the link conserves the run's
+linear momentum. While the link is active, the terminals' own recoil applies
+nothing: the link's force is their recoil (see
+[Terminal hardware and power](#Terminal-hardware-and-power)). A checkpoint
+records every option, and a resume with any of them changed is refused. The
+gve example runs with a beam when given one:
+`gve_sma_configuration(beam=GaussianBeam(...))`.
 
 ## Power links
 
@@ -675,11 +743,42 @@ station end to the station's elevation mask, as `DataLink` does
 (`a.spacecraft isa GroundStation`). A station's antennas are `RadioTerminal`s,
 which carry a kind only where `terminal_supports` allows it.
 
+### Terminals and torques
+
+A kind that reads its terminal hardware, or that turns the spacecraft it
+links, implements the terminal-aware forms of the hooks. The engine calls these
+forms, and their defaults call the ones above, so a kind written without them
+works as before, bit for bit.
+
+- `link_available(link, terminal_a, terminal_b, a, b, ctx)` decides whether the
+  link can close, given the terminal hardware at its two ends (`nothing` for a
+  virtual terminal).
+- `interlink_wrench(link, terminal_a, terminal_b, a, b, ctx)` returns
+  `(force_a_ii, torque_a_body, force_b_ii, torque_b_body)`.
+  - The forces act as `link_force`'s do, and the scheduling policies score
+    candidate links by them.
+  - Each torque is in its spacecraft's body frame, about its body reference
+    point, as a mounted actuator's torque is (see
+    [Frames](../reference/extension_conventions.md#Frames)).
+  - The engine adds each torque to its spacecraft's angular acceleration as
+    `I⁻¹ τ`, with `I` the inertia tensor. This is exact for the rigid spacecraft
+    interlinks support.
+- `link_applies_torque(link) = true` says that a kind's torques can be nonzero.
+  A run with such a link needs attitude (`orientation_sim=true`), and setup
+  refuses it otherwise. A nonzero torque from a kind that does not say so
+  stops a run without attitude.
+- `terminal_pose(spacecraft, terminal)` gives a mounted terminal's boresight and
+  location in its spacecraft's body frame. A force applied at that location has
+  the torque the terminal's own recoil would have: the cross product of the
+  location and the force, in the body frame.
+
 ### Supported scope
 
-Interlinks currently apply a translational force to rigid spacecraft, or carry
-power or data. The laser momentum link does not model terminal pointing,
-occultation, beam losses, torques or thermal dynamics. Links through hardware terminals draw battery
+Interlinks apply forces, and through `interlink_wrench` torques, to rigid
+spacecraft, or carry power or data. The laser momentum link does not model terminal pointing,
+occultation, beam losses or torques; `LaserBeamLink` adds them as options (see
+[Laser physics](#Laser-physics)). Neither models the terminals' thermal
+dynamics. Links through hardware terminals draw battery
 power and close when it is shed; links between virtual terminals draw none.
 Actuator faults on a link-driven terminal do not yet act on its link. The
 spacecraft's `battery_energy_index` and `tempurature_index` fields are
@@ -765,6 +864,14 @@ names inside, so checkpoints written before 0.6.0 resume.
 | --- | --- |
 | the state `laser_dv`, as in `solution.u[end].sc[i].laser_dv` | `interlink_dv` |
 | the state `laser_delta_sma` | `interlink_delta_sma` |
+
+Checkpointed pointing and mounted-recoil beams validate the terminal's mounting
+link as well as its hardware: changing its position, fixed attitude or hinge
+axis/limits refuses resume. A `PanelHinge` restores its moving angle from the
+checkpoint. A terminal on a panel driven by `SolarPanelAngleOfAttackControlModel`
+needs a `PanelHinge` for checkpointing; arbitrary custom changes to a mount's
+position or attitude need their own checkpoint state restoration. The root
+link's attitude remains part of the integrated spacecraft state.
 
 The schedule is also saved for long-format and checkpoint-streamed results. A
 resume that only finishes interrupted trajectory file writes has no restored

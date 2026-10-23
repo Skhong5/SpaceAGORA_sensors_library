@@ -34,9 +34,10 @@ const _HOOK_OLD_INDEX_WORDS = (:i, :sat_idx, :idx)
 # `link` is the shared object of a GNC link (`check_link`, `link_initialize!`);
 # `producer` the model that writes one (`before_reference_control!`); `budget` a
 # data link's link budget (`budget_rate_bps`); `policy` an interlink scheduling
-# policy (`candidate_score`).
+# policy (`candidate_score`); `beam` a laser beam link's beam model
+# (`beam_force_factor`).
 const _HOOK_DISPATCH_NAMES = (:model, :effector, :controller, :actuator, :sensor,
-    :planner, :algorithm, :family, :binding, :result, :provider, :link, :producer, :budget, :policy, :source)
+    :planner, :algorithm, :family, :binding, :result, :provider, :link, :producer, :budget, :policy, :source, :beam)
 
 violations = String[]
 

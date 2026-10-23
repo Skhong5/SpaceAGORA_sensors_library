@@ -118,6 +118,22 @@ module GuidanceHooks
         m.spacecraft_indices == ids && return m
         return ApolloDescentGuidanceModel(m.config, m.state, m.terrain, ids)
     end
+    # The maneuver guidance models, bound to one spacecraft. A periapsis-raise copy
+    # gets its own command states, so copies bound from one template share no run
+    # state; a campaign copy shares the template's maneuver table, which a run only
+    # reads.
+    function SimulationLifecycle.bind_spacecraft(m::ApoapsisTargetPeriapsisRaiseGuidanceModel, sat_idx::Int)
+        m.spacecraft_index == sat_idx && return m
+        b = SimulationLifecycle._shallow_copy(m)
+        b.spacecraft_index = sat_idx
+        b.command_state = copy(m.command_state)
+        return b
+    end
+    function SimulationLifecycle.bind_spacecraft(m::AerobrakingCampaignPropulsiveManeuverGuidanceModel, sat_idx::Int)
+        m.spacecraft_index == sat_idx && return m
+        return AerobrakingCampaignPropulsiveManeuverGuidanceModel(m.maneuver_orbit_number, m.maneuver_Δv,
+            m.maneuver_flight_apoapsis_radius_m, sat_idx)
+    end
 
     # The spacecraft each built-in guidance model acts on (GNCRuntime): the descent
     # guidance flies its selected spacecraft and stops at touchdown. Like every
@@ -125,6 +141,10 @@ module GuidanceHooks
     # (`skip_inactive`, true by default; the descent guidance declares it).
     GNCRuntime.spacecraft_scope(m::ApolloDescentGuidanceModel) = GNCRuntime.BoundSpacecraft(m.spacecraft_indices)
     GNCRuntime.skip_inactive(::ApolloDescentGuidanceModel) = true
+    # A maneuver guidance model acts on every spacecraft, or on the one it is bound to.
+    GNCRuntime.spacecraft_scope(m::Union{ApoapsisTargetPeriapsisRaiseGuidanceModel,
+            AerobrakingCampaignPropulsiveManeuverGuidanceModel}) =
+        m.spacecraft_index == 0 ? GNCRuntime.AllSpacecraft() : GNCRuntime.BoundSpacecraft((m.spacecraft_index,))
 
     # Run state resets at each run's start (G-8): the descent guidance's entries of
     # the shared state, and the periapsis-raise guidance's command states.
@@ -145,10 +165,21 @@ module GuidanceHooks
         _restore_descent_entries!(m.state, m.spacecraft_indices, data.entries)
         return nothing
     end
-    SimulationLifecycle.checkpoint_state(m::ApoapsisTargetPeriapsisRaiseGuidanceModel) =
-        (command_state=copy(m.command_state),)
+    # A periapsis-raise copy bound to a spacecraft keeps only that spacecraft's entry,
+    # `nothing` before its first tick; the model for every spacecraft keeps them all.
+    function SimulationLifecycle.checkpoint_state(m::ApoapsisTargetPeriapsisRaiseGuidanceModel)
+        k = m.spacecraft_index
+        k == 0 && return (command_state=copy(m.command_state),)
+        return (entry=k <= length(m.command_state) ? m.command_state[k] : nothing,)
+    end
     function SimulationLifecycle.restore_checkpoint_state!(m::ApoapsisTargetPeriapsisRaiseGuidanceModel, data)
-        copy!(m.command_state, data.command_state)
+        k = m.spacecraft_index
+        if k == 0
+            copy!(m.command_state, data.command_state)
+        elseif data.entry !== nothing
+            _ensure_apo_target_state!(m, k)
+            m.command_state[k] = data.entry
+        end
         return nothing
     end
 end

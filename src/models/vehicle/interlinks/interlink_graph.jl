@@ -7,11 +7,14 @@ module InterLinkModels
 	using ..EffectorSampling: StateSample
 	using ..HookDeprecation: _hook_deprecation, _NOT_PASSED
 	using ..Geodesy: geodetic_to_pp
+	using ..QuaternionMath: rot
 
 	export AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
+	export interlink_wrench, link_applies_torque, terminal_pose
 	export link_directed, link_terminal_levels, link_terminal, terminal_supports, terminal_shed_tier, terminal_count
 	export register_links!, all_pairs, same_plane_pairs, ring_pairs, grid_pairs
 	export PowerBeamLink, link_received_power_w, beam_spot_radius_m, beam_capture_fraction
+	export LaserBeamLink, AbstractLaserBeam, GaussianBeam, TerminalPointing, beam_force_factor
 	export DataLink, AbstractDataBudget, FixedRateBudget, ShannonBudget, link_data_rate_bps, budget_rate_bps
 	export has_data_links, contact_windows, contact_time_s, available_links
 	export InterlinkModel, InterLinkGraph, register_link!, update_availability!, interlink_force_on_spacecraft
@@ -23,6 +26,7 @@ module InterLinkModels
 	include(joinpath(@__DIR__, "power_links.jl"))
 	include(joinpath(@__DIR__, "data_links.jl"))
 	include(joinpath(@__DIR__, "ground_stations.jl"))
+	include(joinpath(@__DIR__, "laser_beam_links.jl"))
 
 	const vertex = Tuple{Int, Int} # (node, terminal number): a spacecraft vector index, or minus a ground station's number
 	const InterLinkKey = Tuple{vertex, vertex} # Canonically ordered pair of terminal endpoints
@@ -133,6 +137,9 @@ module InterLinkModels
 
 		# vi) The ground stations, in registration order: station `s` is node `-s`.
 		ground_stations::Vector{GroundStation}
+		# vii) The run's terminal hardware at each edge's two ends (`nothing` for a
+		# virtual terminal), set at run setup with `terminal_endpoints`; empty before.
+		edge_terminals::Vector{Tuple{Any, Any}}
 
 		function InterlinkModel(; forbidden_pairs=Tuple{Int, Int}[], record_available::Union{Nothing, Bool}=nothing,
 			record_terms::Bool=false, constellation_link_type=_NOT_PASSED)
@@ -146,7 +153,7 @@ module InterLinkModels
 			end
 			pairs = Set{Tuple{Int, Int}}(minmax(pair...) for pair in forbidden_pairs)
 			new(pairs, InterLinkGraph(), InterLinkHistory[], Vector{NTuple{3, Int}}[], record_available, record_terms,
-				GroundStation[])
+				GroundStation[], Tuple{Any, Any}[])
 		end
 	end
 
@@ -215,7 +222,7 @@ module InterLinkModels
 				"$(nameof(typeof(link)))$(side === :either ? "" : " as its $(side)") (terminal_supports)."))
 			device === nothing && _link_needs_terminals(link) && throw(ArgumentError(
 				"Terminal $number of spacecraft $satellite is virtual, and this $(nameof(typeof(link))) needs terminal " *
-				"hardware at both ends (a ShannonBudget reads both radios)."))
+				"hardware at both ends$(_needs_terminals_reason(link))."))
 			(Int(satellite), number)
 		end
 
@@ -488,15 +495,26 @@ module InterLinkModels
 	# The model of spacecraft `index`, when the run's models are known.
 	_spacecraft_at(spacecraft, index::Int) = spacecraft === nothing ? nothing : spacecraft[index]
 
-	# The forces the link of `edge` puts on its two endpoints, in key order. A
-	# station end's `planet_frame` is the planet's frame at the state's time.
-	function link_endpoint_forces(model::InterlinkModel, edge::Int, state; spacecraft=nothing, context=LinkContext(),
+	# The terminal hardware at the two ends of `edge` (`nothing` for a virtual
+	# terminal): the run's, once its setup has recorded them, or else looked up on
+	# the spacecraft models when they are known.
+	function _edge_terminals(model::InterlinkModel, edge::Int, spacecraft)
+		edge <= length(model.edge_terminals) && return model.edge_terminals[edge]
+		first, second = map(v -> model.graph.vertices[v], model.graph.edges[edge])
+		terminal(endpoint) = endpoint[1] < 0 ? _station_antenna(model, endpoint) :
+			spacecraft === nothing ? nothing : _terminal_device(spacecraft[endpoint[1]], endpoint[2])
+		return (terminal(first), terminal(second))
+	end
+
+	# What the link of `edge` does to its two endpoints, in key order (`interlink_wrench`).
+	function _edge_wrench(model::InterlinkModel, edge::Int, state; spacecraft=nothing, context=LinkContext(),
 		planet_frame=nothing)
 		graph = model.graph
 		first, second = map(v -> graph.vertices[v], graph.edges[edge])
 		a = _endpoint_sample(model, first[1], state, spacecraft, context, planet_frame)
 		b = _endpoint_sample(model, second[1], state, spacecraft, context, planet_frame)
-		return link_force(graph.edge_properties[edge], a, b, context)
+		terminal_a, terminal_b = _edge_terminals(model, edge, spacecraft)
+		return interlink_wrench(graph.edge_properties[edge], terminal_a, terminal_b, a, b, context)
 	end
 
 	# 3. Update link availability
@@ -534,6 +552,7 @@ module InterLinkModels
 			# v) Rule 5: The link itself must be able to close (by default, within its range).
 			graph.available[edge] = if first[1] > 0 && second[1] > 0
 				allowed && link_available(graph.edge_properties[edge],
+					_edge_terminals(model, edge, spacecraft)...,
 					link_endpoint(state.sc[first[1]], _spacecraft_at(spacecraft, first[1]), first[1]),
 					link_endpoint(state.sc[second[1]], _spacecraft_at(spacecraft, second[1]), second[1]), context)
 			else
@@ -550,7 +569,7 @@ module InterLinkModels
 		station, craft = first < 0 ? (a, b) : (b, a)
 		elevation = _station_elevation_rad(station.spacecraft, context.planet, nothing, craft.pos_ii)
 		elevation >= deg2rad(station.spacecraft.min_elevation_deg) || return false
-		return link_available(model.graph.edge_properties[edge], a, b, context)
+		return link_available(model.graph.edge_properties[edge], _edge_terminals(model, edge, spacecraft)..., a, b, context)
 	end
 
 	"""
@@ -576,28 +595,39 @@ module InterLinkModels
 		interlink_force_on_spacecraft(model::InterlinkModel, state, satellite; is_active=nothing, spacecraft=nothing, context=LinkContext())
 
 	The sum of the inertial forces (N) the selected links put on spacecraft
-	`satellite` (its vector index), each from its link's `link_force`. Optional
-	`is_active` flags mask links with an inactive endpoint. A ground station end
-	reads `planet_frame`, the planet-fixed rotation at the state's time, or the
-	planet's current `L_PI` when it is `nothing`; the force on the station goes to
-	the planet.
+	`satellite` (its vector index), each from its link's `interlink_wrench` (by
+	default, its `link_force`). Optional `is_active` flags mask links with an
+	inactive endpoint. A ground station reads `planet_frame` when supplied,
+	otherwise the planet's current `L_PI`; its force is borne by the planet.
 	"""
-	function interlink_force_on_spacecraft(model::InterlinkModel, state, satellite::Int; is_active=nothing,
+	interlink_force_on_spacecraft(model::InterlinkModel, state, satellite::Int; is_active=nothing,
+		spacecraft=nothing, context=LinkContext(), planet_frame=nothing) =
+		first(interlink_wrench_on_spacecraft(model, state, satellite; is_active, spacecraft, context, planet_frame))
+
+	# The sums of the inertial forces (N) and of the body torques (N·m) that the
+	# selected links put on spacecraft `satellite`, each from its link's
+	# `interlink_wrench`, and whether any torque was nonzero.
+	function interlink_wrench_on_spacecraft(model::InterlinkModel, state, satellite::Int; is_active=nothing,
 		spacecraft=nothing, context=LinkContext(), planet_frame=nothing)
 		force = SVector{3, Float64}(0.0, 0.0, 0.0)
-		1 <= satellite <= length(model.graph.satellite_edges) || return force
+		torque = SVector{3, Float64}(0.0, 0.0, 0.0)
+		turned = false
+		1 <= satellite <= length(model.graph.satellite_edges) || return (force, torque, turned)
 		for index in model.graph.satellite_edges[satellite]
 			key = map(v -> model.graph.vertices[v], model.graph.edges[index])
 			model.graph.active[index] || continue
 			is_active === nothing || (_node_active(is_active, key[1][1]) && _node_active(is_active, key[2][1])) || continue
-			first_force, second_force = link_endpoint_forces(model, index, state; spacecraft, context, planet_frame)
+			first_force, first_torque, second_force, second_torque =
+				_edge_wrench(model, index, state; spacecraft, context, planet_frame)
 			if key[1][1] == satellite
 				force += first_force
+				iszero(first_torque) || (torque += first_torque; turned = true)
 			elseif key[2][1] == satellite
 				force += second_force
+				iszero(second_torque) || (torque += second_torque; turned = true)
 			end
 		end
-		return force
+		return (force, torque, turned)
 	end
 
 end

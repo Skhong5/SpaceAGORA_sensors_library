@@ -28,6 +28,7 @@ import TOML
 import ..SimulationModel
 import ..SimulationEngine
 import ..SimulationLifecycle
+import ..GNCRuntime
 import ..GNCAlgorithms
 import ..RPOPlannerInterfaces
 import ..RPOPlannerLifecycle
@@ -74,7 +75,7 @@ const CHECK_IDS = (
         :concurrent_equals_sequential, :initialize_resets, :bind_fresh_state, :checkpoint_round_trip),
     control_model = (:hooks_present, :supported_sample_signature, :repeatable_run,
         :deepcopy_equivalent, :global_rng_independent, :concurrent_equals_sequential, :initialize_resets,
-        :output_hook_pure, :positive_consumption, :bind_fresh_state, :checkpoint_round_trip),
+        :output_hook_pure, :positive_consumption, :bind_fresh_state, :checkpoint_round_trip, :outputs_in_scope),
     algorithm = _ALGORITHM_CHECK_IDS,
     algorithm_family = _ALGORITHM_FAMILY_CHECK_IDS,
 )

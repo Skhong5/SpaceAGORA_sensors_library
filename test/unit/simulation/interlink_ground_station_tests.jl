@@ -25,6 +25,23 @@ const BUDGET = ShannonBudget(bandwidth_hz=1e6, frequency_hz=2.2e9)
 const LINK = DataLink(transmit_power_w=1.0, budget=BUDGET, range_m=3000e3)
 struct StationStoreInterrupted <: Exception end
 
+# A station-compatible kind whose terminal-aware hooks cannot fall back silently.
+struct StationWrenchProbe <: AbstractInterlink end
+const STATION_HOOK_TERMINALS = Ref{Any}(nothing)
+SpaceAGORA.link_range_m(::StationWrenchProbe) = 1e8
+SpaceAGORA.link_directed(::StationWrenchProbe) = true
+SpaceAGORA.link_applies_torque(::StationWrenchProbe) = true
+SpaceAGORA.terminal_supports(::RadioTerminal, ::StationWrenchProbe) = true
+SpaceAGORA.link_available(::StationWrenchProbe, a, b, ctx) = false
+SpaceAGORA.link_available(::StationWrenchProbe, ta, tb, a, b, ctx) =
+    (STATION_HOOK_TERMINALS[] = (ta, tb); ta isa RadioTerminal && tb isa RadioTerminal)
+function SpaceAGORA.interlink_wrench(::StationWrenchProbe, ta, tb, a, b, ctx)
+    @assert ta isa RadioTerminal && tb isa RadioTerminal
+    STATION_HOOK_TERMINALS[] = (ta, tb)
+    force = normalize(b.pos_ii - a.pos_ii)
+    return force, SVector(1.0, 2.0, 3.0), -force, SVector(4.0, 5.0, 6.0)
+end
+
 radio(; kwargs...) = RadioTerminal(; boresight=[0.0, 0.0, 1.0], max_power_w=5.0, gain_dbi=0.0, efficiency=0.5, kwargs...)
 station(; name="north", lat_deg=0.0, lon_deg=0.0, alt_m=0.0, min_elevation_deg=10.0, antennas=[radio()]) =
     GroundStation(; name, lat_deg, lon_deg, alt_m, min_elevation_deg, antennas)
@@ -141,6 +158,49 @@ function carried(solution, key; held::Bool=false, until::Float64=Inf)
 end
 
 @testset "Ground stations" begin
+    @testset "station terminal-aware hooks retain frame and hardware" begin
+        for uplink in (false, true)
+            craft_radio = RadioTerminal(boresight=[0.0, 0.0, 1.0], max_power_w=5.0,
+                gain_dbi=3.0, efficiency=0.5)
+            station_radio = RadioTerminal(boresight=[0.0, 0.0, 1.0], max_power_w=5.0,
+                gain_dbi=7.0, efficiency=0.5)
+            spacecraft = [radio_sat(1; terminal=craft_radio)]
+            model = InterlinkModel()
+            st = station(antennas=[station_radio])
+            add_ground_station!(model, st)
+            ends = uplink ? ((-1, 1), (1, 1)) : ((1, 1), (-1, 1))
+            register_link!(model, spacecraft, ends..., StationWrenchProbe())
+            craft_terminal = only(mounted_link_terminals(only(spacecraft))).terminal
+            expected = uplink ? (only(st.antennas), craft_terminal) : (craft_terminal, only(st.antennas))
+            @test IM._edge_terminals(model, 1, spacecraft) === expected
+            ctx = LinkContext(planet=turned_planet(0.0))
+            state = state_at(SVector(RADIUS, 0.0, 0.0))
+            @test update_availability!(model, spacecraft, state; context=ctx) == [true]
+            @test STATION_HOOK_TERMINALS[] === expected
+            @test SM.InterlinkTerminals.prepare_terminal_endpoints!(model, spacecraft)
+            @test IM._edge_terminals(model, 1, spacecraft) === expected
+            @test update_availability!(model, spacecraft, state; context=ctx) == [true]
+            @test STATION_HOOK_TERMINALS[] === expected
+            model.graph.active .= true
+            explicit_frame = SMatrix{3, 3, Float64}(turned_planet(0.4).L_PI)
+            station_pos = transpose(explicit_frame) * first(IM._station_site(st, ctx.planet))
+            expected_force = normalize(station_pos - state.sc[1].pos)
+            force, torque, turned = IM.interlink_wrench_on_spacecraft(model, state, 1;
+                spacecraft, context=ctx, planet_frame=explicit_frame, is_active=[true])
+            @test STATION_HOOK_TERMINALS[] === expected
+            @test force ≈ expected_force rtol=1e-14
+            @test torque == (uplink ? SVector(4.0, 5.0, 6.0) : SVector(1.0, 2.0, 3.0))
+            @test turned
+            @test interlink_force_on_spacecraft(model, state, 1; spacecraft, context=ctx,
+                planet_frame=explicit_frame, is_active=[true]) == force
+            @test IM.interlink_wrench_on_spacecraft(model, state, 1; spacecraft, context=ctx,
+                planet_frame=explicit_frame, is_active=[false]) == (zeros(3), zeros(3), false)
+            config = SE._interlink_checkpoint_configuration(run_args(spacecraft, model))
+            @test hasproperty(config, :ground_stations) && hasproperty(config, :terminal_mounts)
+            @test only(config.terminal_mounts).endpoint == (1, 1)
+        end
+    end
+
     @testset "geodetic position" begin
         for planet in (PLANET, make_no_gram_planet(:mars))
             @test SM.Geodesy.geodetic_to_pp(0.0, 0.0, 100.0, planet) ≈ [planet.Rp_e + 100.0, 0.0, 0.0] rtol=1e-15
