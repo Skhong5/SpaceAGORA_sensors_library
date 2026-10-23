@@ -349,7 +349,10 @@ The rows file beside the checkpoint is kept too, renamed to
 `simulation_checkpoint.results.before_resume_at_<t>s.bin`: after a run that was
 killed, it may hold the only copy of the earlier rows, since such a run writes no
 results files. A resumed run that saves no results renames it the same way rather
-than removing it.
+than removing it. The rename happens at the first new checkpoint, immediately
+before the earlier file would be replaced or removed. If the resume stops before
+then, the file stays at its original path so the earlier checkpoint can still
+read it.
 The returned `configuration` names that folder as its `results_directory`.
 The checkpoint directory defaults to `results_directory/checkpoints` when left
 empty. Besides

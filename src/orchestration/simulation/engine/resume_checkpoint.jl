@@ -782,6 +782,7 @@ mutable struct _ResultsRowsLog
     fresh::Bool  # the next append starts a new stream
     drop::Int  # rows the next record drops from the end of the stream's rows
     retake::Bool  # the restored last row is saved again by the first segment
+    keep_earlier::Bool  # preserve an abandoned stream when the first checkpoint replaces it
 end
 
 # What the rows were saved with: a resumed run can include them only if it saves
@@ -836,18 +837,13 @@ function _start_results_rows!(args, recording::Bool, save_fields, resumed::Bool,
     path = _checkpoint_paths(args).rows
     header = _results_rows_header(save_fields, length(args.dynamics_model.spacecraft))
     log = _ResultsRowsLog(path, header, _results_rows_token(path), recording, resumed ? t_start : 0.0, 0, 0, true,
-        0, false)
-    # A resumed run that saves no rows would remove the earlier rows file at its
-    # first checkpoint; it keeps it instead.
-    resumed && solves && !recording && _keep_earlier_rows!(path, t_start)
+        0, false, resumed && solves)
     (resumed && recording && (solves || returns_table)) || return log
     rows, reason = _checkpoint_results_rows(entry, path, header, t_start)
     if rows === nothing
-        kept = solves ? _keep_earlier_rows!(path, t_start) : nothing
         consequence = solves ?
             "They start at the resume, and any results files are written to " *
-            "$(_results_destination(args, log).simulation_settings.results_directory), so the earlier ones are kept." *
-            (kept === nothing ? "" : " The rows file beside the checkpoint is kept as $(kept).") :
+            "$(_results_destination(args, log).simulation_settings.results_directory), so the earlier ones are kept." :
             "This resume solves nothing, so it returns an empty table and writes no files."
         @warn "The resumed run's results cannot include the rows before its checkpoint at t = $(t_start) s: " *
               "$(reason). $(consequence)"
@@ -861,6 +857,7 @@ function _start_results_rows!(args, recording::Bool, save_fields, resumed::Bool,
     log.logged = length(times_acc)
     log.bytes = entry.bytes
     log.fresh = false
+    log.keep_earlier = false
     log.retake = retake_last_row
     return log
 end
@@ -902,6 +899,16 @@ end
 # checkpoint's entry. A run that records no rows removes a stream an earlier run
 # left, which is not its own.
 function _append_results_rows!(log::_ResultsRowsLog, times_acc::Vector{Float64}, data_acc::Vector)
+    # Leave the old checkpoint's rows at their original path until this resume
+    # actually reaches a replacement checkpoint. A failed first segment must not
+    # strand the only readable history under a name the old checkpoint cannot find.
+    if log.fresh && log.keep_earlier
+        kept = _keep_earlier_rows!(log.path, log.start_s)
+        log.keep_earlier = false
+        if log.recording && kept !== nothing
+            @warn "The rows file beside the checkpoint is kept as $(kept)."
+        end
+    end
     if log.recording
         new = (log.logged + 1):length(times_acc)
         log.bytes = SimulationModel.IOSerialization._append_checkpoint_rows!(log.path, view(times_acc, new),
