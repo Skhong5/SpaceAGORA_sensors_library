@@ -45,6 +45,7 @@ export write_visualization_scene, read_visualization_scene, write_visualization_
 export velocity_aligned_quaternion, visualization_frame_budget
 export export_visualization, export_viewer_payload, write_viewer_dev_payload
 export texture_manifest, texture_entry, texture_payload, build_viewer_frames, viewer_payload, model_payloads, model_format, gltf_required_extensions, path_payloads
+export interlink_payload
 export terrain_payload, terrain_tiles_payload
 export render_viewer_html, viewer_import_map, kept_row_indices
 export load_model_triangles, model_bounding_box, model_bounding_box_center, sample_model_pointcloud
@@ -172,9 +173,10 @@ include(joinpath(@__DIR__, "atmosphere_spec.jl"))
     VisualizationScene
 
 Everything the viewer needs besides the trajectory rows: epoch, planet,
-spacecraft geometry, the atmosphere (when the run had one), and where the
-trajectory and link-pose columns live. `results_layout` is the run's
-`results_layout`: with `:long`, `results_feather` names the spacecraft table.
+spacecraft geometry, the atmosphere (when the run had one), where the
+trajectory and link-pose columns live, and, for a run with interlinks, the file
+of its link schedule (`nothing` otherwise).
+`results_layout=:long` means `results_feather` names the spacecraft table.
 """
 struct VisualizationScene
     schema::Int
@@ -187,14 +189,21 @@ struct VisualizationScene
     link_pose_field::String
     link_pose_stride::Int
     atmosphere::Union{Nothing, AtmosphereSpec}
+    link_schedule::Union{Nothing, String}
     results_layout::Symbol
 end
-
-# A scene of a run in the wide layout, as scenes were built before the long one.
+# Preserve the original constructor and both independently introduced 11-field forms.
 VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet, spacecraft, orientation_sim, results_feather,
-                   link_pose_field, link_pose_stride, atmosphere) =
+    link_pose_field, link_pose_stride, atmosphere) = VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet,
+    spacecraft, orientation_sim, results_feather, link_pose_field, link_pose_stride, atmosphere, nothing, :wide)
+VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet, spacecraft, orientation_sim, results_feather,
+    link_pose_field, link_pose_stride, atmosphere, link_schedule::Union{Nothing, String}) =
     VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet, spacecraft, orientation_sim, results_feather,
-                       link_pose_field, link_pose_stride, atmosphere, :wide)
+        link_pose_field, link_pose_stride, atmosphere, link_schedule, :wide)
+VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet, spacecraft, orientation_sim, results_feather,
+    link_pose_field, link_pose_stride, atmosphere, results_layout::Symbol) =
+    VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet, spacecraft, orientation_sim, results_feather,
+        link_pose_field, link_pose_stride, atmosphere, nothing, results_layout)
 
 for T in (LinkBox, ThrusterGlyph, FacetGlyph, JointGlyph, ArmLinkGeometry, ArmGeometry, SpacecraftGeometry, PlanetSpec, VisualizationScene)
     @eval Base.:(==)(a::$T, b::$T) = all(getfield(a, f) == getfield(b, f) for f in fieldnames($T))

@@ -245,6 +245,11 @@ sets how much history trails behind each spacecraft (default three orbits,
 selectable on the page). Zooming in on a spacecraft, or selecting it and
 pressing F, swaps its marker for the link-box assembly with thruster and
 facet glyphs; `stl=Dict(id => "model.stl")` draws a CAD mesh instead.
+For a run with interlinks, the sidecar names the run's link schedule, and the
+exported payload carries its windows (an `interlinks` block, checked against the
+results manifest): a renderer that draws them shows each link while it is active.
+They share `data_budget_mb` with the trajectory, and `interlinks=false` leaves
+them out.
 The [Interactive Visualization](visualization.md) page covers the options,
 ensembles and textures; [the independent renderer guide](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl/blob/75b32bc610e3227035810a4c8e12a515106c5a62/viewer/README.md) documents the controls and how to
 develop the viewer itself.

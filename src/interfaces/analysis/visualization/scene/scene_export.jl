@@ -51,8 +51,18 @@ function build_visualization_scene(
         String(LINK_POSE_FIELD),
         LINK_POSE_STRIDE,
         atmosphere_spec(args; density_params=density_params),
+        _scene_link_schedule(args),
         args.simulation_settings.results_layout
     )
+end
+
+# The link schedule's feather file, by name, for a run with interlinks when the
+# file is there; `nothing` otherwise. The export checks the file against the
+# results manifest, as it checks the results feather.
+function _scene_link_schedule(args::SimulationConfiguration)
+    args.interlink_model === nothing && return nothing
+    path = IOConfig._link_schedule_paths(args).feather
+    return isfile(path) ? basename(path) : nothing
 end
 
 # ---------------------------------------------------------------------------
@@ -117,7 +127,7 @@ end
 JSON-ready form of a `VisualizationScene`; `read_visualization_scene` inverts it.
 """
 function scene_dict(scene::VisualizationScene)::Dict{String, Any}
-    d = Dict{String, Any}(
+    dict = Dict{String, Any}(
         "schema" => scene.schema,
         "epoch" => Dict{String, Any}("et_start_s" => scene.epoch_et_start_s, "utc" => scene.epoch_utc),
         "planet" => _scene_dict(scene.planet),
@@ -141,10 +151,13 @@ function scene_dict(scene::VisualizationScene)::Dict{String, Any}
             )
         )
     )
+    # Only a run with interlinks names its link schedule, so other scenes are as before.
+    scene.link_schedule === nothing ||
+        (dict["results"]["link_schedule"] = Dict{String, Any}("file" => scene.link_schedule))
     # A long run's results are the spacecraft table, whose columns lack the `sc{i}_`
     # prefix; the readers turn them back into the wide columns (`_wide_view`).
-    scene.results_layout === :long && (d["results"]["layout"] = "long")
-    return d
+    scene.results_layout === :long && (dict["results"]["layout"] = "long")
+    return dict
 end
 
 _link_box_from(d) = LinkBox(String(d["name"]), Bool(d["root"]), _svec3(d["dims_m"]), _svec3(d["r_m"]), _svec4(d["q"]), Float64(d["mass_kg"]))
@@ -206,9 +219,13 @@ function _scene_from_dict(d)::VisualizationScene
         String(link_pose["field"]),
         Int(link_pose["stride"]),
         _atmosphere_from(get(d, "atmosphere", nothing)),
+        _link_schedule_from(get(results, "link_schedule", nothing)),
         Symbol(get(results, "layout", "wide"))
     )
 end
+
+_link_schedule_from(::Nothing) = nothing
+_link_schedule_from(entry) = String(entry["file"])
 
 """
     write_visualization_scene(path, scene) -> String

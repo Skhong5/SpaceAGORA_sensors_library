@@ -478,7 +478,9 @@ manifest with the policy and its unit (see the
 thinned with the results rows. A run without interlinks writes none, and
 `link_schedule(results)` returns the table's columns with no rows. Like the
 contact windows, the schedule has the scheduler's resolution and, after a resume,
-covers the resumed interval.
+covers the resumed interval. With `save_visualization_scene`, the viewer payload
+carries the schedule's windows, so the viewer can draw each link while it is
+active (see [the viewer page](outputs.md#Interactive-viewer-page)).
 
 ### Optional matching backend
 
