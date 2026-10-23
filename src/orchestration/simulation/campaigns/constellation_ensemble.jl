@@ -153,7 +153,8 @@ function _validate_ensemble_gnc_scopes(args::SimulationConfiguration)
         length(spacecraft) == 1 && _ensemble_scope_positions(scope, spacecraft) == [1] && continue
         throw(ArgumentError(
             "run_constellation_ensemble: the configuration's $(SimulationEngine._gnc_scope_owner(group, j, model)) " *
-            "declares spacecraft_scope $(repr(scope)), but each ensemble member runs its spacecraft alone, at run " *
+            "declares spacecraft_scope $(SimulationModel.SimulationCallbacks._scope_text(scope)), but each " *
+            "ensemble member runs its spacecraft alone, at run " *
             "position 1, with the configuration-level models unchanged, so it would act on every member or fail in " *
             "some. Declare it on the spacecraft it acts on (the SpacecraftModel's $(group) keyword), where each " *
             "member binds it to its own spacecraft, or give it AllSpacecraft() to act on every member."))

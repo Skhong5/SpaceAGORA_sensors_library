@@ -308,6 +308,9 @@ end
         end
         @test_throws message run_constellation_ensemble(ensemble_args(control=(ScopedCtl(BoundSpacecraft((2,))),), n=1);
             allow_gnc_effectors=true)
+        # The scope as written, without its type parameters.
+        @test_throws "declares spacecraft_scope BoundSpacecraft((1,))," run_constellation_ensemble(
+            ensemble_args(control=(ScopedCtl(BoundSpacecraft((1,))),)); allow_gnc_effectors=true)
     end
 end
 
