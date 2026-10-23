@@ -37,12 +37,12 @@ What [`run_constellation_ensemble`](@ref)`(args; merge_results=true)` returns.
   `constellation_summary.csv`, in `results_directory` beside the member
   folders. Empty otherwise.
 
-Each member's rows come back from it whole and are released as they are
-merged, so while the merge runs the members' rows are held about once. For
-large campaigns, `SPACEAGORA_RESULTS_THIN_STRIDE` and
-`SPACEAGORA_RESULTS_FINAL_ONLY` thin each member's rows, and
-[`read_constellation_results`](@ref) merges member folders already written, one
-member at a time.
+Each member's rows come back from its run whole and are released once merged,
+so the merge holds the members' rows about once, besides the values the members
+return with `return_results=true`. For large campaigns,
+`SPACEAGORA_RESULTS_THIN_STRIDE` and `SPACEAGORA_RESULTS_FINAL_ONLY` thin each
+member's rows, and [`read_constellation_results`](@ref) merges member folders
+already written, one member at a time.
 """
 struct ConstellationEnsembleResult{M}
     campaign::MonteCarloResult
