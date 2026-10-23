@@ -134,6 +134,53 @@ env(fixture, name="env") = joinpath(fixture.temporary, name)
             mv(joinpath(fixture.temporary, "src-aside"), joinpath(fixture.repo, "src"))
         end
 
+        @testset "Optional companion core stays optional outside its test environment" begin
+            optional = deepcopy(fixture.project)
+            delete!(optional["deps"], "SpaceAGORA")
+            optional["weakdeps"] = Dict("SpaceAGORA" => CORE_UUID)
+            with_project(fixture, d -> (empty!(d); merge!(d, optional))) do
+                original = read(joinpath(fixture.repo, "Project.toml"), String)
+                p = plan("companion", fixture.repo, env(fixture); root=fixture.core)
+                @test p.project["deps"]["SpaceAGORA"] == CORE_UUID
+                @test p.project["sources"]["SpaceAGORA"] == Dict("path" => fixture.core)
+                @test p.project["compat"]["SpaceAGORA"] == "0.2"
+                @test p.developed == [fixture.core, fixture.repo]
+                @test read(joinpath(fixture.repo, "Project.toml"), String) == original
+                for kind in ("project", "package")
+                    refused_with("[deps] must list SpaceAGORA") do
+                        plan(kind, fixture.repo, env(fixture); root=fixture.core)
+                    end
+                end
+                testfile = joinpath(fixture.repo, "test", "Project.toml")
+                write_toml(testfile, Dict("deps" => Dict("SpaceAGORA" => TEST_UUID)))
+                try
+                    refused_with("conflicting UUID") do
+                        plan("companion", fixture.repo, env(fixture); root=fixture.core)
+                    end
+                finally
+                    rm(testfile)
+                end
+            end
+            for table in ("deps", "weakdeps", "extras")
+                with_project(fixture, d -> begin
+                    d["weakdeps"] = Dict("SpaceAGORA" => CORE_UUID)
+                    get!(d, table, Dict{String,Any}())["SpaceAGORA"] = TEST_UUID
+                end) do
+                    refused_with("conflicting UUID") do
+                        plan("companion", fixture.repo, env(fixture); root=fixture.core)
+                    end
+                end
+            end
+            with_project(fixture, d -> begin
+                delete!(d["deps"], "SpaceAGORA")
+                d["weakdeps"] = Dict("SpaceAGORA" => TEST_UUID)
+            end) do
+                refused_with("[deps] or [weakdeps] must list SpaceAGORA") do
+                    plan("companion", fixture.repo, env(fixture); root=fixture.core)
+                end
+            end
+        end
+
         @testset "A test/Project.toml reaches the environment with its bounds and sources" begin
             test_project = joinpath(fixture.repo, "test", "Project.toml")
             random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
