@@ -234,6 +234,9 @@ it writes it one member at a time and `res.members` reads it in place, with
 read-only columns (`DataFrame(res.members)` copies it). Each member's rows are
 in memory until the merge; for a large campaign,
 `SPACEAGORA_RESULTS_THIN_STRIDE` and `SPACEAGORA_RESULTS_FINAL_ONLY` thin them.
+`merge_results=true` with `return_solver_metadata=true` is refused before any
+member runs. So is a run-wide save field whose `column_prefix` is a
+per-spacecraft field's, since both would sit in the same table.
 
 To merge member folders already written, without running anything again, use
 `read_constellation_results`:
@@ -266,7 +269,4 @@ refuses unless you pass `overwrite=true`.
 The viewer's ensemble page (`export_ensemble_visualization`) labels the
 members of a folder with `constellation_summary.csv` by id, plane and slot
 (`id 7, plane 2, slot 3`), colours them by plane, and reads one member's
-results at a time. `merge_results=true`
-with `return_solver_metadata=true` is refused before any member runs. So is a
-run-wide save field whose `column_prefix` is a per-spacecraft field's, since
-both would sit in the same table.
+results at a time.

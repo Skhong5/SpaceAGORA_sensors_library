@@ -393,8 +393,15 @@ same_columns(a::DataFrame, b::DataFrame) =
         write(manifest_of(tags[4]), original)
         edited(tags[4], Dict("spacecraft_count" => 2))
         @test_throws "wide results bundle of 2 spacecraft" read_constellation_results(dir; overwrite=true)
-        # A run that streamed its results and did not finish has no rows.
+        # A results file whose size is not the one its manifest records is not read.
         write(manifest_of(tags[4]), original)
+        feather_path = joinpath(dir, tags[4], "simulation_results.feather")
+        feather_bytes = read(feather_path)
+        write(feather_path, vcat(feather_bytes, UInt8[0]))
+        grown = quiet(() -> read_constellation_results(dir; overwrite=true))
+        @test grown.constellation.read_status[4] == "files differ from manifest" && grown.constellation.rows[4] == 0
+        write(feather_path, feather_bytes)
+        # A run that streamed its results and did not finish has no rows.
         edited(tags[4], Dict("streaming" => true))
         unfinished = quiet(() -> read_constellation_results(dir; overwrite=true))
         @test unfinished.constellation.read_status[4] == "unfinished run" && unfinished.constellation.rows[4] == 0
