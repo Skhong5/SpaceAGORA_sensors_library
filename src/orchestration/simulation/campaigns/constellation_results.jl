@@ -35,8 +35,9 @@ What [`run_constellation_ensemble`](@ref)`(args; merge_results=true)` returns.
   folders. Empty otherwise.
 
 The members table holds every saved row of every member in memory. Each member's
-rows come back from it whole and are released as they are merged, so while the
-merge runs the members' rows are held about once. For large campaigns,
+rows come back from its run whole and are released once merged, so the merge
+holds the members' rows about once, besides the values the members return with
+`return_results=true`. For large campaigns,
 `SPACEAGORA_RESULTS_THIN_STRIDE` and `SPACEAGORA_RESULTS_FINAL_ONLY` thin each
 member's rows.
 """
