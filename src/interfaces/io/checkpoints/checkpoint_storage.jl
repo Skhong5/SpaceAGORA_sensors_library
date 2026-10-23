@@ -90,6 +90,8 @@ function _clear_checkpoint!(args)
     isfile(paths.data) && rm(paths.data; force=true)
     isfile(paths.manifest) && rm(paths.manifest; force=true)
     isfile(paths.rows) && rm(paths.rows; force=true)
+    rm(paths.stream_spacecraft; force=true)
+    rm(paths.stream_run; force=true)
     return nothing
 end
 

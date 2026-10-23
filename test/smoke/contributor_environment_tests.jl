@@ -302,6 +302,8 @@ env(fixture, name="env") = joinpath(fixture.temporary, name)
             rm(versioned); rm(joinpath(fixture.repo, "Manifest.toml"))
             @test companion_names(["mujoco", "edg", "mujoco", "hypr"]) == ["mujoco", "edg", "hypr"]
             @test companion_names(String[]) == String[]
+            @test ContributorEnvironment.companion_package_names("hypr"; root=fixture.core) == ["HYPR"]
+            @test ContributorEnvironment.companion_package_names("mujoco"; root=fixture.core) == ["SpaceAGORAMuJoCo"]
         end
 
         @testset "Companions come from the pin file, at the core's pins" begin

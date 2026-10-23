@@ -678,3 +678,9 @@ names inside, so checkpoints written before 0.6.0 resume.
 | --- | --- |
 | the state `laser_dv`, as in `solution.u[end].sc[i].laser_dv` | `interlink_dv` |
 | the state `laser_delta_sma` | `interlink_delta_sma` |
+
+The schedule is also saved for long-format and checkpoint-streamed results. A
+resume that only finishes interrupted trajectory file writes has no restored
+link history: it preserves any earlier schedule file, but does not list it in
+the recovered manifest or returned files. A resume that advances the simulation
+writes the schedule for its resumed interval, as described above.

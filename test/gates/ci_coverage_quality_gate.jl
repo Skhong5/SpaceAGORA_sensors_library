@@ -1,7 +1,7 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const SRC_ROOT = joinpath(REPO_ROOT, "src")
 const EDG_SRC_ROOT = joinpath(REPO_ROOT, "packages", "gnc", "SpaceAGORAEDG.jl", "src")
-const SOURCE_ROOTS = (SRC_ROOT, joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"), EDG_SRC_ROOT)
+const SOURCE_ROOTS = (SRC_ROOT, EDG_SRC_ROOT)
 
 using Printf
 
