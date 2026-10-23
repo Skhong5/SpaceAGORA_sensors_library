@@ -276,9 +276,9 @@ in seconds of simulated time. The default is `10.0` seconds. Decreasing
 `data_rate` produces more rows and larger files; increasing it reduces output
 size but loses temporal resolution.
 
-The `num_steps_to_save` field controls how many time steps are buffered in
-memory before a flush. For very long runs, tuning this can reduce peak memory
-use.
+The `num_steps_to_save` field is retained for configuration compatibility. It
+does not currently control buffering, flushing or peak memory use. Use
+`data_rate` to set the output cadence.
 
 ## Checkpointing
 
