@@ -358,7 +358,9 @@ function _save_simulation_results_if_enabled!(
     write_files::Bool=true,
 )
     (args.simulation_settings.results || return_table) || return nothing
-    if checkpoint_active && rows_log !== nothing && rows_log.stream !== nothing
+    # A fallback that fails before its first checkpoint saves only its new rows
+    # in its own results directory; the old checkpoint streams remain untouched.
+    if checkpoint_active && rows_log !== nothing && rows_log.stream !== nothing && !rows_log.keep_earlier
         return _save_streamed_results!(args, rows_log, save_fields_resolved, checkpoint_saved_times,
             checkpoint_saved_data, resumed_from_s; return_table=return_table, write_files=write_files)
     end
@@ -1205,6 +1207,7 @@ function run_simulation(
             u_cursor = deepcopy(seg_sol.u[end])
             # The rows first: a checkpoint never records rows that are not in the file.
             # A run that streams its results writes all but the last row now.
+            _preserve_earlier_results!(rows_log)
             _stream_results_rows!(rows_log, checkpoint_saved_times, checkpoint_saved_data, save_fields_resolved,
                 results_args)
             rows_entry = _append_results_rows!(rows_log, checkpoint_saved_times, checkpoint_saved_data)

@@ -315,6 +315,33 @@ end
         @test isequal(feather(joinpath(dir, "resumed_at_300.0s"), "spacecraft"), uninterrupted.table)
     end
 
+    @testset "a fallback interrupted before its first checkpoint preserves the old run" begin
+        snapshot(dir) = Dict(joinpath(root, file) => (read(joinpath(root, file)), stat(joinpath(root, file)).mtime)
+            for (root, dirs, files) in walkdir(dir) for file in files)
+        crash = DiscreteCallback((u, t, integrator) -> t > 350.0,
+            integrator -> error("interrupted fallback"); save_positions=(false, false))
+        reference = run(config(mktempdir()))
+        for save_csv in (false, true), recording in (false, true)
+            dir = mktempdir()
+            original = config(dir; mission_time=300.0)
+            original = SM.SimConfig._with_configuration(original;
+                simulation_settings=SM.SimConfig._with_fields(original.simulation_settings; save_csv))
+            run(original)
+            checkpoint_dir = dirname(SM.IOConfig._checkpoint_paths(original).rows)
+            before = snapshot(checkpoint_dir)
+            fallback = config(dir; resume=true)
+            fallback = SM.SimConfig._with_configuration(fallback;
+                simulation_settings=SM.SimConfig._with_fields(fallback.simulation_settings;
+                    save_csv, results=recording))
+            @test_throws ErrorException quiet(() -> run_simulation(fallback;
+                return_results=recording, save_fields=SM.default_save_fields(fallback), extra_callbacks=(crash,)))
+            @test snapshot(checkpoint_dir) == before
+            recovered = run(config(dir; resume=true))
+            @test isequal(recovered.table, reference.table)
+            @test isequal(run_table(recovered), run_table(reference))
+        end
+    end
+
     @testset "what does not stream" begin
         # Without checkpoints, or in the wide layout, nothing streams.
         dir = mktempdir()

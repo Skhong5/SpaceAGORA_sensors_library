@@ -361,7 +361,9 @@ ends.
   run's save fields writes them from the streams, whether or not it returns
   results. A resume that solves and cannot include the earlier rows keeps the
   streams beside the checkpoint under other names
-  (`...before_resume_at_<t>s.arrows`), as it keeps the rows file.
+  (`...before_resume_at_<t>s.arrows`), as it keeps the rows file, immediately
+  before its first replacement checkpoint is written. A failure before that
+  checkpoint leaves the old checkpoint and its streams usable.
 
 A run without checkpoints, a run that returns results without writing them, and
 a run with `SPACEAGORA_SAVE_BUNDLE=0` keep their rows in memory, as a wide run
@@ -458,7 +460,9 @@ The rows file beside the checkpoint is kept too, renamed to
 `simulation_checkpoint.results.before_resume_at_<t>s.bin`: after a run that was
 killed, it may hold the only copy of the earlier rows, since such a run writes no
 results files. A resumed run that saves no results renames it the same way rather
-than removing it.
+than removing it. These renames happen when the first replacement checkpoint
+is ready, so a resume that fails before then leaves the old checkpoint and its
+rows usable. A resume that solves nothing does not rename them.
 The returned `configuration` names that folder as its `results_directory`.
 The checkpoint directory defaults to `results_directory/checkpoints` when left
 empty. Besides

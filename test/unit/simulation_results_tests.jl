@@ -402,6 +402,33 @@ end
     @test readdir(joinpath(dir, "checkpoints")) ==
         ["simulation_checkpoint.bin", "simulation_checkpoint.manifest.toml", "simulation_checkpoint.results.bin"]
 
+    # A fallback resume can itself fail before its first checkpoint. Until it
+    # reaches that checkpoint, the old checkpoint must still find its own rows.
+    # Exercise both paths that would otherwise replace/remove the old stream.
+    for recording in (true, false)
+        dir = mktempdir()
+        run_simulation(_resumable_config(dir; results=true, mission_time=2400.0))
+        checkpoint_dir = joinpath(dir, "checkpoints")
+        before_checkpoint = _files(checkpoint_dir)
+        @test_throws Boom _quietly(() -> run_simulation(
+            _resumable_config(dir; results=recording, resume=true);
+            return_results=recording, save_fields=fields, extra_callbacks=(throws_after(2500.0),)))
+        @test _files(checkpoint_dir) == before_checkpoint
+        recovered = _resumed(dir; results=true)
+        @test recovered.table.time[1] == 0.0 && nrow(recovered.table) == 361
+        @test readdir(checkpoint_dir) == sort!(collect(basename(f) for f in keys(before_checkpoint)))
+    end
+
+    # A no-op fallback does not rename a stream even when it returns a table.
+    dir = mktempdir()
+    run_simulation(_resumable_config(dir; results=true, mission_time=2400.0))
+    checkpoint_dir = joinpath(dir, "checkpoints")
+    before_checkpoint = _files(checkpoint_dir)
+    _quietly(() -> run_simulation(
+        _resumable_config(dir; results=true, mission_time=2400.0, resume=true);
+        return_results=true, save_fields=fields))
+    @test _files(checkpoint_dir) == before_checkpoint
+
     # Ensemble members keep their rows beside their own checkpoints.
     function pair(dir; mission_time, resume=false)
         a = _resumable_config(dir; results=true, mission_time, resume)
