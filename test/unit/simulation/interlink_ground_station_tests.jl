@@ -27,6 +27,14 @@ struct StationStoreInterrupted <: Exception end
 
 # A station-compatible kind whose terminal-aware hooks cannot fall back silently.
 struct StationWrenchProbe <: AbstractInterlink end
+# A radio kind with different transmitter and receiver hardware requirements.
+struct StationRoleProbe <: AbstractInterlink end
+SpaceAGORA.link_range_m(::StationRoleProbe) = 1e8
+SpaceAGORA.link_directed(::StationRoleProbe) = true
+SpaceAGORA.terminal_supports(::RadioTerminal, ::StationRoleProbe) = true
+SpaceAGORA.terminal_supports(terminal::RadioTerminal, ::StationRoleProbe, side::Symbol) =
+    side === :transmitter ? terminal.gain_dbi == 0.0 : terminal.gain_dbi == 3.0
+
 const STATION_HOOK_TERMINALS = Ref{Any}(nothing)
 SpaceAGORA.link_range_m(::StationWrenchProbe) = 1e8
 SpaceAGORA.link_directed(::StationWrenchProbe) = true
@@ -340,6 +348,30 @@ end
         @test err isa ArgumentError && occursin("Invalid ground station 3", err.msg)
         err = refusal(() -> register_links!(model, spacecraft, [(-1, -2)], LINK))
         @test err isa ArgumentError && occursin("cannot join two ground stations", err.msg)
+    end
+
+    @testset "automatic station hardware selection" begin
+        # Shannon links skip a spacecraft's virtual terminal in both directions.
+        spacecraft = [radio_sat(1; n_terminal=1)]
+        model = InterlinkModel()
+        add_ground_station!(model, station())
+        @test register_links!(model, spacecraft, [(1, -1), (-1, 1)], LINK) ==
+            [((1, 2), (-1, 1)), ((-1, 1), (1, 2))]
+        # A station antenna must satisfy the same role-aware hook as a spacecraft terminal.
+        for pair in ((1, -1), (-1, 1))
+            @testset "direction $pair" begin
+                spacecraft = [radio_sat(1)]
+                add_actuator!(spacecraft[1], spacecraft[1].root, radio(gain_dbi=3.0))
+                model = InterlinkModel()
+                add_ground_station!(model, station(antennas=[radio(), radio(gain_dbi=3.0)]))
+                @test register_links!(model, spacecraft, [pair], StationRoleProbe()) ==
+                    [((pair[1], 1), (pair[2], 2))]
+            end
+        end
+        # A receiver-only station cannot serve as a transmitter.
+        model = InterlinkModel()
+        add_ground_station!(model, station(antennas=[radio(gain_dbi=3.0)]))
+        @test_throws ArgumentError register_links!(model, [radio_sat(1)], [(-1, 1)], StationRoleProbe())
     end
 
     @testset "the policies at a station end" begin
