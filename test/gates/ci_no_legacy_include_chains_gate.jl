@@ -2,7 +2,6 @@ include(joinpath(@__DIR__, "..", "contracts", "edg_ownership_checks.jl"))
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
 const SCAN_ROOTS = (
-    joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"),
     joinpath(REPO_ROOT, "src", "foundation", "core"),
     joinpath(REPO_ROOT, "src", "models", "environment"),
     joinpath(REPO_ROOT, "src", "models", "gnc", "control"),
@@ -43,7 +42,6 @@ const ALLOWED_RAW_INCLUDE_FILES = Set([
     joinpath("src", "models", "gnc", "planning", "rpo", "comparison", "reporting_compat.jl"),
     # The comparison report module includes its figure functions, kept in one file of their own.
     joinpath("src", "interfaces", "analysis", "planning", "rpo_comparison_reports.jl"),
-    joinpath("packages", "SpaceAGORAHYPR", "src", "SpaceAGORAHYPR.jl"),
     joinpath("src", "models", "gnc", "planning", "rpo", "lifecycle.jl"),
     # The RPO planner contract loads its validation and headroom parts; it sat in
     # gnc/interfaces/, outside these scan roots, until the GNC regroup.

@@ -14,7 +14,7 @@ repository's pin to that commit.
     url = "https://github.com/Space-FALCON-Lab/SpaceAGORA.jl.git"
     rev = "<40-character commit SHA>"
     uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
-    version = "0.6.0"          # optional: the core version at rev
+    version = "0.6.1"          # optional: the core version at rev
     companions = ["mujoco"]    # optional: hypr, mujoco, edg, at this commit's pins
 """
 module ContributorEnvironment
@@ -184,10 +184,10 @@ function companion_names(list::AbstractString)
     return String.(names)
 end
 
-"""Package names that each companion installs: its registry name, and SpaceAGORAHYPR for HYPR."""
+"""Package names that each companion installs from its recorded source pin."""
 function companion_package_names(name; root)
     registry = TOML.parsefile(joinpath(root, "packages", "OptionalPackages.toml"))
-    return name == "hypr" ? [registry[name]["name"], "SpaceAGORAHYPR"] : [registry[name]["name"]]
+    return [registry[name]["name"]]
 end
 
 """A dependency on a companion needs the companion listed in the pin file, at the core's recorded pin."""
@@ -270,7 +270,6 @@ function add_companions(p)
     for name in p.companions
         package = OptionalPackages.spec(name; root=p.core.path)
         paths = [OptionalPackages.checkout(name; root=p.core.path)]
-        name == "hypr" && push!(paths, joinpath(p.core.path, "packages", "SpaceAGORAHYPR"))
         for path in paths
             identity = TOML.parsefile(joinpath(path, "Project.toml"))
             p.project["deps"][identity["name"]] = identity["uuid"]

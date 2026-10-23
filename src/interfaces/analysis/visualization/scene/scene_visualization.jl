@@ -183,6 +183,7 @@ Everything the viewer needs besides the trajectory rows: epoch, planet,
 spacecraft geometry, the atmosphere (when the run had one), where the
 trajectory and link-pose columns live, and, for a run with interlinks, the file
 of its link schedule (`nothing` otherwise).
+`results_layout=:long` means `results_feather` names the spacecraft table.
 """
 struct VisualizationScene
     schema::Int
@@ -196,15 +197,29 @@ struct VisualizationScene
     link_pose_stride::Int
     atmosphere::Union{Nothing, AtmosphereSpec}
     link_schedule::Union{Nothing, String}
+    results_layout::Symbol
     ground_stations::Vector{GroundStationGeometry}
 end
-VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet, spacecraft, orientation_sim, results_feather,
-    link_pose_field, link_pose_stride, atmosphere, link_schedule) = VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet,
-    spacecraft, orientation_sim, results_feather, link_pose_field, link_pose_stride, atmosphere, link_schedule, GroundStationGeometry[])
-# A scene without a link schedule, as scenes were built before runs wrote one.
+# Preserve earlier constructors: optional schedule, layout, or station geometry.
 VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet, spacecraft, orientation_sim, results_feather,
     link_pose_field, link_pose_stride, atmosphere) = VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet,
-    spacecraft, orientation_sim, results_feather, link_pose_field, link_pose_stride, atmosphere, nothing)
+    spacecraft, orientation_sim, results_feather, link_pose_field, link_pose_stride, atmosphere, nothing, :wide, GroundStationGeometry[])
+VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet, spacecraft, orientation_sim, results_feather,
+    link_pose_field, link_pose_stride, atmosphere, link_schedule::Union{Nothing, String}) =
+    VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet, spacecraft, orientation_sim, results_feather,
+        link_pose_field, link_pose_stride, atmosphere, link_schedule, :wide, GroundStationGeometry[])
+VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet, spacecraft, orientation_sim, results_feather,
+    link_pose_field, link_pose_stride, atmosphere, results_layout::Symbol) =
+    VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet, spacecraft, orientation_sim, results_feather,
+        link_pose_field, link_pose_stride, atmosphere, nothing, results_layout, GroundStationGeometry[])
+VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet, spacecraft, orientation_sim, results_feather,
+    link_pose_field, link_pose_stride, atmosphere, link_schedule, results_layout::Symbol) =
+    VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet, spacecraft, orientation_sim, results_feather,
+        link_pose_field, link_pose_stride, atmosphere, link_schedule, results_layout, GroundStationGeometry[])
+VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet, spacecraft, orientation_sim, results_feather,
+    link_pose_field, link_pose_stride, atmosphere, link_schedule, ground_stations::Vector{GroundStationGeometry}) =
+    VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet, spacecraft, orientation_sim, results_feather,
+        link_pose_field, link_pose_stride, atmosphere, link_schedule, :wide, ground_stations)
 
 for T in (LinkBox, ThrusterGlyph, FacetGlyph, JointGlyph, ArmLinkGeometry, ArmGeometry, SpacecraftGeometry, PlanetSpec, GroundStationGeometry, VisualizationScene)
     @eval Base.:(==)(a::$T, b::$T) = all(getfield(a, f) == getfield(b, f) for f in fieldnames($T))

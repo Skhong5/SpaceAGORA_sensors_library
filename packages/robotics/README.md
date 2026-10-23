@@ -8,7 +8,7 @@ spacecraft rendezvous/proximity operations and robot-arm planning.
 
 | Package | Revision recorded by this layout | Role |
 | --- | --- | --- |
-| [HYPR.jl](https://github.com/Space-FALCON-Lab/HYPR.jl/tree/ef85eb2bfc5623fdd26407868d1371c3bff07d1f) | `ef85eb2bfc5623fdd26407868d1371c3bff07d1f` | Search and trajectory planning, with an optional SpaceAGORA extension using `HYPRServices` contract 3.0.0. |
+| [HYPR.jl](https://github.com/Space-FALCON-Lab/HYPR.jl/tree/4654e8b79fcc08209bf66adcd83d2d2053f4e1d8) | `4654e8b79fcc08209bf66adcd83d2d2053f4e1d8` | Search and trajectory planning, with an optional SpaceAGORA extension using `HYPRServices` contract 3.0.0. |
 | [SpaceAGORAMuJoCo.jl](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl/tree/3d77f512920a7af0714d262a5f3857ea59676b84) | `3d77f512920a7af0714d262a5f3857ea59676b84` | Standalone orbital proximity scenes and spacecraft propagation through `ExternalPropagationServices` contract 2.0.0. |
 
 From the SpaceAGORA repository root, prepare the integration you need:
@@ -18,9 +18,8 @@ julia --startup-file=no scripts/optional_packages.jl setup hypr /path/to/hypr-en
 julia --startup-file=no --project=/path/to/hypr-env
 ```
 
-Then load `SpaceAGORA` and `SpaceAGORAHYPR`. The existing
-[`packages/SpaceAGORAHYPR`](../SpaceAGORAHYPR/README.md) compatibility shim remains
-in place; it loads the adapter implemented by HYPR. The [HYPR user guide](../../docs/src/user/hypr_planning.md)
+Then load `SpaceAGORA` and `HYPR` directly. Loading both activates the adapter
+implemented by HYPR; no separate loader package is needed. The [HYPR user guide](../../docs/src/user/hypr_planning.md)
 explains the planner and the [RPO guide](../../docs/src/user/rpo_planner_pilot.md)
 shows its supported simulation entry points.
 

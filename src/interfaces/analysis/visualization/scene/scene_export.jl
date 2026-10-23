@@ -46,11 +46,13 @@ function build_visualization_scene(
         planet_spec(planet, ephemerides_model, et_start, sample_times),
         spacecraft,
         mission.orientation_sim,
-        basename(IOConfig._results_bundle_prefix(args)) * ".feather",
+        basename(IOConfig._results_bundle_prefix(args)) * (args.simulation_settings.results_layout === :long ?
+            "_spacecraft.feather" : ".feather"),
         String(LINK_POSE_FIELD),
         LINK_POSE_STRIDE,
         atmosphere_spec(args; density_params=density_params),
         _scene_link_schedule(args),
+        args.simulation_settings.results_layout,
         _scene_ground_stations(args)
     )
 end
@@ -164,6 +166,8 @@ function scene_dict(scene::VisualizationScene)::Dict{String, Any}
     # Only a run with interlinks names its link schedule, so other scenes are as before.
     scene.link_schedule === nothing ||
         (dict["results"]["link_schedule"] = Dict{String, Any}("file" => scene.link_schedule))
+    # Long results name the spacecraft table; station geometry is independent of layout.
+    scene.results_layout === :long && (dict["results"]["layout"] = "long")
     isempty(scene.ground_stations) || (dict["ground_stations"] = [_scene_dict(station) for station in scene.ground_stations])
     return dict
 end
@@ -228,6 +232,7 @@ function _scene_from_dict(d)::VisualizationScene
         Int(link_pose["stride"]),
         _atmosphere_from(get(d, "atmosphere", nothing)),
         _link_schedule_from(get(results, "link_schedule", nothing)),
+        Symbol(get(results, "layout", "wide")),
         GroundStationGeometry[GroundStationGeometry(Int(station["node"]), String(station["name"]), _svec3(station["position_m"]))
             for station in get(d, "ground_stations", [])]
     )

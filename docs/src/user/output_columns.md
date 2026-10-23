@@ -15,6 +15,11 @@ one-based position in the spacecraft list passed to `DynamicsModel`.
 `SpacecraftModel.id` does not set this prefix. A single-spacecraft run
 produces `sc1_*` columns even when its spacecraft has a different `id`.
 
+With `results_layout = :long`, the spacecraft table has the same columns
+without the prefix (`pos_1` for `sc{N}_pos_1`), one row per spacecraft, and
+the run-wide columns (those without a prefix) are in the run table. See
+[Long layout for many spacecraft](outputs.md#Long-layout-for-many-spacecraft).
+
 ### Time
 
 | Column | Unit | Description |
