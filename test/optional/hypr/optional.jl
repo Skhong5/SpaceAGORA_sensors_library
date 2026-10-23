@@ -7,26 +7,32 @@ if order=="core-first"
     const before_function=SpaceAGORA.SimulationModel.rpo_pso_plan_path
     @test_throws SpaceAGORA.HYPRUnavailableError SpaceAGORA.make_rpo_configuration(
         planner=SpaceAGORA.HYPRRPOPlanner(SpaceAGORA.RPOPSOConfig()))
-    using SpaceAGORAHYPR
+    using HYPR
     @test before_type===SpaceAGORA.RPOPSOConfig
     @test before_function===SpaceAGORA.SimulationModel.rpo_pso_plan_path
 elseif order=="hypr-first"
-    using SpaceAGORAHYPR
+    using HYPR
+    @test Base.get_extension(HYPR, :HYPRSpaceAGORAExt) === nothing
     using SpaceAGORA
 else
     error("Expected core-first or hypr-first")
 end
-@testset "Installed companion preserves compatibility identities" begin
+@testset "Direct companion imports preserve planner identities" begin
     @test SpaceAGORA.hypr_available()
     @test_throws MethodError SpaceAGORA.SimulationModel.rpo_pso_plan_path()
-    @test any(p.name=="SpaceAGORAHYPR" for p in values(Pkg.dependencies()))
+    @test any(p.name=="HYPR" for p in values(Pkg.dependencies()))
+    @test all(p.name!="SpaceAGORAHYPR" for p in values(Pkg.dependencies()))
+    adapter = Base.get_extension(HYPR, :HYPRSpaceAGORAExt)
+    @test adapter isa Module
+    @test adapter.initialized()
+    @test all(isdefined(adapter, name) for name in (:SwarmPolicy, :RPO, :RobotArm, :PlannerAdapter))
     S=SpaceAGORA.SimulationModel
     @test SpaceAGORA.RPOPSOConfig===S.RPOPSOConfig===S.GuidanceHooks.RPOPSOConfig
     @test SpaceAGORA.RobotArmHYPRConfig===S.RobotArmPlanning.RobotArmHYPRConfig
     @test SpaceAGORA.RobotArmHYPRResult===S.RobotArmPlanning.RobotArmHYPRResult
     @test parentmodule(S.GuidanceHooks.rpo_pso_plan_path)===S.GuidanceHooks
     @test parentmodule(S.RobotArmPlanning.plan_robot_arm_motion_hypr)===S.RobotArmPlanning
-    @test any(m.module===SpaceAGORAHYPR.RPO for m in methods(S.rpo_pso_plan_path))
+    @test any(m.module===adapter.RPO for m in methods(S.rpo_pso_plan_path))
     @test parentmodule(S.HYPRUtils.hypr_path_length)===S.HYPRUtils
     @test parentmodule(S.GuidanceHooks.rpo_retime_samples)===S.GuidanceHooks
 end

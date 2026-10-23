@@ -1,5 +1,5 @@
 module PaperExampleChecks
-using Test, Random, StaticArrays, SpaceAGORA, SpaceAGORAHYPR, JSON, SHA
+using Test, Random, StaticArrays, SpaceAGORA, HYPR, JSON, SHA
 const G=SpaceAGORA.SimulationModel.GuidanceHooks
 include(joinpath(@__DIR__, "..", "..", "..", "examples", "support", "hypr_paper_comparison.jl"))
 @testset "Paper example inputs and retained baseline" begin

@@ -8,8 +8,8 @@ julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
 
 Setup creates a local `Project.toml` from the tracked `Project.template.toml`
 and seeds `Manifest.toml` from the repository dependency manifest. It adds this
-checkout and the `SpaceAGORAHYPR` compatibility shim by path, plus HYPR at the
-immutable revision in `packages/SpaceAGORAHYPR/HYPRSource.toml`. Resolution
+checkout by path, plus HYPR at the
+immutable revision in `packages/HYPRSource.toml`. Resolution
 starts from the seeded manifest: the packages it records keep their versions,
 and the records of the libraries bundled with Julia, such as OpenSSL_jll,
 follow the installed Julia. Both generated installation files are ignored; the
@@ -34,7 +34,7 @@ Those research examples also require the assets described in the examples
 catalog. The smoke run above needs neither. Baseline examples use the examples
 environment without loading the companion.
 
-`smoke.jl` explicitly loads `SpaceAGORAHYPR`, then uses the public SpaceAGORA planner surface and its declared dependencies.
+`smoke.jl` explicitly loads `SpaceAGORA` and `HYPR`, then uses the public SpaceAGORA planner surface and its declared dependencies.
 It runs the same two-second Earth corridor case with `DirectRPOPlanner` and
 `HYPRRPOPlanner`, then defines a small user-owned planner and force. It does not
 switch projects, include package source, or access internal modules. Test imports
