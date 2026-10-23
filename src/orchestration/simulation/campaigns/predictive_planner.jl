@@ -1156,6 +1156,7 @@ for tests; a normal process loads them once.
 function reset_predictive_machine_constants!()::Nothing
     lock(_PREDICTIVE_CONSTANTS_LOCK) do
         _PREDICTIVE_CONSTANTS_LOADED[] = false
+        _PREDICTIVE_CONSTANTS_GENERATION[] = -1
         _PREDICTIVE_CONSTANTS[] = nothing
         _PREDICTIVE_CAMPAIGN_CONSTANTS[] = nothing
     end
