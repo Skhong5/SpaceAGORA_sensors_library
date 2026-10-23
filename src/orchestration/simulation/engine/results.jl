@@ -57,8 +57,9 @@ with `spacecraft` (its position in the configuration), `spacecraft_id`, `plane`
 and `slot` (from its constellation slot, `missing` without one) and `time` first,
 then each per-spacecraft column without its `sc<i>_` prefix. Rows are
 time-major. A run with `results_layout=:long` returns its table as it is. For a
-wide run the table is rearranged from the `sc<i>_` columns of its spacecraft;
-its run-wide columns stay in `results.table`.
+wide run the table is rearranged from the `sc<i>_` columns of its spacecraft; a
+column that some spacecraft lack (thruster levels of a spacecraft without
+thrusters) is `missing` for them. Its run-wide columns stay in `results.table`.
 """
 function long_table(results::SimulationResults)::DataFrame
     results.configuration.simulation_settings.results_layout === :long && return results.table
@@ -67,7 +68,12 @@ function long_table(results::SimulationResults)::DataFrame
     num_sats = length(spacecraft)
     n_times = nrow(wide)
     prefix(i) = "sc$(i)_"
-    fields = String[name[(length(prefix(1)) + 1):end] for name in names(wide) if startswith(name, prefix(1))]
+    # Every spacecraft's columns, in the order first seen: spacecraft can differ.
+    fields = String[]
+    for name in names(wide)
+        m = match(r"^sc(\d+)_(.*)$", name)
+        m === nothing || !(1 <= parse(Int, m[1]) <= num_sats) || m[2] in fields || push!(fields, m[2])
+    end
     slot_part(sc, part) = sc.constellation_slot === nothing ? missing : Int16(getproperty(sc.constellation_slot, part))
     long = DataFrame(
         spacecraft=repeat(Int32.(1:num_sats), n_times),
@@ -77,8 +83,8 @@ function long_table(results::SimulationResults)::DataFrame
         time=repeat(Vector{Float64}(wide.time); inner=num_sats),
     )
     for field in fields
-        columns = [wide[!, prefix(i) * field] for i in 1:num_sats]
-        long[!, field] = [columns[sat][row] for row in 1:n_times for sat in 1:num_sats]
+        columns = [prefix(i) * field in names(wide) ? wide[!, prefix(i) * field] : nothing for i in 1:num_sats]
+        long[!, field] = [columns[sat] === nothing ? missing : columns[sat][row] for row in 1:n_times for sat in 1:num_sats]
     end
     return long
 end

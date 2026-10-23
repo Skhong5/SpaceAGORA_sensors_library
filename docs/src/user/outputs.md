@@ -305,14 +305,19 @@ output/fleet/
   follow the bundle, as in the wide layout. No `simulation_results.csv` or
   `.feather` is written, so a reader expecting the wide file finds none. Wide
   files left in the folder by an earlier wide run stay there; the manifest names
-  this run's files.
+  this run's files. When two runs write the same folder at once, the wide layout
+  keeps the other run's CSV under a second name; the long layout does not, and
+  the run that finishes last leaves its files.
 - **In memory**, `SimulationResults.table` is the spacecraft table and
   [`run_table`](@ref) returns the run table (`nothing` without run-wide fields).
   For a wide run, [`long_table`](@ref) rearranges `table` into the long
   spacecraft table.
 
 Which table a field goes to follows its `per_satellite` flag, and its values
-are flattened into columns as in the wide table. The default stays
+are flattened into columns as in the wide table, spacecraft by spacecraft. A
+field whose values differ in shape between spacecraft, such as the thruster
+levels of a spacecraft with thrusters beside one without, has the columns of
+every spacecraft, `missing` where a spacecraft has none. The default stays
 `results_layout = :wide`, whose files are unchanged.
 
 The viewer reads both layouts. For a long run it reads the spacecraft table as
