@@ -269,6 +269,77 @@ contributes its own column set. Spacecraft 1 produces `sc1_*` columns,
 spacecraft 2 produces `sc2_*`, and so on. The spacecraft position in the
 configuration sets the numeric suffix; `SpacecraftModel.id` does not.
 
+## Long layout for many spacecraft
+
+A run of hundreds of spacecraft has tens of thousands of `sc{i}_` columns. Set
+`simulation_settings.results_layout = :long` to write the per-spacecraft
+results as a long table instead: one row per spacecraft and saved time, with
+the same values.
+
+```julia
+settings = SM.SimulationSettings(results_layout=:long, results_directory="output/fleet")
+```
+
+```text
+output/fleet/
+  simulation_results_spacecraft.csv      ← one row per spacecraft and saved time
+  simulation_results_spacecraft.feather
+  simulation_results_run.csv             ← one row per saved time: the run-wide fields
+  simulation_results_run.feather
+  simulation_results.manifest.toml       ← schema_version "2", layout "long"
+```
+
+- **The spacecraft table** starts with `spacecraft` (the spacecraft's position in
+  the configuration, the `i` of `sc{i}_`), `spacecraft_id` (its
+  `SpacecraftModel.id`), `plane` and `slot` (its constellation slot, `missing`
+  without one) and `time`. The per-spacecraft fields follow, named as on
+  [Output Columns](output_columns.md) without the `sc{i}_` prefix: `pos_1`,
+  `vel_1`, `mass` and so on. Its rows are time-major: every spacecraft at the
+  first saved time, then at the next. Use `(spacecraft, time)` as the key rather
+  than the row order.
+- **The run table** holds `time` and the run-wide fields, such as `sun_dir_1..3`
+  and run-wide fields of your own. It is written only when the run has one, and
+  a run without one removes the run table files an earlier long run left there.
+- **The manifest** has `schema_version = "2"` and `layout = "long"`, and lists
+  the files above. The CSVs follow `save_csv`, the Feather files and manifest
+  follow the bundle, as in the wide layout. No `simulation_results.csv` or
+  `.feather` is written, so a reader expecting the wide file finds none. Wide
+  files left in the folder by an earlier wide run stay there; the manifest names
+  this run's files. When two runs write the same folder at once, the wide layout
+  keeps the other run's CSV under a second name; the long layout does not, and
+  the run that finishes last leaves its files.
+- **In memory**, `SimulationResults.table` is the spacecraft table and
+  [`run_table`](@ref) returns the run table (`nothing` without run-wide fields).
+  For a wide run, [`long_table`](@ref) rearranges `table` into the long
+  spacecraft table.
+
+Which table a field goes to follows its `per_satellite` flag, and its values
+are flattened into columns as in the wide table, spacecraft by spacecraft. A
+field whose values differ in shape between spacecraft, such as the thruster
+levels of a spacecraft with thrusters beside one without, has the columns of
+every spacecraft, `missing` where a spacecraft has none. The default stays
+`results_layout = :wide`, whose files are unchanged.
+
+Long output reserves `spacecraft`, `spacecraft_id`, `plane`, `slot` and `time`
+for spacecraft row identities, and `time` in the run table. A custom field whose
+flattened name collides with one of these columns is refused with an
+`ArgumentError`; choose another `column_prefix` or keep the wide layout.
+This also applies when converting wide results with `long_table`.
+
+The long table and its Arrow file retain which spacecraft own each column,
+separately from its values. A present channel whose measurements are all `missing`
+remains a channel with gaps; an absent field does not become a channel. This
+schema information is carried in Arrow metadata, so it stays with a moved results
+file. Older draft long files without it retain the earlier fallback: columns
+whose values are all `missing` on one spacecraft are treated as absent. CSV alone
+does not retain this schema metadata.
+
+The viewer reads both layouts. For a long run it reads the spacecraft table as
+views, without copying it, and its page equals that of the same run in the wide
+layout. `run_monte_carlo_visualization` reads each sample's wide results file
+and refuses `results_layout = :long`. The telemetry verification study runs its
+cases with settings of its own, in the wide layout.
+
 ## Output rate
 
 The `data_rate` field in `MissionConfiguration` sets the output sample cadence

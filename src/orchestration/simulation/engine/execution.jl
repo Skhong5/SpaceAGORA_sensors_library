@@ -371,6 +371,16 @@ function _save_simulation_results_if_enabled!(
         convert(Vector{Float64}, results_times),
         convert(Vector{SimulationModel.SaveData}, results_data),
     )
+    if args.simulation_settings.results_layout === :long
+        tables = _build_long_results_tables(results_times, results_data, save_fields_resolved, args)
+        csv_paths = (spacecraft=nothing, run=nothing)
+        if write_files && args.simulation_settings.results
+            csv_paths = _write_long_results!(tables, results_times, args; write_bundle=_typed_save_bundle_enabled(),
+                resumed_from_s=resumed_from_s)
+        end
+        return return_table ? (; csv_path=csv_paths.spacecraft, run_csv_path=csv_paths.run, table=tables.spacecraft,
+            run_table=tables.run) : csv_paths.spacecraft
+    end
     results_df = _build_results_dataframe(results_times, results_data, save_fields_resolved, args)
     csv_path = nothing
     if write_files && args.simulation_settings.results
@@ -696,6 +706,8 @@ function run_simulation(
     visualization && SimulationModel.SceneVisualization.VisualizerServices.require_available()
     return_results && return_solver_metadata &&
         throw(ArgumentError("return_results=true and return_solver_metadata=true cannot be combined."))
+    args.simulation_settings.results_layout in (:wide, :long) || throw(ArgumentError(
+        "SimulationSettings.results_layout must be :wide or :long; got :$(args.simulation_settings.results_layout)."))
     args = _flatten_spacecraft_gnc(args)
     # Scoped dynamic effectors become bare effectors and a table of run positions,
     # before any check reads the effectors by type (see effector_scopes.jl).
@@ -1240,11 +1252,18 @@ function run_simulation(
         # output never shows up. The bundle and checkpoint paths are the
         # engine's own naming (IOConfig), not guesses.
         prefix = _results_bundle_prefix(results_args)
+        long_layout = args.simulation_settings.results_layout === :long
         candidates = Any[saved_results.csv_path, scene_path, export_path]
+        long_layout && push!(candidates, saved_results.run_csv_path)
         # The bundle is this run's only when this run wrote it; a leftover
         # from an earlier run in the same directory must not be listed.
         if solved && args.simulation_settings.results && _typed_save_bundle_enabled()
-            push!(candidates, prefix * ".feather", prefix * ".manifest.toml")
+            if long_layout
+                push!(candidates, prefix * "_spacecraft.feather", prefix * ".manifest.toml")
+                saved_results.run_table === nothing || push!(candidates, prefix * "_run.feather")
+            else
+                push!(candidates, prefix * ".feather", prefix * ".manifest.toml")
+            end
         end
         if checkpoint_written
             ck = SimulationModel.IOConfig._checkpoint_paths(args)
@@ -1253,7 +1272,8 @@ function run_simulation(
         files = String[string(f) for f in candidates if f !== nothing && isfile(f)]
         # A resume without usable rows writes beside the earlier results; its
         # configuration names the folder it wrote to.
-        return SimulationResults(saved_results.table, results_args, files, return_solution ? last_sol : nothing)
+        return SimulationResults(saved_results.table, results_args, files, return_solution ? last_sol : nothing,
+            long_layout ? saved_results.run_table : nothing)
     end
     return_solution && return last_sol
     return nothing

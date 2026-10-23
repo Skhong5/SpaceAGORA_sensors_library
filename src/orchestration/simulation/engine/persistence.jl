@@ -21,6 +21,14 @@
 @inline _write_results_csv!(results_df::DataFrame, args)::String =
     SimulationModel.IOOutputs._write_results_csv!(results_df, args)
 
+@inline _build_long_results_tables(times::Vector{Float64}, saved_data::Vector, save_fields, args) =
+    SimulationModel.IOOutputs._build_long_results_tables(times, saved_data, save_fields, args)
+
+@inline _write_long_results!(tables, times::Vector{Float64}, args; write_bundle::Bool=true,
+                             resumed_from_s::Union{Nothing, Float64}=nothing) =
+    SimulationModel.IOOutputs._write_long_results!(tables, times, args, LONG_RESULTS_BUNDLE_SCHEMA_VERSION;
+        write_bundle=write_bundle, resumed_from_s=resumed_from_s)
+
 # Viewer scene sidecar (docs/architecture/interactive_visualization_plan.md).
 # Opt-in: nothing is written unless `save_visualization_scene` is set, and it
 # never runs when results themselves are disabled.

@@ -26,7 +26,7 @@ const ODD = (
     SimulationSettings=(results=false, verbose=true, results_directory="odd_results", generate_plots=false,
         generate_filenames=true, normalize=true, save_csv=false, save_visualization_scene=true,
         checkpoint_enabled=true, checkpoint_interval_s=123.0, checkpoint_directory="odd_checkpoints",
-        resume_from_checkpoint=true, articulated_live_pose_loads=true),
+        resume_from_checkpoint=true, articulated_live_pose_loads=true, results_layout=:long),
     MissionConfiguration=(mission_type=MissionOrbits, keplerian=false, number_of_orbits=3, mission_time=4321.0,
         orientation_sim=true, num_steps_to_save=500, data_rate=2.5),
     EnvironmentModel=(planet=PLANET, EI=250.0, density_model=NoAtmosphereModel(),
