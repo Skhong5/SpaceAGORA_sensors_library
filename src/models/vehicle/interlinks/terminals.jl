@@ -7,12 +7,13 @@ module InterlinkTerminals
 # which comes before the mounted-actuator and power models this module needs;
 # its terminal methods for a SpacecraftModel are added here.
 
+using StaticArrays: SVector
 using ..AbstractTypes: AbstractActuator
 using ..SpacecraftModels: SpacecraftModel
 using ..InterLinkModels: InterlinkModel, LinkContext, link_terminal, link_terminal_levels, terminal_supports,
     link_directed, link_received_power_w, link_endpoint, PowerBeamLink, terminal_shed_tier, link_data_rate_bps
 import ..InterLinkModels: terminal_count, _terminal_device, _terminal_devices, _terminal_number, _battery_capacity_wh,
-    _battery_within_full
+    _battery_within_full, terminal_pose
 using ..ActuatorMounting: mounted_actuators, actuator_context
 using ..Actuators: actuator_consumption, actuator_limits
 using ..PowerSystems: battery, within_full_tolerance
@@ -69,6 +70,30 @@ end
 
 _terminal_number(spacecraft::SpacecraftModel, terminal::AbstractActuator) = terminal_number(spacecraft, terminal)
 
+function terminal_pose(spacecraft::SpacecraftModel, terminal)
+    pose = nothing
+    for link in spacecraft.links, mounted in Iterators.flatten((link.laser_terminals, link.custom_actuators))
+        mounted === terminal || continue
+        here = _mounted_terminal_pose(link, terminal)
+        pose === nothing || pose == here || throw(ArgumentError(
+            "Spacecraft $(spacecraft.id) has equal $(nameof(typeof(terminal)))s mounted at different poses, so " *
+            "terminal_pose cannot tell them apart; give them distinct fields."))
+        pose = here
+    end
+    pose === nothing && throw(ArgumentError(
+        "The $(nameof(typeof(terminal))) given is not terminal hardware mounted on spacecraft $(spacecraft.id)."))
+    return pose
+end
+
+function _mounted_terminal_pose(link, terminal)
+    ctx = actuator_context(link)
+    axis = hasproperty(terminal, :boresight) ? terminal.boresight :
+        hasproperty(terminal, :normal) ? terminal.normal : throw(ArgumentError(
+            "terminal_pose: a $(nameof(typeof(terminal))) has no boresight or normal to point with."))
+    location = hasproperty(terminal, :location) ? SVector{3, Float64}(terminal.location) : SVector{3, Float64}(0.0, 0.0, 0.0)
+    return (ctx.link_to_body * SVector{3, Float64}(axis), ctx.link_to_body * location + ctx.link_r_body)
+end
+
 function _battery_capacity_wh(spacecraft::SpacecraftModel)
     b = battery(spacecraft)
     return b === nothing ? NaN : Float64(b.capacity_wh)
@@ -86,13 +111,16 @@ end
 
 At run setup, record on `model` the hardware endpoints of every candidate link
 of the run's spacecraft. For each spacecraft, each endpoint is
-`(edge, side, mounted actuator position)`. Each hardware terminal must still be
+`(edge, side, mounted actuator position)`; for each edge, the terminal hardware
+at its two ends (`nothing` for a virtual terminal), which the link hooks
+receive. Each hardware terminal must still be
 able to carry its link (`terminal_supports`), at a level within its
 `actuator_limits`. Returns whether there are any.
 """
 function prepare_terminal_endpoints!(model::InterlinkModel, spacecraft)::Bool
     graph = model.graph
     endpoints = [NTuple{3, Int}[] for _ in eachindex(spacecraft)]
+    terminals = [Any[nothing, nothing] for _ in eachindex(graph.edges)]
     hardware = Dict{Int, Any}()
     for (edge, vertices) in enumerate(graph.edges), (side, vertex) in enumerate(vertices)
         satellite, number = graph.vertices[vertex]
@@ -118,8 +146,10 @@ function prepare_terminal_endpoints!(model::InterlinkModel, spacecraft)::Bool
             "$level, outside its limits [$low, $high] (for a LaserTerminal, max_power_w); build the link from the " *
             "terminal, LaserMomentumLink(terminal), or lower its power."))
         push!(endpoints[satellite], (edge, side, entry.position))
+        terminals[edge][side] = entry.terminal
     end
     model.terminal_endpoints = endpoints
+    model.edge_terminals = Tuple{Any, Any}[(pair[1], pair[2]) for pair in terminals]
     return any(!isempty, endpoints)
 end
 

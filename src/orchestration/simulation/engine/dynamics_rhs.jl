@@ -3628,7 +3628,11 @@ end
     return nothing
 end
 
-# The forces of the selected interlinks, each from its link's `link_force`.
+# What the selected interlinks do, each from its link's `interlink_wrench`: their
+# forces, and, for links that turn their endpoints, their body torques, added to
+# the attitude equation's angular acceleration as `I⁻¹ τ`. That is exact for the
+# rigid spacecraft interlinks allow, whose `ω̇` is linear in the torque. A
+# spacecraft whose links apply no torque keeps its `ω̇` as it is.
 _apply_interlink_rhs!(derivative, state, parameters) = _apply_interlink_rhs!(derivative, state, parameters, NaN)
 function _apply_interlink_rhs!(derivative, state, parameters, t)
     model = parameters.args.interlink_model
@@ -3641,14 +3645,23 @@ function _apply_interlink_rhs!(derivative, state, parameters, t)
         parameters.is_active[satellite] || continue
         current = state.sc[satellite]
         current_derivative = derivative.sc[satellite]
-        force = SimulationModel.interlink_force_on_spacecraft(model, state, satellite;
+        force, torque, turned = SimulationModel.InterLinkModels.interlink_wrench_on_spacecraft(model, state, satellite;
             is_active=parameters.is_active, spacecraft, context)
         acceleration = force / current.mass
         current_derivative.vel .+= acceleration
         current_derivative.interlink_dv .= acceleration
         semimajor_axis = inv(2 / norm(current.pos) - dot(current.vel, current.vel) / mu)
         current_derivative.interlink_delta_sma = 2 * semimajor_axis^2 / mu * dot(current.vel, force) / current.mass
+        turned && _apply_interlink_torque!(current_derivative, parameters.args, spacecraft[satellite], satellite, torque)
     end
+    return nothing
+end
+
+function _apply_interlink_torque!(current_derivative, args, spacecraft, satellite::Int, torque)
+    args.mission_configuration.orientation_sim || throw(ArgumentError(
+        "An interlink applied a torque to spacecraft $satellite in a run without attitude (orientation_sim=false). " *
+        "A link kind whose interlink_wrench returns torques declares link_applies_torque, and its runs need orientation_sim."))
+    current_derivative.ω .+= SVector{3, Float64}(spacecraft.inertia_tensor \ torque)
     return nothing
 end
 
