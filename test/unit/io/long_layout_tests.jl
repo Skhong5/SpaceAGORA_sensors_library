@@ -113,8 +113,8 @@ end
             per_satellite=true, column_prefix="rag")
         keyed = SM.SaveField(:named, (u, t, integrator) -> [i == short ? (a=t,) : (a=t, b=2t) for i in 1:2];
             per_satellite=true, column_prefix="named")
-        wide_args = config(dir=mktempdir(), n=2, walker=false)
-        long_args = config(dir=mktempdir(), layout=:long, n=2, walker=false)
+        wide_args = config(dir=mktempdir(), n=2, walker=false, scene=true)
+        long_args = config(dir=mktempdir(), layout=:long, n=2, walker=false, scene=true)
         fields = vcat(SM.default_save_fields(wide_args), [ragged, keyed])
         wide = quiet(() -> run_simulation(wide_args; return_results=true, save_fields=fields))
         long = quiet(() -> run_simulation(long_args; return_results=true, save_fields=fields))
@@ -126,6 +126,14 @@ end
         end
         @test rows(long.table, short).named_a == wide.table[!, "sc$(short)_named_a"]
         @test isequal(long_table(wide), long.table)
+        # The viewer offers a channel only when every spacecraft has its column. The
+        # long run's wide view leaves out the columns a spacecraft lacks, as its wide
+        # table has none, so the same channels are offered.
+        channels = [(column="rag_2",), (column="named_b",), (column="named_a",)]
+        payload(args) = JSON.parsefile(export_viewer_payload(args; textures=false, channels=channels))
+        wide_json, long_json = payload(wide_args), payload(long_args)
+        @test [channel["name"] for channel in long_json["frames"]["channels"]] == ["named_a"]
+        @test isequal(wide_json["frames"], long_json["frames"])
     end
     # The thruster levels of a spacecraft with thrusters beside one without, in
     # both orders; the viewer reads the long run as the wide one.
