@@ -74,7 +74,7 @@ GRAMSuite = {path = "data/GRAMSuite.jl"}
 Printf = "1.11"
 PythonCall = "0.9.36"
 SpaceAGORAEDG = "0.5"
-SpaceAGORAVisualizer = "0.1"
+SpaceAGORAVisualizer = "0.1, 0.2"
 ADTypes = "1"
 Arrow = "2"
 Artifacts = "1.11"

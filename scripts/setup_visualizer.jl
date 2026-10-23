@@ -3,7 +3,7 @@ module VisualizerInstallation
 using Pkg, TOML, UUIDs
 const ROOT = normpath(joinpath(@__DIR__, ".."))
 const VISUALIZER_UUID = UUID("a4677e92-0b7f-4d10-9ebd-8cde6a49f03a")
-const SUPPORTED_VERSION = "0.1.0"
+const SUPPORTED_VERSION = "0.2.0"
 
 function source_spec(root=ROOT; local_path=get(ENV, "SPACEAGORA_VISUALIZER_PATH", ""))
     if !isempty(local_path)
