@@ -41,8 +41,9 @@ The names are listed in `src/models/gnc/companions/edg/services.jl`. EDG forward
 calls by name; an external propagator, by contrast, adds methods to SpaceAGORA's
 own functions.
 
-SpaceAGORA's targeting control, and some of the companion's tests and research
-scripts, still use private SpaceAGORA paths. These paths are not supported;
+SpaceAGORA reaches the companion only through the two decisions below. Some of the
+companion's tests and research scripts still use private SpaceAGORA paths. These
+paths are not supported;
 maintainers find them listed, with the checks for a boundary change, in
 `docs/contributing/companion_boundaries.md` in the
 [contributor documentation](https://github.com/Space-FALCON-Lab/SpaceAGORA.jl/tree/main/docs/contributing).
