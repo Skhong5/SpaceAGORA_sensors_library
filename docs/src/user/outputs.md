@@ -347,12 +347,12 @@ ends.
   counts rows over the whole run, so it keeps the rows a run that does not
   stream keeps.
 - **Column types.** Each column keeps the type its first checkpoint's rows gave
-  it. Later rows may bring `missing` into a column that already allows it, but
-  a column whose type changes otherwise (a field that is `missing` until some
-  time and a number after it, or whose flattened columns change) stops the run
-  with an error naming the column. Make such a field return values of one type
-  (NaN rather than `missing`, say), or run it without checkpoints or in the
-  wide layout.
+  it, and later rows must fit it: numbers fit a column that also allows
+  `missing`. A column whose type changes otherwise (a field that is `missing`
+  through the first checkpoint and a number after it, or whose flattened
+  columns change) stops the run with an error naming the column, and so does a
+  resume of it. Make such a field return values of one type (NaN rather than
+  `missing`, say), or run it without checkpoints or in the wide layout.
 - **A resumed run** cuts the streams and CSVs back to its checkpoint, so rows
   written after it by a run that crashed are dropped, and goes on appending. Its
   files then hold the whole run. A resume that solves nothing leaves the files

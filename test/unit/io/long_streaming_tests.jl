@@ -207,6 +207,15 @@ end
         end
         @test isequal(run_table(streamed), run_table(plain)) && eltype(run_table(streamed).early) == Union{Missing, Float64}
         @test csvs(dir) == csvs(plain_dir)
+        # A resume takes the streams' column types back with the checkpoint, so
+        # its numbers join the nullable column too.
+        crash = DiscreteCallback((u, t, integrator) -> t > 350.0, integrator -> error("crashed"); save_positions=(false, false))
+        crashed_dir = mktempdir()
+        @test_throws Exception quiet(() -> run_simulation(config(crashed_dir);
+            save_fields=with_early(config(crashed_dir)), extra_callbacks=(crash,)))
+        resumed = quiet(() -> run_simulation(config(crashed_dir; resume=true); return_results=true,
+            save_fields=with_early(config(crashed_dir))))
+        @test isequal(run_table(resumed), run_table(plain)) && csvs(crashed_dir) == csvs(plain_dir)
     end
 
     @testset "a run killed while writing its files is finished by its resume" begin
