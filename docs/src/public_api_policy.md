@@ -154,6 +154,7 @@ Solver-side policy note:
 
 - `split_imex` now means the atmosphere-implicit IMEX partition
 - `multirate` still means the control-focused split
+- `multirate_mri` uses a fixed coupled partition: custom dynamic effectors stay slow, and `solver_partition` does not change their MRI placement
 - `solver_partition` is the public hook that places dynamic effectors on the implicit or explicit IMEX side
 - `gravity_backbone_split` is the public fixed-step gravity-backbone split mode with a symplectic gravity core plus explicit SRP / N-body velocity kicks
 - `gravity_backbone_structure` / `gravity_backbone_acceleration_ii` declare gravity-core participation
