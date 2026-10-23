@@ -16,6 +16,7 @@ using SHA
 using Base64
 using Random
 using Arrow
+using CSV
 using DataFrames
 
 using ..AbstractTypes: AbstractPlanet, AbstractEphemeridesModel

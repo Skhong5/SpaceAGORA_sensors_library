@@ -356,9 +356,11 @@ separate, explicit-`addprocs` path — see
 
 The runner refuses configurations with guidance, navigation, or control
 effectors, because effectors that coordinate satellites cannot act across
-ensemble members. If every configured effector acts on a single satellite only,
-opt in with `allow_gnc_effectors=true`. Keep the monolithic `run_simulation`
-path for genuinely coupled constellations (RPO, formation control).
+ensemble members. If every configuration-level effector acts on each satellite on
+its own (`spacecraft_scope` `AllSpacecraft()`), opt in with
+`allow_gnc_effectors=true`; GNC for one satellite is declared on its
+`SpacecraftModel` and needs no flag. Keep the monolithic `run_simulation` path
+for genuinely coupled constellations (RPO, formation control).
 
 ## Optional native GRAM density workers
 

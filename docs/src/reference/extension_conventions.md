@@ -139,6 +139,7 @@ cross-track frame, `_site` a landing site's frame.
 | Vehicle | `wrench`, `control_wrench` | inertial frame, N | body frame, about the centre of mass, N·m |
 | Hardware | `actuator_wrench` | body frame, N; the engine rotates it to the inertial frame | body frame, about the body reference point, N·m |
 | Wheels | `control_wheel_torque` | none | body frame, N·m |
+| Interlinks | `interlink_wrench` | inertial frame, N | body frame, about the body reference point, N·m |
 
 The attitude quaternion is `q = (x, y, z, w)`, scalar last, with
 `v_body = rot(q) * v_inertial`.

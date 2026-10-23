@@ -55,16 +55,33 @@ The engine reads them before the run and at each tick.
 
 | Declaration | Default | Declare it when |
 |---|---|---|
-| `spacecraft_scope(model)` | `AllSpacecraft()`: ticked for every spacecraft | the model acts on some spacecraft only: `BoundSpacecraft(indices)`, or `CoupledSpacecraft(primary, partners)` for a model ticked for `primary` that also reads `partners` |
+| `spacecraft_scope(model)` | `AllSpacecraft()`: ticked for every spacecraft | the model acts on some spacecraft only: `BoundSpacecraft(indices)`, `CoupledSpacecraft(primary, partners)` for a model ticked for `primary` that also reads `partners`, or a `SpacecraftSelection` (see [Effectors on part of a constellation](constellations.md#Effectors-on-part-of-a-constellation)) |
 | `gnc_period_s(model)` | `nothing` | the law assumes a tick period, such as the step it was discretized with. Before the run the engine refuses the run when the control rate differs |
 | `skip_inactive(model)` | `true`: a spacecraft that is no longer active, after an impact or a touchdown, is not ticked; each tick calls `release_command!(model, t, spacecraft_index)` instead. The model supplies its off command, such as zero thrust, by implementing `release_command!`: the fallback does nothing, so a model without its own method keeps the command it last held | the model must keep ticking for an inactive spacecraft: return `false`. Before SpaceAGORA 0.4.0 the default was `false` |
 | `held_command(model, spacecraft_index)`, `held_command_time(model, spacecraft_index)` | `nothing`, `NaN` | the model holds a command: return it, as an immutable value, and the time of the tick that produced it |
 | `gnc_links(model)` | none | the model shares an object with a partner: see [Pairing through a link](#Pairing-through-a-link) |
 
-Output hooks are called for every spacecraft whatever the scope, so they check
-`x.spacecraft_index` themselves. A `SpacecraftSelection` scopes dynamic effectors
-only (see [Effectors on part of a constellation](constellations.md#Effectors-on-part-of-a-constellation));
-the scope check refuses it from a guidance, navigation or control model.
+During the run the engine calls a model only for the spacecraft its scope names:
+its ticks, its output hooks (`control_wrench`, `control_propellant_rate`,
+`control_wheel_torque`), its levels (`actuator_levels`, `control_thruster_levels`),
+`register_tstops!` and `atmosphere_transition!`. For a `CoupledSpacecraft` that is
+the primary only: the partners are read, not acted on. SpaceAGORA 0.6 and earlier
+called the output hooks, the levels and `atmosphere_transition!` for every
+spacecraft whatever the scope. Before the run, `touchdown_spec` and, when the
+result columns are sized, `control_thruster_levels` are still asked for every
+spacecraft, and direct callers, such as the conformance kit, may call any of them
+for others, so keep returning zeros or `nothing` for a spacecraft outside the
+scope.
+
+The engine takes each model's scope when the run starts, once the run-start
+initializers ran, and keeps it for the whole run. A `SpacecraftSelection` is
+resolved then, its `where` called once per spacecraft. A scope that changes later
+stops the run: each tick reads the scope again, and an event-driven model's scope
+is read once per accepted step. Set a model's spacecraft in the model itself, in
+`bind_spacecraft` or in an initializer, as the RPO pair does from the spacecraft
+ids. A selection's `where` function is compared by identity, so a model whose scope
+is a `SpacecraftSelection` keeps it in a field and returns that object; one built
+anew at each call, with a new closure, differs from the run's.
 
 A control model that is not ticked periodically declares
 `tick_schedule(model) = :event_driven` and brings its own callbacks with
@@ -135,7 +152,8 @@ function SpaceAGORA.update_control!(c::RateDamper, u, p, t, spacecraft_index)
 end
 
 # The output (shape R), at every evaluation of the equations of motion: the held
-# command, never the law. Output hooks are called for every spacecraft.
+# command, never the law. The engine calls it for the spacecraft in the scope
+# only; direct callers may ask about others, so it checks the index.
 function SpaceAGORA.control_wrench(c::RateDamper, x::StateSample, p, t)
     zero3 = zero(SVector{3, Float64})
     x.spacecraft_index == c.spacecraft_index || return zero3, zero3

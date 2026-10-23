@@ -269,11 +269,14 @@ function _refresh_crossing_atmosphere_flags!(integrator, events)
     for i in eachindex(p.is_active)
         inside = p.shared_buffers.in_atmosphere[i]
         inside == previous_inside[i] && continue
-        for model in p.args.guidance_model.guidance_effectors
-            SimulationLifecycle.atmosphere_transition!(model, integrator.u, p, integrator.t, i, inside)
+        # Each guidance and control model whose scope names the spacecraft.
+        guidance_models = p.args.guidance_model.guidance_effectors
+        for j in _scope_members(p, :guidance, guidance_models, i)
+            SimulationLifecycle.atmosphere_transition!(guidance_models[j], integrator.u, p, integrator.t, i, inside)
         end
-        for model in p.args.control_model.control_effectors
-            SimulationLifecycle.atmosphere_transition!(model, integrator.u, p, integrator.t, i, inside)
+        control_models = p.args.control_model.control_effectors
+        for j in _scope_members(p, :control, control_models, i)
+            SimulationLifecycle.atmosphere_transition!(control_models[j], integrator.u, p, integrator.t, i, inside)
         end
     end
     return nothing

@@ -186,8 +186,57 @@ function _interlink_checkpoint_configuration(args)
     # with any records each spacecraft's terminals, in order; a run without keeps
     # the configuration it had before hardware terminals.
     hardware = [_mounted_terminal_identities(spacecraft) for spacecraft in args.dynamics_model.spacecraft]
-    all(isempty, hardware) && return configuration
-    return merge(configuration, (hardware_terminals=hardware,))
+    all(isempty, hardware) || (configuration = merge(configuration, (hardware_terminals=hardware,)))
+    mounts = _interlink_terminal_mounts(args)
+    isempty(mounts) && return configuration
+    return merge(configuration, (terminal_mounts=mounts,))
+end
+
+# Geometry-aware candidates also depend on the terminal's mounting link. Keep
+# this separate from the hardware identity so center-to-center links retain their
+# historical checkpoint configuration. Only endpoints that read geometry matter.
+function _interlink_terminal_mounts(args)
+    graph = args.interlink_model.graph
+    models = SimulationModel.InterLinkModels
+    endpoints = Set{Tuple{Int, Int}}()
+    for (edge, link) in zip(graph.edges, graph.edge_properties)
+        (models._link_needs_attitude(link) || models.link_applies_torque(link)) || continue
+        for vertex in edge
+            push!(endpoints, graph.vertices[vertex])
+        end
+    end
+    mounts = Any[]
+    for (position, number) in sort!(collect(endpoints))
+        spacecraft = args.dynamics_model.spacecraft[position]
+        for entry in SimulationModel.mounted_link_terminals(spacecraft)
+            entry.number == number || continue
+            link = entry.link
+            index = findfirst(candidate -> candidate === link, spacecraft.links)
+            # Root attitude belongs to integrated spacecraft state, not the
+            # link-to-body transform. A hinge's angle is restored separately;
+            # comparing its current q would reject an unchanged moving mount.
+            rotation = if link.root
+                (kind=:body_frame,)
+            elseif isempty(link.hinges)
+                for control in args.control_model.control_effectors
+                    panel = control isa SimulationModel.AerobrakingEnergyDepletionControlModel ? control.aoa_effector : control
+                    if panel isa SimulationModel.SolarPanelAngleOfAttackControlModel && index in panel.controlled_panel_links
+                        throw(ArgumentError("Checkpointing a geometry-aware interlink on controlled panel link $(index) " *
+                            "of spacecraft $(position) requires a PanelHinge to restore its mounting attitude."))
+                    end
+                end
+                (kind=:fixed, q=_interlink_kind_parameter(Tuple(link.q)))
+            else
+                (kind=:hinged, hinges=[(axis=_interlink_kind_parameter(Tuple(h.axis)),
+                    min_angle_rad=_interlink_kind_parameter(h.min_angle_rad),
+                    max_angle_rad=_interlink_kind_parameter(h.max_angle_rad),
+                    max_rate_rad_s=_interlink_kind_parameter(h.max_rate_rad_s)) for h in link.hinges])
+            end
+            push!(mounts, (endpoint=(position, number), link=index, root=link.root,
+                r=_interlink_kind_parameter(Tuple(link.r)), rotation=rotation))
+        end
+    end
+    return mounts
 end
 
 # The scheduling policy's entry: `policy`, `target_idx` and `target_idxs`, the keys
@@ -370,7 +419,7 @@ function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
     hasproperty(snapshot, :configuration) &&
         isequal(_interlink_snapshot_configuration(snapshot), _interlink_checkpoint_configuration(args)) ||
         throw(ArgumentError("Interlink configuration differs from the checkpoint. Resume with the same " *
-            "candidate topology, link kinds and parameters, forbidden pairs, scheduling policy and terminal counts."))
+            "candidate topology, link kinds and parameters, forbidden pairs, scheduling policy, terminal counts and terminal mounting geometry."))
     count = length(args.dynamics_model.spacecraft)
     hasproperty(snapshot, :is_active) && snapshot.is_active isa AbstractVector{Bool} &&
         length(snapshot.is_active) == count && is_active isa AbstractVector{Bool} &&
