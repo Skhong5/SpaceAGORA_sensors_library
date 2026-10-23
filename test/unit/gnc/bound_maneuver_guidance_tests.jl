@@ -92,6 +92,11 @@ SpaceAGORA.spacecraft_scope(m::NarrowCopy) = m.spacecraft_index == 0 ? AllSpacec
 SpaceAGORA.update_control!(::NarrowCopy, u, p, t::Float64, i::Int) = nothing
 SpaceAGORA.control_wrench(::NarrowCopy, x::StateSample, p, t::Float64) = (Z3, Z3)
 
+# A control model whose scope is a selection and that has no bind_spacecraft method.
+struct SelectsCtl <: SM.AbstractControlEffectorModel end
+SpaceAGORA.spacecraft_scope(::SelectsCtl) = SpacecraftSelection(ids=[11])
+SpaceAGORA.update_control!(::SelectsCtl, u, p, t::Float64, i::Int) = nothing
+
 # A control model with the scope given, for the ensembles.
 struct ScopedCtl <: SM.AbstractControlEffectorModel
     scope::Any
@@ -102,8 +107,8 @@ SpaceAGORA.control_wrench(::ScopedCtl, x::StateSample, p, t::Float64) = (Z3, Z3)
 
 # Two spacecraft for an ensemble, with configuration-level `control` and `declared`
 # on each spacecraft.
-function ensemble_args(; control=(), declared=())
-    sats = map(1:2) do k
+function ensemble_args(; control=(), declared=(), n=2)
+    sats = map(1:n) do k
         root = SM.Link(root=true, m=100.0, ref_area=2.0)
         ic = SM.InitialCondition(a=PLANET.Rp_e + 700e3, e=0.01, i=45.0, Ω=30.0k, ω=0.0, ν=10.0k)
         SM.SpacecraftModel(joints=SM.Joint[], links=[root], root=root, prop_mass=10.0, inertia_tensor=root.inertia,
@@ -223,12 +228,20 @@ end
                 bound = resumed(templates(), mission, interval)
                 @test bound.t[end] == shared.t[end] && isequal(collect(bound.u[end]), collect(shared.u[end]))
             end
-            if mission == 100.0
-                whole = solve(maneuver_args(shared=(raise(),), mission_time=mission,
-                    settings=checkpointed(mktempdir(), interval)))
-                @test isequal(collect(shared.u[end]), collect(whole.u[end]))
-            end
+            # The run without the break: the raise burns at its start, before either break.
+            whole = solve(maneuver_args(shared=(raise(),), mission_time=mission,
+                settings=checkpointed(mktempdir(), interval)))
+            @test isequal(collect(shared.u[end]), collect(whole.u[end]))
         end
+        # A campaign command pending at the 7000 s checkpoint: until the checkpoint
+        # holds the burn scheduler's commands and plans, its resumed run does not end
+        # where the run without the break ends (the fix for main is a PR of its own).
+        g = () -> campaign([1, 2], [2.0, -1.0])
+        whole = solve(maneuver_args(:campaign; shared=(g(),), settings=checkpointed(mktempdir(), 7000.0)))
+        split = mktempdir()
+        solve(maneuver_args(:campaign; shared=(g(),), mission_time=7000.0, settings=checkpointed(split, 7000.0)))
+        late = solve(maneuver_args(:campaign; shared=(g(),), settings=checkpointed(split, 7000.0; resume=true)))
+        @test_broken isequal(collect(late.u[end]), collect(whole.u[end]))
     end
 
     @testset "the burn scheduler cannot be declared on a spacecraft" begin
@@ -238,13 +251,38 @@ end
             scheduler, 1)
         # The pointer is for a model that acts on every spacecraft, not for a bound one.
         @test_throws "acts on every spacecraft" SpaceAGORA.bind_spacecraft(scheduler, 1)
+        # A model whose scope is a selection is told so, without the shared-model pointer.
+        message = try
+            SpaceAGORA.bind_spacecraft(SelectsCtl(), 1)
+            ""
+        catch err
+            sprint(showerror, err)
+        end
+        @test occursin("the spacecraft its spacecraft_scope, a SpacecraftSelection, selects", message)
+        @test !occursin("burn scheduler", message) && !occursin("AllSpacecraft", message)
+    end
+
+    @testset "a bound copy acts on its spacecraft only, also for a direct caller" begin
+        args = maneuver_args(:raise)
+        p = SM.ODEParams(n_sats=3, args=args)
+        u = SpaceAGORA.SimulationEngine.build_initial_conditions(args)
+        bound_raise = SpaceAGORA.bind_spacecraft(raise(), 2)
+        for model in (bound_raise, SpaceAGORA.bind_spacecraft(campaign([0], [1.0]), 2))
+            SpaceAGORA.update_guidance!(model, u, p, 0.0, 1)
+            @test isequal(p.shared_buffers.maneuver_commands[1], SM.PropulsiveManeuverCommand())
+        end
+        @test isempty(bound_raise.command_state)                          # not grown for spacecraft 1
+        # The model for every spacecraft acts on any of them, as before.
+        SpaceAGORA.update_guidance!(campaign([0], [1.0]), u, p, 0.0, 1)
+        @test p.shared_buffers.maneuver_commands[1].valid
     end
 
     @testset "a bound copy that acts on every spacecraft warns once per type" begin
         wide = warnings(BOUND_ALL) do
             run_simulation(ensemble_args(declared=(WideCopy(0),)))
         end
-        @test length(wide) == 1 && occursin("WideCopy is declared on spacecraft 1", string(only(wide).message))
+        @test length(wide) == 1 &&
+            occursin("WideCopy is declared on the spacecraft at run position 1 (id 11)", string(only(wide).message))
         @test isempty(warnings(() -> run_simulation(ensemble_args(declared=(NarrowCopy(0),))), BOUND_ALL))
     end
 
@@ -263,6 +301,13 @@ end
         @test length(all_members.successful) == 2
         declared = run_constellation_ensemble(ensemble_args(declared=(NarrowCopy(0),)))
         @test length(declared.successful) == 2
+        # An ensemble of one keeps a scope that names position 1 alone, as a run would.
+        for scope in (BoundSpacecraft((1,)), SpacecraftSelection(ids=[11]))
+            @test length(run_constellation_ensemble(ensemble_args(control=(ScopedCtl(scope),), n=1);
+                allow_gnc_effectors=true).successful) == 1
+        end
+        @test_throws message run_constellation_ensemble(ensemble_args(control=(ScopedCtl(BoundSpacecraft((2,))),), n=1);
+            allow_gnc_effectors=true)
     end
 end
 

@@ -214,4 +214,8 @@ every member unchanged, so each acts on every member. From SpaceAGORA 0.7.0 the
 ensemble refuses one whose `spacecraft_scope` names run positions
 (`BoundSpacecraft`, `CoupledSpacecraft` or a `SpacecraftSelection`): every member
 runs its spacecraft alone, at position 1, so such a model would act on every
-member or fail in some. Declare it on the spacecraft it acts on instead.
+member or fail in some. Declare it on the spacecraft it acts on instead. An
+ensemble of one member keeps a scope that names position 1 alone. The check reads
+the scope: a model that picks its spacecraft by an index field of its own, without
+declaring `spacecraft_scope`, reaches every member as before and is not detected,
+so declare its scope.

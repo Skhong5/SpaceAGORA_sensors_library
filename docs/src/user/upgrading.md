@@ -45,8 +45,10 @@ binds to its own spacecraft.
 ### Bound copies that act on every spacecraft warn
 
 A model declared on a spacecraft whose `bind_spacecraft` copy still declares
-`AllSpacecraft()` acts on every spacecraft; the run now warns once for each such
-type. Return `BoundSpacecraft((k,))` from the copy's `spacecraft_scope`. The two
+`AllSpacecraft()` acts on every spacecraft; each run now warns once for each such
+type, naming the run position and id of the spacecraft (in an ensemble, each
+member's run warns). Return `BoundSpacecraft((k,))` from the copy's
+`spacecraft_scope`, for the copy bound to run position `k`. The two
 maneuver guidance models, `ApoapsisTargetPeriapsisRaiseGuidanceModel` and
 `AerobrakingCampaignPropulsiveManeuverGuidanceModel`, can now be declared on a
 spacecraft.

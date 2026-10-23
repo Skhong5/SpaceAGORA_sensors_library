@@ -178,8 +178,9 @@ signatures and are called for fewer spacecraft.
   so their runs do not change.
 - **A bound copy that acts on every spacecraft warns.** A model declared on a
   spacecraft whose `bind_spacecraft` copy still declares `AllSpacecraft()` acts
-  on every spacecraft, as at configuration level; the run warns once for each
-  such type. Return `BoundSpacecraft((k,))` from the copy's `spacecraft_scope`.
+  on every spacecraft, as at configuration level; each run warns once for each
+  such type (in an ensemble, each member's run). Return `BoundSpacecraft((k,))`
+  from the copy's `spacecraft_scope`, for the copy bound to run position `k`.
 - **Ensembles refuse configuration-level GNC bound to run positions.**
   `run_constellation_ensemble(args; allow_gnc_effectors=true)` refuses a
   configuration-level model whose scope is a `BoundSpacecraft`, a

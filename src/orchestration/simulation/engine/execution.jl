@@ -451,11 +451,11 @@ function _flatten_spacecraft_gnc(args::SimulationConfiguration)
     c = Any[args.control_model.control_effectors...]; cr = copy(args.control_model.control_rates)
     warned = Set{Any}()
     for (idx, sc) in enumerate(spacecraft)
-        append!(g, _bind_declared_gnc(e, idx, warned) for e in sc.guidance.guidance_effectors)
+        append!(g, _bind_declared_gnc(e, idx, sc.id, warned) for e in sc.guidance.guidance_effectors)
         append!(gr, sc.guidance.guidance_rates)
-        append!(n, _bind_declared_gnc(e, idx, warned) for e in sc.navigation.navigation_effectors)
+        append!(n, _bind_declared_gnc(e, idx, sc.id, warned) for e in sc.navigation.navigation_effectors)
         append!(nr, sc.navigation.navigation_rates)
-        append!(c, _bind_declared_gnc(e, idx, warned) for e in sc.control.control_effectors)
+        append!(c, _bind_declared_gnc(e, idx, sc.id, warned) for e in sc.control.control_effectors)
         append!(cr, sc.control.control_rates)
     end
     return SimulationModel.SimConfig._with_configuration(args;
@@ -469,15 +469,16 @@ end
 
 # A model a spacecraft declares, bound to it. A bound copy whose scope still names
 # every spacecraft acts on every spacecraft, as one declared at configuration level
-# does, which is rarely what declaring it on one meant: warned once per type and run.
-function _bind_declared_gnc(effector, sat_idx::Int, warned::Set{Any})
+# does, which is rarely what declaring it on one meant: warned once per type and run
+# (each member of an ensemble is a run of its own).
+function _bind_declared_gnc(effector, sat_idx::Int, id, warned::Set{Any})
     bound = SimulationLifecycle.bind_spacecraft(effector, sat_idx)
     T = typeof(bound)
     if GNCRuntime.spacecraft_scope(bound) isa GNCRuntime.AllSpacecraft && !(T in warned)
         push!(warned, T)
-        @warn "$(nameof(T)) is declared on spacecraft $sat_idx and bound to it by bind_spacecraft, but its " *
-            "spacecraft_scope is AllSpacecraft(), so it acts on every spacecraft. Return " *
-            "BoundSpacecraft(($sat_idx,)) from spacecraft_scope for the copy bound to spacecraft $sat_idx."
+        @warn "$(nameof(T)) is declared on the spacecraft at run position $sat_idx (id $id) and bound to it by " *
+            "bind_spacecraft, but its spacecraft_scope is AllSpacecraft(), so it acts on every spacecraft. Return " *
+            "BoundSpacecraft(($sat_idx,)) from spacecraft_scope for the copy bound to run position $sat_idx."
     end
     return bound
 end

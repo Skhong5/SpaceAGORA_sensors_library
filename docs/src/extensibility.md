@@ -209,7 +209,8 @@ SpaceAGORA.spacecraft_scope(m::MyPush) = BoundSpacecraft((m.spacecraft_index,))
 ```
 
 A bound copy whose `spacecraft_scope` is still `AllSpacecraft()` acts on every spacecraft,
-as at configuration level; the run warns once for each such type. The fallback throws an
+as at configuration level; each run warns once for each such type, naming the run position
+and id of the spacecraft. The fallback throws an
 `ArgumentError`: an effector without an index acts on every spacecraft, and an effector
 that couples several vehicles (the RPO chaser and target types) cannot belong to one, so
 both stay at configuration level. So does the burn scheduler, `BaseThrusterModel`, one

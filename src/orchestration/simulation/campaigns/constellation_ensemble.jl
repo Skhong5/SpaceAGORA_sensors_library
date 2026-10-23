@@ -139,14 +139,18 @@ end
 # navigation and control models unchanged and runs its spacecraft alone at run
 # position 1. A model whose scope names run positions (a BoundSpacecraft, a
 # CoupledSpacecraft or a SpacecraftSelection) would then act on every member, or
-# fail in some, so it is refused, pointing to declaring it on its spacecraft.
+# fail in some, so it is refused, pointing to declaring it on its spacecraft. An
+# ensemble of one runs its spacecraft at position 1 as the whole run would, so there
+# a scope that names that position alone is kept, as for the dynamic effectors.
 function _validate_ensemble_gnc_scopes(args::SimulationConfiguration)
     GNC = SimulationEngine.GNCRuntime
+    spacecraft = args.dynamics_model.spacecraft
     groups = ((:guidance, args.guidance_model.guidance_effectors),
         (:navigation, args.navigation_model.navigation_effectors), (:control, args.control_model.control_effectors))
     for (group, models) in groups, (j, model) in enumerate(models)
         scope = GNC.spacecraft_scope(model)
         scope isa GNC.AllSpacecraft && continue
+        length(spacecraft) == 1 && _ensemble_scope_positions(scope, spacecraft) == [1] && continue
         throw(ArgumentError(
             "run_constellation_ensemble: the configuration's $(SimulationEngine._gnc_scope_owner(group, j, model)) " *
             "declares spacecraft_scope $(repr(scope)), but each ensemble member runs its spacecraft alone, at run " *
@@ -155,6 +159,19 @@ function _validate_ensemble_gnc_scopes(args::SimulationConfiguration)
             "member binds it to its own spacecraft, or give it AllSpacecraft() to act on every member."))
     end
     return nothing
+end
+
+# The run positions a GNC scope names among `spacecraft`, or `nothing` when it names
+# one the run does not have.
+_ensemble_scope_positions(scope::SimulationEngine.GNCRuntime.CoupledSpacecraft, spacecraft) =
+    sort!(unique!([scope.primary; collect(scope.partners)]))
+function _ensemble_scope_positions(scope, spacecraft)
+    try
+        return SimulationModel.resolve_spacecraft_scope(scope, spacecraft)
+    catch err
+        err isa ArgumentError || rethrow()
+        return nothing
+    end
 end
 
 function _validate_ensemble_uncoupled(args::SimulationConfiguration, allow_gnc_effectors::Bool)
@@ -171,8 +188,9 @@ function _validate_ensemble_uncoupled(args::SimulationConfiguration, allow_gnc_e
         "run_constellation_ensemble requires an uncoupled constellation, but the configuration has " *
         "non-empty $(join(coupled_surfaces, ", ")). GNC effectors may couple satellites (for example " *
         "RPO planners or coordinated maneuvers), and each ensemble member propagates alone. If every " *
-        "effector acts on a single satellite only, opt in with allow_gnc_effectors=true; otherwise use " *
-        "the monolithic run_simulation path."
+        "configuration-level effector acts on each satellite on its own (spacecraft_scope AllSpacecraft()), " *
+        "opt in with allow_gnc_effectors=true. Declare GNC for one satellite on its SpacecraftModel instead, " *
+        "which needs no flag; otherwise use the monolithic run_simulation path."
     ))
 end
 
@@ -234,12 +252,15 @@ supported way to parallelize an ensemble.
 
 The configuration must be uncoupled: `interlink_model` must be `nothing`, and configuration-level guidance, navigation, and control
 effector tuples must be empty, because effectors that coordinate several satellites cannot
-act across ensemble members. If every configured effector acts on one satellite only, pass
-`allow_gnc_effectors=true` to opt in; the effectors are passed to every member unchanged,
-so spacecraft indices are not remapped, and a configuration-level model whose
-`spacecraft_scope` names run positions (`BoundSpacecraft`, `CoupledSpacecraft` or a
-`SpacecraftSelection`) is refused with an `ArgumentError` (since SpaceAGORA 0.7.0): it
-would act on every member, or fail in some. GNC declared on a `SpacecraftModel` (its `guidance`,
+act across ensemble members. If every configuration-level effector acts on each satellite on
+its own, with `spacecraft_scope` `AllSpacecraft()`, pass `allow_gnc_effectors=true` to opt in;
+the effectors are passed to every member unchanged, so spacecraft indices are not remapped,
+and a configuration-level model whose `spacecraft_scope` names run positions
+(`BoundSpacecraft`, `CoupledSpacecraft` or a `SpacecraftSelection`) is refused with an
+`ArgumentError` (since SpaceAGORA 0.7.0): it would act on every member, or fail in some,
+unless the ensemble has one member and the scope names position 1 alone. A model that
+picks its spacecraft by an index field of its own without declaring `spacecraft_scope`
+is not detected. GNC declared on a `SpacecraftModel` (its `guidance`,
 `navigation` and `control` keywords) always travels with that spacecraft, is bound to index 1
 in its member run, and needs no flag.
 
