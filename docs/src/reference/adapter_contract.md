@@ -24,14 +24,13 @@ single callback or registry that all companions use.
 
 | Integration | Who owns the implementation | Supported SpaceAGORA boundary | Lifecycle |
 |---|---|---|---|
-| HYPR planning | The `HYPR.jl` extension; `SpaceAGORAHYPR` is a compatibility package that forwards to it | [`SpaceAGORA.HYPRServices`](hypr_services.md) | HYPR is activated explicitly; planner state is created for each request |
+| HYPR planning | The `HYPR.jl` extension, activated by loading SpaceAGORA and HYPR directly | [`SpaceAGORA.HYPRServices`](hypr_services.md) | HYPR is activated explicitly; planner state is created for each request |
 | External propagation, including MuJoCo | The independent [SpaceAGORAMuJoCo.jl companion](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl) for MuJoCo scenes; each other adapter owns its own domain implementation | [`SpaceAGORA.ExternalPropagationServices`](external_propagation_services.md) | Propagators are set in the configuration; each simulation gets its own mutable runtime |
 | Experimental EDG guidance | The independent `SpaceAGORAEDG.jl` companion | [`SpaceAGORA.EDGServices`](edg_adapter_boundary.md), contract `v"3.0.0"` | SpaceAGORA owns the callbacks and the per-run state; the companion gets copied observations and prediction queries that are valid for one call |
 
 EDG is experimental: review its scientific results separately from its
-interface checks. `SpaceAGORAHYPR`, HYPR's compatibility package, stays at
-`packages/SpaceAGORAHYPR/`. It forwards older code to HYPR; the planner itself
-lives in the external HYPR repository.
+interface checks. HYPR's planner lives in its external repository; load
+`SpaceAGORA` and `HYPR` directly to use the optional adapter.
 
 ## Choose a boundary
 
@@ -138,8 +137,8 @@ contract version is listed here with what changed.
 
 An adapter is either a standalone package that depends on SpaceAGORA, or a Julia
 extension that loads when a weak dependency is present. SpaceAGORA must not have
-a mandatory dependency on an optional adapter. Keep one implementation: a
-compatibility package only forwards to it and checks that it is available.
+a mandatory dependency on an optional adapter. Keep the implementation in its
+companion and activate its supported adapter by loading the required packages.
 
 HYPR and SpaceAGORAMuJoCo are pinned at exact revisions as Git submodules under
 `packages/robotics/`, and SpaceAGORAEDG under `packages/gnc/`. These are source
