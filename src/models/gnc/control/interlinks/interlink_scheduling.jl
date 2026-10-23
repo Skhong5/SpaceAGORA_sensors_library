@@ -3,7 +3,7 @@ module SchedulingPolicies
 using LinearAlgebra
 using ..InterLinkModels
 using ..InterLinkModels: link_endpoint, _terminal_devices, _spacecraft_at, _battery_capacity_wh, _battery_within_full,
-    _data_store_capacity_bits, _data_store_within_empty, _data_store_within_full
+    _data_store_capacity_bits, _data_store_within_empty, _data_store_within_full, _data_store_production_bps
 using ..EffectorSampling: StateSample
 
 export AbstractSchedulingPolicy, LinkCandidate, SchedulingContext, candidate_score
@@ -460,12 +460,15 @@ end
 Score each available directed link by the data (as a rate, bit/s) it could move
 in the next `horizon_s` seconds: the least of the rate it would carry
 (`link_data_rate_bps`, as `DataThroughputPolicy` scores it), the data its
-transmitter's store holds over `horizon_s` (`stored_bits`) and the room in its
-receiver's store over `horizon_s` (`store_room_bits`). So it prefers links out of
-fuller stores and into emptier ones, and never selects a link with nothing to
-send or nowhere to put it: a store the engine counts as empty (within `1e-9` of
-its capacity of nothing) holds nothing here, and one it counts as full has no
-room. A transmitter without a store counts as always holding data, and a
+transmitter's store holds over `horizon_s` (`stored_bits`) plus its current
+source production rate, and the room in its receiver's store over `horizon_s`
+(`store_room_bits`). Production is sampled at the candidate's current state and
+time; this score estimates that rate continuing over the horizon, not future
+source changes or incoming relay traffic. It prefers fuller sending stores and
+emptier receiving stores. An empty sender with ongoing production can stay
+selected; one with neither held data nor production scores zero. A store the
+engine counts as empty (within `1e-9` of its capacity of nothing) holds nothing
+here, and one it counts as full has no room. A transmitter without a store counts as always holding data, and a
 receiver without one as always having room. Undirected
 links score 0, and so does every link when the run's spacecraft models are not
 given. The unit is that of `DataThroughputPolicy`, so the two mix without
@@ -491,7 +494,11 @@ function candidate_score(policy::DataBacklogPolicy, candidate::LinkCandidate, ct
     rate = Float64(link_data_rate_bps(candidate.link, candidate.terminal_a, candidate.terminal_b,
         candidate.a, candidate.b, ctx.link_context))
     transmitter, receiver = candidate.key[1][1], candidate.key[2][1]
-    return min(rate, _backlog_held_bits(ctx, transmitter) / policy.horizon_s, _backlog_room_bits(ctx, receiver) / policy.horizon_s)
+    held = _backlog_held_bits(ctx, transmitter)
+    production = isfinite(held) ?
+        _data_store_production_bps(ctx.spacecraft[transmitter], candidate.a, ctx.link_context, t) : 0.0
+    return min(rate, held / policy.horizon_s + production,
+        _backlog_room_bits(ctx, receiver) / policy.horizon_s)
 end
 
 # The data a transmitter holds and the room a receiver has, for the backlog
