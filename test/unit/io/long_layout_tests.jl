@@ -51,6 +51,14 @@ end
 
 quiet(f) = with_logger(f, ConsoleLogger(stderr, Logging.Error))
 
+# A control model that holds no command and reports thruster levels for one spacecraft.
+struct ReportedThrusters <: SM.AbstractControlEffectorModel
+    firing::Int
+end
+SpaceAGORA.update_control!(::ReportedThrusters, u, p, t::Float64, i::Int64) = nothing
+SpaceAGORA.control_wrench(::ReportedThrusters, x, p, t) = (SVector(0.0, 0.0, 0.0), SVector(0.0, 0.0, 0.0))
+SM.ControlHooks.control_thruster_levels(c::ReportedThrusters, i::Int) = i == c.firing ? [0.25, 0.75] : nothing
+
 # The wide table of a long spacecraft table and run table, in the wide table's
 # column order: the per-spacecraft column `sc<i>_<c>` is spacecraft `i`'s rows of `c`.
 function pivot(long::DataFrame, run, wide_names)
@@ -130,11 +138,14 @@ end
             push!(a.dynamics_model.spacecraft[with_thrusters].root.thrusters, SM.Thruster(max_thrust=2.0,
                 location=MVector{3, Float64}(location...), direction=MVector{3, Float64}(1.0, 0.0, 0.0)))
         end
+        control = SM.ControlModel(control_effectors=(ReportedThrusters(with_thrusters),), control_rates=[10.0])
+        args = map(a -> SM.SimConfig._with_configuration(a; control_model=control), args)
         wide = quiet(() -> run_simulation(args[1]; return_results=true))
         long = quiet(() -> run_simulation(args[2]; return_results=true))
         @test "sc$(with_thrusters)_thruster_level_2" in names(wide.table)
         @test !("sc$(without)_thruster_level_1" in names(wide.table))
         @test rows(long.table, with_thrusters).thruster_level_2 == wide.table[!, "sc$(with_thrusters)_thruster_level_2"]
+        @test all(==(0.75), rows(long.table, with_thrusters).thruster_level_2[2:end])
         @test all(ismissing, rows(long.table, without).thruster_level_1)
         @test isequal(long_table(wide), long.table)
         payload(dir) = JSON.parsefile(export_viewer_payload(joinpath(dir, "simulation_results"); textures=false))
