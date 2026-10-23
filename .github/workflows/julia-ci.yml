@@ -49,6 +49,9 @@ jobs:
       - name: Sparse GRAMSuite retrieval regression
         run: python3 -B .github/scripts/test_gramsuite_sparse.py
 
+      - name: Contributor test entrypoint regression
+        run: python3 -B test/scripts/test_contributor_entrypoint.py
+
       - name: Full-arc export provenance regression
         run: python3 -B test/scripts/test_xval_fullarc_export.py
 

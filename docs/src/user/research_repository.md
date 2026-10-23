@@ -207,6 +207,16 @@ summary line per check. Other inputs: `manifest` (`core`, `committed`, or
 `resolve`, an advisory fresh resolution), `depwarn`, `threads`, `directory` (the
 package inside a larger repository) and `julia-version`.
 
+A standalone companion may declare SpaceAGORA in `[weakdeps]` instead of
+`[deps]`. The shared workflow adds the pinned core only to its separate
+integration environment and preserves the companion's compatibility bound.
+Keep standalone tests in their own job. If `test/runtests.jl` deliberately
+requires SpaceAGORA to be absent, set `test-entrypoint: test/contributor_ci.jl`
+to select the integration suite. This path is relative to `directory`, must
+resolve to a file inside it, and runs with `test/` as its working directory.
+The default remains `test/runtests.jl`. Load-order and incompatible-core probes
+still run in separate processes.
+
 SpaceAGORA's own CI generates each starter from the commit under test and runs
 it through this workflow, so the starters stay in step with the core. It also
 runs the kit's demonstration repository,

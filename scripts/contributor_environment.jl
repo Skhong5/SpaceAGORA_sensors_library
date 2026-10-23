@@ -219,8 +219,22 @@ function check_repository(kind, repository; rev=nothing, root=ROOT, core_from_ca
     tests, testfile = test_project(repository)
     names = companion_names(pin.companions)
     check_companion_dependencies(project, file, names; root=core.path, tests)
-    get(get(project, "deps", Dict{String,Any}()), "SpaceAGORA", nothing) == core.uuid ||
-        fail("$file: [deps] must list SpaceAGORA = \"$(core.uuid)\".")
+    direct = get(get(project, "deps", Dict{String,Any}()), "SpaceAGORA", nothing)
+    weak = get(get(project, "weakdeps", Dict{String,Any}()), "SpaceAGORA", nothing)
+    if kind == "companion"
+        # Only the separate integration environment makes an optional core
+        # adapter's weak dependency mandatory; the package stays standalone.
+        (direct == core.uuid || weak == core.uuid) ||
+            fail("$file: [deps] or [weakdeps] must list SpaceAGORA = \"$(core.uuid)\".")
+    else
+        direct == core.uuid || fail("$file: [deps] must list SpaceAGORA = \"$(core.uuid)\".")
+    end
+    # A correct dependency must not hide a conflicting declaration in another
+    # table or the test project when we construct the integration environment.
+    for (data, source) in ((project, file), (tests, testfile)), table in ("deps", "weakdeps", "extras")
+        declared = get(get(data, table, Dict{String,Any}()), "SpaceAGORA", core.uuid)
+        declared == core.uuid || fail("$source: SpaceAGORA in [$table] has a conflicting UUID; expected $(core.uuid).")
+    end
     return (; kind, core, repository, file, project, tests, testfile, package, pin=pin.description, companions=names)
 end
 
@@ -243,6 +257,7 @@ function plan(kind, repository, environment; manifest="core", rev=nothing, root=
         nothing
     end
     deps = merge(get(project, "deps", Dict{String,Any}()), test_dependencies(project, file, tests))
+    deps["SpaceAGORA"] = core.uuid
     sources = Dict{String,Any}("SpaceAGORA" => Dict("path" => core.path))
     developed = [core.path]
     if package !== nothing
