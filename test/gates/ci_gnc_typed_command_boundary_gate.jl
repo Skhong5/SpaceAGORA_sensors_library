@@ -63,7 +63,7 @@ occursin("controlModel.direction[i] = command.direction_rad", control_propulsive
 
 const GUIDANCE_ROOT = joinpath(REPO_ROOT, "src", "models", "gnc", "guidance")
 const CONTROL_ROOT = joinpath(REPO_ROOT, "src", "models", "gnc", "control")
-const GUIDANCE_ROOTS = (GUIDANCE_ROOT, joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"),
+const GUIDANCE_ROOTS = (GUIDANCE_ROOT,
     (joinpath(REPO_ROOT, "src", "models", "gnc", owner) for owner in ("planning", "companions"))...,
     joinpath(REPO_ROOT, "src", "interfaces", "analysis", "planning"))
 # The general contract serves guidance and control alike: the GNC-wide checks

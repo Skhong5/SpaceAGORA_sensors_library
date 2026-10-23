@@ -15,8 +15,8 @@ the ownership and cleanup status below were reconciled against
 Paths are relative to the repository named for each owner. Completed work,
 remaining decisions and proposals are labelled separately. One-run configuration lives under `src/orchestration/simulation/config/`,
 and HYPR is maintained in its own repository with an optional SpaceAGORA adapter.
-The compatibility package in this tree loads that adapter; it contains no search
-implementation. MuJoCo scene code and its adapter live in the independent
+Loading SpaceAGORA and HYPR directly activates that adapter; core contains no
+HYPR search implementation. MuJoCo scene code and its adapter live in the independent
 [SpaceAGORAMuJoCo.jl repository](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl).
 Pinned checkouts of both external repositories are available under
 `packages/robotics/`; this source layout does not make them mandatory core
@@ -92,8 +92,7 @@ remains beside `src/`. The GRAMSuite extension belongs there even though it
 provides environment-model integration. External companions such as HYPR and
 SpaceAGORAMuJoCo and SpaceAGORAEDG own their implementations in separate repositories;
 this source organization does not bring them into `src/` or make them required
-dependencies. The existing HYPR compatibility package remains under
-`packages/SpaceAGORAHYPR/`.
+dependencies. HYPR is loaded directly alongside SpaceAGORA.
 
 ## Spacecraft assembly and constellation composition
 
@@ -251,8 +250,8 @@ the file that performs each step.
    the optional SpaceAGORAEDG companion owns the numerical kernels and is the
    only EDG implementation. Configured HYPR
    execution is provided by the external
-   HYPR package through `SpaceAGORA.HYPRServices`; the local
-   `packages/SpaceAGORAHYPR/` compatibility package loads its adapter.
+   HYPR package through `SpaceAGORA.HYPRServices`; loading `SpaceAGORA` and `HYPR`
+   directly activates its adapter.
    Navigation and guidance hooks run as periodic callbacks between integrator
    steps; control commands are refreshed on periodic or event-driven schedules, and the
    resulting control force and torque are evaluated inside the right-hand side
@@ -517,12 +516,10 @@ Current behaviour to know:
 
 Core package implementation lives in `src/` and `ext/`. The separate HYPR
 repository owns its optimizer and SpaceAGORA adapter. Its reviewed source is
-checked out as a submodule at `packages/robotics/HYPR.jl`. The small compatibility
-package under `packages/SpaceAGORAHYPR/` still loads and checks that adapter. The
+checked out as a submodule at `packages/robotics/HYPR.jl`. The
 GRAMSuite extension activates when both SpaceAGORA and GRAMSuite are loaded;
 installation alone does not load it. For HYPR, the supported setup installs the
-pinned external package and compatibility package, then the user explicitly
-loads `SpaceAGORAHYPR`. MuJoCo scenes live in the separate
+pinned external package, then the user explicitly loads `SpaceAGORA` and `HYPR`. MuJoCo scenes live in the separate
 [SpaceAGORAMuJoCo.jl repository](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl).
 Its pinned submodule is `packages/robotics/SpaceAGORAMuJoCo.jl`. That companion
 owns its native binding, scene implementation, native tests and Basilisk
@@ -561,7 +558,7 @@ are relative to the directory in the first column.
 | `ext/` | Optional package connections for GRAMSuite, the visualizer and EDG | Each extension activates when its package pair is loaded; see [GRAMSuite Setup](../src/user/gramsuite_setup.md) and the [optional adapter standard](../src/reference/adapter_contract.md). |
 | `packages/robotics/` | Pinned submodules for HYPR and SpaceAGORAMuJoCo; each remains an independently maintained repository | `scripts/optional_packages.jl` selects and verifies source, then delegates to its installer; see [Optional package commands](../src/user/installation_environment.md#optional-package-commands). |
 | `packages/gnc/` | Optional guidance-domain packages, including experimental SpaceAGORAEDG | The companion owns numerical kernels; core retains model types, lifecycle and physics through [EDGServices](../src/reference/edg_adapter_boundary.md). |
-| `packages/SpaceAGORAHYPR/` | Compatibility package and source pin for external HYPR | `src/SpaceAGORAHYPR.jl` checks and aliases the external adapter; `HYPRSource.toml` pins its revision. Core services are defined in `src/models/gnc/companions/hypr/services.jl`. Install and load with the [RPO planner guide](../src/user/rpo_planner_pilot.md#installing-optional-hypr). |
+| `packages/HYPRSource.toml` | Immutable source pin for external HYPR | The standalone installer uses this revision, checked against the HYPR gitlink by the optional-package helper. Core services are defined in `src/models/gnc/companions/hypr/services.jl`. Install and load with the [RPO planner guide](../src/user/rpo_planner_pilot.md#installing-optional-hypr). |
 | `examples/` | Runnable scenarios; `common.jl` is the shared bootstrap | primary scenario entrypoints; development viewer demos also live in `scripts/dev/viewer_demos/`; see the [Examples Catalog](../src/user/examples_catalog.md) |
 | `templates/` | Starting files for a force/torque model, a density model and a control hook | copy one of these to begin an extension |
 | `test/` | Unit, integration, smoke and stress suites; companion suites under `test/optional/{hypr,edg,visualizer}/`; workflow entry points under `test/smoke/`; fixtures under `test/fixtures/`; CI gates under `test/gates/`, contract checks under `test/contracts/`, review artifacts under `test/ai_reviews/` | the gates enforce the ownership rules on this page |
@@ -611,7 +608,7 @@ own package, with its simulator-specific adapter kept distinct from standalone
 search. HYPR now follows that split: its `src/` owns standalone search and swarm
 policy, while its `ext/HYPRSpaceAGORAExt.jl`, `ext/rpo/` and `ext/robot/` provide
 configured SpaceAGORA execution. These paths are in
-[HYPR.jl at the pinned revision](https://github.com/Space-FALCON-Lab/HYPR.jl/tree/ef85eb2bfc5623fdd26407868d1371c3bff07d1f),
+[HYPR.jl at the pinned revision](https://github.com/Space-FALCON-Lab/HYPR.jl/tree/4654e8b79fcc08209bf66adcd83d2d2053f4e1d8),
 which has its own tests, examples and documentation.
 
 SpaceAGORA retains shared planner interfaces, the direct baseline, configuration
@@ -619,9 +616,9 @@ and result types, geometry, metrics, RRT and retiming services, and compatibilit
 entry points. `SpaceAGORA.HYPRServices` exposes the adapter contract without
 changing the original owners of those bindings. Only the explicitly listed
 services and extension points are supported; arbitrary internal-module access is
-not the integration API. The current supported pair is SpaceAGORA 0.6.0 with
-HYPR 0.5.0, service contract 3.0.0 and compatibility package 0.2.0. Install the
-pinned pair and explicitly load `SpaceAGORAHYPR` using the
+not the integration API. The current supported pair is SpaceAGORA 0.6.1 with
+HYPR 0.5.0 and service contract 3.0.0. Install the pinned pair and explicitly
+load `SpaceAGORA` and `HYPR` using the
 [RPO planner guide](../src/user/rpo_planner_pilot.md#installing-optional-hypr).
 The optimizer can run independently; configured RPO and robot-arm execution
 still requires SpaceAGORA services. The independent experimental

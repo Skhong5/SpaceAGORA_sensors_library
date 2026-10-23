@@ -242,6 +242,84 @@ bits(x) = reinterpret(UInt64, collect(Float64, x))
             return_results=true)).steps
     end
 
+    @testset "long and streamed results retain their link schedule" begin
+        for checkpoints in (false, true), csv in (false, true)
+            mktempdir() do directory
+                args = with_settings(gve_sma_configuration(duration=30.0); results=true,
+                    results_directory=directory, results_layout=:long, save_csv=csv,
+                    checkpoint_enabled=checkpoints, checkpoint_interval_s=10.0,
+                    checkpoint_directory=directory)
+                result = run_simulation(args; return_results=true)
+                expected = link_schedule(result)
+                prefix = joinpath(directory, "simulation_results")
+                schedule_path = prefix * "_link_schedule.feather"
+                manifest_path = prefix * ".manifest.toml"
+                manifest = TOML.parsefile(manifest_path)
+                @test manifest["layout"] == "long"
+                @test nrow(expected) > 0
+                @test isequal(DataFrame(Arrow.Table(schedule_path)), expected)
+                @test schedule_path in result.files
+                @test haskey(manifest["files"], "spacecraft_feather")
+                @test manifest["files"]["link_schedule_feather"]["sha256"] == bytes2hex(sha256(read(schedule_path)))
+                @test manifest["interlinks"]["rows"] == nrow(expected)
+                @test haskey(manifest["files"], "link_schedule_csv") == csv
+                @test (prefix * "_link_schedule.csv" in result.files) == csv
+                if checkpoints
+                    # A finished resume must not replace or claim old schedule files.
+                    before = read.( (schedule_path, manifest_path) )
+                    resumed = run_simulation(with_settings(args; resume_from_checkpoint=true); return_results=true)
+                    @test read.( (schedule_path, manifest_path) ) == before
+                    @test !(schedule_path in resumed.files)
+                    # Final-write recovery has trajectory streams, but no checkpointed
+                    # link history. It must preserve earlier schedule bytes unclaimed.
+                    unfinished = TOML.parsefile(manifest_path)
+                    unfinished["streaming"] = true
+                    open(io -> TOML.print(io, unfinished), manifest_path, "w")
+                    rm(prefix * "_spacecraft.feather")
+                    recovered = run_simulation(with_settings(args; resume_from_checkpoint=true); return_results=true)
+                    recovered_manifest = TOML.parsefile(manifest_path)
+                    @test read(schedule_path) == before[1]
+                    @test !haskey(recovered_manifest, "interlinks")
+                    @test !haskey(recovered_manifest["files"], "link_schedule_feather")
+                    @test !haskey(recovered_manifest["files"], "link_schedule_csv")
+                    @test !(schedule_path in recovered.files)
+                    @test isequal(recovered.table, result.table)
+                end
+            end
+        end
+        # Disabled file output still returns the long table and schedule in memory.
+        memory = run_simulation(with_settings(gve_sma_configuration(duration=20.0); results_layout=:long);
+            return_results=true)
+        @test isempty(memory.files) && nrow(link_schedule(memory)) > 0
+        for checkpoints in (false, true)
+            mktempdir() do directory
+                args = with_settings(gve_sma_configuration(duration=30.0); results=true,
+                    results_directory=directory, results_layout=:long, checkpoint_enabled=checkpoints,
+                    checkpoint_interval_s=10.0, checkpoint_directory=directory)
+                crash = DiffEqBase.DiscreteCallback((u, t, integrator) -> t > 15.0,
+                    integrator -> error("link schedule integration interruption"); save_positions=(false, false))
+                @test_throws Exception run_simulation(args; extra_callbacks=(crash,))
+                prefix = joinpath(directory, "simulation_results")
+                manifest = TOML.parsefile(prefix * ".manifest.toml")
+                partial = DataFrame(Arrow.Table(prefix * "_link_schedule.feather"))
+                @test nrow(partial) > 0 && maximum(partial.end_s) < 30.0
+                @test manifest["files"]["link_schedule_feather"]["sha256"] ==
+                    bytes2hex(sha256(read(prefix * "_link_schedule.feather")))
+            end
+        end
+        # CSV-only output has no bundle; no stale feather is claimed.
+        mktempdir() do directory
+            args = with_settings(gve_sma_configuration(duration=20.0); results=true, results_directory=directory,
+                results_layout=:long, save_csv=true)
+            result = withenv("SPACEAGORA_SAVE_BUNDLE" => "0") do
+                run_simulation(args; return_results=true)
+            end
+            @test joinpath(directory, "simulation_results_link_schedule.csv") in result.files
+            @test !isfile(joinpath(directory, "simulation_results_link_schedule.feather"))
+            @test !isfile(joinpath(directory, "simulation_results.manifest.toml"))
+        end
+    end
+
     @testset "a resumed run's schedule starts at the resume" begin
         mktempdir() do directory
             args = with_settings(gve_sma_configuration(duration=20.0); results=false, checkpoint_enabled=true,

@@ -83,11 +83,11 @@ function optional_fixture(f)
                     "160000,$(revisions["hypr"]),data/GRAMSuite.jl")
         write(joinpath(root, ".gitmodules"), String(take!(modules)))
         fixture_toml(joinpath(root, "packages", "OptionalPackages.toml"), registry)
-        fixture_toml(joinpath(root, "packages", "SpaceAGORAHYPR", "HYPRSource.toml"), Dict(
+        fixture_toml(joinpath(root, "packages", "HYPRSource.toml"), Dict(
             "url" => origins["hypr"], "rev" => revisions["hypr"],
             "uuid" => OPTIONAL_FIXTURE_PACKAGES.hypr.uuid, "version" => "0.1.1"))
         fixture_run("-C", root, "add", ".gitmodules", "Project.toml", "Manifest.toml", "scripts",
-                    "packages/OptionalPackages.toml", "packages/SpaceAGORAHYPR/HYPRSource.toml")
+                    "packages/OptionalPackages.toml", "packages/HYPRSource.toml")
         fixture_run("-C", root, "commit", "--quiet", "-m", "Fixture core and optional gitlinks")
         # Local file transport is enabled only for these disposable repositories.
         withenv("GIT_CONFIG_COUNT" => "1", "GIT_CONFIG_KEY_0" => "protocol.file.allow",
@@ -207,7 +207,7 @@ end
     for change in (:hypr_pin, :module_url, :module_path, :not_gitlink)
         optional_fixture() do fixture
             if change == :hypr_pin
-                pin_path = joinpath(fixture.root, "packages", "SpaceAGORAHYPR", "HYPRSource.toml")
+                pin_path = joinpath(fixture.root, "packages", "HYPRSource.toml")
                 pin = TOML.parsefile(pin_path)
                 pin["rev"] = fixture.next_revisions["hypr"]
                 fixture_toml(pin_path, pin)

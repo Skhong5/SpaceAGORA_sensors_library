@@ -88,6 +88,7 @@ end # struct FilePaths
     checkpoint_directory::String = "" # Empty => use results_directory/checkpoints
     resume_from_checkpoint::Bool = false # Resume run from latest checkpoint if present
     articulated_live_pose_loads::Bool = false # Articulated spacecraft: aero and facet SRP per link at the live link poses, per-body gravity gradient (default off: loads act on the root body from the configured geometry)
+    results_layout::Symbol = :wide # :wide (one row per saved time, `sc<i>_` columns per spacecraft) or :long (one row per spacecraft and saved time, run-wide fields in a table of their own)
 end # struct SimulationSettings
 
 # 2.6. Mission Configuration

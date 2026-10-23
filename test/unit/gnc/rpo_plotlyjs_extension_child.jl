@@ -24,7 +24,7 @@ const FIGURES = (
 
 if ORDER == "core-first"
     # The planner comparison's entry needs the HYPR companion before it checks the plot flags.
-    @eval using SpaceAGORAHYPR
+    @eval using HYPR
     @testset "Without PlotlyJS the figures refuse and the CSV is still written" begin
         @test extension() === nothing
         for figure in FIGURES

@@ -83,7 +83,7 @@ julia --startup-file=no scripts/setup_hypr.jl /path/to/visualizer-env
 julia --startup-file=no examples/setup.jl
 ```
 
-These HYPR examples load `SpaceAGORAHYPR` and the renderer before their common
+These HYPR examples load `SpaceAGORA` and `HYPR` and the renderer before their common
 helper continues in the examples environment, so both environments are needed.
 Baseline examples without HTML export use `--project=examples`.
 
