@@ -307,6 +307,9 @@ function get_callbacks(
     callbacks = _append_callbacks(callbacks, extra_callbacks)
 
     original = CallbackSet(callbacks...)
-    return !backbone_mode && !isempty(_edg_heat_states(args)) ?
+    savers = Tuple(cb.affect! for cb in original.discrete_callbacks
+        if cb.affect! isa DiffEqCallbacks.SavingAffect)
+    observed = !backbone_mode && !isempty(_edg_heat_states(args)) ?
         _edg_observe_heat_callbacks(original, num_sats) : original
+    return _save_before_continuous_events(observed, savers)
 end

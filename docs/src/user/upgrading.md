@@ -8,7 +8,7 @@ Renamed and retired extension hooks have their own page,
 [Public API and Compatibility](../public_api_policy.md) describes the
 deprecation rules.
 
-## 0.6.1 (unreleased)
+## 0.6.1
 
 ### Machine calibration constants are measured again
 
