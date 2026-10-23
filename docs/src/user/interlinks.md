@@ -407,8 +407,13 @@ register_links!(model, spacecraft, station_pairs(spacecraft, model), link)
   an orbital policy's target. It has no battery, so its `state_of_charge` is NaN
   and `EnergyBalancingPolicy` scores a link to it 0.
 - **Outputs.** In the link schedule, a station end shows as `-s` in
-  `a_spacecraft` or `b_spacecraft`. The viewer does not draw stations yet and
-  leaves their links out.
+  `a_spacecraft` or `b_spacecraft`, and by its registered name in `a_name` or
+  `b_name`. These name columns are present only for station runs. Saved scenes
+  include each site's planet-fixed coordinates; the station-capable Visualizer
+  draws green markers and names on the rotating globe, and active or contact
+  links in either direction. The labels toggle controls names and the interlinks
+  toggle controls both stations and their links. Existing spacecraft-only scenes
+  and schedule tables retain their format.
 - **Checkpoints.** A run with stations records each station's site, mask and
   antennas, and refuses to resume when any of them has changed.
 - **Not yet modelled.** Terrain and horizon masks, antenna steering limits and

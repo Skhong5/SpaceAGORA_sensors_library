@@ -50,9 +50,21 @@ function build_visualization_scene(
         String(LINK_POSE_FIELD),
         LINK_POSE_STRIDE,
         atmosphere_spec(args; density_params=density_params),
-        _scene_link_schedule(args)
+        _scene_link_schedule(args),
+        _scene_ground_stations(args)
     )
 end
+
+function _scene_ground_stations(args::SimulationConfiguration)
+    model = args.interlink_model
+    model === nothing && return GroundStationGeometry[]
+    return GroundStationGeometry[GroundStationGeometry(-i, station.name,
+        first(_station_site(station, args.environment_model.planet)))
+        for (i, station) in enumerate(model.ground_stations)]
+end
+
+_scene_dict(station::GroundStationGeometry) = Dict{String, Any}(
+    "node" => station.node, "name" => station.name, "position_m" => _plain(station.position_m))
 
 # The link schedule's feather file, by name, for a run with interlinks when the
 # file is there; `nothing` otherwise. The export checks the file against the
@@ -152,6 +164,7 @@ function scene_dict(scene::VisualizationScene)::Dict{String, Any}
     # Only a run with interlinks names its link schedule, so other scenes are as before.
     scene.link_schedule === nothing ||
         (dict["results"]["link_schedule"] = Dict{String, Any}("file" => scene.link_schedule))
+    isempty(scene.ground_stations) || (dict["ground_stations"] = [_scene_dict(station) for station in scene.ground_stations])
     return dict
 end
 
@@ -214,7 +227,9 @@ function _scene_from_dict(d)::VisualizationScene
         String(link_pose["field"]),
         Int(link_pose["stride"]),
         _atmosphere_from(get(d, "atmosphere", nothing)),
-        _link_schedule_from(get(results, "link_schedule", nothing))
+        _link_schedule_from(get(results, "link_schedule", nothing)),
+        GroundStationGeometry[GroundStationGeometry(Int(station["node"]), String(station["name"]), _svec3(station["position_m"]))
+            for station in get(d, "ground_stations", [])]
     )
 end
 

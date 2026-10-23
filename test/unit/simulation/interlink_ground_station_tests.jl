@@ -8,6 +8,9 @@ module InterlinkGroundStationTests
 # and a negative control.
 
 using Test
+using JSON
+using Arrow
+using DataFrames
 using LinearAlgebra
 using StaticArrays
 using SpaceAGORA
@@ -489,10 +492,48 @@ end
         push!(model.history, InterLinkHistory(10.0, [between], [between]))
         table = link_schedule(model)
         @test sort(unique(table.b_spacecraft)) == [-1, 2]
-        # The viewer does not draw stations yet: their links are left out.
-        block = SM.SceneVisualization.interlink_payload(table, 2)
-        @test length(block["links"]) == 1 && only(block["links"])["b"] == 2
-        @test block["active"]["count"] == 1 && block["contact"]["count"] == 1
+        SV = SM.SceneVisualization
+        scene = SV.build_visualization_scene(run_args(spacecraft, model))
+        @test only(scene.ground_stations).position_m ≈ SITE
+        @test only(scene.ground_stations).name == "north"
+        @test table.b_name[findfirst(==(-1), table.b_spacecraft)] == "north"
+        @test_throws ArgumentError SV.interlink_payload(table, 2)
+        block = SV.interlink_payload(table, 2; ground_stations=scene.ground_stations)
+        @test length(block["links"]) == 2 && block["links"][2]["b"] == -1
+        @test block["active"]["count"] == 2 && block["contact"]["count"] == 2
+        @test block["stations"] == [Dict("node" => -1, "name" => "north", "position_m" => collect(SITE))]
+        mktempdir() do directory
+            sidecar = joinpath(directory, "scene.json")
+            SV.write_visualization_scene(sidecar, scene)
+            @test SV.read_visualization_scene(sidecar) == scene
+        end
+    end
+
+    @testset "saved station pass exports names, coordinates and windows" begin
+        for uplink in (false, true)
+            mktempdir() do directory
+                spacecraft, model = pass_fixture(; lead_deg=0.0, uplink)
+                settings = SimulationSettings(results=true, results_directory=directory, generate_plots=false,
+                    save_csv=true, save_visualization_scene=true)
+                result = run_simulation(run_args(spacecraft, model; duration=20.0, settings); return_results=true)
+                prefix = joinpath(directory, "simulation_results")
+                SV = SM.SceneVisualization
+                scene = SV.read_visualization_scene(prefix * "_scene.json")
+                payload = JSON.parsefile(SV.export_viewer_payload(prefix; textures=false))
+                table = link_schedule(result)
+                disk = DataFrame(Arrow.Table(prefix * "_link_schedule.feather"))
+                @test disk.a_name == table.a_name && disk.b_name == table.b_name
+                @test payload["interlinks"] == JSON.parse(JSON.json(SV.interlink_payload(table, 1; ground_stations=scene.ground_stations)))
+                link = only(payload["interlinks"]["links"])
+                @test (link["a"], link["b"]) == (uplink ? (-1, 1) : (1, -1))
+                @test only(payload["interlinks"]["stations"])["position_m"] ≈ SITE
+                # The sidecar's rotation maps the saved fixed site to the same
+                # inertial position used by the physical station at each sample.
+                for (time, q) in zip(scene.planet.rotation_t_s, scene.planet.rotation_q_pi)
+                    @test transpose(SM.rot(q)) * SITE ≈ transpose(frame(time)) * SITE atol=1e-6
+                end
+            end
+        end
     end
 
     @testset "resume initializes the station schedule at checkpoint time" begin

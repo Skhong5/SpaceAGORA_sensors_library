@@ -685,7 +685,7 @@ function viewer_payload(
     _checked_position_precision(position_precision)
     mission = _validated_mission_history(mission)
     # The links' windows share the data budget with the frames.
-    interlinks = link_schedule === nothing ? nothing : interlink_payload(link_schedule, length(scene.spacecraft))
+    interlinks = link_schedule === nothing ? nothing : interlink_payload(link_schedule, length(scene.spacecraft); ground_stations=scene.ground_stations)
     if interlinks !== nothing
         link_mb = _interlink_payload_bytes(interlinks) / 1.0e6
         link_mb < data_budget_mb || throw(ArgumentError("The interlink windows ($(round(link_mb; digits=3)) MB) " *
@@ -726,19 +726,22 @@ in `links`) and Float64 `start_s` and `end_s` on the clock of `frames.t_s`; and
 `contact`, the same for the spans over which a link was available, or `nothing`
 when the run did not record them. A link is drawn at playback time `t` when
 `start_s <= t < end_s`, and at `t == end_s` when that is its schedule's last time.
-Links with a ground station end (a negative `a_spacecraft` or `b_spacecraft`)
-are left out: the viewer does not draw stations yet.
+Ground station ends retain their negative node number. Supply `ground_stations`
+from the scene to include their names and planet-fixed positions in meters.
 """
-function interlink_payload(schedule::DataFrame, spacecraft_count::Integer)::Dict{String, Any}
+function interlink_payload(schedule::DataFrame, spacecraft_count::Integer; ground_stations=GroundStationGeometry[])::Dict{String, Any}
     for column in ("window", "link", "kind", "directed", "a_spacecraft", "a_terminal", "b_spacecraft", "b_terminal",
                    "start_s", "end_s")
         column in names(schedule) || throw(ArgumentError("The link schedule has no `$(column)` column."))
     end
-    stations = (schedule.a_spacecraft .< 0) .| (schedule.b_spacecraft .< 0)
-    any(stations) && (schedule = schedule[.!stations, :])
+    station_nodes = Set(station.node for station in ground_stations)
+    length(station_nodes) == length(ground_stations) && all(<(0), station_nodes) ||
+        throw(ArgumentError("Ground station nodes must be unique negative integers."))
+    all(station -> !isempty(station.name) && all(isfinite, station.position_m), ground_stations) ||
+        throw(ArgumentError("Ground stations need names and finite planet-fixed positions."))
     for spacecraft in Iterators.flatten((schedule.a_spacecraft, schedule.b_spacecraft))
-        1 <= spacecraft <= spacecraft_count || throw(ArgumentError(
-            "The link schedule names spacecraft $(spacecraft), but the scene has $(spacecraft_count)."))
+        (1 <= spacecraft <= spacecraft_count || spacecraft in station_nodes) || throw(ArgumentError(
+            "The link schedule names node $(spacecraft), which is absent from the scene."))
     end
     numbers = sort!(unique(schedule.link))
     position = Dict(number => k - 1 for (k, number) in enumerate(numbers))
@@ -751,8 +754,10 @@ function interlink_payload(schedule::DataFrame, spacecraft_count::Integer)::Dict
         "index" => Int[position[schedule.link[row]] for row in rows],
         "start_s" => _float64_base64(Float64[schedule.start_s[row] for row in rows]),
         "end_s" => _float64_base64(Float64[schedule.end_s[row] for row in rows])))
-    return Dict{String, Any}("schema" => 1, "links" => links, "active" => windows("active"),
+    block = Dict{String, Any}("schema" => 1, "links" => links, "active" => windows("active"),
         "contact" => any(==("contact"), schedule.window) ? windows("contact") : nothing)
+    isempty(ground_stations) || (block["stations"] = [_scene_dict(station) for station in ground_stations])
+    return block
 end
 
 # The bytes the block adds to the payload, as JSON text.

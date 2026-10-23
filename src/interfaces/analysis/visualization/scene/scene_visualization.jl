@@ -33,6 +33,7 @@ using ..Structure: load_model_triangles, model_bounding_box, model_bounding_box_
 using ..Structure: articulate_triangles, articulation_payload
 using ..Structure: model_format, gltf_required_extensions, GLTF_UNSUPPORTED_REQUIRED
 import ..SimulationModel: rot, dcm_to_quaternion
+using ..InterLinkModels: _station_site
 
 export VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec
 export ThrusterGlyph, FacetGlyph, JointGlyph, ArmLinkGeometry, ArmGeometry
@@ -168,6 +169,13 @@ end
 
 include(joinpath(@__DIR__, "atmosphere_spec.jl"))
 
+"""A named fixed point in the planet's rotating frame, in meters."""
+struct GroundStationGeometry
+    node::Int
+    name::String
+    position_m::SVector{3, Float64}
+end
+
 """
     VisualizationScene
 
@@ -188,13 +196,17 @@ struct VisualizationScene
     link_pose_stride::Int
     atmosphere::Union{Nothing, AtmosphereSpec}
     link_schedule::Union{Nothing, String}
+    ground_stations::Vector{GroundStationGeometry}
 end
+VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet, spacecraft, orientation_sim, results_feather,
+    link_pose_field, link_pose_stride, atmosphere, link_schedule) = VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet,
+    spacecraft, orientation_sim, results_feather, link_pose_field, link_pose_stride, atmosphere, link_schedule, GroundStationGeometry[])
 # A scene without a link schedule, as scenes were built before runs wrote one.
 VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet, spacecraft, orientation_sim, results_feather,
     link_pose_field, link_pose_stride, atmosphere) = VisualizationScene(schema, epoch_et_start_s, epoch_utc, planet,
     spacecraft, orientation_sim, results_feather, link_pose_field, link_pose_stride, atmosphere, nothing)
 
-for T in (LinkBox, ThrusterGlyph, FacetGlyph, JointGlyph, ArmLinkGeometry, ArmGeometry, SpacecraftGeometry, PlanetSpec, VisualizationScene)
+for T in (LinkBox, ThrusterGlyph, FacetGlyph, JointGlyph, ArmLinkGeometry, ArmGeometry, SpacecraftGeometry, PlanetSpec, GroundStationGeometry, VisualizationScene)
     @eval Base.:(==)(a::$T, b::$T) = all(getfield(a, f) == getfield(b, f) for f in fieldnames($T))
 end
 

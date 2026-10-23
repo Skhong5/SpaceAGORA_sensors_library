@@ -50,6 +50,7 @@ them, as `simulation_results_link_schedule.csv` and `.feather`.
 | `directed` | | whether the link is directed |
 | `a_spacecraft`, `a_terminal` | | the first endpoint of the link's key, the transmitter of a directed link; a ground station end is `-s` with its antenna number |
 | `b_spacecraft`, `b_terminal` | | the second endpoint |
+| `a_name`, `b_name` | | only for station runs: the station name or `spacecraft N` |
 | `start_s`, `end_s`, `duration_s` | s | the span: its first sample, the next sample without the link or the history's last sample, and their difference |
 | `steps` | | the history samples in the span |
 | `score_start`, `score_end`, `score_min`, `score_max` | the policy's | the score that selected the link at the span's first and last sample, and its extremes; `NaN` for a contact row and for samples without scores |
@@ -77,6 +78,12 @@ function link_schedule(model::SimulationModel.InterlinkModel; policy=nothing)
     table = DataFrame([name => T[getproperty(row, name) for row in rows] for (name, T) in _LINK_SCHEDULE_COLUMNS])
     for k in 1:term_count
         table[!, "term$(k)_start"] = Float64[row.terms[k] for row in rows]
+    end
+    # Preserve spacecraft-only table schemas; station runs also expose readable endpoints.
+    if !isempty(model.ground_stations)
+        endpoint_name(node) = node < 0 ? model.ground_stations[-node].name : "spacecraft $(node)"
+        table[!, :a_name] = endpoint_name.(table.a_spacecraft)
+        table[!, :b_name] = endpoint_name.(table.b_spacecraft)
     end
     description = _link_schedule_policy(policy)
     metadata!(table, "policy", description.policy; style=:note)
