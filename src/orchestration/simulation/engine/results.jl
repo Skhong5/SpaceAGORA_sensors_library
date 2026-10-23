@@ -68,6 +68,7 @@ function long_table(results::SimulationResults)::DataFrame
         m = match(r"^sc(\d+)_(.*)$", name)
         m === nothing || !(1 <= parse(Int, m[1]) <= num_sats) || m[2] in fields || push!(fields, m[2])
     end
+    SimulationModel.IOOutputs._check_long_column_names(fields)
     slot_part(sc, part) = sc.constellation_slot === nothing ? missing : Int16(getproperty(sc.constellation_slot, part))
     long = DataFrame(
         spacecraft=repeat(Int32.(1:num_sats), n_times),

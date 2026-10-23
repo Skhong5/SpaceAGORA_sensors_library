@@ -216,6 +216,15 @@ function _set_long_column_presence!(table::DataFrame, presence)
     return table
 end
 
+function _check_long_column_names(columns; run_table::Bool=false)
+    reserved = run_table ? ("time",) : ("spacecraft", "spacecraft_id", "plane", "slot", "time")
+    for name in columns
+        name in reserved || continue
+        throw(ArgumentError("long results reserve column '$name' for row identity; choose a different SaveField column_prefix or use the wide layout"))
+    end
+    return nothing
+end
+
 function _build_long_results_tables(times::Vector{Float64}, saved_data::Vector, save_fields, args)
     spacecraft = args.dynamics_model.spacecraft
     num_sats = length(spacecraft)
@@ -231,10 +240,18 @@ function _build_long_results_tables(times::Vector{Float64}, saved_data::Vector, 
     run_df = DataFrame(time=times)
     presence = Dict{String, Vector{Int}}()
     for field in save_fields
+        # Flatten before validating: nested names can collide even when the
+        # original prefix does not. Transfer columns without copying their data.
+        columns = DataFrame()
         if field.per_satellite
-            _append_long_field_columns!(spacecraft_df, field, saved_data, num_sats, presence)
+            _append_long_field_columns!(columns, field, saved_data, num_sats, presence)
         else
-            _append_series_columns!(run_df, field.column_prefix, [snapshot[field.name] for snapshot in saved_data])
+            _append_series_columns!(columns, field.column_prefix, [snapshot[field.name] for snapshot in saved_data])
+        end
+        _check_long_column_names(names(columns); run_table=!field.per_satellite)
+        destination = field.per_satellite ? spacecraft_df : run_df
+        for name in names(columns)
+            destination[!, name] = columns[!, name]
         end
     end
     _set_long_column_presence!(spacecraft_df, presence)
