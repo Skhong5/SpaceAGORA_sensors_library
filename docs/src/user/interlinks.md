@@ -222,6 +222,11 @@ register_link!(model, spacecraft, (1, terminal_1), (2, terminal_2), link)
   the torque of the terminal's lever arm, as the terminal's own recoil would.
   The default, `:central`, applies the force with no torque.
 
+The solver does not locate occultation or field-of-regard boundary crossings
+as events. Link availability and selection are recomputed at each accepted step;
+a crossing between steps is not resolved at its exact time. Check timestep
+convergence when these boundaries matter for your case.
+
 Pointing and mounted recoil need terminal hardware at both ends (a
 `LaserTerminal` carries a `LaserBeamLink`), and attitude (`orientation_sim=true`).
 `register_link!` refuses a virtual terminal for them, and a run without attitude
