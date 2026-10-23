@@ -258,6 +258,20 @@ end
         resumed = run_simulation(two_orbits(30000.0, checkpointed(split; resume=true)); return_solution=true)
         @test whole.t[end] < 30000.0 && resumed.t[end] == whole.t[end]
         @test isequal(collect(resumed.u[end]), collect(whole.u[end]))
+        # The same checkpoint without the new entries, as an earlier SpaceAGORA wrote
+        # it, resumes with no error and counts from the first orbit, as it did then:
+        # the run ends late.
+        earlier = mktempdir()
+        run_simulation(two_orbits(4000.0, checkpointed(earlier)))
+        paths = SpaceAGORA.SimulationEngine._checkpoint_paths(two_orbits(4000.0, checkpointed(earlier)))
+        payload = deserialize(paths.data)
+        @test hasproperty(payload.runtime_state, :orbits)
+        runtime = Base.structdiff(payload.runtime_state, NamedTuple{(:orbits, :maneuver_buffers)})
+        payload = isempty(runtime) ? Base.structdiff(payload, NamedTuple{(:runtime_state,)}) :
+            merge(payload, (runtime_state=runtime,))
+        open(io -> serialize(io, payload), paths.data, "w")
+        late = run_simulation(two_orbits(30000.0, checkpointed(earlier; resume=true)); return_solution=true)
+        @test late.t[end] > whole.t[end]
         # A run's random stream compares by its state.
         @test C._same_state(MersenneTwister(3), from_file(MersenneTwister(3)))
         @test !C._same_state(MersenneTwister(3), MersenneTwister(4))
