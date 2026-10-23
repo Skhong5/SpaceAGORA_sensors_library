@@ -265,7 +265,7 @@ trusted queries its family's validation needs and a short simulation: the direct
 planner (with the station clearance `make_rpo_configuration` gives it), the hold
 planner above, the burn-plan family's apoapsis planner, the joint-reference
 family's quintic planner, the EDG guidance decision when the optional
-SpaceAGORAEDG package is loaded, and, when the optional SpaceAGORAHYPR package is
+SpaceAGORAEDG package is loaded, and, when the optional HYPR package is
 loaded, the HYPR planner, the seven comparison planners and the retained-path planner.
 """
 function algorithm_instances()
@@ -293,7 +293,7 @@ Concrete built-in planning algorithm types without an instance, each with the re
 """
 function algorithm_exemptions()
     exemptions = SpaceAGORA.hypr_available() ? Dict{Any, String}() : Dict{Any, String}(
-        T => "needs the optional SpaceAGORAHYPR package, which is not loaded here; the unit runner loads it, and " *
+        T => "needs the optional HYPR package, which is not loaded here; the unit runner loads it, and " *
             "there the planner is checked" for T in HYPR_PLANNER_TYPES)
     SpaceAGORA.EDGServices.available() || (exemptions[SpaceAGORA.EDGGuidanceAlgorithm] =
         "needs the optional SpaceAGORAEDG package, which is not loaded here; the unit runner loads it, and there " *

@@ -8,6 +8,41 @@ Renamed and retired extension hooks have their own page,
 [Public API and Compatibility](../public_api_policy.md) describes the
 deprecation rules.
 
+## 0.7.0 (unreleased)
+
+### Load HYPR directly
+
+The `SpaceAGORAHYPR` compatibility loader is removed. In a project that uses the
+optional planner, replace `using SpaceAGORAHYPR` with:
+
+```julia
+using SpaceAGORA, HYPR
+```
+
+Both load orders activate the same HYPR extension. SpaceAGORA alone still does
+not load HYPR, and planner preflight still refuses an unavailable or incompatible
+provider. The external HYPR repository and its immutable pin are retained; the
+standalone pin has moved to `packages/HYPRSource.toml`.
+
+- Run the HYPR setup helper again for an existing environment. It removes the
+  retired loader's dependency and source entries while preserving unrelated
+  project settings. A project you maintain yourself should remove the loader
+  dependency and declare HYPR directly.
+- The loader's `RPO`, `RobotArm`, `SwarmPolicy` and `PlannerAdapter` module
+  aliases are removed with it. Code that reached HYPR's own helpers through
+  `SpaceAGORAHYPR.RPO.<name>` or `SpaceAGORAHYPR.RobotArm.<name>`, the 0.6.0
+  route, uses the extension's namespaces, the one route now:
+  `Base.get_extension(HYPR, :HYPRSpaceAGORAExt).RPO.<name>` or
+  `Base.get_extension(HYPR, :HYPRSpaceAGORAExt).RobotArm.<name>`. The extension
+  exists after `using SpaceAGORA, HYPR` has activated HYPR; before that, or after
+  a refused activation, `Base.get_extension` returns `nothing`.
+  `hypr_iteration_weights`, `hypr_material_improvement` and
+  `hypr_protected_particle_mask` are HYPR's exported functions
+  ([Versioned HYPR service contract](../reference/hypr_services.md#Changes-from-contract-2.0.0)).
+- Application code should use the public planner interfaces, and companion code
+  the documented `HYPRServices` contract. This removal does not narrow that
+  service contract.
+
 ## 0.6.1
 
 ### Machine calibration constants are measured again

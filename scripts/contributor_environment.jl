@@ -184,10 +184,10 @@ function companion_names(list::AbstractString)
     return String.(names)
 end
 
-"""Package names that each companion installs: its registry name, and SpaceAGORAHYPR for HYPR."""
+"""Package names that each companion installs from its recorded source pin."""
 function companion_package_names(name; root)
     registry = TOML.parsefile(joinpath(root, "packages", "OptionalPackages.toml"))
-    return name == "hypr" ? [registry[name]["name"], "SpaceAGORAHYPR"] : [registry[name]["name"]]
+    return [registry[name]["name"]]
 end
 
 """A dependency on a companion needs the companion listed in the pin file, at the core's recorded pin."""
@@ -270,7 +270,6 @@ function add_companions(p)
     for name in p.companions
         package = OptionalPackages.spec(name; root=p.core.path)
         paths = [OptionalPackages.checkout(name; root=p.core.path)]
-        name == "hypr" && push!(paths, joinpath(p.core.path, "packages", "SpaceAGORAHYPR"))
         for path in paths
             identity = TOML.parsefile(joinpath(path, "Project.toml"))
             p.project["deps"][identity["name"]] = identity["uuid"]
