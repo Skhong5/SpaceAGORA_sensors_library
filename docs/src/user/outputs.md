@@ -375,7 +375,11 @@ first, so a resumed run continues the count: a `MissionOrbits` run ends after th
 same number of orbits, and the campaign maneuver guidance, the pass-indexed
 density models and the periapsis pulses see the orbits they would have seen. A
 checkpoint written by an earlier SpaceAGORA holds no count, and a run resumed from
-it counts from the first orbit again, as before.
+it counts from the first orbit again, as before. If such a checkpoint was written
+after the first orbit, the resumed run's count is behind: a `MissionOrbits` run
+ends late, and the campaign maneuver guidance repeats the maneuvers of the orbits
+already flown. Run it again from its start, or from a checkpoint this version
+wrote.
 
 The checkpoint also records which spacecraft are active. A spacecraft lost to
 an impact or a touchdown before the checkpoint stays inactive in the resumed
