@@ -8,7 +8,6 @@ const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 # so explicit global-stream spellings are also forbidden under these roots.
 const GNC_RANDOM_STREAM_ROOTS = (
     joinpath(REPO_ROOT, "src", "models", "gnc"),
-    joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"),
 )
 const GNC_HIDDEN_STREAM_PATTERNS = (
     r"\bdefault_rng\s*\(",

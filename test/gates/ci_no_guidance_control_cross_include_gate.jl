@@ -1,5 +1,5 @@
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
-const GUIDANCE_ROOTS = (joinpath(REPO_ROOT, "packages", "SpaceAGORAHYPR", "src"),
+const GUIDANCE_ROOTS = (
     (joinpath(REPO_ROOT, "src", "models", "gnc", owner) for owner in ("guidance", "planning", "companions", "contracts"))...,
     joinpath(REPO_ROOT, "src", "interfaces", "analysis", "planning"))
 

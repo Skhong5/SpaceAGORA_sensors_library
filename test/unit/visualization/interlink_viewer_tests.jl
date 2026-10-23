@@ -64,6 +64,45 @@ end
         @test_throws ArgumentError SV.interlink_payload(select(schedule, Not(:end_s)), 3)
     end
 
+    @testset "long and streamed viewer input association" begin
+        for checkpoints in (false, true)
+            mktempdir() do directory
+                args = with_settings(gve_sma_configuration(duration=30.0); results=true,
+                    results_directory=directory, results_layout=:long, save_csv=false,
+                    save_visualization_scene=true, checkpoint_enabled=checkpoints,
+                    checkpoint_interval_s=10.0, checkpoint_directory=directory)
+                result = run_simulation(args; return_results=true)
+                prefix = joinpath(directory, "simulation_results")
+                scene = SV.read_visualization_scene(prefix * "_scene.json")
+                @test scene.results_layout === :long
+                @test scene.link_schedule == "simulation_results_link_schedule.feather"
+                @test SV._scene_from_dict(SV.scene_dict(scene)) == scene
+                payload = JSON.parsefile(SV.export_viewer_payload(prefix; textures=false))
+                @test payload["interlinks"] == JSON.parse(JSON.json(SV.interlink_payload(link_schedule(result), 3)))
+                @test isfile(SV.write_viewer_dev_payload(prefix, prefix * "_valid.js"; textures=false))
+                trajectory_path = joinpath(directory, scene.results_feather)
+                original = read(trajectory_path)
+                rows = DataFrame(Arrow.Table(trajectory_path); copycols=true)
+                rows.pos_1 .+= 1000.0
+                Arrow.write(trajectory_path, rows)
+                @test_throws ArgumentError SV.export_viewer_payload(prefix; textures=false, out=prefix * "_stale.json")
+                @test_throws ArgumentError SV.write_viewer_dev_payload(prefix, prefix * "_stale.js"; textures=false)
+                @test !isfile(prefix * "_stale.json") && !isfile(prefix * "_stale.js")
+                @test !haskey(JSON.parsefile(SV.export_viewer_payload(prefix; textures=false, interlinks=false,
+                    out=prefix * "_optout.json")), "interlinks")
+                @test isfile(SV.write_viewer_dev_payload(prefix, prefix * "_optout.js"; textures=false, interlinks=false))
+                write(trajectory_path, original)
+                values = ntuple(i -> getfield(scene, i), 10)
+                @test SV.VisualizationScene(values...).results_layout === :wide
+                @test SV.VisualizationScene(values...).link_schedule === nothing
+                @test SV.VisualizationScene(values..., :long).results_layout === :long
+                @test SV.VisualizationScene(values..., :long).link_schedule === nothing
+                @test SV.VisualizationScene(values..., "schedule.feather").link_schedule == "schedule.feather"
+                @test SV.VisualizationScene(values..., "schedule.feather").results_layout === :wide
+            end
+        end
+    end
+
     @testset "scene, export and checks" begin
         mktempdir() do directory
             args = with_settings(gve_sma_configuration(duration=600.0); results=true, results_directory=directory,
@@ -117,6 +156,20 @@ end
             @test haskey(JSON.parsefile(SV.export_viewer_payload(prefix; textures=false, interlinks=false,
                 out=prefix * "_stale.json")), "frames")
             write(schedule_path, original)
+
+            # An unchanged schedule cannot be attached to a different valid trajectory.
+            trajectory_path = prefix * ".feather"
+            trajectory_bytes = read(trajectory_path)
+            replacement = DataFrame(Arrow.Table(trajectory_path); copycols=true)
+            replacement.sc1_pos_1 .+= 1000.0
+            Arrow.write(trajectory_path, replacement)
+            @test_throws ArgumentError SV.export_viewer_payload(prefix; textures=false, out=prefix * "_other.json")
+            @test_throws ArgumentError SV.write_viewer_dev_payload(prefix, prefix * "_other.js"; textures=false)
+            @test !isfile(prefix * "_other.json") && !isfile(prefix * "_other.js")
+            @test !haskey(JSON.parsefile(SV.export_viewer_payload(prefix; textures=false, interlinks=false,
+                out=prefix * "_without_stale_links.json")), "interlinks")
+            @test isfile(SV.write_viewer_dev_payload(prefix, prefix * "_without_stale_links.js"; textures=false, interlinks=false))
+            write(trajectory_path, trajectory_bytes)
 
             # The export never writes over the schedule it reads.
             @test_throws ArgumentError SV.export_viewer_payload(prefix; textures=false, out=schedule_path)
