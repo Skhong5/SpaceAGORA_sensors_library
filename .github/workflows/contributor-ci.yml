@@ -49,6 +49,10 @@ on:
         description: Newline-separated scripts, relative to the directory, run after the tests.
         type: string
         default: ""
+      test-entrypoint:
+        description: Test script relative to directory; optional companions can select their integration suite while keeping standalone tests separate.
+        type: string
+        default: "test/runtests.jl"
       load-orders:
         description: "Companions only: also run test/load_order.jl core-first and companion-first."
         type: boolean
@@ -100,6 +104,7 @@ jobs:
       DEPWARN: ${{ inputs.depwarn }}
       EXAMPLES: ${{ inputs.examples }}
       LOAD_ORDERS: ${{ inputs.load-orders }}
+      TEST_ENTRYPOINT: ${{ inputs.test-entrypoint }}
       DIRECTORY: ${{ inputs.directory }}
       CORE_FROM_CALLER: ${{ inputs.core-from-caller }}
       STARTER: ${{ inputs.starter }}
@@ -133,6 +138,12 @@ jobs:
             [[ "$REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || fail "repository must be owner/name, not '$REPOSITORY'."
           fi
           [[ -z "$REPOSITORY_REF" || -n "$REPOSITORY" ]] || fail "repository-ref applies only with repository."
+          case "$TEST_ENTRYPOINT" in
+            ""|/*) fail "test-entrypoint must be a nonempty relative path." ;;
+          esac
+          case "/$TEST_ENTRYPOINT/" in
+            */../*) fail "test-entrypoint must stay inside the repository directory." ;;
+          esac
           case "/$DIRECTORY/" in */../*|//*) fail "directory must be a relative path inside the repository, not '$DIRECTORY'." ;; esac
           if [ -z "$WORKFLOW_SHA" ]; then
             echo "::warning::This runner does not report the workflow's own commit; only the pin file is checked against spaceagora-rev."
@@ -269,15 +280,22 @@ jobs:
       - name: Precompile strictly
         run: julia --startup-file=no --project="$CONTRIBUTOR_ENVIRONMENT" -e 'using Pkg; Pkg.precompile(; strict=true)'
 
-      # test/runtests.jl runs in the environment from the test directory, as
-      # under Pkg.test, without Pkg.test's --check-bounds=yes, which would rebuild
+      # The selected test script runs from test/, preserving the default behavior
+      # under Pkg.test, without its --check-bounds=yes, which would rebuild
       # every package image. Pkg.test also works in this environment locally.
       - name: Tests
         run: |
           set -euo pipefail
           mkdir -p "$SPACEAGORA_CONFORMANCE_REPORT_DIR"
+          script="$CONTRIBUTOR_REPOSITORY/$TEST_ENTRYPOINT"
+          [ -f "$script" ] || { echo "::error::Test entrypoint '$TEST_ENTRYPOINT' was not found."; exit 1; }
+          script="$(realpath "$script")"
+          case "$script" in
+            "$CONTRIBUTOR_REPOSITORY"/*) ;;
+            *) echo "::error::Test entrypoint must stay inside the repository directory."; exit 1 ;;
+          esac
           cd "$CONTRIBUTOR_REPOSITORY/test"
-          julia --startup-file=no --project="$CONTRIBUTOR_ENVIRONMENT" --depwarn="$DEPWARN" runtests.jl
+          julia --startup-file=no --project="$CONTRIBUTOR_ENVIRONMENT" --depwarn="$DEPWARN" "$script"
 
       - name: Examples
         if: inputs.examples != ''

@@ -27,8 +27,10 @@ using SpaceAGORA
 using SpaceAGORAVisualizer
 ```
 
-The helper pins the companion revision recorded in `packages/VisualizerSource.toml`
-and leaves the root project unchanged. You can also install only the viewer in
+The helper selects SpaceAGORAVisualizer 0.2.0, including recorded interlink
+windows and ground-station markers, while the renderer contract remains version 1.
+The helper leaves the root project unchanged. Its immutable companion revision
+is recorded in `packages/VisualizerSource.toml`. You can also install only the viewer in
 another Julia environment to inspect exported JSON without loading SpaceAGORA.
 See the companion's README for that installation and its supported input format.
 
@@ -429,7 +431,7 @@ a host that refuses embedded `data:` scripts, `SpaceAGORAVisualizer.jl/viewer/bu
 rewrites an exported page to load the pinned three.js and mp4-muxer from
 `cdn.jsdelivr.net` with the renderer modules inlined; the built page lists
 its network hosts and third-party notices in its footer, and adds fonts
-from Google Fonts only with `--fonts`. See [the companion renderer guide](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl/blob/75b32bc610e3227035810a4c8e12a515106c5a62/viewer/README.md) for renderer development, module layout and
+from Google Fonts only with `--fonts`. See [the companion renderer guide](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl/blob/76f9037edb61e19e7314eb4db9bb7772a42f2ddc/viewer/README.md) for renderer development, module layout and
 licensing. Landing dynamics and plume-surface physics are separate from the
 viewer: the page only draws what the run saved.
 

@@ -184,6 +184,9 @@ _battery_within_full(spacecraft, energy_wh::Real) = false
 # scheduling policy reads. `SpacecraftModel` methods are in InterlinkTerminals,
 # which comes after the data parts.
 _data_store_capacity_bits(spacecraft) = NaN
+# Current source production at this endpoint. The concrete spacecraft method is
+# supplied after data parts load, alongside the store-capacity methods.
+_data_store_production_bps(spacecraft, sample, context, t::Float64) = 0.0
 # Whether `spacecraft`'s data store counts as empty, or as full, holding `bits`,
 # as the store's own events decide it; false without a store.
 _data_store_within_empty(spacecraft, bits::Real) = false

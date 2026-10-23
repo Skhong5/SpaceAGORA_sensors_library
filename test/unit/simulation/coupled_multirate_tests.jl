@@ -115,6 +115,34 @@ withenv("SPACEAGORA_RHS_CALIBRATE"=>"off", "SPACEAGORA_RHS_IDENTIFY"=>"0",
         end
     end
 
+    @testset "An empty producer stays connected under backlog scheduling" begin
+        finals = []
+        for mode in (:dp8, :multirate_mri)
+            args = fixture(mode; initial_bits=0.0)
+            sender = args.dynamics_model.spacecraft[1]
+            add_data!(sender, sender.root, DataSource(rate_bps=100.0))
+            args = SM.SimConfig._with_configuration(args;
+                scheduling_policy_model=DataBacklogPolicy(horizon_s=5.0))
+            result = run_simulation(args; return_results=true, return_solution=true)
+            final = result.solution.u[end]
+            history = result.configuration.interlink_model.history
+            active = [((1, 1), (2, 1))]
+            @test result.solution.t[end] == 10.0
+            @test length(history) > 1
+            @test first(history).active == active
+            @test all(sample -> sample.active == active, history)
+            @test final.sc[1].data_stored_bits ≈ 0.0 atol=1e-7
+            @test final.sc[1].data_produced_bits ≈ 1000.0 atol=1e-7
+            @test final.sc[1].data_sent_bits ≈ 1000.0 atol=1e-7
+            @test final.sc[2].data_received_bits ≈ 1000.0 atol=1e-7
+            @test final.sc[2].data_stored_bits ≈ 1000.0 atol=1e-7
+            @test final.sc[1].data_lost_bits ≈ 0.0 atol=1e-7
+            @test final.sc[2].data_lost_bits ≈ 0.0 atol=1e-7
+            push!(finals, final)
+        end
+        @test finals[1] ≈ finals[2] rtol=1e-9 atol=1e-6
+    end
+
     @testset "One physical event and periodic callback timeline" begin
         ticks=Float64[]; events=Float64[]
         fast!(du,u,p,t)=(du[1]=-10u[1]+10u[2];du[2]=0.0;nothing)
