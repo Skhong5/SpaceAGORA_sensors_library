@@ -1167,6 +1167,8 @@ jobs:
         run: julia --startup-file=no --project="$RUNNER_TEMP/visualizer-installations/visualizer" -e 'using Pkg; Pkg.test("SpaceAGORAVisualizer")'
       - name: Viewer JavaScript regressions
         run: node "$SPACEAGORA_VISUALIZER_CHECKOUT/test/unit/visualization/viewer_channels_models_tests.mjs"
+      - name: Viewer interlink renderer regressions
+        run: node "$SPACEAGORA_VISUALIZER_CHECKOUT/test/unit/visualization/viewer_links_tests.mjs"
       - name: Viewer external-host page builder tests
         run: python3 -B -m unittest discover -s "$SPACEAGORA_VISUALIZER_CHECKOUT/test/scripts" -p 'test_*.py' -v
       - name: Terrain exporter Julia-to-JavaScript regression
