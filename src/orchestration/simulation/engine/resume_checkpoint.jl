@@ -862,6 +862,9 @@ function _start_results_rows!(args, recording::Bool, save_fields, resumed::Bool,
     header = _results_rows_header(save_fields, length(args.dynamics_model.spacecraft))
     log = _ResultsRowsLog(path, header, _results_rows_token(path), recording, resumed ? t_start : 0.0, 0, 0, true,
         0, false, _new_results_stream(args, recording))
+    # A resumed run that saves no rows would remove the earlier rows file at its
+    # first checkpoint; it keeps it instead.
+    resumed && solves && !recording && _keep_earlier_rows!(path, t_start)
     (resumed && recording && (solves || returns_table)) || return log
     rows, reason = _checkpoint_results_rows(entry, path, header, t_start)
     if rows !== nothing && entry.version === 2
@@ -869,9 +872,11 @@ function _start_results_rows!(args, recording::Bool, save_fields, resumed::Bool,
         reason === nothing || (rows = nothing)
     end
     if rows === nothing
+        kept = solves ? _keep_earlier_rows!(path, t_start) : nothing
         consequence = solves ?
             "They start at the resume, and any results files are written to " *
-            "$(_results_destination(args, log).simulation_settings.results_directory), so the earlier ones are kept." :
+            "$(_results_destination(args, log).simulation_settings.results_directory), so the earlier ones are kept." *
+            (kept === nothing ? "" : " The rows file beside the checkpoint is kept as $(kept).") :
             "This resume solves nothing, so it returns an empty table and writes no files."
         @warn "The resumed run's results cannot include the rows before its checkpoint at t = $(t_start) s: " *
               "$(reason). $(consequence)"
@@ -895,6 +900,25 @@ function _start_results_rows!(args, recording::Bool, save_fields, resumed::Bool,
     log.fresh = false
     log.retake = retake_last_row
     return log
+end
+
+# A resumed run that does not continue the rows file beside its checkpoint (it
+# cannot include the rows there, or it saves none) starts a new one, or removes
+# it, at its first checkpoint. The earlier file can hold the only copy of the
+# earlier run's rows (a run that was killed writes no results files), so it is
+# renamed instead: `<rows file>.before_resume_at_<t>s.bin`, numbered when that
+# name is taken. Returns the new name, or `nothing` without a file.
+function _keep_earlier_rows!(path::String, t_start::Float64)
+    isfile(path) || return nothing
+    stem = replace(path, r"\.bin$" => "") * ".before_resume_at_$(t_start)s"
+    kept = stem * ".bin"
+    n = 1
+    while ispath(kept)
+        n += 1
+        kept = stem * "_$(n).bin"
+    end
+    mv(path, kept)
+    return kept
 end
 
 # Before a segment's rows join the run's: when the restored last row is to be
