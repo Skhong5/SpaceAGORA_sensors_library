@@ -15,20 +15,21 @@ end
         CH._edg_capture_entry_heat!(c.args, c.u, 1)
         @test c.u == original
         c.u.sc[1].heat_loads .+= [100.0, 5.0, 8.0]
-        @test CH._edg_max_heat_load_for_links(c.u.sc[1], (2,3)) == 105.0
-        @test CH._edg_pass_heat_load_for_links(c.u.sc[1], (2,3), c.state, 1) == 8.0
-        @test CH._edg_pass_heat_load_for_links(c.u.sc[1], (2,), c.state, 1) == 5.0
-        @test CH._edg_pass_heat_load_for_links(c.u.sc[1], (3,), c.state, 1) == 8.0
+        # The passage heat SpaceAGORAEDG computes from these is tested there.
+        @test c.u.sc[1].heat_loads == [1099.0, 105.0, 28.0]
+        @test c.state.heat_load_entry_j_cm2[1] == [999.0, 100.0, 20.0]
+        @test isempty(c.state.heat_load_exit_j_cm2[1])
+        @test c.u.sc[1].heat_loads .- c.state.heat_load_entry_j_cm2[1] == [100.0, 5.0, 8.0]
         CH._edg_capture_exit_heat!(c.args, c.u, 1)
         c.u.sc[1].heat_loads .+= [0.0,50.0,50.0] # Coast telemetry stays cumulative.
-        @test CH._edg_pass_heat_load_for_links(c.u.sc[1], (2,3), c.state, 1) == 8.0
+        @test c.state.heat_load_exit_j_cm2[1] == [1099.0, 105.0, 28.0]
         CH._edg_capture_entry_heat!(c.args, c.u, 1)
-        @test CH._edg_pass_heat_load_for_links(c.u.sc[1], (2,3), c.state, 1) == 0.0
+        @test c.state.heat_load_entry_j_cm2[1] == [1099.0, 155.0, 78.0] && isempty(c.state.heat_load_exit_j_cm2[1])
         # A fresh simulation has zero integrated heat and must discard old baselines.
         fill!(c.u.sc[1].heat_loads, 0.0)
         CH._edg_initialize_heat_accounting!(c.args, c.u, 0.0)
         c.u.sc[1].heat_loads .= [0.0, 2.0, 3.0]
-        @test CH._edg_pass_heat_load_for_links(c.u.sc[1], (2,3), c.state, 1) == 3.0
+        @test c.state.heat_load_entry_j_cm2[1] == zeros(3) && isempty(c.state.heat_load_exit_j_cm2[1])
         @test_throws ArgumentError CH._edg_initialize_heat_accounting!(c.args,c.u,5000.0)
     end
     @testset "Spacecraft accounting is independent" begin
@@ -43,10 +44,10 @@ end
         CH._edg_capture_entry_heat!(args,u,2)
         u.sc[1].heat_loads .+= [0,4,8]
         u.sc[2].heat_loads .+= [0,9,2]
-        @test CH._edg_pass_heat_load_for_links(u.sc[1],(2,3),state,1)==8.0
-        @test CH._edg_pass_heat_load_for_links(u.sc[2],(2,3),state,2)==9.0
+        @test state.heat_load_entry_j_cm2[1] == [0.0,26.0,20.0]
+        @test state.heat_load_entry_j_cm2[2] == [0.0,80.0,90.0]
         CH._edg_capture_entry_heat!(args,u,1)
-        @test CH._edg_pass_heat_load_for_links(u.sc[2],(2,3),state,2)==9.0
+        @test state.heat_load_entry_j_cm2[1] == [0.0,30.0,28.0] && state.heat_load_entry_j_cm2[2] == [0.0,80.0,90.0]
         unrelated=(control_model=(control_effectors=(nothing,),),guidance_model=(guidance_effectors=(),))
         @test isempty(CH._edg_heat_states(unrelated))
         @test isnothing(CH._edg_initialize_heat_accounting!(unrelated,u,5000.0))
@@ -141,7 +142,7 @@ end
         @test sol.u[end].sc[1].heat_loads ≈ [0.0,140.0,280.0] atol=1e-8
         exit2 = 40.0 - 10acos(0.75)/pi
         @test c.state.heat_load_exit_j_cm2[1] ≈ [0.0,100+exit2,200+2exit2] atol=1e-5
-        @test CH._edg_pass_heat_load_for_links(sol.u[end].sc[1],(2,3),c.state,1) ≈ 2*(exit2-entry2) atol=1e-5
+        @test c.state.heat_load_exit_j_cm2[1][3] - c.state.heat_load_entry_j_cm2[1][3] ≈ 2*(exit2-entry2) atol=1e-5
         @test !c.p.shared_buffers.in_atmosphere[1]
         # EDG still receives the entry root when integration tolerances match.
         equal_args=SimulationModel.SimulationConfiguration(;merge(fields,(
@@ -191,8 +192,8 @@ end
         # old spherical callback and EDG's geodetic entry.
         @test norm(u.sc[1].pos) - planet.Rp_e < 160000.0
         @test CH._edg_heat_boundary_distance(u, p, 0.0, 1) > 0.0
-        env = CH._edg_environment_state(p, u, 0.0, 1)
-        @test !CH._edg_in_drag_passage(p, env)
+        env = SimulationModel.EDGServices._edg_environment_state(p, u, 0.0, 1)
+        @test !SimulationModel.EDGServices._edg_in_drag_passage(p, env)
         @test CH._edg_heat_boundary_distance(u, p, 0.0, 1) ≈ env.altitude_m - 160000.0
         # Start above both surfaces so both spherical and geodetic callbacks
         # cross on every passage, with a clear shell between their events.
@@ -215,7 +216,7 @@ end
         @test string(sol.retcode) == "Success"
         @test c.state.heat_load_entry_j_cm2[1] ≈ [0.0,100+entry2,200+2entry2] atol=1e-5
         @test c.state.heat_load_exit_j_cm2[1] ≈ [0.0,100+exit2,200+2exit2] atol=1e-5
-        @test CH._edg_pass_heat_load_for_links(sol.u[end].sc[1],(2,3),c.state,1) ≈ 2*(exit2-entry2) atol=1e-5
+        @test c.state.heat_load_exit_j_cm2[1][3] - c.state.heat_load_entry_j_cm2[1][3] ≈ 2*(exit2-entry2) atol=1e-5
         @test sol.u[end].sc[1].heat_loads ≈ [0.0,140.0,280.0] atol=1e-8
         @test isempty(filter(x -> !isfinite(x), c.state.heat_load_entry_j_cm2[1]))
         # A second solve genuinely starts within EDG's passage; its first exit
@@ -235,7 +236,7 @@ end
         @test length(drag_exits) == 3
         @test c.state.heat_load_entry_j_cm2[1] == zeros(3)
         @test c.state.heat_load_exit_j_cm2[1] ≈ [0.0,10.0,20.0] atol=1e-5
-        @test CH._edg_pass_heat_load_for_links(exit_sol.u[end].sc[1],(2,3),c.state,1) ≈ 20.0 atol=1e-5
+        @test c.state.heat_load_exit_j_cm2[1][3] - c.state.heat_load_entry_j_cm2[1][3] ≈ 20.0 atol=1e-5
         @test exit_sol.u[end].sc[1].heat_loads ≈ [0.0,35.0,70.0] atol=1e-8
     end
 end

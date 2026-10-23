@@ -246,7 +246,7 @@ the file that performs each step.
    geometry lives in `planning/rpo/geometry/`, retaining its historical
    `NavigationHooks` bindings. That geometry is not itself a sensor or estimator.
    Core typed EDG models,
-   services and compatibility bindings live in `guidance/aerobraking/typed_edg/`;
+   services and the forwarders of its two decisions live in `guidance/aerobraking/typed_edg/`;
    the optional SpaceAGORAEDG companion owns the numerical kernels and is the
    only EDG implementation. Configured HYPR
    execution is provided by the external

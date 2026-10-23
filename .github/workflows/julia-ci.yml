@@ -1234,8 +1234,10 @@ jobs:
         run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional/edg/cli.jl
       - name: EDG example smoke child environment
         run: julia --startup-file=no --code-coverage=user --project="$RUNNER_TEMP/edg-installations/edg" test/optional/edg/example_smoke.jl
+      # With coverage: the EDG kernel tests run here, and the next step collects
+      # the companion's .cov files for the per-file coverage gate.
       - name: Companion tests
-        run: julia --startup-file=no --project="$RUNNER_TEMP/edg-installations/edg" -e 'using Pkg; Pkg.test("SpaceAGORAEDG")'
+        run: julia --startup-file=no --project="$RUNNER_TEMP/edg-installations/edg" -e 'using Pkg; Pkg.test("SpaceAGORAEDG"; coverage=true)'
       - name: Companion load orders and the refusal without the companion
         run: |
           julia --startup-file=no --project="$RUNNER_TEMP/edg-installations/edg" packages/gnc/SpaceAGORAEDG.jl/test/load_order.jl core-first
