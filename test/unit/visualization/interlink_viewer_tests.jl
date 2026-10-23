@@ -118,6 +118,20 @@ end
                 out=prefix * "_stale.json")), "frames")
             write(schedule_path, original)
 
+            # An unchanged schedule cannot be attached to a different valid trajectory.
+            trajectory_path = prefix * ".feather"
+            trajectory_bytes = read(trajectory_path)
+            replacement = DataFrame(Arrow.Table(trajectory_path); copycols=true)
+            replacement.sc1_pos_1 .+= 1000.0
+            Arrow.write(trajectory_path, replacement)
+            @test_throws ArgumentError SV.export_viewer_payload(prefix; textures=false, out=prefix * "_other.json")
+            @test_throws ArgumentError SV.write_viewer_dev_payload(prefix, prefix * "_other.js"; textures=false)
+            @test !isfile(prefix * "_other.json") && !isfile(prefix * "_other.js")
+            @test !haskey(JSON.parsefile(SV.export_viewer_payload(prefix; textures=false, interlinks=false,
+                out=prefix * "_without_stale_links.json")), "interlinks")
+            @test isfile(SV.write_viewer_dev_payload(prefix, prefix * "_without_stale_links.js"; textures=false, interlinks=false))
+            write(trajectory_path, trajectory_bytes)
+
             # The export never writes over the schedule it reads.
             @test_throws ArgumentError SV.export_viewer_payload(prefix; textures=false, out=schedule_path)
         end
