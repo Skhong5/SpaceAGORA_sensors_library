@@ -18,7 +18,6 @@ const SM = SpaceAGORA.SimulationModel
 const SE = SpaceAGORA.SimulationEngine
 const EM = SM.EnvironmentModels
 const CB = SM.SimulationCallbacks
-const CH = SM.ControlHooks
 
 # A constant density, temperature and wind everywhere.
 struct ConstantWindModel <: SM.AbstractDensityModel
@@ -88,12 +87,12 @@ end
     expected = s.vel_pp - wind_pp(s, wind_enu)
 
     withenv("SPACEAGORA_GRAM_ISOLATED_POOL" => "off", "SPACEAGORA_GRAM_PROCESS_POOL" => "off") do
-        env = CH._edg_targeting_prediction_environment(s.p, s.pos, s.vel, 0.0)
+        env = SM.EDGServices._edg_targeting_prediction_environment(s.p, s.pos, s.vel, 0.0)
         @test env.vel_pp ≈ s.vel_pp rtol = 1e-12
         @test env.vel_pp_rw ≈ expected rtol = 1e-12
         @test env.speed ≈ norm(expected) rtol = 1e-12
 
-        control_env = CH._edg_environment_state(s.p, s.u, 0.0, 1)
+        control_env = SM.EDGServices._edg_environment_state(s.p, s.u, 0.0, 1)
         @test control_env.speed ≈ norm(expected) rtol = 1e-12
         @test control_env.dynamic_pressure ≈ 0.5 * 1.0e-9 * norm(expected)^2 rtol = 1e-12
 
@@ -116,9 +115,9 @@ end
     e, n, u = enu_axes(s0.lat, s0.lon)
     w = 0.4 * s0.vel_pp
     s = setup(ConstantWindModel(SVector(dot(w, e), dot(w, n), dot(w, u))))
-    env = CH._edg_targeting_prediction_environment(s.p, s.pos, s.vel, 0.0)
+    env = SM.EDGServices._edg_targeting_prediction_environment(s.p, s.pos, s.vel, 0.0)
     @test env.speed ≈ 0.6 * norm(s.vel_pp) rtol = 1e-9
-    @test CH._edg_environment_state(s.p, s.u, 0.0, 1).speed ≈ 0.6 * norm(s.vel_pp) rtol = 1e-9
+    @test SM.EDGServices._edg_environment_state(s.p, s.u, 0.0, 1).speed ≈ 0.6 * norm(s.vel_pp) rtol = 1e-9
 end
 
 end # module

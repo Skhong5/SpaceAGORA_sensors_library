@@ -1,4 +1,5 @@
 using ..EDGServices
+using ..EDGAlgorithms
 
 const _EDG_GUIDANCE_MODES = Set((:max_energy_depletion, :targeting))
 const _EDG_MAX_ENERGY_SUBMODES = Set((:heat_rate, :structural_load, :heat_load))
@@ -246,40 +247,5 @@ function update_guidance!(
     t::Float64,
     i::Int64,
 )
-    return _edg_algorithms().guidance_decision!(model.state, model.config, u, p, t, i)
-end
-
-@inline _edg_algorithms() = getfield(_PARENT, :EDGAlgorithms)
-
-function _edg_interpolate_bracket_value(exit_energy::Float64, energy_min::Float64, energy_max::Float64, value_at_min::Float64, value_at_max::Float64)
-    return _edg_algorithms()._edg_interpolate_bracket_value(exit_energy, energy_min, energy_max, value_at_min, value_at_max)
-end
-
-function _edg_target_energy_from_reachable_bracket(
-    planet,
-    target_apoapsis_radius_m::Float64,
-    energy_min::Float64,
-    energy_max::Float64,
-    periapsis_at_min::Float64,
-    periapsis_at_max::Float64,
-)
-    return _edg_algorithms()._edg_target_energy_from_reachable_bracket(planet, target_apoapsis_radius_m, energy_min, energy_max, periapsis_at_min, periapsis_at_max)
-end
-
-function _edg_set_targeting_fallback!(
-    config::AerobrakingEnergyDepletionConfig,
-    state::AerobrakingEnergyDepletionState,
-    i::Int,
-)
-    return _edg_algorithms()._edg_set_targeting_fallback!(config, state, i)
-end
-
-function _edg_run_target_energy_bracketing!(
-    model::AerobrakingEnergyDepletionGuidanceModel,
-    u,
-    p::ODEParams,
-    t::Float64,
-    i::Int,
-)
-    return _edg_algorithms()._edg_run_target_energy_bracketing!(model.config, model.state, u, p, t, i)
+    return EDGAlgorithms.guidance_decision!(model.state, model.config, u, p, t, i)
 end

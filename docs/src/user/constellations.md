@@ -239,3 +239,9 @@ both would sit in the same table.
 Save fields passed to an ensemble with `save_fields` run in each member, which
 has one spacecraft: build them from a member's configuration, since the default
 fields built from the whole constellation are sized for all its spacecraft.
+
+
+Merged summaries reserve `member_tag`, `success`, `error`, `elapsed_s` and `rows`
+for campaign metadata. If a saved field flattens to one of these names, the merge
+raises an `ArgumentError`; give that field a different `column_prefix`. This
+applies to both per-spacecraft and run-wide fields.

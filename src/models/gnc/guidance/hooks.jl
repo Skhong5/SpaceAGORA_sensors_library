@@ -30,11 +30,8 @@ module GuidanceHooks
     using SPICE
 
     const config = Structure
-    # The one module guidance reaches through its parent at run time: EDGAlgorithms,
-    # which loads after GuidanceHooks (`_edg_algorithms()`, typed_edg/guidance_models.jl).
     # Guidance does not look up ControlHooks: what it needs from control comes by
     # dispatch on methods ControlHooks adds (`_is_edg_control`).
-    const _PARENT = parentmodule(@__MODULE__)
 
     export update_guidance!
     export RPOPSOAdaptiveSettings, RPOPSOConfig, RPOPSOConfigurator, RPOPSOCullSettings

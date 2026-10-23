@@ -3,7 +3,7 @@ import ..SimulationModel
 import ..SimulationEngine
 using Arrow: Arrow
 using CSV: CSV
-using DataFrames: DataFrame, nrow
+using DataFrames: DataFrame, nrow, metadata
 
 """
     ConstellationEnsembleResult
@@ -107,7 +107,10 @@ function _constellation_member_rows(position::Integer, outcome)::DataFrame
     rows = shared ? copy(outcome.spacecraft) : outcome.spacecraft
     rows[!, "spacecraft"] = fill(Int32(position), nrow(rows))
     run = outcome.run
-    run === nothing && return rows
+    set_presence(table) = SimulationModel.IOOutputs._set_long_column_presence!(table,
+        Dict(name => [Int(position)] for name in names(table)
+             if !(name in _CONSTELLATION_IDENTITY) && name != "time"))
+    run === nothing && return set_presence(rows)
     isequal(run[!, "time"], rows[!, "time"]) ||
         error("Member $(position)'s run table and spacecraft table have different saved times.")
     for name in names(run)
@@ -118,7 +121,7 @@ function _constellation_member_rows(position::Integer, outcome)::DataFrame
             "column_prefix."))
         rows[!, name] = shared ? copy(run[!, name]) : run[!, name]
     end
-    return rows
+    return set_presence(rows)
 end
 
 # The folder name of member `position` (see `_ensemble_member_configuration`):
@@ -140,6 +143,7 @@ function _constellation_ensemble_result(args::SimulationConfiguration, member_co
     count = length(spacecraft)
     slot_part(sc, part) = sc.constellation_slot === nothing ? missing : Int16(getproperty(sc.constellation_slot, part))
     members = nothing
+    presence = Dict{String, Vector{Int}}()
     last_rows = Union{Nothing, DataFrame}[]
     row_counts = Int[]
     for (k, sample) in enumerate(campaign.samples)
@@ -147,6 +151,10 @@ function _constellation_ensemble_result(args::SimulationConfiguration, member_co
         if sample.success
             outcome = sample.value
             rows = _constellation_member_rows(position, outcome)
+            for name in names(rows)
+                (name in _CONSTELLATION_IDENTITY || name == "time") && continue
+                push!(get!(presence, name, Int[]), Int(position))
+            end
             push!(row_counts, nrow(rows))
             push!(last_rows, nrow(rows) == 0 ? nothing : rows[nrow(rows):nrow(rows), :])
             if members === nothing
@@ -167,6 +175,8 @@ function _constellation_ensemble_result(args::SimulationConfiguration, member_co
     end
     members === nothing && (members = DataFrame(spacecraft=Int32[], spacecraft_id=Int64[],
         plane=Union{Missing, Int16}[], slot=Union{Missing, Int16}[], time=Float64[]))
+
+    SimulationModel.IOOutputs._set_long_column_presence!(members, presence)
 
     positions = [sample.index for sample in campaign.samples]
     constellation = DataFrame(
@@ -189,6 +199,9 @@ function _constellation_ensemble_result(args::SimulationConfiguration, member_co
         end
     end
     for name in last_names
+        name in names(constellation) && throw(ArgumentError(
+            "merged constellation summary reserves column '$name' for campaign metadata; " *
+            "choose a different SaveField column_prefix"))
         constellation[!, name] = [last === nothing || !(name in names(last)) ? missing : last[1, name]
                                   for last in last_rows]
     end
@@ -211,7 +224,9 @@ function _write_constellation_results!(args::SimulationConfiguration, members::D
     write(path, writer) = SimulationModel.IOSerialization._atomic_write_file(path, writer)
     files = String[]
     SimulationEngine._typed_save_bundle_enabled() &&
-        push!(files, write(joinpath(directory, "constellation_members.feather"), tmp -> Arrow.write(tmp, members)))
+        push!(files, write(joinpath(directory, "constellation_members.feather"), tmp -> Arrow.write(tmp, members;
+            metadata=Dict(SimulationModel.IOOutputs._LONG_COLUMN_SPACECRAFT_KEY =>
+                metadata(members, SimulationModel.IOOutputs._LONG_COLUMN_SPACECRAFT_KEY)))))
     settings.save_csv &&
         push!(files, write(joinpath(directory, "constellation_members.csv"), tmp -> CSV.write(tmp, members)))
     push!(files, write(joinpath(directory, "constellation_summary.csv"), tmp -> CSV.write(tmp, constellation)))

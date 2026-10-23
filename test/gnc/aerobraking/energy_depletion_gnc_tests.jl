@@ -10,7 +10,6 @@ end
 using Test
 using ComponentArrays
 using LinearAlgebra
-using SpecialFunctions
 using StaticArrays
 
 const _EDG_SM = SimulationModel
@@ -22,7 +21,6 @@ const _ODYSSEY_HP_INITIAL_M = 100e3
 const _ODYSSEY_EPOCH = (year=2001, month=11, day=6, hour=19, minute=0, second=0.0)
 const _VEX_RA_INITIAL_M = 72_649e3
 const _VEX_HP_INITIAL_M = 136e3
-const _VEX_TARGET_RA_M = 72_480e3
 const _VEX_EPOCH = (year=2014, month=5, day=19, hour=4, minute=0, second=0.0)
 
 function _edg_test_context(;
@@ -142,21 +140,11 @@ end
 _edg_clocked(ctx) = _EDG_SM.EDGServices._borrow_context(ctx.p, _EDG_SM.EDGServices._edg_state_clock(ctx.state))
 
 @testset "VEX N-body target-energy correction" begin
-    hooks = _EDG_SM.ControlHooks
+    # The prediction's gravity query adds the run's N-body acceleration; the target
+    # energy correction itself is tested in SpaceAGORAEDG.
+    gravity = _EDG_SM.EDGServices._edg_prediction_gravity_query
     spice_path = joinpath(REPO_ROOT, "data", "GRAMSuite.jl", "GRAM Suite 2.0", "SPICE")
     planet = _EDG_SM.Venus("", spice_path)
-    periapsis_radius = planet.Rp_e + _VEX_HP_INITIAL_M
-    nominal_target = hooks._edg_target_energy_from_apoapsis(
-        planet,
-        _VEX_TARGET_RA_M,
-        periapsis_radius,
-    )
-    @test hooks._edg_corrected_target_energy_from_apoapsis(
-        planet,
-        _VEX_TARGET_RA_M,
-        periapsis_radius,
-        125.0,
-    ) == nominal_target - 125.0
 
     ctx = _edg_test_context()
     epoch = _EDG_SM.InitialTime(
@@ -215,14 +203,14 @@ _edg_clocked(ctx) = _EDG_SM.EDGServices._borrow_context(ctx.p, _EDG_SM.EDGServic
     position = SVector{3, Float64}(_VEX_RA_INITIAL_M, 0.0, 0.0)
     velocity = SVector{3, Float64}(0.0, 1_000.0, 0.0)
     mass = 650.0
-    acceleration_without_nbody = hooks._edg_prediction_gravity_acceleration(
+    acceleration_without_nbody = gravity(
         p_without_nbody,
         position,
         velocity,
         mass,
         0.0,
     )
-    acceleration_with_nbody = hooks._edg_prediction_gravity_acceleration(
+    acceleration_with_nbody = gravity(
         p_with_nbody,
         position,
         velocity,
@@ -266,28 +254,9 @@ end
     _EDG_SM.update_guidance!(ctx_targeting.guidance, ctx_targeting.u, ctx_targeting.p, 0.0, 1)
     @test ctx_targeting.state.energy_bracketing_count[1] == 1
     @test ctx_targeting.state.energy_bracketing_evaluated[1]
-    sc = ctx_targeting.u.sc[1]
-    pos = SVector{3, Float64}(sc.pos)
-    vel = SVector{3, Float64}(sc.vel)
-    low_drag, max_energy = _EDG_SM.ControlHooks._edg_targeting_bracket_outcomes(
-        ctx_targeting.config,
-        _edg_clocked(ctx_targeting),
-        ctx_targeting.spacecraft,
-        pos,
-        vel,
-        Float64(sc.mass),
-        0.0;
-        heat_load_j_cm2=0.0,
-        heat_rate_control=true,
-        structural_control=true,
-    )
-    bracket_min, bracket_max = extrema((low_drag.energy_jkg, max_energy.energy_jkg))
     # The tiny fixture heat budget cannot certify a targeting family.
     @test isnan(ctx_targeting.state.bracket_min_energy_jkg[1])
-    @test ctx_targeting.state.bracket_max_energy_jkg[1] ≈ low_drag.energy_jkg
     @test ctx_targeting.state.targeting_diagnostics[1].status == :no_admissible_family
-    @test all(isfinite, max_energy.heat_load_switches_s)
-    @test max_energy.heat_load_switches_s[1] < max_energy.heat_load_switches_s[2]
 
     ctx_fallback = _edg_test_context(density_reference_kg_m3=1e-7, guidance_modes=(:targeting, :max_energy_depletion), target_apoapsis_radius_m=1.0e12)
     _EDG_SM.update_guidance!(ctx_fallback.guidance, ctx_fallback.u, ctx_fallback.p, 0.0, 1)
@@ -347,105 +316,12 @@ end
     @test ctx_constraints.state.last_alpha_rad[1] ==
         min(ctx_constraints.state.last_alpha_heat_rate_rad[1], ctx_constraints.state.last_alpha_structural_rad[1])
 
-    hooks = _EDG_SM.ControlHooks
-    sc_state = ctx_constraints.u.sc[1]
-    pos = SVector{3, Float64}(sc_state.pos)
-    vel = SVector{3, Float64}(sc_state.vel)
-    env = hooks._edg_targeting_prediction_environment(ctx_constraints.p, pos, vel, 0.0)
-    track = hooks._edg_closed_form_heat_load_trajectory(
-        ctx_constraints.config,
-        ctx_constraints.p,
-        ctx_constraints.spacecraft,
-        pos,
-        vel,
-        Float64(sc_state.mass),
-        0.0,
-        env,
-    )
-    raw_high = fill(ctx_constraints.config.max_alpha_rad, length(track.time))
-    alpha_heat = hooks._edg_constrained_heat_load_alpha_profile(
-        ctx_constraints.config, ctx_constraints.p, ctx_constraints.spacecraft,
-        ctx_constraints.config.controlled_panel_links, track, raw_high;
-        heat_rate_control=true, structural_control=false,
-    )
-    alpha_structural = hooks._edg_constrained_heat_load_alpha_profile(
-        ctx_constraints.config, ctx_constraints.p, ctx_constraints.spacecraft,
-        ctx_constraints.config.controlled_panel_links, track, raw_high;
-        heat_rate_control=false, structural_control=true,
-    )
-    alpha_high = hooks._edg_constrained_heat_load_alpha_profile(
-        ctx_constraints.config, ctx_constraints.p, ctx_constraints.spacecraft,
-        ctx_constraints.config.controlled_panel_links, track, raw_high;
-        heat_rate_control=true, structural_control=true,
-    )
-    @test alpha_high ≈ min.(alpha_heat, alpha_structural)
-    @test !isdefined(hooks, :_EDG_TPBVP_HEAT_LOAD_PREDICTION_FACTOR)
-
-    shooting_env = hooks._edg_targeting_prediction_environment(ctx_constraints.p, pos, vel, 0.0)
-    shooting_coeffs = hooks._edg_heat_load_coefficients(
-        ctx_constraints.config, ctx_constraints.p, ctx_constraints.spacecraft, shooting_env,
-    )
-    shooting_scale_height = hooks._edg_heat_load_scale_height(ctx_constraints.p)
-    shooting_costates = SVector{3, Float64}(1.0e9, 0.0, 0.0)
-    low_altitude_state = SVector{9, Float64}(pos..., vel..., shooting_costates...)
-    high_altitude_pos = normalize(pos) * (planet.Rp_e + 120e3)
-    high_altitude_state = SVector{9, Float64}(high_altitude_pos..., vel..., shooting_costates...)
-    low_altitude_derivative, _, _ = hooks._edg_heat_load_shooting_stage(
-        ctx_constraints.config, ctx_constraints.p, ctx_constraints.spacecraft,
-        Float64(sc_state.mass), 0.0, 0.0, low_altitude_state,
-        shooting_coeffs, shooting_scale_height, 0.05, ctx_constraints.config.max_alpha_rad;
-        heat_rate_control=false, structural_control=false,
-    )
-    high_altitude_derivative, _, _ = hooks._edg_heat_load_shooting_stage(
-        ctx_constraints.config, ctx_constraints.p, ctx_constraints.spacecraft,
-        Float64(sc_state.mass), 0.0, 0.0, high_altitude_state,
-        shooting_coeffs, shooting_scale_height, 0.05, ctx_constraints.config.max_alpha_rad;
-        heat_rate_control=false, structural_control=false,
-    )
-    low_gravity = hooks._edg_prediction_gravity_acceleration(
-        ctx_constraints.p, pos, vel, Float64(sc_state.mass), 0.0,
-    )
-    high_gravity = hooks._edg_prediction_gravity_acceleration(
-        ctx_constraints.p, high_altitude_pos, vel, Float64(sc_state.mass), 0.0,
-    )
-    low_aero = SVector{3, Float64}(low_altitude_derivative[4:6]) - low_gravity
-    high_aero = SVector{3, Float64}(high_altitude_derivative[4:6]) - high_gravity
-    @test norm(low_aero) > norm(high_aero)
+    @test !isdefined(_EDG_SM.ControlHooks, :_EDG_TPBVP_HEAT_LOAD_PREDICTION_FACTOR)
 
     root_q = copy(ctx_constraints.spacecraft.links[1].q)
     @test ctx_constraints.spacecraft.links[2].α == ctx_constraints.state.last_alpha_rad[1]
     @test ctx_constraints.spacecraft.links[3].α == ctx_constraints.state.last_alpha_rad[1]
     @test ctx_constraints.spacecraft.links[1].q == root_q
-
-    infeasible_env = (
-        dynamic_pressure=1.0e6,
-        temperature=150.0,
-        molecular_speed_ratio=10.0,
-    )
-    reference_drag_area = _EDG_SM.ControlHooks._energy_depletion_struct_drag_area(
-        ctx_constraints.spacecraft,
-        infeasible_env.temperature,
-        infeasible_env.molecular_speed_ratio,
-        ctx_constraints.config.controlled_panel_links,
-        ctx_constraints.config.max_alpha_rad,
-        ctx_constraints.config,
-    )
-    minimum_drag = infeasible_env.dynamic_pressure * _EDG_SM.ControlHooks._energy_depletion_struct_drag_area(
-        ctx_constraints.spacecraft,
-        infeasible_env.temperature,
-        infeasible_env.molecular_speed_ratio,
-        ctx_constraints.config.controlled_panel_links,
-        ctx_constraints.config.min_alpha_rad,
-        ctx_constraints.config,
-    )
-    @test minimum_drag > ctx_constraints.config.structural_load_limit_pa * reference_drag_area
-    @test _EDG_SM.ControlHooks._energy_depletion_struct_load_root_alpha(
-        ctx_constraints.config,
-        infeasible_env,
-        ctx_constraints.spacecraft,
-        ctx_constraints.config.controlled_panel_links,
-        ctx_constraints.config.max_alpha_rad,
-    ) == ctx_constraints.config.min_alpha_rad
 
     sc1 = ctx_constraints.u.sc[1]
     x_ctx = _EDG_SM.StateSample(SVector{3, Float64}(sc1.pos), SVector{3, Float64}(sc1.vel), sc1.mass; spacecraft_index=1)
@@ -454,100 +330,7 @@ end
     @test torque == SVector{3, Float64}(0.0, 0.0, 0.0)
 end
 
-@testset "EDG Phase 1 legacy equation parity" begin
-    hooks = _EDG_SM.ControlHooks
-    ctx = _edg_test_context(max_energy_submodes=(:heat_rate, :structural_load))
-
-    taf = 1.0
-    rho = 2.2e-7
-    temperature = 150.0
-    speed_ratio = 17.0
-    alpha = 0.61
-    gamma = ctx.args.environment_model.planet.γ
-    gas_constant = ctx.args.environment_model.planet.R
-    s_sin = speed_ratio * sin(alpha)
-    legacy_heat_rate = rho * (1e-4 * taf * gas_constant * temperature * sqrt(gas_constant * temperature / (2pi))) * (
-        (speed_ratio^2 + gamma / (gamma - 1.0) - (gamma + 1.0) / (2.0 * (gamma - 1.0))) *
-        (exp(-s_sin^2) + sqrt(pi) * s_sin * (1.0 + erf(s_sin))) -
-        0.5 * exp(-s_sin^2)
-    )
-    @test hooks._energy_depletion_heat_rate_calc(
-        taf,
-        rho,
-        temperature,
-        temperature,
-        gas_constant,
-        gamma,
-        speed_ratio,
-        alpha,
-    ) ≈ legacy_heat_rate rtol=2e-14
-
-    heat_limit = 0.15
-    alpha_heat = hooks._energy_depletion_heatrate_root_alpha(
-        taf=taf,
-        rho=rho,
-        T_p=temperature,
-        R=gas_constant,
-        gamma=gamma,
-        S=speed_ratio,
-        max_alpha=pi / 2,
-        min_alpha=1e-4,
-        heat_rate_limit=heat_limit,
-        alpha_past=0.2,
-    )
-    @test hooks._energy_depletion_heat_rate_calc(
-        taf,
-        rho,
-        temperature,
-        temperature,
-        gas_constant,
-        gamma,
-        speed_ratio,
-        alpha_heat,
-    ) ≈ heat_limit - 1e-5 atol=2e-10
-
-    sigma = 0.9
-    function legacy_plate(alpha)
-        ss = speed_ratio * sin(alpha)
-        exponential = exp(-ss^2)
-        error_term = 1.0 + erf(ss)
-        cn = ((((2.0 - sigma) / sqrt(pi)) * ss + sigma / 2.0) * exponential +
-              ((2.0 - sigma) * (ss^2 + 0.5) + sigma * sqrt(pi) * ss / 2.0) * error_term) / speed_ratio^2
-        ca = sigma * cos(alpha) * (exponential + sqrt(pi) * ss * error_term) / (sqrt(pi) * speed_ratio)
-        return cn * cos(alpha) - ca * sin(alpha), ca * cos(alpha) + cn * sin(alpha)
-    end
-    panel_area = 3.76 * 1.93
-    bus_area = 2.2 * 1.7
-    cl_panel, cd_panel = legacy_plate(alpha)
-    cl_bus, cd_bus = legacy_plate(pi / 2)
-    expected_cl = (cl_panel * panel_area + cl_bus * bus_area) / (panel_area + bus_area)
-    expected_cd = (cd_panel * panel_area + cd_bus * bus_area) / (panel_area + bus_area)
-    actual_cl, actual_cd = hooks._edg_journal_spacecraft_aero_coefficients(
-        ctx.spacecraft,
-        speed_ratio,
-        (2, 3),
-        alpha,
-    )
-    @test actual_cl ≈ expected_cl rtol=2e-14
-    @test actual_cd ≈ expected_cd rtol=2e-14
-
-    times = [0.0, 100.0]
-    f1, f2 = hooks._edg_closed_form_f1_f2(
-        ctx.args.environment_model.planet,
-        4350.0,
-        deg2rad(-5.25),
-        times,
-        100.0,
-    )
-    @test f1 ≈ 4.6815 atol=1e-12
-    @test f2[1] == 0.0
-    @test f2[2] > 0.0
-    @test hooks._edg_closed_form_density(ctx.args.environment_model.planet, 175e3) > 0.0
-end
-
 @testset "EDG Phase 2 and 3 scheduling parity" begin
-    hooks = _EDG_SM.ControlHooks
-
     ctx_before_targeting = _edg_test_context(
         guidance_modes=(:targeting, :max_energy_depletion),
     )
@@ -557,45 +340,6 @@ end
     @test !ctx_before_targeting.state.energy_bracketing_evaluated[1]
     @test ctx_before_targeting.state.energy_bracketing_count[1] == 0
     @test ctx_before_targeting.state.selected_mode[1] == :inactive
-
-    targeting_grid = hooks._edg_targeting_prediction_time_grid(10.4)
-    @test first(targeting_grid) == 0.0
-    @test last(targeting_grid) == 10.4
-    @test maximum(diff(targeting_grid)) <= 1.0
-
-    fit = hooks._edg_closed_form_correction_fit(planet)
-    @test fit[1:4] == (4350.0, 450.0, -5.25, 2.25)
-    @test fit[5] == (4.560850, -1.715925, -0.375150, 0.376025, -0.254500)
-    @test fit[6][1:4] == (-4.74628450, -3.69824500, -6.06348525, 1.07688200)
-
-    rp = planet.Rp_e + _ODYSSEY_HP_INITIAL_M
-    a = 0.5 * (_ODYSSEY_RA_INITIAL_M + rp)
-    e = 1.0 - rp / a
-    interface_radius = planet.Rp_e + 160e3
-    nu_exit = acos((a * (1.0 - e^2) / interface_radius - 1.0) / e)
-    nu_outbound = 0.5 * nu_exit
-    semi_latus_rectum = a * (1.0 - e^2)
-    radius_outbound = semi_latus_rectum / (1.0 + e * cos(nu_outbound))
-    pos_outbound = SVector{3, Float64}(
-        radius_outbound * cos(nu_outbound),
-        radius_outbound * sin(nu_outbound),
-        0.0,
-    )
-    velocity_scale = sqrt(planet.μ / semi_latus_rectum)
-    vel_outbound = velocity_scale * SVector{3, Float64}(-sin(nu_outbound), e + cos(nu_outbound), 0.0)
-    outbound_duration = hooks._edg_drag_passage_duration(
-        ctx_before_targeting.config,
-        ctx_before_targeting.p,
-        pos_outbound,
-        vel_outbound,
-        461.0,
-    )
-    expected_duration = (
-        hooks._edg_mean_anomaly_from_true(nu_exit, e) -
-        hooks._edg_mean_anomaly_from_true(nu_outbound, e)
-    ) / sqrt(planet.μ / a^3)
-    @test outbound_duration ≈ expected_duration rtol=1e-10
-    @test outbound_duration < 1_000.0
 
     ctx_targeting_once = _edg_test_context(
         density_reference_kg_m3=1e-7,
@@ -648,96 +392,11 @@ end
     @test ctx.state.heat_load_switches_s[1] == (41.0, 41.0)
     @test ctx.state.last_switch_solve_t[1] == 41.0
     @test ctx.state.last_alpha_rad[1] == ctx.config.max_alpha_rad
-
-    hooks = _EDG_SM.ControlHooks
-    for switches in ((30.0,30.0), (Inf,Inf), (NaN,NaN), (40.0,30.0))
-        ctx.state.heat_load_switches_s[1] = switches
-        @test !hooks._edg_heat_load_low_drag_active(ctx.control,30.0,1)
-    end
-    ctx.state.heat_load_switches_s[1] = (30.0,40.0)
-    for t in (30.0,35.0,40.0)
-        @test hooks._edg_heat_load_low_drag_active(ctx.control,t,1)
-    end
-    for t in (29.0,41.0)
-        @test !hooks._edg_heat_load_low_drag_active(ctx.control,t,1)
-    end
-    ctx.state.selected_mode[1] = :targeting
-    @test !hooks._edg_heat_load_low_drag_active(ctx.control,35.0,1)
-end
-
-@testset "EDG prediction treats a zero-duration plan as no switch" begin
-    ctx=_edg_test_context(heat_load_limit_j_cm2=1e12,heat_rate_limit_w_cm2=Inf,structural_load_limit_pa=Inf)
-    sc=ctx.u.sc[1];pos=SVector{3,Float64}(sc.pos);vel=SVector{3,Float64}(sc.vel)
-    times=[0.0,1/3,2/3,1.0]
-    predict(sw)=_EDG_SM.ControlHooks._edg_integrated_max_energy_depletion_trajectory(
-        ctx.config,_edg_clocked(ctx),ctx.spacecraft,pos,vel,Float64(sc.mass),30.0,times,sw;
-        heat_rate_control=false,structural_control=false)
-    empty=predict((Inf,Inf));zero=predict((30.0,30.0));window=predict((30.0,30.0+1/3))
-    @test zero.alpha_profile == empty.alpha_profile
-    @test zero.positions == empty.positions
-    @test zero.velocities == empty.velocities
-    @test zero.alpha_profile == fill(ctx.config.max_alpha_rad,length(times))
-    @test window.alpha_profile[1:2] == fill(ctx.config.min_alpha_rad,2)
-    @test window.alpha_profile[end] == ctx.config.max_alpha_rad
-end
-
-@testset "EDG sampled prediction clock and exact events" begin
-    hooks = _EDG_SM.ControlHooks
-    period = 1 / 3
-    for (t, origin) in ((0.0,0.0), (0.1,0.0), (10/3,0.0), (12.345,12.345), (12.445,12.345))
-        grid = hooks._edg_targeting_prediction_time_grid(2.07; t0=t, period=period, origin=origin)
-        @test first(grid) == 0.0
-        @test last(grid) == 2.07
-        @test all(diff(grid) .> 0.0)
-        @test maximum(diff(grid)) <= period + 1e-12
-        @test all(isapprox((t + x - origin) / period, round((t + x - origin) / period); atol=1e-12) for x in grid[2:end-1])
-    end
-    @test hooks._edg_switch_due(143.33333333333331,143.33333333333334)
-    @test !hooks._edg_switch_due(143.0,143.33333333333334)
-    @test !hooks._edg_switch_due(1.0,Inf)
-    @test_throws ArgumentError hooks._edg_targeting_prediction_time_grid(1.0; period=0.0)
-    @test_throws ArgumentError hooks._edg_targeting_prediction_time_grid(Inf)
-
-    ctx = _edg_test_context(max_energy_submodes=(:heat_rate,),heat_rate_limit_w_cm2=Inf)
-    ctx.state.control_clock_period_s = period
-    ctx.state.control_clock_origin_s = 0.1
-    clock = hooks._edg_targeting_control_clock(_edg_clocked(ctx))
-    @test clock == (period=period,origin=0.1)
-    for link in ctx.spacecraft.links[2:3]; link.α = 0.37; end
-    t = 0.2
-    grid = hooks._edg_targeting_prediction_time_grid(1.0;t0=t,period=period,origin=clock.origin)
-    R=SVector{3,Float64}(ctx.u.sc[1].pos); V=SVector{3,Float64}(ctx.u.sc[1].vel)
-    track=hooks._edg_integrated_targeting_trajectory(ctx.config,_edg_clocked(ctx),ctx.spacecraft,R,V,461.0,t,grid,t;
-        heat_rate_control=false,structural_control=false)
-    @test track.alpha_profile[1] == 0.37
-    @test all(track.alpha_profile[2:end-1] .== ctx.config.min_alpha_rad)
-    @test_throws ErrorException hooks._edg_exact_targeting_exit(ctx.config,ctx.p,ctx.spacecraft,461.0,t,track)
-    ctx.state.control_clock_period_s=0.0
-    @test_throws ArgumentError hooks._edg_targeting_control_clock(_edg_clocked(ctx))
-    # Before its run starts the clock has no period, and a call without an EDG
-    # state has no clock at all; neither is read from the configuration.
-    ctx.state.control_clock_period_s=NaN
-    @test_throws ArgumentError hooks._edg_targeting_control_clock(_edg_clocked(ctx))
-    @test_throws ArgumentError hooks._edg_targeting_control_clock(_EDG_SM.EDGServices._borrow_context(ctx.p))
-
-    # A known crossing inside a coarse interval must not return its endpoint.
-    r=SVector(0.0,0.0,0.0);v=SVector(1.0,0.0,0.0)
-    a(r,v,t)=SVector(0.0,0.0,0.0)
-    re,ve,te=hooks._edg_prediction_event(a,(r,v,t)->r[1]-2.3,r,v,0.0,10.0)
-    @test te ≈ 2.3 atol=1e-8
-    @test re[1] ≈ 2.3 atol=1e-8
-    @test ve == v
-    # A ten-second held command still integrates with the one-second cap.
-    oscillator(r,v,t)=-r
-    slow_r,slow_v=hooks._edg_prediction_advance(oscillator,SVector(1.0,0.0,0.0),zero(v),0.0,10.0)
-    @test abs(slow_r[1]-cos(10.0)) < 0.1
-    @test abs(slow_v[1]+sin(10.0)) < 0.1
 end
 
 @testset "EDG callback clock follows a nonzero solve start" begin
     ctx=_edg_test_context()
     ctx.state.control_clock_period_s=NaN   # set again by the solve's start below
-    hooks=_EDG_SM.ControlHooks
     cb=only(_EDG_SM.SimulationCallbacks.get_control_callbacks(1,ctx.args))
     de=_EDG_SM.SimulationCallbacks
     # End before the first periodic affect so this isolates initialization,
@@ -747,108 +406,8 @@ end
     @test ctx.state.control_clock_origin_s==12.345
     @test ctx.state.control_clock_period_s==ctx.args.control_model.control_rates[1]
     @test sol.u[end]==[1.0]
-    @test hooks._edg_targeting_control_clock(_edg_clocked(ctx)).origin==12.345
+    @test _EDG_SM.EDGServices._edg_targeting_control_clock(_edg_clocked(ctx)).origin==12.345
 end
-
-@testset "EDG refuses a dense passage without an outbound interface" begin
-    c = _edg_test_context()
-    sc = c.u.sc[1]
-    @test_throws ErrorException _EDG_SM.ControlHooks._edg_predict_targeting_outcome(
-        c.config,_edg_clocked(c),c.spacecraft,SVector{3,Float64}(sc.pos),SVector{3,Float64}(sc.vel),
-        Float64(sc.mass),0.0,0.0;heat_rate_control=true,structural_control=true)
-end
-
-@testset "EDG exit direction and evaluated switch certificate" begin
-    CH = _EDG_SM.ControlHooks
-    c = _edg_test_context(density_reference_kg_m3=1e-7)
-    mass = Float64(c.u.sc[1].mass)
-    planet = c.args.environment_model.planet
-    r = SVector{3,Float64}(planet.Rp_e+160e3,0,0)
-    v = SVector{3,Float64}(1,4000,0)
-    track = (h=[160e3],positions=[r],velocities=[v],time=[0.0],alpha_profile=[0.0])
-    ex = CH._edg_exact_targeting_exit(c.config,c.p,c.spacecraft,mass,0.0,track)
-    @test ex.time == 0.0
-    @test ex.position == r
-    @test_throws ErrorException CH._edg_exact_targeting_exit(c.config,c.p,c.spacecraft,mass,0.0,
-        merge(track,(velocities=[SVector{3,Float64}(-1,4000,0)],)))
-    @test_throws ErrorException CH._edg_exact_targeting_exit(c.config,c.p,c.spacecraft,mass,0.0,
-        merge(track,(h=[160e3+1.0],)))
-    pos = SVector{3,Float64}(c.u.sc[1].pos)
-    vel = SVector{3,Float64}(c.u.sc[1].vel)
-    c.state.control_clock_origin_s = 0.125
-    for t in (0.125,0.225)
-        first_tick = t == 0.125 ? t : 1.125
-        last_tick = 2000.125
-        outcome(sw) = CH._edg_predict_targeting_outcome(c.config,_edg_clocked(c),c.spacecraft,pos,vel,mass,t,sw;
-            heat_rate_control=true,structural_control=true)
-        c.state.target_energy_jkg[1] = (outcome(first_tick).energy_jkg+outcome(last_tick).energy_jkg)/2
-        cert = CH._edg_targeting_switch_solution(c.config,c.state,c.p,c.spacecraft,pos,vel,mass,t,1;
-            heat_rate_control=true,structural_control=true)
-        @test cert.left_switch_s >= t
-        @test cert.right_switch_s <= t+2000
-        @test cert.right_switch_s-cert.left_switch_s <= 1.0+1e-12
-        @test CH._edg_at_control_tick(cert.switch_s,1.0,0.125)
-        @test signbit(cert.left_residual_jkg) != signbit(cert.right_residual_jkg) || iszero(cert.residual_jkg)
-        @test abs(cert.residual_jkg) <= min(abs(cert.left_residual_jkg),abs(cert.right_residual_jkg))
-        predicted = outcome(cert.switch_s)
-        @test predicted.energy_jkg-c.state.target_energy_jkg[1] ≈ cert.residual_jkg atol=1e-8
-        env = CH._edg_targeting_prediction_environment(c.p,predicted.exit_position,predicted.exit_velocity,t+predicted.duration_s)
-        @test abs(env.altitude_m-160e3) < 1e-5
-    end
-end
-
-@testset "EDG-T candidate-map certification" begin
-    candidate_times = [0.0, 1.0, 2.0, 3.0]
-
-    ordered_energy = [10.0, 9.0, 8.0, 7.0]
-    feasible_heat = [1.0, 2.0, 3.0, 4.0]
-    ordered_evaluator(t) = begin
-        idx = round(Int, t) + 1
-        (energy_jkg=ordered_energy[idx], heat_load_j_cm2=feasible_heat[idx])
-    end
-    ordered = _EDG_SM.ControlHooks._edg_certify_targeting_candidates(
-        candidate_times,
-        ordered_evaluator;
-        heat_load_limit_j_cm2=5.0,
-        energy_order_tolerance_jkg=1e-6,
-        heat_load_tolerance_j_cm2=1e-6,
-    )
-    @test ordered.times == candidate_times
-    @test ordered.failure == :none
-
-    nonmonotone_energy = [10.0, 9.0, 9.5, 8.0]
-    nonmonotone_evaluator(t) = begin
-        idx = round(Int, t) + 1
-        (energy_jkg=nonmonotone_energy[idx], heat_load_j_cm2=feasible_heat[idx])
-    end
-    nonmonotone = _EDG_SM.ControlHooks._edg_certify_targeting_candidates(
-        candidate_times,
-        nonmonotone_evaluator;
-        heat_load_limit_j_cm2=5.0,
-        energy_order_tolerance_jkg=1e-6,
-        heat_load_tolerance_j_cm2=1e-6,
-    )
-    @test nonmonotone.times == candidate_times[1:2]
-    @test nonmonotone.failure == :energy_order
-    @test nonmonotone.failure_time_s == candidate_times[3]
-
-    infeasible_heat = [1.0, 2.0, 6.0, 4.0]
-    heat_evaluator(t) = begin
-        idx = round(Int, t) + 1
-        (energy_jkg=ordered_energy[idx], heat_load_j_cm2=infeasible_heat[idx])
-    end
-    heat_limited = _EDG_SM.ControlHooks._edg_certify_targeting_candidates(
-        candidate_times,
-        heat_evaluator;
-        heat_load_limit_j_cm2=5.0,
-        energy_order_tolerance_jkg=1e-6,
-        heat_load_tolerance_j_cm2=1e-6,
-    )
-    @test heat_limited.times == candidate_times[1:2]
-    @test heat_limited.failure == :heat_load
-    @test heat_limited.failure_time_s == candidate_times[3]
-end
-
 
 @testset "Retained EDG compatibility configuration" begin
  cfg = _EDG_SM.AerobrakingEnergyDepletionConfig()

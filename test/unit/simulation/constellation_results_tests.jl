@@ -89,6 +89,48 @@ end
 same_columns(a::DataFrame, b::DataFrame) =
     names(a) == names(b) && all(name -> isequal(a[!, name], b[!, name]), names(a))
 
+@testset "summary status cannot be overwritten by saved fields" begin
+    args = configuration([three_body(1)]; results=false)
+    for name in ("success", "error", "elapsed_s", "rows", "member_tag"), per_satellite in (false, true)
+        field = SM.SaveField(:custom, (u, t, i) -> nothing; per_satellite, column_prefix=name)
+        value = per_satellite ? [999.0] : 999.0
+        tables = SM.IOOutputs._build_long_results_tables([0.0, 10.0],
+            [Dict(:custom => value), Dict(:custom => value)], [field], args)
+        outcome = (value=nothing, spacecraft=tables.spacecraft, run=tables.run)
+        sample = SC.MonteCarloSampleResult(index=1, seed=1, success=true, elapsed_s=0.5, value=outcome)
+        campaign = SC.MonteCarloResult([sample], 0.5, 1)
+        @test_throws ArgumentError SC._constellation_ensemble_result(args, [args], campaign)
+    end
+end
+
+@testset "merged field ownership follows constellation positions" begin
+    for checkpoints in (false, true)
+        args = configuration([three_body(1), one_link(2)]; results_layout=:long,
+            checkpoint_enabled=checkpoints, checkpoint_interval_s=100.0)
+        gap = SM.SaveField(:gap, (u, t, integrator) -> [missing]; per_satellite=true)
+        ragged = SM.SaveField(:ragged, (u, t, integrator) ->
+            [u.sc[1].mass < 250.0 ? Float64[] : [t]]; per_satellite=true)
+        clock = SM.SaveField(:clock, (u, t, integrator) -> t)
+        result = quiet(() -> run_constellation_ensemble(args; merge_results=true, return_results=true, fail_fast=true,
+            save_fields=vcat(SM.default_save_fields(member(args, 1)), [gap, ragged, clock])))
+        arrow = Arrow.Table(joinpath(args.simulation_settings.results_directory, "constellation_members.feather"))
+        saved = DataFrame(arrow)
+        key = SM.IOOutputs._LONG_COLUMN_SPACECRAFT_KEY
+        metadata!(saved, key, Arrow.getmetadata(arrow)[key]; style=:note)
+        for table in (result.members, saved)
+            wide = try SM.SceneVisualization._wide_view(table, nothing, 2) catch; DataFrame() end
+            @test "sc1_gap" in names(wide) && "sc2_gap" in names(wide)
+            @test !("sc1_ragged_1" in names(wide)) && "sc2_ragged_1" in names(wide)
+            @test "sc1_clock" in names(wide) && "sc2_clock" in names(wide)
+        end
+        for sample in result.campaign.samples
+            own = sample.value
+            wide = SM.SceneVisualization._wide_view(own.table, run_table(own), 1)
+            @test "sc1_gap" in names(wide) && all(ismissing, wide.sc1_gap)
+        end
+    end
+end
+
 @testset "merged constellation results" begin
     @testset "the default ensemble is unchanged" begin
         dir = mktempdir()
