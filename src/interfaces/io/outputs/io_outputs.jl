@@ -4,6 +4,7 @@ using Arrow
 using CSV
 using DataFrames
 using Dates
+using JSON
 using TOML
 
 using ..IOConfig
@@ -206,6 +207,15 @@ end
 # `sc<i>_` prefix. The run table has one row per saved time: `time` and the
 # run-wide fields. Both flatten values as the wide table does, and which table a
 # field goes to follows its `per_satellite` flag, not its name.
+const _LONG_COLUMN_SPACECRAFT_KEY = "spaceagora.long_column_spacecraft.v1"
+
+# Values alone cannot distinguish an absent field from present missing samples.
+# Keep that schema information on the table and in the saved Arrow schema.
+function _set_long_column_presence!(table::DataFrame, presence)
+    metadata!(table, _LONG_COLUMN_SPACECRAFT_KEY, JSON.json(presence); style=:note)
+    return table
+end
+
 function _build_long_results_tables(times::Vector{Float64}, saved_data::Vector, save_fields, args)
     spacecraft = args.dynamics_model.spacecraft
     num_sats = length(spacecraft)
@@ -219,23 +229,26 @@ function _build_long_results_tables(times::Vector{Float64}, saved_data::Vector, 
         time=repeat(times; inner=num_sats),
     )
     run_df = DataFrame(time=times)
+    presence = Dict{String, Vector{Int}}()
     for field in save_fields
         if field.per_satellite
-            _append_long_field_columns!(spacecraft_df, field, saved_data, num_sats)
+            _append_long_field_columns!(spacecraft_df, field, saved_data, num_sats, presence)
         else
             _append_series_columns!(run_df, field.column_prefix, [snapshot[field.name] for snapshot in saved_data])
         end
     end
+    _set_long_column_presence!(spacecraft_df, presence)
     return (spacecraft=spacecraft_df, run=ncol(run_df) > 1 ? run_df : nothing)
 end
 
-function _append_long_field_columns!(results_df::DataFrame, field, saved_data::Vector, num_sats::Int)
+function _append_long_field_columns!(results_df::DataFrame, field, saved_data::Vector, num_sats::Int, presence)
     values = [snapshot[field.name] for snapshot in saved_data]
     if isempty(values) || num_sats == 0
         _append_series_columns!(results_df, field.column_prefix, [value[sat] for value in values for sat in 1:num_sats])
+        presence[field.column_prefix] = collect(1:num_sats)
         return nothing
     end
-    _fill_long_columns!(results_df, field.column_prefix, values, num_sats) && return nothing
+    _fill_long_columns!(results_df, field.column_prefix, values, num_sats, presence) && return nothing
     # Each spacecraft's series is flattened on its own, as the wide table flattens
     # it, so that spacecraft whose values have different shapes (their thruster
     # counts, the keys of a NamedTuple) each keep their columns. The long columns
@@ -251,6 +264,7 @@ function _append_long_field_columns!(results_df::DataFrame, field, saved_data::V
     end
     for name in order
         columns = [name in names(flat) ? flat[!, name] : nothing for flat in per_sat]
+        presence[name] = findall(!isnothing, columns)
         results_df[!, name] = [columns[sat] === nothing ? missing : columns[sat][row]
                                for row in eachindex(values) for sat in 1:num_sats]
     end
@@ -259,10 +273,10 @@ end
 
 # The long counterparts of `_fill_per_satellite_columns!`, under the same
 # conditions, so a column has the element type the wide table's columns have.
-_fill_long_columns!(::DataFrame, ::String, values, ::Int)::Bool = false
+_fill_long_columns!(::DataFrame, ::String, values, ::Int, presence)::Bool = false
 
 function _fill_long_columns!(
-    results_df::DataFrame, prefix::String, values::Vector{V}, num_sats::Int
+    results_df::DataFrame, prefix::String, values::Vector{V}, num_sats::Int, presence
 )::Bool where {T <: Real, V <: AbstractVector{T}}
     isconcretetype(T) || return false
     _rows_are_one_based(values, num_sats) || return false
@@ -271,11 +285,12 @@ function _fill_long_columns!(
         column[(row - 1) * num_sats + sat] = entries[sat]
     end
     results_df[!, prefix] = column
+    presence[prefix] = collect(1:num_sats)
     return true
 end
 
 function _fill_long_columns!(
-    results_df::DataFrame, prefix::String, values::Vector{V}, num_sats::Int
+    results_df::DataFrame, prefix::String, values::Vector{V}, num_sats::Int, presence
 )::Bool where {T <: Real, S <: AbstractVector{T}, V <: AbstractVector{S}}
     isconcretetype(T) || return false
     _rows_are_one_based(values, num_sats) || return false
@@ -292,7 +307,9 @@ function _fill_long_columns!(
         end
     end
     for comp in 1:n_comp
-        results_df[!, "$(prefix)_$(comp)"] = columns[comp]
+        name = "$(prefix)_$(comp)"
+        results_df[!, name] = columns[comp]
+        presence[name] = collect(1:num_sats)
     end
     return true
 end
@@ -430,7 +447,10 @@ function _write_long_results!(
             csv_paths = merge(csv_paths, NamedTuple{(Symbol(part),)}((csv_path,)))
         end
         if write_bundle
-            feather_path = IOSerialization._atomic_write_file(prefix * "_" * part * ".feather", tmp -> Arrow.write(tmp, df))
+            schema_metadata = part == "spacecraft" ?
+                Dict(_LONG_COLUMN_SPACECRAFT_KEY => metadata(df, _LONG_COLUMN_SPACECRAFT_KEY)) : nothing
+            feather_path = IOSerialization._atomic_write_file(prefix * "_" * part * ".feather",
+                tmp -> Arrow.write(tmp, df; metadata=schema_metadata))
             files[part * "_feather"] = entry(feather_path)
         end
     end

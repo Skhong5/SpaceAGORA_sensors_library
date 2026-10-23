@@ -115,7 +115,9 @@ end
             per_satellite=true, column_prefix="named")
         wide_args = config(dir=mktempdir(), n=2, walker=false, scene=true)
         long_args = config(dir=mktempdir(), layout=:long, n=2, walker=false, scene=true)
-        fields = vcat(SM.default_save_fields(wide_args), [ragged, keyed])
+        gap = SM.SaveField(:gap, (u, t, integrator) -> [i == short ? missing : t for i in 1:2];
+            per_satellite=true, column_prefix="gap")
+        fields = vcat(SM.default_save_fields(wide_args), [ragged, keyed, gap])
         wide = quiet(() -> run_simulation(wide_args; return_results=true, save_fields=fields))
         long = quiet(() -> run_simulation(long_args; return_results=true, save_fields=fields))
         @test "sc$(other)_rag_2" in names(wide.table) && !("sc$(short)_rag_1" in names(wide.table))
@@ -129,11 +131,24 @@ end
         # The viewer offers a channel only when every spacecraft has its column. The
         # long run's wide view leaves out the columns a spacecraft lacks, as its wide
         # table has none, so the same channels are offered.
-        channels = [(column="rag_2",), (column="named_b",), (column="named_a",)]
+        channels = [(column="rag_2",), (column="named_b",), (column="named_a",), (column="gap",)]
         payload(args) = JSON.parsefile(export_viewer_payload(args; textures=false, channels=channels))
         wide_json, long_json = payload(wide_args), payload(long_args)
-        @test [channel["name"] for channel in long_json["frames"]["channels"]] == ["named_a"]
+        @test [channel["name"] for channel in long_json["frames"]["channels"]] == ["named_a", "gap"]
         @test isequal(wide_json["frames"], long_json["frames"])
+        # In-memory long results and a converted wide table retain the same schema,
+        # including present all-missing fields and absent ragged components.
+        for table in (long.table, long_table(wide))
+            restored = SV._wide_view(table, run_table(long), 2)
+            @test Set(names(restored)) == Set(names(wide.table))
+            @test all(name -> isequal(restored[!, name], wide.table[!, name]), names(wide.table))
+        end
+        legacy = copy(long.table)
+        emptymetadata!(legacy)
+        @test !("sc$(short)_gap" in names(SV._wide_view(legacy, run_table(long), 2)))
+        damaged = copy(long.table)
+        metadata!(damaged, "spaceagora.long_column_spacecraft.v1", "{}"; style=:note)
+        @test_throws ArgumentError SV._wide_view(damaged, run_table(long), 2)
     end
     # The thruster levels of a spacecraft with thrusters beside one without, in
     # both orders; the viewer reads the long run as the wide one.

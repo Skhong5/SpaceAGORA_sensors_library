@@ -320,6 +320,14 @@ levels of a spacecraft with thrusters beside one without, has the columns of
 every spacecraft, `missing` where a spacecraft has none. The default stays
 `results_layout = :wide`, whose files are unchanged.
 
+The long table and its Arrow file retain which spacecraft own each column,
+separately from its values. A present channel whose measurements are all `missing`
+remains a channel with gaps; an absent field does not become a channel. This
+schema information is carried in Arrow metadata, so it stays with a moved results
+file. Older draft long files without it retain the earlier fallback: columns
+whose values are all `missing` on one spacecraft are treated as absent. CSV alone
+does not retain this schema metadata.
+
 The viewer reads both layouts. For a long run it reads the spacecraft table as
 views, without copying it, and its page equals that of the same run in the wide
 layout. `run_monte_carlo_visualization` reads each sample's wide results file
@@ -333,10 +341,9 @@ in seconds of simulated time. The default is `10.0` seconds. Decreasing
 `data_rate` produces more rows and larger files; increasing it reduces output
 size but loses temporal resolution.
 
-The `num_steps_to_save` field of `MissionConfiguration` is not read by the
-engine: a run keeps its saved rows in memory and writes its results once, when
-it ends. It must still be positive, and setting it changes nothing else. To
-lower the memory of a long run, raise `data_rate`.
+The `num_steps_to_save` field is retained for configuration compatibility. It
+does not currently control buffering, flushing or peak memory use. Use
+`data_rate` to set the output cadence.
 
 ## Checkpointing
 
@@ -403,6 +410,14 @@ save results), or when they were saved with other save fields or another number 
 spacecraft. It then warns, and its results start at the resume: they are written
 to `resumed_at_<t>s` inside `results_directory` (for example
 `output/resumed_at_2400.0s/`), so the earlier results files are kept as they were.
+The rows file beside the checkpoint is kept too, renamed to
+`simulation_checkpoint.results.before_resume_at_<t>s.bin`: after a run that was
+killed, it may hold the only copy of the earlier rows, since such a run writes no
+results files. A resumed run that saves no results renames it the same way rather
+than removing it. The rename happens at the first new checkpoint, immediately
+before the earlier file would be replaced or removed. If the resume stops before
+then, the file stays at its original path so the earlier checkpoint can still
+read it.
 The returned `configuration` names that folder as its `results_directory`.
 The checkpoint directory defaults to `results_directory/checkpoints` when left
 empty. Besides
@@ -419,6 +434,32 @@ control model, or a sensor kind, that keeps run state of its own adds it to
 the file through `checkpoint_state` (see
 [Run state in checkpoint files](../extensibility.md#Run-state-in-checkpoint-files));
 without it, a resumed run starts that state from its reset.
+
+A run with the burn scheduler (`BaseThrusterModel`) also records, when one is
+set, the maneuver command each spacecraft's maneuver guidance last issued and the
+burn plan installed for it. A command issued before the checkpoint and not yet
+planned, or a plan not yet flown, is then planned and flown in the resumed run as
+in a run never interrupted. A checkpoint written by an earlier SpaceAGORA
+holds no such record, and a run resumed from it starts with no command or plan
+waiting, as before.
+
+The checkpoint also records the orbit each spacecraft is on, once one is past its
+first, so a resumed run continues the count: a `MissionOrbits` run ends after the
+same number of orbits, and the campaign maneuver guidance, the pass-indexed
+density models and the periapsis pulses see the orbits they would have seen. A
+checkpoint written by an earlier SpaceAGORA holds no count, and a run resumed from
+it counts from the first orbit again, as before. If such a checkpoint was written
+after the first orbit, the resumed run's count is behind: a `MissionOrbits` run
+ends late, and the campaign maneuver guidance repeats the maneuvers of the orbits
+already flown. Run it again from its start, or from a checkpoint this version
+wrote.
+
+The atmosphere-entry limit (`SPACEAGORA_ENTRY_TARGET_COUNT`) also retains each
+spacecraft's completed entry count, once one has entered. A resumed run then
+ends at the same entry as an uninterrupted checkpointed run. Older checkpoints
+without this count retain their earlier behavior: counting restarts at zero,
+so a run resumed after an entry can end late. Rerun from the start to obtain a
+checkpoint that includes the count.
 
 The checkpoint also records which spacecraft are active. A spacecraft lost to
 an impact or a touchdown before the checkpoint stays inactive in the resumed
