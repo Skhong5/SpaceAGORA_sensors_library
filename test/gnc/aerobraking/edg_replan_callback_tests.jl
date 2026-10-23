@@ -8,12 +8,13 @@ function SimulationModel.update_control!(probe::EDGReplanCallbackProbe,u,p,t::Fl
     st=probe.state
     push!(probe.records,(time=t,count=st.energy_bracketing_count[i],
         last=st.last_switch_solve_t[i],switch=st.targeting_switch_s[i],
-        diagnostic=st.targeting_diagnostics[i],alpha=p.args.dynamics_model.spacecraft[i].links[2].α))
+        diagnostic=st.targeting_diagnostics[i],alpha=p.args.dynamics_model.spacecraft[i].links[2].α,
+        decision_alpha=st.last_alpha_rad[i]))
     return nothing
 end
 
 @testset "EDG assembled callbacks have one targeting replan owner" begin
-    SM=SimulationModel; CH=SM.ControlHooks; CB=SM.SimulationCallbacks
+    SM=SimulationModel; CB=SM.SimulationCallbacks
     c=_edg_test_context(guidance_modes=(:targeting,:max_energy_depletion),
         density_reference_kg_m3=1e-7,heat_load_limit_j_cm2=30.0,
         gravity_models=(SM.InverseSquaredJ2GravityModel(),))
@@ -26,13 +27,12 @@ end
     nu=acos((sl/radius-1)/e)
     r=SVector(radius*cos(nu),radius*sin(nu),0.0)
     v=sqrt(planet.μ/sl)*SVector(-sin(nu),e+cos(nu),0.0)
-    known=CH._edg_predict_targeting_outcome(c.config,_edg_clocked(c),c.spacecraft,r,v,461.0,0.0,10.0;
-        heat_rate_control=true,structural_control=true)
-    coast=CH._edg_vacuum_apoapsis_correction(c.p,known.exit_position,known.exit_velocity,461.0,known.duration_s)
-    @test coast.event_reached
+    # The reachable target for a switch at 10 s, as SpaceAGORAEDG's kernels give it
+    # (recorded on v0.6.0; SpaceAGORAEDG's tests check the kernels still do).
+    target=9.750451931596396e6
     fields=(;(k=>getfield(c.config,k) for k in fieldnames(typeof(c.config)))...)
     config=SM.AerobrakingEnergyDepletionConfig(;merge(fields,
-        (target_apoapsis_radius_m=norm(coast.position),switch_recompute_interval_s=2.0))...)
+        (target_apoapsis_radius_m=target,switch_recompute_interval_s=2.0))...)
     guide=SM.AerobrakingEnergyDepletionGuidanceModel(config,c.state)
     control=SM.AerobrakingEnergyDepletionControlModel(config,c.state)
     records=NamedTuple[];probe=EDGReplanCallbackProbe(c.state,records)
@@ -46,7 +46,6 @@ end
     u=deepcopy(c.u);u.sc[1].pos .= r;u.sc[1].vel .= v
     u.sc[1].heat_loads .= [100.0,8.0,9.0]
     c.state.heat_load_entry_j_cm2[1]=[100.0,6.0,6.0]
-    @test CH._edg_pass_heat_load_for_links(u.sc[1],(2,3),c.state,1)==3.0
     SM.update_guidance!(guide,u,params,0.0,1)
     initial=c.state.targeting_diagnostics[1]
     @test initial.mode==:targeting
@@ -72,7 +71,7 @@ end
         @test rec.diagnostic.certificate.heat_feasible
         @test rec.diagnostic.certificate.instantaneous_admissible
         @test rec.diagnostic.certificate.heat_load_j_cm2>=3.0+0.05*rec.last
-        @test rec.alpha==CH._edg_base_alpha(control,rec.time,1)
+        @test rec.alpha==rec.decision_alpha==config.max_alpha_rad # The panel follows the high-drag command before the switch.
     end
     @test c.state.energy_bracketing_count[1]==3
     # Accumulated heat must be rechecked by guidance at the next due tick.
@@ -81,7 +80,7 @@ end
     hot.u.sc[1].heat_loads .= [100.0,40.0,41.0]
     hotstate=hot.guide.state
     @test hotstate === hot.control.state
-    @test CH._edg_pass_heat_load_for_links(hot.u.sc[1],(2,3),hotstate,1)==35.0
+    @test hotstate.heat_load_entry_j_cm2[1]==[100.0,6.0,6.0] && isempty(hotstate.heat_load_exit_j_cm2[1])
     SM.update_control!(hot.control,hot.u,hot.params,6.0,1)
     @test hotstate.energy_bracketing_count[1]==3
     @test hotstate.last_switch_solve_t[1]==4.0

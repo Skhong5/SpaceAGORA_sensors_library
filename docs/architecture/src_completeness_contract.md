@@ -52,13 +52,14 @@ This contract defines how canonical source files are classified and what is forb
 1. Typed EDG guidance ownership is `src/models/gnc/guidance/aerobraking/*` (`typed_edg/` and `energy_depletion_lifecycle.jl`).
 2. The older E-EDG and T-EDG strategy routes, their execution files (`control/aerobraking/constraint_tracking.jl`, `control_commands.jl` and `tracking_executor.jl`; the folder now holds the typed EDG control files), `internal/bridge_helpers.jl` and the mission-owned `operations/aerobraking_policy/*` selector were removed; `test/gates/ci_path_policy_gate.jl` keeps those paths retired.
 3. Guidance files must not include control source files directly.
-4. EDG control code in `src/models/gnc/control/` does not define numerical EDG solvers; its compatibility bindings import the typed calculations.
+4. EDG control code in `src/models/gnc/control/` does not define numerical EDG solvers; it calls the companion's control decision through `EDGAlgorithms`.
 5. Propulsive maneuver guidance/control coupling must use typed command buffers; guidance must not mutate thruster runtime state directly.
 6. The typed EDG numerical kernels live in the optional `SpaceAGORAEDG.jl` package.
-   Core `typed_edg/algorithms.jl` is a compatibility dispatcher, not an include
-   aggregator: it must contain exactly the declared package forwarders and no
-   numerical implementations. The source-completeness and EDG ownership gates
-   enforce that exact inventory. Core physical services include only their
+   Core `typed_edg/algorithms.jl` forwards the two decisions and is not an include
+   aggregator: it must contain exactly those two package forwarders, no name list
+   and no numerical implementations. The source-completeness and EDG ownership
+   gates enforce that; the extension accepts only the facade's
+   `IMPLEMENTED_FUNCTIONS`. Core physical services include only their
    reviewed `adapter_queries.jl` capability wrapper; the companion receives no
    raw integrator state or mutable vehicle geometry.
 
