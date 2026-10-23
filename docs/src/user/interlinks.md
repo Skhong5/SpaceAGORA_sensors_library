@@ -581,6 +581,14 @@ register_link!(model, spacecraft, (1, 1), (2, 1), PullLink(3.0, 2_000.0))
 A run refuses at setup a link whose kind has no `link_range_m` method. Links of
 different kinds can be registered in one model.
 
+At a ground station end (see [Ground stations](#Ground-stations)), the hooks
+receive the station's state sample: the station is its `spacecraft`, its
+`spacecraft_index` is `-s`, and it has no mass and no attitude. The station sits
+on the planet, so a kind that tests the planet's occultation should leave a
+station end to the station's elevation mask, as `DataLink` does
+(`a.spacecraft isa GroundStation`). A station's antennas are `RadioTerminal`s,
+which carry a kind only where `terminal_supports` allows it.
+
 ### Supported scope
 
 Interlinks currently apply a translational force to rigid spacecraft, or carry
