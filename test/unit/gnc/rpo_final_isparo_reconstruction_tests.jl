@@ -4,6 +4,8 @@ using Test, LinearAlgebra, StaticArrays, Random, SpaceAGORA, HYPR
 const SM=SpaceAGORA.SimulationModel
 const G=SM.GuidanceHooks
 const C=SM.ControlHooks
+# Retained numerical regression fixture from the paper reconstruction at bfa32f6a.
+# It supports generic actuator/replanning/retiming assertions; no swarm policy is tested here.
 function paper_config()
     cfg = RPOPSOConfig(hypr_mode=:manuscript, n_waypoints=5,n_particles=100,n_iters=60,
         mass_kg=5.,isp_s=60.,w_obs=1e6,w_fuel=1.,safe_distance_m=.5,

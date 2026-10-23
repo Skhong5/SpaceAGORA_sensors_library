@@ -30,7 +30,6 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
    - `test/gates/ci_public_api_surface_gate.jl`
    - `test/gates/ci_hpc_extensibility_docs_gate.jl` (the extension templates, starters and HPC scripts exist, the extensibility and HPC pages keep their markers, and every snippet region of the scripts in `examples/gnc_algorithm_env/` and `examples/walkthrough_env/` appears unchanged as a code block of the page that shows it (`gnc_feedback.md`, `gnc_planning.md`, `custom_effector.md`, `custom_actuator.md`), with each script listed and run by its environment's `smoke.jl`)
    - `test/gates/ci_extension_hook_reference_gate.jl` (every exported function in the hook sections of `docs/public_api_symbols.jl` is a row of `docs/extension_hooks.jl` or a listed non-hook; each row's signature is its docstring's first line, its arity and fallback agree with the method table, its page names it, deprecated rows are consistent and current rows use `spacecraft_index`; listed known gaps fail once they no longer apply)
-   - `test/gates/ci_ppb_workload_coverage_gate.jl` (the paper harness precompile workload names every case and mode the paper phases run; reads the harness definitions only)
    - `test/gates/ci_gnc_typed_command_boundary_gate.jl` (GNC reaches actuators through the typed command boundary; algorithm directories stay in scan scope)
    - `test/gates/ci_gnc_random_stream_gate.jl` (GNC and the in-repo HYPR adapter draw random numbers only from an explicit stream argument: no `default_rng()`, `seed!` or stream-less `rand`/`randn`)
    - `test/gates/ci_project_compat_gate.jl` (every non-standard-library `[deps]` entry has a `[compat]` bound)
@@ -41,6 +40,12 @@ This contract defines merge and release quality gates for SpaceAGORA architectur
    - `test/gates/ci_ppc_mode_profile_parity_gate.jl` (the parallelization benchmark's evaluated mode values, scheduler and declared profile identity agree with the shipped routing profiles it names)
    - `test/gates/ci_runtime_analysis_copy_overhead_gate.jl` (synthetic rows check actual summary/report copy-overhead values, successful-run denominators, failed/empty/zero cases, ordering and input preservation; no simulation or performance measurement)
    - `test/gates/ci_removed_hook_names_gate.jl` (no method, declaration or other use of an extension hook name removed in 0.5.0, and no five-argument `wrench` method or call, in `src/`, `ext/`, `templates/` or `examples/`, found by parsing; the contributor starters do not name a removed hook in any file)
+
+The paper workload coverage gate belongs to
+SpaceAGORAParallelizationStudies.
+It checks that the research workload names every case and mode its paper phases
+run. The core mode-profile parity and runtime-analysis gates above remain
+required.
 
 Additional required smoke checks for this migration track:
 1. `test/smoke/ci_clean_depot_smoke.jl`

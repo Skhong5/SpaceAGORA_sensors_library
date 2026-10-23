@@ -10,7 +10,6 @@
         "pck_override_probes.jl",
         "xval_provenance_probes.jl",
         "reference_system_probes.jl",
-        "aerobraking_study_frame_probes.jl",
         "initial_condition_altitude_probes.jl",
         "parallel_policy_probes.jl",
         "density_selection_probes.jl",

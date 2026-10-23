@@ -44,6 +44,7 @@ test/Manifest.toml
 examples/Manifest.toml
 !test/fixtures/*/fixture.csv
 !test/fixtures/agora_earth_regression.csv
+!test/fixtures/research_contracts/pass_exponential_profile.csv
 data/telemetry/CYGNSS/
 data/telemetry/GRIFEX/
 # Reference and public flight sets synced from Space-FALCON-Lab/spaceagora-verification-data

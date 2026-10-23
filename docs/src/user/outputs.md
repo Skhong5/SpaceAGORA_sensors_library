@@ -110,8 +110,7 @@ change, so:
 - `--output-dir` has no effect on the scripts that choose their own directory:
   `AGORA_Earth.jl` and `AGORA_Keplerian.jl` write to `output/` directly,
   `Earth_Navigation.jl` to `output/observer_noDA/`,
-  `AGORA_Earth_Aerobraking.jl` to `output/earth_aerobraking/`,
-  `AGORA_Mars_RAAN_Scenario.jl` to `output/mars_raan_scenario/`, and the RPO,
+  `AGORA_Earth_Aerobraking.jl` to `output/earth_aerobraking/`, and the RPO,
   robot-arm and compliant multibody demos to their own `output/<demo>/` directories; running
   one of them twice overwrites its previous results;
 - `odyssey_surrogate.jl` runs in its own environment and writes its own files:
@@ -121,6 +120,10 @@ change, so:
   [Odyssey walkthrough](../tutorials/odyssey_surrogate.md));
 - for your own scripts, pass `results_directory=` to `make_example_config` or
   set it on `SimulationSettings`.
+
+The Mars RAAN campaign and its output convention belong to
+SpaceAGORAMissionReconstructions.
+Its launcher and output paths are documented there.
 
 The quickstart example additionally saves four PNG plots under
 `<results_directory>/plots/`. The RPO examples also generate HTML plots.

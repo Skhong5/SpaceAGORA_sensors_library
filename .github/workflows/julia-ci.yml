@@ -46,6 +46,9 @@ jobs:
       - name: Shard plan, matrix shape and verifier self-test
         run: python3 -B .github/scripts/test_ci_shards.py
 
+      - name: Extracted native study route controls
+        run: python3 -B scripts/ci/run_mission_native_smoke.py --self-test
+
       - name: Sparse GRAMSuite retrieval regression
         run: python3 -B .github/scripts/test_gramsuite_sparse.py
 
@@ -54,17 +57,6 @@ jobs:
 
       - name: Full-arc export provenance regression
         run: python3 -B test/scripts/test_xval_fullarc_export.py
-
-      - name: Perturbed-density analyzer regressions
-        shell: bash
-        run: |
-          set -euo pipefail
-          analysis_python_dir="$(mktemp -d "$RUNNER_TEMP/spaceagora-analysis-python.XXXXXX")"
-          trap 'rm -rf "$analysis_python_dir"' EXIT
-          python3 -m venv "$analysis_python_dir"
-          "$analysis_python_dir/bin/python" -m pip install numpy pandas pyarrow tomli
-          "$analysis_python_dir/bin/python" -m unittest discover -s test/scripts -p test_analyze_campaign.py -v
-          "$analysis_python_dir/bin/python" -m unittest discover -s test/scripts -p test_perturbed_modes_analyze.py -v
 
       - name: Plan shards
         id: plan
@@ -466,6 +458,19 @@ jobs:
       - name: Example suite smoke shard
         run: julia --startup-file=no --project=. .github/scripts/ci_example_shard.jl
 
+      # Qualify the private Mars RAAN study once when a read credential is available.
+      # Missing credentials explicitly skip native coverage; supplied credentials
+      # make fetch/setup/native failures fatal. Existing licensed inputs are linked.
+      - name: Extracted pinned Mars RAAN native smoke
+        if: matrix.shard == 'examples-1'
+        env:
+          SPACEAGORA_RESEARCH_READ_TOKEN: ${{ secrets.SPACEFALCON_REPO_READ_TOKEN }}
+        run: >-
+          python3 -B scripts/ci/run_mission_native_smoke.py
+          --workspace "$GITHUB_WORKSPACE"
+          --scratch "$RUNNER_TEMP/mission-native-study"
+          --julia "$(command -v julia)"
+
       - name: Mark shard complete
         run: touch "$SPACEAGORA_CI_SHARD_REPORT_DIR/job.ok"
 
@@ -664,13 +669,6 @@ jobs:
         run: |
           julia --startup-file=no --project=scripts/dev -e 'using Pkg; Pkg.instantiate()'
           julia --startup-file=no --project=. scripts/dev/run.jl test_cygnss_environment.jl
-
-      - name: CYGNSS offline data-access checks
-        run: |
-          python3 -m venv /tmp/spaceagora-cygnss-tools
-          /tmp/spaceagora-cygnss-tools/bin/python -m pip install -r scripts/dev/requirements-cygnss.txt
-          /tmp/spaceagora-cygnss-tools/bin/python test/scripts/test_cygnss_fetch.py
-          /tmp/spaceagora-cygnss-tools/bin/python benchmarks/studies/cygnss_reconstruction/fetch_cygnss_l1_states.py --self-test
 
       - name: README quickstart artifact checker regressions
         run: python3 -B -m unittest discover -s test/scripts -p test_readme_quickstart.py -v

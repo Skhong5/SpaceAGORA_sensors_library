@@ -48,9 +48,9 @@ Do not combine old and new rows on the strength of a case name. Likewise,
 benchmark exclusions recorded in an old investigation must be requalified
 before they are lifted or described as current failures.
 
-The maintained phase definitions are in
-`benchmarks/studies/paper_parallelization_benchmarks/cli.jl`, with the case guide
-in [CASES.md](../../benchmarks/studies/paper_parallelization_benchmarks/CASES.md).
+The paper phase definitions and
+case guide (SpaceAGORAParallelizationStudies)
+now live in SpaceAGORAParallelizationStudies.
 The larger B7–B14 families cover constellation size, Monte Carlo throughput,
 atmosphere fidelity, force/actuator stacks, interacting propagation, fixed
 resource splits, and mission/output work. Preview excludes these heavy
@@ -83,8 +83,6 @@ SPACEAGORA_PPC_PROFILE=full SPACEAGORA_PPC_CASES=independent_1sat_1hr \
 SPACEAGORA_PPC_MODES=serial,outer_threads SPACEAGORA_PPC_THREADS=1,4 \
   julia --project=examples benchmarks/studies/parallelization_performance.jl full --warmup=1
 
-SPACEAGORA_PPB_PHASES=B7,B8 SPACEAGORA_PPB_DRY_RUN=1 \
-  julia --project=examples benchmarks/studies/paper_parallelization_benchmarks.jl
 ```
 
 Use the tool usage headers for allocation probes and raw state dumps. The

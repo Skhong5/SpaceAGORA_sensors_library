@@ -6,8 +6,7 @@ Base.include(ex -> ex == :(examples = list_examples()) ? :(examples = String[]) 
 @testset "Example commands isolate the optional companion" begin
     for name in ("Earth_RPO_CubeSat_MPC.jl", "Earth_RPO_CubeSat_MPC_Batch.jl",
             "Earth_RPO_CubeSat_MPC_PlannerComparison.jl", "Earth_RPO_CubeSat_MPC_Replanning.jl",
-            "Robot_Arm_Planner_Cloth_Demo.jl",
-            "Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl")
+            "Robot_Arm_Planner_Cloth_Demo.jl")
         cmd=routing.example_command(joinpath(routing.EXAMPLES_DIR,name))
         @test "--project=$(joinpath(routing.EXAMPLES_DIR,"rpo_planner_env"))" in cmd.exec
         @test all(!startswith(arg,"--load") && arg!="-L" for arg in cmd.exec)
@@ -22,20 +21,5 @@ Base.include(ex -> ex == :(examples = list_examples()) ? :(examples = String[]) 
         @test ok
         @test !has_nan
         @test occursin("baseline_core_only_ok",output)
-    end
-end
-
-@testset "The paper entry point uses the isolated companion environment" begin
-    mktempdir() do output_root
-        withenv("HYPR_OUTPUT_ROOT"=>output_root) do
-            path=joinpath(routing.EXAMPLES_DIR,"Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl")
-            @test path in routing.list_examples()
-            ok,has_nan,output=routing.run_example(path)
-            @test ok
-            @test !has_nan
-            @test occursin("hypr_paper_startup_smoke_ok reconstruction",output)
-            @test !occursin("CASE_START",output)
-            @test isempty(readdir(output_root))
-        end
     end
 end
