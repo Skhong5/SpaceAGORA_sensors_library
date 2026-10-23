@@ -842,7 +842,11 @@ planet's gravitational parameter (m³/s²), `spacecraft` the run's spacecraft
 models (the power and data policies score nothing without them) and `context`
 the link context. The orbital policies take each link's force from its
 `interlink_wrench` (by default its `link_force`), or from a caller's
-`candidate_force(target, partner, link)`.
+`candidate_force(target, partner, link)`. The target is a spacecraft run-state
+view. A spacecraft partner is also a run-state view; a ground-station partner
+is a `StateSample` with its station model, inertial position and velocity and
+negative station index. A callback that handles station links must accept
+that sample rather than assume both arguments are spacecraft state views.
 """
 function score_candidates!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real;
 	candidate_force=nothing, spacecraft=nothing, context=LinkContext())

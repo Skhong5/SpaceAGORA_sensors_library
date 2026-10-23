@@ -56,9 +56,12 @@ The rate (bit/s) at which the data source `source`, on the spacecraft whose
 state sample is `x`, produces data at `t` seconds into the run; `ctx` gives the
 time and the planet. The engine asks for it at every right-hand-side evaluation,
 for each source of each active spacecraft, and integrates it into the
-spacecraft's `data_produced_bits`. A source kind of your own implements it, for
-example imaging only over a region, a duty cycle, or a rate that depends on the
-attitude. The rate must be finite and nonnegative. There is no default: a run
+spacecraft's `data_produced_bits`. It also evaluates the hook when saving data
+rates and when `DataBacklogPolicy` scores a candidate spacecraft transmitter
+with a data store at a scheduling step. These calls can revisit the same state and time; return the
+rate without advancing model state or relying on a particular call count.
+A source kind of your own implements it, for example imaging only over a
+region, a duty cycle, or a rate that depends on the attitude. The rate must be finite and nonnegative. There is no default: a run
 refuses at setup a source kind without a method.
 """
 function data_production_bps end
