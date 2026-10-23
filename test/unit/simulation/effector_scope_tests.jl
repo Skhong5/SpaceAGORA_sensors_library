@@ -252,10 +252,10 @@ end
         AlgorithmGuidance(algorithm=EDGGuidanceAlgorithm(), spacecraft_index=1)))
     @test SE._resolve_effector_scopes(with_binding(
         AlgorithmGuidance(algorithm=ApoapsisBurnPlanner(delta_v_mps=1.0), spacecraft_index=1))) isa SimulationConfiguration
-    # GNC models take AllSpacecraft, BoundSpacecraft or CoupledSpacecraft only.
+    # A GNC model takes a SpacecraftSelection too (from 0.7.0), resolved when the run starts.
     gnc = SM.SimConfig._with_configuration(configuration((InverseSquaredGravityModel(),));
         control_model=SM.ControlModel(control_effectors=(SelectingControl(),), control_rates=[1.0]))
-    @test_throws "which scopes dynamic effectors" SM.SimulationCallbacks.check_spacecraft_scopes(gnc)
+    @test SM.SimulationCallbacks.check_spacecraft_scopes(gnc) === nothing
     # A run set up by hand must resolve scoped entries first.
     unresolved = configuration((InverseSquaredGravityModel(), scoped(push, BoundSpacecraft((1,)))))
     u0 = SE.build_initial_conditions(unresolved)

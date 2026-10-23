@@ -214,7 +214,7 @@ function _score_unit(objective)
     objective isa SP.SemimajorAxisRatePolicy && return "m/s"
     objective isa SP.EccentricityRatePolicy && return "1/s"
     objective isa Union{SP.PowerDeliveryPolicy, SP.EnergyBalancingPolicy} && return "W"
-    objective isa SP.DataThroughputPolicy && return "bit/s"
+    objective isa Union{SP.DataThroughputPolicy, SP.DataBacklogPolicy} && return "bit/s"
     objective isa SP.WeightedPolicy && return "1"
     return ""
 end

@@ -22,7 +22,12 @@ Each criterion takes one value or a collection (`planes=1`, `ids=101:108`). A ru
 resolves the selection to run positions once, when it starts, and refuses a
 selection that names an id no spacecraft or two spacecraft hold, a plane or slot
 no spacecraft holds, or a position outside the run. Use it as the scope of
-`scoped`.
+`scoped`, or return it from a GNC model's `spacecraft_scope`.
+
+Two selections are equal when their criteria are equal and their `where` is the
+same function object (`===`). A GNC model's scope must not change during the run,
+so such a model keeps its selection in a field and returns that object: a selection
+built anew at each call, with a new closure for `where`, is a different scope.
 """
 struct SpacecraftSelection{W} <: SpacecraftScope
     positions::Union{Nothing, Vector{Int}}
