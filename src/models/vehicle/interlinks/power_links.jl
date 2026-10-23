@@ -66,8 +66,9 @@ link_terminal(::PowerReceiver) = true
 
 """
     beam_spot_radius_m(link::PowerBeamLink, distance_m) -> Float64
+    beam_spot_radius_m(beam::GaussianBeam, distance_m) -> Float64
 
-The 1/e² radius (m) of `link`'s beam at `distance_m` from its waist:
+The 1/e² radius (m) of `link`'s beam (or of `beam`) at `distance_m` from its waist:
 `w0 √(1 + (d / z_R)²)`, with the Rayleigh range `z_R = π w0² / λ`.
 """
 function beam_spot_radius_m(link::PowerBeamLink, distance_m::Real)::Float64
@@ -77,8 +78,9 @@ end
 
 """
     beam_capture_fraction(link::PowerBeamLink, radius_m, distance_m) -> Float64
+    beam_capture_fraction(beam::GaussianBeam, radius_m, distance_m) -> Float64
 
-The fraction of `link`'s beam power within `radius_m` of its axis at
+The fraction of `link`'s beam power (or `beam`'s) within `radius_m` of its axis at
 `distance_m`, the share a centred circular aperture of that radius captures:
 `1 − exp(−2 r² / w²)`, with `w` the spot radius there.
 """

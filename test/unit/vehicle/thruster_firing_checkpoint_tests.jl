@@ -161,7 +161,7 @@ refusal(f) = (err = outcome(f); err isa ArgumentError ? sprint(showerror, err) :
                              "no firing dynamics" => configuration(firing=false))
             @testset "$name" begin
                 msg = refusal(() -> resume!(pair, args))
-                @test msg isa String && occursin("thrusters with firing dynamics differ from the checkpoint's", msg)
+                @test msg isa String && occursin(r"thrusters with firing dynamics.*differ from the checkpoint's", msg)
             end
         end
         @test refusal(() -> resume!(pair, configuration())) === nothing                    # the same configuration resumes
@@ -177,7 +177,7 @@ refusal(f) = (err = outcome(f); err isa ArgumentError ? sprint(showerror, err) :
         @test SE._actuator_place(only(on_panel.dynamics_model.spacecraft), panel_jets[1]) == (1, 2, 1)
         pair = interrupted_pair(() -> configuration(on=:root))
         msg = refusal(() -> resume!(pair, configuration(on=:panel)))
-        @test msg isa String && occursin("thrusters with firing dynamics differ from the checkpoint's", msg)
+        @test msg isa String && occursin(r"thrusters with firing dynamics.*differ from the checkpoint's", msg)
         @test bits(resume!(pair, configuration(on=:root))) == bits(pair.straight_sol)
         # Restored onto a thruster on the panel, a run continues as well.
         panel_pair = interrupted_pair(() -> configuration(on=:panel))
@@ -198,7 +198,7 @@ refusal(f) = (err = outcome(f); err isa ArgumentError ? sprint(showerror, err) :
             occursin("SpaceAGORA 0.4 or earlier", msg)
         rewrite_snapshot!(pair.interrupted, snapshot -> nothing)
         msg = refusal(() -> resume!(pair, configuration()))
-        @test msg isa String && occursin("thrusters with firing dynamics, whose run state this checkpoint does not hold", msg)
+        @test msg isa String && occursin(r"thrusters with firing dynamics.*whose run state this checkpoint does not hold", msg)
         rewrite_snapshot!(pair.interrupted, snapshot -> (version=3,))
         msg = refusal(() -> resume!(pair, configuration()))
         @test msg isa String && occursin("version 1 or 2 is required", msg)

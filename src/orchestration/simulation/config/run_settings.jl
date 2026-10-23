@@ -88,6 +88,7 @@ end # struct FilePaths
     checkpoint_directory::String = "" # Empty => use results_directory/checkpoints
     resume_from_checkpoint::Bool = false # Resume run from latest checkpoint if present
     articulated_live_pose_loads::Bool = false # Articulated spacecraft: aero and facet SRP per link at the live link poses, per-body gravity gradient (default off: loads act on the root body from the configured geometry)
+    results_layout::Symbol = :wide # :wide (one row per saved time, `sc<i>_` columns per spacecraft) or :long (one row per spacecraft and saved time, run-wide fields in a table of their own)
 end # struct SimulationSettings
 
 # 2.6. Mission Configuration
@@ -99,7 +100,7 @@ struct MissionConfiguration
     number_of_orbits::Int # Number of orbits to propagate for (if mission_type is "Orbits")
     mission_time::Float64 # Total mission time in seconds (if mission_type is "Time")
     orientation_sim::Bool # Whether to simulate orientation dynamics (if false, only position and velocity are simulated)
-    num_steps_to_save::Int # Number of time steps to store in memory during the simulation before writing to a file
+    num_steps_to_save::Int # Retained configuration field; does not control runtime buffering or flushing
     data_rate::Float64 # Fixed data output rate in seconds, used for saveat in solve
 
     # ii) Inner constructor with data type conversion and validation

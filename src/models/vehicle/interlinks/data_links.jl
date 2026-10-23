@@ -155,6 +155,7 @@ link_terminal(::RadioTerminal) = true
 terminal_shed_tier(::RadioTerminal) = 1
 
 _link_needs_terminals(link::DataLink) = _budget_needs_terminals(link.budget)
+_needs_terminals_reason(::DataLink) = " (a ShannonBudget reads both radios)"
 
 function link_available(link::DataLink, a, b, ctx)
     separation = norm(a.pos_ii - b.pos_ii)

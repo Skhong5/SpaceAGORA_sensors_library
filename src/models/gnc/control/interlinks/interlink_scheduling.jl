@@ -152,10 +152,15 @@ end
 
 # ---- The orbital policies ---------------------------------------------------------
 
-# The link's forces on the candidate's two ends (`link_force`), evaluated once
-# for both, or `nothing` when a caller's `candidate_force` gives the forces.
-_link_forces(ctx::SchedulingContext, candidate::LinkCandidate) = ctx._candidate_force === nothing ?
-    link_force(candidate.link, candidate.a, candidate.b, ctx.link_context) : nothing
+# The link's forces on the candidate's two ends (`interlink_wrench`'s, by default
+# `link_force`'s), evaluated once for both, or `nothing` when a caller's
+# `candidate_force` gives the forces.
+function _link_forces(ctx::SchedulingContext, candidate::LinkCandidate)
+    ctx._candidate_force === nothing || return nothing
+    force_a, _, force_b, _ = interlink_wrench(candidate.link, candidate.terminal_a, candidate.terminal_b,
+        candidate.a, candidate.b, ctx.link_context)
+    return (force_a, force_b)
+end
 
 # The force the candidate puts on spacecraft `target`: from the link's forces,
 # or from a caller's `candidate_force(target, partner, link)`. The caller's
@@ -185,7 +190,7 @@ _check_targets(name, targets) = throw(ArgumentError(
 Score each available link by the rate (m/s) at which its force raises the
 osculating semimajor axis of its target spacecraft:
 `da/dt = 2a² (v · F) / (μ m)` at each target end, summed. The force is the
-link's `link_force`. `targets` picks the ends:
+link's, from `interlink_wrench` (by default its `link_force`). `targets` picks the ends:
 
 - a spacecraft vector index: that spacecraft's end only;
 - a vector or range of indices: every end in the set, stored sorted;
@@ -260,7 +265,8 @@ end
 Score each available link by the rate (1/s) at which its force raises the
 eccentricity of its target spacecraft, `de/dt = ê · ė`, at each target end,
 summed. `targets` is a spacecraft vector index, or `:both` for both ends of
-every link. The force is the link's `link_force`.
+every link. The force is the link's, from `interlink_wrench` (by default its
+`link_force`).
 
 At an eccentricity no greater than `sqrt(eps(Float64))` the score is the norm of
 the eccentricity-vector rate, `‖ė‖`. Such norms are not additive, so a candidate
@@ -793,7 +799,8 @@ available candidate, at the run state `state`, and 0 for the others. `mu` is the
 planet's gravitational parameter (m³/s²), `spacecraft` the run's spacecraft
 models (the power and data policies score nothing without them) and `context`
 the link context. The orbital policies take each link's force from its
-`link_force`, or from a caller's `candidate_force(target, partner, link)`.
+`interlink_wrench` (by default its `link_force`), or from a caller's
+`candidate_force(target, partner, link)`.
 """
 function score_candidates!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real;
 	candidate_force=nothing, spacecraft=nothing, context=LinkContext())

@@ -62,7 +62,7 @@ function spec(name; root=ROOT)
         actual == expected || fail("The $name .gitmodules $key does not match its package metadata.")
     end
     if name == "hypr"
-        pin = TOML.parsefile(joinpath(root, "packages", "SpaceAGORAHYPR", "HYPRSource.toml"))
+        pin = TOML.parsefile(joinpath(root, "packages", "HYPRSource.toml"))
         all(get(pin, key, nothing) == item[key] for key in ("url", "uuid", "version")) &&
             pin["rev"] == revision || fail("HYPRSource.toml and the HYPR gitlink must pin the same package revision.")
     end

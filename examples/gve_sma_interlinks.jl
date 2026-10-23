@@ -6,7 +6,7 @@ using CSV
 using DataFrames
 
 function gve_sma_configuration(; dt_max_orbit::Float64=10.0, duration::Float64=3600.0,
-    power::Float64=10_000.0, save_results::Bool=false, with_interlinks::Bool=true)
+    power::Float64=10_000.0, save_results::Bool=false, with_interlinks::Bool=true, beam=nothing)
     # Step 1: Define the Earth and the three-spacecraft test constellation.
     planet = make_no_gram_planet(:earth)
     radii = planet.Rp_e .+ [1000e3, 1050e3, 1050e3]
@@ -20,9 +20,12 @@ function gve_sma_configuration(; dt_max_orbit::Float64=10.0, duration::Float64=3
     end
     model = InterlinkModel()
     # Step 2: Register the two candidate laser momentum links from spacecraft 1.
+    # Given a beam (a GaussianBeam), they are laser beam links, whose force falls
+    # with distance and which the Earth blocks.
     for partner in 2:length(spacecraft)
-        register_link!(model, spacecraft, (1, 1), (partner, 1),
-            LaserMomentumLink(power_w=power, magnification=100.0, range_m=200e3))
+        link = beam === nothing ? LaserMomentumLink(power_w=power, magnification=100.0, range_m=200e3) :
+            LaserBeamLink(power_w=power, magnification=100.0, range_m=200e3; beam, occultation=true)
+        register_link!(model, spacecraft, (1, 1), (partner, 1), link)
     end
     output = joinpath(REPO_ROOT, "output", "gve_sma_interlinks", "dt_$(dt_max_orbit)s")
     # Step 3: Assemble the simulation settings, environment, dynamics, and scheduler.

@@ -26,12 +26,9 @@ contracts. Release evidence for an adapter is in
 - **Private path:** any other way a companion reaches SpaceAGORA code, such as an
   internal module, an internal name or the engine's raw storage. Private paths are
   not supported and can change without notice.
-- **Compatibility package (shim):** `SpaceAGORAHYPR`, at
-  `packages/SpaceAGORAHYPR/`. It keeps older code that loads it working by
-  forwarding to HYPR; it holds no planner of its own.
-- **Compatibility bridge:** EDG's private forwarding list, `COMPATIBILITY_FUNCTIONS`
-  in `src/models/gnc/guidance/aerobraking/typed_edg/algorithms.jl`. It forwards
-  older helper names to the EDG companion.
+- **Decision forwarders:** `src/models/gnc/guidance/aerobraking/typed_edg/algorithms.jl`,
+  which forwards EDG's two decisions to the companion. Until SpaceAGORA 0.6.1 it
+  also forwarded 101 helper names for tests: the compatibility bridge.
 
 ## How the integration checks catch a boundary change
 
@@ -107,18 +104,19 @@ the contract or by another caller.
 
 ### Before you remove an import from HYPR
 
-The compatibility package's `RPO` and `RobotArm` aliases point at HYPR's
-extension namespaces. Code that loads the compatibility package can reach every
-name those namespaces import, even a name HYPR itself never uses. So when you
-clean up imports in HYPR:
+HYPR's own helpers live in its extension's `RPO` and `RobotArm` namespaces, reached
+as `Base.get_extension(HYPR, :HYPRSpaceAGORAExt).RPO` and `.RobotArm`. Code that
+reaches those namespaces can reach every name they import, even a name HYPR itself
+never uses. Removing the old loader does not narrow the service contract or move
+shared bindings. So when you clean up imports in HYPR:
 
-- check the names reachable through those two aliases, as well as the callers in
+- check the names reachable through those two namespaces, as well as the callers in
   each repository;
 - change SpaceAGORA's contract lists in the same reviewed contract version. HYPR's
   `test/service_boundary.jl` requires the names HYPR imports or reaches to equal
   those lists, and each of them to be used in code outside its import;
 - run the checks below, not only a search: a search finds imports, not the code
-  that reaches names through the aliases.
+  that reaches names through the namespaces.
 
 ### Checks for a HYPR boundary change
 
@@ -140,26 +138,32 @@ SpaceAGORA change that breaks one of them fails before it merges. Keep these cov
 
 | Caller | Private access | Before you replace it |
 |---|---|---|
-| SpaceAGORA's EDG regression tests | The bridge helpers, called directly or through model-typed wrappers in `targeting_control.jl` (`_edg_recompute_switches!`, `_edg_base_alpha`, `_edg_command_alpha!`), `edg_compatibility.jl` and `guidance_models.jl` | SpaceAGORA's runtime reaches only the two decisions; the other entries support compatibility and tests, SpaceAGORA's regression tests and the companion's lease tests. Keep them until those tests move to the companion, which owns the kernels. |
-| The companion's `test/runtests.jl` | Private fixtures for the prediction context and kernels, and checks of the compatibility bindings, next to the public analytic-run tests | Keep the assertions on lease expiry, on observation copies and on the real dispatch path. |
+| The companion's kernel regression tests (`test/kernel_fixtures.jl` and the test files it serves) | `SimulationModel.Mars` and `Venus`, `ODEParams` with its `args` and `shared_buffers` fields, and `SimConfig._with_configuration`, in a fixture copied from SpaceAGORA's `test/gnc/aerobraking/energy_depletion_gnc_tests.jl`. The tests reach the kernels through `EDGServices.guidance_decision!` with a test-only `KernelProbe` method | Keep the kernels' inputs projected by SpaceAGORA's real invoker: call them through the decision route, never by a direct call with SpaceAGORA objects. |
+| The companion's `test/runtests.jl` | `SimulationModel.EDGServices._observation_values` and `_geometry_values`, and `ODEParams` construction, next to the public analytic-run tests; its lease probe goes through `EDGServices.guidance_decision!` | Keep the assertions on lease expiry, on observation copies and on the real dispatch path. |
 | The companion's `benchmarks/native_reference/refresh_comparison.jl` and `observer_comparison_cases.jl` | Private model, engine and control aliases, `ODEParams` construction and integrator access | These research scripts belong to the companion's v0.1.0 source pair (core `05de98e`) and do not run on a newer core. A refresh needs a new comparison, with an explicit replacement for these paths and a check that the results are unchanged. |
 
-### The compatibility bridge
+### The decision forwarders
 
-The bridge, `COMPATIBILITY_FUNCTIONS` in `typed_edg/algorithms.jl`, lists the two
-decisions and the helpers kept for compatibility and tests: SpaceAGORA's EDG
-regression tests and the companion's lease tests. SpaceAGORA's runtime reaches
-only the two decisions through it. Its helpers are not
-extra public hooks. The bridge is separate from `EDGServices`, so shrinking
-`EDGServices` leaves it in place. Keep the bridge until each maintained caller has
-moved to a supported call or has been retired on purpose. [Adapter maintenance](adapter_maintenance.md#edg-extraction-and-source-ownership)
-describes how it forwards to the companion.
+`typed_edg/algorithms.jl` forwards the two decisions SpaceAGORA calls at run time,
+`guidance_decision!` and `control_decision!`. The extension accepts only the names
+in the facade's `IMPLEMENTED_FUNCTIONS`, so there is one list.
+
+SpaceAGORA 0.6.1 retired the compatibility bridge, which also forwarded 101 helper
+names for SpaceAGORA's EDG regression tests and the companion's lease test. The
+kernel regression tests moved to the companion, which owns the kernels; SpaceAGORA
+keeps the tests of what it owns: projection and leases, panel application, heat
+accounting, callbacks and the run lifecycle. Three of its targeting integration
+tests start from recorded target values, and the companion checks that its
+kernels still give them. `test/contracts/edg_ownership_checks.jl` refuses a helper
+forwarder, a model-typed wrapper or a helper import added back to a `src` module.
+[Adapter maintenance](adapter_maintenance.md#edg-extraction-and-source-ownership)
+describes how the forwarders reach the companion.
 
 ### Checks for an EDG boundary change
 
 Run the companion's checks in `test/runtests.jl`: the service module and its
 signatures, the names the companion uses, the prediction-context lease, the
-observation copies and the analytic run. Run `test/load_order.jl` in both orders,
+observation copies, the analytic run and the kernel regression tests. Run `test/load_order.jl` in both orders,
 and SpaceAGORA's EDG callback and control tests.
 
 - Go through the real path, from SpaceAGORA through the extension to the

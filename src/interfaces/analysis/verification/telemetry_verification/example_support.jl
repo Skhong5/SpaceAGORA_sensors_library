@@ -52,11 +52,14 @@ using ..SimulationModel.ExampleConfiguration: make_three_body_spacecraft, make_e
 function run_and_report(args::SM.SimulationConfiguration)
     args_eff = _example_smoke_args(args)
     t = @elapsed run_simulation(args_eff)
-    csv_path = joinpath(args_eff.simulation_settings.results_directory, "simulation_results.csv")
+    # The long layout writes its spacecraft table as simulation_results_spacecraft.csv.
+    long_layout = args_eff.simulation_settings.results_layout === :long
+    csv_path = joinpath(args_eff.simulation_settings.results_directory,
+        long_layout ? "simulation_results_spacecraft.csv" : "simulation_results.csv")
     saved_csv_path = nothing
     if args_eff.simulation_settings.results && isfile(csv_path)
         df = CSV.read(csv_path, DataFrame)
-        println("Saved $(nrow(df)) samples to $(abspath(csv_path))")
+        println("Saved $(nrow(df)) $(long_layout ? "spacecraft rows" : "samples") to $(abspath(csv_path))")
         saved_csv_path = csv_path
     end
     println("COMPUTATIONAL TIME = $(t) s")

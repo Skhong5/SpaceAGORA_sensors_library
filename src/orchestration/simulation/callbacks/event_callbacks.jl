@@ -205,7 +205,6 @@ function get_entry_end_callback(num_sats::Int, args::SimulationConfiguration)
     target_entries = _entry_target_count()
     target_entries > 0 || throw(ArgumentError("Entry target callback requires SPACEAGORA_ENTRY_TARGET_COUNT > 0"))
     entry_interface_m = args.environment_model.EI * 1e3
-    entry_counter = zeros(Int64, num_sats)
 
     function condition!(out, u, t, integrator)
         p = integrator.p
@@ -220,39 +219,28 @@ function get_entry_end_callback(num_sats::Int, args::SimulationConfiguration)
         end
     end
 
-    function affect_downcrossing!(integrator, idx::Int64)
-        p = integrator.p
-        if !p.is_active[idx]
-            return nothing
-        end
-
-        entry_counter[idx] += 1
-        completed_entries = entry_counter[idx]
-        if callback_verbose(integrator)
-            println("Entry $(completed_entries) detected for Satellite $idx at time $(integrator.t) seconds!")
-        end
-
-        if completed_entries >= target_entries
-            all_active_reached_target = true
-            @inbounds for sat_idx in eachindex(entry_counter)
-                if p.is_active[sat_idx] && entry_counter[sat_idx] < target_entries
-                    all_active_reached_target = false
-                    break
-                end
-            end
-            if all_active_reached_target
-                if callback_verbose(integrator)
-                    println("Target entry count reached for all active satellites. Stopping simulation.")
-                end
-                if applicable(terminate!, integrator)
-                    terminate!(integrator)
-                end
-            end
-        end
-        return nothing
-    end
-
+    affect_downcrossing!(integrator, idx::Int64) = _record_atmosphere_entry!(integrator, idx, target_entries)
     return _directional_vector_callback(condition!, nothing, affect_downcrossing!, num_sats)
+end
+
+# Shared by the standalone entry limit and the combined atmosphere crossing.
+# The counter changes only for an active spacecraft's downward crossing.
+function _record_atmosphere_entry!(integrator, idx::Int, target_entries::Int)
+    p = integrator.p
+    p.is_active[idx] || return nothing
+    counts = p.shared_buffers.entry_counter
+    counts[idx] += 1
+    if callback_verbose(integrator)
+        println("Entry $(counts[idx]) detected for Satellite $idx at time $(integrator.t) seconds!")
+    end
+    if counts[idx] >= target_entries &&
+            all(i -> !p.is_active[i] || counts[i] >= target_entries, eachindex(counts))
+        if callback_verbose(integrator)
+            println("Target entry count reached for all active satellites. Stopping simulation.")
+        end
+        applicable(terminate!, integrator) && terminate!(integrator)
+    end
+    return nothing
 end
 
 # Reconcile the whole simultaneous-event mask once. Delivered directions are
@@ -281,11 +269,14 @@ function _refresh_crossing_atmosphere_flags!(integrator, events)
     for i in eachindex(p.is_active)
         inside = p.shared_buffers.in_atmosphere[i]
         inside == previous_inside[i] && continue
-        for model in p.args.guidance_model.guidance_effectors
-            SimulationLifecycle.atmosphere_transition!(model, integrator.u, p, integrator.t, i, inside)
+        # Each guidance and control model whose scope names the spacecraft.
+        guidance_models = p.args.guidance_model.guidance_effectors
+        for j in _scope_members(p, :guidance, guidance_models, i)
+            SimulationLifecycle.atmosphere_transition!(guidance_models[j], integrator.u, p, integrator.t, i, inside)
         end
-        for model in p.args.control_model.control_effectors
-            SimulationLifecycle.atmosphere_transition!(model, integrator.u, p, integrator.t, i, inside)
+        control_models = p.args.control_model.control_effectors
+        for j in _scope_members(p, :control, control_models, i)
+            SimulationLifecycle.atmosphere_transition!(control_models[j], integrator.u, p, integrator.t, i, inside)
         end
     end
     return nothing
@@ -303,7 +294,7 @@ function get_edg_heat_callback(num_sats::Int; drag_callback=nothing)
     return _edg_observe_heat_callbacks(original, num_sats)
 end
 
-function get_drag_state_callback(num_sats::Int)
+function get_drag_state_callback(num_sats::Int; entry_target::Int=0)
     condition!(out, u, t, integrator) = begin
         @inbounds for i in 1:num_sats
             alt = norm(CallbackServices._state_position_ii(u, i)) - integrator.p.args.environment_model.planet.Rp_e
@@ -316,6 +307,15 @@ function get_drag_state_callback(num_sats::Int)
                 DiffEqBase.derivative_discontinuity!(integrator, false)
             end
             return nothing
+        end
+        # When an entry limit is enabled, this is also its root. Two continuous
+        # callbacks for the same interface can repeatedly relocate an exit at
+        # the current time, reducing the next step to zero. Count entries first,
+        # preserving the old entry-before-phase-update ordering, on one mask.
+        if entry_target > 0
+            for idx in eachindex(events)
+                events[idx] < 0 && _record_atmosphere_entry!(integrator, idx, entry_target)
+            end
         end
         _refresh_crossing_atmosphere_flags!(integrator, events)
         _apply_active_phase_solver_settings!(integrator)
@@ -733,6 +733,60 @@ function get_trajectory_recorder_callback(rec::TrajectoryRecorder)
         return nothing
     end
     return SavingCallback(save_func, saved_values; saveat=rec.data_rate, save_everystep=false)
+end
+
+# A continuous event truncates the accepted step. Its effect can change the
+# state or the RHS, after which the integrator's live interpolant no longer
+# describes the portion before the event. Drain strictly earlier output times
+# while that interpolant still belongs to the incoming trajectory. The ordinary
+# saving callback retains ownership of a sample exactly at the event time.
+function _save_before_continuous_event!(savers, integrator)
+    for saver in savers
+        while !isempty(saver.saveat) &&
+                integrator.tdir * first(saver.saveat) < integrator.tdir * integrator.t
+            t = pop!(saver.saveat)
+            DiffEqBase.addsteps!(integrator)
+            u = integrator(t)
+            value = saver.save_func(u, t, integrator)
+            saver.saveiter += 1
+            k = saver.saveiter
+            if k <= length(saver.saved_values.t)
+                saver.saved_values.t[k] = t
+                saver.saved_values.saveval[k] = value
+            else
+                push!(saver.saved_values.t, t)
+                push!(saver.saved_values.saveval, value)
+            end
+        end
+    end
+    return nothing
+end
+
+function _save_before_continuous_events(callbacks::CallbackSet, savers)
+    (isempty(savers) || isempty(callbacks.continuous_callbacks)) && return callbacks
+    wrap_effect(::Nothing) = nothing
+    wrap_effect(effect!) = (integrator, event...) -> begin
+        _save_before_continuous_event!(savers, integrator)
+        effect!(integrator, event...)
+    end
+    continuous = map(callbacks.continuous_callbacks) do cb
+        # Lifecycle hooks receive their original callback, as they may inspect
+        # or invoke its affect object. Preserve every other callback option.
+        initialize = (wrapped, u, t, i) -> cb.initialize(cb, u, t, i)
+        finalize = (wrapped, u, t, i) -> cb.finalize(cb, u, t, i)
+        if cb isa ContinuousCallback
+            options = (; (name => getfield(cb, name) for name in fieldnames(typeof(cb))
+                if name ∉ (:condition, :affect!, :affect_neg!, :initialize, :finalize))...)
+            ContinuousCallback(cb.condition, wrap_effect(cb.affect!), wrap_effect(cb.affect_neg!);
+                initialize, finalize, options...)
+        else
+            options = (; (name => getfield(cb, name) for name in fieldnames(typeof(cb))
+                if name ∉ (:condition, :affect!, :len, :initialize, :finalize))...)
+            VectorContinuousCallback(cb.condition, wrap_effect(cb.affect!), cb.len;
+                initialize, finalize, options...)
+        end
+    end
+    return CallbackSet(continuous, callbacks.discrete_callbacks)
 end
 
 """Return a view of the recorded sample times."""

@@ -169,6 +169,15 @@ end
         spaced = frames(three, 22; times=times, data_budget_mb=holds(23, 66))
         @test spaced["pos_dtype"] == "f32" && spaced["count"] == 24
 
+        # Tables given as functions that read them: the same frames.
+        lazy_tables = [table(3, i, collect(0.0:10.0:90.0)) for i in 1:22]
+        lazy_samples = [EnsembleSample(i, string(i), true, Float64(i), "sample $(i)", dir) for i in 1:22]
+        eager = first(SV.build_ensemble_frames(lazy_samples, fill(three, 22), lazy_tables; data_budget_mb=below(10, 66)))
+        read_count = Ref(0)
+        readers = [() -> (read_count[] += 1; t) for t in lazy_tables]
+        lazy = first(SV.build_ensemble_frames(lazy_samples, fill(three, 22), readers; data_budget_mb=below(10, 66)))
+        @test isequal(lazy, eager) && read_count[] == 44                     # an outline pass, then the rows
+
         # The keyword is checked before any results are read.
         for bad in (:f16, "f64", nothing)
             err = try frames(one, 1; position_precision=bad); nothing catch e; e end

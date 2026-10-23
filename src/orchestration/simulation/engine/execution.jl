@@ -357,11 +357,18 @@ function _save_simulation_results_if_enabled!(
     checkpoint_saved_data,
     backbone_saved_times,
     backbone_saved_data,
-    resumed_from_s::Union{Nothing, Float64};
+    resumed_from_s::Union{Nothing, Float64},
+    rows_log=nothing;
     return_table::Bool=false,
     write_files::Bool=true,
 )
     (args.simulation_settings.results || return_table) || return nothing
+    # A fallback that fails before its first checkpoint saves only its new rows
+    # in its own results directory; the old checkpoint streams remain untouched.
+    if checkpoint_active && rows_log !== nothing && rows_log.stream !== nothing && !rows_log.keep_earlier
+        return _save_streamed_results!(args, rows_log, save_fields_resolved, checkpoint_saved_times,
+            checkpoint_saved_data, resumed_from_s; return_table=return_table, write_files=write_files)
+    end
     results_times = if solver_mode == :gravity_backbone_split
         checkpoint_active ? checkpoint_saved_times : backbone_saved_times
     else
@@ -376,6 +383,21 @@ function _save_simulation_results_if_enabled!(
         convert(Vector{Float64}, results_times),
         convert(Vector{SimulationModel.SaveData}, results_data),
     )
+    sink = return_table ? _LONG_TABLES_SINK[] : nothing
+    if args.simulation_settings.results_layout === :long
+        tables = _build_long_results_tables(results_times, results_data, save_fields_resolved, args)
+        sink === nothing || (sink[] = tables)
+        csv_paths = (spacecraft=nothing, run=nothing)
+        schedule_files = nothing
+        if write_files && args.simulation_settings.results
+            schedule_files = _save_link_schedule_if_enabled!(args)
+            csv_paths = _write_long_results!(tables, results_times, args; write_bundle=_typed_save_bundle_enabled(),
+                resumed_from_s=resumed_from_s, link_schedule=schedule_files)
+        end
+        return return_table ? (; csv_path=csv_paths.spacecraft, run_csv_path=csv_paths.run, table=tables.spacecraft,
+            run_table=tables.run, schedule_files) : csv_paths.spacecraft
+    end
+    sink === nothing || (sink[] = _build_long_results_tables(results_times, results_data, save_fields_resolved, args))
     results_df = _build_results_dataframe(results_times, results_data, save_fields_resolved, args)
     csv_path = nothing
     schedule_files = nothing
@@ -383,21 +405,64 @@ function _save_simulation_results_if_enabled!(
         if args.simulation_settings.save_csv
             csv_path = _write_results_csv!(results_df, args)
         end
-        # A run with interlinks writes its link schedule beside its results, from
-        # the history so far; the results manifest lists it.
-        if args.interlink_model !== nothing
-            schedule = link_schedule(args.interlink_model; policy=args.scheduling_policy_model)
-            written = _write_link_schedule!(schedule, args; csv=args.simulation_settings.save_csv,
-                feather=_typed_save_bundle_enabled())
-            schedule_files = (; written..., metadata=_link_schedule_manifest(schedule, args.scheduling_policy_model,
-                args.interlink_model))
-        end
+        schedule_files = _save_link_schedule_if_enabled!(args)
         if _typed_save_bundle_enabled()
             _write_results_bundle!(results_df, results_times, args; csv_path=csv_path, resumed_from_s=resumed_from_s,
                 link_schedule=schedule_files)
         end
     end
     return return_table ? (; csv_path, table=results_df, schedule_files) : csv_path
+end
+
+# Persist only the schedule written by this save, so stale files are never listed.
+function _save_link_schedule_if_enabled!(args)
+    args.interlink_model === nothing && return nothing
+    schedule = link_schedule(args.interlink_model; policy=args.scheduling_policy_model)
+    written = _write_link_schedule!(schedule, args; csv=args.simulation_settings.save_csv,
+        feather=_typed_save_bundle_enabled())
+    return (; written..., metadata=_link_schedule_manifest(schedule, args.scheduling_policy_model,
+        args.interlink_model))
+end
+
+# The results of a run that streams them (`_stream_results_rows!`): the rows still
+# in memory join the streams, then the feathers and the manifest are written from
+# them, and the returned tables read the feathers without copying them. A resume
+# that solves nothing writes nothing: it returns the rows its checkpoint records
+# in the streams (the first `written` saved times) and the ones it keeps, read
+# into memory. The one exception is a resume that took back the streams of a run
+# killed while writing its files (`_start_results_rows!`; `args` are then that
+# run's): it writes them.
+function _save_streamed_results!(args, log, save_fields, times_acc::Vector{Float64}, data_acc::Vector,
+                                 resumed_from_s::Union{Nothing, Float64}; return_table::Bool, write_files::Bool)
+    stream = log.stream
+    sink = return_table ? _LONG_TABLES_SINK[] : nothing
+    in_memory(df) = DataFrame(df; copycols=true)
+    if !write_files && (stream.fresh || !_streamed_results_unfinished(args))
+        keep = Int[i for i in eachindex(times_acc) if _results_row_written(stream.released + i, i == length(times_acc))]
+        kept = _build_long_results_tables(times_acc[keep], data_acc[keep], save_fields, args)
+        per_time = (length(args.dynamics_model.spacecraft), 1)
+        streamed(path, i) = stream.bytes[i] > 0 ?
+            in_memory(SimulationModel.IOOutputs._read_long_results_table(path)[1:(stream.written * per_time[i]), :]) : nothing
+        joined(a, b) = a === nothing ? b : b === nothing ? a : vcat(a, b)
+        tables = (spacecraft=joined(streamed(stream.spacecraft, 1), kept.spacecraft),
+                  run=joined(streamed(stream.run, 2), kept.run))
+        sink === nothing || (sink[] = tables)
+        return return_table ? (; csv_path=nothing, run_csv_path=nothing, table=tables.spacecraft, run_table=tables.run, schedule_files=nothing) :
+            nothing
+    end
+    _stream_results_rows!(log, times_acc, data_acc, save_fields, args; final=true)
+    # A no-solve recovery can finish trajectory streams, but has no restored
+    # link history. Keep earlier schedule bytes without claiming ownership.
+    schedule_files = write_files ? _save_link_schedule_if_enabled!(args) : nothing
+    written = _finish_long_stream!((spacecraft=stream.spacecraft, run=stream.bytes[2] > 0 ? stream.run : nothing), args;
+        steps=stream.written, first_time_s=isnan(stream.first_s) ? nothing : stream.first_s, resumed_from_s=resumed_from_s,
+        link_schedule=schedule_files)
+    mapped(path) = path === nothing ? nothing : SimulationModel.IOOutputs._read_long_results_table(path)
+    tables = (spacecraft=mapped(written.feather.spacecraft), run=mapped(written.feather.run))
+    sink === nothing || (sink[] = (spacecraft=in_memory(tables.spacecraft),
+                                   run=tables.run === nothing ? nothing : in_memory(tables.run)))
+    return return_table ? (; csv_path=written.csv.spacecraft, run_csv_path=written.csv.run, table=tables.spacecraft,
+        run_table=tables.run, schedule_files) : written.csv.spacecraft
 end
 
 function _try_save_simulation_results_if_enabled!(args...)
@@ -465,12 +530,13 @@ function _flatten_spacecraft_gnc(args::SimulationConfiguration)
     g = Any[args.guidance_model.guidance_effectors...]; gr = copy(args.guidance_model.guidance_rates)
     n = Any[args.navigation_model.navigation_effectors...]; nr = copy(args.navigation_model.navigation_rates)
     c = Any[args.control_model.control_effectors...]; cr = copy(args.control_model.control_rates)
+    warned = Set{Any}()
     for (idx, sc) in enumerate(spacecraft)
-        append!(g, SimulationLifecycle.bind_spacecraft(e, idx) for e in sc.guidance.guidance_effectors)
+        append!(g, _bind_declared_gnc(e, idx, sc.id, warned) for e in sc.guidance.guidance_effectors)
         append!(gr, sc.guidance.guidance_rates)
-        append!(n, SimulationLifecycle.bind_spacecraft(e, idx) for e in sc.navigation.navigation_effectors)
+        append!(n, _bind_declared_gnc(e, idx, sc.id, warned) for e in sc.navigation.navigation_effectors)
         append!(nr, sc.navigation.navigation_rates)
-        append!(c, SimulationLifecycle.bind_spacecraft(e, idx) for e in sc.control.control_effectors)
+        append!(c, _bind_declared_gnc(e, idx, sc.id, warned) for e in sc.control.control_effectors)
         append!(cr, sc.control.control_rates)
     end
     return SimulationModel.SimConfig._with_configuration(args;
@@ -480,6 +546,22 @@ function _flatten_spacecraft_gnc(args::SimulationConfiguration)
         dynamics_model=SimulationModel.DynamicsModel(
             SimulationModel.SpacecraftModel[_declares_gnc(sc) ? _without_gnc(sc) : sc for sc in spacecraft],
             args.dynamics_model.dynamic_effectors, args.dynamics_model.effector_scopes))
+end
+
+# A model a spacecraft declares, bound to it. A bound copy whose scope still names
+# every spacecraft acts on every spacecraft, as one declared at configuration level
+# does, which is rarely what declaring it on one meant: warned once per type and run
+# (each member of an ensemble is a run of its own).
+function _bind_declared_gnc(effector, sat_idx::Int, id, warned::Set{Any})
+    bound = SimulationLifecycle.bind_spacecraft(effector, sat_idx)
+    T = typeof(bound)
+    if GNCRuntime.spacecraft_scope(bound) isa GNCRuntime.AllSpacecraft && !(T in warned)
+        push!(warned, T)
+        @warn "$(nameof(T)) is declared on the spacecraft at run position $sat_idx (id $id) and bound to it by " *
+            "bind_spacecraft, but its spacecraft_scope is AllSpacecraft(), so it acts on every spacecraft. Return " *
+            "BoundSpacecraft(($sat_idx,)) from spacecraft_scope for the copy bound to run position $sat_idx."
+    end
+    return bound
 end
 
 # Opt-in factories own fresh callback state and capture the configuration that
@@ -563,6 +645,9 @@ function _resume_engine_state!(args, p, solver_mode, initial_conditions)
             _restore_activity_checkpoint_state!(args, ckpt, p.is_active)
             _restore_interlink_checkpoint_state!(args, ckpt, p.is_active)
             _restore_callback_checkpoint_state!(args, ckpt, p)
+            _restore_maneuver_buffer_checkpoint_state!(ckpt, p)
+            _restore_orbit_counter_checkpoint_state!(ckpt, p)
+            _restore_entry_counter_checkpoint_state!(ckpt, p)
             model_snapshot = _check_model_checkpoint_state(args, ckpt)
             pending_ticks = _pending_periodic_ticks(ckpt)
             results_rows = _results_rows_checkpoint_state(ckpt)
@@ -612,10 +697,14 @@ function _start_run_models!(args, p, u_start, t_start, run_clock, resumed, model
     for control in args.control_model.control_effectors
         SimulationLifecycle.initialize_control!(control, u_start, p, t_start)
     end
-    # The scopes the initializers resolved, compared with the checkpoint's before
-    # the models' own run state replaces their reset on a resumed run.
-    gnc_scopes = checkpoint_active || resumed ? _gnc_scope_baseline(args) : nothing
+    # The scopes the initializers resolved (the run's GNC scopes, which the ticks,
+    # the right-hand side and the readers follow from here on), compared with the
+    # checkpoint's before the models' own run state replaces their reset on a
+    # resumed run.
+    scopes = _gnc_run_scopes(args)
+    gnc_scopes = checkpoint_active || resumed ? _gnc_scope_record(args, scopes) : nothing
     resumed && _check_gnc_scope_baseline(args, scope_entry, gnc_scopes)
+    p.shared_buffers.gnc_scopes[] = scopes
     resumed && _restore_model_checkpoint_state!(args, model_snapshot)
     checkpoint_active && _check_model_checkpoint_hooks(args)
     SimulationModel.ControlHooks._edg_initialize_heat_accounting!(args, u_start, Float64(t_start))
@@ -709,6 +798,8 @@ function run_simulation(
     visualization && SimulationModel.SceneVisualization.VisualizerServices.require_available()
     return_results && return_solver_metadata &&
         throw(ArgumentError("return_results=true and return_solver_metadata=true cannot be combined."))
+    args.simulation_settings.results_layout in (:wide, :long) || throw(ArgumentError(
+        "SimulationSettings.results_layout must be :wide or :long; got :$(args.simulation_settings.results_layout)."))
     args = _flatten_spacecraft_gnc(args)
     # Scoped dynamic effectors become bare effectors and a table of run positions,
     # before any check reads the effectors by type (see effector_scopes.jl).
@@ -1111,7 +1202,7 @@ function run_simulation(
     # final save read them: containers changed only in place, never rebound.
     results_inputs = (results_args, solver_mode, checkpoint_active, save_fields_resolved, saved_values,
         checkpoint_saved_times, checkpoint_saved_data, backbone_saved_times, backbone_saved_data,
-        resumed ? t_start : nothing)
+        resumed ? t_start : nothing, rows_log)
     # What every solve of the run shares (`_solve_run_interval!`).
     solve_setup = (; p, callbacks, solver_mode, solver_cfg, args, reltol=reltol_tol, abstol=abstol_tol, solver_cache,
         needs_full_solution)
@@ -1164,11 +1255,16 @@ function run_simulation(
             t_cursor = Float64(seg_sol.t[end])
             u_cursor = deepcopy(seg_sol.u[end])
             # The rows first: a checkpoint never records rows that are not in the file.
+            # A run that streams its results writes all but the last row now.
+            _preserve_earlier_results!(rows_log)
+            _stream_results_rows!(rows_log, checkpoint_saved_times, checkpoint_saved_data, save_fields_resolved,
+                results_args)
             rows_entry = _append_results_rows!(rows_log, checkpoint_saved_times, checkpoint_saved_data)
             _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode); is_active=p.is_active,
                 callback_state=_callback_checkpoint_state(args), model_state=_model_checkpoint_state(args),
                 periodic_ticks=_periodic_tick_checkpoint_state(p, t_cursor), gnc_scopes=gnc_scopes,
-                results_rows=rows_entry)
+                results_rows=rows_entry, maneuver_buffers=_maneuver_buffer_checkpoint_state(p),
+                orbits=_orbit_counter_checkpoint_state(p), entries=_entry_counter_checkpoint_state(p))
             checkpoint_written = true
             if string(seg_sol.retcode) != "Success" || !_gravity_backbone_time_reached(t_cursor, t_next)
                 break
@@ -1253,24 +1349,33 @@ function run_simulation(
         # output never shows up. The bundle and checkpoint paths are the
         # engine's own naming (IOConfig), not guesses.
         prefix = _results_bundle_prefix(results_args)
+        long_layout = args.simulation_settings.results_layout === :long
         candidates = Any[saved_results.csv_path, scene_path, export_path]
         # The link schedule this run wrote, beside its results.
         if saved_results.schedule_files !== nothing
             push!(candidates, saved_results.schedule_files.csv, saved_results.schedule_files.feather)
         end
+        long_layout && push!(candidates, saved_results.run_csv_path)
         # The bundle is this run's only when this run wrote it; a leftover
         # from an earlier run in the same directory must not be listed.
         if solved && args.simulation_settings.results && _typed_save_bundle_enabled()
-            push!(candidates, prefix * ".feather", prefix * ".manifest.toml")
+            if long_layout
+                push!(candidates, prefix * "_spacecraft.feather", prefix * ".manifest.toml")
+                saved_results.run_table === nothing || push!(candidates, prefix * "_run.feather")
+            else
+                push!(candidates, prefix * ".feather", prefix * ".manifest.toml")
+            end
         end
         if checkpoint_written
             ck = SimulationModel.IOConfig._checkpoint_paths(args)
             push!(candidates, ck.data, ck.manifest, ck.rows)
+            rows_log !== nothing && rows_log.stream !== nothing && push!(candidates, ck.stream_spacecraft, ck.stream_run)
         end
         files = String[string(f) for f in candidates if f !== nothing && isfile(f)]
         # A resume without usable rows writes beside the earlier results; its
         # configuration names the folder it wrote to.
-        return SimulationResults(saved_results.table, results_args, files, return_solution ? last_sol : nothing)
+        return SimulationResults(saved_results.table, results_args, files, return_solution ? last_sol : nothing,
+            long_layout ? saved_results.run_table : nothing)
     end
     return_solution && return last_sol
     return nothing

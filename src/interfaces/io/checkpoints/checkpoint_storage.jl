@@ -90,6 +90,8 @@ function _clear_checkpoint!(args)
     isfile(paths.data) && rm(paths.data; force=true)
     isfile(paths.manifest) && rm(paths.manifest; force=true)
     isfile(paths.rows) && rm(paths.rows; force=true)
+    rm(paths.stream_spacecraft; force=true)
+    rm(paths.stream_run; force=true)
     return nothing
 end
 
@@ -157,5 +159,23 @@ export _clear_checkpoint!
 export _append_checkpoint_rows!
 export _read_checkpoint_rows
 export _truncate_checkpoint_rows!
+
+# Resolve a constellation member's explicitly recorded results destination.
+# Both disk merging and viewer discovery must make the same recovery choice.
+function _member_results_directory(folder::String, destination)
+    if ismissing(destination)
+        # An old summary cannot identify which recovery bundle supplied its
+        # rows. Never silently substitute the obsolete top-level bundle.
+        if isdir(folder) && any(name -> startswith(name, "resumed_at_") && isdir(joinpath(folder, name)), readdir(folder))
+            throw(ArgumentError("Member $(basename(folder)) has recovery results but no recorded results_subdirectory; " *
+                "select its intended bundle explicitly before merging."))
+        end
+        return folder
+    end
+    relative = normpath(String(destination))
+    (isabspath(relative) || relative == ".." || startswith(relative, "../") || startswith(relative, "..\\")) &&
+        throw(ArgumentError("Member $(basename(folder))'s results_subdirectory must stay inside its member folder."))
+    return relative == "." ? folder : joinpath(folder, rstrip(relative, ('/', '\\')))
+end
 
 end # module IOSerialization

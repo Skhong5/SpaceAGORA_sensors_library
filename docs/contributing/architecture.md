@@ -15,8 +15,8 @@ the ownership and cleanup status below were reconciled against
 Paths are relative to the repository named for each owner. Completed work,
 remaining decisions and proposals are labelled separately. One-run configuration lives under `src/orchestration/simulation/config/`,
 and HYPR is maintained in its own repository with an optional SpaceAGORA adapter.
-The compatibility package in this tree loads that adapter; it contains no search
-implementation. MuJoCo scene code and its adapter live in the independent
+Loading SpaceAGORA and HYPR directly activates that adapter; core contains no
+HYPR search implementation. MuJoCo scene code and its adapter live in the independent
 [SpaceAGORAMuJoCo.jl repository](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl).
 Pinned checkouts of both external repositories are available under
 `packages/robotics/`; this source layout does not make them mandatory core
@@ -92,8 +92,7 @@ remains beside `src/`. The GRAMSuite extension belongs there even though it
 provides environment-model integration. External companions such as HYPR and
 SpaceAGORAMuJoCo and SpaceAGORAEDG own their implementations in separate repositories;
 this source organization does not bring them into `src/` or make them required
-dependencies. The existing HYPR compatibility package remains under
-`packages/SpaceAGORAHYPR/`.
+dependencies. HYPR is loaded directly alongside SpaceAGORA.
 
 ## Spacecraft assembly and constellation composition
 
@@ -247,12 +246,12 @@ the file that performs each step.
    geometry lives in `planning/rpo/geometry/`, retaining its historical
    `NavigationHooks` bindings. That geometry is not itself a sensor or estimator.
    Core typed EDG models,
-   services and compatibility bindings live in `guidance/aerobraking/typed_edg/`;
+   services and the forwarders of its two decisions live in `guidance/aerobraking/typed_edg/`;
    the optional SpaceAGORAEDG companion owns the numerical kernels and is the
    only EDG implementation. Configured HYPR
    execution is provided by the external
-   HYPR package through `SpaceAGORA.HYPRServices`; the local
-   `packages/SpaceAGORAHYPR/` compatibility package loads its adapter.
+   HYPR package through `SpaceAGORA.HYPRServices`; loading `SpaceAGORA` and `HYPR`
+   directly activates its adapter.
    Navigation and guidance hooks run as periodic callbacks between integrator
    steps; control commands are refreshed on periodic or event-driven schedules, and the
    resulting control force and torque are evaluated inside the right-hand side
@@ -422,13 +421,34 @@ interlinks.
   ascending order (`_tick_positions` in `callbacks/gnc_scope.jl`), so a tick
   costs the size of the scope, not the number of spacecraft. A control model
   that consumes a link has its scope read once more, first, to decide whether
-  its producers prepare it (`_ticks_any`). The tick reads the scope after they
-  have, so it follows a scope a producer changed. When the model
+  its producers prepare it (`_ticks_any`). The tick reads the scope again after
+  they have, and a producer that changed it stops the run (see the run's GNC
+  scopes below). When the model
   declares `skip_inactive`, an inactive spacecraft gets `release_command!`
   instead of the tick (`_gnc_tick_in_scope!`). The
   mounted actuators then apply the levels the model holds. An event-driven
   model's own callbacks do this themselves; the burn scheduler keeps a released
   command released at its scheduling passes and burn edges.
+- **The run's GNC scopes.** When the run starts, after the run-start
+  initializers (`_start_run_models!`), the engine takes each guidance,
+  navigation and control model's scope (`_gnc_run_scopes` in
+  `engine/gnc_run_scopes.jl`, held in `SharedBuffers.gnc_scopes`). A checkpoint
+  records the same scopes in its `gnc_scopes` entry, and a resumed run compares
+  that entry before restoring any model's state.
+  - **Fixed for the run.** Each tick compares the scope it reads with the run's
+    (`_check_run_scope`), and one callback after the event-driven models' own
+    compares theirs once per accepted step. A difference stops the run. A
+    `SpacecraftSelection` is resolved once, here, and compared with the run's
+    own copy of its criteria.
+  - **Hooks follow the scope.** For each spacecraft the run lists the control
+    and guidance models whose scope names it, in configuration order, when some
+    model acts on fewer than every spacecraft. The right-hand side
+    (`_accumulate_control_effectors!`), the robot-arm coupling, the power, fault
+    and result readers, the burn scheduler's passes and the atmosphere
+    crossings call only those models' hooks (`_scope_members`). Without the
+    lists every model is called, as before. A model left out returns zeros or
+    `nothing` there, and the sums it would add to start at +0.0 and are never
+    -0.0, so leaving it out changes no bit.
 - **Stops after the ticks, one spacecraft at a time.** The ticks of one control
   model may run on several threads. The solver's stop list belongs to the
   integrator they share, so `register_tstops!` runs afterwards, on the
@@ -450,10 +470,10 @@ building the run's buffers and callbacks:
 
 1. `_resume_engine_state!`. On a run resumed from a checkpoint file, it checks
    the checkpoint against the run and restores the engine's and the callbacks'
-   run state: the `activity`, `interlinks` and `callbacks` entries, and the
-   periodic ticks still pending. It also sets the resume flags
-   (`callback_resume`, `model_resume`). The models' own state and the form of
-   their `gnc_scopes` entry are only checked here; a run with guidance,
+   run state: the `activity`, `interlinks`, `callbacks`, `maneuver_buffers` and
+   `orbits` and `entries` entries, and the periodic ticks still pending. It also sets the
+   resume flags (`callback_resume`, `model_resume`). The models' own state and
+   the form of their `gnc_scopes` entry are only checked here; a run with guidance,
    navigation or control models refuses a checkpoint without that entry here,
    before anything is restored.
 2. `_start_run_clock!`: the run clock of the periodic ticks, for a checkpointed
@@ -489,6 +509,9 @@ calls them at the top of `src/models/gnc/contracts/simulation_lifecycle.jl`.
 | Data store flags | the data stores | the data callbacks' first initialization | `callbacks`, only in a run with a data store | `_restore_callback_checkpoint_state!`, as the battery flags | phase 1 |
 | Sensor streams, latest measurements, biases, sample times | the mounted sensors and the sensor callbacks | `reset_sensors!` at the first solve's start | `callbacks`, and the sensor's own `checkpoint_state` in `models` | the records in phase 1; the sensor's own state in phase 3. A resumed run does not call `initialize_sensor!` | phases 1 and 3 |
 | Hinge and gimbal angles, mounted thrusters' firing state (`κ`, `thrust`) | the link hardware: `PanelHinge`, `ThrusterGimbal` and `Thruster`, which keep the state a run starts from (`run_start`, first the configured one) and the last tick's write (`run_written`) | the run-state callback's first initialization (`get_run_state_callbacks`): a value still equal to the last mounted tick's write returns to the previous run's start; a value a user changed between runs is kept | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume`: the run-state callback's initialization then keeps the restored state and records it as the latest write | phase 1 |
+| Maneuver commands and burn plans | `SharedBuffers.maneuver_commands` and `maneuver_burn_plans`: the maneuver guidance models write the commands, the burn scheduler (`BaseThrusterModel`) the plans | a new `SharedBuffers`, every command and plan unset | `maneuver_buffers`, written while a command or plan is set | `_restore_maneuver_buffer_checkpoint_state!` | phase 1 |
+| The orbit each spacecraft is on | `ODEParams.orbit_counter`: the apoapsis callback counts the orbits, and a state anchor with an `orbit_count` sets it | a new `ODEParams`, the first orbit for every spacecraft | `orbits`, written once a spacecraft is past its first orbit | `_restore_orbit_counter_checkpoint_state!` | phase 1 |
+| Completed atmosphere entries | `SharedBuffers.entry_counter`: the entry-end callback counts downward interface crossings | new run buffers, zero for every spacecraft | `entries`, written once a spacecraft has entered | `_restore_entry_counter_checkpoint_state!` | phase 1 |
 | Periodic tick clocks | each run-clock callback, and the run clock in the shared buffers | each solve's start; the run clock in phase 2 | `periodic_ticks` | `_pending_periodic_ticks`, taken at the first solve's start | phases 1 and 2 |
 | Saved results rows | the run's row lists in `run_simulation` | empty | `results_rows`: how much of `simulation_checkpoint.results.bin`, beside the checkpoint, is its own | `_start_results_rows!` puts the rows back before the first segment, or warns when it cannot | before the solve |
 | GNC links | the shared object | `link_initialize!`, once per run | none of their own: the models save what they need | — | phase 3 |
@@ -498,23 +521,29 @@ calls them at the top of `src/models/gnc/contracts/simulation_lifecycle.jl`.
 | Plume interaction integral | the plume model's state | the plume callback's first initialization | none: a resumed run starts a new integral | — | the solve's start |
 | GRAM density perturbation walk | the perturbation callback | its initialization | none: a resume is refused | — | the solve's start |
 | Density model histories | the density models | `_reset_density_model_histories!`, after the pre-solve probes | none | — | before the solve |
+| GRAM track and vacuum-prediction caches, when enabled (`SPACEAGORA_GRAM_TRACK_CACHE`, `SPACEAGORA_VACUUM_GRAM_CACHE`; both off by default) | the shared buffers | emptied before the solve | none: a resumed run builds them again, so its interpolated densities can differ from those of a run never interrupted, within the caches' tolerances | — | before the solve |
 
 Current behaviour to know:
 
 - **Runs that cannot resume.** EDG, `AlgorithmGuidance`, the GRAM density
   perturbation and externally propagated spacecraft refuse checkpoints or a
   resume, because the checkpoint does not hold their run state.
+- **State a checkpoint does not need.** Some run state changes during a run
+  and is not in the checkpoint because it comes back by itself, as it does at a
+  checkpoint segment's start: the atmosphere flags (`in_atmosphere`), from the
+  state at each solve's start; the sampled densities, winds and heat rates, when
+  they are next sampled; the state anchors' next anchor and the periapsis
+  pulses' last pass, at each solve's start. The ephemeris memos, workspaces and
+  execution plans change only how fast a run goes.
 
 ## Map of the repository
 
 Core package implementation lives in `src/` and `ext/`. The separate HYPR
 repository owns its optimizer and SpaceAGORA adapter. Its reviewed source is
-checked out as a submodule at `packages/robotics/HYPR.jl`. The small compatibility
-package under `packages/SpaceAGORAHYPR/` still loads and checks that adapter. The
+checked out as a submodule at `packages/robotics/HYPR.jl`. The
 GRAMSuite extension activates when both SpaceAGORA and GRAMSuite are loaded;
 installation alone does not load it. For HYPR, the supported setup installs the
-pinned external package and compatibility package, then the user explicitly
-loads `SpaceAGORAHYPR`. MuJoCo scenes live in the separate
+pinned external package, then the user explicitly loads `SpaceAGORA` and `HYPR`. MuJoCo scenes live in the separate
 [SpaceAGORAMuJoCo.jl repository](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl).
 Its pinned submodule is `packages/robotics/SpaceAGORAMuJoCo.jl`. That companion
 owns its native binding, scene implementation, native tests and Basilisk
@@ -553,7 +582,7 @@ are relative to the directory in the first column.
 | `ext/` | Optional package connections for GRAMSuite, the visualizer and EDG | Each extension activates when its package pair is loaded; see [GRAMSuite Setup](../src/user/gramsuite_setup.md) and the [optional adapter standard](../src/reference/adapter_contract.md). |
 | `packages/robotics/` | Pinned submodules for HYPR and SpaceAGORAMuJoCo; each remains an independently maintained repository | `scripts/optional_packages.jl` selects and verifies source, then delegates to its installer; see [Optional package commands](../src/user/installation_environment.md#optional-package-commands). |
 | `packages/gnc/` | Optional guidance-domain packages, including experimental SpaceAGORAEDG | The companion owns numerical kernels; core retains model types, lifecycle and physics through [EDGServices](../src/reference/edg_adapter_boundary.md). |
-| `packages/SpaceAGORAHYPR/` | Compatibility package and source pin for external HYPR | `src/SpaceAGORAHYPR.jl` checks and aliases the external adapter; `HYPRSource.toml` pins its revision. Core services are defined in `src/models/gnc/companions/hypr/services.jl`. Install and load with the [RPO planner guide](../src/user/rpo_planner_pilot.md#installing-optional-hypr). |
+| `packages/HYPRSource.toml` | Immutable source pin for external HYPR | The standalone installer uses this revision, checked against the HYPR gitlink by the optional-package helper. Core services are defined in `src/models/gnc/companions/hypr/services.jl`. Install and load with the [RPO planner guide](../src/user/rpo_planner_pilot.md#installing-optional-hypr). |
 | `examples/` | Runnable scenarios; `common.jl` is the shared bootstrap | primary scenario entrypoints; development viewer demos also live in `scripts/dev/viewer_demos/`; see the [Examples Catalog](../src/user/examples_catalog.md) |
 | `templates/` | Starting files for a force/torque model, a density model and a control hook | copy one of these to begin an extension |
 | `test/` | Unit, integration, smoke and stress suites; companion suites under `test/optional/{hypr,edg,visualizer}/`; workflow entry points under `test/smoke/`; fixtures under `test/fixtures/`; CI gates under `test/gates/`, contract checks under `test/contracts/`, review artifacts under `test/ai_reviews/` | the gates enforce the ownership rules on this page |
@@ -603,7 +632,7 @@ own package, with its simulator-specific adapter kept distinct from standalone
 search. HYPR now follows that split: its `src/` owns standalone search and swarm
 policy, while its `ext/HYPRSpaceAGORAExt.jl`, `ext/rpo/` and `ext/robot/` provide
 configured SpaceAGORA execution. These paths are in
-[HYPR.jl at the pinned revision](https://github.com/Space-FALCON-Lab/HYPR.jl/tree/ef85eb2bfc5623fdd26407868d1371c3bff07d1f),
+[HYPR.jl at the pinned revision](https://github.com/Space-FALCON-Lab/HYPR.jl/tree/4654e8b79fcc08209bf66adcd83d2d2053f4e1d8),
 which has its own tests, examples and documentation.
 
 SpaceAGORA retains shared planner interfaces, the direct baseline, configuration
@@ -611,9 +640,9 @@ and result types, geometry, metrics, RRT and retiming services, and compatibilit
 entry points. `SpaceAGORA.HYPRServices` exposes the adapter contract without
 changing the original owners of those bindings. Only the explicitly listed
 services and extension points are supported; arbitrary internal-module access is
-not the integration API. The current supported pair is SpaceAGORA 0.6.0 with
-HYPR 0.5.0, service contract 3.0.0 and compatibility package 0.2.0. Install the
-pinned pair and explicitly load `SpaceAGORAHYPR` using the
+not the integration API. The current supported pair is SpaceAGORA 0.6.1 with
+HYPR 0.5.0 and service contract 3.0.0. Install the pinned pair and explicitly
+load `SpaceAGORA` and `HYPR` using the
 [RPO planner guide](../src/user/rpo_planner_pilot.md#installing-optional-hypr).
 The optimizer can run independently; configured RPO and robot-arm execution
 still requires SpaceAGORA services. The independent experimental

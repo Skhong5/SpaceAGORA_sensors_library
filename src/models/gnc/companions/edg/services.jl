@@ -35,7 +35,7 @@ using ..SimulationModel.GuidanceHooks: AerobrakingEnergyDepletionConfig, Aerobra
 using ..SimulationModel.CommandTypes: AerobrakingControlCommand
 using ..SimulationModel.AerodynamicEffectors: aerodynamic_coefficient_fM
 using ..SimulationModel.FrameTransforms: rvtoorbitalelement, rtolatlong
-using ..SimulationModel.EDGAlgorithms: guidance_decision!, control_decision!, COMPATIBILITY_FUNCTIONS
+using ..SimulationModel.EDGAlgorithms: guidance_decision!, control_decision!
 const IMPLEMENTED_FUNCTIONS = (:guidance_decision!, :control_decision!)
 const CONSUMED_SERVICES = (
     :AbstractPredictionContext,
