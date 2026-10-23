@@ -383,25 +383,40 @@ function _save_simulation_results_if_enabled!(
         tables = _build_long_results_tables(results_times, results_data, save_fields_resolved, args)
         sink === nothing || (sink[] = tables)
         csv_paths = (spacecraft=nothing, run=nothing)
+        schedule_files = nothing
         if write_files && args.simulation_settings.results
+            schedule_files = _save_link_schedule_if_enabled!(args)
             csv_paths = _write_long_results!(tables, results_times, args; write_bundle=_typed_save_bundle_enabled(),
-                resumed_from_s=resumed_from_s)
+                resumed_from_s=resumed_from_s, link_schedule=schedule_files)
         end
         return return_table ? (; csv_path=csv_paths.spacecraft, run_csv_path=csv_paths.run, table=tables.spacecraft,
-            run_table=tables.run) : csv_paths.spacecraft
+            run_table=tables.run, schedule_files) : csv_paths.spacecraft
     end
     sink === nothing || (sink[] = _build_long_results_tables(results_times, results_data, save_fields_resolved, args))
     results_df = _build_results_dataframe(results_times, results_data, save_fields_resolved, args)
     csv_path = nothing
+    schedule_files = nothing
     if write_files && args.simulation_settings.results
         if args.simulation_settings.save_csv
             csv_path = _write_results_csv!(results_df, args)
         end
+        schedule_files = _save_link_schedule_if_enabled!(args)
         if _typed_save_bundle_enabled()
-            _write_results_bundle!(results_df, results_times, args; csv_path=csv_path, resumed_from_s=resumed_from_s)
+            _write_results_bundle!(results_df, results_times, args; csv_path=csv_path, resumed_from_s=resumed_from_s,
+                link_schedule=schedule_files)
         end
     end
-    return return_table ? (; csv_path, table=results_df) : csv_path
+    return return_table ? (; csv_path, table=results_df, schedule_files) : csv_path
+end
+
+# Persist only the schedule written by this save, so stale files are never listed.
+function _save_link_schedule_if_enabled!(args)
+    args.interlink_model === nothing && return nothing
+    schedule = link_schedule(args.interlink_model; policy=args.scheduling_policy_model)
+    written = _write_link_schedule!(schedule, args; csv=args.simulation_settings.save_csv,
+        feather=_typed_save_bundle_enabled())
+    return (; written..., metadata=_link_schedule_manifest(schedule, args.scheduling_policy_model,
+        args.interlink_model))
 end
 
 # The results of a run that streams them (`_stream_results_rows!`): the rows still
@@ -427,18 +442,22 @@ function _save_streamed_results!(args, log, save_fields, times_acc::Vector{Float
         tables = (spacecraft=joined(streamed(stream.spacecraft, 1), kept.spacecraft),
                   run=joined(streamed(stream.run, 2), kept.run))
         sink === nothing || (sink[] = tables)
-        return return_table ? (; csv_path=nothing, run_csv_path=nothing, table=tables.spacecraft, run_table=tables.run) :
+        return return_table ? (; csv_path=nothing, run_csv_path=nothing, table=tables.spacecraft, run_table=tables.run, schedule_files=nothing) :
             nothing
     end
     _stream_results_rows!(log, times_acc, data_acc, save_fields, args; final=true)
+    # A no-solve recovery can finish trajectory streams, but has no restored
+    # link history. Keep earlier schedule bytes without claiming ownership.
+    schedule_files = write_files ? _save_link_schedule_if_enabled!(args) : nothing
     written = _finish_long_stream!((spacecraft=stream.spacecraft, run=stream.bytes[2] > 0 ? stream.run : nothing), args;
-        steps=stream.written, first_time_s=isnan(stream.first_s) ? nothing : stream.first_s, resumed_from_s=resumed_from_s)
+        steps=stream.written, first_time_s=isnan(stream.first_s) ? nothing : stream.first_s, resumed_from_s=resumed_from_s,
+        link_schedule=schedule_files)
     mapped(path) = path === nothing ? nothing : SimulationModel.IOOutputs._read_long_results_table(path)
     tables = (spacecraft=mapped(written.feather.spacecraft), run=mapped(written.feather.run))
     sink === nothing || (sink[] = (spacecraft=in_memory(tables.spacecraft),
                                    run=tables.run === nothing ? nothing : in_memory(tables.run)))
     return return_table ? (; csv_path=written.csv.spacecraft, run_csv_path=written.csv.run, table=tables.spacecraft,
-        run_table=tables.run) : written.csv.spacecraft
+        run_table=tables.run, schedule_files) : written.csv.spacecraft
 end
 
 function _try_save_simulation_results_if_enabled!(args...)
@@ -1309,6 +1328,10 @@ function run_simulation(
         prefix = _results_bundle_prefix(results_args)
         long_layout = args.simulation_settings.results_layout === :long
         candidates = Any[saved_results.csv_path, scene_path, export_path]
+        # The link schedule this run wrote, beside its results.
+        if saved_results.schedule_files !== nothing
+            push!(candidates, saved_results.schedule_files.csv, saved_results.schedule_files.feather)
+        end
         long_layout && push!(candidates, saved_results.run_csv_path)
         # The bundle is this run's only when this run wrote it; a leftover
         # from an earlier run in the same directory must not be listed.

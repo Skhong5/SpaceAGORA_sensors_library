@@ -35,6 +35,7 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :budget_rate_bps, rendered = "SpaceAGORA.budget_rate_bps"),
         (owner = :SpaceAGORA, symbol = :contact_windows, rendered = "SpaceAGORA.contact_windows"),
         (owner = :SpaceAGORA, symbol = :contact_time_s, rendered = "SpaceAGORA.contact_time_s"),
+        (owner = :SpaceAGORA, symbol = :link_schedule, rendered = "SpaceAGORA.link_schedule"),
         (owner = :SpaceAGORA, symbol = :link_directed, rendered = "SpaceAGORA.link_directed"),
         (owner = :SpaceAGORA, symbol = :link_terminal_levels, rendered = "SpaceAGORA.link_terminal_levels"),
         (owner = :SpaceAGORA, symbol = :link_terminal, rendered = "SpaceAGORA.link_terminal"),

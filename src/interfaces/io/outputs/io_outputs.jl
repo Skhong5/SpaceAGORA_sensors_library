@@ -377,13 +377,23 @@ function _write_results_csv!(results_df::DataFrame, args)::String
     end
 end
 
+# The link schedule's files: its CSV when `csv`, its feather file when `feather`.
+# Returns the paths written, `nothing` for a file not written.
+function _write_link_schedule!(schedule::DataFrame, args; csv::Bool, feather::Bool)
+    paths = IOConfig._link_schedule_paths(args)
+    csv_path = csv ? IOSerialization._atomic_write_file(paths.csv, tmp -> CSV.write(tmp, schedule)) : nothing
+    feather_path = feather ? IOSerialization._atomic_write_file(paths.feather, tmp -> Arrow.write(tmp, schedule)) : nothing
+    return (csv=csv_path, feather=feather_path)
+end
+
 function _write_results_bundle!(
     results_df::DataFrame,
     times::Vector{Float64},
     args,
     results_bundle_schema_version;
     csv_path::Union{Nothing, String}=nothing,
-    resumed_from_s::Union{Nothing, Float64}=nothing
+    resumed_from_s::Union{Nothing, Float64}=nothing,
+    link_schedule=nothing
 )
     _invalidate_mission_history!(args)
     prefix = IOConfig._results_bundle_prefix(args)
@@ -425,6 +435,7 @@ function _write_results_bundle!(
     # from a checkpoint that kept no rows starts at its resume.
     isempty(times) || (manifest["first_time_s"] = times[1])
     resumed_from_s === nothing || (manifest["resumed_from_s"] = resumed_from_s)
+    _add_link_schedule_manifest!(manifest, link_schedule)
 
     IOSerialization._atomic_write_file(manifest_path, tmp -> begin
         open(tmp, "w") do io
@@ -432,6 +443,17 @@ function _write_results_bundle!(
         end
     end)
 
+    return nothing
+end
+
+function _add_link_schedule_manifest!(manifest, link_schedule)
+    link_schedule === nothing && return nothing
+    files = manifest["files"]
+    for (kind, path) in (("link_schedule_csv", link_schedule.csv), ("link_schedule_feather", link_schedule.feather))
+        path === nothing && continue
+        files[kind] = Dict("path" => path, "size_bytes" => filesize(path), "sha256" => IOSerialization._sha256_hex(path))
+    end
+    manifest["interlinks"] = link_schedule.metadata
     return nothing
 end
 
@@ -447,7 +469,8 @@ function _write_long_results!(
     args,
     results_bundle_schema_version;
     write_bundle::Bool=true,
-    resumed_from_s::Union{Nothing, Float64}=nothing
+    resumed_from_s::Union{Nothing, Float64}=nothing,
+    link_schedule=nothing
 )
     _invalidate_mission_history!(args)
     prefix = IOConfig._results_bundle_prefix(args)
@@ -473,7 +496,7 @@ function _write_long_results!(
     end
     write_bundle || return csv_paths
     _write_long_manifest!(args, results_bundle_schema_version, files, length(times),
-        isempty(times) ? nothing : times[1], resumed_from_s)
+        isempty(times) ? nothing : times[1], resumed_from_s; link_schedule=link_schedule)
     return csv_paths
 end
 
@@ -481,7 +504,7 @@ end
 # given, `steps` saved times from `first_time_s`. `extra` adds entries (a
 # streaming run's manifest before it ends).
 function _write_long_manifest!(args, results_bundle_schema_version, files, steps::Integer,
-                               first_time_s, resumed_from_s; extra=())
+                               first_time_s, resumed_from_s; extra=(), link_schedule=nothing)
     prefix = IOConfig._results_bundle_prefix(args)
     manifest = Dict{String, Any}(
         "schema_version" => results_bundle_schema_version,
@@ -496,6 +519,7 @@ function _write_long_manifest!(args, results_bundle_schema_version, files, steps
     )
     first_time_s === nothing || (manifest["first_time_s"] = first_time_s)
     resumed_from_s === nothing || (manifest["resumed_from_s"] = resumed_from_s)
+    _add_link_schedule_manifest!(manifest, link_schedule)
     for (key, value) in extra
         manifest[key] = value
     end
@@ -577,7 +601,8 @@ end
 # the streams and the CSVs as streamed, listed in the manifest. A run without a
 # run table removes the run table files an earlier run left. Returns the CSV
 # paths and the feather paths.
-function _finish_long_stream!(streams, args, results_bundle_schema_version; steps::Integer, first_time_s, resumed_from_s)
+function _finish_long_stream!(streams, args, results_bundle_schema_version; steps::Integer, first_time_s, resumed_from_s,
+                              link_schedule=nothing)
     _invalidate_mission_history!(args)
     prefix = IOConfig._results_bundle_prefix(args)
     files = Dict{String, Any}()
@@ -600,7 +625,8 @@ function _finish_long_stream!(streams, args, results_bundle_schema_version; step
             tmp -> Arrow.write(tmp, Arrow.Stream(stream); metadata=schema_metadata, ntasks=1))
         files[String(part) * "_feather"] = entry(feather[part])
     end
-    _write_long_manifest!(args, results_bundle_schema_version, files, steps, first_time_s, resumed_from_s)
+    _write_long_manifest!(args, results_bundle_schema_version, files, steps, first_time_s, resumed_from_s;
+        link_schedule=link_schedule)
     return (csv=(spacecraft=csv[:spacecraft], run=csv[:run]), feather=(spacecraft=feather[:spacecraft], run=feather[:run]))
 end
 
@@ -611,6 +637,7 @@ export _build_results_dataframe
 export _build_long_results_tables
 export _write_results_csv!
 export _write_results_bundle!
+export _write_link_schedule!
 export _write_long_results!
 export _write_long_manifest!
 export _append_long_stream!

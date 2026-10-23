@@ -27,6 +27,9 @@ struct InterLinkMatchingWorkspace
 	choice::Vector{Int}
 	blocked::Vector{Bool}
 	cyclic::Vector{Bool}
+	# A weighted policy's term scores, one row per top-level term and one column per
+	# edge, when the interlink model records them (`record_terms`); otherwise `nothing`.
+	terms::Union{Nothing, Matrix{Float64}}
 end
 
 # 2. Scheduling policies: what the scheduler maximizes. A policy is a value of a
@@ -327,8 +330,9 @@ function _eccentricity_score(policy::EccentricityRatePolicy, candidate::LinkCand
 end
 
 # The scheduler's own loop records the near-circular candidates while it scores
-# them; the check of a policy inside another (a mix) computes them again.
-function _score_and_check!(scores, policy::EccentricityRatePolicy, model, ctx::SchedulingContext)
+# them; the check of a policy inside another (a mix) computes them again. Only a
+# mix has terms to record.
+function _score_and_check!(scores, policy::EccentricityRatePolicy, model, ctx::SchedulingContext; terms=nothing)
     circular = Dict{Int, Vector{Int}}()
     _score_candidates!(scores, policy, model, ctx, circular)
     return _check_circular_candidates(model, scores, circular)
@@ -522,12 +526,19 @@ struct WeightedPolicy{T <: Tuple{Vararg{PolicyTerm}}} <: AbstractSchedulingPolic
 end
 WeightedPolicy(terms::PolicyTerm...) = WeightedPolicy(terms)
 
-function candidate_score(policy::WeightedPolicy, candidate::LinkCandidate, ctx::SchedulingContext, t::Float64)
+candidate_score(policy::WeightedPolicy, candidate::LinkCandidate, ctx::SchedulingContext, t::Float64) =
+    _weighted_score(policy, candidate, ctx, t, nothing, 0)
+
+# The mix's score, and with `terms` each term's own score in column `edge`: one
+# loop for both, so recording the terms leaves the mix's arithmetic unchanged.
+function _weighted_score(policy::WeightedPolicy, candidate::LinkCandidate, ctx::SchedulingContext, t::Float64,
+    terms, edge::Int)
     score = 0.0
-    for term in policy.terms
+    for (k, term) in enumerate(policy.terms)
         value = Float64(candidate_score(term.policy, candidate, ctx, t))
         isfinite(value) || throw(ArgumentError("Nonfinite $(nameof(typeof(term.policy))) score in a WeightedPolicy " *
             "term for candidate $(candidate.key)."))
+        terms === nothing || (terms[k, edge] = value)
         score += term.weight * (value / term.scale)
     end
     return score
@@ -667,8 +678,10 @@ function matching_workspace!(model::InterlinkModel, policy::SchedulingPolicyMode
 	graph = model.graph
 	vertices, edges = length(graph.vertices), length(graph.edges)
 	work = policy.matching
+	term_count = model.record_terms && policy.objective isa WeightedPolicy ? length(policy.objective.terms) : 0
 	if work !== nothing && work.graph === graph &&
-		length(work.parent) == vertices && length(work.weights) == edges
+		length(work.parent) == vertices && length(work.weights) == edges &&
+		(work.terms === nothing ? term_count == 0 : size(work.terms) == (term_count, edges))
 		return work
 	end
 	scores = zeros(Float64, edges)
@@ -679,7 +692,7 @@ function matching_workspace!(model::InterlinkModel, policy::SchedulingPolicyMode
 		graph, scores, sizehint!(Int[], edges), sizehint!(Rational{BigInt}[], edges), zeros(BigInt, edges),
 		zeros(Int, vertices), sizehint!(Int[], vertices), sizehint!(Int[], vertices),
 		zeros(BigInt, vertices), zeros(BigInt, vertices), zeros(Int, vertices),
-		fill(false, vertices), fill(false, vertices))
+		fill(false, vertices), fill(false, vertices), term_count == 0 ? nothing : zeros(term_count, edges))
 	return policy.matching
 end
 
@@ -702,27 +715,30 @@ function score_candidates!(model::InterlinkModel, policy::SchedulingPolicyModel,
 	objective = policy.objective
 	_prepare_scoring(objective, model, ctx)
 	work = matching_workspace!(model, policy)
-	_score_and_check!(work.score, objective, model, ctx)
+	_score_and_check!(work.score, objective, model, ctx; terms=work.terms)
 	return nothing
 end
 
 # Score every edge, then make the policy's checks across the scores.
-function _score_and_check!(scores, objective, model, ctx::SchedulingContext)
-	_score_candidates!(scores, objective, model, ctx)
+function _score_and_check!(scores, objective, model, ctx::SchedulingContext; terms=nothing)
+	_score_candidates!(scores, objective, model, ctx; terms)
 	return _check_scores(objective, model, scores, ctx)
 end
 
 # The scores of every edge: one loop compiled for each policy type. With
 # `circular`, the eccentricity policy also records its near-circular candidates.
-function _score_candidates!(scores, objective::P, model::InterlinkModel, ctx::SchedulingContext, circular=nothing) where {P}
+function _score_candidates!(scores, objective::P, model::InterlinkModel, ctx::SchedulingContext, circular=nothing;
+	terms=nothing) where {P}
 	graph = model.graph
 	t = ctx.link_context.time_s
 	for edge in eachindex(graph.edges)
 		score = 0.0
+		terms === nothing || (terms[:, edge] .= 0.0)
 		if graph.available[edge] && _may_score(objective, model, edge, ctx)
 			candidate = _link_candidate(model, edge, ctx)
-			score = Float64(circular === nothing ? candidate_score(objective, candidate, ctx, t) :
-				_eccentricity_score(objective, candidate, ctx, circular, edge))
+			score = Float64(circular !== nothing ? _eccentricity_score(objective, candidate, ctx, circular, edge) :
+				terms === nothing ? candidate_score(objective, candidate, ctx, t) :
+				_weighted_score(objective, candidate, ctx, t, terms, edge))
 			isfinite(score) || throw(ArgumentError("Nonfinite $(nameof(P)) score for candidate $(candidate.key)."))
 		end
 		scores[edge] = score

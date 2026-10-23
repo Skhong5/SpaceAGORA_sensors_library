@@ -53,6 +53,7 @@ export SimulationEngineConfig
 export simulation_engine_config_from_env
 export run_simulation
 export SimulationResults
+export link_schedule
 export run_table, long_table
 export SolverIntegratorCache
 export prewarm_nbody_ephemeris_cache

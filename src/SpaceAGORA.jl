@@ -147,7 +147,7 @@ export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!,
 @doc (@doc SimulationModel.InterlinkTerminals.terminal_number) terminal_number
 @doc """Indexed terminal vertices, candidate edges, the link of each edge (`edge_properties`) and availability/selection flags. Register candidates with `register_link!`.""" InterLinkGraph
 @doc """Canonically ordered pair of `(spacecraft array index, terminal number)` endpoints.""" InterLinkKey
-@doc """One accepted-step schedule sample: time in seconds, the selected `InterLinkKey` values (`active`) and the available ones (`available`, recorded in a run with a data link or with `InterlinkModel(; record_available=true)`, and empty for a sample built from a time and the selected keys). `contact_windows` reads a run's samples.""" InterLinkHistory
+@doc """One accepted-step schedule sample: time in seconds, the selected `InterLinkKey` values (`active`), the available ones (`available`, recorded in a run with a data link or with `InterlinkModel(; record_available=true)`), the score that selected each active link (`scores`), and, with `InterlinkModel(; record_terms=true)` and a `WeightedPolicy`, each top-level term's score for each active link (`terms`, one row per term, one column per active link). A sample built from a time and the selected keys records neither scores nor available links. `contact_windows` and `link_schedule` read a run's samples.""" InterLinkHistory
 @doc (@doc SimulationModel.SchedulingPolicies.SchedulingPolicyModel) SchedulingPolicyModel
 @doc (@doc SimulationModel.SchedulingPolicies.score_candidates!) score_candidates!
 @doc (@doc SimulationModel.SchedulingPolicies.AbstractSchedulingPolicy) AbstractSchedulingPolicy
@@ -281,7 +281,7 @@ using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_worke
 ## 2.3. Simulation Engine
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
-using .SimulationEngine: SimulationResults, run_table, long_table
+using .SimulationEngine: SimulationResults, link_schedule, run_table, long_table
 using .SimulationEngine: prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kwargs...)
 
@@ -481,6 +481,7 @@ end
 @doc (@doc SimulationEngine.SimulationEngineConfig) SimulationEngineConfig
 @doc (@doc SimulationEngine.simulation_engine_config_from_env) simulation_engine_config_from_env
 @doc (@doc SimulationEngine.SimulationResults) SimulationResults
+@doc (@doc SimulationEngine.link_schedule) link_schedule
 @doc (@doc SimulationEngine.run_table) run_table
 @doc (@doc SimulationEngine.long_table) long_table
 @doc (@doc SimulationEngine.run_simulation) run_simulation
@@ -873,7 +874,7 @@ export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionContro
 export SolarPanelAngleOfAttackControlModel
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
-export run_verification, run_verification_cli, run_study, run_simulation, SimulationResults, run_table, long_table
+export run_verification, run_verification_cli, run_study, run_simulation, SimulationResults, link_schedule, run_table, long_table
 export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 export RPOStationGeometry, RPOCubeSatGeometry
 export VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec, ArmGeometry, arm_geometry

@@ -21,7 +21,8 @@ function interlink_scheduler_callback(; candidate_force=nothing)
 			context=LinkContext(time_s=Float64(integrator.t), planet=planet),
 			terminal_available=terminal_availability(model, args.dynamics_model.spacecraft))
 		sample = InterLinkHistory(Float64(integrator.t), selected,
-			records_available(model) ? available_links(model) : InterLinkKey[])
+			records_available(model) ? available_links(model) : InterLinkKey[],
+			_selected_scores(model, args.scheduling_policy_model, selected)...)
 		if !isempty(model.history) && model.history[end].time == sample.time
 			model.history[end] = sample
 		else
@@ -33,6 +34,17 @@ function interlink_scheduler_callback(; candidate_force=nothing)
 	initialize = (callback, state, time, integrator) -> affect!(integrator) # update link graph when the simulation is initialized
 	return DiffEqBase.DiscreteCallback((state, time, integrator) -> true, affect!; # update link graph at each accepted simulation step
 		initialize=initialize, save_positions=(false, false))
+end
+
+# The score that selected each link, read from the scheduler's workspace after the
+# selection, and, when it keeps them, the weighted policy's term scores: one column
+# per selected link.
+function _selected_scores(model, scheduler, selected)
+	work = scheduler.matching
+	edges = [model.graph.edge_index_lookup[key] for key in selected]
+	scores = Float64[work.score[edge] for edge in edges]
+	terms = work.terms === nothing ? zeros(0, length(selected)) : work.terms[:, edges]
+	return scores, terms
 end
 
 # The same scheduling, at initialization only: placed ahead of the run's other

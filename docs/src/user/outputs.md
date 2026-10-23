@@ -33,6 +33,12 @@ output/
   simulation_results.manifest.toml ← metadata: row count, spacecraft count, file hashes
 ```
 
+A run with interlinks also writes its link schedule,
+`simulation_results_link_schedule.csv` and
+`simulation_results_link_schedule.feather` (see
+[the link schedule's columns](output_columns.md#Link-schedule)); the manifest lists
+both and records the scheduling policy and its score unit under `[interlinks]`.
+
 Set `simulation_settings.save_csv = false` to save the Feather file and manifest
 without writing a CSV. A CSV left by an earlier run is preserved, but is not
 listed in the new manifest or in `SimulationResults.files`.
