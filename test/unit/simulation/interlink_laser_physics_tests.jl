@@ -105,10 +105,10 @@ const rot = SM.QuaternionMath.rot
 # Spacecraft 1 and, 1 km behind it along track, spacecraft 2, each with one laser
 # terminal: boresights and locations as given (spacecraft 1's points back at 2,
 # and 2's forward at 1, by default).
-function beam_pair(link; boresights=([0.0, -1.0, 0.0], [0.0, 1.0, 0.0]), location=ZERO3)
+function beam_pair(link; boresights=([0.0, -1.0, 0.0], [0.0, 1.0, 0.0]), location=ZERO3, locations=(location, location))
     spacecraft = [bus_sat(1; n_terminal=0), bus_sat(2; y=-1000.0, n_terminal=0)]
-    for (sc, boresight) in zip(spacecraft, boresights)
-        add_actuator!(sc, sc.root, LaserTerminal(boresight=boresight, location=location, max_power_w=50.0))
+    for (sc, boresight, offset) in zip(spacecraft, boresights, locations)
+        add_actuator!(sc, sc.root, LaserTerminal(boresight=boresight, location=offset, max_power_w=50.0))
     end
     model = InterlinkModel()
     register_link!(model, spacecraft, (1, 1), (2, 1), link)
@@ -472,7 +472,8 @@ end
         # In attitude, the force is turned into the body frame first.
         turn = SVector(0.0, 0.0, sin(pi / 8), cos(pi / 8))
         a_turned, _, _, _ = beam_ends(spacecraft; q1=turn)
-        @test interlink_wrench(mounted, terminal_a, terminal_b, a_turned, b, ctx)[2] ≈ cross(arm, rot(turn) * force_a) rtol = 1e-14
+        turned_wrench = interlink_wrench(mounted, terminal_a, terminal_b, a_turned, b, ctx)
+        @test turned_wrench[2] ≈ cross(arm, rot(turn) * turned_wrench[1]) rtol = 1e-14
         # It needs terminal hardware at both ends.
         virtual = [bus_sat(1; terminals=1, n_terminal=0), bus_sat(2; y=-1000.0)]
         @test_throws ArgumentError register_link!(InterlinkModel(), virtual, (1, 1), (2, 1), mounted)
@@ -501,6 +502,49 @@ end
         held = run_simulation(run_args(beam_pair(mounted; location)...; duration=5.0, orientation=true,
             control=ControlModel(control_effectors=(HoldLevels([30.0]),), control_rates=[1.0])); return_solution=true)
         @test SE._mounted_control_effect(HoldLevels([30.0]), held.u[end].sc[1], held.prob.p, 1, 5.0)[1] == zeros(3)
+    end
+
+    @testset "mounted beam uses the terminal-to-terminal ray" begin
+        mounted = LaserBeamLink(power_w=40.0, magnification=100.0, range_m=200e3, recoil=:mounted)
+        spacecraft, _ = beam_pair(mounted; locations=(SVector(1.0, 0.0, 0.0), SVector(-1.0, 0.0, 0.0)))
+        for angle in (0.0, pi / 4)
+            turn = SVector(0.0, 0.0, sin(angle / 2), cos(angle / 2))
+            a, b, ta, tb = beam_ends(spacecraft; q1=turn)
+            arm_a = terminal_pose(a.spacecraft, ta)[2]
+            arm_b = terminal_pose(b.spacecraft, tb)[2]
+            offset_a = transpose(rot(a.q_ib)) * arm_a
+            offset_b = transpose(rot(b.q_ib)) * arm_b
+            ray = (a.pos_ii - b.pos_ii) + (offset_a - offset_b)
+            fa, torque_a, fb, torque_b = interlink_wrench(mounted, ta, tb, a, b, LinkContext())
+            @test fa ≈ NEAR_FIELD_N * normalize(ray) rtol = 1e-13
+            @test fa + fb == ZERO3
+            @test torque_a ≈ cross(arm_a, rot(a.q_ib) * fa) rtol = 1e-13
+            @test torque_b ≈ cross(arm_b, rot(b.q_ib) * fb) rtol = 1e-13
+            # About spacecraft b: orbital moment plus both body torques must
+            # cancel for equal/opposite forces on the same physical ray.
+            net_moment = cross(a.pos_ii - b.pos_ii, fa) +
+                transpose(rot(a.q_ib)) * torque_a + transpose(rot(b.q_ib)) * torque_b
+            @test norm(net_moment) <= 1e-12 * NEAR_FIELD_N
+        end
+        a, b, ta, tb = beam_ends(spacecraft)
+        # A 2 m lateral offset over 1 km lies outside this 1 mrad cone,
+        # though the spacecraft-center line lies exactly on both boresights.
+        narrow = LaserBeamLink(power_w=40.0, magnification=100.0, range_m=200e3,
+            pointing=TerminalPointing(field_of_regard_rad=0.001))
+        @test !link_available(narrow, ta, tb, a, b, LinkContext())
+        short = LaserBeamLink(power_w=40.0, magnification=100.0, range_m=1000.001, recoil=:mounted)
+        @test !link_available(short, ta, tb, a, b, LinkContext())
+        beam = GaussianBeam(waist_radius_m=0.05, aperture_radius_m=0.08)
+        diverging = LaserBeamLink(power_w=40.0, magnification=100.0, range_m=200e3, recoil=:mounted, beam=beam)
+        fa = interlink_wrench(diverging, ta, tb, a, b, LinkContext())[1]
+        distance = hypot(1000.0, 2.0)
+        @test norm(fa) ≈ NEAR_FIELD_N * beam_capture_fraction(beam, beam.aperture_radius_m, distance) rtol = 1e-13
+        # Mounted terminals clear a sphere that blocks the center-to-center ray.
+        occulted = LaserBeamLink(power_w=40.0, magnification=100.0, range_m=200e3,
+            recoil=:mounted, occultation=true)
+        clear_pair, _ = beam_pair(occulted; location=SVector(2.0, 0.0, 0.0))
+        ca, cb, cta, ctb = beam_ends(clear_pair)
+        @test link_available(occulted, cta, ctb, ca, cb, LinkContext(planet=(Rp_e=RADIUS + 1.0,)))
     end
 
     @testset "checkpoints keep the options" begin

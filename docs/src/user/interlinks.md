@@ -225,7 +225,12 @@ register_link!(model, spacecraft, (1, terminal_1), (2, terminal_2), link)
 Pointing and mounted recoil need terminal hardware at both ends (a
 `LaserTerminal` carries a `LaserBeamLink`), and attitude (`orientation_sim=true`).
 `register_link!` refuses a virtual terminal for them, and a run without attitude
-refuses them at setup.
+refuses them at setup. With either option, range, occultation, divergence and
+force direction all use the ray between the mounted terminals, including the
+attitude transformation of each mount offset. Other configurations retain the
+spacecraft body-reference positions. Call the terminal-aware `interlink_wrench`
+and `link_available` forms for pointing or mounted recoil; their four-argument
+force/availability forms lack the required terminal hardware.
 
 The two forces are always equal and opposite, so the link conserves the run's
 linear momentum. While the link is active, the terminals' own recoil applies

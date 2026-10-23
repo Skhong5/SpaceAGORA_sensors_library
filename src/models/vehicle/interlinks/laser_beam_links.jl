@@ -142,6 +142,12 @@ An open-cavity laser link that pushes its two spacecraft apart, as
   would (`actuator_wrench`). The default, `:central`, applies it with no
   torque. Mounted recoil needs terminal hardware at both ends and attitude.
 
+With pointing or mounted recoil, range, occultation, divergence and force
+use the ray between the mounted terminals, transformed by their attitudes.
+Other configurations use the spacecraft body-reference positions. The
+terminal-aware hooks are required for pointing or mounted recoil; the
+four-argument `link_force` and `link_available` cannot supply that geometry.
+
 The two forces stay equal and opposite, so the run's linear momentum is
 conserved. While the link is active, the terminals' own recoil applies nothing:
 the link's force is their recoil.
@@ -203,13 +209,35 @@ _needs_terminals_reason(::LaserBeamLink) = " (its pointing or mounted recoil rea
 _segment_occulted(p, q, planet, margin_m::Float64) =
     planet !== nothing && hasproperty(planet, :Rp_e) && _segment_occulted(p, q, (Rp_e=Float64(planet.Rp_e) + margin_m,))
 
+# Pointing and mounted recoil share one physical ray. Other modes retain the
+# body-reference geometry, including the bitwise-compatible all-default path.
+function _beam_geometry(link::LaserBeamLink, terminal_a, terminal_b, a, b)
+    separation = a.pos_ii - b.pos_ii
+    _link_needs_attitude(link) || return (a.pos_ii, b.pos_ii, separation)
+    offset_a = _beam_terminal_offset(a, terminal_a)
+    offset_b = _beam_terminal_offset(b, terminal_b)
+    # Subtract the body positions before adding small mount offsets, to avoid
+    # losing their precision at large inertial coordinates.
+    return (a.pos_ii + offset_a, b.pos_ii + offset_b, separation + (offset_a - offset_b))
+end
+
+function _beam_terminal_offset(sample, terminal)
+    terminal === nothing && throw(ArgumentError(
+        "A LaserBeamLink with pointing or mounted recoil needs terminal hardware at both ends; spacecraft $(sample.spacecraft_index)'s is virtual."))
+    sample.q_ib === nothing && throw(ArgumentError(
+        "A LaserBeamLink with pointing or mounted recoil needs the endpoints' attitude (orientation_sim)."))
+    _, location = terminal_pose(sample.spacecraft, terminal)
+    return transpose(rot(sample.q_ib)) * location
+end
+
 function link_available(link::LaserBeamLink, terminal_a, terminal_b, a, b, ctx)
-    separation = norm(a.pos_ii - b.pos_ii)
+    position_a, position_b, ray = _beam_geometry(link, terminal_a, terminal_b, a, b)
+    separation = norm(ray)
     0 < separation <= link.range_m || return false
-    link.occultation && _segment_occulted(a.pos_ii, b.pos_ii, ctx.planet, link.min_ray_altitude_m) && return false
+    link.occultation && _segment_occulted(position_a, position_b, ctx.planet, link.min_ray_altitude_m) && return false
     link.pointing === nothing && return true
-    return _within_field_of_regard(link.pointing.field_of_regard_rad, a, terminal_a, b.pos_ii) &&
-        _within_field_of_regard(link.pointing.field_of_regard_rad, b, terminal_b, a.pos_ii)
+    return _within_field_of_regard(link.pointing.field_of_regard_rad, a, terminal_a, -ray) &&
+        _within_field_of_regard(link.pointing.field_of_regard_rad, b, terminal_b, ray)
 end
 link_available(link::LaserBeamLink, a, b, ctx) = link_available(link, nothing, nothing, a, b, ctx)
 
@@ -223,7 +251,7 @@ link_force(link::LaserBeamLink, a, b, ctx) = _beam_forces(link, nothing, nothing
 # The two forces: the laser momentum link's, scaled by the beam's factor and the
 # pointing loss when the link has them.
 function _beam_forces(link::LaserBeamLink, terminal_a, terminal_b, a, b)
-    separation = a.pos_ii - b.pos_ii
+    _, _, separation = _beam_geometry(link, terminal_a, terminal_b, a, b)
     distance = norm(separation)
     distance == 0 && return (zero(separation), zero(separation))
     scale = link.magnification * link.power_w / SPEED_OF_LIGHT_MPS
@@ -236,15 +264,15 @@ function _beam_forces(link::LaserBeamLink, terminal_a, terminal_b, a, b)
     return (force, -force)
 end
 
-# Whether the line of sight from endpoint `sample` to `other_ii` lies within
+# Whether the terminal-to-terminal direction `sight_ii` lies within
 # `field_of_regard` (rad) of its terminal's boresight, in its body frame.
-function _within_field_of_regard(field_of_regard::Float64, sample, terminal, other_ii)
+function _within_field_of_regard(field_of_regard::Float64, sample, terminal, sight_ii)
     terminal === nothing && throw(ArgumentError(
         "A LaserBeamLink with pointing needs terminal hardware at both ends; spacecraft $(sample.spacecraft_index)'s is virtual."))
     sample.q_ib === nothing && throw(ArgumentError(
         "A LaserBeamLink with pointing needs the endpoints' attitude (orientation_sim)."))
     boresight, _ = terminal_pose(sample.spacecraft, terminal)
-    sight = rot(sample.q_ib) * (other_ii - sample.pos_ii)
+    sight = rot(sample.q_ib) * sight_ii
     return atan(norm(cross(sight, boresight)), dot(sight, boresight)) <= field_of_regard
 end
 
