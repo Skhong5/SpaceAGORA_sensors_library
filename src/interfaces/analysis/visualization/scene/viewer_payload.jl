@@ -836,7 +836,14 @@ function _saved_results_table(scene::VisualizationScene, feather_path::AbstractS
     scene.results_layout === :long || return DataFrame(Arrow.Table(feather_path))
     run_path = replace(String(feather_path), r"_spacecraft\.feather$" => "_run.feather")
     run = run_path != feather_path && isfile(run_path) ? DataFrame(Arrow.Table(run_path); copycols=false) : nothing
-    return _wide_view(DataFrame(Arrow.Table(feather_path); copycols=false), run, length(scene.spacecraft))
+    arrow_table = Arrow.Table(feather_path)
+    long = DataFrame(arrow_table; copycols=false)
+    arrow_metadata = Arrow.getmetadata(arrow_table)
+    key = "spaceagora.long_column_spacecraft.v1"
+    if arrow_metadata !== nothing && haskey(arrow_metadata, key)
+        metadata!(long, key, arrow_metadata[key]; style=:note)
+    end
+    return _wide_view(long, run, length(scene.spacecraft))
 end
 
 const _LONG_IDENTITY_COLUMNS = ("spacecraft", "spacecraft_id", "plane", "slot", "time")
@@ -850,6 +857,25 @@ run table's columns. The rows may come in any order but must hold every
 spacecraft at every time once.
 """
 function _wide_view(long::DataFrame, run::Union{Nothing, DataFrame}, num_sats::Integer)::DataFrame
+    raw_presence = metadata(long, "spaceagora.long_column_spacecraft.v1", nothing)
+    presence = if raw_presence === nothing
+        nothing
+    else
+        parsed = try
+            JSON.parse(raw_presence)
+        catch
+            throw(ArgumentError("Invalid long-results column-presence metadata."))
+        end
+        parsed isa AbstractDict || throw(ArgumentError("Invalid long-results column-presence metadata."))
+        for name in names(long)
+            name in _LONG_IDENTITY_COLUMNS && continue
+            members = get(parsed, name, nothing)
+            members isa AbstractVector && all(i -> i isa Integer && !(i isa Bool) && 1 <= i <= num_sats, members) &&
+                length(unique(members)) == length(members) ||
+                throw(ArgumentError("Invalid long-results column-presence metadata for column $(name)."))
+        end
+        parsed
+    end
     spacecraft, times = long[!, "spacecraft"], long[!, "time"]
     n = length(spacecraft)
     n % num_sats == 0 || throw(ArgumentError("The long results table does not hold every spacecraft at every time."))
@@ -864,9 +890,13 @@ function _wide_view(long::DataFrame, run::Union{Nothing, DataFrame}, num_sats::I
         column = long[!, name]
         for i in 1:num_sats
             spacecraft_column = view(column, rows[i])
-            # A column a spacecraft lacks (thruster levels of one without
-            # thrusters) is `missing` throughout for it; its wide table has none.
-            Missing <: eltype(column) && all(ismissing, spacecraft_column) && continue
+            if presence === nothing
+                # Compatibility with older draft bundles: their all-missing columns
+                # cannot distinguish absent fields from present measurement gaps.
+                Missing <: eltype(column) && all(ismissing, spacecraft_column) && continue
+            else
+                i in presence[name] || continue
+            end
             wide[!, "sc$(i)_$(name)"] = spacecraft_column
         end
     end

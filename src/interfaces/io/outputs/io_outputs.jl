@@ -4,6 +4,7 @@ using Arrow
 using CSV
 using DataFrames
 using Dates
+using JSON
 using TOML
 
 using ..IOConfig
@@ -206,6 +207,24 @@ end
 # `sc<i>_` prefix. The run table has one row per saved time: `time` and the
 # run-wide fields. Both flatten values as the wide table does, and which table a
 # field goes to follows its `per_satellite` flag, not its name.
+const _LONG_COLUMN_SPACECRAFT_KEY = "spaceagora.long_column_spacecraft.v1"
+
+# Values alone cannot distinguish an absent field from present missing samples.
+# Keep that schema information on the table and in the saved Arrow schema.
+function _set_long_column_presence!(table::DataFrame, presence)
+    metadata!(table, _LONG_COLUMN_SPACECRAFT_KEY, JSON.json(presence); style=:note)
+    return table
+end
+
+function _check_long_column_names(columns; run_table::Bool=false)
+    reserved = run_table ? ("time",) : ("spacecraft", "spacecraft_id", "plane", "slot", "time")
+    for name in columns
+        name in reserved || continue
+        throw(ArgumentError("long results reserve column '$name' for row identity; choose a different SaveField column_prefix or use the wide layout"))
+    end
+    return nothing
+end
+
 function _build_long_results_tables(times::Vector{Float64}, saved_data::Vector, save_fields, args)
     spacecraft = args.dynamics_model.spacecraft
     num_sats = length(spacecraft)
@@ -219,23 +238,34 @@ function _build_long_results_tables(times::Vector{Float64}, saved_data::Vector, 
         time=repeat(times; inner=num_sats),
     )
     run_df = DataFrame(time=times)
+    presence = Dict{String, Vector{Int}}()
     for field in save_fields
+        # Flatten before validating: nested names can collide even when the
+        # original prefix does not. Transfer columns without copying their data.
+        columns = DataFrame()
         if field.per_satellite
-            _append_long_field_columns!(spacecraft_df, field, saved_data, num_sats)
+            _append_long_field_columns!(columns, field, saved_data, num_sats, presence)
         else
-            _append_series_columns!(run_df, field.column_prefix, [snapshot[field.name] for snapshot in saved_data])
+            _append_series_columns!(columns, field.column_prefix, [snapshot[field.name] for snapshot in saved_data])
+        end
+        _check_long_column_names(names(columns); run_table=!field.per_satellite)
+        destination = field.per_satellite ? spacecraft_df : run_df
+        for name in names(columns)
+            destination[!, name] = columns[!, name]
         end
     end
+    _set_long_column_presence!(spacecraft_df, presence)
     return (spacecraft=spacecraft_df, run=ncol(run_df) > 1 ? run_df : nothing)
 end
 
-function _append_long_field_columns!(results_df::DataFrame, field, saved_data::Vector, num_sats::Int)
+function _append_long_field_columns!(results_df::DataFrame, field, saved_data::Vector, num_sats::Int, presence)
     values = [snapshot[field.name] for snapshot in saved_data]
     if isempty(values) || num_sats == 0
         _append_series_columns!(results_df, field.column_prefix, [value[sat] for value in values for sat in 1:num_sats])
+        presence[field.column_prefix] = collect(1:num_sats)
         return nothing
     end
-    _fill_long_columns!(results_df, field.column_prefix, values, num_sats) && return nothing
+    _fill_long_columns!(results_df, field.column_prefix, values, num_sats, presence) && return nothing
     # Each spacecraft's series is flattened on its own, as the wide table flattens
     # it, so that spacecraft whose values have different shapes (their thruster
     # counts, the keys of a NamedTuple) each keep their columns. The long columns
@@ -251,6 +281,7 @@ function _append_long_field_columns!(results_df::DataFrame, field, saved_data::V
     end
     for name in order
         columns = [name in names(flat) ? flat[!, name] : nothing for flat in per_sat]
+        presence[name] = findall(!isnothing, columns)
         results_df[!, name] = [columns[sat] === nothing ? missing : columns[sat][row]
                                for row in eachindex(values) for sat in 1:num_sats]
     end
@@ -259,10 +290,10 @@ end
 
 # The long counterparts of `_fill_per_satellite_columns!`, under the same
 # conditions, so a column has the element type the wide table's columns have.
-_fill_long_columns!(::DataFrame, ::String, values, ::Int)::Bool = false
+_fill_long_columns!(::DataFrame, ::String, values, ::Int, presence)::Bool = false
 
 function _fill_long_columns!(
-    results_df::DataFrame, prefix::String, values::Vector{V}, num_sats::Int
+    results_df::DataFrame, prefix::String, values::Vector{V}, num_sats::Int, presence
 )::Bool where {T <: Real, V <: AbstractVector{T}}
     isconcretetype(T) || return false
     _rows_are_one_based(values, num_sats) || return false
@@ -271,11 +302,12 @@ function _fill_long_columns!(
         column[(row - 1) * num_sats + sat] = entries[sat]
     end
     results_df[!, prefix] = column
+    presence[prefix] = collect(1:num_sats)
     return true
 end
 
 function _fill_long_columns!(
-    results_df::DataFrame, prefix::String, values::Vector{V}, num_sats::Int
+    results_df::DataFrame, prefix::String, values::Vector{V}, num_sats::Int, presence
 )::Bool where {T <: Real, S <: AbstractVector{T}, V <: AbstractVector{S}}
     isconcretetype(T) || return false
     _rows_are_one_based(values, num_sats) || return false
@@ -292,7 +324,9 @@ function _fill_long_columns!(
         end
     end
     for comp in 1:n_comp
-        results_df[!, "$(prefix)_$(comp)"] = columns[comp]
+        name = "$(prefix)_$(comp)"
+        results_df[!, name] = columns[comp]
+        presence[name] = collect(1:num_sats)
     end
     return true
 end
@@ -430,26 +464,144 @@ function _write_long_results!(
             csv_paths = merge(csv_paths, NamedTuple{(Symbol(part),)}((csv_path,)))
         end
         if write_bundle
-            feather_path = IOSerialization._atomic_write_file(prefix * "_" * part * ".feather", tmp -> Arrow.write(tmp, df))
+            schema_metadata = part == "spacecraft" ?
+                Dict(_LONG_COLUMN_SPACECRAFT_KEY => metadata(df, _LONG_COLUMN_SPACECRAFT_KEY)) : nothing
+            feather_path = IOSerialization._atomic_write_file(prefix * "_" * part * ".feather",
+                tmp -> Arrow.write(tmp, df; metadata=schema_metadata))
             files[part * "_feather"] = entry(feather_path)
         end
     end
     write_bundle || return csv_paths
+    _write_long_manifest!(args, results_bundle_schema_version, files, length(times),
+        isempty(times) ? nothing : times[1], resumed_from_s)
+    return csv_paths
+end
+
+# The long layout's manifest: `schema_version` "2", `layout` "long", the `files`
+# given, `steps` saved times from `first_time_s`. `extra` adds entries (a
+# streaming run's manifest before it ends).
+function _write_long_manifest!(args, results_bundle_schema_version, files, steps::Integer,
+                               first_time_s, resumed_from_s; extra=())
+    prefix = IOConfig._results_bundle_prefix(args)
     manifest = Dict{String, Any}(
         "schema_version" => results_bundle_schema_version,
         "layout" => "long",
         "created_utc" => string(now(UTC)),
         "mission_time_s" => args.mission_configuration.mission_time,
-        "steps" => length(times),
+        "steps" => steps,
         "spacecraft_count" => length(args.dynamics_model.spacecraft),
         "orientation_sim" => args.mission_configuration.orientation_sim,
         "atmosphere" => atmosphere_provenance(args.environment_model.density_model),
         "files" => files
     )
-    isempty(times) || (manifest["first_time_s"] = times[1])
+    first_time_s === nothing || (manifest["first_time_s"] = first_time_s)
     resumed_from_s === nothing || (manifest["resumed_from_s"] = resumed_from_s)
+    for (key, value) in extra
+        manifest[key] = value
+    end
     IOSerialization._atomic_write_file(prefix * ".manifest.toml", tmp -> open(io -> TOML.print(io, manifest), tmp, "w"))
-    return csv_paths
+    return nothing
+end
+
+# Streaming, for a long-layout run with checkpoints that writes results: each
+# checkpoint appends its rows to an Arrow IPC stream beside the checkpoint, which
+# Arrow can append to, and to the CSV. When the run ends, or a solve fails, the
+# results feather is written from the stream, one record batch per append, so it
+# is an Arrow file as the unstreamed run's is. The stream stays beside the
+# checkpoint for a later resume, which cuts it back to the checkpoint's length.
+
+# Schema metadata is fixed by the first batch. Read only that batch so checking
+# ownership does not rebuild every preceding batch on each checkpoint append.
+function _long_stream_schema_metadata(path::AbstractString)
+    batch = iterate(Arrow.Stream(path))
+    return batch === nothing ? nothing : Arrow.getmetadata(first(batch))
+end
+
+# Append `df` to the stream at `path`, which a first append starts and tags with
+# `token`, and to `csv_path` (with the header when it is empty). Returns their
+# lengths in bytes.
+function _append_long_stream!(path::String, csv_path::Union{Nothing, String}, df::DataFrame, token::String)
+    mkpath(dirname(path))
+    started = isfile(path) && filesize(path) > 0
+    presence = metadata(df, _LONG_COLUMN_SPACECRAFT_KEY, nothing)
+    schema_metadata = Dict("spaceagora_results_token" => token)
+    if started
+        previous = _long_stream_schema_metadata(path)
+        previous_presence = previous === nothing ? nothing : get(previous, _LONG_COLUMN_SPACECRAFT_KEY, nothing)
+        # Older draft streams lack ownership metadata and keep their legacy
+        # interpretation. New streams must not silently change column ownership.
+        if previous_presence !== nothing
+            presence !== nothing && JSON.parse(previous_presence) == JSON.parse(presence) ||
+                throw(ArgumentError("The streamed spacecraft table's column ownership changed between checkpoints."))
+        end
+    elseif presence !== nothing
+        schema_metadata[_LONG_COLUMN_SPACECRAFT_KEY] = presence
+    end
+    Arrow.append(path, df; metadata=started ? nothing : schema_metadata, ntasks=1)
+    csv_bytes = 0
+    if csv_path !== nothing
+        mkpath(dirname(csv_path))
+        CSV.write(csv_path, df; append=isfile(csv_path) && filesize(csv_path) > 0)
+        csv_bytes = filesize(csv_path)
+    end
+    return filesize(path), csv_bytes
+end
+
+# Arrow table metadata is not imported by the DataFrame constructor. Retain the
+# long schema explicitly for streamed results returned to callers or ensembles.
+function _read_long_results_table(path::AbstractString; copycols::Bool=false)
+    arrow = Arrow.Table(path)
+    table = DataFrame(arrow; copycols=copycols)
+    schema_metadata = Arrow.getmetadata(arrow)
+    if schema_metadata !== nothing && haskey(schema_metadata, _LONG_COLUMN_SPACECRAFT_KEY)
+        metadata!(table, _LONG_COLUMN_SPACECRAFT_KEY, schema_metadata[_LONG_COLUMN_SPACECRAFT_KEY]; style=:note)
+    end
+    return table
+end
+
+# The token a stream was started with, or `nothing` (also for a file that is not
+# a readable stream).
+function _long_stream_token(path::String)
+    isfile(path) && filesize(path) > 0 || return nothing
+    metadata = try
+        Arrow.getmetadata(Arrow.Table(path))
+    catch err
+        err isa InterruptException && rethrow()
+        nothing
+    end
+    return metadata === nothing ? nothing : get(metadata, "spaceagora_results_token", nothing)
+end
+
+# The long layout's files from the streams (`streams.spacecraft`, and
+# `streams.run` or `nothing` without run-wide fields): the feathers written from
+# the streams and the CSVs as streamed, listed in the manifest. A run without a
+# run table removes the run table files an earlier run left. Returns the CSV
+# paths and the feather paths.
+function _finish_long_stream!(streams, args, results_bundle_schema_version; steps::Integer, first_time_s, resumed_from_s)
+    _invalidate_mission_history!(args)
+    prefix = IOConfig._results_bundle_prefix(args)
+    files = Dict{String, Any}()
+    entry(path) = Dict("path" => path, "size_bytes" => filesize(path), "sha256" => IOSerialization._sha256_hex(path))
+    csv = Dict{Symbol, Union{Nothing, String}}(:spacecraft => nothing, :run => nothing)
+    feather = Dict{Symbol, Union{Nothing, String}}(:spacecraft => nothing, :run => nothing)
+    streams.run === nothing && foreach(ext -> rm(prefix * "_run" * ext; force=true), (".csv", ".feather"))
+    for part in (:spacecraft, :run)
+        stream = getproperty(streams, part)
+        stream === nothing && continue
+        csv_path = prefix * "_" * String(part) * ".csv"
+        if args.simulation_settings.save_csv && isfile(csv_path)
+            files[String(part) * "_csv"] = entry(csv_path)
+            csv[part] = csv_path
+        end
+        stream_metadata = _long_stream_schema_metadata(stream)
+        presence = stream_metadata === nothing ? nothing : get(stream_metadata, _LONG_COLUMN_SPACECRAFT_KEY, nothing)
+        schema_metadata = presence === nothing ? nothing : Dict(_LONG_COLUMN_SPACECRAFT_KEY => presence)
+        feather[part] = IOSerialization._atomic_write_file(prefix * "_" * String(part) * ".feather",
+            tmp -> Arrow.write(tmp, Arrow.Stream(stream); metadata=schema_metadata, ntasks=1))
+        files[String(part) * "_feather"] = entry(feather[part])
+    end
+    _write_long_manifest!(args, results_bundle_schema_version, files, steps, first_time_s, resumed_from_s)
+    return (csv=(spacecraft=csv[:spacecraft], run=csv[:run]), feather=(spacecraft=feather[:spacecraft], run=feather[:run]))
 end
 
 export _append_saved_segment!
@@ -460,5 +612,9 @@ export _build_long_results_tables
 export _write_results_csv!
 export _write_results_bundle!
 export _write_long_results!
+export _write_long_manifest!
+export _append_long_stream!
+export _long_stream_token
+export _finish_long_stream!
 
 end # module IOOutputs

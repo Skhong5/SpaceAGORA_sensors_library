@@ -54,15 +54,18 @@ remain labeled as historical until rerun.
 
 ## EDG extraction and source ownership
 
-The private core `typed_edg/algorithms.jl` is a compatibility dispatcher. Its
-explicit `COMPATIBILITY_FUNCTIONS` inventory forwards existing helper names to
-the companion; it contains no second implementation of the eight kernels.
-Core source gates reject a numerical implementation added back to that owner.
+The private core `typed_edg/algorithms.jl` forwards the two decisions core calls,
+`guidance_decision!` and `control_decision!`, to the companion; the extension
+accepts only the names in `EDGServices.IMPLEMENTED_FUNCTIONS`. It contains no
+second implementation of the eight kernels and forwards none of their helpers.
+Core source gates reject a numerical implementation, a helper forwarder or a
+helper import added back.
 
 The extracted baseline is the reviewed PR289/current-main integration recorded
 in the companion's `provenance/extraction.json`. That record preserves original
 file hashes and identifies the service substitutions. Numerical ownership tests,
-the existing equation, targeting, heat, event and lifecycle regressions,
+the equation, targeting, heat and event regressions (the companion's tests since
+SpaceAGORA 0.6.1), the lifecycle regressions,
 core-only failure tests, both package load orders and a short analytic-atmosphere
 run exercise the software boundary. Native reference campaigns and their exact
 settings remain separate evidence; an installation test does not qualify them.

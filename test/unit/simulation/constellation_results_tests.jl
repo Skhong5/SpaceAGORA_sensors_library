@@ -11,6 +11,7 @@ using DataFrames
 using Arrow
 using CSV
 using TOML
+using Base64
 import OrdinaryDiffEq
 using SpaceAGORA
 using SpaceAGORA.SimulationModel
@@ -89,6 +90,102 @@ end
 
 same_columns(a::DataFrame, b::DataFrame) =
     names(a) == names(b) && all(name -> isequal(a[!, name], b[!, name]), names(a))
+
+@testset "summary status cannot be overwritten by saved fields" begin
+    args = configuration([three_body(1)]; results=false)
+    for name in ("success", "error", "elapsed_s", "rows", "member_tag", "results_subdirectory"), per_satellite in (false, true)
+        field = SM.SaveField(:custom, (u, t, i) -> nothing; per_satellite, column_prefix=name)
+        value = per_satellite ? [999.0] : 999.0
+        tables = SM.IOOutputs._build_long_results_tables([0.0, 10.0],
+            [Dict(:custom => value), Dict(:custom => value)], [field], args)
+        outcome = (value=nothing, spacecraft=tables.spacecraft, run=tables.run)
+        sample = SC.MonteCarloSampleResult(index=1, seed=1, success=true, elapsed_s=0.5, value=outcome)
+        campaign = SC.MonteCarloResult([sample], 0.5, 1)
+        @test_throws ArgumentError SC._constellation_ensemble_result(args, [args], campaign)
+    end
+end
+
+@testset "merged field ownership follows constellation positions" begin
+    for checkpoints in (false, true)
+        args = configuration([three_body(1), one_link(2)]; results_layout=:long,
+            checkpoint_enabled=checkpoints, checkpoint_interval_s=100.0)
+        gap = SM.SaveField(:gap, (u, t, integrator) -> [missing]; per_satellite=true)
+        ragged = SM.SaveField(:ragged, (u, t, integrator) ->
+            [u.sc[1].mass < 250.0 ? Float64[] : [t]]; per_satellite=true)
+        clock = SM.SaveField(:clock, (u, t, integrator) -> t)
+        result = quiet(() -> run_constellation_ensemble(args; merge_results=true, return_results=true, fail_fast=true,
+            save_fields=vcat(SM.default_save_fields(member(args, 1)), [gap, ragged, clock])))
+        saved = SM.IOOutputs._read_long_results_table(joinpath(args.simulation_settings.results_directory,
+            "constellation_members.feather"))
+        disk = read_constellation_results(args.simulation_settings.results_directory; overwrite=true)
+        disk_saved = SM.IOOutputs._read_long_results_table(disk.files[1])
+        for table in (result.members, saved, disk.members, disk_saved)
+            wide = try SM.SceneVisualization._wide_view(table, nothing, 2) catch; DataFrame() end
+            @test "sc1_gap" in names(wide) && "sc2_gap" in names(wide)
+            @test !("sc1_ragged_1" in names(wide)) && "sc2_ragged_1" in names(wide)
+            @test "sc1_clock" in names(wide) && "sc2_clock" in names(wide)
+        end
+        for sample in result.campaign.samples
+            own = sample.value
+            wide = SM.SceneVisualization._wide_view(own.table, run_table(own), 1)
+            @test "sc1_gap" in names(wide) && all(ismissing, wide.sc1_gap)
+        end
+    end
+end
+
+@testset "disk validation preserves both existing merged files" begin
+    for layout in (:wide, :long), per_satellite in (false, true), reserved in ("read_status", "success", "results_subdirectory")
+        args = configuration([one_link(1)]; mission_time=2.0, results_layout=layout)
+        field = SM.SaveField(:custom, (u, t, i) -> per_satellite ? [999.0] : 999.0;
+            per_satellite, column_prefix=reserved)
+        quiet(() -> run_constellation_ensemble(args; save_fields=[field], fail_fast=true))
+        directory = args.simulation_settings.results_directory
+        members_path = joinpath(directory, "constellation_members.feather")
+        summary_path = joinpath(directory, "constellation_summary.csv")
+        write(members_path, "previous merged members")
+        CSV.write(summary_path, DataFrame(spacecraft=[1], spacecraft_id=[1], plane=[missing], slot=[missing],
+            member_tag=["sat_1_id_1"], success=[true], error=[missing], elapsed_s=[0.0]))
+        before = [(read(path), stat(path).mtime) for path in (members_path, summary_path)]
+        @test_throws ArgumentError read_constellation_results(directory; overwrite=true)
+        @test [(read(path), stat(path).mtime) for path in (members_path, summary_path)] == before
+    end
+end
+
+@testset "disk reload follows a recovery member's actual output folder" begin
+    for layout in (:wide, :long)
+        directory = mktempdir()
+        first_leg = configuration([one_link(1), one_link(2)]; dir=directory, mission_time=2.0,
+            results_layout=layout, save_visualization_scene=true, checkpoint_enabled=true, checkpoint_interval_s=1.0)
+        quiet(() -> run_constellation_ensemble(first_leg; merge_results=true, fail_fast=true))
+        for k in 1:2
+            rm(SE._checkpoint_paths(member(first_leg, k)).rows)
+        end
+        resume = configuration([one_link(1), one_link(2)]; dir=directory, mission_time=4.0,
+            results_layout=layout, save_visualization_scene=true, checkpoint_enabled=true, checkpoint_interval_s=1.0, resume_from_checkpoint=true)
+        live = quiet(() -> run_constellation_ensemble(resume; merge_results=true, fail_fast=true))
+        @test live.constellation.results_subdirectory == fill("resumed_at_2.0s", 2)
+        disk = read_constellation_results(directory; overwrite=true)
+        @test same_columns(disk.members, live.members)
+        @test first(disk.members.time) == 2.0 && last(disk.members.time) == 4.0
+        @test all(==("read"), disk.constellation.read_status)
+        samples, _ = SM.SceneVisualization.discover_ensemble_samples(directory)
+        @test length(samples) == 2
+        @test all(sample -> basename(sample.directory) == "resumed_at_2.0s", samples)
+        @test [sample.label for sample in samples] == ["id 1", "id 2"]
+        scenes = [SM.SceneVisualization.read_visualization_scene(joinpath(sample.directory, "simulation_results_scene.json")) for sample in samples]
+        tables = [() -> SM.SceneVisualization._saved_results_table(scenes[i], joinpath(sample.directory, scenes[i].results_feather))
+            for (i, sample) in enumerate(samples)]
+        frames, _, _ = SM.SceneVisualization.build_ensemble_frames(samples, scenes, tables)
+        @test last(reinterpret(Float64, base64decode(frames["t_s"]))) == 4.0
+        # Older summaries cannot choose between an original and a recovery bundle.
+        summary_path = joinpath(directory, "constellation_summary.csv")
+        CSV.write(summary_path, select(disk.constellation, Not(:results_subdirectory)))
+        before = read(joinpath(directory, "constellation_members.feather"))
+        @test_throws "no recorded results_subdirectory" read_constellation_results(directory; overwrite=true)
+        @test read(joinpath(directory, "constellation_members.feather")) == before
+        @test_throws "no recorded results_subdirectory" SM.SceneVisualization.discover_ensemble_samples(directory)
+    end
+end
 
 @testset "merged constellation results" begin
     @testset "the default ensemble is unchanged" begin

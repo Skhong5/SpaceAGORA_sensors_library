@@ -133,9 +133,9 @@ function discover_ensemble_samples(campaign_dir::AbstractString)
     samples = EnsembleSample[]
     for name in sort(readdir(String(campaign_dir)))
         occursin(ENSEMBLE_SAMPLE_DIR_RE, name) || continue
-        dir = joinpath(String(campaign_dir), name)
+        label, plane, destination = get(identities, name, (name, NaN, missing))
+        dir = IOSerialization._member_results_directory(joinpath(String(campaign_dir), name), destination)
         isfile(joinpath(dir, "simulation_results_scene.json")) || continue
-        label, plane = get(identities, name, (name, NaN))
         push!(samples, EnsembleSample(length(samples) + 1, "", true, plane, label, dir))
     end
     return samples, any(sample -> !isnan(sample.scalar), samples) ? "plane" : ""
@@ -146,13 +146,14 @@ end
 # its plane (`NaN` without one). Empty without the summary.
 function _constellation_member_identities(campaign_dir::String)
     path = joinpath(campaign_dir, "constellation_summary.csv")
-    isfile(path) || return Dict{String, Tuple{String, Float64}}()
+    isfile(path) || return Dict{String, Tuple{String, Float64, Union{Missing, String}}}()
     summary = CSV.read(path, DataFrame)
-    identities = Dict{String, Tuple{String, Float64}}()
+    identities = Dict{String, Tuple{String, Float64, Union{Missing, String}}}()
     for row in eachrow(summary)
         located = !ismissing(row.plane) && !ismissing(row.slot)
         label = located ? "id $(row.spacecraft_id), plane $(row.plane), slot $(row.slot)" : "id $(row.spacecraft_id)"
-        identities[String(row.member_tag)] = (label, located ? Float64(row.plane) : NaN)
+        destination = :results_subdirectory in propertynames(row) ? row.results_subdirectory : missing
+        identities[String(row.member_tag)] = (label, located ? Float64(row.plane) : NaN, destination)
     end
     return identities
 end

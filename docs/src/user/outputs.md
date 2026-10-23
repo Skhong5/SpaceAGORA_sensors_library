@@ -320,6 +320,74 @@ levels of a spacecraft with thrusters beside one without, has the columns of
 every spacecraft, `missing` where a spacecraft has none. The default stays
 `results_layout = :wide`, whose files are unchanged.
 
+Long output reserves `spacecraft`, `spacecraft_id`, `plane`, `slot` and `time`
+for spacecraft row identities, and `time` in the run table. A custom field whose
+flattened name collides with one of these columns is refused with an
+`ArgumentError`; choose another `column_prefix` or keep the wide layout.
+This also applies when converting wide results with `long_table`.
+
+The long table and its Arrow file retain which spacecraft own each column,
+separately from its values. A present channel whose measurements are all `missing`
+remains a channel with gaps; an absent field does not become a channel. This
+schema information is carried in Arrow metadata, so it stays with a moved results
+file. Older draft long files without it retain the earlier fallback: columns
+whose values are all `missing` on one spacecraft are treated as absent. CSV alone
+does not retain this schema metadata.
+
+### Streaming at each checkpoint
+
+A long-layout run with checkpoints (see [Checkpointing](#Checkpointing)) that
+writes results streams them: it does not keep its saved rows in memory until it
+ends.
+
+- **At each checkpoint**, the rows saved since the last one, except the last row,
+  are appended to the spacecraft and run tables. The last row stays in memory
+  and is kept beside the checkpoint, so the run holds about one segment of rows
+  at a time.
+- **The tables grow as the run goes.** They are appended to as Arrow IPC streams
+  beside the checkpoint (`simulation_checkpoint.results_spacecraft.arrows` and
+  `simulation_checkpoint.results_run.arrows`) and to the CSVs. The manifest
+  shows `streaming = true`, the number of saved times written and the time
+  reached. Until the run finishes, `Arrow.Table` reads its rows from the
+  streams.
+- **When the run ends, or a solve fails,** the last rows are appended and the
+  Feather files and the manifest are written from the streams, as for a run that
+  does not stream. The files hold the same rows, values and column types, and
+  the CSVs the same bytes. A Feather file has one record batch per checkpoint.
+- **`SimulationResults.table` and [`run_table`](@ref)** read the Feather files
+  in place instead of holding a copy. Their columns are read-only; use
+  `DataFrame(results.table)` for a copy you can change.
+- **Thinning** (`SPACEAGORA_RESULTS_THIN_STRIDE`, `SPACEAGORA_RESULTS_FINAL_ONLY`)
+  counts rows over the whole run, so it keeps the rows a run that does not
+  stream keeps.
+- **Column ownership.** The spacecraft owning each column stay fixed across
+  checkpoints, including a resume. Changing that ownership stops the run before
+  appending the changed batch. Ownership metadata stays with the streams, final
+  Arrow files and returned tables. Older draft streams without it keep the
+  legacy fallback described above.
+- **Column types.** Each column keeps the type its first checkpoint's rows gave
+  it, and later rows must fit it: numbers fit a column that also allows
+  `missing`. A column whose type changes otherwise (a field that is `missing`
+  through the first checkpoint and a number after it, or whose flattened
+  columns change) stops the run with an error naming the column, and so does a
+  resume of it. Make such a field return values of one type (NaN rather than
+  `missing`, say), or run it without checkpoints or in the wide layout.
+- **A resumed run** cuts the streams and CSVs back to its checkpoint, so rows
+  written after it by a run that crashed are dropped, and goes on appending. Its
+  files then hold the whole run. A resume that solves nothing (its checkpoint
+  is at the mission's end) leaves the files and the streams as they are, unless
+  the run was killed while writing its Feather files: then a resume with the
+  run's save fields writes them from the streams, whether or not it returns
+  results. A resume that solves and cannot include the earlier rows keeps the
+  streams beside the checkpoint under other names
+  (`...before_resume_at_<t>s.arrows`), as it keeps the rows file, immediately
+  before its first replacement checkpoint is written. A failure before that
+  checkpoint leaves the old checkpoint and its streams usable.
+
+A run without checkpoints, a run that returns results without writing them, and
+a run with `SPACEAGORA_SAVE_BUNDLE=0` keep their rows in memory, as a wide run
+does.
+
 The viewer reads both layouts. For a long run it reads the spacecraft table as
 views, without copying it, and its page equals that of the same run in the wide
 layout. `run_monte_carlo_visualization` reads each sample's wide results file
@@ -333,10 +401,9 @@ in seconds of simulated time. The default is `10.0` seconds. Decreasing
 `data_rate` produces more rows and larger files; increasing it reduces output
 size but loses temporal resolution.
 
-The `num_steps_to_save` field of `MissionConfiguration` is not read by the
-engine: a run keeps its saved rows in memory and writes its results once, when
-it ends. It must still be positive, and setting it changes nothing else. To
-lower the memory of a long run, raise `data_rate`.
+The `num_steps_to_save` field is retained for configuration compatibility. It
+does not currently control buffering, flushing or peak memory use. Use
+`data_rate` to set the output cadence.
 
 ## Checkpointing
 
@@ -390,7 +457,11 @@ to the checkpoint, or none when the checkpoint holds no usable rows.
 The rows file stays with the checkpoint files after the run; a later run in the
 same checkpoint directory that is not a resume replaces it. It holds every row the
 run saves, before any thinning, so it grows with the run, to about the size of the
-results CSV. A run that neither writes nor returns results keeps no rows file,
+results CSV. A long-layout run that streams its results (see
+[Streaming at each checkpoint](#Streaming-at-each-checkpoint)) keeps only its last
+row there: the rest is in its results streams, which stay beside the checkpoint
+too. A resume in another layout cannot include rows kept that way: it warns and
+writes to `resumed_at_<t>s`, as below. A run that neither writes nor returns results keeps no rows file,
 except one with the gravity backbone, which builds its results from those rows. The
 checkpoint and its rows file are written with Julia's `Serialization`, whose
 format can change between Julia versions: resume with the Julia version that wrote
@@ -403,6 +474,13 @@ save results), or when they were saved with other save fields or another number 
 spacecraft. It then warns, and its results start at the resume: they are written
 to `resumed_at_<t>s` inside `results_directory` (for example
 `output/resumed_at_2400.0s/`), so the earlier results files are kept as they were.
+The rows file beside the checkpoint is kept too, renamed to
+`simulation_checkpoint.results.before_resume_at_<t>s.bin`: after a run that was
+killed, it may hold the only copy of the earlier rows, since such a run writes no
+results files. A resumed run that saves no results renames it the same way rather
+than removing it. These renames happen when the first replacement checkpoint
+is ready, so a resume that fails before then leaves the old checkpoint and its
+rows usable. A resume that solves nothing does not rename them.
 The returned `configuration` names that folder as its `results_directory`.
 The checkpoint directory defaults to `results_directory/checkpoints` when left
 empty. Besides
@@ -419,6 +497,32 @@ control model, or a sensor kind, that keeps run state of its own adds it to
 the file through `checkpoint_state` (see
 [Run state in checkpoint files](../extensibility.md#Run-state-in-checkpoint-files));
 without it, a resumed run starts that state from its reset.
+
+A run with the burn scheduler (`BaseThrusterModel`) also records, when one is
+set, the maneuver command each spacecraft's maneuver guidance last issued and the
+burn plan installed for it. A command issued before the checkpoint and not yet
+planned, or a plan not yet flown, is then planned and flown in the resumed run as
+in a run never interrupted. A checkpoint written by an earlier SpaceAGORA
+holds no such record, and a run resumed from it starts with no command or plan
+waiting, as before.
+
+The checkpoint also records the orbit each spacecraft is on, once one is past its
+first, so a resumed run continues the count: a `MissionOrbits` run ends after the
+same number of orbits, and the campaign maneuver guidance, the pass-indexed
+density models and the periapsis pulses see the orbits they would have seen. A
+checkpoint written by an earlier SpaceAGORA holds no count, and a run resumed from
+it counts from the first orbit again, as before. If such a checkpoint was written
+after the first orbit, the resumed run's count is behind: a `MissionOrbits` run
+ends late, and the campaign maneuver guidance repeats the maneuvers of the orbits
+already flown. Run it again from its start, or from a checkpoint this version
+wrote.
+
+The atmosphere-entry limit (`SPACEAGORA_ENTRY_TARGET_COUNT`) also retains each
+spacecraft's completed entry count, once one has entered. A resumed run then
+ends at the same entry as an uninterrupted checkpointed run. Older checkpoints
+without this count retain their earlier behavior: counting restarts at zero,
+so a run resumed after an entry can end late. Rerun from the start to obtain a
+checkpoint that includes the count.
 
 The checkpoint also records which spacecraft are active. A spacecraft lost to
 an impact or a touchdown before the checkpoint stays inactive in the resumed

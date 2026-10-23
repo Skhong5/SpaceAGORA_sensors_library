@@ -3,7 +3,7 @@ import ..SimulationModel
 import ..SimulationEngine
 using Arrow: Arrow
 using CSV: CSV
-using DataFrames: DataFrame, nrow, ncol
+using DataFrames: DataFrame, nrow, ncol, metadata
 
 """
     ConstellationEnsembleResult
@@ -88,7 +88,8 @@ function _constellation_member_outcome(member::SimulationConfiguration, run_kwar
     end
     tables = sink[]
     value = wants_results ? result : wants_solution ? result.solution : nothing
-    return (value=value, spacecraft=tables.spacecraft, run=tables.run)
+    return (value=value, spacecraft=tables.spacecraft, run=tables.run,
+        results_directory=result.configuration.simulation_settings.results_directory)
 end
 
 # The member run of an ensemble: `run_simulation`, or with merge_results=true the
@@ -110,7 +111,10 @@ function _constellation_member_rows(position::Integer, outcome)::DataFrame
     rows = shared ? copy(outcome.spacecraft) : outcome.spacecraft
     rows[!, "spacecraft"] = fill(Int32(position), nrow(rows))
     run = outcome.run
-    run === nothing && return rows
+    set_presence(table) = SimulationModel.IOOutputs._set_long_column_presence!(table,
+        Dict(name => [Int(position)] for name in names(table)
+             if !(name in _CONSTELLATION_IDENTITY) && name != "time"))
+    run === nothing && return set_presence(rows)
     isequal(run[!, "time"], rows[!, "time"]) ||
         error("Member $(position)'s run table and spacecraft table have different saved times.")
     for name in names(run)
@@ -121,7 +125,7 @@ function _constellation_member_rows(position::Integer, outcome)::DataFrame
             "column_prefix."))
         rows[!, name] = shared ? copy(run[!, name]) : run[!, name]
     end
-    return rows
+    return set_presence(rows)
 end
 
 # The folder name of member `position` (see `_ensemble_member_configuration`):
@@ -144,13 +148,22 @@ function _constellation_ensemble_result(args::SimulationConfiguration, member_co
     count = length(spacecraft)
     slot_part(sc, part) = sc.constellation_slot === nothing ? missing : Int16(getproperty(sc.constellation_slot, part))
     member_rows = DataFrame[]
+    presence = Dict{String, Vector{Int}}()
     last_rows = Union{Nothing, DataFrame}[]
     row_counts = Int[]
+    destinations = String[]
     for (k, sample) in enumerate(campaign.samples)
         position = sample.index
         if sample.success
             outcome = sample.value
+            destination = hasproperty(outcome, :results_directory) ? outcome.results_directory :
+                member_configs[position].simulation_settings.results_directory
+            push!(destinations, relpath(destination, member_configs[position].simulation_settings.results_directory))
             rows = _constellation_member_rows(position, outcome)
+            for name in names(rows)
+                (name in _CONSTELLATION_IDENTITY || name == "time") && continue
+                push!(get!(presence, name, Int[]), Int(position))
+            end
             push!(row_counts, nrow(rows))
             push!(last_rows, nrow(rows) == 0 ? nothing : rows[nrow(rows):nrow(rows), :])
             push!(member_rows, rows)
@@ -161,10 +174,12 @@ function _constellation_ensemble_result(args::SimulationConfiguration, member_co
             j = findfirst(s -> s.index == position, campaign.successful)
             j === nothing || (campaign.successful[j] = released)
         else
+            push!(destinations, ".")
             push!(row_counts, 0)
             push!(last_rows, nothing)
         end
     end
+
 
     positions = [sample.index for sample in campaign.samples]
     identity = DataFrame(
@@ -173,6 +188,7 @@ function _constellation_ensemble_result(args::SimulationConfiguration, member_co
         plane=Union{Missing, Int16}[slot_part(spacecraft[k], :plane) for k in positions],
         slot=Union{Missing, Int16}[slot_part(spacecraft[k], :slot) for k in positions],
         member_tag=String[_constellation_member_tag(member_configs[k], k, count, spacecraft[k].id) for k in positions],
+        results_subdirectory=destinations,
     )
     constellation = _constellation_summary(identity, Bool[sample.success for sample in campaign.samples],
         Union{Missing, String}[sample.success ? missing : sprint(showerror, sample.error) for sample in campaign.samples],
@@ -180,19 +196,20 @@ function _constellation_ensemble_result(args::SimulationConfiguration, member_co
 
     result_campaign = MonteCarloResult(campaign.samples, campaign.elapsed_s, campaign.threads;
                                        route=campaign.route, local_slots=campaign.local_slots)
-    members, files = _write_constellation_results!(args, member_rows, constellation)
+    members, files = _write_constellation_results!(args, member_rows, constellation, presence)
     return ConstellationEnsembleResult(result_campaign, members, constellation, files)
 end
 
 # The constellation table: the members' identity and folder (`identity`), their
 # status, their rows in the members table and their last row there, under the
 # same names (`missing` for a member without rows).
-function _constellation_summary(identity::DataFrame, success, error, elapsed_s, row_counts, last_rows)
+function _constellation_summary(identity::DataFrame, success, error, elapsed_s, row_counts, last_rows; read_status=nothing)
     constellation = copy(identity)
     constellation[!, "success"] = success
     constellation[!, "error"] = error
     constellation[!, "elapsed_s"] = elapsed_s
     constellation[!, "rows"] = row_counts
+    read_status === nothing || (constellation[!, "read_status"] = read_status)
     last_names = String[]
     for last in last_rows
         last === nothing && continue
@@ -201,6 +218,9 @@ function _constellation_summary(identity::DataFrame, success, error, elapsed_s, 
         end
     end
     for name in last_names
+        name in names(constellation) && throw(ArgumentError(
+            "merged constellation summary reserves column '$name' for campaign metadata; " *
+            "choose a different SaveField column_prefix"))
         constellation[!, name] = [last === nothing || !(name in names(last)) ? missing : last[1, name]
                                   for last in last_rows]
     end
@@ -247,9 +267,11 @@ _members_batch(rows::DataFrame, columns) = DataFrame([name => (name in names(row
 # The members table as an Arrow file at `path`, written member by member, one
 # record batch each, so that a member's rows are in memory only while they are
 # written. `tables` gives the members' tables in position order, one at a time.
-function _write_members_feather!(path::String, columns, tables)
+function _write_members_feather!(path::String, columns, tables, presence)
     return SimulationModel.IOSerialization._atomic_write_file(path, tmp -> begin
-        writer = open(Arrow.Writer, tmp; ntasks=1)
+        schema = SimulationModel.IOOutputs._set_long_column_presence!(_empty_members(), presence)
+        key = SimulationModel.IOOutputs._LONG_COLUMN_SPACECRAFT_KEY
+        writer = open(Arrow.Writer, tmp; ntasks=1, metadata=Dict(key => metadata(schema, key)))
         try
             written = 0
             for rows in tables
@@ -269,7 +291,7 @@ end
 # place; the CSV with `save_csv`), and the constellation table as
 # `constellation_summary.csv`. Without the feather the members table is built in
 # memory. Returns the members table and the files written.
-function _write_constellation_results!(args::SimulationConfiguration, member_rows::Vector{DataFrame}, constellation::DataFrame)
+function _write_constellation_results!(args::SimulationConfiguration, member_rows::Vector{DataFrame}, constellation::DataFrame, presence)
     settings = args.simulation_settings
     directory = settings.results_directory
     write(path, writer) = SimulationModel.IOSerialization._atomic_write_file(path, writer)
@@ -280,7 +302,7 @@ function _write_constellation_results!(args::SimulationConfiguration, member_row
         columns = _members_columns(member_rows)
         # Each member's rows are released once written.
         pending = Iterators.map(_ -> popfirst!(member_rows), 1:length(member_rows))
-        push!(files, _write_members_feather!(path, columns, pending))
+        push!(files, _write_members_feather!(path, columns, pending, presence))
         members = DataFrame(Arrow.Table(path); copycols=false)
     else
         members = isempty(member_rows) ? _empty_members() : popfirst!(member_rows)
@@ -288,6 +310,7 @@ function _write_constellation_results!(args::SimulationConfiguration, member_row
             append!(members, popfirst!(member_rows); cols=:union, promote=true)
         end
     end
+    SimulationModel.IOOutputs._set_long_column_presence!(members, presence)
     settings.results || return members, files
     mkpath(directory)
     settings.save_csv &&
@@ -363,19 +386,21 @@ function read_constellation_results(results_directory::AbstractString; overwrite
     position_of(tag) = haskey(found, tag) ? found[tag] : (Int(listed[tag].spacecraft), Int(listed[tag].spacecraft_id))
     members_list = sort!([(position_of(tag)..., tag) for tag in tags])
     as_int16(v) = v === nothing || ismissing(v) ? missing : Int16(v)
-    recorded(tag, name) = haskey(listed, tag) ? listed[tag][name] : missing
+    recorded(tag, name) = haskey(listed, tag) && Symbol(name) in propertynames(listed[tag]) ? listed[tag][name] : missing
+    member_folder(tag) = SimulationModel.IOSerialization._member_results_directory(
+        joinpath(directory, tag), recorded(tag, "results_subdirectory"))
 
     # Why a member's rows are not read, or "read".
     function status_of(member)
         _, _, tag = member
         haskey(listed, tag) && !coalesce(listed[tag].success, true) && return "member failed"
         haskey(found, tag) || return "folder missing"
-        return _disk_member_status(joinpath(directory, tag))
+        return _disk_member_status(member_folder(tag))
     end
     rows_of(member) = begin
         position, id, tag = member
         located = (plane=as_int16(recorded(tag, "plane")), slot=as_int16(recorded(tag, "slot")))
-        _disk_member_rows(joinpath(directory, tag), position, id, located)
+        _disk_member_rows(member_folder(tag), position, id, located)
     end
     statuses = String[status_of(member) for member in members_list]
     readable = [status == "read" for status in statuses]
@@ -390,9 +415,14 @@ function read_constellation_results(results_directory::AbstractString; overwrite
     planes = Union{Missing, Int16}[as_int16(recorded(member[3], "plane")) for member in members_list]
     slots = Union{Missing, Int16}[as_int16(recorded(member[3], "slot")) for member in members_list]
     schema_tables = DataFrame[]
+    presence = Dict{String, Vector{Int}}()
     for (k, member) in enumerate(members_list)
         readable[k] || continue
         rows = rows_of(member)
+        for name in names(rows)
+            (name in _CONSTELLATION_IDENTITY || name == "time") && continue
+            push!(get!(presence, name, Int[]), member[1])
+        end
         row_counts[k] = nrow(rows)
         if nrow(rows) > 0
             last_rows[k] = DataFrame(rows[nrow(rows):nrow(rows), :])
@@ -402,23 +432,25 @@ function read_constellation_results(results_directory::AbstractString; overwrite
         push!(schema_tables, rows[1:0, :])
     end
     columns = _members_columns(schema_tables)
-    _write_members_feather!(members_path, columns,
-        (rows_of(member) for (k, member) in enumerate(members_list) if readable[k]))
-    members = DataFrame(Arrow.Table(members_path); copycols=false)
-
     identity = DataFrame(
         spacecraft=Int32[member[1] for member in members_list],
         spacecraft_id=Int64[member[2] for member in members_list],
         plane=planes,
         slot=slots,
         member_tag=String[member[3] for member in members_list],
+        results_subdirectory=String[ismissing(recorded(member[3], "results_subdirectory")) ? "." :
+            recorded(member[3], "results_subdirectory") for member in members_list],
     )
     constellation = _constellation_summary(identity,
         Union{Missing, Bool}[recorded(member[3], "success") for member in members_list],
         Union{Missing, String}[recorded(member[3], "error") for member in members_list],
         Union{Missing, Float64}[recorded(member[3], "elapsed_s") for member in members_list],
-        row_counts, last_rows)
-    constellation[!, "read_status"] = statuses
+        row_counts, last_rows; read_status=statuses)
+    # Validate the complete summary before replacing either existing merged file.
+    _write_members_feather!(members_path, columns,
+        (rows_of(member) for (k, member) in enumerate(members_list) if readable[k]), presence)
+    members = DataFrame(Arrow.Table(members_path); copycols=false)
+    SimulationModel.IOOutputs._set_long_column_presence!(members, presence)
     written = SimulationModel.IOSerialization._atomic_write_file(summary_path, tmp -> CSV.write(tmp, constellation))
     return (members=members, constellation=constellation, files=[members_path, written])
 end
@@ -467,6 +499,7 @@ function _disk_member_rows(folder::String, position::Int, id::Int, located)
         plane=Vector{Union{Missing, Int16}}(fill(located.plane, n)),
         slot=Vector{Union{Missing, Int16}}(fill(located.slot, n)), time=wide[!, "time"]; copycols=false)
     run = DataFrame(time=wide[!, "time"]; copycols=false)
+    SimulationModel.IOOutputs._check_long_column_names([name[5:end] for name in names(wide) if startswith(name, "sc1_")])
     for name in names(wide)
         name == "time" && continue
         startswith(name, "sc1_") ? (spacecraft[!, name[5:end]] = wide[!, name]) : (run[!, name] = wide[!, name])

@@ -7,7 +7,9 @@ What `run_simulation(args; return_results=true)` returns.
   CSV, built in memory even when `simulation_settings.results=false`. A resumed
   run's table holds the whole run, from the rows kept beside its checkpoint.
   With `results_layout=:long` it is the spacecraft table: one row per spacecraft
-  and saved time (see [`long_table`](@ref)).
+  and saved time (see [`long_table`](@ref)). A long-layout run that streams its
+  results at each checkpoint reads it from its Feather file in place, with
+  read-only columns; `DataFrame(results.table)` copies it.
 - `configuration`: the configuration that ran. Under the default
   `isolate_state=true` this is the deep copy, so mutated controller state and
   logs (for example the RPO command log) are reachable here and not on the
@@ -74,6 +76,7 @@ function long_table(results::SimulationResults)::DataFrame
         m = match(r"^sc(\d+)_(.*)$", name)
         m === nothing || !(1 <= parse(Int, m[1]) <= num_sats) || m[2] in fields || push!(fields, m[2])
     end
+    SimulationModel.IOOutputs._check_long_column_names(fields)
     slot_part(sc, part) = sc.constellation_slot === nothing ? missing : Int16(getproperty(sc.constellation_slot, part))
     long = DataFrame(
         spacecraft=repeat(Int32.(1:num_sats), n_times),
@@ -82,9 +85,11 @@ function long_table(results::SimulationResults)::DataFrame
         slot=repeat(Union{Missing, Int16}[slot_part(sc, :slot) for sc in spacecraft], n_times),
         time=repeat(Vector{Float64}(wide.time); inner=num_sats),
     )
+    presence = Dict{String, Vector{Int}}()
     for field in fields
+        presence[field] = [i for i in 1:num_sats if prefix(i) * field in names(wide)]
         columns = [prefix(i) * field in names(wide) ? wide[!, prefix(i) * field] : nothing for i in 1:num_sats]
         long[!, field] = [columns[sat] === nothing ? missing : columns[sat][row] for row in 1:n_times for sat in 1:num_sats]
     end
-    return long
+    return SimulationModel.IOOutputs._set_long_column_presence!(long, presence)
 end

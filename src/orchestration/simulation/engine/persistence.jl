@@ -29,6 +29,19 @@
     SimulationModel.IOOutputs._write_long_results!(tables, times, args, LONG_RESULTS_BUNDLE_SCHEMA_VERSION;
         write_bundle=write_bundle, resumed_from_s=resumed_from_s)
 
+@inline _append_long_stream!(path::String, csv_path::Union{Nothing, String}, df::DataFrame, token::String) =
+    SimulationModel.IOOutputs._append_long_stream!(path, csv_path, df, token)
+
+@inline _long_stream_token(path::String) = SimulationModel.IOOutputs._long_stream_token(path)
+
+@inline _finish_long_stream!(streams, args; steps::Integer, first_time_s, resumed_from_s) =
+    SimulationModel.IOOutputs._finish_long_stream!(streams, args, LONG_RESULTS_BUNDLE_SCHEMA_VERSION;
+        steps=steps, first_time_s=first_time_s, resumed_from_s=resumed_from_s)
+
+@inline _write_long_manifest!(args, files, steps::Integer, first_time_s, resumed_from_s; extra=()) =
+    SimulationModel.IOOutputs._write_long_manifest!(args, LONG_RESULTS_BUNDLE_SCHEMA_VERSION, files, steps,
+        first_time_s, resumed_from_s; extra=extra)
+
 # Viewer scene sidecar (docs/architecture/interactive_visualization_plan.md).
 # Opt-in: nothing is written unless `save_visualization_scene` is set, and it
 # never runs when results themselves are disabled.

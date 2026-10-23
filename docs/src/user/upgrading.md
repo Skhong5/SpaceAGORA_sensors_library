@@ -24,14 +24,33 @@ Constants saved by SpaceAGORA 0.6.0 or earlier are no longer read:
   that planner runs without machine constants.
 - If you calibrated with the script at a job's thread count, rerun it as well:
   otherwise the first `parallel=true` session in that working directory measures
-  with its own thread count. Terminal, from the repository root:
+  with its own thread count.
 
-  ```text
-  julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl
-  ```
+To rerun the calibration, replace `<T>` with the thread count you run with.
+Terminal, from the repository root:
+
+```text
+julia --project=. --threads=<T> scripts/calibration/calibrate_machine.jl
+```
 
 [Parallel Execution](parallel_execution.md#Turning-on-parallel-execution) says
 where the constants are kept.
+
+### SpaceAGORA calls the EDG companion only through its two decisions
+
+SpaceAGORA reaches SpaceAGORAEDG only through `guidance_decision!` and
+`control_decision!`, as before at run time. The EDG helpers it also forwarded,
+only for tests, are gone: their forwarders in the internal
+`SimulationModel.EDGAlgorithms`, the eight model-typed EDG wrappers and the helper
+bindings in `ControlHooks` and `GuidanceHooks`, and the private list
+`EDGServices.COMPATIBILITY_FUNCTIONS`. None of them was exported or part of the
+`EDGServices` contract, which stays at 3.0.0, and EDG results do not change.
+
+- Code that called an EDG helper through one of those modules stops with an
+  `UndefVarError`. The helper's tests now live in SpaceAGORAEDG.
+- This release installs SpaceAGORAEDG 0.5.1, whose tests use the decision route.
+  SpaceAGORAEDG 0.5.0 runs unchanged with it, but its own lease test calls a
+  removed helper.
 
 ## 0.6.0
 

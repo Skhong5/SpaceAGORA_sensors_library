@@ -274,3 +274,16 @@ The viewer's ensemble page (`export_ensemble_visualization`) labels the
 members of a folder with `constellation_summary.csv` by id, plane and slot
 (`id 7, plane 2, slot 3`), colours them by plane, and reads one member's
 results at a time.
+
+Merged summaries reserve `member_tag`, `success`, `error`, `elapsed_s` and `rows`
+for campaign metadata. If a saved field flattens to one of these names, the merge
+raises an `ArgumentError`; give that field a different `column_prefix`. This
+applies to both per-spacecraft and run-wide fields.
+
+Merged summaries also record `results_subdirectory`, the member's actual output
+folder relative to its `member_tag` folder (`.` normally, `resumed_at_<t>s` after
+recovery without usable earlier rows). Disk merging follows this destination;
+an older summary with several possible recovery bundles is refused because it
+cannot identify the intended results. `results_subdirectory` is reserved for
+this metadata, and disk summaries additionally reserve `read_status`. Summary
+validation happens before either existing merged file is replaced.
