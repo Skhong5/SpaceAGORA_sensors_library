@@ -152,13 +152,17 @@ for developers extending the integration.
 
 ## Final iSpaRo reconstruction candidate
 
-The SpaceAGORARPOStudies project owns
+The private SpaceAGORARPOStudies project owns
 `examples/Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl`, which records a newly
 generated experiment through the full SpaceAGORA simulator. It uses the final paper's
 0.5 m clearance, 10 Hz control, 60-step horizon and controller weights, with
 5 kg interpreted as initial wet mass and 0.2 kg of propellant. Exact original
 case coordinates, geometry draws and the paper-producing source revision have
 not been recovered. This example is a reconstruction, not an original-run replay.
+
+The following reconstruction commands are for lab members with access to that
+repository; outside collaborators need an invitation. Core users can use the
+generic planner examples described above.
 
 The example defaults to one HyPR case. Select other methods explicitly with
 `HYPR_PLANNERS`; comparisons are optional, not an installation requirement.

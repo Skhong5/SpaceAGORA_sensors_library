@@ -614,8 +614,8 @@ function _write_smart_ladder_report(
         )
         println(io, "```")
         println(io)
-        println(io, "Cross-machine replay/merge helper (run from the separately prepared SpaceAGORAParallelizationStudies repository):")
-        println(io, "https://github.com/Space-FALCON-Lab/SpaceAGORAParallelizationStudies")
+        println(io, "Cross-machine replay/merge helper (for lab members with access to the separately prepared private study repository):")
+        println(io, "SpaceAGORAParallelizationStudies")
         println(io, "```bash")
         cross_outdir = joinpath(dirname(config.outdir), "smart_parallel_ladder_cross_machine")
         println(

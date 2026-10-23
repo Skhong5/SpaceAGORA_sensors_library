@@ -1108,7 +1108,7 @@ function ppc_workload_env()::Union{Nothing, String}
     end
     fresh && return env
     msg = "Precompile workload image not built or not current for $(env); " *
-          "prepare it in the pinned SpaceAGORAParallelizationStudies repository: https://github.com/Space-FALCON-Lab/SpaceAGORAParallelizationStudies"
+          "lab members can prepare it in the pinned private SpaceAGORAParallelizationStudies repository"
     required && throw(ErrorException(msg * " (SPACEAGORA_PPB_WORKLOAD=$(setting))."))
     setting == "auto" && isfile(joinpath(env, "Project.toml")) && @warn msg * "; running without it."
     return nothing
