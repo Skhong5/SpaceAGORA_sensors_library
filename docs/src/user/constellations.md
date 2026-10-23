@@ -235,3 +235,7 @@ large campaign, `SPACEAGORA_RESULTS_THIN_STRIDE` and
 with `return_solver_metadata=true` is refused before any member runs. So is a
 run-wide save field whose `column_prefix` is a per-spacecraft field's, since
 both would sit in the same table.
+
+Save fields passed to an ensemble with `save_fields` run in each member, which
+has one spacecraft: build them from a member's configuration, since the default
+fields built from the whole constellation are sized for all its spacecraft.
