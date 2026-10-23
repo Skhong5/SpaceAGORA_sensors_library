@@ -222,25 +222,57 @@ solver = SolverConfig(
 args = SimulationConfiguration(...; solver_config=solver)
 ```
 
-This opt-in route uses OrdinaryDiffEq's explicit MRI-GARK45a method. Orbit
-and environmental forces form the slow component. Control, interlink forces,
-power and data transfer form the fast component. Both components act on the
-same spacecraft states. One integrator owns the callbacks, so a guidance tick,
-sensor sample, store boundary or other event is processed on one physical
-timeline.
+This opt-in route uses OrdinaryDiffEq's explicit MRI-GARK45a method. The slow
+component includes orbit and environmental forces and torques, quaternion
+kinematics, gyroscopic terms and custom dynamic effectors. Control and interlink
+forces and torques, power, data production and transfer, stores and station
+counters form the fast component. `solver_partition` does not move a custom
+effector into MRI's fast component. Both components act on the same spacecraft
+states. One integrator owns the callbacks, so a guidance tick, sensor sample,
+store boundary or other event is processed on one physical timeline. Fast
+attitude motion can still limit the outer step because its kinematics are slow.
 
-`multirate_slow_dt_s` limits the outer step; the orbital and atmospheric step
-limits can shorten it further. `multirate_fast_substeps` is the number of RK4
-microsteps **per MRI stage**, not per outer step. The outer method adapts its
-step using the configured tolerances. The `multirate_slow_solver` and
-`multirate_fast_solver` fields configure only the original `:multirate` Strang
-route. They do not change MRI's internal methods or enable automatic switching
-to a stiff solver. Use a full-state stiff solver such as `:rodas5p` or
-`:auto_stiff` for stiff problems; validate step convergence for your model.
+`multirate_slow_dt_s` limits the outer step. If omitted, its cap is
+`min(dt_max_orbit, 2.0)` seconds; orbital and atmospheric step limits can shorten
+it further. `multirate_fast_substeps` is the number of RK4 microsteps **per MRI
+stage**, not per outer step.
+
+!!! warning "Fast microstep accuracy needs a separate convergence check"
+    The outer method adapts its step using an embedded estimate of the slow
+    coupling error. That estimate does **not** control the error or stability
+    of the fast RK4 microsteps. Tightening `reltol` and `abstol` alone is not
+    sufficient: an under-resolved fast controller can return `Success` with
+    severely wrong intermediate states.
+
+    Choose `multirate_fast_substeps` and `multirate_slow_dt_s` to resolve the
+    fastest time constant in the fast component. Increase the substep count
+    and reduce the outer cap separately, and compare the full trajectory and
+    event/output quantities against a suitable single-rate reference. A
+    plausible final state alone does not establish convergence. Use a
+    full-state stiff solver such as `:rodas5p` or `:auto_stiff` for stiff fast
+    dynamics.
+
+The `multirate_slow_solver` and `multirate_fast_solver` fields configure only the
+original `:multirate` Strang route. They do not change MRI's internal methods or
+enable automatic switching to a stiff solver. MRI does not reuse an integrator
+through `solver_cache`.
 
 The MRI route supports rigid-spacecraft interlinks, batteries, data stores,
-mounted sensors and normal checkpoint continuation. Articulated spacecraft,
-compliant attachments, coupled robot-arm effectors and external propagation
-retain their setup refusals. The existing `:multirate` route and default
-`:tsit5` behavior are unchanged. This is a numerical option, not a promise that
-coupled runs will be faster; measure accuracy and runtime on the intended case.
+mounted sensors and normal checkpoint continuation. Keep the solver mode and
+numerical settings unchanged when checking resumed runs against uninterrupted
+runs: switching between MRI and the ordinary single-rate modes is currently
+accepted without a warning and does not promise the same trajectory. Same-mode
+MRI restart checks recover identical solver states, but saved rows at checkpoint
+boundaries can differ by floating-point rounding.
+
+MRI uses Hermite dense output. A custom discrete callback that jumps the state
+can affect interpolated output rows earlier in that accepted step; merely
+putting the callback time in `tstops` does not remove this limitation. Validate
+saved rows around such jumps rather than inferring their accuracy from the
+accepted solver states.
+
+Articulated spacecraft, compliant attachments, coupled robot-arm effectors,
+external propagation and mission segments retain their setup refusals. The
+existing `:multirate` route and default `:tsit5` behavior are unchanged. This is
+a numerical option, not a promise that coupled runs will be faster; measure
+accuracy and runtime on the intended case.
