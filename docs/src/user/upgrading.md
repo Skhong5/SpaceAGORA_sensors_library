@@ -90,6 +90,14 @@ standalone pin has moved to `packages/HYPRSource.toml`.
 
 ## 0.6.1
 
+### Resume checkpoints with the matching release or newer
+
+Resume a checkpoint written by SpaceAGORA 0.6.1 with 0.6.1 or later, using the
+Julia version that wrote it. Earlier SpaceAGORA versions can silently ignore
+the restored maneuver, orbit and atmosphere-entry state and resume with their
+older counting behavior; loading the file does not establish compatibility.
+
+
 ### Machine calibration constants are measured again
 
 The machine calibration now measures only the two constants the predictive

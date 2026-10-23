@@ -491,7 +491,11 @@ killed, it may hold the only copy of the earlier rows, since such a run writes n
 results files. A resumed run that saves no results renames it the same way rather
 than removing it. These renames happen when the first replacement checkpoint
 is ready, so a resume that fails before then leaves the old checkpoint and its
-rows usable. A resume that solves nothing does not rename them.
+rows usable. A resume that solves nothing does not rename them. If a kept name
+already exists, a numbered name is used. Normal resume does not search those kept
+files: restoring the original save-field settings alone does not recover them.
+Keep the rows file and its matching checkpoint together for an explicitly
+reviewed recovery procedure; there is no public reader for the kept-file format.
 The returned `configuration` names that folder as its `results_directory`.
 The checkpoint directory defaults to `results_directory/checkpoints` when left
 empty. Besides
