@@ -293,13 +293,13 @@ using .ParallelProcess: ProcessPool, campaign_process_pool, ensure_process_worke
 ## 2.3. Simulation Engine
 using .SimulationEngine: ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, SimulationEngineConfig
 using .SimulationEngine: simulation_engine_config_from_env
-using .SimulationEngine: SimulationResults, link_schedule
+using .SimulationEngine: SimulationResults, link_schedule, run_table, long_table
 using .SimulationEngine: prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 run_simulation(args...; kwargs...) = SimulationEngine.run_simulation(args...; kwargs...)
 
 ## 2.4. Simulation Campaigns
 using .SimulationCampaigns: MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
-using .SimulationCampaigns: run_constellation_ensemble
+using .SimulationCampaigns: run_constellation_ensemble, ConstellationEnsembleResult
 using .SimulationCampaigns: run_monte_carlo_visualization
 
 ## 2.5. Simulation Model
@@ -494,6 +494,8 @@ end
 @doc (@doc SimulationEngine.simulation_engine_config_from_env) simulation_engine_config_from_env
 @doc (@doc SimulationEngine.SimulationResults) SimulationResults
 @doc (@doc SimulationEngine.link_schedule) link_schedule
+@doc (@doc SimulationEngine.run_table) run_table
+@doc (@doc SimulationEngine.long_table) long_table
 @doc (@doc SimulationEngine.run_simulation) run_simulation
 @doc (@doc SimulationEngine.prewarm_nbody_ephemeris_cache) prewarm_nbody_ephemeris_cache
 @doc (@doc SimulationEngine.load_nbody_ephemeris_cache!) load_nbody_ephemeris_cache!
@@ -504,6 +506,7 @@ end
 @doc (@doc SimulationCampaigns.MonteCarloResult) MonteCarloResult
 @doc (@doc SimulationCampaigns.run_monte_carlo) run_monte_carlo
 @doc (@doc SimulationCampaigns.run_constellation_ensemble) run_constellation_ensemble
+@doc (@doc SimulationCampaigns.ConstellationEnsembleResult) ConstellationEnsembleResult
 
 # 3.3. Simulation Model
 @doc (@doc SimulationModel.AerobrakingEnergyDepletionConfig) AerobrakingEnergyDepletionConfig
@@ -813,7 +816,7 @@ export ParallelConfig, SolverConfig, RuntimePolicyConfig, ArtifactConfig, Simula
 export simulation_engine_config_from_env
 export prewarm_nbody_ephemeris_cache, load_nbody_ephemeris_cache!
 export MonteCarloSpec, MonteCarloSampleResult, MonteCarloResult, run_monte_carlo
-export run_constellation_ensemble
+export run_constellation_ensemble, ConstellationEnsembleResult
 export StateAnchor, get_state_anchor_callback
 export AbstractForceTorqueModel, AbstractPlanet, AbstractDensityModel, AbstractControlEffectorModel
 export AbstractEphemeridesModel, AbstractThermalModel, AbstractThrusterModel, AbstractGuidanceModel
@@ -882,7 +885,7 @@ export AerobrakingEnergyDepletionGuidanceModel, AerobrakingEnergyDepletionContro
 export SolarPanelAngleOfAttackControlModel
 export ApoapsisTargetPeriapsisRaiseGuidanceModel
 export VerificationRequest, VerificationResult
-export run_verification, run_verification_cli, run_study, run_simulation, SimulationResults, link_schedule
+export run_verification, run_verification_cli, run_study, run_simulation, SimulationResults, link_schedule, run_table, long_table
 export station_geometry_path, station_cad_path, load_rpo_station_pointcloud, load_rpo_station_cad_triangles, load_rpo_station_cad_pointcloud
 export RPOStationGeometry, RPOCubeSatGeometry
 export VisualizationScene, PlanetSpec, SpacecraftGeometry, LinkBox, AtmosphereSpec, atmosphere_spec, ArmGeometry, arm_geometry

@@ -1,6 +1,6 @@
 # Execute with the optional HYPR integration environment.
 module FinalISpaRoReconstructionChecks
-using Test, LinearAlgebra, StaticArrays, Random, SpaceAGORA, SpaceAGORAHYPR
+using Test, LinearAlgebra, StaticArrays, Random, SpaceAGORA, HYPR
 const SM=SpaceAGORA.SimulationModel
 const G=SM.GuidanceHooks
 const C=SM.ControlHooks

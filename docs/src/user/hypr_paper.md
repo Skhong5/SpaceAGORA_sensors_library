@@ -1,7 +1,7 @@
 # Run the HyPR paper algorithm
 
 !!! note "Optional package"
-    Requires the optional `SpaceAGORAHYPR` package and the HYPR planner; see
+    Requires the optional `HYPR` package; see
     [Install and run](#Install-and-run).
 
 These examples implement the algorithm described in the final author-shared
@@ -15,8 +15,9 @@ same numerical results. The selected paper PDF has SHA-256
 ## Install and run
 
 From the SpaceAGORA checkout containing this guide, create a separate environment.
-The setup helper installs the immutable HYPR source revision recorded in
-`packages/SpaceAGORAHYPR/HYPRSource.toml`, SpaceAGORA and its companion package.
+The setup helper installs this checkout and the immutable HYPR source revision
+recorded in `packages/HYPRSource.toml`. The examples load SpaceAGORA and HYPR
+directly.
 Record the SpaceAGORA commit, the HYPR pin, Julia version, hardware and thread
 count with any results. An older HYPR release is not a substitute for this pin.
 The example loads HYPR from that environment and then continues in the

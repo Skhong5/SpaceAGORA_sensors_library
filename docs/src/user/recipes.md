@@ -68,7 +68,7 @@ julia --project=examples/rpo_planner_env examples/rpo_planner_env/setup.jl
 julia --startup-file=no examples/setup.jl
 ```
 
-These HYPR examples load `SpaceAGORAHYPR` before their common helper continues
+These HYPR examples load `SpaceAGORA` and `HYPR` before their common helper continues
 in the examples environment, so both environments are needed. Baseline examples
 use `--project=examples`.
 

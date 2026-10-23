@@ -226,7 +226,7 @@ if !isdir(_RPO_SPICE)
     @info "SPICE kernels absent; skipping the RPO command-log results test" _RPO_SPICE
 else
     # The RPO example needs the HYPR package; the unit runner has loaded it already.
-    isdefined(Main, :SpaceAGORAHYPR) || Base.include(Main, joinpath(@__DIR__, "..", "helpers", "load_hypr.jl"))
+    isdefined(Main, :HYPR) || Base.include(Main, joinpath(@__DIR__, "..", "helpers", "load_hypr.jl"))
     Base.include(RPOResultsExample, normpath(joinpath(@__DIR__, "..", "..", "examples", "Earth_RPO_CubeSat_MPC.jl")))
     @testset "SimulationResults RPO command log" begin
         dt = Base.invokelatest() do

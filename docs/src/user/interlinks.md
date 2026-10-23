@@ -729,3 +729,9 @@ checkpoint. A terminal on a panel driven by `SolarPanelAngleOfAttackControlModel
 needs a `PanelHinge` for checkpointing; arbitrary custom changes to a mount's
 position or attitude need their own checkpoint state restoration. The root
 link's attitude remains part of the integrated spacecraft state.
+
+The schedule is also saved for long-format and checkpoint-streamed results. A
+resume that only finishes interrupted trajectory file writes has no restored
+link history: it preserves any earlier schedule file, but does not list it in
+the recovered manifest or returned files. A resume that advances the simulation
+writes the schedule for its resumed interval, as described above.

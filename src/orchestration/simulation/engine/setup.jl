@@ -21,6 +21,8 @@ using TOML
 
 const _normalize_warning_emitted = Ref(false)
 const RESULTS_BUNDLE_SCHEMA_VERSION = "1"
+# The long layout's bundle (`results_layout=:long`): its own files and `layout` key.
+const LONG_RESULTS_BUNDLE_SCHEMA_VERSION = "2"
 const CHECKPOINT_SCHEMA_VERSION = "1"
 const NBODY_EPHEMERIS_CACHE_SCHEMA_VERSION = "1"
 const _EPHEMERIS_REUSE_LOCK = ReentrantLock()
