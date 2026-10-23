@@ -212,7 +212,6 @@ module ControlHooks
 
     using ..QuaternionMath
     include(joinpath(@__DIR__, "maneuvers", "propulsive_maneuvers.jl"))
-    include(joinpath(@__DIR__, "aerobraking", "edg_compatibility.jl"))
     include(joinpath(@__DIR__, "aerobraking", "targeting_control.jl"))
     include(joinpath(@__DIR__, "aerobraking", "edg_heat_accounting.jl"))
     include(joinpath(@__DIR__, "aerobraking", "energy_depletion_lifecycle.jl"))

@@ -1,4 +1,3 @@
-using ..EDGAlgorithms: _edg_pass_heat_load_for_links
 # Passage heat is a difference of cumulative integrals, one baseline per panel.
 # Do not reset the physical integrator state or change any guidance policy here.
 _edg_heat_state(::Any) = nothing

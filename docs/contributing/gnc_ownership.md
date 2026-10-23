@@ -55,10 +55,9 @@ owners. This internal module does not add root public API.
 EDG pairing validation finds the EDG control by dispatch.
 `GuidanceHooks._is_edg_control` returns `false` by default, and `ControlHooks`
 adds the method for `AerobrakingEnergyDepletionControlModel`. Guidance does not
-look up `ControlHooks` at run time. Its only lookup through its parent module is
-`_edg_algorithms()`, which reaches `EDGAlgorithms` (loaded after
-`GuidanceHooks`). `test/unit/gnc/planning_ownership_tests.jl` keeps it the only
-one.
+look up `ControlHooks`, or any other module, through its parent module at run
+time: `EDGAlgorithms` loads before `GuidanceHooks`, which imports it.
+`test/unit/gnc/planning_ownership_tests.jl` refuses such a lookup.
 
 Reporting completed results belongs to
 `src/interfaces/analysis/planning/rpo_comparison_reports.jl`. Its internal
@@ -81,8 +80,8 @@ kernels. Core retains public model types, run-owned state and passage resets,
 physical integration, queries, outputs and panel actuation.
 `guidance/aerobraking/typed_edg/` contains these core models and services; its
 `algorithms.jl` forwards to the optional provider through `SpaceAGORA.EDGServices`.
-`control/aerobraking/edg_compatibility.jl`, which imports the EDG calculations and
-keeps one model adapter, holds compatibility bindings, not additional algorithms.
+Control calls the companion's `control_decision!` and applies its command to the
+panels; it holds no EDG calculation and no binding of an EDG helper.
 
 SpaceAGORA no longer carries the older E-EDG and T-EDG strategy routes: the
 `guidance/aerobraking/e_edg/` and `t_edg/` solvers, their execution paths (then in a

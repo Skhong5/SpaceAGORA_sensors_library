@@ -99,7 +99,7 @@ struct MissionConfiguration
     number_of_orbits::Int # Number of orbits to propagate for (if mission_type is "Orbits")
     mission_time::Float64 # Total mission time in seconds (if mission_type is "Time")
     orientation_sim::Bool # Whether to simulate orientation dynamics (if false, only position and velocity are simulated)
-    num_steps_to_save::Int # Number of time steps to store in memory during the simulation before writing to a file
+    num_steps_to_save::Int # Retained configuration field; does not control runtime buffering or flushing
     data_rate::Float64 # Fixed data output rate in seconds, used for saveat in solve
 
     # ii) Inner constructor with data type conversion and validation

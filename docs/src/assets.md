@@ -1,22 +1,22 @@
 # Assets and Modes
 
-Use this page when you need to decide whether your machine is ready to run
-SpaceAGORA and which operating mode to choose.
+Use this guide to choose the environment inputs for a simulation and check which
+assets are available on your machine. The no-GRAM baseline is the first-run
+route; native GRAM, SPICE-backed geometry and surrogate workflows need additional
+inputs described below.
 
-This page is for users setting up local runs, deciding between no-GRAM and
-higher-fidelity workflows, or checking whether required data is present.
-
-Shortest successful command:
+After [preparing the core environment](user/installation_environment.md), run
+this inventory command from the repository root:
 
 ```text
 julia --project=. src/interfaces/cli/main.jl assets check
 ```
 
-What to read next:
-
-- [Quickstart](user/quickstart.md)
-- [Installation & Environment](user/installation_environment.md)
-- [First Simulation](user/first_script.md)
+The check also covers reference data used by verification studies. Missing
+required references can make it report a failure even when the no-GRAM
+[Quickstart](user/quickstart.md) can run. Use the asset names in the report to
+identify the prerequisites for your selected workflow; the
+[First Simulation](user/first_script.md) explains the baseline configuration.
 
 ## Choose a mode
 
@@ -50,8 +50,8 @@ It does not require:
 
 ### High-fidelity mode
 
-Use this mode when you need mission-quality atmosphere, SPICE-backed geometry,
-or other higher-fidelity environment inputs.
+Use this mode when your selected models need native GRAM atmosphere data,
+SPICE-backed geometry, or other machine-local environment inputs.
 
 It depends on machine-local or user-provided assets.
 
