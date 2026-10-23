@@ -320,6 +320,14 @@ levels of a spacecraft with thrusters beside one without, has the columns of
 every spacecraft, `missing` where a spacecraft has none. The default stays
 `results_layout = :wide`, whose files are unchanged.
 
+The long table and its Arrow file retain which spacecraft own each column,
+separately from its values. A present channel whose measurements are all `missing`
+remains a channel with gaps; an absent field does not become a channel. This
+schema information is carried in Arrow metadata, so it stays with a moved results
+file. Older draft long files without it retain the earlier fallback: columns
+whose values are all `missing` on one spacecraft are treated as absent. CSV alone
+does not retain this schema metadata.
+
 ### Streaming at each checkpoint
 
 A long-layout run with checkpoints (see [Checkpointing](#Checkpointing)) that
@@ -346,6 +354,11 @@ ends.
 - **Thinning** (`SPACEAGORA_RESULTS_THIN_STRIDE`, `SPACEAGORA_RESULTS_FINAL_ONLY`)
   counts rows over the whole run, so it keeps the rows a run that does not
   stream keeps.
+- **Column ownership.** The spacecraft owning each column stay fixed across
+  checkpoints, including a resume. Changing that ownership stops the run before
+  appending the changed batch. Ownership metadata stays with the streams, final
+  Arrow files and returned tables. Older draft streams without it keep the
+  legacy fallback described above.
 - **Column types.** Each column keeps the type its first checkpoint's rows gave
   it, and later rows must fit it: numbers fit a column that also allows
   `missing`. A column whose type changes otherwise (a field that is `missing`
@@ -478,6 +491,32 @@ control model, or a sensor kind, that keeps run state of its own adds it to
 the file through `checkpoint_state` (see
 [Run state in checkpoint files](../extensibility.md#Run-state-in-checkpoint-files));
 without it, a resumed run starts that state from its reset.
+
+A run with the burn scheduler (`BaseThrusterModel`) also records, when one is
+set, the maneuver command each spacecraft's maneuver guidance last issued and the
+burn plan installed for it. A command issued before the checkpoint and not yet
+planned, or a plan not yet flown, is then planned and flown in the resumed run as
+in a run never interrupted. A checkpoint written by an earlier SpaceAGORA
+holds no such record, and a run resumed from it starts with no command or plan
+waiting, as before.
+
+The checkpoint also records the orbit each spacecraft is on, once one is past its
+first, so a resumed run continues the count: a `MissionOrbits` run ends after the
+same number of orbits, and the campaign maneuver guidance, the pass-indexed
+density models and the periapsis pulses see the orbits they would have seen. A
+checkpoint written by an earlier SpaceAGORA holds no count, and a run resumed from
+it counts from the first orbit again, as before. If such a checkpoint was written
+after the first orbit, the resumed run's count is behind: a `MissionOrbits` run
+ends late, and the campaign maneuver guidance repeats the maneuvers of the orbits
+already flown. Run it again from its start, or from a checkpoint this version
+wrote.
+
+The atmosphere-entry limit (`SPACEAGORA_ENTRY_TARGET_COUNT`) also retains each
+spacecraft's completed entry count, once one has entered. A resumed run then
+ends at the same entry as an uninterrupted checkpointed run. Older checkpoints
+without this count retain their earlier behavior: counting restarts at zero,
+so a run resumed after an entry can end late. Rerun from the start to obtain a
+checkpoint that includes the count.
 
 The checkpoint also records which spacecraft are active. A spacecraft lost to
 an impact or a touchdown before the checkpoint stays inactive in the resumed

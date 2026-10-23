@@ -10,6 +10,7 @@ using DataFrames
 using Arrow
 using CSV
 using TOML
+using JSON
 using Logging
 using OrdinaryDiffEq: DiscreteCallback
 import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft
@@ -59,6 +60,55 @@ function watcher(watch::Watch, path)
             push!(watch.at, maximum(s for s in (150.0, 250.0, 350.0) if integrator.t > s))
             push!(watch.rows, isfile(path) ? length(Arrow.Table(path).time) : 0)
         end; save_positions=(false, false))
+end
+
+@testset "streaming keeps absent fields distinct from missing measurements" begin
+    for short in (1, 3)
+        with_scene(args) = SM.SimConfig._with_configuration(args;
+            simulation_settings=SM.SimConfig._with_fields(args.simulation_settings; save_visualization_scene=true))
+        gap = SM.SaveField(:gap, (u, t, integrator) -> [i == short ? missing : t for i in 1:3];
+            per_satellite=true, column_prefix="gap")
+        ragged = SM.SaveField(:ragged, (u, t, integrator) -> [i == short ? Float64[] : [t] for i in 1:3];
+            per_satellite=true, column_prefix="ragged")
+        run_channels(args; kwargs...) = quiet(() -> run_simulation(args; return_results=true,
+            save_fields=vcat(fields(args), [gap, ragged]), kwargs...))
+        wide_dir, straight_dir, resumed_dir = mktempdir(), mktempdir(), mktempdir()
+        wide = run_channels(with_scene(config(wide_dir; layout=:wide)))
+        straight = run_channels(with_scene(config(straight_dir)))
+        crash = DiscreteCallback((u, t, integrator) -> t > 350.0,
+            integrator -> error("metadata resume interruption"); save_positions=(false, false))
+        @test_throws Exception run_channels(with_scene(config(resumed_dir)); extra_callbacks=(crash,))
+        resumed = run_channels(with_scene(config(resumed_dir; resume=true)))
+        again = run_channels(with_scene(config(resumed_dir; resume=true)))
+        for result in (straight, resumed, again)
+            restored = SM.SceneVisualization._wide_view(result.table, run_table(result), 3)
+            same_columns = Set(names(restored)) == Set(names(wide.table))
+            @test same_columns
+            @test same_columns && all(name -> isequal(restored[!, name], wide.table[!, name]), names(wide.table))
+        end
+        channels = [(column="gap",), (column="ragged_1",)]
+        payload(dir) = JSON.parsefile(export_viewer_payload(joinpath(dir, "simulation_results");
+            textures=false, channels=channels))
+        expected = payload(wide_dir)
+        for dir in (straight_dir, resumed_dir)
+            actual = payload(dir)
+            @test [channel["name"] for channel in get(actual["frames"], "channels", [])] == ["gap"]
+            @test isequal(actual["frames"], expected["frames"])
+        end
+    end
+end
+
+@testset "streaming refuses changed column ownership before appending" begin
+    io = SM.IOOutputs
+    dir = mktempdir()
+    path, csv = joinpath(dir, "test.arrows"), joinpath(dir, "test.csv")
+    table = DataFrame(spacecraft=Int32[1, 2], time=[0.0, 0.0], value=[missing, 1.0])
+    io._set_long_column_presence!(table, Dict("value" => [2]))
+    io._append_long_stream!(path, csv, table, "ownership-test")
+    before = (read(path), read(csv))
+    io._set_long_column_presence!(table, Dict("value" => [1]))
+    @test_throws r"column ownership changed" io._append_long_stream!(path, csv, table, "ownership-test")
+    @test (read(path), read(csv)) == before
 end
 
 @testset "streamed long results" begin
