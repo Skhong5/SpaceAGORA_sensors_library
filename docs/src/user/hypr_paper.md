@@ -19,12 +19,15 @@ The setup helper installs the immutable HYPR source revision recorded in
 `packages/SpaceAGORAHYPR/HYPRSource.toml`, SpaceAGORA and its companion package.
 Record the SpaceAGORA commit, the HYPR pin, Julia version, hardware and thread
 count with any results. An older HYPR release is not a substitute for this pin.
+The example loads HYPR from that environment and then continues in the
+checkout's examples environment, which the second command prepares.
 
 ```sh
-julia --startup-file=no scripts/setup_hypr.jl "$HOME/AgentScratch/hypr-paper-env"
+julia --startup-file=no scripts/setup_hypr.jl "$HOME/spaceagora-hypr-paper-env"
+julia --startup-file=no examples/setup.jl
 JULIA_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 \
-  HYPR_OUTPUT_ROOT="$HOME/AgentScratch/hypr-paper-static" \
-  julia --startup-file=no --project="$HOME/AgentScratch/hypr-paper-env" \
+  HYPR_OUTPUT_ROOT="$HOME/spaceagora-hypr-paper-static" \
+  julia --startup-file=no --project="$HOME/spaceagora-hypr-paper-env" \
   examples/Earth_RPO_HyPR_FinalISpaRo_Reconstruction.jl
 ```
 
@@ -84,14 +87,16 @@ Replacement planning uses seed 1744.
     follows the v0.4.0 tag; until then, that they are reproducible from v0.4.0 is
     unchecked.
 
-In a checkout of the v0.4.0 tag, with the HYPR environment set up as in
-[Install and run](#Install-and-run), the case runs with:
+Use a separate checkout of the v0.4.0 tag for this historical case. From that
+checkout's root, create a distinct environment so the current-release setup
+above keeps its own core and HYPR pins:
 
 ```sh
+julia --startup-file=no scripts/setup_hypr.jl "$HOME/spaceagora-hypr-paper-v040-env"
 JULIA_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 \
-  HYPR_OUTPUT_ROOT="$HOME/AgentScratch/hypr-paper-dynamic" \
+  HYPR_OUTPUT_ROOT="$HOME/spaceagora-hypr-paper-dynamic" \
   HYPR_DYNAMIC_SCENARIOS=directly_ahead HYPR_DYNAMIC_MAX_TIME_S=1200 \
-  julia --startup-file=no --project="$HOME/AgentScratch/hypr-paper-env" \
+  julia --startup-file=no --project="$HOME/spaceagora-hypr-paper-v040-env" \
   examples/Earth_RPO_HyPR_FinalISpaRo_Replanning.jl
 ```
 

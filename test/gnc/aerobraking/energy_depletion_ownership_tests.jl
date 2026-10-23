@@ -14,30 +14,7 @@ geometry(sc) = [(r=Tuple(l.r), q=Tuple(l.q), alpha=l.α, a=Tuple(l.aᵇ), b=Tupl
                  inertia=Tuple(l.inertia), force=Tuple(l.net_force), torque=Tuple(l.net_torque)) for l in sc.links]
 decision(x, t=0.0, i=1; links=x.control.aoa_effector.controlled_panel_links) =
     A.control_decision!(x.state, x.config, links, x.u, x.p, t, i)
-
-# Public hook composition reference. The mathematical policy is supplied by
-# the independently reviewed published algorithms, with one canonical owner.
-function reference_control!(model, u, p, t, i)
-    state = model.state
-    1 <= i <= length(state.selected_mode) || return nothing
-    config = model.config
-    if state.selected_mode[i] == :inactive && !(:targeting in config.guidance_modes)
-        state.selected_mode[i] = (:max_energy_depletion in config.guidance_modes) ? :max_energy_depletion : :safe_low_drag
-    end
-    sc = C._edg_control_sat_state(u, i)
-    env = C._edg_environment_state(p, u, Float64(t), i)
-    spacecraft = p.args.dynamics_model.spacecraft[i]
-    pos, vel, mass = C._edg_control_pos_vel_mass(sc)
-    heat_load = C._edg_max_heat_load_for_links(sc, model.aoa_effector.controlled_panel_links)
-    pass_heat = A._edg_pass_heat_load_for_links(sc, model.aoa_effector.controlled_panel_links, state, i)
-    C._edg_recompute_switches!(model, p, env, spacecraft, pos, vel, mass, pass_heat, Float64(t), i)
-    A._edg_update_heat_load_security!(config, state, p, env, spacecraft, pos, vel, mass, pass_heat, Float64(t), i)
-    heat_load_low_drag_active = C._edg_heat_load_low_drag_active(model, Float64(t), i)
-    base_alpha = C._edg_base_alpha(model, Float64(t), i)
-    alpha = C._edg_command_alpha!(model, p, u, env, spacecraft, base_alpha, heat_load, heat_load_low_drag_active, i; pass_heat_load_j_cm2=pass_heat)
-    C._apply_solar_panel_aoa!(model.aoa_effector, spacecraft, alpha)
-    return nothing
-end
+# SpaceAGORAEDG's tests compare the decision with the composition of its kernels.
 
 @testset "Typed EDG owners and compatibility" begin
     @test S.AerobrakingEnergyDepletionConfig === G.AerobrakingEnergyDepletionConfig
@@ -52,7 +29,7 @@ end
         symbol = Symbol(name)
         owner = endswith(path, "/services.jl") ? P : A
         @test isdefined(owner, symbol)
-        if isdefined(C, symbol) && name ∉ ("_edg_recompute_switches!", "_edg_base_alpha", "_edg_command_alpha!", "_edg_heat_load_low_drag_active")
+        if isdefined(C, symbol)
             @test getfield(C, symbol) === getfield(owner, symbol)
         end
     end
@@ -60,22 +37,29 @@ end
     @test isempty(EDGOwnershipChecks.runtime_violations(A, P, gnc_modules))
     # A same-name function in another loaded module is not an alias.
     foreign = Module(gensym(:EDGForeignWitness))
-    Core.eval(foreign, :(_edg_prediction_time_grid(x) = x))
-    @test any(message -> occursin("separate EDG binding _edg_prediction_time_grid", message),
+    Core.eval(foreign, :(control_decision!(x) = x))
+    @test any(message -> occursin("separate EDG binding control_decision!", message),
         EDGOwnershipChecks.runtime_violations(A, P, [gnc_modules; foreign]))
+    # A helper name bound to an EDGAlgorithms function is a bridge entry again.
+    helper = Module(gensym(:EDGHelperWitness))
+    Core.eval(helper, :(const _edg_base_alpha = $A.control_decision!))
+    @test any(message -> occursin("binds EDG helper _edg_base_alpha to EDGAlgorithms", message),
+        EDGOwnershipChecks.runtime_violations(A, P, [gnc_modules; helper]))
     # Qualified extensions are legal Julia, but do not belong to the EDG owner.
     Core.eval(foreign, :(const Algorithms = $A))
-    before_methods = collect(methods(A._edg_prediction_time_grid))
+    before_methods = collect(methods(A.control_decision!))
     try
-        Core.eval(foreign, :(Algorithms._edg_prediction_time_grid(::Val{:edg_foreign_witness}) = nothing))
-        @test any(message -> occursin("foreign method on _edg_prediction_time_grid", message),
+        Core.eval(foreign, :(Algorithms.control_decision!(::Val{:edg_foreign_witness}) = nothing))
+        @test any(message -> occursin("foreign method on control_decision!", message),
             Base.invokelatest(EDGOwnershipChecks.runtime_violations, A, P, gnc_modules))
     finally
-        for method in setdiff(Base.invokelatest(() -> collect(methods(A._edg_prediction_time_grid))), before_methods)
+        for method in setdiff(Base.invokelatest(() -> collect(methods(A.control_decision!))), before_methods)
             Base.delete_method(method)
         end
     end
     @test isempty(EDGOwnershipChecks.runtime_violations(A, P, gnc_modules))
+    # The provider route accepts only the two decisions.
+    @test_throws ArgumentError P._invoke_kernel(:_edg_base_alpha)
     @test !isdefined(A, :ControlHooks)
     @test !isdefined(A, :SolarPanelAngleOfAttackControlModel)
     @test !isdefined(A, :_apply_solar_panel_aoa!)
@@ -90,7 +74,7 @@ end
         x.state.targeting_switch_s[1] = 10.0
         x.state.heat_load_switches_s[1] = (10.0,20.0)
         x.state.heat_load_switch_solved[1] = true
-        old = deepcopy(x); hook = deepcopy(x)
+        hook = deepcopy(x)
         before = geometry(x.spacecraft); loads = copy(x.u.sc[1].heat_loads)
         result = decision(x, t)
         @test result.apply
@@ -100,11 +84,9 @@ end
         @test result.diagnostics.heat_load_j_cm2 == x.state.last_heat_load_j_cm2[1]
         @test isequal(result.diagnostics.targeting_switch_s, x.state.targeting_switch_s[1])
         C._apply_solar_panel_aoa!(x.control.aoa_effector, x.spacecraft, result.command.alpha_command)
-        reference_control!(old.control, old.u, old.p, t, 1)
         @test S.update_control!(hook.control, hook.u, hook.p, t, 1) === nothing
-        @test isequal(state_values(x.state), state_values(old.state))
-        @test isequal(state_values(hook.state), state_values(old.state))
-        @test geometry(x.spacecraft) == geometry(old.spacecraft) == geometry(hook.spacecraft)
+        @test isequal(state_values(hook.state), state_values(x.state))
+        @test geometry(x.spacecraft) == geometry(hook.spacecraft)
     end
 end
 
@@ -158,14 +140,8 @@ end
     x.state.selected_mode[1] = :max_energy_depletion
     x.state.heat_load_switch_solved[1] = true
     x.state.heat_load_switches_s[1] = (10.,20.)
-    for (t, active) in ((prevfloat(10.),false),(10.,true),(nextfloat(10.),true),(20.,true),(nextfloat(20.),false))
-        @test A._edg_heat_load_low_drag_active(x.config,x.state,t,1) == active
-        @test A._edg_base_alpha(x.config,x.state,t,1) == (active ? x.config.min_alpha_rad : x.config.max_alpha_rad)
-    end
+    # SpaceAGORAEDG's tests check the switch endpoints of these two plans.
     x.state.selected_mode[1] = :targeting; x.state.targeting_active[1] = true; x.state.targeting_switch_s[1] = 10.
-    @test A._edg_base_alpha(x.config,x.state,10.0-1e-8,1) == x.config.max_alpha_rad
-    @test A._edg_base_alpha(x.config,x.state,prevfloat(10.),1) == x.config.min_alpha_rad # Clock roundoff tolerance.
-    @test A._edg_base_alpha(x.config,x.state,10.,1) == x.config.min_alpha_rad
     x.state.selected_mode[1] = :max_energy_depletion
     x.state.heat_load_switches_s[1] = (Inf,Inf)
     x.u.sc[1].heat_loads .= [0.,1.,90.]
@@ -177,11 +153,8 @@ end
     @test result.command.alpha_command == x.config.max_alpha_rad
     C._apply_solar_panel_aoa!(S.SolarPanelAngleOfAttackControlModel((2,)),x.spacecraft,result.command.alpha_command)
     @test geometry(x.spacecraft)[3] == before[3]
-    @test A._edg_max_heat_load_for_links(x.u.sc[1],x.config.controlled_panel_links) == 90.
     @test decision(x,0.;links=(2,3)).command.alpha_command == x.config.max_alpha_rad
     @test x.state.last_heat_budget_status[1] == :exhausted # Report; no new hard clipping policy.
-    @test A._edg_max_heat_load_for_links((heat_loads=[NaN,-1.,2.],),(1,2,3,8)) == 2.
-    @test A._edg_max_heat_load_for_links((pos=zeros(3),),(2,)) == 0.
     x.state.selected_mode[1]=:targeting; x.state.targeting_active[1]=true; x.state.targeting_switch_s[1]=Inf
     x.state.target_energy_jkg[1]=NaN
     @test decision(x,5.).switch_action == :cached
@@ -226,9 +199,8 @@ end
         @test isequal(state_values(x.state),prior)
     end
     @test isempty(x.events)
+    # SpaceAGORAEDG's tests check that an evaluated bracket queries nothing.
     x.state.energy_bracketing_evaluated[1]=true
-    A._edg_run_target_energy_bracketing!(x.config,x.state,x.u,x.p,7.,1)
-    @test isempty(x.events)
     x.u.sc[1].pos .= [3.0e6,1.0e6,1.2e6]
     r=SVector{3,Float64}(x.u.sc[1].pos);v=SVector{3,Float64}(x.u.sc[1].vel)
     env=P._edg_targeting_prediction_environment(x.p,r,v,7.)
@@ -276,8 +248,6 @@ end
     @test isequal(P._edg_control_pos_vel_mass((pos=collect(r),vel=collect(v))),(r,v,NaN))
     @test P._edg_control_sat_state((sc=[sc,sc],),2)===sc
     @test P._edg_control_sat_state(collect(sc),1)==collect(sc)
-    @test A._edg_predict_mass(x.spacecraft,NaN) == A._edg_predict_mass(x.spacecraft,Inf)
-    @test A._edg_predict_mass(x.spacecraft,321.)==321.
     structured=decision(x)
     y=_edg_test_context(max_energy_submodes=(:heat_rate,),heat_rate_limit_w_cm2=Inf)
     flat=A.control_decision!(y.state,y.config,(2,3),collect(y.u.sc[1])[1:7],y.p,0.,1)
@@ -298,7 +268,7 @@ end
         bad=copy(sources);bad[path]=get(bad,path,"")*"\n"*extra
         return !isempty(EDGOwnershipChecks.violations(bad))
     end
-    @test refused("src/models/gnc/control/other.jl","function _edg_prediction_time_grid(t)\n    return [t]\nend")
+    @test refused("src/models/gnc/control/other.jl","function guidance_decision!(t)\n    return [t]\nend")
     @test refused(EDGOwnershipChecks.OWNER*"targeting.jl","const reverse = ControlHooks")
     @test refused(EDGOwnershipChecks.OWNER*"targeting.jl","rotate_link(link, axis, angle)")
     @test refused(EDGOwnershipChecks.OWNER*"targeting.jl","link.α = 0.0")
@@ -307,25 +277,32 @@ end
         @test refused(EDGOwnershipChecks.OWNER*"targeting.jl", "$(tick)(model, u, p, t, i)")
     end
     @test refused("src/models/gnc/guidance/aerobraking/typed_edg/guidance_models.jl","_control_module()._edg_prediction_time_grid(1.0)")
+    aggregator_path=EDGOwnershipChecks.OWNER*"algorithms.jl"
     bad=copy(sources)
-    path="src/models/gnc/control/aerobraking/targeting_control.jl"
-    bad[path]=replace(bad[path],"    return EDGAlgorithms._edg_base_alpha"=>"    t += 1.0\n    return EDGAlgorithms._edg_base_alpha")
+    bad[aggregator_path]=replace(bad[aggregator_path],"_invoke_kernel(:control_decision!, args...;"=>"_invoke_kernel(:control_decision!, reverse(args)...;")
+    @test bad != sources
     @test !isempty(EDGOwnershipChecks.violations(bad))
     for definition in (
-        "_edg_prediction_time_grid(t) = [t]",
-        "    function _edg_prediction_time_grid(t)\n        [t]\n    end",
-        "@noinline function _edg_prediction_time_grid(t)\n    [t]\nend",
-        "function EDGAlgorithms._edg_prediction_time_grid(t)\n    [t]\nend",
+        "guidance_decision!(t) = [t]",
+        "    function guidance_decision!(t)\n        [t]\n    end",
+        "@noinline function guidance_decision!(t)\n    [t]\nend",
+        "function EDGAlgorithms.guidance_decision!(t)\n    [t]\nend",
         "control_decision!(args...) = nothing",
     )
         @test refused("src/models/gnc/control/other.jl", definition)
         @test refused("src/foundation/core/other.jl", definition)
     end
-    @test refused(path, "_edg_base_alpha(model, t, i) = t")
-    bad = copy(sources)
-    bad[path] = replace(bad[path], "model.config, model.state, t, i)" =>
-        "model.config, model.state, i, t)")
-    @test !isempty(EDGOwnershipChecks.violations(bad))
+    # The retired bridge stays retired: a helper forwarder, a model wrapper, a
+    # helper import into a GNC module, or a second name list.
+    path="src/models/gnc/control/aerobraking/targeting_control.jl"
+    @test refused(aggregator_path, "_edg_base_alpha(args...; kwargs...) = _invoke_kernel(:_edg_base_alpha, args...; kwargs...)")
+    @test refused(path, "_edg_base_alpha(model, t, i) = EDGAlgorithms._edg_base_alpha(model.config, model.state, t, i)")
+    @test refused("src/models/gnc/guidance/aerobraking/typed_edg/guidance_models.jl",
+        "_edg_set_targeting_fallback!(config, state, i) = getfield(parentmodule(@__MODULE__), :EDGAlgorithms)._edg_set_targeting_fallback!(config, state, i)")
+    @test refused(path, "using ..EDGAlgorithms: _edg_base_alpha")
+    @test refused(path, "import ..EDGAlgorithms._energy_depletion_heat_rate_calc")
+    @test refused(aggregator_path, "const COMPATIBILITY_FUNCTIONS = (:control_decision!, :guidance_decision!)")
+    @test !refused(path, "using ..EDGAlgorithms: control_decision!")
     for include_call in (
         "include(joinpath(dirname(dirname(dirname(@__DIR__))), \"control\", \"struct_load_control.jl\"))",
         "Base.include(@__MODULE__, joinpath(dirname(@__DIR__), \"control\", \"other.jl\"))",
@@ -337,7 +314,7 @@ end
     @test !EDGOwnershipChecks.has_control_include("message = \"include(control) is forbidden\"")
     aggregator = sources[EDGOwnershipChecks.OWNER * "algorithms.jl"]
     @test !isempty(EDGOwnershipChecks.aggregator_violations(
-        replace(aggregator, "_invoke_kernel(:_edg_at_control_tick" => "_invoke_kernel(:_edg_wrong_kernel")))
+        replace(aggregator, "_invoke_kernel(:guidance_decision!" => "_invoke_kernel(:_edg_wrong_kernel")))
     @test !isempty(EDGOwnershipChecks.aggregator_violations(
         aggregator * "\ninclude(joinpath(@__DIR__, \"heat_rate.jl\"))"))
     missing=copy(sources);delete!(missing,EDGOwnershipChecks.OWNER*"algorithms.jl")
@@ -353,7 +330,9 @@ end
     x.state.selected_mode[1]=:safe_low_drag
     old=deepcopy((x=x,model=model))
     @test_throws ArgumentError S.update_control!(model,x.u,x.p,1.,1)
-    @test_throws ArgumentError reference_control!(old.model,old.x.u,old.x.p,1.,1)
+    # The same decision, then the same panel application, on the copy.
+    @test_throws ArgumentError C._apply_solar_panel_aoa!(old.model.aoa_effector,old.x.spacecraft,
+        decision(old.x,1.;links=old.model.aoa_effector.controlled_panel_links).command.alpha_command)
     @test isequal(state_values(x.state),state_values(old.x.state))
     @test geometry(x.spacecraft)==geometry(old.x.spacecraft)
     @test x.spacecraft.links[2].α==x.config.min_alpha_rad
