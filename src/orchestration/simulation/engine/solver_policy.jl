@@ -473,6 +473,7 @@ end
         dtmax_use, reltol_tol, abstol_tol =
             SimulationModel.SimulationCallbacks._active_phase_solver_settings(prob.p, reltol_tol, abstol_tol)
     end
+    cfg.solver_mode === :multirate_mri && (dtmax_use = min(dtmax_use, _multirate_slow_dt_s(cfg, args)))
     dtmax_use > 0.0 || throw(ArgumentError("Solver dtmax must be > 0.0, got $dtmax_use."))
     # When nothing reads the trajectory (return_solution=false, results=false, no
     # solver metadata), skip per-step solution/dense storage — it is the dominant
@@ -917,6 +918,16 @@ function _solve_with_solver_policy(prob, cfg::SolverConfig, args, reltol_tol, ab
             fallback_used=false,
             trigger_retcode=missing
         )
+    end
+
+    if mode == :multirate_mri
+        # One integrator owns physical time and all callbacks. Fast stages
+        # integrate the coupled state without replaying callback intervals.
+        alg = MRIGARKERK45a(m=_multirate_fast_substeps(cfg))
+        sol = _solve_with_explicit_solver(prob, cfg, args, alg, reltol_tol, abstol_tol;
+            needs_full_solution=needs_full_solution)
+        return sol, (solver="Multirate(MRIGARKERK45a)", initial_solver="MRIGARKERK45a",
+            fallback_used=false, trigger_retcode=missing)
     end
 
     if mode == :multirate

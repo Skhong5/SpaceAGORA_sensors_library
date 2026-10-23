@@ -4,7 +4,7 @@
 # Solver names SolverConfig accepts. The SPACEAGORA_SOLVER_* parsers
 # (engine/adapters/from_env.jl) check against these same tuples, so the typed
 # and environment paths cannot accept different names.
-const _SOLVER_MODES = (:tsit5, :gravity_backbone_split, :dp8, :auto_stiff, :rodas5p, :split_imex, :multirate)
+const _SOLVER_MODES = (:tsit5, :gravity_backbone_split, :dp8, :auto_stiff, :rodas5p, :split_imex, :multirate, :multirate_mri)
 const _SPLIT_IMEX_SOLVERS = (:kencarp4, :kencarp47, :kencarp58)
 const _MULTIRATE_SOLVERS = (:tsit5, :dp8, :auto_stiff, :rodas5p, :kencarp4)
 
@@ -42,14 +42,18 @@ reads the effective config from the active environment at call time (respecting 
 independent of environment variables.
 
 `split_imex` uses the atmosphere-implicit IMEX partition. `multirate` keeps the
-control-focused split path. `gravity_backbone_split` is a fixed-step symplectic
+control-focused Strang split path. `multirate_mri` uses explicit MRI-GARK45a
+with a single callback timeline for rigid spacecraft, including interlinks,
+batteries and data stores. Its microsteps use RK4; `multirate_slow_solver`
+and `multirate_fast_solver` apply only to the original `multirate` mode.
+`gravity_backbone_split` is a fixed-step symplectic
 gravity-backbone mode; it is not a fully symplectic whole-system solve.
 
 The constructor checks the settings and throws an `ArgumentError` naming the
 accepted values for an unknown name:
 
 - `solver_mode`: `:tsit5`, `:gravity_backbone_split`, `:dp8`, `:auto_stiff`,
-  `:rodas5p`, `:split_imex`, `:multirate`. `:symplectic` is refused; use
+  `:rodas5p`, `:split_imex`, `:multirate`, `:multirate_mri`. `:symplectic` is refused; use
   `:gravity_backbone_split`.
 - `split_imex_solver`: `:kencarp4`, `:kencarp47`, `:kencarp58`.
 - `multirate_slow_solver`, `multirate_fast_solver`: `:tsit5`, `:dp8`,

@@ -2,7 +2,7 @@
 
 julia_version = "1.12.3"
 manifest_format = "2.0"
-project_hash = "35f1c8a63d5d0f437345ac81e0067dd35aa0c715"
+project_hash = "b91a94dda7d7666a92cdf9691a950ff31a21586f"
 
 [[deps.ADTypes]]
 deps = ["PrecompileTools"]
@@ -1354,6 +1354,12 @@ git-tree-sha1 = "ad41cf15bd74d8962fecbc81d34e5c1dfe0fc2a8"
 uuid = "d28bc4f8-55e1-4f49-af69-84c1a99f0f58"
 version = "2.2.1"
 
+[[deps.OrdinaryDiffEqMultirate]]
+deps = ["DiffEqBase", "FastBroadcast", "LinearAlgebra", "MuladdMacro", "OrdinaryDiffEqCore", "RecursiveArrayTools", "Reexport", "SciMLBase"]
+git-tree-sha1 = "4f944bbe765c136f78825de86c4d518e7fbe6ef5"
+uuid = "d4b830b4-ac80-426b-8507-16693d424963"
+version = "3.0.3"
+
 [[deps.OrdinaryDiffEqNonlinearSolve]]
 deps = ["ADTypes", "ArrayInterface", "CommonSolve", "ConstructionBase", "DiffEqBase", "FastBroadcast", "FastClosures", "ForwardDiff", "LinearAlgebra", "LinearSolve", "MuladdMacro", "NonlinearSolve", "NonlinearSolveBase", "OrdinaryDiffEqCore", "OrdinaryDiffEqDifferentiation", "PreallocationTools", "RecursiveArrayTools", "SciMLBase", "SciMLOperators", "SciMLPublic", "SimpleNonlinearSolve", "SparseArrays", "StaticArraysCore"]
 git-tree-sha1 = "d37ed37d7f2c6d29770f8235b54dbb614572b228"
@@ -1835,7 +1841,7 @@ uuid = "a2af1166-a08f-5f64-846c-94a0d3cef48c"
 version = "1.2.2"
 
 [[deps.SpaceAGORA]]
-deps = ["ADTypes", "Arrow", "Artifacts", "AstroTime", "Base64", "CSV", "ComponentArrays", "DataFrames", "Dates", "DiffEqBase", "DiffEqCallbacks", "Distributed", "Interpolations", "JSON", "LinearAlgebra", "LinearSolve", "Logging", "LoopVectorization", "OSQP", "OrdinaryDiffEq", "OrdinaryDiffEqHighOrderRK", "OrdinaryDiffEqSDIRK", "OrdinaryDiffEqSymplecticRK", "Pkg", "Polyester", "PrecompileTools", "Printf", "Random", "RecursiveArrayTools", "Reexport", "SHA", "SPICE", "SatelliteToolboxAtmosphericModels", "SatelliteToolboxGeomagneticField", "SatelliteToolboxTransformations", "SciMLBase", "Serialization", "SpaceIndices", "SparseArrays", "SpecialFunctions", "StaticArrays", "Statistics", "TOML"]
+deps = ["ADTypes", "Arrow", "Artifacts", "AstroTime", "Base64", "CSV", "ComponentArrays", "DataFrames", "Dates", "DiffEqBase", "DiffEqCallbacks", "Distributed", "Interpolations", "JSON", "LinearAlgebra", "LinearSolve", "Logging", "LoopVectorization", "OSQP", "OrdinaryDiffEq", "OrdinaryDiffEqHighOrderRK", "OrdinaryDiffEqMultirate", "OrdinaryDiffEqSDIRK", "OrdinaryDiffEqSymplecticRK", "Pkg", "Polyester", "PrecompileTools", "Printf", "Random", "RecursiveArrayTools", "Reexport", "SHA", "SPICE", "SatelliteToolboxAtmosphericModels", "SatelliteToolboxGeomagneticField", "SatelliteToolboxTransformations", "SciMLBase", "Serialization", "SpaceIndices", "SparseArrays", "SpecialFunctions", "StaticArrays", "Statistics", "TOML"]
 path = "."
 uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
 version = "0.6.1"

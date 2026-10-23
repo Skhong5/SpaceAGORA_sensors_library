@@ -55,6 +55,14 @@ end
     end
 end
 
+# The planet-fixed rotation that ground-station link ends read at `t` in a
+# right-hand-side evaluation or a saved row: the planet's frame at `t`, so a
+# station moves through a step rather than holding its place at the step's
+# start. `nothing` in a run without stations, and at a time that is not finite,
+# where a station end reads the planet's current `L_PI`.
+@inline _station_planet_frame(p, t) =
+    has_ground_stations(p.args.interlink_model) && isfinite(t) ? _planet_lpi_at(p, Float64(t)) : nothing
+
 @noinline function _planet_relative_state(
     pos_ii::SVector{3, Float64},
     vel_ii::SVector{3, Float64},

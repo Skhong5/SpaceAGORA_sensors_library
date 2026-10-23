@@ -159,6 +159,11 @@ function _active_phase_solver_settings(p, reltol, abstol)
     inside = _active_atmospheric_phase(p)
     tol = p.args.integration_tolerances
     cap = inside ? tol.dt_max_atmosphere : tol.dt_max_orbit
+    cfg = hasproperty(p.args, :solver_config) ? p.args.solver_config : nothing
+    if cfg !== nothing && cfg.solver_mode === :multirate_mri
+        macro_cap = isnothing(cfg.multirate_slow_dt_s) ? min(tol.dt_max_orbit, 2.0) : cfg.multirate_slow_dt_s
+        cap = min(cap, macro_cap)
+    end
     reltol, abstol = _callback_tolerances_for_phase(reltol, abstol, p.args, inside)
     return cap, reltol, abstol
 end

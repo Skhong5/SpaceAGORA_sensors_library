@@ -225,6 +225,13 @@ end
             p,
             callback=callbacks
         )
+    elseif mode == :multirate_mri
+        _any_robot_arm_effector(p.args) && throw(ArgumentError(
+            "Coupled robot-arm effectors are not supported by :multirate_mri; use a full-state solver."))
+        # SciML's MRI methods take the fast component first. The original
+        # Strang path below retains its historical slow-first order.
+        return SplitODEProblem(spacecraft_dynamics_mri_fast!, spacecraft_dynamics_mri_slow!,
+            u0, tspan, p; callback=callbacks)
     elseif mode == :multirate
         return SplitODEProblem(
             _split_component_function(spacecraft_dynamics_slow!, jac_prototype),
@@ -841,6 +848,11 @@ function run_simulation(
     # Resolve effective solver config: explicit field on args wins; otherwise read from env
     # (which respects any active SimulationEngineConfig overrides via _engine_env_get).
     solver_cfg = _run_solver_config(args)
+    # MRI phase callbacks need the effective macro-step cap, including when
+    # it came from the environment rather than an explicit configuration.
+    if solver_cfg.solver_mode === :multirate_mri && args.solver_config === nothing
+        args = SimulationModel.SimConfig._with_configuration(args; solver_config=solver_cfg)
+    end
     solver_mode = solver_cfg.solver_mode
 
     # Typed pipeline is SI-native (meters, seconds, kilograms). The

@@ -29,6 +29,17 @@ end
     return _bowring_altitude(p_xy, z, e2, N, lat)
 end
 
+# The planet-fixed position (m) at geodetic latitude `lat_rad`, longitude
+# `lon_rad` and altitude `alt_m` above the planet's ellipsoid (`Rp_e`, `Rp_p`):
+# the inverse of `rtolatlong`'s conversion, with its flattening.
+@inline function geodetic_to_pp(lat_rad::Float64, lon_rad::Float64, alt_m::Float64, planet)::SVector{3, Float64}
+    f = (planet.Rp_e - planet.Rp_p) / planet.Rp_e
+    e2 = 1.0 - (1.0 - f)^2
+    N = planet.Rp_e / sqrt(1.0 - e2 * sin(lat_rad)^2)
+    return SVector{3, Float64}((N + alt_m) * cos(lat_rad) * cos(lon_rad), (N + alt_m) * cos(lat_rad) * sin(lon_rad),
+        (N * (1.0 - e2) + alt_m) * sin(lat_rad))
+end
+
 @inline function ellipsoid_surface_radius(u_pp::SVector{3, Float64}, planet)::Float64
     return inv(sqrt((u_pp[1]^2 + u_pp[2]^2) / planet.Rp_e^2 + u_pp[3]^2 / planet.Rp_p^2))
 end

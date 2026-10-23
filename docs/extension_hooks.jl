@@ -841,6 +841,8 @@ const NOT_HOOKS = [
     (symbol = :same_plane_pairs, reason = "lists the spacecraft pairs within each orbital plane, for `register_links!`"),
     (symbol = :ring_pairs, reason = "lists the in-plane ring neighbours, for `register_links!`"),
     (symbol = :grid_pairs, reason = "lists the +grid neighbours, in plane and across planes, for `register_links!`"),
+    (symbol = :add_ground_station!, reason = "adds a ground station to an interlink model and returns its number"),
+    (symbol = :station_pairs, reason = "lists every spacecraft and ground station pair, for `register_links!`"),
     (symbol = :beam_spot_radius_m, reason = "the Gaussian spot radius of a `PowerBeamLink` or a `GaussianBeam` at a distance"),
     (symbol = :beam_capture_fraction, reason = "the share of a `PowerBeamLink` or a `GaussianBeam` a circular aperture captures"),
     (symbol = :contact_windows, reason = "lists the windows over which a run's links could close, or were selected"),

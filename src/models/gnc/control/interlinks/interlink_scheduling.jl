@@ -3,7 +3,8 @@ module SchedulingPolicies
 using LinearAlgebra
 using ..InterLinkModels
 using ..InterLinkModels: link_endpoint, _terminal_devices, _spacecraft_at, _battery_capacity_wh, _battery_within_full,
-    _data_store_capacity_bits, _data_store_within_empty, _data_store_within_full, _data_store_production_bps
+    _endpoint_sample, _station_antenna, _data_store_capacity_bits, _data_store_within_empty,
+    _data_store_within_full, _data_store_production_bps
 using ..EffectorSampling: StateSample
 
 export AbstractSchedulingPolicy, LinkCandidate, SchedulingContext, candidate_score
@@ -57,12 +58,14 @@ One available candidate link, as a scheduling policy scores it.
 
 - `key`: its endpoints, `(spacecraft vector index, terminal number)` each, in key
   order: the transmitter first for a directed link, the lower endpoint first
-  otherwise.
+  otherwise. A ground station end is `(-s, antenna number)`.
 - `link`: its link kind value.
 - `a`, `b`: the endpoints' state samples (`StateSample`), in key order, with
-  their spacecraft models when the run's are known.
+  their spacecraft models when the run's are known. A station end's sample has
+  the station as its model, no mass and no attitude.
 - `terminal_a`, `terminal_b`: the terminal hardware at the two ends, `nothing`
-  for a virtual terminal or when the spacecraft models are not known.
+  for a virtual terminal or when the spacecraft models are not known; a
+  station's antenna at a station end.
 """
 struct LinkCandidate
     key::InterLinkKey
@@ -115,15 +118,25 @@ type implements it: a run refuses at setup a policy without a method.
 """
 function candidate_score end
 
-# The candidate of graph edge `edge`, at the context's state.
+# The candidate of graph edge `edge`, at the context's state. A ground station
+# end reads the planet's current frame, as the availability does.
 function _link_candidate(model, edge::Int, ctx::SchedulingContext)
     graph = model.graph
     first, second = map(vertex -> graph.vertices[vertex], graph.edges[edge])
     spacecraft, state = ctx.spacecraft, ctx._state
+    first[1] > 0 && second[1] > 0 || return _station_link_candidate(model, edge, ctx)
     a = link_endpoint(state.sc[first[1]], _spacecraft_at(spacecraft, first[1]), first[1])
     b = link_endpoint(state.sc[second[1]], _spacecraft_at(spacecraft, second[1]), second[1])
     return LinkCandidate((first, second), graph.edge_properties[edge], a, b,
         _candidate_terminal(ctx._terminals, first), _candidate_terminal(ctx._terminals, second))
+end
+function _station_link_candidate(model, edge::Int, ctx::SchedulingContext)
+    graph = model.graph
+    first, second = map(vertex -> graph.vertices[vertex], graph.edges[edge])
+    a = _endpoint_sample(model, first[1], ctx._state, ctx.spacecraft, ctx.link_context)
+    b = _endpoint_sample(model, second[1], ctx._state, ctx.spacecraft, ctx.link_context)
+    terminal(endpoint) = endpoint[1] < 0 ? _station_antenna(model, endpoint) : _candidate_terminal(ctx._terminals, endpoint)
+    return LinkCandidate((first, second), graph.edge_properties[edge], a, b, terminal(first), terminal(second))
 end
 _candidate_terminal(::Nothing, endpoint) = nothing
 _candidate_terminal(terminals, (satellite, number)) = _candidate_terminal(terminals[satellite], number)
@@ -168,8 +181,13 @@ end
 # the context had field types, and its arithmetic rounds the same.
 function _target_force(ctx::SchedulingContext, candidate::LinkCandidate, target::Int, partner::Int, forces)
     forces === nothing || return target == candidate.key[1][1] ? forces[1] : forces[2]
-    return Base.inferencebarrier(ctx._candidate_force)(ctx._state.sc[target], ctx._state.sc[partner], candidate.link)
+    return Base.inferencebarrier(ctx._candidate_force)(ctx._state.sc[target], _partner_state(ctx, candidate, partner),
+        candidate.link)
 end
+# The partner a caller's `candidate_force` receives: its run state, or for a
+# ground station, its state sample.
+_partner_state(ctx::SchedulingContext, candidate::LinkCandidate, partner::Int) = partner > 0 ? ctx._state.sc[partner] :
+    candidate.key[1][1] == partner ? candidate.a : candidate.b
 
 # The rate (m/s) at which `force` changes the osculating semimajor axis of the
 # spacecraft state `target`, as the engine holds it. The rate functions are
@@ -197,6 +215,9 @@ link's, from `interlink_wrench` (by default its `link_force`). `targets` picks t
 - `:both`: both ends of every link;
 - `:lower_index`: the lower spacecraft index of each pair.
 
+A ground station end is never a target: a station has no orbit, and a link to
+one scores at its spacecraft end alone (`:lower_index` takes that end).
+
 A link that lowers the semimajor axis scores negative, and links that apply no
 force (power beams, data links) score 0, so this policy never selects them.
 """
@@ -222,8 +243,12 @@ end
 SemimajorAxisRatePolicy(; targets=1) = SemimajorAxisRatePolicy(targets)
 
 _is_target(targets::Int, satellite::Int) = targets == satellite
+# The `:lower_index` target of a link and its partner: the lower spacecraft
+# index, or the spacecraft end of a link to a ground station.
+_lower_spacecraft_end(first::Int, second::Int) = first < 0 ? (second, first) : second < 0 ? (first, second) :
+    minmax(first, second)
 _is_target(targets::Vector{Int}, satellite::Int) = satellite in targets
-_is_target(targets::Symbol, satellite::Int) = targets === :both
+_is_target(targets::Symbol, satellite::Int) = targets === :both && satellite > 0
 
 function _prepare_scoring(policy::SemimajorAxisRatePolicy, model, ctx::SchedulingContext)
     isfinite(ctx.mu) && ctx.mu > 0 || throw(ArgumentError("The gravitational parameter must be finite and positive."))
@@ -246,7 +271,7 @@ end
 function candidate_score(policy::SemimajorAxisRatePolicy, candidate::LinkCandidate, ctx::SchedulingContext, t::Float64)
     first_satellite, second_satellite = candidate.key[1][1], candidate.key[2][1]
     if policy.targets === :lower_index
-        target, partner = minmax(first_satellite, second_satellite)
+        target, partner = _lower_spacecraft_end(first_satellite, second_satellite)
         force = _target_force(ctx, candidate, target, partner, _link_forces(ctx, candidate))
         return _semimajor_axis_rate(ctx._state.sc[target], force, ctx.mu)
     end
@@ -266,7 +291,7 @@ Score each available link by the rate (1/s) at which its force raises the
 eccentricity of its target spacecraft, `de/dt = ê · ė`, at each target end,
 summed. `targets` is a spacecraft vector index, or `:both` for both ends of
 every link. The force is the link's, from `interlink_wrench` (by default its
-`link_force`).
+`link_force`). A ground station end is never a target.
 
 At an eccentricity no greater than `sqrt(eps(Float64))` the score is the norm of
 the eccentricity-vector rate, `‖ė‖`. Such norms are not additive, so a candidate
@@ -328,7 +353,7 @@ function _eccentricity_score(policy::EccentricityRatePolicy, candidate::LinkCand
     first_satellite, second_satellite = candidate.key[1][1], candidate.key[2][1]
     score, forces = 0.0, nothing
     for (target, partner) in ((first_satellite, second_satellite), (second_satellite, first_satellite))
-        policy.targets === :both || policy.targets == target || continue
+        target > 0 && (policy.targets === :both || policy.targets == target) || continue
         forces === nothing && (forces = _link_forces(ctx, candidate))
         rate, near_circular = _eccentricity_rate(ctx._state.sc[target], _target_force(ctx, candidate, target, partner, forces), ctx.mu)
         score += rate
@@ -430,8 +455,11 @@ end
 The data (bit) spacecraft `spacecraft_index`'s data store holds at the
 scheduling state, the `data_stored_bits` column's value. NaN without a store,
 without the run's spacecraft models, or for a state without `data_stored_bits`.
+Inf for a ground station (a negative index), an unbounded store that always
+has data to send.
 """
 function stored_bits(ctx::SchedulingContext, spacecraft_index::Integer)
+    spacecraft_index < 0 && return Inf
     ctx.spacecraft === nothing && return NaN
     isnan(_data_store_capacity_bits(ctx.spacecraft[spacecraft_index])) && return NaN
     view = ctx._state.sc[spacecraft_index]
@@ -445,9 +473,11 @@ end
 The room (bit) left in spacecraft `spacecraft_index`'s data store at the
 scheduling state: its capacity less `stored_bits`. Inf without a store or
 without the run's spacecraft models, since nothing then limits what the
-spacecraft takes in; NaN for a state without `data_stored_bits`.
+spacecraft takes in; NaN for a state without `data_stored_bits`. Inf for a
+ground station (a negative index), an unbounded store that always has room.
 """
 function store_room_bits(ctx::SchedulingContext, spacecraft_index::Integer)
+    spacecraft_index < 0 && return Inf
     ctx.spacecraft === nothing && return Inf
     capacity = _data_store_capacity_bits(ctx.spacecraft[spacecraft_index])
     isnan(capacity) && return Inf
@@ -469,7 +499,8 @@ emptier receiving stores. An empty sender with ongoing production can stay
 selected; one with neither held data nor production scores zero. A store the
 engine counts as empty (within `1e-9` of its capacity of nothing) holds nothing
 here, and one it counts as full has no room. A transmitter without a store counts as always holding data, and a
-receiver without one as always having room. Undirected
+receiver without one as always having room; so does a ground station, which
+never limits a link: the policy drains fuller stores to the ground first. Undirected
 links score 0, and so does every link when the run's spacecraft models are not
 given. The unit is that of `DataThroughputPolicy`, so the two mix without
 rescaling.
@@ -503,13 +534,15 @@ end
 
 # The data a transmitter holds and the room a receiver has, for the backlog
 # score: as the store's own events count it, so the hair a full or empty event
-# leaves does not count; Inf without a store.
+# leaves does not count; Inf without a store and at a ground station.
 function _backlog_held_bits(ctx::SchedulingContext, i::Int)
+    i < 0 && return Inf
     held = stored_bits(ctx, i)
     isnan(held) && return Inf
     return _data_store_within_empty(ctx.spacecraft[i], held) ? 0.0 : held
 end
 function _backlog_room_bits(ctx::SchedulingContext, i::Int)
+    i < 0 && return Inf
     room = store_room_bits(ctx, i)
     isnan(room) && return Inf
     return _data_store_within_full(ctx.spacecraft[i], stored_bits(ctx, i)) ? 0.0 : room
@@ -521,10 +554,12 @@ end
 The state of charge (a fraction of its capacity) of spacecraft
 `spacecraft_index`'s battery at the scheduling state: its `battery_wh` over its
 `capacity_wh`, the `battery_soc` column's value. NaN without a battery, without
-the run's spacecraft models, or for a state without `battery_wh`.
+the run's spacecraft models, for a state without `battery_wh`, or for a ground
+station (a negative index), which has no battery.
 """
 function state_of_charge(ctx::SchedulingContext, spacecraft_index::Integer)
     ctx.spacecraft === nothing && return NaN
+    spacecraft_index < 0 && return NaN
     view = ctx._state.sc[spacecraft_index]
     hasproperty(view, :battery_wh) || return NaN
     return Float64(view.battery_wh) / _battery_capacity_wh(ctx.spacecraft[spacecraft_index])

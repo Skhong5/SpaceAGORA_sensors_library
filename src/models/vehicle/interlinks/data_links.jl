@@ -126,7 +126,8 @@ that carries data and applies no force.
   terminal draws nothing.
 - **Availability.** The link can close within `range_m`, while the segment
   between the two spacecraft clears the planet (a sphere of its equatorial
-  radius).
+  radius). At a ground station end, the station's elevation mask stands for
+  that test.
 - **Direction.** Two-way traffic is two links, one each way. A radio carries one
   active link at a time.
 """
@@ -157,9 +158,12 @@ terminal_shed_tier(::RadioTerminal) = 1
 _link_needs_terminals(link::DataLink) = _budget_needs_terminals(link.budget)
 _needs_terminals_reason(::DataLink) = " (a ShannonBudget reads both radios)"
 
+# A ground station end sits on the planet, inside the occulting sphere: its
+# elevation mask, which the graph checks, is the link's line of sight.
 function link_available(link::DataLink, a, b, ctx)
     separation = norm(a.pos_ii - b.pos_ii)
     0 < separation <= link.range_m || return false
+    (_station_end(a) || _station_end(b)) && return true
     return !_segment_occulted(a.pos_ii, b.pos_ii, ctx.planet)
 end
 
