@@ -233,9 +233,10 @@ end
                 settings=checkpointed(mktempdir(), interval)))
             @test isequal(collect(shared.u[end]), collect(whole.u[end]))
         end
-        # A campaign command pending at the 7000 s checkpoint: until the checkpoint
-        # holds the burn scheduler's commands and plans, its resumed run does not end
-        # where the run without the break ends (the fix for main is a PR of its own).
+        # A campaign run past its first orbit at the 7000 s checkpoint: until the
+        # checkpoint holds the burn scheduler's commands and plans and the orbit
+        # counter, its resumed run does not end where the run without the break ends
+        # (the fix for main is a PR of its own; with it, this check passes).
         g = () -> campaign([1, 2], [2.0, -1.0])
         whole = solve(maneuver_args(:campaign; shared=(g(),), settings=checkpointed(mktempdir(), 7000.0)))
         split = mktempdir()
