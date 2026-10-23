@@ -272,6 +272,62 @@ end
         open(io -> serialize(io, payload), paths.data, "w")
         late = run_simulation(two_orbits(30000.0, checkpointed(earlier; resume=true)); return_solution=true)
         @test late.t[end] > whole.t[end]
+        # The entry-end counter is owned by the run, not a fresh callback closure.
+        entries(p) = SpaceAGORA.SimulationEngine._entry_counter_checkpoint_state(p)
+        restore_entries!(entry, p) = SpaceAGORA.SimulationEngine._restore_entry_counter_checkpoint_state!(
+            (runtime_state=(entries=entry,),), p)
+        p = SM.ODEParams(n_sats=3, args=raise)
+        @test entries(p) === nothing
+        p.shared_buffers.entry_counter[2] = 1
+        saved_entries = from_file(entries(p))
+        p.shared_buffers.entry_counter[2] = 2
+        q = SM.ODEParams(n_sats=3, args=raise)
+        restore_entries!(saved_entries, q)
+        @test q.shared_buffers.entry_counter == [0, 1, 0]
+        @test_throws "spacecraft count" restore_entries!(saved_entries, SM.ODEParams(n_sats=2, args=raise))
+        @test_throws "version 1" restore_entries!(merge(saved_entries, (version=2,)), q)
+        @test_throws "nonnegative" restore_entries!(merge(saved_entries, (entry_counter=[0, -1, 0],)), q)
+        @test_throws "spacecraft count" restore_entries!((version=1,), q)
+        fresh = SM.ODEParams(n_sats=3, args=raise)
+        SpaceAGORA.SimulationEngine._restore_entry_counter_checkpoint_state!((;), fresh)
+        @test fresh.shared_buffers.entry_counter == [0, 0, 0]
+
+        # Three unpowered spacecraft cross a 500 km interface on eccentric
+        # orbits. Drag is present to enable the entry-end callback, but density
+        # is zero. Resume after each has entered once, before the second entry.
+        function two_entries(mission_time, settings)
+            base = first(maneuver_configuration(nothing; EI=500.0, mission=(mission_time=mission_time,)))
+            config = SM.SimConfig._with_configuration(base;
+                dynamics_model=SM.DynamicsModel(base.dynamics_model.spacecraft,
+                    (SM.InverseSquaredGravityModel(), SM.AerodynamicCoefficientConstant())),
+                guidance_model=SM.GuidanceModel(), control_model=SM.ControlModel(),
+                solver_config=SM.SolverConfig(solver_mode=:tsit5))
+            return with_settings(config; settings...)
+        end
+        entry_settings(dir; resume=false) = (checkpoint_enabled=true, checkpoint_interval_s=7000.0,
+            checkpoint_directory=dir, resume_from_checkpoint=resume)
+        withenv("SPACEAGORA_ENTRY_TARGET_COUNT" => "2") do
+            whole_entries = run_simulation(two_entries(30000.0, entry_settings(mktempdir())); return_solution=true)
+            split_entries = mktempdir()
+            part = two_entries(7000.0, entry_settings(split_entries))
+            run_simulation(part)
+            entry_paths = SpaceAGORA.SimulationEngine._checkpoint_paths(part)
+            payload = deserialize(entry_paths.data)
+            @test payload.runtime_state.entries.entry_counter == [1, 1, 1]
+            # Retain the old-format checkpoint for a compatibility comparison.
+            legacy_payload = merge(payload, (runtime_state=Base.structdiff(payload.runtime_state, NamedTuple{(:entries,)}),))
+            continued = run_simulation(two_entries(30000.0, entry_settings(split_entries; resume=true)); return_solution=true)
+            @test whole_entries.t[end] < 30000.0 && continued.t[end] == whole_entries.t[end]
+            @test isequal(collect(continued.u[end]), collect(whole_entries.u[end]))
+            # No count in old checkpoints: preserve the old zero-count behavior.
+            # Run past the new checkpoint's second-entry end and inspect the
+            # saved counters, rather than assuming a complete third orbit.
+            serialize(entry_paths.data, legacy_payload)
+            legacy_horizon = whole_entries.t[end] + 1.0
+            legacy = run_simulation(two_entries(legacy_horizon, entry_settings(split_entries; resume=true)); return_solution=true)
+            @test legacy.t[end] == legacy_horizon
+            @test deserialize(entry_paths.data).runtime_state.entries.entry_counter == [1, 1, 1]
+        end
         # A run's random stream compares by its state.
         @test C._same_state(MersenneTwister(3), from_file(MersenneTwister(3)))
         @test !C._same_state(MersenneTwister(3), MersenneTwister(4))

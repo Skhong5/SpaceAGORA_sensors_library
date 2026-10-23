@@ -549,6 +549,7 @@ function _resume_engine_state!(args, p, solver_mode, initial_conditions)
             _restore_callback_checkpoint_state!(args, ckpt, p)
             _restore_maneuver_buffer_checkpoint_state!(ckpt, p)
             _restore_orbit_counter_checkpoint_state!(ckpt, p)
+            _restore_entry_counter_checkpoint_state!(ckpt, p)
             model_snapshot = _check_model_checkpoint_state(args, ckpt)
             pending_ticks = _pending_periodic_ticks(ckpt)
             results_rows = _results_rows_checkpoint_state(ckpt)
@@ -1154,7 +1155,7 @@ function run_simulation(
                 callback_state=_callback_checkpoint_state(args), model_state=_model_checkpoint_state(args),
                 periodic_ticks=_periodic_tick_checkpoint_state(p, t_cursor), gnc_scopes=gnc_scopes,
                 results_rows=rows_entry, maneuver_buffers=_maneuver_buffer_checkpoint_state(p),
-                orbits=_orbit_counter_checkpoint_state(p))
+                orbits=_orbit_counter_checkpoint_state(p), entries=_entry_counter_checkpoint_state(p))
             checkpoint_written = true
             if string(seg_sol.retcode) != "Success" || !_gravity_backbone_time_reached(t_cursor, t_next)
                 break

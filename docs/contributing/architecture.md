@@ -449,7 +449,7 @@ building the run's buffers and callbacks:
 1. `_resume_engine_state!`. On a run resumed from a checkpoint file, it checks
    the checkpoint against the run and restores the engine's and the callbacks'
    run state: the `activity`, `interlinks`, `callbacks`, `maneuver_buffers` and
-   `orbits` entries, and the periodic ticks still pending. It also sets the
+   `orbits` and `entries` entries, and the periodic ticks still pending. It also sets the
    resume flags (`callback_resume`, `model_resume`). The models' own state and
    the form of their `gnc_scopes` entry are only checked here; a run with guidance,
    navigation or control models refuses a checkpoint without that entry here,
@@ -488,6 +488,7 @@ calls them at the top of `src/models/gnc/contracts/simulation_lifecycle.jl`.
 | Hinge and gimbal angles, mounted thrusters' firing state (`κ`, `thrust`) | the link hardware: `PanelHinge`, `ThrusterGimbal` and `Thruster`, which keep the state a run starts from (`run_start`, first the configured one) and the last tick's write (`run_written`) | the run-state callback's first initialization (`get_run_state_callbacks`): a value still equal to the last mounted tick's write returns to the previous run's start; a value a user changed between runs is kept | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume`: the run-state callback's initialization then keeps the restored state and records it as the latest write | phase 1 |
 | Maneuver commands and burn plans | `SharedBuffers.maneuver_commands` and `maneuver_burn_plans`: the maneuver guidance models write the commands, the burn scheduler (`BaseThrusterModel`) the plans | a new `SharedBuffers`, every command and plan unset | `maneuver_buffers`, written while a command or plan is set | `_restore_maneuver_buffer_checkpoint_state!` | phase 1 |
 | The orbit each spacecraft is on | `ODEParams.orbit_counter`: the apoapsis callback counts the orbits, and a state anchor with an `orbit_count` sets it | a new `ODEParams`, the first orbit for every spacecraft | `orbits`, written once a spacecraft is past its first orbit | `_restore_orbit_counter_checkpoint_state!` | phase 1 |
+| Completed atmosphere entries | `SharedBuffers.entry_counter`: the entry-end callback counts downward interface crossings | new run buffers, zero for every spacecraft | `entries`, written once a spacecraft has entered | `_restore_entry_counter_checkpoint_state!` | phase 1 |
 | Periodic tick clocks | each run-clock callback, and the run clock in the shared buffers | each solve's start; the run clock in phase 2 | `periodic_ticks` | `_pending_periodic_ticks`, taken at the first solve's start | phases 1 and 2 |
 | Saved results rows | the run's row lists in `run_simulation` | empty | `results_rows`: how much of `simulation_checkpoint.results.bin`, beside the checkpoint, is its own | `_start_results_rows!` puts the rows back before the first segment, or warns when it cannot | before the solve |
 | GNC links | the shared object | `link_initialize!`, once per run | none of their own: the models save what they need | — | phase 3 |

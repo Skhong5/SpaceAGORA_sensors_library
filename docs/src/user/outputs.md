@@ -381,6 +381,13 @@ ends late, and the campaign maneuver guidance repeats the maneuvers of the orbit
 already flown. Run it again from its start, or from a checkpoint this version
 wrote.
 
+The atmosphere-entry limit (`SPACEAGORA_ENTRY_TARGET_COUNT`) also retains each
+spacecraft's completed entry count, once one has entered. A resumed run then
+ends at the same entry as an uninterrupted checkpointed run. Older checkpoints
+without this count retain their earlier behavior: counting restarts at zero,
+so a run resumed after an entry can end late. Rerun from the start to obtain a
+checkpoint that includes the count.
+
 The checkpoint also records which spacecraft are active. A spacecraft lost to
 an impact or a touchdown before the checkpoint stays inactive in the resumed
 run, as it would in a run that was never interrupted: it is not propagated, its

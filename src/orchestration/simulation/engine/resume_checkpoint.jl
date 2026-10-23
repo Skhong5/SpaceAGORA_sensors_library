@@ -3,7 +3,7 @@
 # in the order a resumed run uses them (see "Run state: owners, resets and
 # restores" in docs/contributing/architecture.md):
 #
-# - `activity`, `interlinks`, `callbacks`, `maneuver_buffers` and `orbits`: the
+# - `activity`, `interlinks`, `callbacks`, `maneuver_buffers`, `orbits` and `entries`: the
 #   engine's and the callbacks' run state, restored by `_resume_engine_state!`
 #   (execution.jl) before the models start and before the callbacks initialize;
 # - `models`: the models' own run state, checked when the checkpoint is read and
@@ -101,6 +101,30 @@ function _restore_orbit_counter_checkpoint_state!(checkpoint, p)
     length(entry.orbit_counter) == length(p.orbit_counter) ||
         throw(ArgumentError("The checkpoint's orbit counters must match the spacecraft count."))
     copyto!(p.orbit_counter, entry.orbit_counter)
+    return nothing
+end
+
+# Atmosphere entries counted by the entry-end callback. These used to live only
+# in its closure, which survived solve segments but was rebuilt on resume. Keep
+# them with the run buffers so a checkpoint can restore them before callbacks run.
+# An older checkpoint without this entry retains the historical zero-count start.
+function _entry_counter_checkpoint_state(p)
+    counts = p.shared_buffers.entry_counter
+    all(iszero, counts) && return nothing
+    return (version=1, entry_counter=copy(counts))
+end
+
+function _restore_entry_counter_checkpoint_state!(checkpoint, p)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    entry = runtime !== nothing && hasproperty(runtime, :entries) ? runtime.entries : nothing
+    entry === nothing && return nothing
+    hasproperty(entry, :version) && entry.version === 1 ||
+        throw(ArgumentError("Atmosphere entry counter checkpoint state version 1 is required to resume this run."))
+    counts = p.shared_buffers.entry_counter
+    hasproperty(entry, :entry_counter) && entry.entry_counter isa AbstractVector{<:Integer} &&
+        length(entry.entry_counter) == length(counts) && all(>=(0), entry.entry_counter) ||
+        throw(ArgumentError("The checkpoint's atmosphere entry counters must be nonnegative and match the spacecraft count."))
+    copyto!(counts, entry.entry_counter)
     return nothing
 end
 
@@ -973,13 +997,16 @@ end
 
 @inline function _write_checkpoint!(args, t::Float64, u_state, solver_mode::String; is_active=nothing, callback_state=nothing,
                                      model_state=nothing, periodic_ticks=nothing, gnc_scopes=nothing,
-                                     results_rows=nothing, maneuver_buffers=nothing, orbits=nothing)
+                                     results_rows=nothing, maneuver_buffers=nothing, orbits=nothing, entries=nothing)
     runtime = _interlink_checkpoint_runtime_state(args, is_active)
     if callback_state !== nothing
         runtime = runtime === nothing ? (callbacks=callback_state,) : merge(runtime, (callbacks=callback_state,))
     end
     if orbits !== nothing
         runtime = runtime === nothing ? (orbits=orbits,) : merge(runtime, (orbits=orbits,))
+    end
+    if entries !== nothing
+        runtime = runtime === nothing ? (entries=entries,) : merge(runtime, (entries=entries,))
     end
     if maneuver_buffers !== nothing
         runtime = runtime === nothing ? (maneuver_buffers=maneuver_buffers,) :
