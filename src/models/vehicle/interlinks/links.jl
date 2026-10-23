@@ -180,6 +180,17 @@ _battery_capacity_wh(spacecraft) = NaN
 # Whether `spacecraft`'s battery counts as full holding `energy_wh` (Wh), as the
 # power system decides it; false without one.
 _battery_within_full(spacecraft, energy_wh::Real) = false
+# The capacity (bit) of `spacecraft`'s data store, NaN without one: the room a
+# scheduling policy reads. `SpacecraftModel` methods are in InterlinkTerminals,
+# which comes after the data parts.
+_data_store_capacity_bits(spacecraft) = NaN
+# Current source production at this endpoint. The concrete spacecraft method is
+# supplied after data parts load, alongside the store-capacity methods.
+_data_store_production_bps(spacecraft, sample, context, t::Float64) = 0.0
+# Whether `spacecraft`'s data store counts as empty, or as full, holding `bits`,
+# as the store's own events decide it; false without a store.
+_data_store_within_empty(spacecraft, bits::Real) = false
+_data_store_within_full(spacecraft, bits::Real) = false
 
 # The terminal number of an endpoint's terminal: a number as given, or a mounted
 # terminal object (resolved on a `SpacecraftModel` in InterlinkTerminals).
