@@ -878,12 +878,14 @@ function _start_results_rows!(args, recording::Bool, save_fields, resumed::Bool,
     if rows === nothing
         # The rows file and, for a run that streamed, its results streams can hold
         # the only copy of the earlier rows: they are kept under other names.
-        earlier = (path, _checkpoint_paths(args).stream_spacecraft, _checkpoint_paths(args).stream_run)
-        kept = solves ? filter(!isnothing, [_keep_earlier_rows!(file, t_start) for file in earlier]) : String[]
+        streams = (_checkpoint_paths(args).stream_spacecraft, _checkpoint_paths(args).stream_run)
+        kept = solves ? _keep_earlier_rows!(path, t_start) : nothing
+        kept_streams = solves ? filter(!isnothing, [_keep_earlier_rows!(file, t_start) for file in streams]) : String[]
         consequence = solves ?
             "They start at the resume, and any results files are written to " *
             "$(_results_destination(args, log).simulation_settings.results_directory), so the earlier ones are kept." *
-            (isempty(kept) ? "" : " The rows kept beside the checkpoint are kept as $(join(kept, ", ")).") :
+            (kept === nothing ? "" : " The rows file beside the checkpoint is kept as $(kept).") *
+            (isempty(kept_streams) ? "" : " The results streams beside it are kept as $(join(kept_streams, " and ")).") :
             "This resume solves nothing, so it returns an empty table and writes no files."
         @warn "The resumed run's results cannot include the rows before its checkpoint at t = $(t_start) s: " *
               "$(reason). $(consequence)"
