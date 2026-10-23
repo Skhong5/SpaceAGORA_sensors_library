@@ -382,10 +382,9 @@ in seconds of simulated time. The default is `10.0` seconds. Decreasing
 `data_rate` produces more rows and larger files; increasing it reduces output
 size but loses temporal resolution.
 
-The `num_steps_to_save` field of `MissionConfiguration` is not read by the
-engine: a run keeps its saved rows in memory and writes its results once, when
-it ends. It must still be positive, and setting it changes nothing else. To
-lower the memory of a long run, raise `data_rate`.
+The `num_steps_to_save` field is retained for configuration compatibility. It
+does not currently control buffering, flushing or peak memory use. Use
+`data_rate` to set the output cadence.
 
 ## Checkpointing
 
