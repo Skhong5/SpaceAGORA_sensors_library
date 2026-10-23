@@ -12,11 +12,13 @@ deprecation rules.
 
 ### A GNC model's hooks follow its spacecraft scope
 
-A guidance, navigation or control model's output hooks (`control_wrench`,
-`control_propellant_rate`, `control_wheel_torque`), its levels (`actuator_levels`,
-`control_thruster_levels`) and `atmosphere_transition!` are called only for the
-spacecraft its `spacecraft_scope` names, as its ticks already were. A model that
-returns zeros or `nothing` outside its scope, as the docs asked, runs as before.
+During the run, a guidance, navigation or control model's output hooks
+(`control_wrench`, `control_propellant_rate`, `control_wheel_torque`), its levels
+(`actuator_levels`, `control_thruster_levels`) and `atmosphere_transition!` are
+called only for the spacecraft its `spacecraft_scope` names, as its ticks already
+were. Before the run, `control_thruster_levels` is still asked for every
+spacecraft, to size the result columns (see the table). A model that returns zeros
+or `nothing` outside its scope, as the docs asked, runs as before.
 
 - A model that acts on a spacecraft outside its declared scope, such as a
   `CoupledSpacecraft` model that pushes its partners, declares a scope that names

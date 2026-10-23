@@ -151,10 +151,26 @@ function _same_positions(positions::Vector{Int}, other)
     return true
 end
 
+# A scope as a user writes it, without its type parameters (`BoundSpacecraft((1,))`,
+# not `BoundSpacecraft{1}((1,))`), for messages.
+_scope_text(::AllSpacecraft) = "AllSpacecraft()"
+_scope_text(scope::BoundSpacecraft) = "BoundSpacecraft($(scope.indices))"
+_scope_text(scope::CoupledSpacecraft) = "CoupledSpacecraft($(scope.primary), $(scope.partners))"
+function _scope_text(scope::SpacecraftSelection)
+    criteria = ["$(name)=$(repr(getfield(scope, name)))" for name in (:positions, :ids, :planes, :slots)
+        if getfield(scope, name) !== nothing]
+    if scope.where !== nothing
+        name = string(scope.where isa Function ? nameof(scope.where) : nameof(typeof(scope.where)))
+        push!(criteria, startswith(name, "#") ? "where=<function>" : "where=$name")
+    end
+    return "SpacecraftSelection($(join(criteria, ", ")))"
+end
+_scope_text(scope) = repr(scope)
+
 _scope_change_message(slot, scope) = _scope_change_message(slot, slot.declared, scope)
 _scope_change_message(slot, declared, scope) =
-    "$(slot.owner)'s spacecraft_scope changed during the run: it was $(repr(declared)) when the run " *
-    "started and is $(repr(scope)) now. A guidance, navigation or control model's scope is fixed once its " *
+    "$(slot.owner)'s spacecraft_scope changed during the run: it was $(_scope_text(declared)) when the run " *
+    "started and is $(_scope_text(scope)) now. A guidance, navigation or control model's scope is fixed once its " *
     "run-start initializers ran; set it before then (in the model, in bind_spacecraft or in an initializer)."
 # A selection with the same criteria and another `where` object, as a scope method
 # that builds its selection, and a new closure, at each call returns: the advice is

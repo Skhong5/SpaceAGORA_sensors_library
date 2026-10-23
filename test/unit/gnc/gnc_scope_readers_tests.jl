@@ -411,6 +411,12 @@ SpaceAGORA.initialize_control!(m::MovesCtl, u, p, t) = (m.spacecraft_index = 2; 
             control=(TurnsCtl(BoundSpacecraft((1,)), BoundSpacecraft((2,)), 3.0),)))
         @test_throws "control model 1 (TurnsCtl)" run_simulation(scope_args(n;
             control=(TurnsCtl(BoundSpacecraft((1,)), BoundSpacecraft((2,)), 3.0),)))
+        # The scopes as users write them, without their type parameters.
+        @test_throws "it was BoundSpacecraft((1,)) when the run started and is BoundSpacecraft((2,)) now" run_simulation(
+            scope_args(n; control=(TurnsCtl(BoundSpacecraft((1,)), BoundSpacecraft((2,)), 3.0),)))
+        @test CB._scope_text(CoupledSpacecraft(1, (2, 3))) == "CoupledSpacecraft(1, (2, 3))"
+        @test CB._scope_text(SpacecraftSelection(ids=[2], where=(i, sc) -> true)) ==
+            "SpacecraftSelection(ids=[2], where=<function>)"
         # A model that acts on every spacecraft and then on one: the run took its scope too.
         @test_throws message run_simulation(scope_args(n; control=(TurnsCtl(AllSpacecraft(), BoundSpacecraft((1,)), 3.0),)))
         # An event-driven model whose own callback changes its scope.
