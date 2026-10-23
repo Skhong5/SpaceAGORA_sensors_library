@@ -1,7 +1,8 @@
 # The built-in guidance and control models' run state in checkpoint files
-# (checkpoint_state / restore_checkpoint_state!): a run resumed from a checkpoint
-# ends as an uninterrupted run with the same checkpoints, bit for bit, in
-# configurations where each model's state changes (the kit's
+# (checkpoint_state / restore_checkpoint_state!), and the burn scheduler's commands
+# and plans: a run resumed from a checkpoint ends as an uninterrupted run with the
+# same checkpoints, bit for bit, in configurations where each model's state changes
+# (the kit's
 # `checkpoint_round_trip`, on runs it cannot make with its own fixture); the RPO
 # planner binding resumes without planning again and refuses a planner whose own
 # state a checkpoint cannot hold; the RPO MPC solver continues from its saved
@@ -146,6 +147,38 @@ function apollo_configuration()
     return args, guidance, control
 end
 
+# Three spacecraft on 400 km by 2000 km orbits with the periapsis-raise guidance and
+# one burn scheduler for all of them, for 14000 s: the guidance issues its commands
+# before apoapsis, and the scheduler plans them at the next scheduling pass, the
+# start of the segment after the halfway checkpoint. The commands and plans waiting
+# there must survive the checkpoint.
+function raise_configuration()
+    planet = SM.make_no_gram_planet(:earth)
+    sats = map(1:3) do k
+        root = SM.Link(root=true, m=100.0, ref_area=2.0)
+        ic = SM.InitialCondition(ra=planet.Rp_e + 2000e3, rp=planet.Rp_e + 400e3, i=30.0, ω=0.0, Ω=40.0k, ν=10.0 + 30.0k)
+        SM.SpacecraftModel(joints=SM.Joint[], links=[root], root=root, prop_mass=50.0, inertia_tensor=root.inertia,
+            initial_condition=ic, id=k)
+    end
+    guidance = SM.ApoapsisTargetPeriapsisRaiseGuidanceModel(target_apoapsis_radius_m=planet.Rp_e + 3000e3,
+        target_periapsis_altitude_m=500e3)
+    scheduler = SM.ThrusterModels.BaseThrusterModel(thrust=fill(50.0, 3), direction=zeros(3), Δv=zeros(3),
+        start_burn_time=fill(-1.0, 3), stop_burn_time=fill(-1.0, 3), Isp=fill(300.0, 3))
+    env = SM.EnvironmentModel(planet=planet, EI=120.0, density_model=SM.NoAtmosphereModel(),
+        ephemerides_model=SM.SimpleEphemeridesModel(),
+        thermal_model=SM.MaxwellianHeat(thermal_accomodation_factor=1.0, planet=planet), topography=false, wind=false)
+    args = SM.SimulationConfiguration(
+        simulation_settings=SM.SimulationSettings(results=false, verbose=false, generate_plots=false, normalize=false),
+        mission_configuration=SM.MissionConfiguration(mission_type=SM.MissionTime, keplerian=true, number_of_orbits=1,
+            mission_time=14000.0, orientation_sim=false, num_steps_to_save=1000),
+        environment_model=env,
+        dynamics_model=SM.DynamicsModel(SM.SpacecraftModel[sats...], (SM.InverseSquaredGravityModel(),)),
+        guidance_model=SM.GuidanceModel((guidance,), [30.0]),
+        control_model=SM.ControlModel(control_effectors=(scheduler,), control_rates=[1.0]),
+        initial_time=SM.InitialTime(year=2020, month=1, day=1, hour=0, minute=0, second=0.0))
+    return args, guidance, scheduler
+end
+
 @testset "Built-in models' run state survives a checkpoint" begin
     @testset "a resumed run ends as an uninterrupted one" begin
         # The momentum manager with its command and field callables: it accumulates
@@ -163,6 +196,10 @@ end
         # The Apollo descent guidance and control.
         apollo, guidance, control = apollo_configuration()
         push!(cases, (:guidance_model, guidance, apollo), (:control_model, control, apollo))
+        # The periapsis-raise guidance and the burn scheduler, with commands and plans
+        # waiting at the halfway checkpoint.
+        raise, raise_guidance, raise_scheduler = raise_configuration()
+        push!(cases, (:guidance_model, raise_guidance, raise), (:control_model, raise_scheduler, raise))
         for (kind, model, configuration) in cases
             check = round_trip(model, kind, configuration)
             @testset let model = nameof(typeof(model)), status = check.status, detail = check.detail
@@ -173,6 +210,23 @@ end
         @testset let model = :RPOMPCControlModel, status = check.status, detail = check.detail
             @test status === :pass
         end
+        # Their checkpoint holds the commands and plans only when one is set.
+        buffers(p) = SpaceAGORA.SimulationEngine._maneuver_buffer_checkpoint_state(p)
+        p = SM.ODEParams(n_sats=3, args=raise)
+        @test buffers(p) === nothing
+        p.shared_buffers.maneuver_commands[2] = SM.PropulsiveManeuverCommand(valid=true, delta_v_mps=1.5)
+        @test buffers(p).commands[2].delta_v_mps == 1.5
+        p.shared_buffers.maneuver_burn_plans[3] = SM.PropulsiveBurnPlan(valid=true, delta_v_mps=1.5, start_burn_s=8.0,
+            stop_burn_s=9.0)
+        entry = buffers(p)
+        @test entry.version == 1 && entry.plans[3].valid && !entry.plans[1].valid
+        q = SM.ODEParams(n_sats=3, args=raise)
+        SpaceAGORA.SimulationEngine._restore_maneuver_buffer_checkpoint_state!(
+            (runtime_state=(maneuver_buffers=from_file(entry),),), q)
+        @test q.shared_buffers.maneuver_commands == p.shared_buffers.maneuver_commands
+        @test q.shared_buffers.maneuver_burn_plans == p.shared_buffers.maneuver_burn_plans
+        @test_throws "spacecraft count" SpaceAGORA.SimulationEngine._restore_maneuver_buffer_checkpoint_state!(
+            (runtime_state=(maneuver_buffers=entry,),), SM.ODEParams(n_sats=2, args=raise))
         # A run's random stream compares by its state.
         @test C._same_state(MersenneTwister(3), from_file(MersenneTwister(3)))
         @test !C._same_state(MersenneTwister(3), MersenneTwister(4))

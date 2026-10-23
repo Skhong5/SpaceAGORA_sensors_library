@@ -3,9 +3,9 @@
 # in the order a resumed run uses them (see "Run state: owners, resets and
 # restores" in docs/contributing/architecture.md):
 #
-# - `activity`, `interlinks` and `callbacks`: the engine's and the callbacks' run
-#   state, restored by `_resume_engine_state!` (execution.jl) before the models
-#   start and before the callbacks initialize;
+# - `activity`, `interlinks`, `callbacks` and `maneuver_buffers`: the engine's and
+#   the callbacks' run state, restored by `_resume_engine_state!` (execution.jl)
+#   before the models start and before the callbacks initialize;
 # - `models`: the models' own run state, checked when the checkpoint is read and
 #   restored by `_start_run_models!` after the models' initializers;
 # - `gnc_scopes`: the spacecraft each guidance, navigation and control model acts
@@ -47,6 +47,37 @@ function _restore_activity_checkpoint_state!(args, checkpoint, is_active)
     interlinks === nothing || !hasproperty(interlinks, :is_active) || interlinks.is_active == entry.is_active ||
         throw(ArgumentError("The checkpoint's spacecraft activity flags differ from its interlink entry's."))
     copyto!(is_active, entry.is_active)
+    return nothing
+end
+
+# The burn scheduler's command channel (`SharedBuffers`): the maneuver command each
+# spacecraft's maneuver guidance last issued, and the burn plan installed for it.
+# A run carries both from one checkpoint segment to the next, so a resumed run
+# takes them from its checkpoint: a command issued before the checkpoint and not
+# yet planned, or a plan not yet flown, is then planned and flown as in the run
+# without the break. Written only when some entry differs from its default, so the
+# checkpoints of other runs do not change, and a checkpoint without the entry,
+# written by an earlier SpaceAGORA, resumes with the defaults, as before.
+function _maneuver_buffer_checkpoint_state(p)
+    buffers = p.shared_buffers
+    commands, plans = buffers.maneuver_commands, buffers.maneuver_burn_plans
+    all(c -> isequal(c, SimulationModel.PropulsiveManeuverCommand()), commands) &&
+        all(b -> isequal(b, SimulationModel.PropulsiveBurnPlan()), plans) && return nothing
+    return (version=1, commands=copy(commands), plans=copy(plans))
+end
+
+function _restore_maneuver_buffer_checkpoint_state!(checkpoint, p)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    entry = runtime !== nothing && hasproperty(runtime, :maneuver_buffers) ? runtime.maneuver_buffers : nothing
+    entry === nothing && return nothing
+    hasproperty(entry, :version) && entry.version === 1 ||
+        throw(ArgumentError("Maneuver command checkpoint state version 1 is required to resume this run."))
+    buffers = p.shared_buffers
+    length(entry.commands) == length(buffers.maneuver_commands) &&
+        length(entry.plans) == length(buffers.maneuver_burn_plans) ||
+        throw(ArgumentError("The checkpoint's maneuver commands and burn plans must match the spacecraft count."))
+    copyto!(buffers.maneuver_commands, entry.commands)
+    copyto!(buffers.maneuver_burn_plans, entry.plans)
     return nothing
 end
 
@@ -919,10 +950,14 @@ end
 
 @inline function _write_checkpoint!(args, t::Float64, u_state, solver_mode::String; is_active=nothing, callback_state=nothing,
                                      model_state=nothing, periodic_ticks=nothing, gnc_scopes=nothing,
-                                     results_rows=nothing)
+                                     results_rows=nothing, maneuver_buffers=nothing)
     runtime = _interlink_checkpoint_runtime_state(args, is_active)
     if callback_state !== nothing
         runtime = runtime === nothing ? (callbacks=callback_state,) : merge(runtime, (callbacks=callback_state,))
+    end
+    if maneuver_buffers !== nothing
+        runtime = runtime === nothing ? (maneuver_buffers=maneuver_buffers,) :
+            merge(runtime, (maneuver_buffers=maneuver_buffers,))
     end
     if is_active !== nothing
         activity = _activity_checkpoint_state(is_active)

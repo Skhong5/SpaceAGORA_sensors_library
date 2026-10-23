@@ -362,6 +362,14 @@ the file through `checkpoint_state` (see
 [Run state in checkpoint files](../extensibility.md#Run-state-in-checkpoint-files));
 without it, a resumed run starts that state from its reset.
 
+A run with the burn scheduler (`BaseThrusterModel`) also records, when one is
+set, the maneuver command each spacecraft's maneuver guidance last issued and the
+burn plan installed for it. A command issued before the checkpoint and not yet
+planned, or a plan not yet flown, is then planned and flown in the resumed run as
+in a run never interrupted. A checkpoint written by an earlier SpaceAGORA
+holds no such record, and a run resumed from it starts with no command or plan
+waiting, as before.
+
 The checkpoint also records which spacecraft are active. A spacecraft lost to
 an impact or a touchdown before the checkpoint stays inactive in the resumed
 run, as it would in a run that was never interrupted: it is not propagated, its
