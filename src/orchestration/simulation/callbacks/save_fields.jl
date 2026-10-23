@@ -446,12 +446,16 @@ function _save_actuator_power(num_sats::Int, counts::Vector{Int}, u, t, integrat
 end
 
 # Per spacecraft, the data rate its active links carry out (`which === :sent`)
-# or in.
+# or in: with data stores, as the stores limit them.
 function _save_data_rates(u, t, integrator, which::Symbol)
     p = integrator.p
+    context = LinkContext(time_s=Float64(t), planet=p.args.environment_model.planet)
+    if any(has_data_store, p.args.dynamics_model.spacecraft)
+        flows = _data_flows(p.args.interlink_model, p.args.dynamics_model.spacecraft, u; is_active=p.is_active, context)
+        return which === :sent ? flows.sent : flows.received
+    end
     sent, received = data_link_rates_bps(p.args.interlink_model, p.args.dynamics_model.spacecraft, u;
-        is_active=p.is_active, context=LinkContext(time_s=Float64(t), planet=p.args.environment_model.planet),
-        planet_frame=_station_planet_frame(p, t))
+        is_active=p.is_active, context=context, planet_frame=_station_planet_frame(p, t))
     return which === :sent ? sent : received
 end
 
@@ -486,8 +490,9 @@ end
 
 The data columns, in a run with data links (`DataLink`): per spacecraft
 `data_rate_tx_bps` and `data_rate_rx_bps`, the rates its active links carry out
-and in (bits per second), and `data_sent_bits` and `data_received_bits`, the
-bits sent and received since the run started. Empty otherwise.
+and in (bits per second; with data stores, as the stores limit them), and
+`data_sent_bits` and `data_received_bits`, the bits sent and received since the
+run started. Empty otherwise.
 """
 function data_save_fields(args::SimulationConfiguration)
     has_data_links(args.interlink_model) || return SaveField[]
@@ -764,6 +769,7 @@ function default_save_fields(args::SimulationConfiguration)
     end
     append!(fields, interlink_save_fields(args))
     append!(fields, data_save_fields(args))
+    append!(fields, data_storage_save_fields(args))
     append!(fields, articulated_save_fields(args))
     append!(fields, attachment_save_fields(args))
     append!(fields, plume_save_fields(args))

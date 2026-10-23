@@ -367,8 +367,10 @@ and keeps each kind in the order below.
     5. actuator faults switch;
     6. the power budget: the battery boundary (continuous) and the step-end
        update, which sheds by the load the switched faults leave;
-    7. CMG gimbals stop at their limits (continuous);
-    8. the remaining guidance ticks.
+    7. the data stores: the full and empty boundary (continuous) and the
+       step-end update of their flags;
+    8. CMG gimbals stop at their limits (continuous);
+    9. the remaining guidance ticks.
 11. The quaternion projection, when attitude is integrated.
 12. Plume interaction.
 13. The initial force output.
@@ -392,7 +394,7 @@ interlinks.
 
 - **At one time: sensors, navigation, control, guidance.** Sensors sample
   before navigation reads them. Guidance that does not feed the same tick's
-  control ticks after control, faults, power and CMGs; energy depletion
+  control ticks after control, faults, power, the data stores and CMGs; energy depletion
   guidance with targeting ticks before control, so the panel command uses the
   plan made at the same tick.
 - **The hardware starts the run before anything reads it.** Hinge and gimbal
@@ -484,6 +486,7 @@ calls them at the top of `src/models/gnc/contracts/simulation_lifecycle.jl`.
 | Which spacecraft are active | `ODEParams.is_active` | a new `ODEParams`, all active | `activity` (also in `interlinks`) | `_restore_activity_checkpoint_state!` | phase 1 |
 | Interlink selection and history | the `InterlinkModel` | `run_simulation` empties the history and clears the graph's flags and the matching | `interlinks`: the configuration's identity and the activity flags | the identity is checked; the scheduler's initialization rebuilds the selection | phase 1; the scheduler at the solve's start |
 | Battery flags, fault activity | the batteries and the actuator faults | the power and fault callbacks' first initialization | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume` so that those initializations keep it | phase 1 |
+| Data store flags | the data stores | the data callbacks' first initialization | `callbacks`, only in a run with a data store | `_restore_callback_checkpoint_state!`, as the battery flags | phase 1 |
 | Sensor streams, latest measurements, biases, sample times | the mounted sensors and the sensor callbacks | `reset_sensors!` at the first solve's start | `callbacks`, and the sensor's own `checkpoint_state` in `models` | the records in phase 1; the sensor's own state in phase 3. A resumed run does not call `initialize_sensor!` | phases 1 and 3 |
 | Hinge and gimbal angles, mounted thrusters' firing state (`κ`, `thrust`) | the link hardware: `PanelHinge`, `ThrusterGimbal` and `Thruster`, which keep the state a run starts from (`run_start`, first the configured one) and the last tick's write (`run_written`) | the run-state callback's first initialization (`get_run_state_callbacks`): a value still equal to the last mounted tick's write returns to the previous run's start; a value a user changed between runs is kept | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume`: the run-state callback's initialization then keeps the restored state and records it as the latest write | phase 1 |
 | Periodic tick clocks | each run-clock callback, and the run clock in the shared buffers | each solve's start; the run clock in phase 2 | `periodic_ticks` | `_pending_periodic_ticks`, taken at the first solve's start | phases 1 and 2 |

@@ -208,6 +208,7 @@ function _gnc_phase_callbacks(num_sats::Int, args::SimulationConfiguration)
     # sheds by the load the switched faults leave.
     callbacks = _append_callbacks(callbacks, get_fault_callbacks(num_sats, args))
     callbacks = _append_callbacks(callbacks, get_power_callbacks(num_sats, args))
+    callbacks = _append_callbacks(callbacks, get_data_callbacks(num_sats, args))
     callbacks = _append_callbacks(callbacks, get_cmg_callbacks(num_sats, args))
     return _append_callbacks(callbacks, _guidance_callbacks_in_phase(guidance_callbacks, guidance_models, false))
 end

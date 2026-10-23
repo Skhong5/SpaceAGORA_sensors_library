@@ -13,10 +13,11 @@ using ..InterLinkModels: InterlinkModel, LinkContext, link_terminal, link_termin
     link_directed, link_received_power_w, link_endpoint, PowerBeamLink, terminal_shed_tier, link_data_rate_bps,
     _endpoint_sample, _node_active, _station_antenna
 import ..InterLinkModels: terminal_count, _terminal_device, _terminal_devices, _terminal_number, _battery_capacity_wh,
-    _battery_within_full
+    _battery_within_full, _data_store_capacity_bits, _data_store_within_empty, _data_store_within_full
 using ..ActuatorMounting: mounted_actuators, actuator_context
 using ..Actuators: actuator_consumption, actuator_limits
 using ..PowerSystems: battery, within_full_tolerance
+using ..DataStorage: has_data_store, data_store, _production_bps, _within_store_empty, _within_store_full
 
 export mounted_link_terminals, terminal_number, data_link_rates_bps
 
@@ -73,6 +74,21 @@ _terminal_number(spacecraft::SpacecraftModel, terminal::AbstractActuator) = term
 function _battery_capacity_wh(spacecraft::SpacecraftModel)
     b = battery(spacecraft)
     return b === nothing ? NaN : Float64(b.capacity_wh)
+end
+
+function _data_store_capacity_bits(spacecraft::SpacecraftModel)
+    store = data_store(spacecraft)
+    return store === nothing ? NaN : store.capacity_bits
+end
+
+function _data_store_within_empty(spacecraft::SpacecraftModel, bits::Real)
+    store = data_store(spacecraft)
+    return store !== nothing && _within_store_empty(store, bits)
+end
+
+function _data_store_within_full(spacecraft::SpacecraftModel, bits::Real)
+    store = data_store(spacecraft)
+    return store !== nothing && _within_store_full(store, bits)
 end
 
 function _battery_within_full(spacecraft::SpacecraftModel, energy_wh::Real)
@@ -349,6 +365,102 @@ function _station_link_rate_bps(model, edge::Int, first, second, spacecraft, sta
     a = _endpoint_sample(model, first[1], state, spacecraft, context, planet_frame)
     b = _endpoint_sample(model, second[1], state, spacecraft, context, planet_frame)
     return Float64(link_data_rate_bps(link, terminal(first, 1), terminal(second, 2), a, b, context))
+end
+
+# Per spacecraft, the data flows at `state` in a run with data stores (bit/s):
+# `sent` and `received`, what its active links carry out and in; `produced`, its
+# sources' production; `stored`, the rate of the data its store holds; and
+# `lost`, the production a full store cannot keep. A link carries at most its
+# `link_data_rate_bps` (`data_link_rates_bps`), and less at a store: an empty
+# store sends no more than comes in (its production and its incoming links),
+# shared among its outgoing links in proportion to their rates, and a full store
+# takes in no more than it sends, so links lose nothing and only its production
+# beyond that is lost. A spacecraft without a store neither limits nor is
+# limited. An inactive spacecraft's links carry nothing and it produces nothing.
+function _data_flows(model, spacecraft, state; is_active=nothing, context=LinkContext())
+    n = length(spacecraft)
+    sent, received, produced, stored, lost = (zeros(Float64, n) for _ in 1:5)
+    transmitters, receivers, capacities = Int[], Int[], Float64[]
+    if model !== nothing
+        graph = model.graph
+        for edge in eachindex(graph.edges)
+            graph.active[edge] || continue
+            link = graph.edge_properties[edge]
+            link_directed(link) || continue
+            first, second = map(vertex -> graph.vertices[vertex], graph.edges[edge])
+            is_active === nothing || (is_active[first[1]] && is_active[second[1]]) || continue
+            transmitter = _endpoint_terminal(model, first[1], edge, 1, spacecraft[first[1]])
+            receiver = _endpoint_terminal(model, second[1], edge, 2, spacecraft[second[1]])
+            a = link_endpoint(state.sc[first[1]], spacecraft[first[1]], first[1])
+            b = link_endpoint(state.sc[second[1]], spacecraft[second[1]], second[1])
+            push!(transmitters, first[1])
+            push!(receivers, second[1])
+            push!(capacities, Float64(link_data_rate_bps(link, transmitter, receiver, a, b, context)))
+        end
+    end
+    for i in 1:n
+        has_data_store(spacecraft[i]) || continue
+        is_active === nothing || is_active[i] || continue
+        x = link_endpoint(state.sc[i], spacecraft[i], i)
+        produced[i] = _production_bps(spacecraft[i], x, context, context.time_s)
+    end
+    rates = _carried_data_rates(transmitters, receivers, capacities, produced, spacecraft)
+    for e in eachindex(rates)
+        sent[transmitters[e]] += rates[e]
+        received[receivers[e]] += rates[e]
+    end
+    for i in 1:n
+        store = data_store(spacecraft[i])
+        store === nothing && continue
+        is_active === nothing || is_active[i] || continue
+        kept = store.full ? min(produced[i], max(0.0, sent[i] - received[i])) : produced[i]
+        lost[i] = produced[i] - kept
+        net = kept + received[i] - sent[i]
+        # An empty store does not go below nothing, nor a full one above its
+        # capacity, by the rounding of the shares.
+        stored[i] = store.empty ? max(net, 0.0) : store.full ? min(net, 0.0) : net
+    end
+    return (sent=sent, received=received, produced=produced, stored=stored, lost=lost)
+end
+
+# The rates (bit/s) the active data links carry, from link `e`'s transmitter
+# `transmitters[e]`, receiver `receivers[e]` and rate `capacities[e]`, and each
+# spacecraft's production: each link at most its rate; out of an empty store, a
+# share of what comes in; into a full store, a share of what goes out. Starting
+# from no flow, each pass sets every link's rate from the previous pass's
+# inflows and outflows, so the rates only grow and every pass keeps within the
+# stores' limits. The passes stop when nothing changes, or after one more pass
+# than there are stores, which a chain of relays needs.
+function _carried_data_rates(transmitters, receivers, capacities, produced, spacecraft)
+    limits_out = [(store = data_store(sc); store !== nothing && store.empty) for sc in spacecraft]
+    limits_in = [(store = data_store(sc); store !== nothing && store.full) for sc in spacecraft]
+    (any(limits_out) || any(limits_in)) || return copy(capacities)
+    n = length(spacecraft)
+    out_capacity, in_capacity, inflow, outflow = (zeros(Float64, n) for _ in 1:4)
+    for e in eachindex(capacities)
+        out_capacity[transmitters[e]] += capacities[e]
+        in_capacity[receivers[e]] += capacities[e]
+    end
+    rates = zeros(Float64, length(capacities))
+    next = similar(rates)
+    for _ in 1:(count(has_data_store, spacecraft) + 1)
+        copyto!(inflow, produced)
+        fill!(outflow, 0.0)
+        for e in eachindex(rates)
+            inflow[receivers[e]] += rates[e]
+            outflow[transmitters[e]] += rates[e]
+        end
+        for e in eachindex(rates)
+            i, j = transmitters[e], receivers[e]
+            rate = capacities[e]
+            limits_out[i] && out_capacity[i] > inflow[i] && (rate = min(rate, capacities[e] * (inflow[i] / out_capacity[i])))
+            limits_in[j] && in_capacity[j] > outflow[j] && (rate = min(rate, capacities[e] * (outflow[j] / in_capacity[j])))
+            next[e] = rate
+        end
+        next == rates && break
+        rates, next = next, rates
+    end
+    return rates
 end
 
 """
