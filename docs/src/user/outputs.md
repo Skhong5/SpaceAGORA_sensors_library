@@ -370,6 +370,32 @@ the file through `checkpoint_state` (see
 [Run state in checkpoint files](../extensibility.md#Run-state-in-checkpoint-files));
 without it, a resumed run starts that state from its reset.
 
+A run with the burn scheduler (`BaseThrusterModel`) also records, when one is
+set, the maneuver command each spacecraft's maneuver guidance last issued and the
+burn plan installed for it. A command issued before the checkpoint and not yet
+planned, or a plan not yet flown, is then planned and flown in the resumed run as
+in a run never interrupted. A checkpoint written by an earlier SpaceAGORA
+holds no such record, and a run resumed from it starts with no command or plan
+waiting, as before.
+
+The checkpoint also records the orbit each spacecraft is on, once one is past its
+first, so a resumed run continues the count: a `MissionOrbits` run ends after the
+same number of orbits, and the campaign maneuver guidance, the pass-indexed
+density models and the periapsis pulses see the orbits they would have seen. A
+checkpoint written by an earlier SpaceAGORA holds no count, and a run resumed from
+it counts from the first orbit again, as before. If such a checkpoint was written
+after the first orbit, the resumed run's count is behind: a `MissionOrbits` run
+ends late, and the campaign maneuver guidance repeats the maneuvers of the orbits
+already flown. Run it again from its start, or from a checkpoint this version
+wrote.
+
+The atmosphere-entry limit (`SPACEAGORA_ENTRY_TARGET_COUNT`) also retains each
+spacecraft's completed entry count, once one has entered. A resumed run then
+ends at the same entry as an uninterrupted checkpointed run. Older checkpoints
+without this count retain their earlier behavior: counting restarts at zero,
+so a run resumed after an entry can end late. Rerun from the start to obtain a
+checkpoint that includes the count.
+
 The checkpoint also records which spacecraft are active. A spacecraft lost to
 an impact or a touchdown before the checkpoint stays inactive in the resumed
 run, as it would in a run that was never interrupted: it is not propagated, its

@@ -205,7 +205,6 @@ function get_entry_end_callback(num_sats::Int, args::SimulationConfiguration)
     target_entries = _entry_target_count()
     target_entries > 0 || throw(ArgumentError("Entry target callback requires SPACEAGORA_ENTRY_TARGET_COUNT > 0"))
     entry_interface_m = args.environment_model.EI * 1e3
-    entry_counter = zeros(Int64, num_sats)
 
     function condition!(out, u, t, integrator)
         p = integrator.p
@@ -226,6 +225,7 @@ function get_entry_end_callback(num_sats::Int, args::SimulationConfiguration)
             return nothing
         end
 
+        entry_counter = p.shared_buffers.entry_counter
         entry_counter[idx] += 1
         completed_entries = entry_counter[idx]
         if callback_verbose(integrator)
