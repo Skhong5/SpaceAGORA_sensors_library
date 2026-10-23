@@ -191,9 +191,9 @@ module InterLinkModels
 	antenna number or one of its antennas. The terminals must be on different
 	spacecraft, or on a spacecraft and a station (two stations cannot link),
 	numbered within each spacecraft's `terminal_count` or the station's antennas,
-	and able to carry the link (`terminal_supports`); a link that reads the
-	terminal hardware at both ends (a `DataLink` with a `ShannonBudget`) refuses a
-	virtual terminal. A link registers once. Its key lists the lower endpoint
+	and able to carry the link (`terminal_supports`); a link requiring hardware
+	at both ends (a `DataLink` with a `ShannonBudget`, or a `LaserBeamLink` with
+	mounted recoil or terminal pointing) refuses a virtual terminal. A link registers once. Its key lists the lower endpoint
 	first (a station's before a spacecraft's), or, for a directed link
 	(`link_directed`), the endpoints in the order given. The link is available
 	only when `link_available` allows it, and active only when the scheduler
@@ -457,20 +457,21 @@ module InterLinkModels
 			pair_link = link isa AbstractInterlink ? link : link(i, j)
 			pair_link isa AbstractInterlink || throw(ArgumentError(
 				"register_links!: the link for pair ($i, $j) is a $(typeof(pair_link)), not a link kind (AbstractInterlink)."))
-			terminal_of(node) = node < 0 ? _next_antenna!(station_turn, model, node, pair_link) :
-				_next_terminal!(turn, spacecraft, node, pair_link)
-			ends = terminals === nothing ? (terminal_of(i), terminal_of(j)) : terminals(i, j)
+			sides = link_directed(pair_link) ? (:transmitter, :receiver) : (:either, :either)
+			terminal_of(node, side) = node < 0 ? _next_antenna!(station_turn, model, node, pair_link, side) :
+				_next_terminal!(turn, spacecraft, node, pair_link, side)
+			ends = terminals === nothing ? (terminal_of(i, sides[1]), terminal_of(j, sides[2])) : terminals(i, j)
 			push!(keys, register_link!(model, spacecraft, (i, ends[1]), (j, ends[2]), pair_link))
 		end
 		return keys
 	end
 
 	# The next terminal of spacecraft `satellite` that can carry `link`, in turn.
-	function _next_terminal!(turn::Vector{Int}, spacecraft, satellite::Integer, link)
+	function _next_terminal!(turn::Vector{Int}, spacecraft, satellite::Integer, link, side::Symbol)
 		1 <= satellite <= length(spacecraft) || throw(ArgumentError("Invalid spacecraft vector index $satellite."))
 		usable = filter(1:terminal_count(spacecraft[satellite])) do number
 			device = _terminal_device(spacecraft[satellite], number)
-			device === nothing || terminal_supports(device, link)
+			device === nothing ? !_link_needs_terminals(link) : terminal_supports(device, link, side)
 		end
 		isempty(usable) && throw(ArgumentError(
 			"Spacecraft $satellite has no terminal that can carry a $(nameof(typeof(link)))."))
@@ -479,13 +480,13 @@ module InterLinkModels
 	end
 
 	# The next antenna of the station at node `node` that can carry `link`, in turn.
-	function _next_antenna!(turn::Vector{Int}, model::InterlinkModel, node::Integer, link)
+	function _next_antenna!(turn::Vector{Int}, model::InterlinkModel, node::Integer, link, side::Symbol)
 		s = -Int(node)
 		s <= length(model.ground_stations) || throw(ArgumentError(
 			"Invalid ground station $s (node $node): the model has $(length(model.ground_stations)) ground stations " *
 			"(add_ground_station!)."))
 		station = model.ground_stations[s]
-		usable = filter(number -> terminal_supports(station.antennas[number], link), eachindex(station.antennas))
+		usable = filter(number -> terminal_supports(station.antennas[number], link, side), eachindex(station.antennas))
 		isempty(usable) && throw(ArgumentError(
 			"Ground station $s ($(station.name)) has no antenna that can carry a $(nameof(typeof(link)))."))
 		turn[s] += 1
