@@ -219,3 +219,51 @@ ensemble of one member keeps a scope that names position 1 alone. The check read
 the scope: a model that picks its spacecraft by an index field of its own, without
 declaring `spacecraft_scope`, reaches every member as before and is not detected,
 so declare its scope.
+
+### One table for the whole ensemble
+
+Each member writes and returns its own results, in which its spacecraft is
+`sc1`. Pass `merge_results=true` to get one table for the constellation as well:
+
+```julia
+res = run_constellation_ensemble(args; merge_results=true)
+res.members         # one row per member and saved time
+res.constellation   # one row per member
+res.campaign        # the MonteCarloResult the call returns without the keyword
+```
+
+- **`res.members`** has the columns of the [long layout](outputs.md#Long-layout-for-many-spacecraft):
+  `spacecraft` (the member's position in `dynamics_model.spacecraft`, which is
+  also its folder number), `spacecraft_id`, `plane`, `slot` and `time`, then the
+  member's fields without the `sc1_` prefix, and its run-wide fields beside
+  them. Members that save different fields give the union of the columns, with
+  `missing` where a member has none. Rows are in position order, then time,
+  whichever order the members finished in. A failed member has no rows.
+- **`res.constellation`** has one row per member: its identity, `member_tag`
+  (its folder name), `success`, `error`, `elapsed_s`, `rows`, and its last saved
+  row under the same names.
+- **Files.** With `results=true`, the ensemble also writes
+  `constellation_members.feather` (and `.csv` with `save_csv`) and
+  `constellation_summary.csv` in `results_directory`, beside the member
+  folders. `res.files` lists them.
+
+Filter the members with the selection you scoped effectors with:
+`res.members[coalesce.(res.members.plane .== 2, false), :]` holds plane 2.
+
+The member runs, their files and the `value` of each sample are what they are
+without the keyword. The merged tables hold every saved row in memory; for a
+large campaign, `SPACEAGORA_RESULTS_THIN_STRIDE` and
+`SPACEAGORA_RESULTS_FINAL_ONLY` thin each member's rows. `merge_results=true`
+with `return_solver_metadata=true` is refused before any member runs. So is a
+run-wide save field whose `column_prefix` is a per-spacecraft field's, since
+both would sit in the same table.
+
+Save fields passed to an ensemble with `save_fields` run in each member, which
+has one spacecraft: build them from a member's configuration, since the default
+fields built from the whole constellation are sized for all its spacecraft.
+
+
+Merged summaries reserve `member_tag`, `success`, `error`, `elapsed_s` and `rows`
+for campaign metadata. If a saved field flattens to one of these names, the merge
+raises an `ArgumentError`; give that field a different `column_prefix`. This
+applies to both per-spacecraft and run-wide fields.

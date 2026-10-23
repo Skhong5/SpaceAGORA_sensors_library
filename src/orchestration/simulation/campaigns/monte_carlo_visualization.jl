@@ -57,6 +57,8 @@ function run_monte_carlo_visualization(
             _with_configuration(base_args; simulation_settings=settings),
             sample_dir; visualization=true,
         )
+        args.simulation_settings.results_layout === :wide || throw(ArgumentError(
+            "run_monte_carlo_visualization reads each sample's wide results file; it needs results_layout=:wide."))
         run_simulation(args)
         df = DataFrame(Arrow.Table(joinpath(args.simulation_settings.results_directory, "simulation_results.feather")))
         return Float64(scalar(df))

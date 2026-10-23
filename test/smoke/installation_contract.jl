@@ -2,7 +2,7 @@ using Test, TOML
 include(joinpath(@__DIR__, "..", "..", "scripts", "setup_hypr.jl"))
 @testset "Immutable HYPR installation contract" begin
     mktempdir() do root
-        folder=joinpath(root,"packages","SpaceAGORAHYPR");mkpath(folder)
+        folder=joinpath(root,"packages");mkpath(folder)
         pin=joinpath(folder,"HYPRSource.toml")
         write(pin,"url = \"https://github.com/Space-FALCON-Lab/HYPR.jl.git\"\nrev = \"$(repeat("a",40))\"\nuuid = \"$(HYPRInstallation.HYPR_UUID)\"\nversion = \"0.5.0\"\n")
         spec=HYPRInstallation.source_spec(root;local_path="")
@@ -64,6 +64,54 @@ end
                 @test (read(project), read(manifest), readdir(root)) == before
                 @test Base.active_project() == active
             end
+        end
+    end
+end
+
+@testset "Retired loader manifest migration preserves weak identities" begin
+    mktempdir() do directory
+        manifest = joinpath(directory, "Manifest.toml")
+        core_uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
+        loader_uuid = "4096c904-79d0-4d9a-9f5d-f1d6c7a2f1b4"
+        original = Dict("manifest_format" => "2.0", "julia_version" => string(VERSION),
+            "deps" => Dict(
+                "SpaceAGORA" => [Dict("uuid" => core_uuid, "version" => "0.5.1")],
+                "HYPR" => [Dict("uuid" => string(HYPRInstallation.HYPR_UUID), "version" => "0.4.0",
+                    "weakdeps" => ["SpaceAGORA", "SpaceAGORAHYPR"],
+                    "extensions" => Dict("HYPRSpaceAGORAExt" => "SpaceAGORA"))],
+                "SpaceAGORAHYPR" => [Dict("uuid" => loader_uuid, "version" => "0.2.0",
+                    "path" => joinpath(directory, "removed-loader"), "deps" => ["SpaceAGORA", "HYPR"])]))
+        open(manifest, "w") do io; TOML.print(io, original; sorted=true); end
+        @test !ispath(original["deps"]["SpaceAGORAHYPR"][1]["path"])
+        @test HYPRInstallation.retire_loader_manifest!(manifest) === nothing
+        migrated = TOML.parsefile(manifest)
+        @test !haskey(migrated["deps"], "SpaceAGORAHYPR")
+        @test migrated["deps"]["SpaceAGORA"] == original["deps"]["SpaceAGORA"]
+        @test migrated["deps"]["HYPR"][1]["weakdeps"] == Dict(
+            "SpaceAGORA" => core_uuid, "SpaceAGORAHYPR" => loader_uuid)
+        @test migrated["deps"]["HYPR"][1]["extensions"] == original["deps"]["HYPR"][1]["extensions"]
+        @test length(HYPRInstallation.Pkg.Types.read_manifest(manifest)) == 2
+        once = read(manifest)
+        @test HYPRInstallation.retire_loader_manifest!(manifest) === nothing
+        @test read(manifest) == once
+        # A package that really imports the old loader needs its own migration.
+        # Do not silently erase that dependency or rewrite its implementation.
+        for dependencies in (["SpaceAGORAHYPR"], Dict("SpaceAGORAHYPR" => loader_uuid))
+            blocked = deepcopy(original)
+            blocked["deps"]["Consumer"] = [Dict("uuid" => "7296cf7c-9f96-44d3-93c0-ef879936dd03",
+                "version" => "1.0.0", "deps" => dependencies)]
+            open(manifest, "w") do io; TOML.print(io, blocked; sorted=true); end
+            before = read(manifest)
+            err = try HYPRInstallation.retire_loader_manifest!(manifest); nothing catch caught; caught end
+            @test err isa ErrorException
+            @test occursin("Consumer still depends on the retired", sprint(showerror, err))
+            @test read(manifest) == before
+            project = joinpath(directory, "Project.toml")
+            write(project, "[deps]\nSpaceAGORAHYPR = \"$loader_uuid\"\n[preferences]\nkeep = true\n")
+            project_before = read(project)
+            @test_throws ErrorException HYPRInstallation.setup(directory; with_hypr=false)
+            @test read(project) == project_before
+            @test read(manifest) == before
         end
     end
 end

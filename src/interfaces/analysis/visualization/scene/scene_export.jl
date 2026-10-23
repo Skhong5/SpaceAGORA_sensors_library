@@ -46,10 +46,12 @@ function build_visualization_scene(
         planet_spec(planet, ephemerides_model, et_start, sample_times),
         spacecraft,
         mission.orientation_sim,
-        basename(IOConfig._results_bundle_prefix(args)) * ".feather",
+        basename(IOConfig._results_bundle_prefix(args)) * (args.simulation_settings.results_layout === :long ?
+            "_spacecraft.feather" : ".feather"),
         String(LINK_POSE_FIELD),
         LINK_POSE_STRIDE,
-        atmosphere_spec(args; density_params=density_params)
+        atmosphere_spec(args; density_params=density_params),
+        args.simulation_settings.results_layout
     )
 end
 
@@ -115,7 +117,7 @@ end
 JSON-ready form of a `VisualizationScene`; `read_visualization_scene` inverts it.
 """
 function scene_dict(scene::VisualizationScene)::Dict{String, Any}
-    return Dict{String, Any}(
+    d = Dict{String, Any}(
         "schema" => scene.schema,
         "epoch" => Dict{String, Any}("et_start_s" => scene.epoch_et_start_s, "utc" => scene.epoch_utc),
         "planet" => _scene_dict(scene.planet),
@@ -139,6 +141,10 @@ function scene_dict(scene::VisualizationScene)::Dict{String, Any}
             )
         )
     )
+    # A long run's results are the spacecraft table, whose columns lack the `sc{i}_`
+    # prefix; the readers turn them back into the wide columns (`_wide_view`).
+    scene.results_layout === :long && (d["results"]["layout"] = "long")
+    return d
 end
 
 _link_box_from(d) = LinkBox(String(d["name"]), Bool(d["root"]), _svec3(d["dims_m"]), _svec3(d["r_m"]), _svec4(d["q"]), Float64(d["mass_kg"]))
@@ -199,7 +205,8 @@ function _scene_from_dict(d)::VisualizationScene
         String(results["feather"]),
         String(link_pose["field"]),
         Int(link_pose["stride"]),
-        _atmosphere_from(get(d, "atmosphere", nothing))
+        _atmosphere_from(get(d, "atmosphere", nothing)),
+        Symbol(get(results, "layout", "wide"))
     )
 end
 

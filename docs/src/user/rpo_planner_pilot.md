@@ -2,7 +2,7 @@
 
 !!! note "Optional package"
     The direct baseline planner runs with SpaceAGORA alone. The HYPR planner
-    requires the optional `SpaceAGORAHYPR` package; see
+    requires the optional `HYPR` package; see
     [Installing optional HYPR](#Installing-optional-HYPR).
 
 The opt-in RPO pilot connects a planner to the existing simulation and LQ-MPC
@@ -20,7 +20,7 @@ report.planners[1].records
 report.commands[1].log
 ```
 
-Load `SpaceAGORAHYPR` in your project, then use `HYPRRPOPlanner(RPOPSOConfig(...))` as the `planner` to choose HYPR. The separate
+Load `SpaceAGORA` and `HYPR` in your project, then use `HYPRRPOPlanner(RPOPSOConfig(...))` as the `planner` to choose HYPR. The separate
 `examples/rpo_planner_env` project provides exact, deterministic settings and runs
 both choices through this interface. Its README documents setup and offline
 execution. The default two-second case is a partial maneuver; the planners need
@@ -248,9 +248,9 @@ julia --startup-file=no scripts/optional_packages.jl setup hypr /path/to/my-rpo-
 The helper checks out `packages/robotics/HYPR.jl` at the parent repository's
 recorded revision, verifies its identity and clean state, and delegates to the
 existing HYPR installer with that path. The pin agrees with
-`packages/SpaceAGORAHYPR/HYPRSource.toml`. It selects HYPR 0.5.0 alongside
-SpaceAGORA 0.6.1 and compatibility shim 0.2.0. The shim keeps its existing location;
-HYPR remains optional for the simulator core.
+`packages/HYPRSource.toml`. It selects HYPR 0.5.0 alongside
+the supported SpaceAGORA source. HYPR remains optional for the simulator core;
+there is no separate compatibility loader to install.
 
 The original external-source route is also supported:
 
@@ -269,7 +269,7 @@ for source checks and Git-clone requirements.
 Run with `--project=/path/to/my-rpo-project` and explicitly load the companion.
 
 ```julia
-using SpaceAGORA, SpaceAGORAHYPR
+using SpaceAGORA, HYPR
 @assert hypr_available()
 planner = HYPRRPOPlanner(RPOPSOConfig())
 ```
