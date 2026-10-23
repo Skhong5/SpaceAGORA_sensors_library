@@ -351,9 +351,65 @@ args = SimulationConfiguration(...; interlink_model=model,
 - **Columns.** A run with a data link adds `data_rate_tx_bps`,
   `data_rate_rx_bps`, `data_sent_bits` and `data_received_bits` per spacecraft
   (see [the data columns](output_columns.md#Data-links)).
-- **Not yet modelled.** Onboard storage and queues, ground stations, pointing
-  and antenna patterns, Doppler, atmospheric and polarization losses,
-  interference between links and acquisition time are not modelled.
+- **Not yet modelled.** Ground stations, pointing and antenna patterns,
+  Doppler, atmospheric and polarization losses, interference between links and
+  acquisition time are not modelled. Onboard storage is below.
+
+### Data storage
+
+A spacecraft can hold data in a `DataStore` and produce it with data sources.
+The data links then carry only what the stores hold, or what passes through
+them:
+
+```julia
+add_data!(sc, bus, DataStore(capacity_bits=8e9, initial_bits=0.0))   # the root link, at most one
+add_data!(sc, bus, DataSource(rate_bps=2e5))                          # any link, any number
+```
+
+- **States.** In a run with a store, every spacecraft has three more
+  integrated states, which stay zero for a spacecraft without a store:
+  - `data_stored_bits`, the data its store holds;
+  - `data_produced_bits`, what its sources have produced;
+  - `data_lost_bits`, the production a full store could not keep.
+
+  They balance: `stored = initial + produced + received − sent − lost`. The
+  counters `data_sent_bits` and `data_received_bits` count what the links
+  actually carry.
+- **Flow control.** A link carries at most its rate (`link_data_rate_bps`),
+  and less at a store, so links lose nothing:
+  - **An empty store** passes what comes in straight on: its production and
+    what its incoming links carry, shared among its outgoing links in
+    proportion to their rates. A relay with an empty store forwards data at
+    zero stock.
+  - **A full store** takes in no more than it sends on. Its production beyond
+    that is lost and counted in `data_lost_bits`.
+  - **A spacecraft without a store** neither limits its links nor is limited,
+    as before.
+
+  The rates are found at every right-hand-side evaluation, along chains of
+  relays.
+- **Full and empty.** A store counts as full within `1e-9` of its capacity and
+  as empty within `1e-9` of its capacity of nothing. Events mark it full or
+  empty when it crosses either, as a battery's do, and the flags are checked
+  again at the end of each step. They continue across a checkpoint resume. A
+  resume with another capacity or initial content is refused.
+- **Sources.** `DataSource(; rate_bps, name="")` produces a constant rate while
+  its spacecraft is active. A source kind of your own subtypes
+  `AbstractDataSource` and implements
+  `data_production_bps(source, x::StateSample, ctx::LinkContext, t)`, its rate
+  in bit/s: for example imaging only over a region, a duty cycle, or a rate that
+  depends on the attitude. A run refuses at setup a source on a spacecraft
+  without a store, and a source kind without a method.
+- **Solvers.** As with a battery, a run with a data store needs a solver mode
+  that integrates the full right-hand side.
+- **Columns.** A run with a store adds `data_stored_bits`, `data_store_fill`
+  (the fraction of the capacity held), `data_produced_bits` and
+  `data_lost_bits` per spacecraft (see
+  [the storage columns](output_columns.md#Data-storage)). `data_rate_tx_bps` and
+  `data_rate_rx_bps` show the rates the links carry.
+- **Not yet modelled.** One store holds one stream of data: there are no
+  priority classes, no queues per destination, and no age or latency of the
+  data held.
 
 ## Scheduling
 

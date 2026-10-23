@@ -303,6 +303,10 @@ mutable struct Link
     faults::FaultSet
     # Sensors mounted on the link (see SensorMounting.add_sensor!); the link's frame is theirs.
     sensors::Vector{AbstractSensor}
+    # Onboard-data parts mounted on the link (see DataStorage.add_data!): the data
+    # store (root link, at most one) and the data sources.
+    data_stores::Vector{DataStore}
+    data_sources::Vector{AbstractDataSource}
 
     function Link(; root=false,
         r=MVector{3, Float64}(0, 0, 0),
@@ -342,7 +346,9 @@ mutable struct Link
         batteries=Battery[],
         power_loads=PowerLoad[],
         faults=FaultSet(),
-        sensors=AbstractSensor[])
+        sensors=AbstractSensor[],
+        data_stores=DataStore[],
+        data_sources=AbstractDataSource[])
 
         n_rw = size(J_rw, 2)
         rw_assembly = ReactionWheelAssembly(
@@ -356,7 +362,7 @@ mutable struct Link
         )
         new(root, r, q, ṙ, ω, dims, ref_area, m, mass, inertia, a, b, α, β, θ, reflection_coefficient, rw_assembly, net_force, net_torque, attitude_control_rate, SRP_facets, thrusters, magnets, cop_offset_b, Vector{Magnetorquer}(magnetorquers), Vector{LaserTerminal}(laser_terminals), Vector{PanelHinge}(hinges), Vector{ThrusterGimbal}(gimbals), Vector{AbstractActuator}(custom_actuators),
             Vector{SolarArray}(solar_arrays), Vector{Battery}(batteries), Vector{PowerLoad}(power_loads), faults,
-            Vector{AbstractSensor}(sensors))
+            Vector{AbstractSensor}(sensors), Vector{DataStore}(data_stores), Vector{AbstractDataSource}(data_sources))
     end
 end
 

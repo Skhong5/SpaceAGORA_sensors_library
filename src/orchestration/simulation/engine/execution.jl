@@ -186,6 +186,11 @@ end
         throw(ArgumentError("A spacecraft with a battery needs a solver mode that integrates the full right-hand side; " *
             "solver_mode=$(repr(mode)) splits it. Use :tsit5, :dp8, :rodas5p or :auto_stiff."))
     end
+    if mode in (:gravity_backbone_split, :split_imex, :multirate) &&
+            any(SimulationModel.has_data_store, p.args.dynamics_model.spacecraft)
+        throw(ArgumentError("A spacecraft with a data store needs a solver mode that integrates the full right-hand side; " *
+            "solver_mode=$(repr(mode)) splits it. Use :tsit5, :dp8, :rodas5p or :auto_stiff."))
+    end
     # The split modes carry the CMG rates in their control component only
     # (`actuator_rates` in `_assign_orientation_rhs!`); the gravity backbone has
     # no attitude state.
@@ -845,6 +850,7 @@ function run_simulation(
     _validate_attachments!(args, solver_mode)
     _validate_external_propagators!(args, solver_mode)
     _validate_interlinks!(args, solver_mode)
+    _validate_data_parts!(args)
     _warn_repeated_spacecraft_ids(args)
     _validate_orientation_inertia!(args)
     _validate_thermal_model_support!(args)

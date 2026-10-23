@@ -76,6 +76,11 @@ const PUBLIC_API_SECTIONS = [
         (owner = :SpaceAGORA, symbol = :register_allowed_link!, rendered = "SpaceAGORA.register_allowed_link!"),
         (owner = :SpaceAGORA, symbol = :force_on_endpoint, rendered = "SpaceAGORA.force_on_endpoint"),
         (owner = :SpaceAGORA, symbol = :laser_force_on_spacecraft, rendered = "SpaceAGORA.laser_force_on_spacecraft"),
+        (owner = :SpaceAGORA, symbol = :DataStore, rendered = "SpaceAGORA.DataStore"),
+        (owner = :SpaceAGORA, symbol = :AbstractDataSource, rendered = "SpaceAGORA.AbstractDataSource"),
+        (owner = :SpaceAGORA, symbol = :DataSource, rendered = "SpaceAGORA.DataSource"),
+        (owner = :SpaceAGORA, symbol = :add_data!, rendered = "SpaceAGORA.add_data!"),
+        (owner = :SpaceAGORA, symbol = :data_production_bps, rendered = "SpaceAGORA.data_production_bps"),
     ]),
     (title = "RPO planner pilot", items = [
         (owner = :SpaceAGORA, symbol = :hypr_available, rendered = "SpaceAGORA.hypr_available"),

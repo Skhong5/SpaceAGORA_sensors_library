@@ -3719,16 +3719,41 @@ end
 
 # The data counters of a run with data links, after every route: the bits each
 # spacecraft has sent and received grow at the rates its active links carry,
-# each link's `link_data_rate_bps` at the current state.
+# each link's `link_data_rate_bps` at the current state. A run with data stores
+# integrates the stores too, with the rates limited at the stores.
 function _apply_data_rhs!(du, u, p, t::Float64)
-    isempty(u.sc) || hasproperty(u.sc[1], :data_sent_bits) || return nothing
     spacecraft = p.args.dynamics_model.spacecraft
+    any(SimulationModel.has_data_store, spacecraft) && return _apply_data_storage_rhs!(du, u, p, t)
+    isempty(u.sc) || hasproperty(u.sc[1], :data_sent_bits) || return nothing
     planet = p.args.environment_model.planet
     sent, received = SimulationModel.data_link_rates_bps(p.args.interlink_model, spacecraft, u;
         is_active=p.is_active, context=SimulationModel.LinkContext(time_s=t, planet=planet))
     @inbounds for i in eachindex(spacecraft)
         du.sc[i].data_sent_bits = p.is_active[i] ? sent[i] : 0.0
         du.sc[i].data_received_bits = p.is_active[i] ? received[i] : 0.0
+    end
+    return nothing
+end
+
+# A run with data stores: the counters grow at the rates the links carry, and
+# each store's held, produced and lost data at its rates, as `_data_flows` gives
+# them (zero for a spacecraft without a store). An inactive spacecraft's data
+# does not change.
+function _apply_data_storage_rhs!(du, u, p, t::Float64)
+    spacecraft = p.args.dynamics_model.spacecraft
+    planet = p.args.environment_model.planet
+    flows = SimulationModel.InterlinkTerminals._data_flows(p.args.interlink_model, spacecraft, u;
+        is_active=p.is_active, context=SimulationModel.LinkContext(time_s=t, planet=planet))
+    counters = hasproperty(u.sc[1], :data_sent_bits)
+    @inbounds for i in eachindex(spacecraft)
+        active = p.is_active[i]
+        if counters
+            du.sc[i].data_sent_bits = active ? flows.sent[i] : 0.0
+            du.sc[i].data_received_bits = active ? flows.received[i] : 0.0
+        end
+        du.sc[i].data_stored_bits = active ? flows.stored[i] : 0.0
+        du.sc[i].data_produced_bits = active ? flows.produced[i] : 0.0
+        du.sc[i].data_lost_bits = active ? flows.lost[i] : 0.0
     end
     return nothing
 end
@@ -4380,6 +4405,12 @@ function build_initial_conditions(args)::ComponentVector
         if SimulationModel.has_data_links(args.interlink_model)
             base_shape = merge(base_shape, (data_sent_bits = 0.0, data_received_bits = 0.0))
         end
+        # The data a data store holds, and the data produced and lost, in a run with
+        # a data store: every spacecraft carries them, as the state needs one shape,
+        # and they stay zero for a spacecraft without a store.
+        if any(SimulationModel.has_data_store, args.dynamics_model.spacecraft)
+            base_shape = merge(base_shape, (data_stored_bits = 0.0, data_produced_bits = 0.0, data_lost_bits = 0.0))
+        end
         if SimulationModel.articulated_has_moving_joints(sc)
             tree = SimulationModel.build_articulated_tree(sc; prop_mass=sc.prop_mass)
             base_shape = merge(base_shape, (joint_q = zeros(tree.nq), joint_qd = zeros(tree.nv)))
@@ -4421,6 +4452,9 @@ function build_initial_conditions(args)::ComponentVector
         end
         if SimulationModel.has_battery(spacecraft)
             sc_view.battery_wh = SimulationModel.initial_battery_wh(spacecraft)
+        end
+        if SimulationModel.has_data_store(spacecraft)
+            sc_view.data_stored_bits = SimulationModel.data_store(spacecraft).initial_bits
         end
         init_tree = nothing
         if SimulationModel.articulated_has_moving_joints(spacecraft)

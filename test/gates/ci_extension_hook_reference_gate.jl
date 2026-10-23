@@ -37,7 +37,7 @@ const _HOOK_OLD_INDEX_WORDS = (:i, :sat_idx, :idx)
 # policy (`candidate_score`); `beam` a laser beam link's beam model
 # (`beam_force_factor`).
 const _HOOK_DISPATCH_NAMES = (:model, :effector, :controller, :actuator, :sensor,
-    :planner, :algorithm, :family, :binding, :result, :provider, :link, :producer, :budget, :policy, :beam)
+    :planner, :algorithm, :family, :binding, :result, :provider, :link, :producer, :budget, :policy, :source, :beam)
 
 violations = String[]
 

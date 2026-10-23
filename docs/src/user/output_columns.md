@@ -293,6 +293,21 @@ These columns are written with the default save-field list in a run with a
 | `sc1_data_sent_bits` | bit | Bits sent since the run started (an integrated state) |
 | `sc1_data_received_bits` | bit | Bits received since the run started (an integrated state) |
 
+With data stores, the rates are those the links carry as the stores limit them.
+
+### Data storage
+
+These columns are written with the default save-field list when a spacecraft
+of the run carries a `DataStore` (see [Interlinks](interlinks.md#Data-storage)).
+They are NaN for a spacecraft without a store:
+
+| Column | Unit | Description |
+|---|---|---|
+| `sc1_data_stored_bits` | bit | Data the store holds (an integrated state) |
+| `sc1_data_store_fill` | — | That data over the store's capacity |
+| `sc1_data_produced_bits` | bit | Data the spacecraft's sources have produced since the run started (an integrated state) |
+| `sc1_data_lost_bits` | bit | Production a full store could not keep, since the run started (an integrated state) |
+
 ### Interlinks
 
 These columns are written with the default save-field list in a run with an

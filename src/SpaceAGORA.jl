@@ -404,6 +404,7 @@ using .SimulationModel: actuator_wrench, actuator_limits, actuator_saturate, act
 using .SimulationModel: add_actuator!, mounted_actuators, actuator_context, allocation_matrix, mounted_wrench, six_axis_thrusters
 using .SimulationModel: propellant_mass_rate, ActuatorRequirements, actuator_requirements, applied_actuator_levels, mounted_power
 using .SimulationModel: SolarArray, Battery, PowerLoad, add_power!
+using .SimulationModel: AbstractDataSource, DataStore, DataSource, add_data!, data_production_bps
 using .SimulationModel: ActuatorFault, add_fault!
 using .SimulationModel: RateGyro, StarTracker, Magnetometer, SensorTruth, sensor_measure, sensor_dimension, sensor_requirements, sensor_period_s, initialize_sensor!
 using .SimulationModel: GNSSReceiver, SunSensor, Accelerometer, sensor_needs_specific_force, is_gravitational
@@ -567,6 +568,11 @@ end
 @doc (@doc SimulationModel.Battery) Battery
 @doc (@doc SimulationModel.PowerLoad) PowerLoad
 @doc (@doc SimulationModel.add_power!) add_power!
+@doc (@doc SimulationModel.AbstractDataSource) AbstractDataSource
+@doc (@doc SimulationModel.DataStore) DataStore
+@doc (@doc SimulationModel.DataSource) DataSource
+@doc (@doc SimulationModel.add_data!) add_data!
+@doc (@doc SimulationModel.data_production_bps) data_production_bps
 @doc (@doc SimulationModel.ActuatorFault) ActuatorFault
 @doc (@doc SimulationModel.add_fault!) add_fault!
 @doc (@doc SimulationModel.RateGyro) RateGyro
@@ -877,6 +883,7 @@ export actuator_wrench, actuator_limits, actuator_saturate, actuator_consumption
 export add_actuator!, mounted_actuators, actuator_context, allocation_matrix, mounted_wrench, six_axis_thrusters
 export propellant_mass_rate, ActuatorRequirements, actuator_requirements, applied_actuator_levels, mounted_power
 export SolarArray, Battery, PowerLoad, add_power!
+export AbstractDataSource, DataStore, DataSource, add_data!, data_production_bps
 export ActuatorFault, add_fault!
 export AbstractSensor, RateGyro, StarTracker, Magnetometer, SensorTruth, sensor_measure, sensor_dimension, sensor_requirements, sensor_period_s, initialize_sensor!
 export GNSSReceiver, SunSensor, Accelerometer, sensor_needs_specific_force, is_gravitational
