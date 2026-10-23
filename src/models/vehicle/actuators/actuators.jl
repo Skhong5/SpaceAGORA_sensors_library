@@ -214,8 +214,10 @@ on spacecraft `i` (its position in the run, not its ID), in mounting order
 (see `mounted_actuators`), held between control ticks. Return `nothing` for a
 spacecraft the effector does not drive.
 
-The engine calls this at every right-hand-side evaluation, so compute the
-levels in `update_control!` and return stored values here.
+The engine calls this at every right-hand-side evaluation, and in the power,
+fault and result readers, for the spacecraft the controller's `spacecraft_scope`
+names (for every spacecraft in SpaceAGORA 0.6 and earlier), so compute the levels
+in `update_control!` and return stored values here.
 
 The defaults of this and the other optional actuator methods take untyped
 arguments, so a method written for one kind or one controller, typed or not,

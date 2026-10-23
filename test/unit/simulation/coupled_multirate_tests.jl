@@ -26,6 +26,10 @@ function fixture(mode; duration=10.0, cap=0.5, initial_bits=1e6, kind=:data,
             add_actuator!(sc, bus, RadioTerminal(boresight=[0.0, 1.0, 0.0],
                 max_power_w=5.0, gain_dbi=6.0, efficiency=0.5))
         end
+        if kind === :mounted
+            add_actuator!(sc, bus, LaserTerminal(boresight=[0.0, index == 1 ? 1.0 : -1.0, 0.0],
+                location=[1.0, 0.0, 0.0], max_power_w=50.0, efficiency=0.5))
+        end
         if kind === :power
             terminal = index == 1 ?
                 LaserTerminal(boresight=[0.0, 1.0, 0.0], max_power_w=100.0, efficiency=0.5) :
@@ -42,6 +46,8 @@ function fixture(mode; duration=10.0, cap=0.5, initial_bits=1e6, kind=:data,
     link = kind === :data ?
         DataLink(transmit_power_w=1.0, budget=FixedRateBudget(rate_bps=1000.0), range_m=2000e3) :
         kind === :power ? PowerBeamLink(power_w=80.0, range_m=50e3) :
+        kind === :mounted ? LaserBeamLink(power_w=40.0, magnification=100.0,
+            range_m=2000e3, recoil=:mounted) :
         LaserMomentumLink(power_w=1e8, magnification=100.0, range_m=2000e3)
     register_link!(model, spacecraft, (1, 1), (2, 1), link)
     return SimulationConfiguration(
@@ -68,7 +74,7 @@ withenv("SPACEAGORA_RHS_CALIBRATE"=>"off", "SPACEAGORA_RHS_IDENTIFY"=>"0",
 @testset "Coupled MRI integration" begin
     @test SE._parse_solver_mode_sym("multirate_mri") === :multirate_mri
 
-    @testset "Complete partition and reference trajectory: $kind" for kind in (:data, :laser, :power)
+    @testset "Complete partition and reference trajectory: $kind" for kind in (:data, :laser, :power, :mounted)
         reference=run_simulation(fixture(:dp8; kind, orientation=true); return_results=true,return_solution=true)
         p=reference.solution.prob.p
         u=copy(reference.solution.u[end])
@@ -81,6 +87,10 @@ withenv("SPACEAGORA_RHS_CALIBRATE"=>"off", "SPACEAGORA_RHS_IDENTIFY"=>"0",
             SE.spacecraft_dynamics_mri_slow!(slow,u,p,10.0)
             @test all(isfinite,fast) && all(isfinite,slow)
             @test whole ≈ fast+slow rtol=1e-12 atol=1e-12
+            if kind === :mounted && !inactive
+                @test norm(fast.sc[1].ω) > 1e-8
+                @test fast.sc[1].ω ≈ whole.sc[1].ω rtol=1e-12 atol=1e-12
+            end
         end
         result=run_simulation(fixture(:multirate_mri; kind, orientation=true);return_results=true,return_solution=true)
         @test result.solution.t[end]==10.0
@@ -92,6 +102,10 @@ withenv("SPACEAGORA_RHS_CALIBRATE"=>"off", "SPACEAGORA_RHS_IDENTIFY"=>"0",
             @test result.solution.u[end].sc[1].data_sent_bits ≈ 10000.0 atol=1e-6
             @test result.solution.u[end].sc[2].data_received_bits ≈ 10000.0 atol=1e-6
             @test result.solution.u[end].sc[1].battery_wh ≈ 5-2*10/3600 atol=1e-10
+        elseif kind === :mounted
+            @test norm(result.solution.u[end].sc[1].ω - SVector(0.0, 0.0, 0.01)) > 1e-8
+            @test result.solution.u[end].sc[1].ω ≈ reference.solution.u[end].sc[1].ω rtol=1e-9 atol=1e-12
+            @test norm(result.solution.u[end].sc[1].interlink_dv) > 0
         elseif kind === :power
             @test result.solution.u[end].sc[1].battery_wh ≈ 5 - 160 * 10 / 3600 atol=1e-10
             @test result.solution.u[end].sc[2].battery_wh ≈ 5 + 32 * 10 / 3600 atol=1e-10

@@ -9,6 +9,8 @@ module InterlinkStorageTests
 using Test
 using LinearAlgebra
 using StaticArrays
+using TOML
+using DataFrames
 using SpaceAGORA
 
 const SM = SpaceAGORA.SimulationModel
@@ -358,6 +360,31 @@ end
         @test first(history).active == [((1, 1), (2, 1))]
         @test isempty(last(history).active)
         @test solution.u[end].sc[2].data_received_bits ≈ 1e7 rtol=1e-6
+    end
+
+    @testset "backlog score units survive saved results" begin
+        backlog = DataBacklogPolicy(horizon_s=5.0)
+        mixed = WeightedPolicy(PolicyTerm(backlog; scale=1e6),
+            PolicyTerm(DataThroughputPolicy(); scale=1e6))
+        for policy in (backlog, mixed)
+            mktempdir() do directory
+                spacecraft, model = one_link()
+                args = run_args(spacecraft, model; duration=1.0,
+                    settings=SimulationSettings(results=true, generate_plots=false,
+                        results_directory=directory, save_csv=false))
+                args = SM.SimConfig._with_configuration(args; scheduling_policy_model=policy)
+                result = run_simulation(args; return_results=true)
+                expected_unit = policy === backlog ? "bit/s" : "1"
+                table = link_schedule(result)
+                @test !isempty(table)
+                @test DataFrames.metadata(table)["score_unit"] == expected_unit
+                manifest = TOML.parsefile(joinpath(directory, "simulation_results.manifest.toml"))
+                @test manifest["interlinks"]["score_unit"] == expected_unit
+                if policy === mixed
+                    @test [term["score_unit"] for term in manifest["interlinks"]["terms"]] == ["bit/s", "bit/s"]
+                end
+            end
+        end
     end
 
     @testset "without a store, as before" begin

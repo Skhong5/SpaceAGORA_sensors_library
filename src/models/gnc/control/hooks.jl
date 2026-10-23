@@ -61,7 +61,11 @@ module ControlHooks
 
     The engine reads this at save time, so an effector must compute the levels
     in `update_control!` and keep them in its own actuator state rather than
-    recomputing them here.
+    recomputing them here. During the run it asks only for the spacecraft the
+    effector's `spacecraft_scope` names (for every spacecraft in SpaceAGORA 0.6
+    and earlier). Before the run, when the result columns are sized, it asks
+    every effector about every spacecraft with thrusters, so keep returning
+    `nothing` for a spacecraft outside the scope.
     """
     control_thruster_levels(effector, spacecraft_index::Int) = nothing
 
@@ -115,7 +119,10 @@ module ControlHooks
 
     Return the command held since the last `update_control!` tick rather than
     recomputing the control law here. A method typed `x::StateSample`, or with
-    `x` untyped, is the one the dynamics call.
+    `x` untyped, is the one the dynamics call. The dynamics call it, and the
+    other output hooks, only for the spacecraft the model's `spacecraft_scope`
+    names (SpaceAGORA 0.6 and earlier called them for every spacecraft); return
+    zeros for any other, which direct callers may still ask about.
     """
     function control_wrench end
 

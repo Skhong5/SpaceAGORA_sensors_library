@@ -156,6 +156,7 @@ link_terminal(::RadioTerminal) = true
 terminal_shed_tier(::RadioTerminal) = 1
 
 _link_needs_terminals(link::DataLink) = _budget_needs_terminals(link.budget)
+_needs_terminals_reason(::DataLink) = " (a ShannonBudget reads both radios)"
 
 # A ground station end sits on the planet, inside the occulting sphere: its
 # elevation mask, which the graph checks, is the link's line of sight.

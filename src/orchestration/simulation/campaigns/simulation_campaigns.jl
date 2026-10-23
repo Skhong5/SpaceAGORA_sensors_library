@@ -21,6 +21,7 @@ export MonteCarloResult
 export run_monte_carlo
 export run_constellation_ensemble
 export ConstellationEnsembleResult
+export read_constellation_results
 export run_monte_carlo_visualization
 export campaign_route_features
 export campaign_route_state_path, save_campaign_route_state

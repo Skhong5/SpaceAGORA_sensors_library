@@ -370,7 +370,7 @@ end
 NcCtl{V}() where {V} = NcCtl{V}(0.0, false, [0.0], 0)
 const NC_CTL_STEPS = (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoReset)
 for variant in (:Clean, :RunEpoch, :Identity, :Rand, :Shared, :SharedBind, :NoReset, :NoWrench, :Narrow,
-        :Impure, :Negative, :NoCheckpoint, :WrenchOnly, :Mounted)
+        :Impure, :Negative, :NoCheckpoint, :WrenchOnly, :Mounted, :Leaky)
     step = variant in NC_CTL_STEPS ? variant : :Clean
     @eval SpaceAGORA.update_control!(m::NcCtl{$(QuoteNode(variant))}, u, p, t::Float64, i::Int) =
         (m.acc += gnc_step(Val($(QuoteNode(step))), m, u, i); nothing)
@@ -389,6 +389,8 @@ SpaceAGORA.control_wrench(m::NcCtl{:Impure}, x::Sample, p, t::Float64) = (m.call
 SpaceAGORA.control_propellant_rate(m::NcCtl{:Negative}, x::Sample, p, t::Float64) = -1.0e-5
 # No output hook of its own: the mounted actuators carry its command.
 SpaceAGORA.actuation_mode(::NcCtl{:Mounted}) = :mounted
+# Bound to spacecraft 1, but its output hooks act on every spacecraft.
+SpaceAGORA.spacecraft_scope(::NcCtl{:Leaky}) = BoundSpacecraft((1,))
 SpaceAGORA.checkpoint_state(m::NcCtl) = merge(nc_checkpoint_state(m), (calls=m.calls,))
 SpaceAGORA.restore_checkpoint_state!(m::NcCtl, data) = (nc_restore!(m, data); m.calls = data.calls; nothing)
 SpaceAGORA.checkpoint_state(m::NcCtl{:NoCheckpoint}) = nothing
@@ -461,7 +463,12 @@ function gnc_controls()
             passing=gnc_except(kind, :bind_fresh_state, :initialize_resets)),
         (kind=kind, id=:checkpoint_round_trip, broken="its own state not in a checkpoint_state",
             expect="a run resumed from its checkpoint at 30.0 s and an uninterrupted run differ after it: ",
-            report=() -> check_control_model(ctl(:NoCheckpoint)), passing=gnc_except(kind, :checkpoint_round_trip)))
+            report=() -> check_control_model(ctl(:NoCheckpoint)), passing=gnc_except(kind, :checkpoint_round_trip)),
+        (kind=kind, id=:outputs_in_scope, broken="control_wrench acts on a spacecraft outside its scope",
+            expect="control_wrench returned force", report=() -> begin
+                model = ctl(:Leaky)
+                check_control_model(model; fixture=conformance_fixture(control=(model,), spacecraft_count=2))
+            end, passing=gnc_except(kind, :outputs_in_scope)))
     return controls
 end
 
@@ -761,7 +768,7 @@ facade_report(facade; version) = Base.invokelatest(check_service_facade, facade;
 
 status_of(report, id) = only(check.status for check in report.checks if check.id === id)
 const MAY_SKIP = (:concurrent_equals_sequential, :bind_fresh_state, :stream_untouched_if_declared, :refuses_explicitly,
-    :simulation_run)
+    :simulation_run, :outputs_in_scope)
 
 @testset "Conformance negative controls" begin
     all_controls = controls()
