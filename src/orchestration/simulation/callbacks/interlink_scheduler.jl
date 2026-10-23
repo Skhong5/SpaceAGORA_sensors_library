@@ -53,6 +53,16 @@ end
 # after the others, repeats it (the same selection) and runs at every step.
 function interlink_scheduler_initialization(; candidate_force=nothing)
 	scheduler = interlink_scheduler_callback(; candidate_force)
+	function initialize(callback, state, time, integrator)
+		# This pass precedes the normal planet-frame callback. A resumed run
+		# starts at its checkpoint time, so stations must already be rotated to
+		# that time before power, saving and other initializers read the selection.
+		p = integrator.p
+		if has_ground_stations(p.args.interlink_model)
+			p.args.environment_model.planet.L_PI .= _planet_lpi_at(p, Float64(time))
+		end
+		scheduler.initialize(callback, state, time, integrator)
+	end
 	return DiffEqBase.DiscreteCallback((state, time, integrator) -> false, integrator -> nothing;
-		initialize=scheduler.initialize, save_positions=(false, false))
+		initialize=initialize, save_positions=(false, false))
 end

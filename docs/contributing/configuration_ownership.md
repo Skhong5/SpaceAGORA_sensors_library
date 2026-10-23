@@ -1,8 +1,10 @@
 # Configuration source ownership
 
-The existing configuration API is assembled by `src/orchestration/simulation/config/configuration.jl`.
-This is a source-file organization; users still access the same types through
-`SpaceAGORA.SimulationModel`. No new configuration wrapper is required.
+The configuration implementation is assembled by
+`src/orchestration/simulation/config/configuration.jl`. Applications use the
+documented types exported by `SpaceAGORA`; their existing internal
+`SpaceAGORA.SimulationModel` bindings retain their identities. This source-file
+organization introduces no new configuration wrapper.
 
 | Source file under `src/orchestration/simulation/config/` | Responsibility |
 | --- | --- |

@@ -6,14 +6,23 @@ shape, architecture rules, or CI-backed repository policy.
 This page is for maintainers and contributors working on the repository itself,
 not for first-time users trying to run a simulation.
 
-Quickest maintainer build:
+## Build and inspect documentation
+
+From the root of a prepared SpaceAGORA checkout, use Julia 1.12:
 
 ```text
 julia --startup-file=no docs/setup.jl
 julia --project=docs docs/make.jl
 ```
 
-What to read next:
+The setup command creates the ignored docs environment and may access package
+servers. The build writes `docs/build/`; open its `index.html` to inspect the
+result. Contributor pages in this directory stay in the repository, so also
+review their Markdown and relative links directly. See the
+[documentation policy](documentation_policy.md#build-the-docs-locally) for the
+full procedure.
+
+## Find the relevant guide
 
 - [Optional Adapter Standard](../src/reference/adapter_contract.md)
 - [EDG Package Boundary](../src/reference/edg_adapter_boundary.md)

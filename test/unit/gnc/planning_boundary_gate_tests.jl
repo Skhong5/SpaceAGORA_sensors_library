@@ -184,7 +184,7 @@ using Test
                 original = read(dispatcher, String)
                 try
                     write(dispatcher, replace(original,
-                        "_invoke_kernel(:_edg_at_control_tick" => "_invoke_kernel(:_edg_wrong_kernel"))
+                        "_invoke_kernel(:guidance_decision!" => "_invoke_kernel(:_edg_wrong_kernel"))
                     rejected = run_gate()
                     @test rejected.failure isa LoadError
                     @test any(v -> occursin("must be an exact package forwarder", v), rejected.violations)
