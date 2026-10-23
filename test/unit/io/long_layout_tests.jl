@@ -11,6 +11,7 @@ using CSV
 using JSON
 using TOML
 using Logging
+using StaticArrays
 import SpaceAGORA.TelemetryVerification: make_example_config, make_three_body_spacecraft
 
 const SM = SpaceAGORA.SimulationModel
@@ -91,6 +92,55 @@ end
         # long_table rearranges a wide run into the same spacecraft table.
         @test isequal(long_table(wide), long.table)
         @test long_table(long) === long.table
+    end
+end
+
+@testset "fields whose shape differs between spacecraft" begin
+    rows(table, k) = table[table.spacecraft .== k, :]
+    # A user field with no entries for one spacecraft and two for the other, in
+    # both orders, and a NamedTuple field whose keys differ between them.
+    for short in (1, 2)
+        other = 3 - short
+        ragged = SM.SaveField(:rag, (u, t, integrator) -> [i == short ? Float64[] : [t, 2t] for i in 1:2];
+            per_satellite=true, column_prefix="rag")
+        keyed = SM.SaveField(:named, (u, t, integrator) -> [i == short ? (a=t,) : (a=t, b=2t) for i in 1:2];
+            per_satellite=true, column_prefix="named")
+        wide_args = config(dir=mktempdir(), n=2, walker=false)
+        long_args = config(dir=mktempdir(), layout=:long, n=2, walker=false)
+        fields = vcat(SM.default_save_fields(wide_args), [ragged, keyed])
+        wide = quiet(() -> run_simulation(wide_args; return_results=true, save_fields=fields))
+        long = quiet(() -> run_simulation(long_args; return_results=true, save_fields=fields))
+        @test "sc$(other)_rag_2" in names(wide.table) && !("sc$(short)_rag_1" in names(wide.table))
+        @test "sc$(other)_named_b" in names(wide.table) && !("sc$(short)_named_b" in names(wide.table))
+        for name in ("rag_1", "rag_2", "named_b")
+            @test rows(long.table, other)[!, name] == wide.table[!, "sc$(other)_$(name)"]
+            @test all(ismissing, rows(long.table, short)[!, name])
+        end
+        @test rows(long.table, short).named_a == wide.table[!, "sc$(short)_named_a"]
+        @test isequal(long_table(wide), long.table)
+    end
+    # The thruster levels of a spacecraft with thrusters beside one without, in
+    # both orders; the viewer reads the long run as the wide one.
+    for with_thrusters in (1, 2)
+        without = 3 - with_thrusters
+        dirs = (mktempdir(), mktempdir())
+        args = (config(dir=dirs[1], n=2, walker=false, scene=true),
+                config(dir=dirs[2], layout=:long, n=2, walker=false, scene=true))
+        for a in args, location in ((0.0, 0.0, 1.0), (1.0, 0.0, 0.0))
+            push!(a.dynamics_model.spacecraft[with_thrusters].root.thrusters, SM.Thruster(max_thrust=2.0,
+                location=MVector{3, Float64}(location...), direction=MVector{3, Float64}(1.0, 0.0, 0.0)))
+        end
+        wide = quiet(() -> run_simulation(args[1]; return_results=true))
+        long = quiet(() -> run_simulation(args[2]; return_results=true))
+        @test "sc$(with_thrusters)_thruster_level_2" in names(wide.table)
+        @test !("sc$(without)_thruster_level_1" in names(wide.table))
+        @test rows(long.table, with_thrusters).thruster_level_2 == wide.table[!, "sc$(with_thrusters)_thruster_level_2"]
+        @test all(ismissing, rows(long.table, without).thruster_level_1)
+        @test isequal(long_table(wide), long.table)
+        payload(dir) = JSON.parsefile(export_viewer_payload(joinpath(dir, "simulation_results"); textures=false))
+        wide_json, long_json = payload(dirs[1]), payload(dirs[2])
+        @test wide_json["frames"]["thruster_counts"] == long_json["frames"]["thruster_counts"]
+        @test isequal(wide_json["frames"], long_json["frames"])
     end
 end
 
