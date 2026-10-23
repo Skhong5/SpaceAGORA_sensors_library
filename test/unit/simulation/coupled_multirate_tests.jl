@@ -1,6 +1,7 @@
 module CoupledMultirateTests
 
 using Test, LinearAlgebra, StaticArrays, SpaceAGORA, OrdinaryDiffEq, DiffEqCallbacks, Serialization
+using Arrow, DataFrames
 const SM = SpaceAGORA.SimulationModel
 const SE = SpaceAGORA.SimulationEngine
 const PLANET = make_no_gram_planet(:earth)
@@ -197,6 +198,34 @@ withenv("SPACEAGORA_RHS_CALIBRATE"=>"off", "SPACEAGORA_RHS_IDENTIFY"=>"0",
         p.shared_buffers.in_atmosphere .= true
         cap, _, _ = SM.SimulationCallbacks._active_phase_solver_settings(p, reltol, abstol)
         @test cap == 0.1
+    end
+
+    @testset "MRI streamed outputs survive interruption" begin
+        mktempdir() do directory
+            settings(path; resume=false) = SimulationSettings(results=true, generate_plots=false,
+                results_layout=:long, save_csv=false, results_directory=path,
+                checkpoint_enabled=true, checkpoint_interval_s=3.0,
+                checkpoint_directory=path, resume_from_checkpoint=resume)
+            reference = run_simulation(fixture(:multirate_mri;
+                settings=settings(joinpath(directory, "reference"))); return_results=true)
+            resumed_dir = joinpath(directory, "resumed")
+            stop = DiscreteCallback((u,t,i)->t>6.2, i->throw(Interrupted()); save_positions=(false,false))
+            @test_throws Interrupted run_simulation(fixture(:multirate_mri;
+                settings=settings(resumed_dir)); extra_callbacks=(stop,))
+            resumed = run_simulation(fixture(:multirate_mri;
+                settings=settings(resumed_dir; resume=true)); return_results=true)
+            @test resumed.table.time == reference.table.time
+            @test resumed.table.spacecraft == reference.table.spacecraft
+            for column in (:data_sent_bits, :data_received_bits, :data_stored_bits)
+                @test resumed.table[!, column] ≈ reference.table[!, column] rtol=1e-10 atol=1e-7
+            end
+            sender = resumed.table[resumed.table.spacecraft .== 1, :]
+            @test last(sender.time) == 10.0
+            @test last(sender.data_sent_bits) ≈ 10000.0 atol=1e-6
+            prefix = joinpath(resumed_dir, "simulation_results")
+            @test isequal(DataFrame(Arrow.Table(prefix * "_spacecraft.feather")), resumed.table)
+            @test isequal(DataFrame(Arrow.Table(prefix * "_link_schedule.feather")), link_schedule(resumed))
+        end
     end
 
     @testset "Checkpoint interruption uses the same mission horizon" begin

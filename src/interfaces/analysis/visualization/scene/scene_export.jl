@@ -46,11 +46,13 @@ function build_visualization_scene(
         planet_spec(planet, ephemerides_model, et_start, sample_times),
         spacecraft,
         mission.orientation_sim,
-        basename(IOConfig._results_bundle_prefix(args)) * ".feather",
+        basename(IOConfig._results_bundle_prefix(args)) * (args.simulation_settings.results_layout === :long ?
+            "_spacecraft.feather" : ".feather"),
         String(LINK_POSE_FIELD),
         LINK_POSE_STRIDE,
         atmosphere_spec(args; density_params=density_params),
-        _scene_link_schedule(args)
+        _scene_link_schedule(args),
+        args.simulation_settings.results_layout
     )
 end
 
@@ -152,6 +154,9 @@ function scene_dict(scene::VisualizationScene)::Dict{String, Any}
     # Only a run with interlinks names its link schedule, so other scenes are as before.
     scene.link_schedule === nothing ||
         (dict["results"]["link_schedule"] = Dict{String, Any}("file" => scene.link_schedule))
+    # A long run's results are the spacecraft table, whose columns lack the `sc{i}_`
+    # prefix; the readers turn them back into the wide columns (`_wide_view`).
+    scene.results_layout === :long && (dict["results"]["layout"] = "long")
     return dict
 end
 
@@ -214,7 +219,8 @@ function _scene_from_dict(d)::VisualizationScene
         String(link_pose["field"]),
         Int(link_pose["stride"]),
         _atmosphere_from(get(d, "atmosphere", nothing)),
-        _link_schedule_from(get(results, "link_schedule", nothing))
+        _link_schedule_from(get(results, "link_schedule", nothing)),
+        Symbol(get(results, "layout", "wide"))
     )
 end
 

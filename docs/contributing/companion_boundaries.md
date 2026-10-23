@@ -26,9 +26,6 @@ contracts. Release evidence for an adapter is in
 - **Private path:** any other way a companion reaches SpaceAGORA code, such as an
   internal module, an internal name or the engine's raw storage. Private paths are
   not supported and can change without notice.
-- **Compatibility package (shim):** `SpaceAGORAHYPR`, at
-  `packages/SpaceAGORAHYPR/`. It keeps older code that loads it working by
-  forwarding to HYPR; it holds no planner of its own.
 - **Decision forwarders:** `src/models/gnc/guidance/aerobraking/typed_edg/algorithms.jl`,
   which forwards EDG's two decisions to the companion. Until SpaceAGORA 0.6.1 it
   also forwarded 101 helper names for tests: the compatibility bridge.
@@ -107,18 +104,19 @@ the contract or by another caller.
 
 ### Before you remove an import from HYPR
 
-The compatibility package's `RPO` and `RobotArm` aliases point at HYPR's
-extension namespaces. Code that loads the compatibility package can reach every
-name those namespaces import, even a name HYPR itself never uses. So when you
-clean up imports in HYPR:
+HYPR's own helpers live in its extension's `RPO` and `RobotArm` namespaces, reached
+as `Base.get_extension(HYPR, :HYPRSpaceAGORAExt).RPO` and `.RobotArm`. Code that
+reaches those namespaces can reach every name they import, even a name HYPR itself
+never uses. Removing the old loader does not narrow the service contract or move
+shared bindings. So when you clean up imports in HYPR:
 
-- check the names reachable through those two aliases, as well as the callers in
+- check the names reachable through those two namespaces, as well as the callers in
   each repository;
 - change SpaceAGORA's contract lists in the same reviewed contract version. HYPR's
   `test/service_boundary.jl` requires the names HYPR imports or reaches to equal
   those lists, and each of them to be used in code outside its import;
 - run the checks below, not only a search: a search finds imports, not the code
-  that reaches names through the aliases.
+  that reaches names through the namespaces.
 
 ### Checks for a HYPR boundary change
 

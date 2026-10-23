@@ -90,8 +90,8 @@ end
     # ChainRulesCore extension then failed to precompile in a coverage run.
     child = joinpath(@__DIR__, "rpo_plotlyjs_extension_child.jl")
     project = dirname(Base.active_project())
-    hypr = Base.identify_package_env("SpaceAGORAHYPR")
-    hypr === nothing && error("SpaceAGORAHYPR is not on the load path; load test/helpers/load_hypr.jl first.")
+    hypr = Base.identify_package_env("HYPR")
+    hypr === nothing && error("HYPR is not on the load path; load test/helpers/load_hypr.jl first.")
     load_path = join(unique(["@", last(hypr), "@stdlib"]), Sys.iswindows() ? ';' : ':')
     for order in ("core-first", "plotlyjs-first")
         output = IOBuffer()

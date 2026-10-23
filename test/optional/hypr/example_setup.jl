@@ -22,6 +22,10 @@ const EXAMPLE = joinpath(ROOT, "examples", "rpo_planner_env")
             @test success(`git -C $ROOT check-ignore -q -- $path`)
         end
         project = TOML.parsefile(joinpath(EXAMPLE, "Project.toml"))
-        @test all(haskey(project["deps"], name) for name in ("SpaceAGORA", "SpaceAGORAHYPR", "HYPR"))
+        @test all(haskey(project["deps"], name) for name in ("SpaceAGORA", "HYPR"))
+        @test !haskey(project["deps"], "SpaceAGORAHYPR")
+        @test !haskey(get(project, "sources", Dict()), "SpaceAGORAHYPR")
+        manifest = TOML.parsefile(joinpath(EXAMPLE, "Manifest.toml"))
+        @test !haskey(manifest["deps"], "SpaceAGORAHYPR")
     end
 end
