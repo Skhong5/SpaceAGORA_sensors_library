@@ -12,7 +12,7 @@ responsibility for selected spacecraft during a SpaceAGORA run.
 
 The implementation lives in the separate
 [SpaceAGORAMuJoCo.jl repository](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl).
-Its [user guide at the v0.5.0 release](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl/blob/3d77f512920a7af0714d262a5f3857ea59676b84/docs/user_guide.md)
+Its [user guide at the recorded source revision](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl/blob/7b5a00318f6883d7cdc7c7e7c0c18830f96ce57f/docs/user_guide.md)
 contains a complete two-spacecraft example, its extension into a SpaceAGORA
 configuration, and explanations of resetting, forcing and reading scene states.
 The companion owns these examples and the native implementation, so the
@@ -26,12 +26,19 @@ to create a separate environment, then load `SpaceAGORA` and
 and Linux x86_64, using the pinned MuJoCo 3.11.0 artifact. Importing SpaceAGORA
 alone does not load the native library.
 
-Use the source revisions recorded by the companion's installer and its
-[v0.5.0 release](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl/releases/tag/v0.5.0),
-which pairs it with SpaceAGORA 0.6.0. Releases from v0.2.0 on use
-`ExternalPropagationServices` contract 2.0.0; the first release, v0.1.0, uses
-contract 1.0.0 with its own pinned core, so do not combine it or its guide with
-this version of SpaceAGORA. The core
+For SpaceAGORA 0.7.0, use the companion source recorded by the core checkout:
+`7b5a00318f6883d7cdc7c7e7c0c18830f96ce57f`. Its package version remains 0.5.0,
+but the existing companion version tag predates compatibility with this core.
+From the updated core checkout, prepare a separate environment:
+
+```text
+julia --startup-file=no scripts/optional_packages.jl setup mujoco /path/to/mujoco-env
+```
+
+If the companion checkout is already initialized, preserve local work and update
+it to the revision recorded by core before setup; see
+[Set up the companion sources recorded by the updated core](upgrading.md#Set-up-the-companion-sources-recorded-by-the-updated-core).
+The core
 and companion are qualified as a pair; a matching version-family constraint is
 insufficient to establish compatibility. The connection follows
 the shared [adapter standard](../reference/adapter_contract.md) and version 2.0.0

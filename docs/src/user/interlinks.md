@@ -426,6 +426,16 @@ add_data!(sc, bus, DataSource(rate_bps=2e5))                          # any link
   a `WeightedPolicy` without rescaling. A policy of your own reads the stores
   with `stored_bits(ctx, i)` (NaN without a store) and `store_room_bits(ctx, i)`
   (Inf without one).
+- **Backlog scoring limits in relay networks.** The score estimates a local
+  transfer, not additional data delivered to its final destination. A full relay
+  can attract incoming traffic that displaces its own production while a better
+  direct path goes unused. Two full stores can also keep exchanging data without
+  increasing delivery to a destination. Each incoming candidate independently
+  receives the receiver's whole carried-outflow credit; that credit is neither
+  reduced by the receiver's own production nor divided among candidates. If
+  several links are selected, actual transfers still share the available flow
+  capacity and respect store limits. These scoring limitations remain in v0.7.1;
+  compare delivered and lost data when choosing a policy for a relay network.
 - **Columns.** A run with a store adds `data_stored_bits`, `data_store_fill`
   (the fraction of the capacity held), `data_produced_bits` and
   `data_lost_bits` per spacecraft (see
