@@ -118,7 +118,7 @@ them, as `simulation_results_link_schedule.csv` and `.feather`.
 | `link` | | the link's number, its position in registration order |
 | `kind` | | the link kind's type name with its type parameters, without modules, for example `DataLink{ShannonBudget}` |
 | `directed` | | whether the link is directed |
-| `a_spacecraft`, `a_terminal` | | the first endpoint of the link's key, the transmitter of a directed link |
+| `a_spacecraft`, `a_terminal` | | the first endpoint of the link's key, the transmitter of a directed link; a ground station end is `-s` with its antenna number |
 | `b_spacecraft`, `b_terminal` | | the second endpoint |
 | `start_s`, `end_s`, `duration_s` | s | the span: its first sample, the next sample without the link or the history's last sample, and their difference |
 | `steps` | | the history samples in the span |

@@ -11,7 +11,8 @@ using StaticArrays: SVector
 using ..AbstractTypes: AbstractActuator
 using ..SpacecraftModels: SpacecraftModel
 using ..InterLinkModels: InterlinkModel, LinkContext, link_terminal, link_terminal_levels, terminal_supports,
-    link_directed, link_received_power_w, link_endpoint, PowerBeamLink, terminal_shed_tier, link_data_rate_bps
+    link_directed, link_received_power_w, link_endpoint, PowerBeamLink, terminal_shed_tier, link_data_rate_bps,
+    _endpoint_sample, _node_active, _station_antenna
 import ..InterLinkModels: terminal_count, _terminal_device, _terminal_devices, _terminal_number, _battery_capacity_wh,
     _battery_within_full, terminal_pose, _data_store_capacity_bits, _data_store_within_empty,
     _data_store_within_full, _data_store_production_bps
@@ -135,7 +136,8 @@ of the run's spacecraft. For each spacecraft, each endpoint is
 at its two ends (`nothing` for a virtual terminal), which the link hooks
 receive. Each hardware terminal must still be
 able to carry its link (`terminal_supports`), at a level within its
-`actuator_limits`. Returns whether there are any.
+`actuator_limits`; so must a ground station's antenna, which is not recorded (a
+station has no power budget). Returns whether there are any.
 """
 function prepare_terminal_endpoints!(model::InterlinkModel, spacecraft)::Bool
     graph = model.graph
@@ -144,6 +146,11 @@ function prepare_terminal_endpoints!(model::InterlinkModel, spacecraft)::Bool
     hardware = Dict{Int, Any}()
     for (edge, vertices) in enumerate(graph.edges), (side, vertex) in enumerate(vertices)
         satellite, number = graph.vertices[vertex]
+        if satellite < 0
+            _check_station_antenna(model, edge, side, (satellite, number))
+            terminals[edge][side] = _station_antenna(model, (satellite, number))
+            continue
+        end
         model_s = spacecraft[satellite]
         model_s isa SpacecraftModel && number > model_s.n_terminal || continue
         mounted = get!(() -> mounted_link_terminals(model_s), hardware, satellite)
@@ -171,6 +178,26 @@ function prepare_terminal_endpoints!(model::InterlinkModel, spacecraft)::Bool
     model.terminal_endpoints = endpoints
     model.edge_terminals = Tuple{Any, Any}[(pair[1], pair[2]) for pair in terminals]
     return any(!isempty, endpoints)
+end
+
+# A ground station's antenna at end `side` of `edge`: able to carry its link, at
+# a level within its limits.
+function _check_station_antenna(model::InterlinkModel, edge::Int, side::Int, endpoint)
+    s, number = -endpoint[1], endpoint[2]
+    s <= length(model.ground_stations) && number <= length(model.ground_stations[s].antennas) || throw(ArgumentError(
+        "Interlinks: ground station $s has no antenna $number."))
+    antenna = _station_antenna(model, endpoint)
+    link = model.graph.edge_properties[edge]
+    role = link_directed(link) ? (side == 1 ? :transmitter : :receiver) : :either
+    terminal_supports(antenna, link, role) || throw(ArgumentError(
+        "Interlinks: antenna $number of ground station $s, a $(nameof(typeof(antenna))), cannot carry a " *
+        "$(nameof(typeof(link)))$(role === :either ? "" : " as its $(role)") (terminal_supports)."))
+    level = Float64(link_terminal_levels(link)[side])
+    low, high = actuator_limits(antenna)
+    low <= level <= high || throw(ArgumentError(
+        "Interlinks: the $(nameof(typeof(link))) on antenna $number of ground station $s sets it to level $level, " *
+        "outside its limits [$low, $high]."))
+    return nothing
 end
 
 # Whether links drive terminal hardware on spacecraft `satellite`.
@@ -274,9 +301,12 @@ end
 The electrical power (W) that the active directed links ending on spacecraft
 `satellite`'s terminal hardware deliver to its bus, each from
 `link_received_power_w` at `state`. `spacecraft` is the run's spacecraft and
-`state` the run state, with every spacecraft. Returns 0 when it receives none.
+`state` the run state, with every spacecraft. A ground station transmitter
+reads `planet_frame`, the planet-fixed rotation at the state's time (`nothing`
+for the planet's current `L_PI`). Returns 0 when it receives none.
 """
-function received_link_power_w(model, satellite::Int, spacecraft, state; context=LinkContext())::Float64
+function received_link_power_w(model, satellite::Int, spacecraft, state; context=LinkContext(),
+    planet_frame=nothing)::Float64
     link_receives(model, satellite) || return 0.0
     graph = model.graph
     entries = mounted_actuators(spacecraft[satellite])
@@ -286,7 +316,8 @@ function received_link_power_w(model, satellite::Int, spacecraft, state; context
         link = graph.edge_properties[edge]
         link_directed(link) || continue
         first, second = map(vertex -> graph.vertices[vertex], graph.edges[edge])
-        a = link_endpoint(state.sc[first[1]], spacecraft[first[1]], first[1])
+        a = first[1] > 0 ? link_endpoint(state.sc[first[1]], spacecraft[first[1]], first[1]) :
+            _endpoint_sample(model, first[1], state, spacecraft, context, planet_frame)
         b = link_endpoint(state.sc[second[1]], spacecraft[second[1]], second[1])
         total += Float64(link_received_power_w(link, entries[position].actuator, a, b, context))
     end
@@ -331,28 +362,56 @@ Per spacecraft, the data rates (bits per second) that the run's active links
 carry out of it (`sent`) and into it (`received`), each link's
 `link_data_rate_bps` at `state`, the run state with every spacecraft.
 `spacecraft` is the run's spacecraft. Optional `is_active` flags drop links with
-an inactive end. Undirected links carry none.
+an inactive end. Undirected links carry none. A link with a ground station end
+counts at its spacecraft end, and the station end reads `planet_frame`, the
+planet-fixed rotation at the state's time (`nothing` for the planet's current
+`L_PI`).
 """
-function data_link_rates_bps(model, spacecraft, state; is_active=nothing, context=LinkContext())
+function data_link_rates_bps(model, spacecraft, state; is_active=nothing, context=LinkContext(), planet_frame=nothing)
+    rates = _data_link_rates(model, spacecraft, state; is_active, context, planet_frame)
+    return (rates.sent, rates.received)
+end
+
+# The rates of `data_link_rates_bps`, with each ground station's too:
+# `station_sent` and `station_received`, by station number.
+function _data_link_rates(model, spacecraft, state; is_active=nothing, context=LinkContext(), planet_frame=nothing)
     sent = zeros(Float64, length(spacecraft))
     received = zeros(Float64, length(spacecraft))
-    model === nothing && return (sent, received)
+    station_sent = zeros(Float64, model === nothing ? 0 : length(model.ground_stations))
+    station_received = zeros(Float64, length(station_sent))
+    model === nothing && return (; sent, received, station_sent, station_received)
     graph = model.graph
     for edge in eachindex(graph.edges)
         graph.active[edge] || continue
         link = graph.edge_properties[edge]
         link_directed(link) || continue
         first, second = map(vertex -> graph.vertices[vertex], graph.edges[edge])
-        is_active === nothing || (is_active[first[1]] && is_active[second[1]]) || continue
-        transmitter = _endpoint_terminal(model, first[1], edge, 1, spacecraft[first[1]])
-        receiver = _endpoint_terminal(model, second[1], edge, 2, spacecraft[second[1]])
-        a = link_endpoint(state.sc[first[1]], spacecraft[first[1]], first[1])
-        b = link_endpoint(state.sc[second[1]], spacecraft[second[1]], second[1])
-        rate = Float64(link_data_rate_bps(link, transmitter, receiver, a, b, context))
-        sent[first[1]] += rate
-        received[second[1]] += rate
+        is_active === nothing || (_node_active(is_active, first[1]) && _node_active(is_active, second[1])) || continue
+        if first[1] > 0 && second[1] > 0
+            transmitter = _endpoint_terminal(model, first[1], edge, 1, spacecraft[first[1]])
+            receiver = _endpoint_terminal(model, second[1], edge, 2, spacecraft[second[1]])
+            a = link_endpoint(state.sc[first[1]], spacecraft[first[1]], first[1])
+            b = link_endpoint(state.sc[second[1]], spacecraft[second[1]], second[1])
+            rate = Float64(link_data_rate_bps(link, transmitter, receiver, a, b, context))
+            sent[first[1]] += rate
+            received[second[1]] += rate
+        else
+            rate = _station_link_rate_bps(model, edge, first, second, spacecraft, state, context, planet_frame)
+            first[1] > 0 ? (sent[first[1]] += rate) : (station_sent[-first[1]] += rate)
+            second[1] > 0 ? (received[second[1]] += rate) : (station_received[-second[1]] += rate)
+        end
     end
-    return (sent, received)
+    return (; sent, received, station_sent, station_received)
+end
+
+# The rate of the active data link of `edge` between a spacecraft and a ground station.
+function _station_link_rate_bps(model, edge::Int, first, second, spacecraft, state, context, planet_frame)
+    link = model.graph.edge_properties[edge]
+    terminal(endpoint, side) = endpoint[1] < 0 ? _station_antenna(model, endpoint) :
+        _endpoint_terminal(model, endpoint[1], edge, side, spacecraft[endpoint[1]])
+    a = _endpoint_sample(model, first[1], state, spacecraft, context, planet_frame)
+    b = _endpoint_sample(model, second[1], state, spacecraft, context, planet_frame)
+    return Float64(link_data_rate_bps(link, terminal(first, 1), terminal(second, 2), a, b, context))
 end
 
 # Per spacecraft, the data flows at `state` in a run with data stores (bit/s):
@@ -364,10 +423,16 @@ end
 # shared among its outgoing links in proportion to their rates, and a full store
 # takes in no more than it sends, so links lose nothing and only its production
 # beyond that is lost. A spacecraft without a store neither limits nor is
-# limited. An inactive spacecraft's links carry nothing and it produces nothing.
-function _data_flows(model, spacecraft, state; is_active=nothing, context=LinkContext())
+# limited, and neither does a ground station, an unbounded store: its links'
+# rates are `station_sent` and `station_received`, by station number, and its
+# end reads `planet_frame` (see `data_link_rates_bps`). An inactive spacecraft's
+# links carry nothing and it produces nothing.
+function _data_flows(model, spacecraft, state; is_active=nothing, context=LinkContext(), planet_frame=nothing)
     n = length(spacecraft)
     sent, received, produced, stored, lost = (zeros(Float64, n) for _ in 1:5)
+    station_sent = zeros(Float64, model === nothing ? 0 : length(model.ground_stations))
+    station_received = zeros(Float64, length(station_sent))
+    # The flow nodes: spacecraft `i` is node `i`, and station `s` node `n + s`.
     transmitters, receivers, capacities = Int[], Int[], Float64[]
     if model !== nothing
         graph = model.graph
@@ -376,14 +441,20 @@ function _data_flows(model, spacecraft, state; is_active=nothing, context=LinkCo
             link = graph.edge_properties[edge]
             link_directed(link) || continue
             first, second = map(vertex -> graph.vertices[vertex], graph.edges[edge])
-            is_active === nothing || (is_active[first[1]] && is_active[second[1]]) || continue
-            transmitter = _endpoint_terminal(model, first[1], edge, 1, spacecraft[first[1]])
-            receiver = _endpoint_terminal(model, second[1], edge, 2, spacecraft[second[1]])
-            a = link_endpoint(state.sc[first[1]], spacecraft[first[1]], first[1])
-            b = link_endpoint(state.sc[second[1]], spacecraft[second[1]], second[1])
-            push!(transmitters, first[1])
-            push!(receivers, second[1])
-            push!(capacities, Float64(link_data_rate_bps(link, transmitter, receiver, a, b, context)))
+            is_active === nothing || (_node_active(is_active, first[1]) && _node_active(is_active, second[1])) || continue
+            if first[1] > 0 && second[1] > 0
+                transmitter = _endpoint_terminal(model, first[1], edge, 1, spacecraft[first[1]])
+                receiver = _endpoint_terminal(model, second[1], edge, 2, spacecraft[second[1]])
+                a = link_endpoint(state.sc[first[1]], spacecraft[first[1]], first[1])
+                b = link_endpoint(state.sc[second[1]], spacecraft[second[1]], second[1])
+                push!(transmitters, first[1])
+                push!(receivers, second[1])
+                push!(capacities, Float64(link_data_rate_bps(link, transmitter, receiver, a, b, context)))
+            else
+                push!(transmitters, first[1] > 0 ? first[1] : n - first[1])
+                push!(receivers, second[1] > 0 ? second[1] : n - second[1])
+                push!(capacities, _station_link_rate_bps(model, edge, first, second, spacecraft, state, context, planet_frame))
+            end
         end
     end
     for i in 1:n
@@ -392,10 +463,11 @@ function _data_flows(model, spacecraft, state; is_active=nothing, context=LinkCo
         x = link_endpoint(state.sc[i], spacecraft[i], i)
         produced[i] = _production_bps(spacecraft[i], x, context, context.time_s)
     end
-    rates = _carried_data_rates(transmitters, receivers, capacities, produced, spacecraft)
+    rates = _carried_data_rates(transmitters, receivers, capacities, produced, spacecraft, length(station_sent))
     for e in eachindex(rates)
-        sent[transmitters[e]] += rates[e]
-        received[receivers[e]] += rates[e]
+        i, j = transmitters[e], receivers[e]
+        i <= n ? (sent[i] += rates[e]) : (station_sent[i - n] += rates[e])
+        j <= n ? (received[j] += rates[e]) : (station_received[j - n] += rates[e])
     end
     for i in 1:n
         store = data_store(spacecraft[i])
@@ -408,7 +480,8 @@ function _data_flows(model, spacecraft, state; is_active=nothing, context=LinkCo
         # capacity, by the rounding of the shares.
         stored[i] = store.empty ? max(net, 0.0) : store.full ? min(net, 0.0) : net
     end
-    return (sent=sent, received=received, produced=produced, stored=stored, lost=lost)
+    return (sent=sent, received=received, produced=produced, stored=stored, lost=lost,
+        station_sent=station_sent, station_received=station_received)
 end
 
 # The rates (bit/s) the active data links carry, from link `e`'s transmitter
@@ -418,12 +491,18 @@ end
 # from no flow, each pass sets every link's rate from the previous pass's
 # inflows and outflows, so the rates only grow and every pass keeps within the
 # stores' limits. The passes stop when nothing changes, or after one more pass
-# than there are stores, which a chain of relays needs.
-function _carried_data_rates(transmitters, receivers, capacities, produced, spacecraft)
+# than there are stores, which a chain of relays needs. Nodes past the
+# spacecraft are the `stations` ground stations, which never limit a link.
+function _carried_data_rates(transmitters, receivers, capacities, produced, spacecraft, stations::Int=0)
     limits_out = [(store = data_store(sc); store !== nothing && store.empty) for sc in spacecraft]
     limits_in = [(store = data_store(sc); store !== nothing && store.full) for sc in spacecraft]
     (any(limits_out) || any(limits_in)) || return copy(capacities)
-    n = length(spacecraft)
+    if stations > 0
+        append!(limits_out, fill(false, stations))
+        append!(limits_in, fill(false, stations))
+        produced = [produced; zeros(stations)]
+    end
+    n = length(spacecraft) + stations
     out_capacity, in_capacity, inflow, outflow = (zeros(Float64, n) for _ in 1:4)
     for e in eachindex(capacities)
         out_capacity[transmitters[e]] += capacities[e]
@@ -474,7 +553,7 @@ One flag per graph vertex, false for terminal hardware that its spacecraft's
 power budget sheds: a terminal while the battery sheds its
 `terminal_shed_tier` or more (tier 1 for laser and radio terminals).
 Links through such a terminal are unavailable until the tier clears. Virtual
-terminals are always available. Returns `nothing` when the run has no hardware
+terminals and ground station antennas are always available. Returns `nothing` when the run has no hardware
 endpoints.
 """
 function terminal_availability(model, spacecraft)
@@ -482,6 +561,7 @@ function terminal_availability(model, spacecraft)
     graph = model.graph
     flags = fill(true, length(graph.vertices))
     for (vertex, (satellite, number)) in enumerate(graph.vertices)
+        satellite > 0 || continue # a ground station's antennas are never shed
         model_s = spacecraft[satellite]
         model_s isa SpacecraftModel && number > model_s.n_terminal || continue
         flags[vertex] = !_terminal_shed(model_s, _terminal_device(model_s, number))

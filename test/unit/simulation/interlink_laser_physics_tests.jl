@@ -82,6 +82,7 @@ SpaceAGORA.interlink_wrench(link::TurningLink, terminal_a, terminal_b, a, b, ctx
     (ZERO3, SVector(0.0, 0.0, link.torque_n_m), ZERO3, SVector(0.0, 0.0, -link.torque_n_m))
 
 # Selects every available link.
+struct MixedStationInterrupted <: Exception end
 struct EveryLinkPolicy <: AbstractSchedulingPolicy end
 SpaceAGORA.candidate_score(::EveryLinkPolicy, candidate, ctx, t) = 1.0
 
@@ -614,6 +615,57 @@ end
                 end
             end
         end
+        @testset "mounted laser and station data resume together" begin
+            function mixed_args(directory; resume=false, offset=SVector(1.0, 0.0, 0.0), mask=10.0)
+                spacecraft, model = mounted_pair(; offset)
+                radio() = RadioTerminal(boresight=[0.0, 0.0, 1.0], max_power_w=5.0, gain_dbi=0.0, efficiency=0.5)
+                # Put the station under spacecraft 1 at the initial epoch.
+                env = make_no_gram_environment(planet=PLANET)
+                epoch = SM.EphemeridesModels.ephemerides_epoch_seconds(env.ephemerides_model, InitialTime())
+                L0 = SM.EphemeridesModels.ephemerides_frame_lpi(env.ephemerides_model, PLANET, epoch)
+                direction = normalize(L0 * SVector(RADIUS, 0.0, 0.0))
+                st = GroundStation(name="mixed", lat_deg=rad2deg(asin(direction[3])),
+                    lon_deg=rad2deg(atan(direction[2], direction[1])), min_elevation_deg=mask,
+                    antennas=[radio()])
+                add_ground_station!(model, st)
+                sc = spacecraft[1]
+                radio_device = radio()
+                add_actuator!(sc, sc.links[2], radio_device)
+                # The mounted laser remains terminal 1; resolve the radio by identity.
+                register_link!(model, spacecraft, (1, radio_device), (-1, 1),
+                    DataLink(transmit_power_w=1.0, budget=FixedRateBudget(1e3), range_m=3e6))
+                add_data!(sc, sc.root, DataStore(capacity_bits=1e6, initial_bits=1e5))
+                settings = SimulationSettings(results=false, generate_plots=false,
+                    checkpoint_enabled=true, checkpoint_interval_s=1.0,
+                    checkpoint_directory=directory, resume_from_checkpoint=resume)
+                return run_args(spacecraft, model; policy=EveryLinkPolicy(), duration=3.0,
+                    orientation=true, settings)
+            end
+            mktempdir() do reference_dir
+                whole = run_simulation(mixed_args(reference_dir); return_solution=true)
+                mktempdir() do split_dir
+                    args = mixed_args(split_dir)
+                    stop = SM.SimulationCallbacks.PresetTimeCallback([1.1],
+                        i -> throw(MixedStationInterrupted()); save_positions=(false, false))
+                    @test_throws MixedStationInterrupted run_simulation(args; extra_callbacks=(stop,))
+                    saved = SE._load_checkpoint(args)
+                    @test saved.t == 1.0
+                    @test saved.u.gs[1].received_bits > 0.0
+                    @test_throws ArgumentError run_simulation(mixed_args(split_dir; resume=true, mask=20.0))
+                    @test_throws ArgumentError run_simulation(mixed_args(split_dir; resume=true,
+                        offset=SVector(2.0, 0.0, 0.0)))
+                    resumed = run_simulation(mixed_args(split_dir; resume=true); return_solution=true)
+                    @test resumed.t == whole.t
+                    @test all(isequal(collect(a), collect(b)) for (a,b) in zip(resumed.u, whole.u))
+                    final = resumed.u[end]
+                    @test final.gs[1].received_bits ≈ 3e3 rtol=1e-10
+                    @test final.gs[1].received_bits == final.sc[1].data_sent_bits
+                    @test norm(final.sc[1].ω) > 0.0
+                    @test any(length(h.active) == 2 for h in resumed.prob.p.args.interlink_model.history)
+                end
+            end
+        end
+
         root_args = run_args(beam_pair(LaserBeamLink(power_w=40.0, magnification=100.0, range_m=200e3, recoil=:mounted))...)
         original = SE._interlink_checkpoint_configuration(root_args)
         root_args.dynamics_model.spacecraft[1].root.q .= SVector(0.0, 0.0, sin(0.2), cos(0.2))

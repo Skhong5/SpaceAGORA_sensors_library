@@ -456,11 +456,12 @@ function _save_data_rates(u, t, integrator, which::Symbol)
     p = integrator.p
     context = LinkContext(time_s=Float64(t), planet=p.args.environment_model.planet)
     if any(has_data_store, p.args.dynamics_model.spacecraft)
-        flows = _data_flows(p.args.interlink_model, p.args.dynamics_model.spacecraft, u; is_active=p.is_active, context)
+        flows = _data_flows(p.args.interlink_model, p.args.dynamics_model.spacecraft, u; is_active=p.is_active, context,
+            planet_frame=_station_planet_frame(p, t))
         return which === :sent ? flows.sent : flows.received
     end
     sent, received = data_link_rates_bps(p.args.interlink_model, p.args.dynamics_model.spacecraft, u;
-        is_active=p.is_active, context=context)
+        is_active=p.is_active, context=context, planet_frame=_station_planet_frame(p, t))
     return which === :sent ? sent : received
 end
 
@@ -497,17 +498,24 @@ The data columns, in a run with data links (`DataLink`): per spacecraft
 `data_rate_tx_bps` and `data_rate_rx_bps`, the rates its active links carry out
 and in (bits per second; with data stores, as the stores limit them), and
 `data_sent_bits` and `data_received_bits`, the bits sent and received since the
-run started. Empty otherwise.
+run started. With ground stations, `gs{s}_received_bits` and `gs{s}_sent_bits`
+follow for each station `s`, its integrated counters. Empty otherwise.
 """
 function data_save_fields(args::SimulationConfiguration)
     has_data_links(args.interlink_model) || return SaveField[]
-    return SaveField[
+    fields = SaveField[
         SaveField(:data_rate_tx_bps, (u, t, integrator) -> _save_data_rates(u, t, integrator, :sent); per_satellite=true),
         SaveField(:data_rate_rx_bps, (u, t, integrator) -> _save_data_rates(u, t, integrator, :received); per_satellite=true),
         SaveField(:data_sent_bits, (u, t, integrator) -> [Float64(current.data_sent_bits) for current in u.sc]; per_satellite=true),
         SaveField(:data_received_bits, (u, t, integrator) -> [Float64(current.data_received_bits) for current in u.sc];
             per_satellite=true),
     ]
+    has_station_counters(args.interlink_model) || return fields
+    for s in eachindex(args.interlink_model.ground_stations)
+        push!(fields, SaveField(Symbol("gs$(s)_received_bits"), (u, t, integrator) -> Float64(u.gs[s].received_bits)))
+        push!(fields, SaveField(Symbol("gs$(s)_sent_bits"), (u, t, integrator) -> Float64(u.gs[s].sent_bits)))
+    end
+    return fields
 end
 
 """

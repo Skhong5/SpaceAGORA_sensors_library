@@ -187,6 +187,10 @@ function _interlink_checkpoint_configuration(args)
     # the configuration it had before hardware terminals.
     hardware = [_mounted_terminal_identities(spacecraft) for spacecraft in args.dynamics_model.spacecraft]
     all(isempty, hardware) || (configuration = merge(configuration, (hardware_terminals=hardware,)))
+    # Likewise, a run with ground stations records each station's site, mask and
+    # antennas, in order.
+    isempty(model.ground_stations) ||
+        (configuration = merge(configuration, (ground_stations=map(_ground_station_identity, model.ground_stations),)))
     mounts = _interlink_terminal_mounts(args)
     isempty(mounts) && return configuration
     return merge(configuration, (terminal_mounts=mounts,))
@@ -202,7 +206,7 @@ function _interlink_terminal_mounts(args)
     for (edge, link) in zip(graph.edges, graph.edge_properties)
         (models._link_needs_attitude(link) || models.link_applies_torque(link)) || continue
         for vertex in edge
-            push!(endpoints, graph.vertices[vertex])
+            graph.vertices[vertex][1] > 0 && push!(endpoints, graph.vertices[vertex])
         end
     end
     mounts = Any[]
@@ -238,6 +242,13 @@ function _interlink_terminal_mounts(args)
     end
     return mounts
 end
+
+# A ground station's identity: its site and mask, each float with its bits, and
+# each antenna as a terminal's identity. Its name is a label, not part of it.
+_ground_station_identity(station) = (
+    site=map(_interlink_kind_parameter, (lat_deg=station.lat_deg, lon_deg=station.lon_deg, alt_m=station.alt_m,
+        min_elevation_deg=station.min_elevation_deg)),
+    antennas=Any[_interlink_terminal_identity(antenna) for antenna in station.antennas])
 
 # The scheduling policy's entry: `policy`, `target_idx` and `target_idxs`, the keys
 # checkpoints have always been written with. A policy that 0.5 chose by a symbol
@@ -419,7 +430,8 @@ function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
     hasproperty(snapshot, :configuration) &&
         isequal(_interlink_snapshot_configuration(snapshot), _interlink_checkpoint_configuration(args)) ||
         throw(ArgumentError("Interlink configuration differs from the checkpoint. Resume with the same " *
-            "candidate topology, link kinds and parameters, forbidden pairs, scheduling policy, terminal counts and terminal mounting geometry."))
+            "candidate topology, link kinds and parameters, forbidden pairs, scheduling policy, terminal counts, " *
+            "terminal mounting geometry and ground stations."))
     count = length(args.dynamics_model.spacecraft)
     hasproperty(snapshot, :is_active) && snapshot.is_active isa AbstractVector{Bool} &&
         length(snapshot.is_active) == count && is_active isa AbstractVector{Bool} &&
@@ -427,6 +439,11 @@ function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
         throw(ArgumentError("Interlink checkpoint activity flags must match the spacecraft count."))
     hasproperty(checkpoint.u, :sc) && length(checkpoint.u.sc) == count ||
         throw(ArgumentError("Interlink checkpoint state must match the spacecraft count."))
+    stations = SimulationModel.InterLinkModels.has_station_counters(args.interlink_model) ?
+        length(args.interlink_model.ground_stations) : 0
+    (hasproperty(checkpoint.u, :gs) ? length(checkpoint.u.gs) : 0) == stations ||
+        throw(ArgumentError("Interlink checkpoint state must hold one data counter pair per ground station " *
+            "($(stations) in this run)."))
     copyto!(is_active, snapshot.is_active)
     return nothing
 end
@@ -472,10 +489,14 @@ _resumed_checkpoint_state(args, u) = args.interlink_model !== nothing && _interl
     _renamed_spacecraft_state(u, map(reverse, _INTERLINK_STATE_NAMES)) : u
 
 # A copy of the state `u` with the spacecraft components renamed by `names` (old =>
-# new pairs). Every other component, every shape and every value stay; the copy's
-# values are checked bit for bit against `u`'s.
+# new pairs). Every other component, every shape and every value stay (the ground
+# stations' counters, `gs`, as they are); the copy's values are checked bit for bit
+# against `u`'s.
 function _renamed_spacecraft_state(u::ComponentVector, names)
-    state = ComponentVector(sc=[_renamed_components(u.sc[i], names) for i in eachindex(u.sc)])
+    spacecraft = [_renamed_components(u.sc[i], names) for i in eachindex(u.sc)]
+    state = hasproperty(u, :gs) ?
+        ComponentVector(sc=spacecraft, gs=[_renamed_components(u.gs[s], ()) for s in eachindex(u.gs)]) :
+        ComponentVector(sc=spacecraft)
     old, new = ComponentArrays.getdata(u), ComponentArrays.getdata(state)
     length(old) == length(new) && all(index -> old[index] === new[index], eachindex(old, new)) ||
         error("Renaming the interlink states changed the state's values; this is a SpaceAGORA bug.")

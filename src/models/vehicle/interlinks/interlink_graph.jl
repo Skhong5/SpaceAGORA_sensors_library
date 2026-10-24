@@ -6,6 +6,7 @@ module InterLinkModels
 	using ..AbstractTypes: AbstractActuator
 	using ..EffectorSampling: StateSample
 	using ..HookDeprecation: _hook_deprecation, _NOT_PASSED
+	using ..Geodesy: geodetic_to_pp
 	using ..QuaternionMath: rot
 
 	export AbstractInterlink, LinkContext, LaserMomentumLink, link_range_m, link_available, link_force
@@ -19,13 +20,15 @@ module InterLinkModels
 	export InterlinkModel, InterLinkGraph, register_link!, update_availability!, interlink_force_on_spacecraft
 	export vertex, InterLinkKey, InterLinkHistory
 	export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!
+	export GroundStation, add_ground_station!, station_pairs
 
 	include(joinpath(@__DIR__, "links.jl"))
 	include(joinpath(@__DIR__, "power_links.jl"))
 	include(joinpath(@__DIR__, "data_links.jl"))
+	include(joinpath(@__DIR__, "ground_stations.jl"))
 	include(joinpath(@__DIR__, "laser_beam_links.jl"))
 
-	const vertex = Tuple{Int, Int} # (spacecraft vector index, terminal number)
+	const vertex = Tuple{Int, Int} # (node, terminal number): a spacecraft vector index, or minus a ground station's number
 	const InterLinkKey = Tuple{vertex, vertex} # Canonically ordered pair of terminal endpoints
 
 	"""
@@ -98,7 +101,10 @@ module InterLinkModels
 	`(spacecraft vector index, terminal number)` pairs: the position of the
 	spacecraft in `dynamics_model.spacecraft`, not its `id`. Terminals
 	`1:n_terminal` are virtual; mounted terminal hardware (see `link_terminal`)
-	follows.
+	follows. Ground stations (`add_ground_station!`) are link ends too: antenna
+	`k` of station `s` is the endpoint `(-s, k)`. `forbidden_pairs` lists pairs of
+	spacecraft indices that may never link; `(i, -s)` forbids spacecraft `i` and
+	station `s`.
 
 	`record_available` sets whether each history sample also records the links
 	that were available, which `contact_windows` reads: `nothing`, the default,
@@ -129,7 +135,9 @@ module InterLinkModels
 		# v) Whether the history records a weighted policy's term scores.
 		record_terms::Bool
 
-		# vi) The run's terminal hardware at each edge's two ends (`nothing` for a
+		# vi) The ground stations, in registration order: station `s` is node `-s`.
+		ground_stations::Vector{GroundStation}
+		# vii) The run's terminal hardware at each edge's two ends (`nothing` for a
 		# virtual terminal), set at run setup with `terminal_endpoints`; empty before.
 		edge_terminals::Vector{Tuple{Any, Any}}
 
@@ -145,7 +153,7 @@ module InterLinkModels
 			end
 			pairs = Set{Tuple{Int, Int}}(minmax(pair...) for pair in forbidden_pairs)
 			new(pairs, InterLinkGraph(), InterLinkHistory[], Vector{NTuple{3, Int}}[], record_available, record_terms,
-				Tuple{Any, Any}[])
+				GroundStation[], Tuple{Any, Any}[])
 		end
 	end
 
@@ -178,25 +186,32 @@ module InterLinkModels
 
 	Register a candidate link of kind `link` between two terminals and return its
 	key. Each endpoint is `(spacecraft vector index, terminal)`, where the terminal
-	is a terminal number or a terminal mounted on that `SpacecraftModel`. The
-	terminals must be on different spacecraft, numbered within each spacecraft's
-	`terminal_count`, and able to carry the link (`terminal_supports`); a link
-	that requires hardware at both ends (a `DataLink` with a `ShannonBudget`, or
-	a `LaserBeamLink` with mounted recoil or terminal pointing) refuses a virtual terminal. A link registers once. Its key lists the lower `(spacecraft, terminal)` first, or,
-	for a directed link (`link_directed`), the endpoints in the order given. The
-	link is available only when `link_available` allows it, and active only when
-	the scheduler selects it.
+	is a terminal number or a terminal mounted on that `SpacecraftModel`, or
+	`(-s, antenna)` for ground station `s` (`add_ground_station!`), with an
+	antenna number or one of its antennas. The terminals must be on different
+	spacecraft, or on a spacecraft and a station (two stations cannot link),
+	numbered within each spacecraft's `terminal_count` or the station's antennas,
+	and able to carry the link (`terminal_supports`); a link requiring hardware
+	at both ends (a `DataLink` with a `ShannonBudget`, or a `LaserBeamLink` with
+	mounted recoil or terminal pointing) refuses a virtual terminal. A link registers once. Its key lists the lower endpoint
+	first (a station's before a spacecraft's), or, for a directed link
+	(`link_directed`), the endpoints in the order given. The link is available
+	only when `link_available` allows it, and active only when the scheduler
+	selects it.
 	"""
 	function register_link!(model::InterlinkModel, spacecraft,
 		first_endpoint::Tuple{Integer, Any}, second_endpoint::Tuple{Integer, Any}, link::AbstractInterlink)
 
 		# 2.1. Validate the terminals before changing the graph.
-		# i) Rule 1: The interlink must join different spacecraft.
+		# i) Rule 1: The interlink must join different spacecraft, or a spacecraft and a ground station.
+		first_endpoint[1] < 0 && second_endpoint[1] < 0 &&
+			throw(ArgumentError("An interlink cannot join two ground stations."))
 		first_endpoint[1] != second_endpoint[1] || throw(ArgumentError("An interlink must join different spacecraft."))
 
-		# ii) Rule 2: Both terminals must be valid for their spacecraft and able to carry the link.
+		# ii) Rule 2: Both terminals must be valid for their spacecraft or station and able to carry the link.
 		sides = link_directed(link) ? (:transmitter, :receiver) : (:either, :either)
 		endpoints = map((first_endpoint, second_endpoint), sides) do (satellite, terminal), side
+			satellite < 0 && return _station_endpoint(model, satellite, terminal, link, side)
 			1 <= satellite <= length(spacecraft) || throw(ArgumentError("Invalid spacecraft vector index $satellite."))
 			number = _terminal_number(spacecraft[satellite], terminal)
 			1 <= number <= terminal_count(spacecraft[satellite]) ||
@@ -249,16 +264,72 @@ module InterLinkModels
 			insert!(neighbors, position, edge)
 		end
 
-		# 2.4. Add the edge to both spacecraft's adjacency lists, including empty lists for unlinked spacecraft.
+		# 2.4. Add the edge to its spacecraft's adjacency lists, including empty lists for unlinked spacecraft.
 		while length(graph.satellite_edges) < length(spacecraft)
 			push!(graph.satellite_edges, Int[])
 		end
 		for (satellite, _) in key
-			push!(graph.satellite_edges[satellite], edge)
+			satellite > 0 && push!(graph.satellite_edges[satellite], edge)
 		end
 
 		return key
 	end
+
+	# A ground station end `(node, terminal)` of a link being registered, node
+	# `-s` for station `s`, checked as a spacecraft end is.
+	function _station_endpoint(model::InterlinkModel, node::Integer, terminal, link, side::Symbol)
+		s = -Int(node)
+		s <= length(model.ground_stations) || throw(ArgumentError(
+			"Invalid ground station $s (node $node): the model has $(length(model.ground_stations)) ground stations " *
+			"(add_ground_station!)."))
+		station = model.ground_stations[s]
+		number = _station_antenna_number(station, terminal)
+		1 <= number <= length(station.antennas) ||
+			throw(ArgumentError("Invalid antenna $number on ground station $s ($(station.name))."))
+		terminal_supports(station.antennas[number], link, side) || throw(ArgumentError(
+			"Antenna $number of ground station $s ($(station.name)), a RadioTerminal, cannot carry a " *
+			"$(nameof(typeof(link)))$(side === :either ? "" : " as its $(side)") (terminal_supports)."))
+		return (Int(node), number)
+	end
+
+	"""
+	    add_ground_station!(model::InterlinkModel, station::GroundStation) -> Int
+
+	Add `station` to `model`'s ground stations and return its station number `s`,
+	its position in registration order. Its antenna `k` is then the link endpoint
+	`(-s, k)` for `register_link!`, and `station_pairs` lists a pair with every
+	spacecraft for `register_links!`. Each station's name must be its own.
+	"""
+	function add_ground_station!(model::InterlinkModel, station::GroundStation)
+		any(other -> other.name == station.name, model.ground_stations) && throw(ArgumentError(
+			"The interlink model already has a ground station named $(repr(station.name))."))
+		push!(model.ground_stations, station)
+		return length(model.ground_stations)
+	end
+
+	station_pairs(spacecraft, model::InterlinkModel) = station_pairs(spacecraft, model.ground_stations)
+
+	# Whether `model` (or `nothing`) has ground stations.
+	has_ground_stations(model) = model !== nothing && !isempty(model.ground_stations)
+
+	# Whether a run with interlink model `model` counts each ground station's bits
+	# received and sent: with stations and data links, as the spacecraft's counters.
+	has_station_counters(model) = has_ground_stations(model) && has_data_links(model)
+
+	# Whether the link end at node `node` is active: a spacecraft's flag, and always for a station.
+	@inline _node_active(is_active, node::Int) = node < 0 || is_active[node]
+
+	# The state sample of the link end at node `node`: spacecraft `node` of the run
+	# state `state`, with its model when known, or ground station `-node`, with the
+	# planet-fixed rotation `planet_frame` at the state's time (`nothing` for the
+	# planet's current `L_PI`).
+	@inline function _endpoint_sample(model, node::Int, state, spacecraft, context, planet_frame=nothing)
+		node > 0 && return link_endpoint(state.sc[node], _spacecraft_at(spacecraft, node), node)
+		return _station_sample(model.ground_stations[-node], -node, context.planet, planet_frame)
+	end
+
+	# The terminal hardware at the station end `(node, number)`: its antenna.
+	_station_antenna(model, (node, number)) = model.ground_stations[-node].antennas[number]
 
 	"""
 	    register_allowed_link!(model, spacecraft, first_endpoint, second_endpoint; parameters=InterLinkParameters())
@@ -368,27 +439,28 @@ module InterLinkModels
 	Register one candidate link per spacecraft pair `(i, j)` in `pairs` and return
 	their keys in order. The pairs come from `all_pairs(spacecraft)`, from a
 	constellation's planes and slots (`same_plane_pairs`, `ring_pairs`,
-	`grid_pairs`), or from any vector of index pairs. `link` is a link kind value, or a function
+	`grid_pairs`), from `station_pairs` for ground stations (node `-s` for station
+	`s`), or from any vector of index pairs. `link` is a link kind value, or a function
 	`(i, j) -> link` that builds each pair's link.
 
-	Each spacecraft's links take the terminals that can carry them in turn,
-	starting again from the first when they run out; links that share a terminal
-	compete for it when the scheduler selects. Pass
+	Each spacecraft's (and station's) links take the terminals that can carry them
+	in turn, starting again from the first when they run out; links that share a
+	terminal compete for it when the scheduler selects. Pass
 	`terminals=(i, j) -> (terminal_i, terminal_j)` to choose them instead. For a
 	directed link, `i` is the transmitter.
 	"""
 	function register_links!(model::InterlinkModel, spacecraft, pairs, link; terminals=nothing)
 		turn = zeros(Int, length(spacecraft))
+		station_turn = zeros(Int, length(model.ground_stations))
 		keys = InterLinkKey[]
 		for (i, j) in pairs
 			pair_link = link isa AbstractInterlink ? link : link(i, j)
 			pair_link isa AbstractInterlink || throw(ArgumentError(
 				"register_links!: the link for pair ($i, $j) is a $(typeof(pair_link)), not a link kind (AbstractInterlink)."))
 			sides = link_directed(pair_link) ? (:transmitter, :receiver) : (:either, :either)
-			ends = terminals === nothing ?
-				(_next_terminal!(turn, spacecraft, i, pair_link, sides[1]),
-				 _next_terminal!(turn, spacecraft, j, pair_link, sides[2])) :
-				terminals(i, j)
+			terminal_of(node, side) = node < 0 ? _next_antenna!(station_turn, model, node, pair_link, side) :
+				_next_terminal!(turn, spacecraft, node, pair_link, side)
+			ends = terminals === nothing ? (terminal_of(i, sides[1]), terminal_of(j, sides[2])) : terminals(i, j)
 			push!(keys, register_link!(model, spacecraft, (i, ends[1]), (j, ends[2]), pair_link))
 		end
 		return keys
@@ -407,6 +479,20 @@ module InterLinkModels
 		return usable[mod1(turn[satellite], length(usable))]
 	end
 
+	# The next antenna of the station at node `node` that can carry `link`, in turn.
+	function _next_antenna!(turn::Vector{Int}, model::InterlinkModel, node::Integer, link, side::Symbol)
+		s = -Int(node)
+		s <= length(model.ground_stations) || throw(ArgumentError(
+			"Invalid ground station $s (node $node): the model has $(length(model.ground_stations)) ground stations " *
+			"(add_ground_station!)."))
+		station = model.ground_stations[s]
+		usable = filter(number -> terminal_supports(station.antennas[number], link, side), eachindex(station.antennas))
+		isempty(usable) && throw(ArgumentError(
+			"Ground station $s ($(station.name)) has no antenna that can carry a $(nameof(typeof(link)))."))
+		turn[s] += 1
+		return usable[mod1(turn[s], length(usable))]
+	end
+
 	# The model of spacecraft `index`, when the run's models are known.
 	_spacecraft_at(spacecraft, index::Int) = spacecraft === nothing ? nothing : spacecraft[index]
 
@@ -415,17 +501,19 @@ module InterLinkModels
 	# the spacecraft models when they are known.
 	function _edge_terminals(model::InterlinkModel, edge::Int, spacecraft)
 		edge <= length(model.edge_terminals) && return model.edge_terminals[edge]
-		spacecraft === nothing && return (nothing, nothing)
 		first, second = map(v -> model.graph.vertices[v], model.graph.edges[edge])
-		return (_terminal_device(spacecraft[first[1]], first[2]), _terminal_device(spacecraft[second[1]], second[2]))
+		terminal(endpoint) = endpoint[1] < 0 ? _station_antenna(model, endpoint) :
+			spacecraft === nothing ? nothing : _terminal_device(spacecraft[endpoint[1]], endpoint[2])
+		return (terminal(first), terminal(second))
 	end
 
 	# What the link of `edge` does to its two endpoints, in key order (`interlink_wrench`).
-	function _edge_wrench(model::InterlinkModel, edge::Int, state; spacecraft=nothing, context=LinkContext())
+	function _edge_wrench(model::InterlinkModel, edge::Int, state; spacecraft=nothing, context=LinkContext(),
+		planet_frame=nothing)
 		graph = model.graph
 		first, second = map(v -> graph.vertices[v], graph.edges[edge])
-		a = link_endpoint(state.sc[first[1]], _spacecraft_at(spacecraft, first[1]), first[1])
-		b = link_endpoint(state.sc[second[1]], _spacecraft_at(spacecraft, second[1]), second[1])
+		a = _endpoint_sample(model, first[1], state, spacecraft, context, planet_frame)
+		b = _endpoint_sample(model, second[1], state, spacecraft, context, planet_frame)
 		terminal_a, terminal_b = _edge_terminals(model, edge, spacecraft)
 		return interlink_wrench(graph.edge_properties[edge], terminal_a, terminal_b, a, b, context)
 	end
@@ -440,7 +528,10 @@ module InterLinkModels
 	are available (when `terminal_available` gives a flag per graph vertex: in a
 	run, terminal hardware the power budget sheds is not), and its link's
 	`link_available` allows it (by default, the endpoints are apart and within
-	`link_range_m`). Return a fresh `Vector{Bool}` in registration order.
+	`link_range_m`). A link with a ground station end also needs the spacecraft at
+	least the station's `min_elevation_deg` above its horizon, at the planet's
+	current frame (`context.planet.L_PI`); a station is always active. Return a
+	fresh `Vector{Bool}` in registration order.
 	"""
 	function update_availability!(model::InterlinkModel, spacecraft, state; is_active=nothing, context=LinkContext(),
 		terminal_available=nothing)
@@ -452,19 +543,34 @@ module InterLinkModels
 			allowed = !(minmax(first[1], second[1]) in model.forbidden_pairs) &&
 
 				# ii) Rule 2: Both spacecraft must be active when activity flags are supplied.
-				(is_active === nothing || (is_active[first[1]] && is_active[second[1]])) &&
+				(is_active === nothing || (_node_active(is_active, first[1]) && _node_active(is_active, second[1]))) &&
 
 				# iii) Rule 3: Both terminals must be available when terminal flags are supplied.
 				(terminal_available === nothing ||
 					(terminal_available[graph.edges[edge][1]] && terminal_available[graph.edges[edge][2]]))
 
-			# iv) Rule 4: The link itself must be able to close (by default, within its range).
-			graph.available[edge] = allowed && link_available(graph.edge_properties[edge],
-				_edge_terminals(model, edge, spacecraft)...,
-				link_endpoint(state.sc[first[1]], _spacecraft_at(spacecraft, first[1]), first[1]),
-				link_endpoint(state.sc[second[1]], _spacecraft_at(spacecraft, second[1]), second[1]), context)
+			# iv) Rule 4: A ground station must see the spacecraft above its mask.
+			# v) Rule 5: The link itself must be able to close (by default, within its range).
+			graph.available[edge] = if first[1] > 0 && second[1] > 0
+				allowed && link_available(graph.edge_properties[edge],
+					_edge_terminals(model, edge, spacecraft)...,
+					link_endpoint(state.sc[first[1]], _spacecraft_at(spacecraft, first[1]), first[1]),
+					link_endpoint(state.sc[second[1]], _spacecraft_at(spacecraft, second[1]), second[1]), context)
+			else
+				allowed && _station_link_available(model, edge, first[1], second[1], state, spacecraft, context)
+			end
 		end
 		return copy(graph.available)
+	end
+
+	# Rules 4 and 5 for the link of `edge`, between a spacecraft and a ground station.
+	function _station_link_available(model::InterlinkModel, edge::Int, first::Int, second::Int, state, spacecraft, context)
+		a = _endpoint_sample(model, first, state, spacecraft, context)
+		b = _endpoint_sample(model, second, state, spacecraft, context)
+		station, craft = first < 0 ? (a, b) : (b, a)
+		elevation = _station_elevation_rad(station.spacecraft, context.planet, nothing, craft.pos_ii)
+		elevation >= deg2rad(station.spacecraft.min_elevation_deg) || return false
+		return link_available(model.graph.edge_properties[edge], _edge_terminals(model, edge, spacecraft)..., a, b, context)
 	end
 
 	"""
@@ -492,17 +598,18 @@ module InterLinkModels
 	The sum of the inertial forces (N) the selected links put on spacecraft
 	`satellite` (its vector index), each from its link's `interlink_wrench` (by
 	default, its `link_force`). Optional `is_active` flags mask links with an
-	inactive endpoint.
+	inactive endpoint. A ground station reads `planet_frame` when supplied,
+	otherwise the planet's current `L_PI`; its force is borne by the planet.
 	"""
 	interlink_force_on_spacecraft(model::InterlinkModel, state, satellite::Int; is_active=nothing,
-		spacecraft=nothing, context=LinkContext()) =
-		first(interlink_wrench_on_spacecraft(model, state, satellite; is_active, spacecraft, context))
+		spacecraft=nothing, context=LinkContext(), planet_frame=nothing) =
+		first(interlink_wrench_on_spacecraft(model, state, satellite; is_active, spacecraft, context, planet_frame))
 
 	# The sums of the inertial forces (N) and of the body torques (N·m) that the
 	# selected links put on spacecraft `satellite`, each from its link's
 	# `interlink_wrench`, and whether any torque was nonzero.
 	function interlink_wrench_on_spacecraft(model::InterlinkModel, state, satellite::Int; is_active=nothing,
-		spacecraft=nothing, context=LinkContext())
+		spacecraft=nothing, context=LinkContext(), planet_frame=nothing)
 		force = SVector{3, Float64}(0.0, 0.0, 0.0)
 		torque = SVector{3, Float64}(0.0, 0.0, 0.0)
 		turned = false
@@ -510,9 +617,9 @@ module InterLinkModels
 		for index in model.graph.satellite_edges[satellite]
 			key = map(v -> model.graph.vertices[v], model.graph.edges[index])
 			model.graph.active[index] || continue
-			is_active === nothing || (is_active[key[1][1]] && is_active[key[2][1]]) || continue
+			is_active === nothing || (_node_active(is_active, key[1][1]) && _node_active(is_active, key[2][1])) || continue
 			first_force, first_torque, second_force, second_torque =
-				_edge_wrench(model, index, state; spacecraft, context)
+				_edge_wrench(model, index, state; spacecraft, context, planet_frame)
 			if key[1][1] == satellite
 				force += first_force
 				iszero(first_torque) || (torque += first_torque; turned = true)

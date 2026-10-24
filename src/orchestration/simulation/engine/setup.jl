@@ -2610,6 +2610,14 @@ function _validate_interlinks!(args, solver_mode::Symbol)
     spacecraft = args.dynamics_model.spacecraft
     external_owned = _external_owned_indices(args)
     for (satellite, terminal) in model.graph.vertices
+        if satellite < 0
+            stations = model.ground_stations
+            -satellite <= length(stations) || throw(ArgumentError(
+                "Interlink graph references ground station $(-satellite), but the interlink model has $(length(stations))."))
+            1 <= terminal <= length(stations[-satellite].antennas) ||
+                throw(ArgumentError("Invalid interlink antenna $terminal on ground station $(-satellite)."))
+            continue
+        end
         1 <= satellite <= length(spacecraft) ||
             throw(ArgumentError("Interlink graph references spacecraft index $satellite, but the configuration has $(length(spacecraft)) spacecraft."))
         sc = spacecraft[satellite]

@@ -87,6 +87,7 @@ using .SimulationModel: InterlinkModel, InterLinkGraph, InterLinkKey, InterLinkH
 using .SimulationModel: link_directed, link_terminal_levels, link_terminal, terminal_supports, terminal_count
 using .SimulationModel: register_links!, all_pairs, mounted_link_terminals, terminal_number, terminal_pose
 using .SimulationModel: same_plane_pairs, ring_pairs, grid_pairs
+using .SimulationModel: GroundStation, add_ground_station!, station_pairs
 using .SimulationModel: PowerBeamLink, link_received_power_w, beam_spot_radius_m, beam_capture_fraction
 using .SimulationModel: LaserBeamLink, AbstractLaserBeam, GaussianBeam, TerminalPointing, beam_force_factor
 using .SimulationModel: DataLink, AbstractDataBudget, FixedRateBudget, ShannonBudget, link_data_rate_bps, budget_rate_bps
@@ -103,6 +104,7 @@ export InterlinkModel, InterLinkGraph, InterLinkKey, InterLinkHistory, register_
 export link_directed, link_terminal_levels, link_terminal, terminal_supports, terminal_count
 export register_links!, all_pairs, mounted_link_terminals, terminal_number, terminal_pose
 export same_plane_pairs, ring_pairs, grid_pairs
+export GroundStation, add_ground_station!, station_pairs
 export PowerBeamLink, link_received_power_w, beam_spot_radius_m, beam_capture_fraction
 export LaserBeamLink, AbstractLaserBeam, GaussianBeam, TerminalPointing, beam_force_factor
 export DataLink, AbstractDataBudget, FixedRateBudget, ShannonBudget, link_data_rate_bps, budget_rate_bps
@@ -156,11 +158,14 @@ export ConstellationInterLinkModel, InterLinkParameters, register_allowed_link!,
 @doc (@doc SimulationModel.InterLinkModels.contact_time_s) contact_time_s
 @doc (@doc SimulationModel.InterLinkModels.ring_pairs) ring_pairs
 @doc (@doc SimulationModel.InterLinkModels.grid_pairs) grid_pairs
+@doc (@doc SimulationModel.InterLinkModels.GroundStation) GroundStation
+@doc (@doc SimulationModel.InterLinkModels.add_ground_station!) add_ground_station!
+@doc (@doc SimulationModel.InterLinkModels.station_pairs) station_pairs
 @doc (@doc SimulationModel.InterlinkTerminals.mounted_link_terminals) mounted_link_terminals
 @doc (@doc SimulationModel.InterlinkTerminals.terminal_number) terminal_number
 @doc (@doc SimulationModel.InterLinkModels.terminal_pose) terminal_pose
 @doc """Indexed terminal vertices, candidate edges, the link of each edge (`edge_properties`) and availability/selection flags. Register candidates with `register_link!`.""" InterLinkGraph
-@doc """Canonically ordered pair of `(spacecraft array index, terminal number)` endpoints.""" InterLinkKey
+@doc """Canonically ordered pair of `(spacecraft array index, terminal number)` endpoints; a ground station end is `(-s, antenna number)`.""" InterLinkKey
 @doc """One accepted-step schedule sample: time in seconds, the selected `InterLinkKey` values (`active`), the available ones (`available`, recorded in a run with a data link or with `InterlinkModel(; record_available=true)`), the score that selected each active link (`scores`), and, with `InterlinkModel(; record_terms=true)` and a `WeightedPolicy`, each top-level term's score for each active link (`terms`, one row per term, one column per active link). A sample built from a time and the selected keys records neither scores nor available links. `contact_windows` and `link_schedule` read a run's samples.""" InterLinkHistory
 @doc (@doc SimulationModel.SchedulingPolicies.SchedulingPolicyModel) SchedulingPolicyModel
 @doc (@doc SimulationModel.SchedulingPolicies.score_candidates!) score_candidates!
