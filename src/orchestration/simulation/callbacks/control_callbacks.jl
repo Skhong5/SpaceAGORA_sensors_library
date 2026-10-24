@@ -104,19 +104,6 @@ function get_run_state_callbacks(num_sats::Int, args::SimulationConfiguration)
         save_positions=(false, false)),)
 end
 
-# The burn scheduler's scheduling pass for spacecraft `sat_idx` first ticks the
-# guidance models that act on it (`_scope_members`, `_acts_on`).
-@inline function _run_guidance_for_thruster_schedule!(integrator, sat_idx::Int)
-    p = integrator.p
-    guidance_models = p.args.guidance_model.guidance_effectors
-    @inbounds for j in _scope_members(p, :guidance, guidance_models, sat_idx)
-        guidance_model = guidance_models[j]
-        _acts_on(p, :guidance, j, guidance_model, sat_idx) || continue
-        _gnc_tick_in_scope!(update_guidance!, guidance_model, integrator.u, p, integrator.t, sat_idx)
-    end
-    return nothing
-end
-
 # The burn's bookkeeping for spacecraft `sat_idx` (its window, burn flag and trace)
 # goes on while the spacecraft is inactive, but a released command stays released
 # (`_released`): no scheduling pass or burn edge turns its mounted engine back on.
@@ -127,27 +114,39 @@ end
 end
 
 @inline function _schedule_thruster_control!(integrator, control_model::BaseThrusterModel, sat_idx::Int)
-    _run_guidance_for_thruster_schedule!(integrator, sat_idx)
     _gnc_tick!(update_control!, control_model, integrator.u, integrator.p, integrator.t, sat_idx)
     _register_control_tstops!(integrator, control_model, sat_idx)
     _refresh_burn_keeping_release!(control_model, integrator.p, sat_idx, integrator.t)
     return nothing
 end
 
-# A burn scheduler in `:mounted` actuation also ticks periodically: it points the
-# engine with the mounted wheels and applies the mounted hinges and firing
-# dynamics, as other mounted effectors do after their ticks.
-function _mounted_burn_tick_callback(control_model::BaseThrusterModel, period::Float64, num_sats::Int)
-    tick! = integrator -> begin
-        @inbounds for sat_idx in _tick_positions(spacecraft_scope(control_model), num_sats)
-            # As every periodic tick (`_gnc_tick_in_scope!`): an inactive spacecraft's
-            # command is released instead, and the mounted actuators then apply it.
-            _gnc_tick_in_scope!(mounted_burn_tick!, control_model, integrator.u, integrator.p, integrator.t, sat_idx)
-            _apply_mounted_tick!(control_model, integrator.p, sat_idx, integrator.t, period)
+# Planning is a separate late GNC phase: all guidance due at this time has
+# published its request. Both ideal and mounted schedulers use the run clock;
+# mounted outputs are applied after planning on that same tick.
+function get_maneuver_planning_callbacks(num_sats::Int, args::SimulationConfiguration)
+    callbacks = Any[]
+    for (j, model) in pairs(args.control_model.control_effectors)
+        model isa BaseThrusterModel || continue
+        period = Float64(args.control_model.control_rates[j])
+        tick! = integrator -> begin
+            slot = _run_scope_slot(integrator.p, :control, j)
+            scope = spacecraft_scope(model)
+            _check_run_scope(slot, scope, num_sats)
+            for sat_idx in _run_tick_positions(slot, scope, num_sats)
+                _schedule_thruster_control!(integrator, model, sat_idx)
+                if actuation_mode(model) === :mounted
+                    _gnc_tick_in_scope!(mounted_burn_tick!, model, integrator.u, integrator.p, integrator.t, sat_idx)
+                    _apply_mounted_tick!(model, integrator.p, sat_idx, integrator.t, period)
+                end
+            end
+            return nothing
         end
-        return nothing
+        push!(callbacks, _run_clock_periodic_callback(tick!, period))
+        # Explicit external plans can arrive off the control grid. Register
+        # their boundaries after guidance without processing a new request.
+        push!(callbacks, _burn_edge_callback(model, num_sats))
     end
-    return _run_clock_periodic_callback(tick!, period)
+    return callbacks
 end
 
 # A burn switches only between integration steps: the solver stops at the
@@ -172,11 +171,14 @@ function _burn_edge_callback(control_model::BaseThrusterModel, num_sats::Int)
     return DiscreteCallback(condition, affect!; save_positions=(false, false))
 end
 
-# When spacecraft `sat_idx` leaves the atmosphere, the event-driven control
-# models plan again; the burn scheduler schedules its next burn.
+# An atmosphere exit may restore boundary bookkeeping, but new requests wait
+# for the next defined control tick; the event never calls guidance or planning.
 _reschedule_event_driven!(integrator, control_model, sat_idx::Int) = nothing
-_reschedule_event_driven!(integrator, control_model::BaseThrusterModel, sat_idx::Int) =
-    _schedule_thruster_control!(integrator, control_model, sat_idx)
+function _reschedule_event_driven!(integrator, control_model::BaseThrusterModel, sat_idx::Int)
+    _register_control_tstops!(integrator, control_model, sat_idx)
+    _refresh_burn_keeping_release!(control_model, integrator.p, sat_idx, integrator.t)
+    return nothing
+end
 
 function schedule_event_driven_thruster_controls!(integrator, sat_idx::Int)
     control_models = integrator.p.args.control_model.control_effectors
@@ -200,7 +202,8 @@ function _thruster_schedule_callbacks(control_model::BaseThrusterModel, num_sats
 
     function schedule_all!(integrator)
         @inbounds for sat_idx in 1:num_sats
-            _schedule_thruster_control!(integrator, control_model, sat_idx)
+            _register_control_tstops!(integrator, control_model, sat_idx)
+            _refresh_burn_keeping_release!(control_model, integrator.p, sat_idx, integrator.t)
         end
         return nothing
     end
@@ -221,15 +224,11 @@ function _thruster_schedule_callbacks(control_model::BaseThrusterModel, num_sats
 end
 
 # The run-time declarations of the built-in control models (GNCRuntime). The
-# burn scheduler is event-driven: its callbacks schedule each burn, switch it at
-# the window's ends and, in `:mounted` actuation, tick the mounted actuators at
-# the control rate.
+# burn scheduler keeps exact event-driven window boundaries. Its request
+# processing and mounted actuation have a late periodic phase after guidance.
 GNCRuntime.tick_schedule(::BaseThrusterModel) = :event_driven
 function GNCRuntime.gnc_callbacks(control_model::BaseThrusterModel, num_sats, args, period_s)
     callbacks = Any[_thruster_schedule_callbacks(control_model, num_sats, args)...]
-    push!(callbacks, _burn_edge_callback(control_model, num_sats))
-    actuation_mode(control_model) === :mounted &&
-        push!(callbacks, _mounted_burn_tick_callback(control_model, Float64(period_s), num_sats))
     return Tuple(callbacks)
 end
 GNCRuntime.register_tstops!(integrator, control_model::BaseThrusterModel, spacecraft_index) =

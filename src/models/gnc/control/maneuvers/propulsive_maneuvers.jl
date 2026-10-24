@@ -99,6 +99,7 @@ end
             delta_v_mps = abs(delta_v_mps)
             direction_rad = π
         end
+        isequal(controlModel.consumed_command[i], (delta_v_mps, direction_rad, Int64(command.source_orbit))) && return nothing
         controlModel.Δv[i] = delta_v_mps
         controlModel.direction[i] = direction_rad
         _note_schedule!(controlModel, i)
@@ -113,6 +114,7 @@ end
         return nothing
     end
 
+    isequal(controlModel.consumed_configured[i], (controlModel.Δv[i], controlModel.direction[i])) && return nothing
     delta_v_cmd = Float64(controlModel.Δv[i])
     direction_rad = Float64(controlModel.direction[i])
     if isfinite(delta_v_cmd)
@@ -142,15 +144,11 @@ end
 end
 
 @inline function _effective_burn_window(controlModel::BaseThrusterModel, p, i::Int64)
-    start_time, stop_time = _model_burn_window(controlModel, i)
-    if isfinite(start_time) && isfinite(stop_time) && stop_time > start_time
-        return start_time, stop_time
-    end
+    # Explicitly installed plans are authoritative even between control ticks.
+    # Scheduler-owned plans have the same window as the model fields.
     plan = _active_burn_plan(p, i)
-    if plan !== nothing
-        return plan.start_burn_s, plan.stop_burn_s
-    end
-    return start_time, stop_time
+    plan === nothing || return plan.start_burn_s, plan.stop_burn_s
+    return _model_burn_window(controlModel, i)
 end
 
 @inline function _effective_direction_rad(controlModel::BaseThrusterModel, p, i::Int64)::Float64
@@ -265,9 +263,17 @@ end
 # Keep a refused plan's reason, one record per refusal, for `burn_plan_rejections`.
 function _record_burn_rejection!(controlModel::BaseThrusterModel, i::Int64, t::Float64, reason::Symbol, maneuver)
     1 <= i <= length(controlModel.plan_rejections) || return nothing
-    push!(controlModel.plan_rejections[i], (time_s=t, rejection=reason,
+    records = controlModel.plan_rejections[i]
+    record = (time_s=t, rejection=reason,
         delta_v_mps=Float64(maneuver.delta_v_mps), direction_rad=Float64(maneuver.direction_rad),
-        source_orbit=Int64(maneuver.source_orbit)))
+        source_orbit=Int64(maneuver.source_orbit))
+    # A held refused request can be reconsidered on later control ticks, but
+    # identical consecutive refusals are one diagnostic event, at the first tick.
+    if !isempty(records) && isequal(Base.structdiff(last(records), NamedTuple{(:time_s,)}),
+                                   Base.structdiff(record, NamedTuple{(:time_s,)}))
+        return nothing
+    end
+    push!(records, record)
     return nothing
 end
 
@@ -281,6 +287,8 @@ record has `time_s` (elapsed s), the `rejection` reason, and the commanded
 burn-plan family's validation (`validate_burn_plan`): `:invalid_mass`,
 `:invalid_delta_v`, `:invalid_direction`, `:invalid_thrust`, `:invalid_isp`,
 `:invalid_mass_fraction`, `:invalid_burn_size` and `:insufficient_propellant`.
+Identical consecutive refusals (same reason and command) share one record,
+whose `time_s` is the first refusal; the request is still reconsidered on later ticks.
 A command of exactly zero Δv asks for no burn and leaves no record. A refused
 command leaves any burn already planned in place. The records start empty at
 each run's start; after `run_simulation` with the default `isolate_state=true`,
@@ -321,6 +329,14 @@ function SimulationLifecycle.initialize_control!(model::BaseThrusterModel, u, p,
     end
     fill!(model.burn_windows, (NaN, NaN, 0.0))
     fill!(model.burning, false)
+    fill!(model.consumed_command, nothing)
+    fill!(model.consumed_configured, nothing)
+    for i in 1:n
+        start_s, stop_s = _model_burn_window(model, i)
+        if isfinite(start_s) && isfinite(stop_s) && stop_s > start_s
+            model.consumed_configured[i] = (model.Δv[i], model.direction[i])
+        end
+    end
     foreach(empty!, model.mounted_levels)
     foreach(empty!, model.plan_rejections)
     return nothing
@@ -330,12 +346,18 @@ end
 # checkpoint files; a resumed run puts them back after its reset, the schedule with
 # the scheduler's record of its writes.
 function SimulationLifecycle.checkpoint_state(model::BaseThrusterModel)
-    return (schedule=[_schedule_entry(model, i) for i in eachindex(model.thrust)],
+    return (version=2, schedule=[_schedule_entry(model, i) for i in eachindex(model.thrust)],
         written_schedule=copy(model.written_schedule), burn_windows=copy(model.burn_windows),
         burning=copy(model.burning), mounted_levels=deepcopy(model.mounted_levels),
-        plan_rejections=deepcopy(model.plan_rejections))
+        plan_rejections=deepcopy(model.plan_rejections),
+        consumed_command=copy(model.consumed_command), consumed_configured=copy(model.consumed_configured))
 end
 function SimulationLifecycle.restore_checkpoint_state!(model::BaseThrusterModel, data)
+    hasproperty(data, :version) && data.version == 2 && hasproperty(data, :consumed_command) &&
+        hasproperty(data, :consumed_configured) || throw(ArgumentError(
+            "This burn-scheduler checkpoint predates control-clock request processing. " *
+            "Resume with the SpaceAGORA version that wrote it, or start a new run; " *
+            "its request-consumption state and pending control clocks cannot be inferred safely."))
     n = length(model.thrust)
     length(data.schedule) == n || throw(ArgumentError(
         "The checkpoint's burn scheduler serves $(length(data.schedule)) spacecraft; this one serves $n."))
@@ -345,6 +367,8 @@ function SimulationLifecycle.restore_checkpoint_state!(model::BaseThrusterModel,
     copyto!(model.written_schedule, data.written_schedule)
     copyto!(model.burn_windows, data.burn_windows)
     copyto!(model.burning, data.burning)
+    copyto!(model.consumed_command, data.consumed_command)
+    copyto!(model.consumed_configured, data.consumed_configured)
     foreach(copy!, model.mounted_levels, data.mounted_levels)
     foreach(copy!, model.plan_rejections, data.plan_rejections)
     return nothing
@@ -553,8 +577,9 @@ end
 For `BaseThrusterModel`, `u` is the full simulation state (`u.sc[i]` selects
 the spacecraft), `p` holds the simulation parameters, and `t` is elapsed time
 in seconds. This method schedules eligible maneuvers around apoapsis, updates
-the model's burn times and the stored burn plan, preserves an active burn's
-schedule, and clears completed burns. It does not directly compute or store
+the model's burn times and the stored burn plan, preserves a scheduled burn's
+window until completion, and clears completed burns without accepting the same
+request again. The engine calls it on the defined control clock, after guidance. It does not directly compute or store
 force and torque; [`control_wrench`](@ref) evaluates the scheduled
 thrust during dynamics evaluation.
 """
@@ -570,6 +595,16 @@ function update_control!(controlModel::BaseThrusterModel, u::ComponentVector, p:
 
     active_plan = _active_burn_plan(p, i)
     model_start_time, model_stop_time = _model_burn_window(controlModel, i)
+    # An explicit BurnPlanFamily installation replaces the shared plan slot.
+    # Our own plans have exactly the model's window; a different installed
+    # window must take precedence before a stale model schedule is cleared.
+    if active_plan !== nothing && model_stop_time > model_start_time &&
+            !isequal((model_start_time, model_stop_time), (active_plan.start_burn_s, active_plan.stop_burn_s))
+        controlModel.start_burn_time[i] = -1.0
+        controlModel.stop_burn_time[i] = -1.0
+        _note_schedule!(controlModel, i)
+        model_start_time, model_stop_time = -1.0, -1.0
+    end
     start_time, stop_time = if isfinite(model_start_time) && isfinite(model_stop_time) && model_stop_time > model_start_time
         model_start_time, model_stop_time
     elseif active_plan === nothing
@@ -578,9 +613,12 @@ function update_control!(controlModel::BaseThrusterModel, u::ComponentVector, p:
         active_plan.start_burn_s, active_plan.stop_burn_s
     end
     if isfinite(start_time) && isfinite(stop_time) && stop_time > start_time
-        in_burn_window = t >= start_time - 1e-9 && t <= stop_time + 1e-9
-        # Lock the schedule only after ignition begins and until burn stop.
-        if in_burn_window
+        # Keep an accepted future or active window. Do not consume edits to
+        # configured Δv while waiting: they remain requests for a later burn.
+        if active_plan !== nothing
+            controlModel.consumed_command[i] = (active_plan.delta_v_mps, active_plan.direction_rad, Int64(active_plan.source_orbit))
+        end
+        if t <= stop_time + 1e-9
             return
         end
         # Burn completed: clear the schedule so future campaign maneuvers can be planned.
@@ -653,6 +691,8 @@ function update_control!(controlModel::BaseThrusterModel, u::ComponentVector, p:
             propellant_required_kg=plan.propellant_required_kg
         )
         _set_burn_plan!(p, i, new_plan)
+        controlModel.consumed_command[i] = (maneuver.delta_v_mps, maneuver.direction_rad, Int64(maneuver.source_orbit))
+        controlModel.consumed_configured[i] = (controlModel.Δv[i], controlModel.direction[i])
 
         same_window = isfinite(recorded_start) && isfinite(recorded_stop) &&
             abs(recorded_start - start_burn_time) <= 1e-9 &&

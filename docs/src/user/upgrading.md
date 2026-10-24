@@ -10,6 +10,23 @@ deprecation rules.
 
 ## 0.7.0 (unreleased)
 
+### Maneuver requests follow the control schedule
+
+`BaseThrusterModel` processes new maneuver requests at its configured
+`control_rates`, after guidance due at the same time. It no longer calls guidance
+or plans a new burn at solver startup or atmosphere exit. Set the control period
+to the request-processing interval your mission needs. An accepted burn keeps
+its window through checkpoint segments and resume, and is consumed once.
+Explicit `BurnPlanFamily` plans retain their own ignition times, including times
+between control ticks.
+
+A guidance request is identified by its Δv, direction and source orbit; a new
+source orbit permits another request with the same Δv. A configured Δv is used
+once unless changed. Existing burn-scheduler checkpoints lack the consumed-request
+state needed by this policy and are refused before result streams are changed.
+Resume them with the SpaceAGORA version that wrote them, or start a new run.
+See [Checkpoints and resume](outputs.md) for the recorded state and limits.
+
 ### A GNC model's hooks follow its spacecraft scope
 
 During the run, a guidance, navigation or control model's output hooks
