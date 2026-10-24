@@ -477,8 +477,10 @@ checkpoint by a run that crashed are dropped, since the resumed run computes the
 again. The link schedule holds the whole run too: a checkpointed run with
 interlinks keeps its interlink history beside its checkpoint, in
 `simulation_checkpoint.interlinks.bin`, and a resumed run takes it back first,
-so its schedule retains the earlier recorded windows. Later scheduling samples
-can still differ when adaptive solver steps change. A checkpoint that
+so its schedule retains the earlier recorded windows. With the same configuration,
+checkpoint schedule and deterministic models whose complete run state is restored,
+its history and schedule match the uninterrupted checkpointed run. A run with no checkpoints can have different
+adaptive solver steps and therefore different scheduling samples. A checkpoint that
 holds no record of that history (written before SpaceAGORA kept it), or whose
 history file is missing or another run's, resumes with a warning: its schedule
 then covers the resumed interval only, and its `[interlinks].history_start_s` is

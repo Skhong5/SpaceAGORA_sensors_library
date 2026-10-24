@@ -90,6 +90,7 @@ function _clear_checkpoint!(args)
     isfile(paths.data) && rm(paths.data; force=true)
     isfile(paths.manifest) && rm(paths.manifest; force=true)
     isfile(paths.rows) && rm(paths.rows; force=true)
+    rm(paths.interlinks; force=true)
     rm(paths.stream_spacecraft; force=true)
     rm(paths.stream_run; force=true)
     return nothing
@@ -114,6 +115,27 @@ function _append_checkpoint_rows!(path::String, times::AbstractVector{Float64}, 
         flush(io)
     end
     return filesize(path)
+end
+
+# Hash only the requested byte range. Writers extend a live context with newly
+# appended bytes; readers hash the checkpoint-owned prefix, excluding crash tails.
+# Reading in bounded chunks avoids retaining a second copy of a large history.
+function _hash_checkpoint_rows!(context, path::String, start_bytes::Integer, end_bytes::Integer)
+    0 <= start_bytes <= end_bytes || throw(ArgumentError("Invalid checkpoint history byte range."))
+    open(path, "r") do io
+        filesize(io) >= end_bytes || throw(EOFError())
+        seek(io, start_bytes)
+        buffer = Vector{UInt8}(undef, min(64 * 1024, end_bytes - start_bytes))
+        remaining = end_bytes - start_bytes
+        while remaining > 0
+            wanted = min(length(buffer), remaining)
+            count = readbytes!(io, buffer, wanted)
+            count == wanted || throw(EOFError())
+            SHA.update!(context, buffer, count)
+            remaining -= count
+        end
+    end
+    return context
 end
 
 # The header and the rows of the first `length_bytes` bytes of the stream, or

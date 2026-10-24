@@ -49,6 +49,12 @@ end
         @test storage._load_checkpoint(config).solver_mode === nothing
         serialize(p.data, (t=1,))
         @test_throws ArgumentError storage._load_checkpoint(config)
+        write(p.interlinks, "active history")
+        archived = p.interlinks * ".before_resume"
+        write(archived, "diagnostic history")
+        @test storage._clear_checkpoint!(config) === nothing
+        @test !ispath(p.interlinks)
+        @test read(archived, String) == "diagnostic history"
         @test storage._clear_checkpoint!(config) === nothing
         @test !ispath(p.data) && !ispath(p.manifest)
         @test storage._load_checkpoint(config) === nothing
@@ -63,5 +69,30 @@ end
         @test_throws ErrorException storage._atomic_write_file(target, writer)
         @test read(target, String) == "original"
         @test sort(readdir(root)) == before
+    end
+end
+
+@testset "Checkpoint history hashes only the requested byte range" begin
+    storage = CheckpointStorageBoundaryFixture.IOSerialization
+    mktempdir() do root
+        path = joinpath(root, "history.bin")
+        bytes = UInt8[mod(i, 251) for i in 1:200_000]
+        write(path, bytes)
+        context = SHA256_CTX()
+        storage._hash_checkpoint_rows!(context, path, 0, 70_001)
+        @test digest!(deepcopy(context)) == sha256(bytes[1:70_001])
+        # Mutating the already-hashed prefix demonstrates that an append hashes
+        # only the new range; the saved context retains the original prefix.
+        open(path, "r+") do io
+            write(io, UInt8(0xff))
+        end
+        storage._hash_checkpoint_rows!(context, path, 70_001, length(bytes))
+        @test digest!(deepcopy(context)) == sha256(bytes)
+        @test digest!(deepcopy(context)) != sha256(read(path))
+        storage._hash_checkpoint_rows!(context, path, length(bytes), length(bytes))
+        @test digest!(deepcopy(context)) == sha256(bytes)
+        @test_throws ArgumentError storage._hash_checkpoint_rows!(context, path, -1, 20)
+        @test_throws ArgumentError storage._hash_checkpoint_rows!(context, path, 20, 19)
+        @test_throws EOFError storage._hash_checkpoint_rows!(context, path, 0, length(bytes) + 1)
     end
 end
