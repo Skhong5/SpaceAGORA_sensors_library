@@ -542,6 +542,105 @@ end
             carried(result.solution, ((1, 1), (-1, 1)); until=t_before) rtol=1e-7
     end
 
+    @testset "backlog counts a full receiver's current outflow" begin
+        function relay_fixture(; draining=true)
+            reference = pass_fixture(lead_deg=10.0)[1][1]
+            sc = radio_sat(1; pos=reference.initial_condition.pos, vel=reference.initial_condition.vel)
+            add_actuator!(sc, sc.root, radio())
+            add_data!(sc, sc.root, DataStore(capacity_bits=1e7, initial_bits=1e7))
+            model = InterlinkModel()
+            add_ground_station!(model, station(antennas=[radio(), radio()]))
+            link = DataLink(transmit_power_w=0.0, budget=FixedRateBudget(rate_bps=1e4), range_m=3e6)
+            register_link!(model, [sc], (-1, 1), (1, 1), link)
+            draining && register_link!(model, [sc], (1, 2), (-1, 2), link)
+            return [sc], model
+        end
+        uplink = ((-1, 1), (1, 1))
+        for draining in (false, true)
+            result = run(relay_fixture(; draining)...; duration=450.0, dt_max=5.0,
+                policy=DataBacklogPolicy(horizon_s=60.0))
+            table = result.table
+            final = result.solution.u[end]
+            chosen = [uplink in sample.active for sample in result.configuration.interlink_model.history]
+            @test all(-1e-2 .<= table.sc1_data_stored_bits .<= 1e7 + 1e-2)
+            @test all(iszero, table.sc1_data_lost_bits)
+            @test final.sc[1].data_stored_bits ≈ 1e7 + final.gs[1].sent_bits - final.gs[1].received_bits atol=1e-2
+            @test final.sc[1].data_received_bits ≈ final.gs[1].sent_bits atol=1e-2
+            @test final.sc[1].data_sent_bits ≈ final.gs[1].received_bits atol=1e-2
+            # Initialization cannot borrow outflow from its own first selection:
+            # the saved initial row and final initial matching agree.
+            @test !chosen[1]
+            @test iszero(table.sc1_data_rate_rx_bps[1])
+            if draining
+                @test table.sc1_data_rate_tx_bps[1] == 1e4
+                @test any(chosen)
+                first_on = findfirst(chosen)
+                @test all(chosen[first_on:end]) # no alternating selection after acquisition
+                @test count(pair -> pair[1] != pair[2], zip(chosen[1:end-1], chosen[2:end])) <= 1
+                @test final.gs[1].sent_bits > 4e6
+            else
+                @test !any(chosen)
+                @test iszero(final.gs[1].sent_bits)
+                @test final.sc[1].data_stored_bits ≈ 1e7 atol=1e-2
+            end
+        end
+        # Score at an exactly full state: outflow is from the old matching,
+        # with current availability and downstream flow caps, not the new choice.
+        spacecraft, model = relay_fixture()
+        args = run_args(spacecraft, model)
+        state = SE.build_initial_conditions(args)
+        SM.data_store(only(spacecraft)).full = true
+        context = LinkContext(time_s=0.0, planet=PLANET)
+        model.graph.available .= true
+        model.graph.active .= [false, true]
+        for policy in (DataBacklogPolicy(horizon_s=60.0),
+                       WeightedPolicy(PolicyTerm(DataBacklogPolicy(horizon_s=60.0); scale=1.0)),
+                       WeightedPolicy(PolicyTerm(WeightedPolicy(PolicyTerm(DataBacklogPolicy(horizon_s=60.0); scale=1.0)); scale=1.0)))
+            scheduler = SchedulingPolicyModel(policy)
+            score_candidates!(model, scheduler, state, PLANET.μ; spacecraft, context)
+            @test scheduler.matching.score[1] == 1e4
+            @test model.graph.active == [false, true] # scoring does not choose links
+        end
+        # A snapshot from before the first initialization pass stays authoritative.
+        scheduler = SchedulingPolicyModel(DataBacklogPolicy(horizon_s=60.0))
+        score_candidates!(model, scheduler, state, PLANET.μ; spacecraft, context, previous_active=falses(2))
+        @test scheduler.matching.score[1] == 0.0
+        score_candidates!(model, scheduler, state, PLANET.μ; spacecraft, context, is_active=[false])
+        @test scheduler.matching.score[1] == 0.0
+        # Existing caller constructors remain usable without outflow credit.
+        SP = SM.SchedulingPolicies
+        ctx5 = SchedulingContext(PLANET.μ, context, spacecraft, state, nothing)
+        ctx6 = SchedulingContext(PLANET.μ, context, spacecraft, state, nothing, ctx5._terminals)
+        @test ctx5._outflows === nothing && ctx6._outflows === nothing
+        model.graph.available[2] = false
+        scheduler = SchedulingPolicyModel(DataBacklogPolicy(horizon_s=60.0))
+        score_candidates!(model, scheduler, state, PLANET.μ; spacecraft, context)
+        @test scheduler.matching.score[1] == 0.0
+        # Nominal rate is not room when the downstream store cannot drain.
+        a = radio_sat(1)
+        b = radio_sat(2)
+        for sc in (a, b)
+            add_actuator!(sc, sc.root, radio())
+            add_data!(sc, sc.root, DataStore(capacity_bits=1e7, initial_bits=1e7))
+        end
+        chain = InterlinkModel()
+        add_ground_station!(chain, station(antennas=[radio(), radio()]))
+        fixed(rate) = DataLink(transmit_power_w=0.0, budget=FixedRateBudget(rate_bps=rate), range_m=1e8)
+        register_link!(chain, [a, b], (-1, 1), (1, 1), fixed(1e4))
+        register_link!(chain, [a, b], (1, 2), (2, 1), fixed(1e4))
+        register_link!(chain, [a, b], (2, 2), (-1, 2), fixed(2500.0))
+        state2 = SE.build_initial_conditions(run_args([a, b], chain))
+        foreach(sc -> (SM.data_store(sc).full = true), (a, b))
+        chain.graph.available .= true
+        chain.graph.active .= [false, true, false]
+        scheduler2 = SchedulingPolicyModel(DataBacklogPolicy(horizon_s=60.0))
+        score_candidates!(chain, scheduler2, state2, PLANET.μ; spacecraft=[a, b], context)
+        @test scheduler2.matching.score[1] == 0.0
+        chain.graph.active[3] = true
+        score_candidates!(chain, scheduler2, state2, PLANET.μ; spacecraft=[a, b], context)
+        @test scheduler2.matching.score[1] == 2500.0
+    end
+
     @testset "the planet's frame inside a step" begin
         # The rising half of the pass, before culmination: the station moves away from the spacecraft.
         spacecraft, model = pass_fixture()

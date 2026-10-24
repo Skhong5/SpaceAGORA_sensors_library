@@ -409,13 +409,18 @@ add_data!(sc, bus, DataSource(rate_bps=2e5))                          # any link
   that integrates the full right-hand side.
 - **Scheduling by backlog.** `DataBacklogPolicy(; horizon_s)` scores a data
   link by what it could move in the next `horizon_s` seconds,
-  `min(c, stored_tx / horizon_s + production_tx, room_rx / horizon_s)` in bit/s,
+  `min(c, stored_tx / horizon_s + production_tx, room_rx / horizon_s + outflow_rx)` in bit/s,
   with `c` the link's rate and `production_tx` the transmitter's current source
-  production rate. It samples production at the current state and time and
+  production rate. `outflow_rx` is the receiver's currently carried outgoing
+  rate, sampled once from previously active links that remain available at the
+  scheduling step, before choosing the new matching. It uses the runtime flow
+  caps; it does not assume links in the new matching will be active. This is a
+  scoring estimate only: actual transfers still obey the store's flow limits.
+  It samples production at the current state and time and
   estimates that rate continuing over the horizon; it does not predict future
   source changes or incoming relay traffic. An empty sender that is still
   producing can keep its link active. A sender with neither stored data nor
-  production, or a receiver with no room, scores zero. A transmitter
+  production, or a receiver with neither free space nor outflow, scores zero. A transmitter
   without a store counts as always holding data, and a receiver without one as
   always having room. It shares `DataThroughputPolicy`'s unit, so the two mix in
   a `WeightedPolicy` without rescaling. A policy of your own reads the stores
@@ -531,7 +536,7 @@ scheduler, which also holds the matching workspace:
 | `EccentricityRatePolicy(; targets=1)` | the rate at which its force raises its target's eccentricity, `ê·ė` | 1/s |
 | `PowerDeliveryPolicy()` | the electrical power it would deliver to the receiver's bus, `link_received_power_w` | W |
 | `DataThroughputPolicy()` | the data rate it would carry, `link_data_rate_bps` | bit/s |
-| `DataBacklogPolicy(; horizon_s)` | the data it could move in the next `horizon_s`: the least of its rate, the transmitter's stored data over `horizon_s` plus its current production rate, and the room in the receiver's store over `horizon_s` | bit/s |
+| `DataBacklogPolicy(; horizon_s)` | the data it could move in the next `horizon_s`: the least of its rate, the transmitter's stored data over `horizon_s` plus its current production rate, and the receiver's free space over `horizon_s` plus current carried outflow | bit/s |
 | `EnergyBalancingPolicy()` | the power it would deliver times the state-of-charge gap from sender to receiver, `P × (s_tx − s_rx)` | W |
 | `WeightedPolicy(terms...)` | `Σ weight × (score / scale)` over its terms | 1 |
 

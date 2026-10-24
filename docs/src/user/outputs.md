@@ -619,3 +619,13 @@ Explicit `save_fields` use their supplied getters, including a custom getter
 with a built-in field name. Additional default fields without a specialized
 array filler also retain their getters. Timing improvements depend on the run
 and should be measured before adopting this recorder for a campaign.
+
+### Backlog scheduling and stored data
+
+`DataBacklogPolicy` scores a candidate with
+`min(link_rate, held/horizon + current_production, free_space/horizon + current_outflow)`.
+Receiver outflow is sampled before the new selection, from already-active links
+that remain available, with the runtime's carried-rate caps. It is an estimate
+for scoring; the data-flow calculation still prevents stores from overfilling.
+The saved transfer-rate and stored/lost-bit columns report actual carried flows,
+not this estimated score. A full store with no outflow still scores zero room.
