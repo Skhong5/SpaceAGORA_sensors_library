@@ -15,7 +15,7 @@ using ..InterLinkModels: InterlinkModel, LinkContext, link_terminal, link_termin
     _endpoint_sample, _node_active, _station_antenna
 import ..InterLinkModels: terminal_count, _terminal_device, _terminal_devices, _terminal_number, _battery_capacity_wh,
     _battery_within_full, terminal_pose, _data_store_capacity_bits, _data_store_within_empty,
-    _data_store_within_full, _data_store_production_bps
+    _data_store_within_full, _data_store_production_bps, _data_store_outflows_bps
 using ..ActuatorMounting: mounted_actuators, actuator_context
 using ..Actuators: actuator_consumption, actuator_limits
 using ..PowerSystems: battery, within_full_tolerance
@@ -427,7 +427,8 @@ end
 # rates are `station_sent` and `station_received`, by station number, and its
 # end reads `planet_frame` (see `data_link_rates_bps`). An inactive spacecraft's
 # links carry nothing and it produces nothing.
-function _data_flows(model, spacecraft, state; is_active=nothing, context=LinkContext(), planet_frame=nothing)
+function _data_flows(model, spacecraft, state; is_active=nothing, context=LinkContext(), planet_frame=nothing,
+                     available_only::Bool=false, active_edges=nothing)
     n = length(spacecraft)
     sent, received, produced, stored, lost = (zeros(Float64, n) for _ in 1:5)
     station_sent = zeros(Float64, model === nothing ? 0 : length(model.ground_stations))
@@ -437,7 +438,8 @@ function _data_flows(model, spacecraft, state; is_active=nothing, context=LinkCo
     if model !== nothing
         graph = model.graph
         for edge in eachindex(graph.edges)
-            graph.active[edge] || continue
+            (active_edges === nothing ? graph.active[edge] : active_edges[edge]) || continue
+            available_only && !graph.available[edge] && continue
             link = graph.edge_properties[edge]
             link_directed(link) || continue
             first, second = map(vertex -> graph.vertices[vertex], graph.edges[edge])
@@ -575,5 +577,12 @@ function _terminal_shed(spacecraft::SpacecraftModel, terminal)
     b = battery(spacecraft)
     return b !== nothing && b.shed_tier >= own
 end
+
+
+
+# Snapshot current carried outflow before a new matching replaces graph.active.
+# Availability has already been refreshed at this scheduling state.
+_data_store_outflows_bps(model::InterlinkModel, spacecraft, state, context; is_active=nothing, active_edges=nothing) =
+    _data_flows(model, spacecraft, state; context, is_active, active_edges, available_only=true).sent
 
 end # module InterlinkTerminals

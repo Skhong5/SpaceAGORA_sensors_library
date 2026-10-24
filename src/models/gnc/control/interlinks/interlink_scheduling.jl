@@ -4,7 +4,7 @@ using LinearAlgebra
 using ..InterLinkModels
 using ..InterLinkModels: link_endpoint, _terminal_devices, _spacecraft_at, _battery_capacity_wh, _battery_within_full,
     _endpoint_sample, _station_antenna, _data_store_capacity_bits, _data_store_within_empty,
-    _data_store_within_full, _data_store_production_bps
+    _data_store_within_full, _data_store_production_bps, _data_store_outflows_bps
 using ..EffectorSampling: StateSample
 
 export AbstractSchedulingPolicy, LinkCandidate, SchedulingContext, candidate_score
@@ -89,7 +89,7 @@ What a scheduling policy may read besides the candidate:
 
 Its other fields are the engine's.
 """
-struct SchedulingContext{L <: LinkContext, S, X, F, T}
+struct SchedulingContext{L <: LinkContext, S, X, F, T, O}
     mu::Float64
     link_context::L
     spacecraft::S
@@ -100,10 +100,13 @@ struct SchedulingContext{L <: LinkContext, S, X, F, T}
     _state::X
     _candidate_force::F
     _terminals::T
+    _outflows::O # carried rates from the previous matching, sampled once per pass
 end
 SchedulingContext(mu::Real, link_context::LinkContext, spacecraft, state, candidate_force) =
     SchedulingContext(Float64(mu), link_context, spacecraft, state, candidate_force,
-        spacecraft === nothing ? nothing : map(_terminal_devices, spacecraft))
+        spacecraft === nothing ? nothing : map(_terminal_devices, spacecraft), nothing)
+SchedulingContext(mu::Real, link_context::LinkContext, spacecraft, state, candidate_force, terminals) =
+    SchedulingContext(Float64(mu), link_context, spacecraft, state, candidate_force, terminals, nothing)
 
 """
     candidate_score(policy, candidate::LinkCandidate, ctx::SchedulingContext, t::Float64) -> Float64
@@ -492,13 +495,16 @@ in the next `horizon_s` seconds: the least of the rate it would carry
 (`link_data_rate_bps`, as `DataThroughputPolicy` scores it), the data its
 transmitter's store holds over `horizon_s` (`stored_bits`) plus its current
 source production rate, and the room in its receiver's store over `horizon_s`
-(`store_room_bits`). Production is sampled at the candidate's current state and
+(`store_room_bits`) plus its current carried outflow. Outflow is sampled once
+before selection from links that were already active and remain available,
+using the same flow caps as the runtime. It does not predict the new matching.
+Production is sampled at the candidate's current state and
 time; this score estimates that rate continuing over the horizon, not future
 source changes or incoming relay traffic. It prefers fuller sending stores and
-emptier receiving stores. An empty sender with ongoing production can stay
+emptier receiving stores, while a full store that is draining can keep an incoming link. An empty sender with ongoing production can stay
 selected; one with neither held data nor production scores zero. A store the
 engine counts as empty (within `1e-9` of its capacity of nothing) holds nothing
-here, and one it counts as full has no room. A transmitter without a store counts as always holding data, and a
+here; a full receiver has only its current outflow as scoring room. A transmitter without a store counts as always holding data, and a
 receiver without one as always having room; so does a ground station, which
 never limits a link: the policy drains fuller stores to the ground first. Undirected
 links score 0, and so does every link when the run's spacecraft models are not
@@ -528,8 +534,9 @@ function candidate_score(policy::DataBacklogPolicy, candidate::LinkCandidate, ct
     held = _backlog_held_bits(ctx, transmitter)
     production = isfinite(held) ?
         _data_store_production_bps(ctx.spacecraft[transmitter], candidate.a, ctx.link_context, t) : 0.0
+    outflow = receiver > 0 && ctx._outflows !== nothing ? ctx._outflows[receiver] : 0.0
     return min(rate, held / policy.horizon_s + production,
-        _backlog_room_bits(ctx, receiver) / policy.horizon_s)
+        _backlog_room_bits(ctx, receiver) / policy.horizon_s + outflow)
 end
 
 # The data a transmitter holds and the room a receiver has, for the backlog
@@ -845,14 +852,23 @@ the link context. The orbital policies take each link's force from its
 `candidate_force(target, partner, link)`.
 """
 function score_candidates!(model::InterlinkModel, policy::SchedulingPolicyModel, state, mu::Real;
-	candidate_force=nothing, spacecraft=nothing, context=LinkContext())
+	candidate_force=nothing, spacecraft=nothing, context=LinkContext(), is_active=nothing, previous_active=nothing)
 	ctx = SchedulingContext(Float64(mu), context, spacecraft, state, candidate_force)
 	objective = policy.objective
+	if spacecraft !== nothing && _uses_backlog_outflow(objective) &&
+		any((previous_active === nothing ? model.graph.active : previous_active) .& model.graph.available)
+		outflows = _data_store_outflows_bps(model, spacecraft, state, context; is_active, active_edges=previous_active)
+		ctx = SchedulingContext(ctx.mu, context, spacecraft, state, candidate_force, ctx._terminals, outflows)
+	end
 	_prepare_scoring(objective, model, ctx)
 	work = matching_workspace!(model, policy)
 	_score_and_check!(work.score, objective, model, ctx; terms=work.terms)
 	return nothing
 end
+
+_uses_backlog_outflow(objective) = false
+_uses_backlog_outflow(::DataBacklogPolicy) = true
+_uses_backlog_outflow(policy::WeightedPolicy) = any(term -> _uses_backlog_outflow(term.policy), policy.terms)
 
 # Score every edge, then make the policy's checks across the scores.
 function _score_and_check!(scores, objective, model, ctx::SchedulingContext; terms=nothing)
@@ -1060,12 +1076,12 @@ end
 # 4. Overall scheduling function to schedule interlinks based on the current state and scoring policy
 function schedule_interlinks!(model::InterlinkModel, policy::SchedulingPolicyModel,
 	spacecraft, state, mu::Real; candidate_force=nothing, is_active=nothing, context=LinkContext(),
-	terminal_available=nothing)
+	terminal_available=nothing, previous_active=nothing)
 	# step 1. update the availability of each interlink based on the current state
 	update_availability!(model, spacecraft, state; is_active, context, terminal_available)
 
 	# step 2. compute the score of each interlink based on the scheduling policy / scoring policy
-	score_candidates!(model, policy, state, mu; candidate_force, spacecraft, context)
+	score_candidates!(model, policy, state, mu; candidate_force, spacecraft, context, is_active, previous_active)
 
 	# step 3. select the best set of interlinks based on the current scores
 	return select_interlinks!(model, policy)

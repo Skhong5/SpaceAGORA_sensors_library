@@ -951,8 +951,9 @@ function run_simulation(
         solver_mode=solver_mode
     ) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
     if args.interlink_model !== nothing
-        callbacks = CallbackSet(SimulationModel.SimulationCallbacks.interlink_scheduler_initialization(), callbacks,
-            SimulationModel.interlink_scheduler_callback())
+        initialization_active = Ref(copy(args.interlink_model.graph.active))
+        callbacks = CallbackSet(SimulationModel.SimulationCallbacks.interlink_scheduler_initialization(; initialization_active), callbacks,
+            SimulationModel.interlink_scheduler_callback(; initialization_active))
     end
     # Last, after every wrapper: building a CallbackSet from another flattens it
     # back into tuples.
