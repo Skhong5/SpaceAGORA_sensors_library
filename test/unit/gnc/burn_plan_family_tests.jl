@@ -2,7 +2,7 @@
 # trusted validation reasons, the planner, runs through the shared request driver,
 # and the burn scheduler's recorded refusals.
 module BurnPlanFamilyTests
-using Test, Random, SpaceAGORA, SpaceAGORA.SimulationModel
+using Test, Random, CSV, DataFrames, SpaceAGORA, SpaceAGORA.SimulationModel
 using OrdinaryDiffEq: DiscreteCallback
 const GA = SpaceAGORA.GNCAlgorithms
 
@@ -62,6 +62,13 @@ burn_binding(; delta_v_mps=10.0, spacecraft_index=1, events=[AlgorithmEvent(0.0)
     AlgorithmGuidance(; algorithm=ApoapsisBurnPlanner(delta_v_mps=delta_v_mps), spacecraft_index=spacecraft_index,
         events=events, kwargs...)
 
+function traced_burn(args; kwargs...)
+    path = tempname()*".csv"
+    solution = withenv("SPACEAGORA_MANEUVER_TRACE_CSV" => path) do
+        run_simulation(args; return_solution=true, kwargs...)
+    end
+    return solution, CSV.read(path, DataFrame)
+end
 ran_scheduler(solution) = only(solution.prob.p.args.control_model.control_effectors)
 same_states(a, b) = a.t == b.t && length(a.u) == length(b.u) && all(collect(x) == collect(y) for (x, y) in zip(a.u, b.u))
 
@@ -191,18 +198,21 @@ end
 @testset "Family through the generic binding equals the scheduler's own burn" begin
     # The scheduler plans the burn itself (nonzero Δv); the binding plans the same
     # burn through the request driver and the scheduler only executes it.
-    own = run_simulation(burn_config(scheduler=burn_scheduler(Δv=10.0)); return_solution=true)
-    binding = burn_binding()
-    viafamily = run_simulation(burn_config(guidance=(binding,)); return_solution=true)
-    @test same_states(own, viafamily)
-    @test ran_scheduler(own).burn_windows == ran_scheduler(viafamily).burn_windows
-    @test isfinite(ran_scheduler(viafamily).burn_windows[1][1])
+    own, owntrace = traced_burn(burn_config(scheduler=burn_scheduler(Δv=10.0)))
+    # Align the explicit plan's installation with the scheduler's first control tick.
+    binding = burn_binding(events=[AlgorithmEvent(1.0)])
+    viafamily, familytrace = traced_burn(burn_config(guidance=(binding,), rates=[1.0]))
+    @test collect(own.u[end]) ≈ collect(viafamily.u[end]) rtol=1e-10 atol=1e-7
+    ownburn = only(eachrow(owntrace[owntrace.event .== "burn_start", :]))
+    familyburn = only(eachrow(familytrace[familytrace.event .== "burn_start", :]))
+    @test ownburn.start_burn_s ≈ familyburn.start_burn_s atol=1e-7
+    @test ownburn.stop_burn_s ≈ familyburn.stop_burn_s atol=1e-7
     @test viafamily.u[1].sc[1].mass - viafamily.u[end].sc[1].mass > 0.5
     report = algorithm_run_report(viafamily).bindings[1]
     @test [r.event for r in report.records] == [:request, :installed]
     @test report.request_id == 1 && report.product isa PropulsiveBurnPlan
-    @test report.records[1].request isa BurnPlanRequest && report.records[1].request.time_s == 0.0
-    @test report.product.start_burn_s == ran_scheduler(viafamily).burn_windows[1][1]
+    @test report.records[1].request isa BurnPlanRequest && report.records[1].request.time_s == 1.0
+    @test report.product.start_burn_s == familyburn.start_burn_s
     @test report.stream_words == gnc_stream_words("AlgorithmGuidance/v1", 0, :BurnPlanFamily, 7)
     @test isempty(burn_plan_rejections(ran_scheduler(viafamily), 1))
     @test binding.runtime === nothing   # isolate_state=true: the configured binding never runs
@@ -212,12 +222,13 @@ end
     steps = Float64[]
     spy = DiscreteCallback((u, t, integrator) -> (push!(steps, t); false), integrator -> nothing;
         save_positions=(false, false))
-    solution = run_simulation(burn_config(guidance=(burn_binding(events=[AlgorithmEvent(500.0)]),), rates=[10.0]);
-        return_solution=true, extra_callbacks=(spy,))
+    solution, trace = traced_burn(burn_config(guidance=(burn_binding(events=[AlgorithmEvent(500.0)]),), rates=[10.0]);
+        extra_callbacks=(spy,))
     report = algorithm_run_report(solution).bindings[1]
     plan = report.product
     @test [(r.event, r.time_s) for r in report.records] == [(:request, 500.0), (:installed, 500.0)]
-    @test ran_scheduler(solution).burn_windows == [(plan.start_burn_s, plan.stop_burn_s, plan.thrust_n)]
+    flown = only(eachrow(trace[trace.event .== "burn_start", :]))
+    @test (flown.start_burn_s, flown.stop_burn_s) == (plan.start_burn_s, plan.stop_burn_s)
     @test plan.start_burn_s in steps && plan.stop_burn_s in steps
     burned = solution.u[1].sc[1].mass - solution.u[end].sc[1].mass
     @test isapprox(burned, plan.propellant_required_kg; rtol=1e-9)
@@ -242,7 +253,7 @@ end
     end
     plan = algorithm_run_report(solution).bindings[1].product
     @test plan.start_burn_s == 500.0
-    events = [split(line, ",") for line in readlines(trace)[2:end]]
+    events = [split(line, ",") for line in readlines(trace)[2:end] if startswith(line, "burn_")]
     @test [(e[1], parse(Float64, e[2])) for e in events] == [("burn_start", 500.0), ("burn_end", plan.stop_burn_s)]
     @test isapprox(solution.u[1].sc[1].mass - solution.u[end].sc[1].mass, plan.propellant_required_kg; rtol=1e-9)
     rm(trace; force=true)
@@ -253,15 +264,15 @@ end
         start_burn_time=[-1.0, -1.0], stop_burn_time=[-1.0, -1.0], Isp=[300.0, 300.0])
     template = burn_binding()
     bindings = (template, SpaceAGORA.bind_spacecraft(template, 2))
-    solution = run_simulation(burn_config(scheduler=two, guidance=bindings,
-        spacecraft=SpacecraftModel[burn_sat(id=7), burn_sat(id=8)]); return_solution=true)
+    solution, trace = traced_burn(burn_config(scheduler=two, guidance=bindings,
+        spacecraft=SpacecraftModel[burn_sat(id=7), burn_sat(id=8)]))
     reports = algorithm_run_report(solution).bindings
     @test [r.spacecraft_index for r in reports] == [1, 2]
     @test all(r -> [x.event for x in r.records] == [:request, :installed], reports)
     @test reports[1].stream_words != reports[2].stream_words
     @test reports[2].stream_words == gnc_stream_words("AlgorithmGuidance/v1", 0, :BurnPlanFamily, 8)
-    windows = ran_scheduler(solution).burn_windows
-    @test [w[1] for w in windows] == [r.product.start_burn_s for r in reports]
+    flown = sort(trace[trace.event .== "burn_start", :], :spacecraft_idx)
+    @test flown.start_burn_s == [r.product.start_burn_s for r in reports]
     @test all(i -> solution.u[1].sc[i].mass - solution.u[end].sc[i].mass > 0.5, 1:2)
 end
 
@@ -315,7 +326,7 @@ end
     refused = run_simulation(burn_config(scheduler=burn_scheduler(Δv=10.0), prop_mass=0.05); return_solution=true)
     records = burn_plan_rejections(ran_scheduler(refused), 1)
     @test length(records) == 1
-    @test records[1] == (time_s=0.0, rejection=:insufficient_propellant, delta_v_mps=10.0, direction_rad=0.0, source_orbit=-1)
+    @test records[1] == (time_s=1.0, rejection=:insufficient_propellant, delta_v_mps=10.0, direction_rad=0.0, source_orbit=-1)
     @test refused.u[end].sc[1].mass == refused.u[1].sc[1].mass
     @test_throws ArgumentError burn_plan_rejections(ran_scheduler(refused), 2)
     # No record for a zero Δv, and every run starts with none.

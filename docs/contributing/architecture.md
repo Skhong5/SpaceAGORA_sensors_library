@@ -369,7 +369,10 @@ and keeps each kind in the order below.
     7. the data stores: the full and empty boundary (continuous) and the
        step-end update of their flags;
     8. CMG gimbals stop at their limits (continuous);
-    9. the remaining guidance ticks.
+    9. the remaining guidance ticks;
+    10. maneuver request processing at each burn scheduler's control rate, then
+        its mounted actuator updates, followed by planning-free burn-edge
+        bookkeeping for explicit plans installed at any guidance time.
 11. The quaternion projection, when attitude is integrated.
 12. Plume interaction.
 13. The initial force output.
@@ -395,7 +398,10 @@ interlinks.
   before navigation reads them. Guidance that does not feed the same tick's
   control ticks after control, faults, power, the data stores and CMGs; energy depletion
   guidance with targeting ticks before control, so the panel command uses the
-  plan made at the same tick.
+  plan made at the same tick. Maneuver request processing runs after all due
+  guidance, on the scheduler's control clock. Initialization and atmosphere exits
+  only restore burn boundary bookkeeping; accepted windows and consumed request
+  identities survive checkpoint resumes.
 - **The hardware starts the run before anything reads it.** Hinge and gimbal
   angles and the firing state of thrusters with firing dynamics start each run
   as configured, unless changed between two runs with `isolate_state=false`.

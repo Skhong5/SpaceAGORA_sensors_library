@@ -215,7 +215,8 @@ function _gnc_phase_callbacks(num_sats::Int, args::SimulationConfiguration)
     callbacks = _append_callbacks(callbacks, get_power_callbacks(num_sats, args))
     callbacks = _append_callbacks(callbacks, get_data_callbacks(num_sats, args))
     callbacks = _append_callbacks(callbacks, get_cmg_callbacks(num_sats, args))
-    return _append_callbacks(callbacks, _guidance_callbacks_in_phase(guidance_callbacks, guidance_models, false))
+    callbacks = _append_callbacks(callbacks, _guidance_callbacks_in_phase(guidance_callbacks, guidance_models, false))
+    return _append_callbacks(callbacks, get_maneuver_planning_callbacks(num_sats, args))
 end
 
 # The run's callbacks, in the order the solver applies them at one time; the

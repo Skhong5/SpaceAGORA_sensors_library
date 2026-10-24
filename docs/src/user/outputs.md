@@ -539,13 +539,23 @@ the file through `checkpoint_state` (see
 [Run state in checkpoint files](../extensibility.md#Run-state-in-checkpoint-files));
 without it, a resumed run starts that state from its reset.
 
-A run with the burn scheduler (`BaseThrusterModel`) also records, when one is
-set, the maneuver command each spacecraft's maneuver guidance last issued and the
-burn plan installed for it. A command issued before the checkpoint and not yet
-planned, or a plan not yet flown, is then planned and flown in the resumed run as
-in a run never interrupted. A checkpoint written by an earlier SpaceAGORA
-holds no such record, and a run resumed from it starts with no command or plan
-waiting, as before.
+A run with the burn scheduler (`BaseThrusterModel`) also records the latest
+maneuver commands, accepted burn plans and which requests have been consumed.
+New requests are processed on the configured control schedule, after guidance due
+at the same time. A checkpoint segment or atmosphere exit does not re-plan an
+accepted burn. The resumed run preserves its window and takes any pending control
+tick once; the same accepted request is not flown again after completion.
+
+Guidance requests are identified by their Δv, direction and source orbit. A new
+source orbit permits a new request even when its Δv is unchanged. A configured
+Δv is consumed once unless changed. An explicit `BurnPlanFamily` installation
+supplies its own window; the engine registers its boundaries after guidance, even
+between control ticks. These plans remain separate from ordinary requests.
+
+Burn-scheduler checkpoints written before this control-clock policy are refused:
+their pending clock positions and consumed requests cannot be inferred safely.
+Resume those checkpoints with the SpaceAGORA version that wrote them, or start a
+new run. The refusal occurs before result streams are changed.
 
 The checkpoint also records the orbit each spacecraft is on, once one is past its
 first, so a resumed run continues the count: a `MissionOrbits` run ends after the
