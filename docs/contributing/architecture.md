@@ -478,7 +478,9 @@ building the run's buffers and callbacks:
    the checkpoint against the run and restores the engine's and the callbacks'
    run state: the `activity`, `interlinks`, `callbacks`, `maneuver_buffers`,
    `orbits` and `entries` entries, and the periodic ticks still pending. It also sets the
-   resume flags (`callback_resume`, `model_resume`). The models' own state and
+   resume flags (`callback_resume`, `model_resume`). The `interlinks` entry restores
+   `active_links`, the previous matching used for carried receiver-outflow scoring;
+   the scheduler then checks availability again. The models' own state and
    the form of their `gnc_scopes` entry are only checked here; a run with guidance,
    navigation or control models refuses a checkpoint without that entry here,
    before anything is restored.
@@ -510,7 +512,8 @@ calls them at the top of `src/models/gnc/contracts/simulation_lifecycle.jl`.
 | State | Owner | Reset at a run's start | Checkpoint entry | Restored on a resume | When |
 | --- | --- | --- | --- | --- | --- |
 | Which spacecraft are active | `ODEParams.is_active` | a new `ODEParams`, all active | `activity` (also in `interlinks`) | `_restore_activity_checkpoint_state!` | phase 1 |
-| Interlink selection and history | the `InterlinkModel` | `run_simulation` empties the history and clears the graph's flags and the matching | `interlinks`: the configuration's identity and the activity flags | the identity is checked; the scheduler's initialization rebuilds the selection | phase 1; the scheduler at the solve's start |
+| Interlink selection | the `InterlinkModel` | `run_simulation` clears the graph's flags and matching | `interlinks`: configuration identity, activity flags and `active_links` | identity is checked and the previous matching restored, independently of history; scheduler initialization checks availability and chooses the next matching | phase 1; scheduler at the solve's start |
+| Recorded interlink history | `InterlinkModel.history` | `run_simulation` empties it | `interlink_history`: owned prefix of `simulation_checkpoint.interlinks.bin`, recording settings, token and sample count; unreleased integrity correction also adds SHA-256 | `_start_interlink_history!` restores the prefix before the first segment, or warns and starts history at resume time; changed recording settings are refused | before the solve |
 | Battery flags, fault activity | the batteries and the actuator faults | the power and fault callbacks' first initialization | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume` so that those initializations keep it | phase 1 |
 | Data store flags | the data stores | the data callbacks' first initialization | `callbacks`, only in a run with a data store | `_restore_callback_checkpoint_state!`, as the battery flags | phase 1 |
 | Sensor streams, latest measurements, biases, sample times | the mounted sensors and the sensor callbacks | `reset_sensors!` at the first solve's start | `callbacks`, and the sensor's own `checkpoint_state` in `models` | the records in phase 1; the sensor's own state in phase 3. A resumed run does not call `initialize_sensor!` | phases 1 and 3 |

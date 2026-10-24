@@ -1310,7 +1310,8 @@ end
 # a record drops the last sample before it when the scheduler replaced it (a
 # segment, or a resumed run, starts with a sample at the time the last one ended).
 # The checkpoint's `interlink_history` entry records how much of the stream is its
-# own (`bytes`, `samples`), and the stream's `token`. A run without interlinks
+# own (`bytes`, `samples`), its SHA-256 digest, and the stream's `token`. The live
+# digest context hashes only new bytes and is never serialized. A run without interlinks
 # keeps none and writes no entry.
 mutable struct _InterlinkHistoryLog
     path::String
@@ -1322,7 +1323,11 @@ mutable struct _InterlinkHistoryLog
     fresh::Bool            # the next append starts a new stream
     start_s::Float64
     keep_earlier::Bool
+    hash_context::SHA256_CTX
 end
+
+_InterlinkHistoryLog(path, token, recording, logged, last, bytes, fresh, start_s, keep_earlier) =
+    _InterlinkHistoryLog(path, token, recording, logged, last, bytes, fresh, start_s, keep_earlier, SHA256_CTX())
 
 const _INTERLINK_HISTORY_HEADER = (kind=:spaceagora_interlink_history, version=2)
 
@@ -1335,7 +1340,7 @@ function _interlink_history_checkpoint_state(checkpoint)
 end
 
 # The history up to the checkpoint at `t`, or `nothing` and the reason it cannot be used.
-function _checkpoint_interlink_history(entry, path::String, t::Float64, model)
+function _checkpoint_interlink_history(entry, path::String, t::Float64, model; hash_context=SHA256_CTX())
     entry === nothing &&
         return nothing, "the checkpoint holds no record of it (it was written before SpaceAGORA kept it)"
     hasproperty(entry, :version) && entry.version === 2 ||
@@ -1345,6 +1350,22 @@ function _checkpoint_interlink_history(entry, path::String, t::Float64, model)
     entry.recording == _interlink_recording(model) || throw(ArgumentError(
         "Cannot resume interlink history with different record_available or record_terms settings. " *
         "Restore the checkpoint's recording settings or start a new run."))
+    entry.bytes isa Integer && entry.bytes >= 0 ||
+        return nothing, "the checkpoint's history byte length is invalid"
+    if hasproperty(entry, :sha256)
+        entry.sha256 isa String && occursin(r"^[0-9a-f]{64}$", entry.sha256) ||
+            return nothing, "the checkpoint's history checksum is malformed"
+    end
+    try
+        SimulationModel.IOSerialization._hash_checkpoint_rows!(hash_context, path, 0, entry.bytes)
+    catch err
+        err isa InterruptException && rethrow()
+        return nothing, "$(path) is missing, shorter than the checkpoint records, or unreadable"
+    end
+    if hasproperty(entry, :sha256)
+        entry.sha256 == bytes2hex(SHA.digest!(deepcopy(hash_context))) ||
+            return nothing, "$(path) does not match the checkpoint's history checksum"
+    end
     stream = SimulationModel.IOSerialization._read_checkpoint_rows(path, entry.bytes)
     stream === nothing && return nothing, "$(path) is missing, shorter than the checkpoint records, or unreadable"
     hasproperty(stream.header, :token) && stream.header.token == entry.token ||
@@ -1366,13 +1387,17 @@ function _start_interlink_history!(args, resumed::Bool, t_start::Float64, entry;
     model = args.interlink_model
     log = _InterlinkHistoryLog(path, _results_rows_token(path), model !== nothing, 0, nothing, 0, true, t_start, resumed && solves)
     (resumed && model !== nothing) || return log
-    stream, reason = _checkpoint_interlink_history(entry, path, t_start, model)
+    stream, reason = _checkpoint_interlink_history(entry, path, t_start, model; hash_context=log.hash_context)
     if stream === nothing
         consequence = solves ? "It covers the resumed interval only, from history_start_s = $(t_start) s." :
             "This resume solves nothing, so its returned schedule is empty and earlier schedule files are preserved."
         @warn "The resumed run's link schedule cannot include the windows before its checkpoint at t = $(t_start) s: " *
               "$(reason). $(consequence)"
         return log
+    end
+    if !hasproperty(entry, :sha256)
+        @warn "This checkpoint's interlink history has no checksum. Its readable history is retained, " *
+              "but earlier byte corruption cannot be detected. New checkpoints will record a checksum."
     end
     append!(model.history, stream.data)
     solves && SimulationModel.IOSerialization._truncate_checkpoint_rows!(path, entry.bytes)
@@ -1402,13 +1427,19 @@ function _append_interlink_history!(log::_InterlinkHistoryLog, model)
     # A sample the scheduler replaced since it was logged is logged again.
     drop = log.logged > 0 && log.logged <= length(history) && history[log.logged] !== log.last ? 1 : 0
     new = (log.logged - drop + 1):length(history)
-    log.bytes = SimulationModel.IOSerialization._append_checkpoint_rows!(log.path,
+    previous_bytes = log.fresh ? 0 : log.bytes
+    next_context = log.fresh ? SHA256_CTX() : deepcopy(log.hash_context)
+    next_bytes = SimulationModel.IOSerialization._append_checkpoint_rows!(log.path,
         Float64[sample.time for sample in view(history, new)], collect(view(history, new)); drop,
         header=log.fresh ? merge(_INTERLINK_HISTORY_HEADER, (token=log.token, recording=_interlink_recording(model))) : nothing)
+    SimulationModel.IOSerialization._hash_checkpoint_rows!(next_context, log.path, previous_bytes, next_bytes)
+    log.hash_context = next_context
+    log.bytes = next_bytes
     log.logged = length(history)
     log.last = isempty(history) ? nothing : history[end]
     log.fresh = false
-    return (version=2, samples=log.logged, bytes=log.bytes, token=log.token, recording=_interlink_recording(model))
+    return (version=2, samples=log.logged, bytes=log.bytes, token=log.token, recording=_interlink_recording(model),
+        sha256=bytes2hex(SHA.digest!(deepcopy(log.hash_context))))
 end
 
 # Where the run writes its results: its results directory when its rows start at
