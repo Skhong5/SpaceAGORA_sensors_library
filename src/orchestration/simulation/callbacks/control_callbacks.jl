@@ -141,7 +141,9 @@ function get_maneuver_planning_callbacks(num_sats::Int, args::SimulationConfigur
             end
             return nothing
         end
-        push!(callbacks, _run_clock_periodic_callback(tick!, period))
+        # Planning updates commands, not the integrated state. Output rows have
+        # their own saving callback; avoid two extra states at every control tick.
+        push!(callbacks, _run_clock_periodic_callback(tick!, period; save_positions=(false, false)))
         # Explicit external plans can arrive off the control grid. Register
         # their boundaries after guidance without processing a new request.
         push!(callbacks, _burn_edge_callback(model, num_sats))

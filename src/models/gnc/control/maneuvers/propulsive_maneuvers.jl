@@ -90,6 +90,14 @@ end
     return nothing
 end
 
+# Campaign guidance uses this accepted request as its per-orbit latch. Generic
+# guidance still identifies new requests by the full (Δv, direction, orbit) tuple.
+@inline function _accepted_campaign_request(model::BaseThrusterModel, i::Int, orbit::Int)
+    1 <= i <= length(model.consumed_command) || return nothing
+    accepted = model.consumed_command[i]
+    return accepted !== nothing && accepted[3] == orbit ? accepted : nothing
+end
+
 @inline function _commanded_maneuver(controlModel::BaseThrusterModel, p, i::Int64)
     command = _guidance_maneuver_command(p, i)
     if command !== nothing
@@ -355,7 +363,8 @@ end
 function SimulationLifecycle.restore_checkpoint_state!(model::BaseThrusterModel, data)
     hasproperty(data, :version) && data.version == 2 && hasproperty(data, :consumed_command) &&
         hasproperty(data, :consumed_configured) || throw(ArgumentError(
-            "This burn-scheduler checkpoint predates control-clock request processing. " *
+            "The BaseThrusterModel state in this checkpoint predates control-clock request processing. " *
+            "This applies even when no burn was configured. " *
             "Resume with the SpaceAGORA version that wrote it, or start a new run; " *
             "its request-consumption state and pending control clocks cannot be inferred safely."))
     n = length(model.thrust)
