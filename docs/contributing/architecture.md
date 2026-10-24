@@ -513,7 +513,7 @@ calls them at the top of `src/models/gnc/contracts/simulation_lifecycle.jl`.
 | --- | --- | --- | --- | --- | --- |
 | Which spacecraft are active | `ODEParams.is_active` | a new `ODEParams`, all active | `activity` (also in `interlinks`) | `_restore_activity_checkpoint_state!` | phase 1 |
 | Interlink selection | the `InterlinkModel` | `run_simulation` clears the graph's flags and matching | `interlinks`: configuration identity, activity flags and `active_links` | identity is checked and the previous matching restored, independently of history; scheduler initialization checks availability and chooses the next matching | phase 1; scheduler at the solve's start |
-| Recorded interlink history | `InterlinkModel.history` | `run_simulation` empties it | `interlink_history`: owned prefix of `simulation_checkpoint.interlinks.bin`, recording settings, token and sample count; unreleased integrity correction also adds SHA-256 | `_start_interlink_history!` restores the prefix before the first segment, or warns and starts history at resume time; changed recording settings are refused | before the solve |
+| Recorded interlink history | `InterlinkModel.history` | `run_simulation` empties it | `interlink_history`: owned prefix of `simulation_checkpoint.interlinks.bin`, recording settings, token and sample count; 0.7.1 adds SHA-256 | `_start_interlink_history!` restores the prefix before the first segment, or warns and starts history at resume time; changed recording settings are refused | before the solve |
 | Battery flags, fault activity | the batteries and the actuator faults | the power and fault callbacks' first initialization | `callbacks` | `_restore_callback_checkpoint_state!`, which sets `callback_resume` so that those initializations keep it | phase 1 |
 | Data store flags | the data stores | the data callbacks' first initialization | `callbacks`, only in a run with a data store | `_restore_callback_checkpoint_state!`, as the battery flags | phase 1 |
 | Sensor streams, latest measurements, biases, sample times | the mounted sensors and the sensor callbacks | `reset_sensors!` at the first solve's start | `callbacks`, and the sensor's own `checkpoint_state` in `models` | the records in phase 1; the sensor's own state in phase 3. A resumed run does not call `initialize_sensor!` | phases 1 and 3 |
@@ -649,7 +649,7 @@ and result types, geometry, metrics, RRT and retiming services, and compatibilit
 entry points. `SpaceAGORA.HYPRServices` exposes the adapter contract without
 changing the original owners of those bindings. Only the explicitly listed
 services and extension points are supported; arbitrary internal-module access is
-not the integration API. The current supported pair is SpaceAGORA 0.7.0 with
+not the integration API. The current supported pair is SpaceAGORA 0.7.1 with
 HYPR at the recorded revision above (package version 0.5.0) and service contract
 3.0.0. The existing HYPR version tag predates the core compatibility update;
 install the source recorded by core and explicitly
