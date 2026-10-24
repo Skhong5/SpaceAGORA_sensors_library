@@ -143,7 +143,8 @@ A `DiscreteCallback` applying `f(integrator)` every `Δt` seconds on the run's
 tick grid (see the comment at the top of this file). `on_clock` receives the
 grid's origin when the callback initializes, before the first tick is scheduled.
 """
-function _run_clock_periodic_callback(f, Δt::Float64; on_clock=(origin, integrator) -> nothing)
+function _run_clock_periodic_callback(f, Δt::Float64; on_clock=(origin, integrator) -> nothing,
+        save_positions=(true, true))
     key = gensym(:run_clock_periodic_callback)
 
     condition = function (u, t, integrator)
@@ -194,5 +195,5 @@ function _run_clock_periodic_callback(f, Δt::Float64; on_clock=(origin, integra
         return nothing
     end
 
-    return DiscreteCallback(condition, affect!; initialize=initialize)
+    return DiscreteCallback(condition, affect!; initialize=initialize, save_positions=save_positions)
 end

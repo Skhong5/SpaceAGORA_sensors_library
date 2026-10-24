@@ -329,10 +329,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      # Coverage debt (July 2026): first real gate run measured 82.84%
-      # overall; restore to 90.0 as the debt register in
-      # test/gates/ci_coverage_quality_gate.jl burns down.
-      SPACEAGORA_COVERAGE_MIN_OVERALL: "80.0"
+      # Match the verification contract and the gate's default overall floor.
+      SPACEAGORA_COVERAGE_MIN_OVERALL: "90.0"
       SPACEAGORA_COVERAGE_MIN_FILE: "80.0"
       # The gate keeps only .cov files within this many seconds of the newest
       # one. Every file here comes from this run's shards, and they are

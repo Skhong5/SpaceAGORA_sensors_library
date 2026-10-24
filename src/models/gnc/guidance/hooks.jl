@@ -76,14 +76,14 @@ module GuidanceHooks
     - `t`: elapsed time since the run's start epoch, in seconds (`Float64`).
     - `spacecraft_index`: the spacecraft's position in the run (`Int`, from 1), not its ID.
 
-    Effector `k` runs every `guidance_rates[k]` seconds of simulated time, once
-    for each spacecraft in index order, starting one period after the solve
-    starts. When ticks coincide, navigation effectors run first, then control
-    effectors, then guidance effectors; energy depletion guidance with targeting
-    runs before the control effectors instead. The propulsive-maneuver thruster
-    control effector (see `update_control!`) also runs every guidance
-    effector at the start of the solve and when a spacecraft leaves the
-    atmosphere, just before it schedules that spacecraft's burns.
+    Effector `k` runs every `guidance_rates[k]` seconds of simulated time for
+    the spacecraft in its declared scope, starting one period after the run
+    starts. Checkpoint segments and resume retain that run clock. When ticks
+    coincide, navigation runs first, followed by control and guidance; energy
+    depletion guidance with targeting runs before control instead. Maneuver
+    planning runs after all guidance due at that time. Startup and atmosphere
+    exits do not force extra guidance ticks; a tick pending at resume is taken
+    once on the retained clock.
 
     Before integration starts, `run_simulation` checks that every guidance
     effector has a method of this function for these arguments and stops with

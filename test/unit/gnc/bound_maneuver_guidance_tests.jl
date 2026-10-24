@@ -228,7 +228,7 @@ end
                 bound = resumed(templates(), mission, interval)
                 @test bound.t[end] == shared.t[end] && isequal(collect(bound.u[end]), collect(shared.u[end]))
             end
-            # The run without the break: the raise burns at its start, before either break.
+            # The uninterrupted run with the same checkpoint interval must match.
             whole = solve(maneuver_args(shared=(raise(),), mission_time=mission,
                 settings=checkpointed(mktempdir(), interval)))
             @test isequal(collect(shared.u[end]), collect(whole.u[end]))

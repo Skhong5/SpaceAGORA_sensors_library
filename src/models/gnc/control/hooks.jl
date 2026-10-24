@@ -19,6 +19,7 @@ module ControlHooks
     using ..GuidanceModels: RPOPlan, RPOPlanBuffer
     using ..GravityEffectors: aerobraking_gravity_force_ii
     using ..AerodynamicEffectors: aerodynamic_coefficient_fM
+    import ..GuidanceHooks: _accepted_campaign_request
     using ..GuidanceHooks: AerobrakingEnergyDepletionConfig, AerobrakingEnergyDepletionState, AerobrakingEnergyDepletionGuidanceModel
     using ..GuidanceHooks: ApolloDescentConfig, ApolloDescentState, _validate_descent_config, _descent_indices
     using ..AbstractTypes: AbstractTerrainModel
@@ -193,15 +194,19 @@ module ControlHooks
     - `t`: elapsed time since the run's start epoch, in seconds (`Float64`).
     - `spacecraft_index`: the spacecraft's position in the run (`Int`, from 1), not its ID.
 
-    Effector `k` runs every `control_rates[k]` seconds of simulated time, once for
-    each spacecraft, starting one period after the solve starts. The calls for
+    Effector `k` runs on the simulation's control clock every `control_rates[k]`
+    seconds, once for each spacecraft in its declared scope. Checkpoint segments
+    and resume retain that clock rather than starting a new period. The calls for
     different spacecraft run one after another unless the effector's type is
     declared thread-safe (`SimulationModel.SimulationCallbacks.control_model_threadsafe(::MyEffector) = true`)
     or the run sets `SPACEAGORA_CONTROL_CALLBACK_ASSUME_THREADSAFE=1`; then they
     may run at the same time on different threads, and state that several
-    spacecraft share needs a lock. `BaseThrusterModel` is the exception: it runs
-    at the start of the solve and when a spacecraft leaves the atmosphere, to
-    schedule that spacecraft's burns.
+    spacecraft share needs a lock. `BaseThrusterModel` considers new maneuver
+    requests on its control ticks, after guidance due at the same time. Startup
+    and atmosphere-exit bookkeeping do not force an extra request-processing tick;
+    a control tick pending at resume is still taken once. Accepted burn windows
+    and explicitly installed plans retain their
+    ignition and stop times, including boundaries between control ticks.
 
     Before integration starts, `run_simulation` checks that every control
     effector has a method of this function and, unless its actuation is

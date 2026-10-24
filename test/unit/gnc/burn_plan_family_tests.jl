@@ -202,11 +202,11 @@ end
     # Align the explicit plan's installation with the scheduler's first control tick.
     binding = burn_binding(events=[AlgorithmEvent(1.0)])
     viafamily, familytrace = traced_burn(burn_config(guidance=(binding,), rates=[1.0]))
-    @test collect(own.u[end]) ≈ collect(viafamily.u[end]) rtol=1e-10 atol=1e-7
+    @test isequal(own.u[end], viafamily.u[end])
     ownburn = only(eachrow(owntrace[owntrace.event .== "burn_start", :]))
     familyburn = only(eachrow(familytrace[familytrace.event .== "burn_start", :]))
-    @test ownburn.start_burn_s ≈ familyburn.start_burn_s atol=1e-7
-    @test ownburn.stop_burn_s ≈ familyburn.stop_burn_s atol=1e-7
+    @test isequal(ownburn.start_burn_s, familyburn.start_burn_s)
+    @test isequal(ownburn.stop_burn_s, familyburn.stop_burn_s)
     @test viafamily.u[1].sc[1].mass - viafamily.u[end].sc[1].mass > 0.5
     report = algorithm_run_report(viafamily).bindings[1]
     @test [r.event for r in report.records] == [:request, :installed]

@@ -58,10 +58,39 @@ between control ticks.
 
 A guidance request is identified by its Δv, direction and source orbit; a new
 source orbit permits another request with the same Δv. A configured Δv is used
-once unless changed. Existing burn-scheduler checkpoints lack the consumed-request
-state needed by this policy and are refused before result streams are changed.
+once unless changed. Checkpoints written before 0.7.0 for any run containing
+`BaseThrusterModel` lack the consumed-request state needed by this policy, even
+when no burn was configured. They are refused before result streams are changed.
 Resume them with the SpaceAGORA version that wrote them, or start a new run.
 See [Checkpoints and resume](outputs.md) for the recorded state and limits.
+
+These changes also affect runs that do not checkpoint. Compared with the older
+atmosphere-exit scheduling, periapsis-raise requests can be accepted an orbit
+earlier and no longer repeat because of the scheduler's own Δv write. Campaign
+requests for later orbits can execute even when the atmosphere model produces
+no exit events. A fixed configured Δv is one explicit request, not a request to
+repeat after each atmosphere pass; use guidance to request repeated maneuvers.
+
+### Unreleased maneuver corrections
+
+These corrections are not present in the published v0.7.0 release.
+
+Flight-scaled campaign guidance keeps the accepted Δv and direction fixed for
+that maneuver's source orbit. Changes to the osculating apoapsis after acceptance
+do not request a second burn. This latch uses the scheduler's existing saved
+request history, including when resuming a checkpoint written by v0.7.0.
+This preserves an already accepted burn window; it cannot undo an extra burn
+that v0.7.0 already executed or scheduled before writing the checkpoint.
+Restart affected flight-scaled campaigns from their initial conditions to
+obtain a history without those earlier duplicate requests.
+Custom guidance can still issue a new request with a changed Δv or direction.
+
+The control period also sets solver stopping times for the burn scheduler,
+even while it is idle. Planning ticks do not add before/after solver-state saves;
+result rows retain their configured output schedule and burn edges keep their
+exact times. The changed stopping times mean that runs using the scheduler are
+not generally bitwise identical to runs made with the older scheduling policy.
+
 
 ### A GNC model's hooks follow its spacecraft scope
 
