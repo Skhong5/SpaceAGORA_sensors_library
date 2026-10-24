@@ -172,24 +172,30 @@
         @test model_signed_retrograde.start_burn_time[1] == signed_retrograde_plan.start_burn_s
         @test model_signed_retrograde.stop_burn_time[1] == signed_retrograde_plan.stop_burn_s
 
-        # Pre-ignition tracking: a future scheduled window should be retimed.
+        # An explicitly accepted future window stays fixed until completion.
         model_track = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=10_000.0, stop_burn_time=11_000.0)
         _clear_burn_plan!(p, 1)
         update_control!(model_track, state, p, 100.0, 1)
         plan_track = _burn_plan(p, 1)
-        @test plan_track.valid
-        @test plan_track.start_burn_s != 10_000.0
-        @test plan_track.stop_burn_s != 11_000.0
-        @test model_track.start_burn_time[1] == plan_track.start_burn_s
-        @test model_track.stop_burn_time[1] == plan_track.stop_burn_s
+        @test !plan_track.valid # The explicit model window needs no generated plan.
+        @test model_track.start_burn_time[1] == 10_000.0
+        @test model_track.stop_burn_time[1] == 11_000.0
 
-        # Post-ignition lock: once burn start time has been reached, keep fixed.
-        s_sched = plan.start_burn_s
-        e_sched = plan.stop_burn_s
-        update_control!(model, state, p, s_sched + 1e-6, 1)
-        plan_locked = _burn_plan(p, 1)
-        @test plan_locked.start_burn_s == s_sched
-        @test plan_locked.stop_burn_s == e_sched
+        # An independently accepted plan also stays fixed before and during ignition.
+        p_lock = ODEParams(n_sats=1, args=args)
+        model_lock = make_base_thruster_model(thrust=2.0, Δv=2.0, start_burn_time=-1.0, stop_burn_time=-1.0)
+        update_control!(model_lock, state, p_lock, 100.0, 1)
+        accepted_plan = _burn_plan(p_lock, 1)
+        @test accepted_plan.valid
+        s_sched, e_sched = accepted_plan.start_burn_s, accepted_plan.stop_burn_s
+        @test 100.0 < s_sched < e_sched
+        for tick in (100.5, s_sched + 1e-6)
+            update_control!(model_lock, state, p_lock, tick, 1)
+            plan_locked = _burn_plan(p_lock, 1)
+            @test plan_locked == accepted_plan
+            @test model_lock.start_burn_time[1] == s_sched
+            @test model_lock.stop_burn_time[1] == e_sched
+        end
 
         sc_ineligible = make_spacecraft(ra_alt_m=600e3, rp_alt_m=400e3, ν_deg=210.0)
         args_ineligible = build_config(
@@ -392,12 +398,12 @@
             planet=throw_planet
         )
         p_throw = ODEParams(n_sats=1, args=args_throw)
-        model_throw = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=123.0, stop_burn_time=124.0)
+        model_throw = make_base_thruster_model(thrust=2.0, Δv=20.0, start_burn_time=-1.0, stop_burn_time=-1.0)
         withenv("SPACEAGORA_DEBUG_CONTROL" => "1", "SPACEAGORA_STRICT_CONTROL_EXCEPTIONS" => "0") do
             @test_logs (:warn, r"orbital-element conversion failed") update_control!(model_throw, state, p_throw, 100.0, 1)
         end
-        @test model_throw.start_burn_time[1] == 123.0
-        @test model_throw.stop_burn_time[1] == 124.0
+        @test model_throw.start_burn_time[1] == -1.0
+        @test model_throw.stop_burn_time[1] == -1.0
         withenv("SPACEAGORA_STRICT_CONTROL_EXCEPTIONS" => "1") do
             @test_throws ErrorException update_control!(model_throw, state, p_throw, 100.0, 1)
         end
@@ -449,19 +455,28 @@
                 @test level_trace() == 0.0
                 schedule_trace!(e_trace + 1.0)
                 trace_plan_after = _burn_plan(p_trace, 1)
-                @test !trace_plan_after.valid ||
-                      trace_plan_after.start_burn_s != s_trace ||
-                      trace_plan_after.stop_burn_s != e_trace
+                @test !trace_plan_after.valid
+                @test model_trace.start_burn_time[1] == -1.0
+                @test model_trace.stop_burn_time[1] == -1.0
 
                 @test isfile(trace_csv)
                 trace_text = read(trace_csv, String)
                 @test occursin("event,t_s,spacecraft_idx", trace_text)
                 trace_rows = [split(line, ",") for line in split(chomp(trace_text), "\n")[2:end]]
-                # The clearing call plans the next burn from the same state.
-                @test [row[1] for row in trace_rows] == ["schedule_set", "burn_start", "burn_end", "schedule_clear", "schedule_set"]
+                # A consumed request clears without planning the same burn again.
+                @test [row[1] for row in trace_rows] == ["schedule_set", "burn_start", "burn_end", "schedule_clear"]
                 # The burn's events fall on the window's ends, with the window they ran.
                 @test parse(Float64, trace_rows[2][2]) == s_trace && parse(Float64, trace_rows[3][2]) == e_trace
                 @test all(parse(Float64, row[8]) == s_trace && parse(Float64, row[9]) == e_trace for row in trace_rows[1:4])
+
+                # A changed request is accepted on the next scheduling call.
+                model_trace.Δv[1] = 1.0
+                schedule_trace!(e_trace + 2.0)
+                @test _burn_plan(p_trace, 1).valid
+                @test _burn_plan(p_trace, 1).delta_v_mps == 1.0
+                @test _burn_plan(p_trace, 1).start_burn_s > e_trace + 2.0
+                changed_rows = [split(line, ",") for line in split(chomp(read(trace_csv, String)), "\n")[2:end]]
+                @test [row[1] for row in changed_rows] == ["schedule_set", "burn_start", "burn_end", "schedule_clear", "schedule_set"]
 
                 trace_event_helper("manual_event", model_trace, p_no_orbit_counter, 1, 0.0)
                 trace_text_after_manual = read(trace_csv, String)
@@ -848,10 +863,12 @@ end
     )
     df = run_case_silent(args; isolate_state=false)
 
+    # Both one-shot requests have finished by the end of the run. Their windows
+    # clear rather than silently scheduling another burn from the same request.
     for sat_idx in 1:2
-        @test isfinite(shared_thruster.start_burn_time[sat_idx])
-        @test isfinite(shared_thruster.stop_burn_time[sat_idx])
-        @test shared_thruster.stop_burn_time[sat_idx] > shared_thruster.start_burn_time[sat_idx]
+        @test shared_thruster.start_burn_time[sat_idx] == -1.0
+        @test shared_thruster.stop_burn_time[sat_idx] == -1.0
+        @test !shared_thruster.burning[sat_idx]
     end
 
     mass1 = Vector{Float64}(df.sc1_mass)

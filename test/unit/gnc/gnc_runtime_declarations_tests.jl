@@ -350,8 +350,8 @@ hinge_seer(hinge) = DiscreteCallback((u, t, integrator) -> false, integrator -> 
         @test tick_schedule(thruster) === :event_driven
         @test tick_schedule(ClockedControl()) === :periodic
         @test !isdefined(SM.SimulationCallbacks, :control_requires_periodic_callback)   # removed in 0.5.0
-        # Its schedule callback and its burn-edge callback; no mounted tick in :ideal actuation.
-        @test length(gnc_callbacks(thruster, 1, runtime_args((thruster,)), 0.5)) == 2
+        # Initialization only; planning and burn edges run in the late phase after guidance.
+        @test length(gnc_callbacks(thruster, 1, runtime_args((thruster,)), 0.5)) == 1
         own(f, T) = which(f, T).module !== SpaceAGORA.GNCRuntime
         @test own(register_tstops!, Tuple{Any, SM.BaseThrusterModel, Int})
         @test own(gnc_clock_started!, Tuple{SM.AerobrakingEnergyDepletionControlModel, Float64, Float64})
