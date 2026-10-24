@@ -248,7 +248,7 @@ Base.@noinline function test_solver_paths()
     withenv("SPACEAGORA_RHS_CALIBRATE" => "off",
             "SPACEAGORA_PARALLEL_POLICY_PERSISTENT_HINTS" => "0",
             "SPACEAGORA_PARALLEL_POLICY_STATE_PERSIST" => "0") do
-        for mode in (:tsit5, :rodas5p, :split_imex), recorder_first in (false, true)
+        for mode in (:tsit5, :rodas5p, :split_imex, :multirate_mri), recorder_first in (false, true)
             args = configuration(mode=mode)
             u, p = Base.invokelatest(parameters, args)
             expected = expected_drag(u, p)

@@ -790,9 +790,11 @@ metadata, not availability constraints. The cavity
 magnification and force law are modeling assumptions; passing implementation
 tests does not validate a physical laser system.
 
-Use a full-state solver such as `:tsit5`. Split solvers, external propagator
-coupling, articulated/compliant vehicles and independent constellation ensembles
-are rejected for linked spacecraft. Near circularity, `EccentricityRatePolicy`
+Use a full-state solver such as `:tsit5`, or the opt-in `:multirate_mri` route
+described in [Solver configuration](solver_configuration.md#Coupled-multirate-integration).
+The original split modes (`:split_imex`, `:multirate`, `:gravity_backbone_split`),
+external propagator coupling, articulated/compliant vehicles and independent
+constellation ensembles are rejected for linked spacecraft. Near circularity, `EccentricityRatePolicy`
 also rejects candidate sets that can simultaneously apply several positive-score
 links to one target: individual eccentricity-rate norms are not additive there.
 `SemimajorAxisRatePolicy` does not have that restriction.

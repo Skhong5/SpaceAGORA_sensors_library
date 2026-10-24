@@ -43,7 +43,9 @@ spacecraft's `battery_energy_index` (a percentage).
 The battery's full and empty states switch at events, when its stored energy
 reaches its capacity or zero; the shedding tier is updated at the end of each
 integration step. The split solver modes (`:split_imex`, `:multirate`,
-`:gravity_backbone_split`) refuse a spacecraft with a battery. A checkpointed
+`:gravity_backbone_split`) refuse a spacecraft with a battery. The opt-in
+`:multirate_mri` route integrates battery and interlink power in its fast
+component and supports the same boundary events. A checkpointed
 run keeps these states from one segment to the next, and a run resumed from a
 checkpoint file takes them from the file, which holds the stored energy and
 whether the battery is empty and recharging or full.

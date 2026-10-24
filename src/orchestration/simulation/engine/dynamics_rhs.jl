@@ -4496,3 +4496,22 @@ function build_initial_conditions(args)::ComponentVector
 
     return state
 end
+
+# Complete rigid-spacecraft partition for the event-preserving MRI driver.
+# Every component owns its whole derivative buffer; fields absent from that
+# partition stay zero, including station and interlink accounting states.
+function spacecraft_dynamics_mri_slow!(du::ComponentVector, u::ComponentVector, p, t::Float64)
+    fill!(du, 0.0)
+    spacecraft_dynamics_slow!(du, u, p, t)
+    SimulationModel.SimulationCallbacks._publish_initial_force_outputs!(u, t, p)
+    return nothing
+end
+
+function spacecraft_dynamics_mri_fast!(du::ComponentVector, u::ComponentVector, p, t::Float64)
+    fill!(du, 0.0)
+    spacecraft_dynamics_fast_control!(du, u, p, t)
+    _apply_interlink_rhs!(du, u, p, t)
+    _apply_power_rhs!(du, u, p, t)
+    _apply_data_rhs!(du, u, p, t)
+    return nothing
+end

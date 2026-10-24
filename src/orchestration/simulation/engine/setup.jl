@@ -5,6 +5,7 @@ using LoopVectorization
 using ComponentArrays
 using OrdinaryDiffEq
 using OrdinaryDiffEqHighOrderRK: DP8
+using OrdinaryDiffEqMultirate: MRIGARKERK45a
 using OrdinaryDiffEqSDIRK: KenCarp4, KenCarp47, KenCarp58, NLNewton
 using OrdinaryDiffEqSymplecticRK: KahanLi8
 import SciMLBase

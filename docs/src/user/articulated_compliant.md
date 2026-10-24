@@ -140,7 +140,7 @@ orbit librates at `sqrt(3) n`, which needs the per-body gradient.
 | Route | Support |
 |---|---|
 | Single-RHS first-order solver modes `:tsit5`, `:auto_stiff`, `:rodas5p`, `:dp8` | supported |
-| `:split_imex`, `:multirate`, `:symplectic`, `:gravity_backbone_split` | refused with an `ArgumentError` |
+| `:split_imex`, `:multirate`, `:multirate_mri`, `:symplectic`, `:gravity_backbone_split` | refused with an `ArgumentError` |
 | Serial, `satellite_batch` and per-satellite RHS routes | supported (one workspace per spacecraft) |
 | Flat constellation queue | automatically rerouted to the per-satellite route; forcing `SPACEAGORA_RHS_EXECUTION_MODE=flat` is refused |
 | Process routes and `isolate_state` copies | supported: runtime data is rebuilt from the configuration inside each run |
@@ -231,7 +231,7 @@ Thrust, mass flow and every other effector see the spacecraft mass only.
 | Route | Support |
 |---|---|
 | `:tsit5`, `:auto_stiff`, `:rodas5p`, `:dp8`, rigid or articulated spacecraft | supported |
-| `:split_imex`, `:multirate`, `:symplectic`, `:gravity_backbone_split` | refused with an `ArgumentError` |
+| `:split_imex`, `:multirate`, `:multirate_mri`, `:symplectic`, `:gravity_backbone_split` | refused with an `ArgumentError` |
 | Serial and per-satellite RHS routes, `isolate_state` copies, checkpoint and resume | supported |
 | Flat constellation queue | automatically rerouted to the per-satellite route; forcing `SPACEAGORA_RHS_EXECUTION_MODE=flat` is refused |
 | `orientation_sim=false`, a robot-arm effector on the same spacecraft | refused |

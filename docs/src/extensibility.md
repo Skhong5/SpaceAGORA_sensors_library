@@ -91,6 +91,7 @@ Solver partition contract:
 
 - `split_imex` is the atmosphere-implicit IMEX path
 - `multirate` remains the control-focused split path
+- `multirate_mri` uses a fixed coupled partition: custom dynamic effectors stay slow, and `solver_partition` does not change their MRI placement
 - `gravity_backbone_split` is a fixed-step gravity-backbone split mode with a symplectic gravity core plus explicit SRP / N-body velocity kicks
 - `gravity_backbone_split` remains translational-only; it is not a fully symplectic whole-system solve
 - force returned by `wrench` is inertial-frame and torque is body-frame
