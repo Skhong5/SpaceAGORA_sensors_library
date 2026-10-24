@@ -181,12 +181,12 @@ the recorded revisions. Clone SpaceAGORA to use these commands, or follow a
 companion's standalone installation guide. Merely seeing the folder in a clone
 does not mean the package is installed in the active Julia environment.
 
-### 0.7 candidate companion sources
+### 0.7 companion sources
 
-The 0.7 development checkout pins the following compatibility updates. Their
+The 0.7 checkout pins the following compatibility updates. Their
 package versions remain unchanged; the existing companion release tags do not
 contain the new core-0.7 compatibility metadata. Use the setup commands from
-this checkout so its immutable source pins select the recorded candidate pair.
+this checkout so its immutable source pins select the recorded revisions.
 
 | Companion | Package version | Source revision |
 | --- | --- | --- |

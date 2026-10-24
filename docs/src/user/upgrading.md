@@ -8,7 +8,7 @@ Renamed and retired extension hooks have their own page,
 [Public API and Compatibility](../public_api_policy.md) describes the
 deprecation rules.
 
-## 0.7.0 (unreleased)
+## 0.7.0
 
 ### A GNC model's hooks follow its spacecraft scope
 
@@ -111,7 +111,7 @@ Use `packages/robotics/HYPR.jl` or `packages/robotics/SpaceAGORAMuJoCo.jl` for
 the other companions. The [optional-package commands](installation_environment.md#Optional-package-commands)
 describe source checks and environment ownership.
 
-The [candidate source table](installation_environment.md#0.7-candidate-companion-sources)
+The [companion source table](installation_environment.md#0.7-companion-sources)
 records the exact revisions. Their package versions remain HYPR 0.5.0,
 SpaceAGORAEDG 0.5.1 and SpaceAGORAMuJoCo 0.5.0; the existing tags at those
 versions do not contain the new core-0.7 compatibility metadata. Use the core
