@@ -656,9 +656,12 @@ contact_time_s(history, ((1, 1), (2, 1)); active=true)
 
 A window starts at the first accepted step that has the link and ends at the
 next step that does not, or at the last step: the resolution is the
-scheduler's. A history resumed from a checkpoint covers the resumed interval
-only, so a window that spans the resume is split at it. The results table, unlike
-the history, holds the whole run (see [Outputs](outputs.md)).
+scheduler's. A checkpointed run keeps its history beside its checkpoint, and a
+resumed run takes it back, so a resumed history holds the whole run, as the
+results do (see [Outputs](outputs.md)). If that record is missing or unreadable,
+the run warns and records only the resumed interval. A resume that solves nothing
+returns an empty schedule in that case. Retaining history preserves the earlier
+record; changes in solver steps can still change the later scheduling samples.
 
 ### The link schedule
 
@@ -694,8 +697,11 @@ manifest with the policy and its unit (see the
 [link schedule's columns](output_columns.md#Link-schedule)). The table is not
 thinned with the results rows. A run without interlinks writes none, and
 `link_schedule(results)` returns the table's columns with no rows. Like the
-contact windows, the schedule has the scheduler's resolution and, after a resume,
-covers the resumed interval. With `save_visualization_scene`, the viewer payload
+contact windows, the schedule has the scheduler's resolution. A resumed run
+restores its recorded history from beside the checkpoint, including earlier
+windows. Its metadata and manifest give `history_start_s` and `history_end_s`.
+If the history is unavailable, a warning identifies the missing earlier interval;
+that interval means not recorded, rather than no link. With `save_visualization_scene`, the viewer payload
 carries the schedule's windows, so the viewer can draw each link while it is
 active (see [the viewer page](outputs.md#Interactive-viewer-page)).
 
@@ -818,8 +824,12 @@ in mounting order, and every field of each, such as a receiver's aperture or a
 transmitter's efficiency; a new run is required when those change. Checkpoints
 written by SpaceAGORA 0.4 and earlier still resume, and so do checkpoints written
 with the symbol policies of 0.5, under the typed policy that schedules the same.
-The resumed history covers the resumed interval, while integrated diagnostic
-states continue from the checkpoint and the results table holds the whole run.
+A resumed run takes its interlink history back from beside its checkpoint, as
+its results take back their rows, so its history, schedule and results table
+hold the whole run, and integrated diagnostic states continue from the
+checkpoint. Restoring recorded history requires the same `record_available` and
+`record_terms` settings; changing either is refused before result streams are
+changed. Start a new run to change these settings.
 
 ## Deprecated names
 
@@ -890,7 +900,10 @@ position or attitude need their own checkpoint state restoration. The root
 link's attitude remains part of the integrated spacecraft state.
 
 The schedule is also saved for long-format and checkpoint-streamed results. A
-resume that only finishes interrupted trajectory file writes has no restored
-link history: it preserves any earlier schedule file, but does not list it in
-the recovered manifest or returned files. A resume that advances the simulation
-writes the schedule for its resumed interval, as described above.
+resume that only finishes interrupted trajectory file writes can rebuild its
+schedule from validated checkpoint history. Without that history, it preserves
+any earlier schedule file but does not list it in the recovered manifest or
+returned files. A completed resume that solves nothing returns validated history
+without rewriting files. An unusable history sidecar is preserved under a
+`before_resume_at_<t>s` name immediately before the first replacement checkpoint;
+a resume that fails before then leaves it untouched.
