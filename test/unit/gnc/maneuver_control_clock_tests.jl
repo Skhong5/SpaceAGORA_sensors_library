@@ -152,7 +152,7 @@ plans(trace) = trace[trace.event .== "schedule_set", :]
         @test restored.consumed_command == ctl.consumed_command
         @test restored.consumed_configured == ctl.consumed_configured
         legacy = Base.structdiff(snapshot, NamedTuple{(:version, :consumed_command, :consumed_configured)})
-        @test_throws r"predates control-clock" L.restore_checkpoint_state!(restored, legacy)
+        @test_throws r"BaseThrusterModel.*predates control-clock.*even when no burn was configured" L.restore_checkpoint_state!(restored, legacy)
     end
 end
 # A real burn-plan binding installs consecutive plans between control ticks.

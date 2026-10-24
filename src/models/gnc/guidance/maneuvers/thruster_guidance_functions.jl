@@ -57,10 +57,9 @@ _radius_for_oblate_altitude(target_altitude_m::Float64, u_pp::SVector{3, Float64
     (isfinite(r_a_flight_m) && r_a_flight_m > 0.0 &&
      isfinite(r_a_sim_m) && r_a_sim_m > 0.0) ? clamp(r_a_flight_m / r_a_sim_m, 0.1, 10.0) : 1.0
 
-# The control layer locks the burn plan at the first tick after atmosphere
-# exit (pre-apoapsis), where the osculating apoapsis already equals the
-# post-drag apo radius, so the last command before plan lock carries the
-# correctly scaled Δv.
+# The scheduler accepts the latest scaled command on a control tick when
+# planning conditions permit it, before apoapsis. Once accepted, the campaign keeps that
+# command fixed for its source orbit, including after the burn has completed.
 function _flight_apoapsis_ratio_scale(
     guidanceAlg::AerobrakingCampaignPropulsiveManeuverGuidanceModel,
     maneuver_idx::Int,
@@ -80,6 +79,11 @@ function _flight_apoapsis_ratio_scale(
     return _flight_ratio_scale(Float64(flight[maneuver_idx]), r_a_sim_m)
 end
 
+# Control provides its accepted request through dispatch, without a dependency
+# from guidance on ControlHooks. The scheduler already checkpoints this record,
+# so campaigns need no new serialized state to remember a completed short burn.
+_accepted_campaign_request(::Any, i::Int, orbit::Int) = nothing
+
 # A copy bound to a spacecraft acts on that spacecraft only, also for a direct
 # caller; the engine calls it only there.
 function update_guidance!(guidanceAlg::AerobrakingCampaignPropulsiveManeuverGuidanceModel, u::ComponentVector, p::ODEParams, t::Float64, i::Int64)
@@ -89,6 +93,13 @@ function update_guidance!(guidanceAlg::AerobrakingCampaignPropulsiveManeuverGuid
     end
 
     orbit_counter = p.orbit_counter[i]
+    for control in p.args.control_model.control_effectors
+        accepted = _accepted_campaign_request(control, i, orbit_counter)
+        accepted === nothing && continue
+        p.shared_buffers.maneuver_commands[i] = PropulsiveManeuverCommand(valid=true,
+            delta_v_mps=accepted[1], direction_rad=accepted[2], source_orbit=accepted[3])
+        return nothing
+    end
     maneuver_idx = findfirst(==(orbit_counter), guidanceAlg.maneuver_orbit_number)
 
     # Campaign guidance currently emits at most one burn command per orbit by

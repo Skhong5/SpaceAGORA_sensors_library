@@ -233,8 +233,8 @@ function S.GuidanceHooks.update_guidance!(g::AlgorithmGuidance, u, p, t::Float64
     spacecraft_index == g.spacecraft_index || return nothing
     r = g.runtime
     r === nothing && _fail!(g, :uninitialized)
-    # One tick can arrive through the periodic callback and an event-driven
-    # controller's scheduling pass; only a due event makes a second request.
+    # A periodic tick and an explicit event can reach the same time; only a
+    # due event makes a second request at an already processed guidance time.
     t == r.last_guidance_time && !any(e -> _due(e, r, t), g.events) && return nothing
     t >= r.last_guidance_time || _fail!(g, :nonmonotonic_guidance_time)
     r.last_guidance_time = t

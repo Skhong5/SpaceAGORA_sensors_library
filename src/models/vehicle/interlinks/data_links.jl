@@ -200,7 +200,11 @@ history. Windows are sorted by start time, then key.
 
 The resolution is the scheduler's: the run's accepted steps. A resumed run takes
 its history back from beside its checkpoint, retaining the earlier recorded
-samples and windows. Later adaptive solver steps can still differ. Without usable
+samples and windows. With the same configuration, checkpoint schedule and
+deterministic models whose complete run state is restored, it matches the
+uninterrupted checkpointed history. A run without checkpoints can take different
+adaptive steps and record different
+scheduling samples. Without usable
 history the run warns and records only the resumed interval, where a window open
 there starts; a resume that solves nothing returns an empty schedule instead.
 """
