@@ -396,10 +396,12 @@ bits(x) = reinterpret(UInt64, collect(Float64, x))
             push!(model.history, InterLinkHistory(0.0, [key], InterLinkKey[], [1.0]),
                 InterLinkHistory(10.0, [key], InterLinkKey[], [2.0]))
             log = SE._InterlinkHistoryLog(path, "token", true, 0, nothing, 0, true, 0.0, false)
-            SE._append_interlink_history!(log, model)
+            first_entry = SE._append_interlink_history!(log, model)
+            @test first_entry.sha256 == bytes2hex(sha256(read(path)))
             model.history[end] = InterLinkHistory(10.0, InterLinkKey[], InterLinkKey[], Float64[])
             push!(model.history, InterLinkHistory(20.0, [key], InterLinkKey[], [3.0]))
             entry = SE._append_interlink_history!(log, model)
+            @test entry.sha256 == bytes2hex(sha256(read(path)))
             stream = SM.IOSerialization._read_checkpoint_rows(path, entry.bytes)
             @test entry.samples == 3 && [sample.time for sample in stream.data] == [0.0, 10.0, 20.0]
             @test isempty(stream.data[2].active) && stream.data[3].scores == [3.0]
@@ -414,7 +416,66 @@ bits(x) = reinterpret(UInt64, collect(Float64, x))
             @test occursin("another run", SE._checkpoint_interlink_history(merge(entry, (token="other",)), path, 20.0, model)[2])
             @test SE._checkpoint_interlink_history(nothing, path, 20.0, model)[1] === nothing
             @test SE._checkpoint_interlink_history(merge(entry, (version=1,)), path, 20.0, model)[1] === nothing
+            for malformed in (nothing, missing, "", "a"^63, "z"^64, 123)
+                @test occursin("malformed", SE._checkpoint_interlink_history(
+                    merge(entry, (sha256=malformed,)), path, 20.0, model)[2])
+            end
+            @test occursin("byte length", SE._checkpoint_interlink_history(
+                merge(entry, (bytes=-1,)), path, 20.0, model)[2])
             original = read(path)
+            # Flip a bit in a score, leaving a readable stream of the same size.
+            score_bytes = collect(reinterpret(UInt8, [3.0]))
+            locations = [i for i in 1:(length(original)-7) if original[i:i+7] == score_bytes]
+            @test length(locations) == 1
+            corrupt = copy(original)
+            corrupt[only(locations)] ⊻= 0x01
+            write(path, corrupt)
+            readable = SM.IOSerialization._read_checkpoint_rows(path, entry.bytes)
+            @test readable !== nothing && readable.data[3].scores != [3.0]
+            @test occursin("checksum", SE._checkpoint_interlink_history(entry, path, 20.0, model)[2])
+            settings = (checkpoint_directory=directory, results_directory=directory)
+            fresh_args() = (simulation_settings=settings, interlink_model=InterlinkModel())
+            no_solve = fresh_args()
+            @test_logs (:warn, r"checksum.*This resume solves nothing") SE._start_interlink_history!(
+                no_solve, true, 20.0, entry; solves=false)
+            @test isempty(no_solve.interlink_model.history) && read(path) == corrupt
+            resumed_args = fresh_args()
+            replacement = @test_logs (:warn, r"checksum") SE._start_interlink_history!(resumed_args, true, 20.0, entry)
+            @test replacement.start_s == 20.0 && read(path) == corrupt
+            push!(resumed_args.interlink_model.history, InterLinkHistory(20.0, [key], InterLinkKey[], [3.0]))
+            replaced_entry = SE._append_interlink_history!(replacement, resumed_args.interlink_model)
+            archives = filter(p -> occursin("interlinks.before_resume", p), readdir(directory; join=true))
+            @test length(archives) == 1 && read(only(archives)) == corrupt
+            @test replaced_entry.sha256 == bytes2hex(sha256(read(path)))
+
+            # Legacy metadata retains readable history with an explicit warning;
+            # a subsequent checkpoint protects the retained prefix and new bytes.
+            write(path, original)
+            legacy = Base.structdiff(entry, NamedTuple{(:sha256,)})
+            legacy_args = fresh_args()
+            legacy_log = @test_logs (:warn, r"has no checksum") SE._start_interlink_history!(legacy_args, true, 20.0, legacy)
+            @test length(legacy_args.interlink_model.history) == entry.samples
+            push!(legacy_args.interlink_model.history, InterLinkHistory(30.0, [key], InterLinkKey[], [4.0]))
+            upgraded = SE._append_interlink_history!(legacy_log, legacy_args.interlink_model)
+            @test upgraded.sha256 == bytes2hex(sha256(read(path)))
+            @test SE._checkpoint_interlink_history(upgraded, path, 30.0, legacy_args.interlink_model)[1] !== nothing
+
+            # A no-solve resume keeps a crash tail; a continuing one removes only
+            # that tail and initializes the digest for the next append correctly.
+            write(path, original)
+            open(io -> write(io, "after checkpoint"), path, "a")
+            with_tail = read(path)
+            valid_no_solve = fresh_args()
+            SE._start_interlink_history!(valid_no_solve, true, 20.0, entry; solves=false)
+            @test read(path) == with_tail && length(valid_no_solve.interlink_model.history) == entry.samples
+            valid_resume = fresh_args()
+            resumed_log = SE._start_interlink_history!(valid_resume, true, 20.0, entry)
+            @test read(path) == original
+            push!(valid_resume.interlink_model.history, InterLinkHistory(30.0, [key], InterLinkKey[], [4.0]))
+            continued = SE._append_interlink_history!(resumed_log, valid_resume.interlink_model)
+            @test continued.sha256 == bytes2hex(sha256(read(path)))
+            @test SE._checkpoint_interlink_history(continued, path, 30.0, valid_resume.interlink_model)[1] !== nothing
+            write(path, original)
             open(io -> write(io, "after checkpoint"), path, "a")
             @test all(all(isequal(getfield(a, field), getfield(b, field)) for field in fieldnames(typeof(a))) for (a, b) in zip(
                 SE._checkpoint_interlink_history(entry, path, 20.0, model)[1].data, stream.data))

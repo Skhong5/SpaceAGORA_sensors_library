@@ -656,12 +656,15 @@ contact_time_s(history, ((1, 1), (2, 1)); active=true)
 
 A window starts at the first accepted step that has the link and ends at the
 next step that does not, or at the last step: the resolution is the
-scheduler's. A checkpointed run keeps its history beside its checkpoint, and a
+scheduler's. A checkpointed run keeps its history in
+`simulation_checkpoint.interlinks.bin` beside its checkpoint, and a
 resumed run takes it back, so a resumed history holds the whole run, as the
 results do (see [Outputs](outputs.md)). If that record is missing or unreadable,
 the run warns and records only the resumed interval. A resume that solves nothing
-returns an empty schedule in that case. Retaining history preserves the earlier
-record; changes in solver steps can still change the later scheduling samples.
+returns an empty schedule in that case. With the same configuration, checkpoint
+schedule and deterministic models whose complete run state is restored, resumed
+history matches the uninterrupted checkpointed run. A run without checkpoints
+can take different adaptive steps and record different scheduling samples.
 
 ### The link schedule
 

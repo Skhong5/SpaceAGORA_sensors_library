@@ -8,17 +8,33 @@ Renamed and retired extension hooks have their own page,
 [Public API and Compatibility](../public_api_policy.md) describes the
 deprecation rules.
 
+## Unreleased history integrity correction
+
+New checkpoints include a SHA-256 checksum for the owned prefix of
+`simulation_checkpoint.interlinks.bin`. Resume checks it before reading the
+history. A mismatch warns and falls back to history starting at resume time;
+the original bytes are preserved before the first replacement checkpoint.
+Trailing bytes written after the checkpoint are outside that checksum.
+
+Version 0.7.0 checkpoints have no history checksum. Their readable history is
+still restored with a warning; earlier corruption cannot be detected. The next
+checkpoint adds a checksum over the retained bytes and new history. This does
+not retroactively verify the older record. Checkpoint cleanup also removes the
+active history sidecar, while preserving archived diagnostic copies.
+
 ## 0.7.0
 
 ### Resume retains the recorded interlink history
 
-A checkpoint now preserves earlier recorded link activity in its `.interlinks`
-sidecar. Keep the sidecar with the checkpoint, and retain the same
+A checkpoint now preserves earlier recorded link activity in
+`simulation_checkpoint.interlinks.bin` beside the checkpoint. Keep the sidecar with the checkpoint, and retain the same
 `record_available` and weighted-term recording settings when resuming. A missing
 or unusable sidecar cannot reconstruct earlier activity: the run warns and records
 only the resumed interval. A resume with no integration returns no history when
-that sidecar is unusable. Retaining earlier samples does not guarantee identical
-later adaptive steps. See [Simulation Outputs](outputs.md#Checkpointing).
+that sidecar is unusable. With the same configuration, checkpoint schedule and
+deterministic models whose complete run state is restored, resumed history
+matches the uninterrupted checkpointed run. A run without checkpoints can take different adaptive steps and record
+different scheduling samples. See [Simulation Outputs](outputs.md#Checkpointing).
 
 The checkpoint also saves the previous active matching independently of the
 history sidecar. When using backlog scheduling, older checkpoints without this
