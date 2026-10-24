@@ -46,6 +46,13 @@ Transfers remain subject to runtime flow limits: a full store accepts no more
 than it sends and cannot overfill. A full store with no carried outflow still
 has no room.
 
+Version 0.7.1 retains this scoring rule. Its credit is evaluated separately for
+each incoming candidate and does not subtract the receiver's own production.
+In relay networks, a high-scoring link can displace locally produced data or
+leave a better direct path unused; it does not guarantee greater delivery to
+the final destination. Actual flow limits still apply. See the backlog scoring
+limits in [Interlinks](interlinks.md).
+
 ### Automatic terminals respect directed hardware roles
 
 Automatic interlink registration now selects hardware that supports the requested
