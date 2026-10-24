@@ -491,6 +491,12 @@ interrupted saves it. A resume from a checkpoint at or past the mission's end
 solves nothing and writes no results files; its returned table holds the rows up
 to the checkpoint, or none when the checkpoint holds no usable rows.
 
+The checkpoint also retains the previous active interlink matching independently
+of the history sidecar, so a full receiving store keeps its carried-outflow credit
+when scheduling resumes. Availability is checked again at the checkpoint time.
+With backlog scheduling, older checkpoints without that matching warn and begin
+with zero receiver-outflow credit.
+
 The rows file stays with the checkpoint files after the run; a later run in the
 same checkpoint directory that is not a resume replaces it. It holds every row the
 run saves, before any thinning, so it grows with the run, to about the size of the

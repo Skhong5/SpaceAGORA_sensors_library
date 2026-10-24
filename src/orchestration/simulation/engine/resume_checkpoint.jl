@@ -400,6 +400,10 @@ function _interlink_checkpoint_runtime_state(args, is_active)
         version=2,
         configuration=_interlink_checkpoint_configuration(args),
         is_active=Vector{Bool}(is_active),
+        # Scheduling now uses the previous matching for receiver-outflow credit.
+        # Keep it independently of the optional/recoverable history sidecar.
+        active_links=sort!([key for (key, edge) in args.interlink_model.graph.edge_index_lookup
+            if args.interlink_model.graph.active[edge]]),
     ),)
 end
 
@@ -446,7 +450,25 @@ function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
     (hasproperty(checkpoint.u, :gs) ? length(checkpoint.u.gs) : 0) == stations ||
         throw(ArgumentError("Interlink checkpoint state must hold one data counter pair per ground station " *
             "($(stations) in this run)."))
+    graph = args.interlink_model.graph
+    restored_active = falses(length(graph.active))
+    if hasproperty(snapshot, :active_links)
+        selected = snapshot.active_links
+        selected isa AbstractVector && allunique(selected) &&
+            all(key -> haskey(graph.edge_index_lookup, key), selected) ||
+            throw(ArgumentError("Checkpoint active interlinks must be distinct candidates in the restored topology."))
+        allunique(collect(Iterators.flatten(selected))) || throw(ArgumentError(
+            "Checkpoint active interlinks must not share terminals."))
+        for key in selected
+            restored_active[graph.edge_index_lookup[key]] = true
+        end
+    elseif SimulationModel.SchedulingPolicies._uses_backlog_outflow(args.scheduling_policy_model.objective)
+        @warn "Checkpoint has no previous active interlink matching; receiver-outflow credit starts at zero."
+    end
+    # Availability is refreshed at the checkpoint's time before scoring; the
+    # old matching never grants credit for a link that is now unavailable.
     copyto!(is_active, snapshot.is_active)
+    copyto!(graph.active, restored_active)
     return nothing
 end
 

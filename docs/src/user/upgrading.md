@@ -10,6 +10,26 @@ deprecation rules.
 
 ## 0.7.0
 
+### Resume retains the recorded interlink history
+
+A checkpoint now preserves earlier recorded link activity in its `.interlinks`
+sidecar. Keep the sidecar with the checkpoint, and retain the same
+`record_available` and weighted-term recording settings when resuming. A missing
+or unusable sidecar cannot reconstruct earlier activity: the run warns and records
+only the resumed interval. A resume with no integration returns no history when
+that sidecar is unusable. Retaining earlier samples does not guarantee identical
+later adaptive steps. See [Simulation Outputs](outputs.md#Checkpointing).
+
+The checkpoint also saves the previous active matching independently of the
+history sidecar. When using backlog scheduling, older checkpoints without this
+matching warn and begin with zero receiver-outflow credit.
+
+Backlog scheduling now counts a full receiving store's carried outflow as room
+for incoming data, using the links already active when scheduling begins.
+Transfers remain subject to runtime flow limits: a full store accepts no more
+than it sends and cannot overfill. A full store with no carried outflow still
+has no room.
+
 ### Maneuver requests follow the control schedule
 
 `BaseThrusterModel` processes new maneuver requests at its configured
@@ -159,8 +179,9 @@ describes the tables, reserved columns and checkpoint streams.
 
 ### Resume checkpoints with the matching release or newer
 
-Resume a checkpoint written by SpaceAGORA 0.6.1 with 0.6.1 or later, using the
-Julia version that wrote it. Earlier SpaceAGORA versions can silently ignore
+Resume a checkpoint written by SpaceAGORA 0.6.1 with 0.6.1 or a compatible
+later version, using the Julia version that wrote it. The 0.7.0 burn-scheduler
+change described above explicitly refuses older scheduler checkpoints. Earlier SpaceAGORA versions can silently ignore
 the restored maneuver, orbit and atmosphere-entry state and resume with their
 older counting behavior; loading the file does not establish compatibility.
 
