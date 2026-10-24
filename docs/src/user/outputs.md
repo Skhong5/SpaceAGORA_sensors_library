@@ -252,9 +252,11 @@ For a run with interlinks, the sidecar names the run's link schedule, and the
 exported payload carries its windows (an `interlinks` block, checked against the
 results manifest): a renderer that draws them shows each link while it is active.
 They share `data_budget_mb` with the trajectory, and `interlinks=false` leaves
-them out.
+them out. Older saved ground-station scenes may lack station geometry; exporting
+their links is refused because their endpoints cannot be placed. Pass
+`interlinks=false` to export those scenes' trajectories without links.
 The [Interactive Visualization](visualization.md) page covers the options,
-ensembles and textures; [the independent renderer guide](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl/blob/75b32bc610e3227035810a4c8e12a515106c5a62/viewer/README.md) documents the controls and how to
+ensembles and textures; [the independent renderer guide](https://github.com/Space-FALCON-Lab/SpaceAGORAVisualizer.jl/blob/76f9037edb61e19e7314eb4db9bb7772a42f2ddc/viewer/README.md) documents the controls and how to
 develop the viewer itself.
 
 ## Loading results in Julia
