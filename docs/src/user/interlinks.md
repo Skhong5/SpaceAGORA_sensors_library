@@ -222,6 +222,11 @@ register_link!(model, spacecraft, (1, terminal_1), (2, terminal_2), link)
   the torque of the terminal's lever arm, as the terminal's own recoil would.
   The default, `:central`, applies the force with no torque.
 
+The solver does not locate occultation or field-of-regard boundary crossings
+as events. Link availability and selection are recomputed at each accepted step;
+a crossing between steps is not resolved at its exact time. Check timestep
+convergence when these boundaries matter for your case.
+
 Pointing and mounted recoil need terminal hardware at both ends (a
 `LaserTerminal` carries a `LaserBeamLink`), and attitude (`orientation_sim=true`).
 `register_link!` refuses a virtual terminal for them, and a run without attitude
@@ -404,13 +409,18 @@ add_data!(sc, bus, DataSource(rate_bps=2e5))                          # any link
   that integrates the full right-hand side.
 - **Scheduling by backlog.** `DataBacklogPolicy(; horizon_s)` scores a data
   link by what it could move in the next `horizon_s` seconds,
-  `min(c, stored_tx / horizon_s + production_tx, room_rx / horizon_s)` in bit/s,
+  `min(c, stored_tx / horizon_s + production_tx, room_rx / horizon_s + outflow_rx)` in bit/s,
   with `c` the link's rate and `production_tx` the transmitter's current source
-  production rate. It samples production at the current state and time and
+  production rate. `outflow_rx` is the receiver's currently carried outgoing
+  rate, sampled once from previously active links that remain available at the
+  scheduling step, before choosing the new matching. It uses the runtime flow
+  caps; it does not assume links in the new matching will be active. This is a
+  scoring estimate only: actual transfers still obey the store's flow limits.
+  It samples production at the current state and time and
   estimates that rate continuing over the horizon; it does not predict future
   source changes or incoming relay traffic. An empty sender that is still
   producing can keep its link active. A sender with neither stored data nor
-  production, or a receiver with no room, scores zero. A transmitter
+  production, or a receiver with neither free space nor outflow, scores zero. A transmitter
   without a store counts as always holding data, and a receiver without one as
   always having room. It shares `DataThroughputPolicy`'s unit, so the two mix in
   a `WeightedPolicy` without rescaling. A policy of your own reads the stores
@@ -526,7 +536,7 @@ scheduler, which also holds the matching workspace:
 | `EccentricityRatePolicy(; targets=1)` | the rate at which its force raises its target's eccentricity, `ê·ė` | 1/s |
 | `PowerDeliveryPolicy()` | the electrical power it would deliver to the receiver's bus, `link_received_power_w` | W |
 | `DataThroughputPolicy()` | the data rate it would carry, `link_data_rate_bps` | bit/s |
-| `DataBacklogPolicy(; horizon_s)` | the data it could move in the next `horizon_s`: the least of its rate, the transmitter's stored data over `horizon_s` plus its current production rate, and the room in the receiver's store over `horizon_s` | bit/s |
+| `DataBacklogPolicy(; horizon_s)` | the data it could move in the next `horizon_s`: the least of its rate, the transmitter's stored data over `horizon_s` plus its current production rate, and the receiver's free space over `horizon_s` plus current carried outflow | bit/s |
 | `EnergyBalancingPolicy()` | the power it would deliver times the state-of-charge gap from sender to receiver, `P × (s_tx − s_rx)` | W |
 | `WeightedPolicy(terms...)` | `Σ weight × (score / scale)` over its terms | 1 |
 
@@ -646,9 +656,12 @@ contact_time_s(history, ((1, 1), (2, 1)); active=true)
 
 A window starts at the first accepted step that has the link and ends at the
 next step that does not, or at the last step: the resolution is the
-scheduler's. A history resumed from a checkpoint covers the resumed interval
-only, so a window that spans the resume is split at it. The results table, unlike
-the history, holds the whole run (see [Outputs](outputs.md)).
+scheduler's. A checkpointed run keeps its history beside its checkpoint, and a
+resumed run takes it back, so a resumed history holds the whole run, as the
+results do (see [Outputs](outputs.md)). If that record is missing or unreadable,
+the run warns and records only the resumed interval. A resume that solves nothing
+returns an empty schedule in that case. Retaining history preserves the earlier
+record; changes in solver steps can still change the later scheduling samples.
 
 ### The link schedule
 
@@ -684,8 +697,11 @@ manifest with the policy and its unit (see the
 [link schedule's columns](output_columns.md#Link-schedule)). The table is not
 thinned with the results rows. A run without interlinks writes none, and
 `link_schedule(results)` returns the table's columns with no rows. Like the
-contact windows, the schedule has the scheduler's resolution and, after a resume,
-covers the resumed interval. With `save_visualization_scene`, the viewer payload
+contact windows, the schedule has the scheduler's resolution. A resumed run
+restores its recorded history from beside the checkpoint, including earlier
+windows. Its metadata and manifest give `history_start_s` and `history_end_s`.
+If the history is unavailable, a warning identifies the missing earlier interval;
+that interval means not recorded, rather than no link. With `save_visualization_scene`, the viewer payload
 carries the schedule's windows, so the viewer can draw each link while it is
 active (see [the viewer page](outputs.md#Interactive-viewer-page)).
 
@@ -808,8 +824,12 @@ in mounting order, and every field of each, such as a receiver's aperture or a
 transmitter's efficiency; a new run is required when those change. Checkpoints
 written by SpaceAGORA 0.4 and earlier still resume, and so do checkpoints written
 with the symbol policies of 0.5, under the typed policy that schedules the same.
-The resumed history covers the resumed interval, while integrated diagnostic
-states continue from the checkpoint and the results table holds the whole run.
+A resumed run takes its interlink history back from beside its checkpoint, as
+its results take back their rows, so its history, schedule and results table
+hold the whole run, and integrated diagnostic states continue from the
+checkpoint. Restoring recorded history requires the same `record_available` and
+`record_terms` settings; changing either is refused before result streams are
+changed. Start a new run to change these settings.
 
 ## Deprecated names
 
@@ -880,7 +900,10 @@ position or attitude need their own checkpoint state restoration. The root
 link's attitude remains part of the integrated spacecraft state.
 
 The schedule is also saved for long-format and checkpoint-streamed results. A
-resume that only finishes interrupted trajectory file writes has no restored
-link history: it preserves any earlier schedule file, but does not list it in
-the recovered manifest or returned files. A resume that advances the simulation
-writes the schedule for its resumed interval, as described above.
+resume that only finishes interrupted trajectory file writes can rebuild its
+schedule from validated checkpoint history. Without that history, it preserves
+any earlier schedule file but does not list it in the recovered manifest or
+returned files. A completed resume that solves nothing returns validated history
+without rewriting files. An unusable history sidecar is preserved under a
+`before_resume_at_<t>s` name immediately before the first replacement checkpoint;
+a resume that fails before then leaves it untouched.

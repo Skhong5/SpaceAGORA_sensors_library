@@ -96,6 +96,8 @@ end
         _copy_into!(fixture, repo, joinpath("docs", "Project.toml"))
         _copy_into!(fixture, repo, joinpath("test", "Project.toml"))
         _copy_into!(fixture, repo, joinpath("examples", "Project.toml"))
+        _copy_into!(fixture, repo, joinpath("examples", "odyssey_surrogate_env", "Project.toml"))
+        _copy_into!(fixture, repo, joinpath("test", "grid_atmosphere", "Project.toml"))
         _copy_into!(fixture, repo, joinpath("build", "build_sysimage.jl"))
 
         @testset "Project compat gate" begin
@@ -167,6 +169,21 @@ end
                 @test _failed_with(run_gate(), "Missing compat entries in examples/Project.toml: Plots")
             end
             @test isnothing(run_gate().failure)
+
+            # A present bound can still exclude the checkout, including in the
+            # nested smoke environments that the ordinary dependency scan omits.
+            core_version = VersionNumber(project["version"])
+            excluded_bound = "=$(core_version.major + 1).0.0"
+            for relative in ("docs", "test", "examples", "examples/odyssey_surrogate_env", "test/grid_atmosphere")
+                bundled_path = joinpath(fixture, relative, "Project.toml")
+                bundled = TOML.parsefile(bundled_path)
+                bundled["compat"]["SpaceAGORA"] = excluded_bound
+                _with_text(bundled_path, sprint(io -> TOML.print(io, bundled))) do
+                    @test _failed_with(run_gate(),
+                        "$relative/Project.toml excludes checked-out SpaceAGORA $core_version (compat: $excluded_bound)")
+                end
+                @test isnothing(run_gate().failure)
+            end
         end
 
         @testset "Sysimage package lists gate" begin

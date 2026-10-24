@@ -129,13 +129,27 @@ them, as `simulation_results_link_schedule.csv` and `.feather`.
 The scores are in the policy's unit: m/s for `SemimajorAxisRatePolicy`, 1/s for
 `EccentricityRatePolicy`, W for `PowerDeliveryPolicy` and
 `EnergyBalancingPolicy`, bit/s for `DataThroughputPolicy`, and 1 for
-`WeightedPolicy`. `policy`, the run's scheduler or its policy, names the policy
-and the unit in the table's metadata (`policy`, `score_unit`). The spans are
-those of `contact_windows`, at the scheduler's resolution, the run's accepted
-steps; a history resumed from a checkpoint covers the resumed interval only.
+`WeightedPolicy`. The spans are those of `contact_windows`, at the scheduler's
+resolution, the run's accepted steps.
 
-The `results` form reads the configuration that ran; a run without interlinks
-gives an empty table with the same columns.
+The table's metadata:
+- `policy` and `score_unit`, from `policy` (the run's scheduler or its policy);
+- `history_start_s` and `history_end_s`, the times of the history's first and
+  last samples (NaN without samples): the span the schedule covers. A resumed
+  run restores usable history from beside its checkpoint. Without usable history,
+  a continuing run records only the resumed interval; a resume that solves nothing
+  returns an empty schedule;
+- `record_available`, whether the history records the available links, so that
+  no contact row means none was available rather than none was recorded.
+
+With term columns, each `term<k>_start` column's metadata gives its term's
+`policy`, `score_unit`, `weight` and `scale`.
+
+The `results` form reads the configuration that ran. A run without interlinks
+gives an empty table with the same columns. It reads the interlink model as it
+is when called: with `isolate_state=false`, a later run on the same
+configuration refills that model's history, and so changes this table; and a
+resume that solves nothing returns any validated checkpoint history without advancing it.
 """
 function link_schedule(model::SimulationModel.InterlinkModel; policy=nothing)
     history = model.history
@@ -158,6 +172,15 @@ function link_schedule(model::SimulationModel.InterlinkModel; policy=nothing)
     description = _link_schedule_policy(policy)
     metadata!(table, "policy", description.policy; style=:note)
     metadata!(table, "score_unit", description.score_unit; style=:note)
+    metadata!(table, "history_start_s", isempty(history) ? NaN : first(history).time; style=:note)
+    metadata!(table, "history_end_s", isempty(history) ? NaN : last(history).time; style=:note)
+    metadata!(table, "record_available", SimulationModel.InterLinkModels.records_available(model); style=:note)
+    for (k, term) in enumerate(description.terms)
+        k <= term_count || break
+        for (key, value) in pairs(term)
+            colmetadata!(table, "term$(k)_start", String(key), value; style=:note)
+        end
+    end
     return table
 end
 
@@ -226,12 +249,16 @@ function _score_unit(objective)
     return ""
 end
 
-# The link schedule's entry in the results manifest.
+# The link schedule's entry in the results manifest: the policy and its unit, the
+# number of windows, the recording flags, the span the history covers (absent
+# without samples) and, for a weighted mix, its terms.
 function _link_schedule_manifest(table::DataFrame, policy, model)
     description = _link_schedule_policy(policy)
     entry = Dict{String, Any}("policy" => description.policy, "score_unit" => description.score_unit,
         "rows" => nrow(table), "record_available" => SimulationModel.InterLinkModels.records_available(model),
         "record_terms" => model.record_terms)
+    history = model.history
+    isempty(history) || (entry["history_start_s"] = first(history).time; entry["history_end_s"] = last(history).time)
     isempty(description.terms) || (entry["terms"] = [Dict{String, Any}(String(name) => value
         for (name, value) in pairs(term)) for term in description.terms])
     return entry

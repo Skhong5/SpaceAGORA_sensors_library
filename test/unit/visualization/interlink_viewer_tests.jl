@@ -41,6 +41,7 @@ end
         schedule = hand_schedule()
         block = SV.interlink_payload(schedule, 3)
         @test block["schema"] == 1
+        @test block["history_start_s"] == 0.0 && block["history_end_s"] == 40.0
         @test [link["link"] for link in block["links"]] == [1, 2]
         @test block["links"][1] == Dict("link" => 1, "kind" => "LaserMomentumLink", "directed" => false,
             "a" => 1, "a_terminal" => 1, "b" => 2, "b_terminal" => 1)
@@ -54,11 +55,19 @@ end
         contact = block["contact"]
         @test contact["count"] == 2 && contact["index"] == [0, 1]
         @test decode(contact["start_s"]) == [0.0, 0.0] && decode(contact["end_s"]) == [20.0, 40.0]
-        # Without contact rows the block says so.
-        @test SV.interlink_payload(schedule[schedule.window .== "active", :], 3)["contact"] === nothing
+        # Filtering retains recording metadata: no contacts in a recorded span
+        # differs from a schedule that never recorded contacts.
+        active_only = schedule[schedule.window .== "active", :]
+        @test SV.interlink_payload(active_only, 3)["contact"]["count"] == 0
+        DataFrames.metadata!(active_only, "record_available", false; style=:note)
+        @test SV.interlink_payload(active_only, 3)["contact"] === nothing
         # An empty schedule is an empty block.
         empty_block = SV.interlink_payload(link_schedule(InterlinkModel()), 3)
         @test isempty(empty_block["links"]) && empty_block["active"]["count"] == 0
+        recorded_empty = link_schedule(InterlinkModel(record_available=true))
+        recorded_block = SV.interlink_payload(recorded_empty, 3)
+        @test recorded_block["contact"]["count"] == 0
+        @test recorded_block["history_start_s"] === nothing && recorded_block["history_end_s"] === nothing
         # Spacecraft must exist in the scene, and the columns must be there.
         @test_throws ArgumentError SV.interlink_payload(schedule, 2)
         @test_throws ArgumentError SV.interlink_payload(select(schedule, Not(:end_s)), 3)

@@ -458,9 +458,10 @@ function _save_streamed_results!(args, log, save_fields, times_acc::Vector{Float
             nothing
     end
     _stream_results_rows!(log, times_acc, data_acc, save_fields, args; final=true)
-    # A no-solve recovery can finish trajectory streams, but has no restored
-    # link history. Keep earlier schedule bytes without claiming ownership.
-    schedule_files = write_files ? _save_link_schedule_if_enabled!(args) : nothing
+    # Final-write recovery may regenerate a schedule only from validated history.
+    # Without it, preserve earlier schedule bytes without claiming ownership.
+    has_history = args.interlink_model !== nothing && !isempty(args.interlink_model.history)
+    schedule_files = (write_files || has_history) ? _save_link_schedule_if_enabled!(args) : nothing
     written = _finish_long_stream!((spacecraft=stream.spacecraft, run=stream.bytes[2] > 0 ? stream.run : nothing), args;
         steps=stream.written, first_time_s=isnan(stream.first_s) ? nothing : stream.first_s, resumed_from_s=resumed_from_s,
         link_schedule=schedule_files)
@@ -630,6 +631,7 @@ function _resume_engine_state!(args, p, solver_mode, initial_conditions)
     resumed, model_snapshot, scope_entry = false, nothing, nothing
     pending_ticks = (at_s=NaN, from_s=-Inf, clocks=nothing)
     results_rows = nothing
+    interlink_history = nothing
     if args.simulation_settings.resume_from_checkpoint
         ckpt = _load_checkpoint(args)
         if ckpt === nothing
@@ -658,6 +660,7 @@ function _resume_engine_state!(args, p, solver_mode, initial_conditions)
             model_snapshot = _check_model_checkpoint_state(args, ckpt)
             pending_ticks = _pending_periodic_ticks(ckpt)
             results_rows = _results_rows_checkpoint_state(ckpt)
+            interlink_history = _interlink_history_checkpoint_state(ckpt)
             resumed = true
             t_start = ckpt.t
             u_start = _resumed_checkpoint_state(args, ckpt.u)
@@ -668,7 +671,7 @@ function _resume_engine_state!(args, p, solver_mode, initial_conditions)
             end
         end
     end
-    return (; resumed, model_snapshot, scope_entry, pending_ticks, t_start, u_start, results_rows)
+    return (; resumed, model_snapshot, scope_entry, pending_ticks, t_start, u_start, results_rows, interlink_history)
 end
 
 # Phase 2, the run clock of the periodic navigation, guidance and control ticks
@@ -951,8 +954,9 @@ function run_simulation(
         solver_mode=solver_mode
     ) # Get the callbacks based on the number of satellites and the dynamic effectors being used in the simulation
     if args.interlink_model !== nothing
-        callbacks = CallbackSet(SimulationModel.SimulationCallbacks.interlink_scheduler_initialization(), callbacks,
-            SimulationModel.interlink_scheduler_callback())
+        initialization_active = Ref(copy(args.interlink_model.graph.active))
+        callbacks = CallbackSet(SimulationModel.SimulationCallbacks.interlink_scheduler_initialization(; initialization_active), callbacks,
+            SimulationModel.interlink_scheduler_callback(; initialization_active))
     end
     # Last, after every wrapper: building a CallbackSet from another flattens it
     # back into tuples.
@@ -975,7 +979,7 @@ function run_simulation(
 
     # The run's start, in three phases (defined above): a resumed run's engine and
     # callback state, the run clock, then the models.
-    (; resumed, model_snapshot, scope_entry, pending_ticks, t_start, u_start, results_rows) =
+    (; resumed, model_snapshot, scope_entry, pending_ticks, t_start, u_start, results_rows, interlink_history) =
         _resume_engine_state!(args, p, solver_mode, initial_conditions)
 
 
@@ -1206,6 +1210,10 @@ function run_simulation(
     # The backbone's rows come from the solution, which has no row of its own there.
     retake_last_row = resumed && t_start < mission_end && solver_mode != :gravity_backbone_split &&
         pending_ticks.clocks !== nothing && !isempty(pending_ticks.clocks)
+    # Likewise the interlink history, so that a resumed run's link schedule holds
+    # the whole run (see `_start_interlink_history!`).
+    history_log = checkpoint_active ? _start_interlink_history!(args, resumed, t_start, interlink_history;
+        solves=t_start < mission_end) : nothing
     rows_log = checkpoint_active ? _start_results_rows!(args, rows_recorded, save_fields_resolved, resumed, t_start,
         results_rows, checkpoint_saved_times, checkpoint_saved_data; solves=t_start < mission_end,
         returns_table=return_results, retake_last_row) : nothing
@@ -1272,10 +1280,11 @@ function run_simulation(
             _stream_results_rows!(rows_log, checkpoint_saved_times, checkpoint_saved_data, save_fields_resolved,
                 results_args)
             rows_entry = _append_results_rows!(rows_log, checkpoint_saved_times, checkpoint_saved_data)
+            history_entry = _append_interlink_history!(history_log, args.interlink_model)
             _write_checkpoint!(args, t_cursor, u_cursor, string(solver_mode); is_active=p.is_active,
                 callback_state=_callback_checkpoint_state(args), model_state=_model_checkpoint_state(args),
                 periodic_ticks=_periodic_tick_checkpoint_state(p, t_cursor), gnc_scopes=gnc_scopes,
-                results_rows=rows_entry, maneuver_buffers=_maneuver_buffer_checkpoint_state(p),
+                results_rows=rows_entry, interlink_history=history_entry, maneuver_buffers=_maneuver_buffer_checkpoint_state(p),
                 orbits=_orbit_counter_checkpoint_state(p), entries=_entry_counter_checkpoint_state(p))
             checkpoint_written = true
             if string(seg_sol.retcode) != "Success" || !_gravity_backbone_time_reached(t_cursor, t_next)
@@ -1380,7 +1389,7 @@ function run_simulation(
         end
         if checkpoint_written
             ck = SimulationModel.IOConfig._checkpoint_paths(args)
-            push!(candidates, ck.data, ck.manifest, ck.rows)
+            push!(candidates, ck.data, ck.manifest, ck.rows, ck.interlinks)
             rows_log !== nothing && rows_log.stream !== nothing && push!(candidates, ck.stream_spacecraft, ck.stream_run)
         end
         files = String[string(f) for f in candidates if f !== nothing && isfile(f)]

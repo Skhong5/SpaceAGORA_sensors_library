@@ -181,6 +181,24 @@ the recorded revisions. Clone SpaceAGORA to use these commands, or follow a
 companion's standalone installation guide. Merely seeing the folder in a clone
 does not mean the package is installed in the active Julia environment.
 
+### 0.7 companion sources
+
+The 0.7 checkout pins the following compatibility updates. Their
+package versions remain unchanged; the existing companion release tags do not
+contain the new core-0.7 compatibility metadata. Use the setup commands from
+this checkout so its immutable source pins select the recorded revisions.
+
+| Companion | Package version | Source revision |
+| --- | --- | --- |
+| HYPR | 0.5.0 | [`2816df11`](https://github.com/Space-FALCON-Lab/HYPR.jl/commit/2816df11c86206cc348ec2c4f82732f958f18ad2) |
+| SpaceAGORAEDG | 0.5.1 | [`424d8aa8`](https://github.com/Space-FALCON-Lab/SpaceAGORAEDG.jl/commit/424d8aa822e4f2d0a710231b86c28a1bc1dfd636) |
+| SpaceAGORAMuJoCo | 0.5.0 | [`7b5a0031`](https://github.com/Space-FALCON-Lab/SpaceAGORAMuJoCo.jl/commit/7b5a00318f6883d7cdc7c7e7c0c18830f96ce57f) |
+
+The companions' own default core pins still identify their existing 0.6
+verification pairs. Core's optional-package jobs exercise the source revisions
+above against this checkout; a broad package compatibility range alone does not
+qualify every revision in that range.
+
 ### Optional HYPR planner
 
 HYPR lives at `packages/robotics/HYPR.jl` and supports RPO and robot-arm planning.

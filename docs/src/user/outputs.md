@@ -36,8 +36,18 @@ output/
 A run with interlinks also writes its link schedule,
 `simulation_results_link_schedule.csv` and
 `simulation_results_link_schedule.feather` (see
-[the link schedule's columns](output_columns.md#Link-schedule)); the manifest lists
-both and records the scheduling policy and its score unit under `[interlinks]`.
+[the link schedule's columns](output_columns.md#Link-schedule)). The manifest lists
+both under `[files]`, and describes the schedule under `[interlinks]`:
+
+- `policy` and `score_unit`: the scheduling policy's type and its score's unit;
+- `rows`: the schedule's number of rows;
+- `record_available` and `record_terms`: whether the history recorded the
+  available links (the contact rows) and a weighted policy's term scores;
+- `history_start_s` and `history_end_s`: the times of the interlink history's
+  first and last samples, the span the schedule covers (absent when it has no
+  samples);
+- `terms`, for a `WeightedPolicy`: each top-level term's `policy`, `score_unit`,
+  `weight` and `scale`, in the order of the `term<k>_start` columns.
 
 Set `simulation_settings.save_csv = false` to save the Feather file and manifest
 without writing a CSV. A CSV left by an earlier run is preserved, but is not
@@ -464,11 +474,28 @@ resumed run takes those rows back first. Its results files, its manifest
 checkpointed at the same times and never interrupted, including after a crash,
 whose partial results the resumed run completes. Rows written after the last
 checkpoint by a run that crashed are dropped, since the resumed run computes them
-again. A run extended from the end of a finished run takes the ticks due there
+again. The link schedule holds the whole run too: a checkpointed run with
+interlinks keeps its interlink history beside its checkpoint, in
+`simulation_checkpoint.interlinks.bin`, and a resumed run takes it back first,
+so its schedule retains the earlier recorded windows. Later scheduling samples
+can still differ when adaptive solver steps change. A checkpoint that
+holds no record of that history (written before SpaceAGORA kept it), or whose
+history file is missing or another run's, resumes with a warning: its schedule
+then covers the resumed interval only, and its `[interlinks].history_start_s` is
+the resume's time, `resumed_from_s`. If it solves nothing, its schedule is empty
+instead. Changing `record_available` or `record_terms` from the checkpoint's
+recording settings is refused before changing result streams, including when the
+history sidecar is missing. A run extended from the end of a finished run takes the ticks due there
 first (see above), and saves the row at that time again after them, as a run never
 interrupted saves it. A resume from a checkpoint at or past the mission's end
 solves nothing and writes no results files; its returned table holds the rows up
 to the checkpoint, or none when the checkpoint holds no usable rows.
+
+The checkpoint also retains the previous active interlink matching independently
+of the history sidecar, so a full receiving store keeps its carried-outflow credit
+when scheduling resumes. Availability is checked again at the checkpoint time.
+With backlog scheduling, older checkpoints without that matching warn and begin
+with zero receiver-outflow credit.
 
 The rows file stays with the checkpoint files after the run; a later run in the
 same checkpoint directory that is not a resume replaces it. It holds every row the
@@ -518,13 +545,23 @@ the file through `checkpoint_state` (see
 [Run state in checkpoint files](../extensibility.md#Run-state-in-checkpoint-files));
 without it, a resumed run starts that state from its reset.
 
-A run with the burn scheduler (`BaseThrusterModel`) also records, when one is
-set, the maneuver command each spacecraft's maneuver guidance last issued and the
-burn plan installed for it. A command issued before the checkpoint and not yet
-planned, or a plan not yet flown, is then planned and flown in the resumed run as
-in a run never interrupted. A checkpoint written by an earlier SpaceAGORA
-holds no such record, and a run resumed from it starts with no command or plan
-waiting, as before.
+A run with the burn scheduler (`BaseThrusterModel`) also records the latest
+maneuver commands, accepted burn plans and which requests have been consumed.
+New requests are processed on the configured control schedule, after guidance due
+at the same time. A checkpoint segment or atmosphere exit does not re-plan an
+accepted burn. The resumed run preserves its window and takes any pending control
+tick once; the same accepted request is not flown again after completion.
+
+Guidance requests are identified by their Δv, direction and source orbit. A new
+source orbit permits a new request even when its Δv is unchanged. A configured
+Δv is consumed once unless changed. An explicit `BurnPlanFamily` installation
+supplies its own window; the engine registers its boundaries after guidance, even
+between control ticks. These plans remain separate from ordinary requests.
+
+Burn-scheduler checkpoints written before this control-clock policy are refused:
+their pending clock positions and consumed requests cannot be inferred safely.
+Resume those checkpoints with the SpaceAGORA version that wrote them, or start a
+new run. The refusal occurs before result streams are changed.
 
 The checkpoint also records the orbit each spacecraft is on, once one is past its
 first, so a resumed run continues the count: a `MissionOrbits` run ends after the
@@ -619,3 +656,13 @@ Explicit `save_fields` use their supplied getters, including a custom getter
 with a built-in field name. Additional default fields without a specialized
 array filler also retain their getters. Timing improvements depend on the run
 and should be measured before adopting this recorder for a campaign.
+
+### Backlog scheduling and stored data
+
+`DataBacklogPolicy` scores a candidate with
+`min(link_rate, held/horizon + current_production, free_space/horizon + current_outflow)`.
+Receiver outflow is sampled before the new selection, from already-active links
+that remain available, with the runtime's carried-rate caps. It is an estimate
+for scoring; the data-flow calculation still prevents stores from overfilling.
+The saved transfer-rate and stored/lost-bit columns report actual carried flows,
+not this estimated score. A full store with no outflow still scores zero room.

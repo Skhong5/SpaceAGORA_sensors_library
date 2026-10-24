@@ -20,9 +20,9 @@ campaign(orbits, Δv) = SM.AerobrakingCampaignPropulsiveManeuverGuidanceModel(ma
 # Three spacecraft on 400 km by 2000 km orbits with one burn scheduler for all of
 # them, and guidance at configuration level (`shared`) or declared on each
 # spacecraft (`declared[k]` on spacecraft k), at a 30 s rate. The scheduler plans
-# when the run starts and at each atmosphere exit, after its guidance pass: a
-# periapsis raise plans from inside its window before apoapsis (`:raise` starts
-# the spacecraft there), a campaign maneuver from the exits of an interface above
+# at its control ticks after due guidance: a periapsis raise plans from inside
+# its window before apoapsis (`:raise` starts
+# the spacecraft there), a campaign maneuver after exits of an interface above
 # the periapsis (`:campaign`; no atmosphere, so no drag).
 function maneuver_args(scenario::Symbol=:raise; shared=(), declared=((), (), ()), mission_time=14000.0, settings=(;))
     sats = map(1:3) do k

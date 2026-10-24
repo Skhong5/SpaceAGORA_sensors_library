@@ -357,8 +357,16 @@ It has one row per window, sorted by `start_s`, active rows first, then by key:
 
 The policy's unit is m/s for `SemimajorAxisRatePolicy`, 1/s for
 `EccentricityRatePolicy`, W for `PowerDeliveryPolicy` and `EnergyBalancingPolicy`,
-bit/s for `DataThroughputPolicy` and 1 for `WeightedPolicy`. The results manifest
-names the policy and the unit under `[interlinks]`.
+bit/s for `DataThroughputPolicy` and `DataBacklogPolicy`, and 1 for `WeightedPolicy`. The results manifest
+names the policy and the unit under `[interlinks]` (see
+[Outputs](outputs.md) for its keys).
+
+The schedule's resolution is the scheduler's: the run's accepted steps, so a
+window's ends are accurate to one step. It covers the interlink history's span,
+`history_start_s` to `history_end_s` in `[interlinks]` and in the table's
+metadata. A resumed run restores usable history kept beside its checkpoint.
+Without usable history, a continuing run records only its resumed interval;
+a resume that solves nothing returns an empty schedule.
 
 ### Actuator faults
 

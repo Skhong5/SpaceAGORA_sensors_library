@@ -560,14 +560,17 @@ end
                     LaserBeamLink(; power_w=40.0, magnification=100.0, range_m=200e3, options..., changes...))
                 (spacecraft, model)
             end
-            run_simulation(run_args(pair()...; duration=30.0, settings=segments(false)))
+            partial = run_simulation(run_args(pair()...; duration=30.0, settings=segments(false)); return_solution=true)
             for change in ((beam=GaussianBeam(waist_radius_m=0.05, aperture_radius_m=0.09),),
                            (beam=ConstantBeam(0.5),), (occultation=(; min_ray_altitude_m=1e3),), (occultation=false,))
                 @test_throws ArgumentError run_simulation(run_args(pair(; change...)...; duration=60.0, settings=segments(true)))
             end
             resumed = run_simulation(run_args(pair()...; duration=60.0, settings=segments(true)); return_solution=true)
             history = resumed.prob.p.args.interlink_model.history
-            @test first(history).time == 30.0 && last(history).time == 60.0     # it resumed at 30 s
+            @test first(history).time == 0.0 && last(history).time == 60.0
+            @test count(sample -> sample.time == 30.0, history) == 1
+            prefix(h) = [(s.time, s.active, s.available, s.scores, s.terms) for s in h if s.time < 30.0]
+            @test prefix(history) == prefix(partial.prob.p.args.interlink_model.history)
         end
     end
 
@@ -607,7 +610,12 @@ end
                         attitude=SVector(0.0, 0.0, sin(0.1), cos(0.1))))
                 end
                 resumed = run_simulation(args(; resume=true, duration=5.0); return_solution=true)
-                @test first(resumed.prob.p.args.interlink_model.history).time == 3.0
+                history = resumed.prob.p.args.interlink_model.history
+                @test first(history).time == 0.0
+                @test last(history).time == 5.0
+                @test count(sample -> sample.time == 3.0, history) == 1
+                prefix(h) = [(s.time, s.active, s.available, s.scores, s.terms) for s in h if s.time < 3.0]
+                @test prefix(history) == prefix(partial.prob.p.args.interlink_model.history)
                 @test last(resumed.t) == 5.0
                 if hinged
                     saved_sc = resumed.prob.p.args.dynamics_model.spacecraft[1]

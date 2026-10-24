@@ -14,7 +14,9 @@
 # - `periodic_ticks`: the periodic ticks not yet taken at the checkpoint's time,
 #   which a resumed run takes at its start (`_start_run_clock!`);
 # - `results_rows`: how much of the results rows kept beside the checkpoint
-#   belongs to it, read before the run's first segment (`_start_results_rows!`).
+#   belongs to it, read before the run's first segment (`_start_results_rows!`);
+# - `interlink_history`: likewise, how much of the interlink history kept beside
+#   the checkpoint belongs to it (`_start_interlink_history!`).
 #
 # The definitions below follow that order, then the segment ends and the file.
 
@@ -398,6 +400,10 @@ function _interlink_checkpoint_runtime_state(args, is_active)
         version=2,
         configuration=_interlink_checkpoint_configuration(args),
         is_active=Vector{Bool}(is_active),
+        # Scheduling now uses the previous matching for receiver-outflow credit.
+        # Keep it independently of the optional/recoverable history sidecar.
+        active_links=sort!([key for (key, edge) in args.interlink_model.graph.edge_index_lookup
+            if args.interlink_model.graph.active[edge]]),
     ),)
 end
 
@@ -444,7 +450,25 @@ function _restore_interlink_checkpoint_state!(args, checkpoint, is_active)
     (hasproperty(checkpoint.u, :gs) ? length(checkpoint.u.gs) : 0) == stations ||
         throw(ArgumentError("Interlink checkpoint state must hold one data counter pair per ground station " *
             "($(stations) in this run)."))
+    graph = args.interlink_model.graph
+    restored_active = falses(length(graph.active))
+    if hasproperty(snapshot, :active_links)
+        selected = snapshot.active_links
+        selected isa AbstractVector && allunique(selected) &&
+            all(key -> haskey(graph.edge_index_lookup, key), selected) ||
+            throw(ArgumentError("Checkpoint active interlinks must be distinct candidates in the restored topology."))
+        allunique(collect(Iterators.flatten(selected))) || throw(ArgumentError(
+            "Checkpoint active interlinks must not share terminals."))
+        for key in selected
+            restored_active[graph.edge_index_lookup[key]] = true
+        end
+    elseif SimulationModel.SchedulingPolicies._uses_backlog_outflow(args.scheduling_policy_model.objective)
+        @warn "Checkpoint has no previous active interlink matching; receiver-outflow credit starts at zero."
+    end
+    # Availability is refreshed at the checkpoint's time before scoring; the
+    # old matching never grants credit for a link that is now unavailable.
     copyto!(is_active, snapshot.is_active)
+    copyto!(graph.active, restored_active)
     return nothing
 end
 
@@ -1279,6 +1303,114 @@ function _append_results_rows!(log::_ResultsRowsLog, times_acc::Vector{Float64},
         written=stream.written, first_s=stream.first_s)))
 end
 
+# The interlink history kept beside the checkpoint, so that a resumed run's link
+# schedule, which is built from the history, holds the whole run as its results
+# do. It follows the results rows' stream (`_append_checkpoint_rows!`): a header,
+# then records appended at each checkpoint, each the samples since the last one;
+# a record drops the last sample before it when the scheduler replaced it (a
+# segment, or a resumed run, starts with a sample at the time the last one ended).
+# The checkpoint's `interlink_history` entry records how much of the stream is its
+# own (`bytes`, `samples`), and the stream's `token`. A run without interlinks
+# keeps none and writes no entry.
+mutable struct _InterlinkHistoryLog
+    path::String
+    token::String
+    recording::Bool
+    logged::Int            # the history's samples already in the stream
+    last::Any              # the last of them, to see whether the scheduler replaced it
+    bytes::Int
+    fresh::Bool            # the next append starts a new stream
+    start_s::Float64
+    keep_earlier::Bool
+end
+
+const _INTERLINK_HISTORY_HEADER = (kind=:spaceagora_interlink_history, version=2)
+
+_interlink_recording(model) = (record_available=SimulationModel.InterLinkModels.records_available(model),
+    record_terms=model.record_terms)
+
+function _interlink_history_checkpoint_state(checkpoint)
+    runtime = get(checkpoint, :runtime_state, nothing)
+    return runtime !== nothing && hasproperty(runtime, :interlink_history) ? runtime.interlink_history : nothing
+end
+
+# The history up to the checkpoint at `t`, or `nothing` and the reason it cannot be used.
+function _checkpoint_interlink_history(entry, path::String, t::Float64, model)
+    entry === nothing &&
+        return nothing, "the checkpoint holds no record of it (it was written before SpaceAGORA kept it)"
+    hasproperty(entry, :version) && entry.version === 2 ||
+        return nothing, "the checkpoint's record of it has an unknown version"
+    all(key -> hasproperty(entry, key), (:bytes, :token, :samples, :recording)) ||
+        return nothing, "the checkpoint's history record is incomplete"
+    entry.recording == _interlink_recording(model) || throw(ArgumentError(
+        "Cannot resume interlink history with different record_available or record_terms settings. " *
+        "Restore the checkpoint's recording settings or start a new run."))
+    stream = SimulationModel.IOSerialization._read_checkpoint_rows(path, entry.bytes)
+    stream === nothing && return nothing, "$(path) is missing, shorter than the checkpoint records, or unreadable"
+    hasproperty(stream.header, :token) && stream.header.token == entry.token ||
+        return nothing, "$(path) was written by another run than the checkpoint"
+    Base.structdiff(stream.header, NamedTuple{(:token,)}) ==
+        merge(_INTERLINK_HISTORY_HEADER, (recording=entry.recording,)) ||
+        return nothing, "it was kept in another format"
+    length(stream.data) == entry.samples && !isempty(stream.times) && stream.times[end] == t ||
+        return nothing, "it does not reach the checkpoint's time"
+    return stream, nothing
+end
+
+# Start the run's interlink history: a resumed run takes back the history up to
+# its checkpoint and continues its stream after cutting away anything written
+# after the checkpoint. When it cannot, it warns, and its history, and so its
+# link schedule, starts at the resume (`history_start_s` says so).
+function _start_interlink_history!(args, resumed::Bool, t_start::Float64, entry; solves::Bool=true)::_InterlinkHistoryLog
+    path = _checkpoint_paths(args).interlinks
+    model = args.interlink_model
+    log = _InterlinkHistoryLog(path, _results_rows_token(path), model !== nothing, 0, nothing, 0, true, t_start, resumed && solves)
+    (resumed && model !== nothing) || return log
+    stream, reason = _checkpoint_interlink_history(entry, path, t_start, model)
+    if stream === nothing
+        consequence = solves ? "It covers the resumed interval only, from history_start_s = $(t_start) s." :
+            "This resume solves nothing, so its returned schedule is empty and earlier schedule files are preserved."
+        @warn "The resumed run's link schedule cannot include the windows before its checkpoint at t = $(t_start) s: " *
+              "$(reason). $(consequence)"
+        return log
+    end
+    append!(model.history, stream.data)
+    solves && SimulationModel.IOSerialization._truncate_checkpoint_rows!(path, entry.bytes)
+    log.keep_earlier = false
+    log.token = stream.header.token
+    log.logged = length(model.history)
+    log.last = isempty(model.history) ? nothing : model.history[end]
+    log.bytes = entry.bytes
+    log.fresh = false
+    return log
+end
+
+# At a checkpoint: append the history's samples since the last record, and return
+# the checkpoint's entry; `nothing` for a run without interlinks, which removes a
+# stream an earlier run left.
+function _append_interlink_history!(log::_InterlinkHistoryLog, model)
+    if log.keep_earlier
+        _keep_earlier_rows!(log.path, log.start_s)
+        log.keep_earlier = false
+    end
+    if !log.recording
+        log.fresh && rm(log.path; force=true)
+        log.fresh = false
+        return nothing
+    end
+    history = model.history
+    # A sample the scheduler replaced since it was logged is logged again.
+    drop = log.logged > 0 && log.logged <= length(history) && history[log.logged] !== log.last ? 1 : 0
+    new = (log.logged - drop + 1):length(history)
+    log.bytes = SimulationModel.IOSerialization._append_checkpoint_rows!(log.path,
+        Float64[sample.time for sample in view(history, new)], collect(view(history, new)); drop,
+        header=log.fresh ? merge(_INTERLINK_HISTORY_HEADER, (token=log.token, recording=_interlink_recording(model))) : nothing)
+    log.logged = length(history)
+    log.last = isempty(history) ? nothing : history[end]
+    log.fresh = false
+    return (version=2, samples=log.logged, bytes=log.bytes, token=log.token, recording=_interlink_recording(model))
+end
+
 # Where the run writes its results: its results directory when its rows start at
 # the start of the run, otherwise (a resumed run that could not include the rows
 # before its resume) `resumed_at_<start>s` inside it, so the earlier results are
@@ -1306,7 +1438,7 @@ end
 
 @inline function _write_checkpoint!(args, t::Float64, u_state, solver_mode::String; is_active=nothing, callback_state=nothing,
                                      model_state=nothing, periodic_ticks=nothing, gnc_scopes=nothing,
-                                     results_rows=nothing, maneuver_buffers=nothing, orbits=nothing, entries=nothing)
+                                     results_rows=nothing, interlink_history=nothing, maneuver_buffers=nothing, orbits=nothing, entries=nothing)
     runtime = _interlink_checkpoint_runtime_state(args, is_active)
     if callback_state !== nothing
         runtime = runtime === nothing ? (callbacks=callback_state,) : merge(runtime, (callbacks=callback_state,))
@@ -1340,6 +1472,10 @@ end
     end
     if results_rows !== nothing
         runtime = runtime === nothing ? (results_rows=results_rows,) : merge(runtime, (results_rows=results_rows,))
+    end
+    if interlink_history !== nothing
+        runtime = runtime === nothing ? (interlink_history=interlink_history,) :
+            merge(runtime, (interlink_history=interlink_history,))
     end
     return SimulationModel.IOSerialization._write_checkpoint!(
         args,

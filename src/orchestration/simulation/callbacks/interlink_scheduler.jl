@@ -8,8 +8,8 @@ export interlink_scheduler_callback
 # Update the matching and its recorded history at initialization and accepted steps.
 # The links score by their own `link_force`; `candidate_force` overrides it for
 # callers that pass one (`candidate_force(target, partner, link)`).
-function interlink_scheduler_callback(; candidate_force=nothing)
-	function affect!(integrator)
+function interlink_scheduler_callback(; candidate_force=nothing, initialization_active=nothing)
+	function affect!(integrator; previous_active=nothing)
 		args = integrator.p.args
 		model = args.interlink_model
 		planet = args.environment_model.planet
@@ -17,7 +17,7 @@ function interlink_scheduler_callback(; candidate_force=nothing)
 		# step-end update runs before this callback.
 		selected = schedule_interlinks!(model, args.scheduling_policy_model,
 			args.dynamics_model.spacecraft, integrator.u, planet.μ;
-			candidate_force, is_active=integrator.p.is_active,
+			candidate_force, previous_active, is_active=integrator.p.is_active,
 			context=LinkContext(time_s=Float64(integrator.t), planet=planet),
 			terminal_available=terminal_availability(model, args.dynamics_model.spacecraft))
 		sample = InterLinkHistory(Float64(integrator.t), selected,
@@ -31,7 +31,8 @@ function interlink_scheduler_callback(; candidate_force=nothing)
 		DiffEqBase.derivative_discontinuity!(integrator, true)
 		return nothing
 	end
-	initialize = (callback, state, time, integrator) -> affect!(integrator) # update link graph when the simulation is initialized
+	initialize = (callback, state, time, integrator) -> affect!(integrator;
+		previous_active=initialization_active === nothing ? nothing : initialization_active[]) # update link graph when the simulation is initialized
 	return DiffEqBase.DiscreteCallback((state, time, integrator) -> true, affect!; # update link graph at each accepted simulation step
 		initialize=initialize, save_positions=(false, false))
 end
@@ -50,14 +51,17 @@ end
 # The same scheduling, at initialization only: placed ahead of the run's other
 # callbacks, the first selection is in place before they initialize, so the
 # first saved row already shows what the links draw. The scheduler callback,
-# after the others, repeats it (the same selection) and runs at every step.
-function interlink_scheduler_initialization(; candidate_force=nothing)
-	scheduler = interlink_scheduler_callback(; candidate_force)
+# after the others, repeats it and runs at every step. Both initialization
+# passes score outflow from the matching carried into the segment, so the first
+# pass cannot create new outflow credit for the second.
+function interlink_scheduler_initialization(; candidate_force=nothing, initialization_active=nothing)
+	scheduler = interlink_scheduler_callback(; candidate_force, initialization_active)
 	function initialize(callback, state, time, integrator)
 		# This pass precedes the normal planet-frame callback. A resumed run
 		# starts at its checkpoint time, so stations must already be rotated to
 		# that time before power, saving and other initializers read the selection.
 		p = integrator.p
+		initialization_active === nothing || (initialization_active[] = copy(p.args.interlink_model.graph.active))
 		if has_ground_stations(p.args.interlink_model)
 			p.args.environment_model.planet.L_PI .= _planet_lpi_at(p, Float64(time))
 		end

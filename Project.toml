@@ -1,6 +1,6 @@
 name = "SpaceAGORA"
 uuid = "afbfb69f-5c0b-4832-b760-43725dff8540"
-version = "0.6.1"
+version = "0.7.0"
 authors = ["SpaceAGORA Contributors"]
 
 [deps]
@@ -93,7 +93,7 @@ LinearSolve = "5.18.1"
 LoopVectorization = "0.12"
 OrdinaryDiffEq = "7"
 OrdinaryDiffEqHighOrderRK = "2.2.1"
-OrdinaryDiffEqMultirate = "3.0.3"
+OrdinaryDiffEqMultirate = "~3.0.3"
 OrdinaryDiffEqSDIRK = "2.9.6"
 OrdinaryDiffEqSymplecticRK = "2.2.2"
 OSQP = "0.8"

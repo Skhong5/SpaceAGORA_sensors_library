@@ -8,7 +8,44 @@ Renamed and retired extension hooks have their own page,
 [Public API and Compatibility](../public_api_policy.md) describes the
 deprecation rules.
 
-## 0.7.0 (unreleased)
+## 0.7.0
+
+### Resume retains the recorded interlink history
+
+A checkpoint now preserves earlier recorded link activity in its `.interlinks`
+sidecar. Keep the sidecar with the checkpoint, and retain the same
+`record_available` and weighted-term recording settings when resuming. A missing
+or unusable sidecar cannot reconstruct earlier activity: the run warns and records
+only the resumed interval. A resume with no integration returns no history when
+that sidecar is unusable. Retaining earlier samples does not guarantee identical
+later adaptive steps. See [Simulation Outputs](outputs.md#Checkpointing).
+
+The checkpoint also saves the previous active matching independently of the
+history sidecar. When using backlog scheduling, older checkpoints without this
+matching warn and begin with zero receiver-outflow credit.
+
+Backlog scheduling now counts a full receiving store's carried outflow as room
+for incoming data, using the links already active when scheduling begins.
+Transfers remain subject to runtime flow limits: a full store accepts no more
+than it sends and cannot overfill. A full store with no carried outflow still
+has no room.
+
+### Maneuver requests follow the control schedule
+
+`BaseThrusterModel` processes new maneuver requests at its configured
+`control_rates`, after guidance due at the same time. It no longer calls guidance
+or plans a new burn at solver startup or atmosphere exit. Set the control period
+to the request-processing interval your mission needs. An accepted burn keeps
+its window through checkpoint segments and resume, and is consumed once.
+Explicit `BurnPlanFamily` plans retain their own ignition times, including times
+between control ticks.
+
+A guidance request is identified by its Δv, direction and source orbit; a new
+source orbit permits another request with the same Δv. A configured Δv is used
+once unless changed. Existing burn-scheduler checkpoints lack the consumed-request
+state needed by this policy and are refused before result streams are changed.
+Resume them with the SpaceAGORA version that wrote them, or start a new run.
+See [Checkpoints and resume](outputs.md) for the recorded state and limits.
 
 ### A GNC model's hooks follow its spacecraft scope
 
@@ -88,12 +125,63 @@ standalone pin has moved to `packages/HYPRSource.toml`.
   the documented `HYPRServices` contract. This removal does not narrow that
   service contract.
 
+### Set up the companion sources recorded by the updated core
+
+After updating core, run the optional-package setup again for each companion you
+use (`hypr`, `edg` or `mujoco`), from that core checkout, into a new environment
+outside the source directories. For example:
+
+```text
+julia --startup-file=no scripts/optional_packages.jl setup edg /path/to/edg-07-env
+```
+
+Setup verifies an existing companion checkout and refuses an older or modified
+one; it does not update or reset it. If you already initialized that submodule,
+preserve any local work and update the selected clean checkout to the revision
+recorded by core before setup. For EDG:
+
+```text
+git submodule update --init --checkout -- packages/gnc/SpaceAGORAEDG.jl
+```
+
+Use `packages/robotics/HYPR.jl` or `packages/robotics/SpaceAGORAMuJoCo.jl` for
+the other companions. The [optional-package commands](installation_environment.md#Optional-package-commands)
+describe source checks and environment ownership.
+
+The [companion source table](installation_environment.md#0.7-companion-sources)
+records the exact revisions. Their package versions remain HYPR 0.5.0,
+SpaceAGORAEDG 0.5.1 and SpaceAGORAMuJoCo 0.5.0; the existing tags at those
+versions do not contain the new core-0.7 compatibility metadata. Use the core
+checkout's recorded sources to build its paired environment. A companion's own
+default core pin still identifies its earlier verification pair.
+
+### Research studies moved out of core
+
+Paper and mission campaign scripts moved out of core, so commands using their
+old core paths need updating. The [research repository mapping](studies_benchmarks.md#Research-repositories)
+names the Atmosphere, Parallelization, Mission Reconstructions and RPO projects.
+Use the appropriate project's setup instructions, environment and recorded core
+pin; core's examples environment does not prepare it. These repositories remain
+private, and collaborators or students without access need an invitation.
+Moving a study does not establish scientific equivalence or require changing its
+recorded historical core pin to 0.7.
+
+### Update readers when selecting long output
+
+The default remains `results_layout=:wide`. If you select `:long`, update readers
+for manifest schema 2 and the separate spacecraft and run tables, with their
+new filenames and spacecraft identity columns. Follow the current manifest's
+file list: wide files left by an earlier run in the same directory do not belong
+to the new long-layout result. [Long layout for many spacecraft](outputs.md#Long-layout-for-many-spacecraft)
+describes the tables, reserved columns and checkpoint streams.
+
 ## 0.6.1
 
 ### Resume checkpoints with the matching release or newer
 
-Resume a checkpoint written by SpaceAGORA 0.6.1 with 0.6.1 or later, using the
-Julia version that wrote it. Earlier SpaceAGORA versions can silently ignore
+Resume a checkpoint written by SpaceAGORA 0.6.1 with 0.6.1 or a compatible
+later version, using the Julia version that wrote it. The 0.7.0 burn-scheduler
+change described above explicitly refuses older scheduler checkpoints. Earlier SpaceAGORA versions can silently ignore
 the restored maneuver, orbit and atmosphere-entry state and resume with their
 older counting behavior; loading the file does not establish compatibility.
 

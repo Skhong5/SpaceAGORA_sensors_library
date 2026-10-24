@@ -11,7 +11,13 @@ A burn of `thrust` newtons and specific impulse `Isp` seconds runs between
 `start_burn_time` and `stop_burn_time` (seconds into the run), prograde when
 `direction` is 0 and retrograde when it is π. With a guidance maneuver
 command, or a nonzero `Δv`, the scheduler plans the burn itself, symmetric
-about the next apoapsis, after the spacecraft leaves the atmosphere.
+about the next apoapsis, after the spacecraft leaves the atmosphere. New requests
+are processed on `control_rates`, after guidance due at the same time. A planned
+burn keeps its window until completion, including across checkpoints; solver
+initialization and atmosphere exits do not create or revise plans. Guidance
+requests are identified by `(delta_v_mps, direction_rad, source_orbit)`, so an
+unchanged request is accepted only once. A configured `Δv` is likewise used once
+unless changed; a fresh run resets this record.
 
 `actuation = :ideal` (the default) applies the burn as a force along the
 velocity, whatever the attitude. In both modes the burn switches exactly at
@@ -34,8 +40,17 @@ carries, its command is not finite, the thrust or specific impulse is not
 positive) is not scheduled, and the reason is kept: see
 `burn_plan_rejections`. The scheduler also executes a plan that an
 `AlgorithmGuidance` of the burn-plan family (`BurnPlanFamily`) installs for a
-spacecraft whose own `Δv` is zero and whose window is unset: it takes the
-plan's window, direction, thrust and specific impulse.
+spacecraft: an explicit installation replaces the previous plan and takes its
+window, direction, thrust and specific impulse. For a `BurnPlanFamily` binding,
+configure exactly one `BaseThrusterModel`, set that spacecraft's configured `Δv`
+to zero and leave its window unset, and do not combine it with the scheduler's
+maneuver-guidance models. After setup, explicit installations may replace earlier
+plans, including between control ticks. This is distinct from ordinary maneuver
+requests, which wait for completion of the accepted burn.
+
+Checkpoints written before control-clock request processing are refused for this
+scheduler: their pending clock positions and consumed requests cannot be safely
+inferred. Resume them with the version that wrote them, or start a new run.
 
 During a run the scheduler plans in its `Δv`, `direction`, `start_burn_time` and
 `stop_burn_time` vectors, which show the run's schedule afterwards. Each run
@@ -68,6 +83,11 @@ struct BaseThrusterModel <: AbstractThrusterModel
     # the run (`nothing` before any).
     configured_schedule::Vector{NTuple{4, Float64}}
     written_schedule::Vector{Union{Nothing, NTuple{4, Float64}}}
+    # Accepted requests survive completion and resume. source_orbit separates
+    # equal guidance requests on different orbits; the configured value prevents
+    # an accepted guidance command falling back to the scheduler's own Δv write.
+    consumed_command::Vector{Union{Nothing, Tuple{Float64, Float64, Int64}}}
+    consumed_configured::Vector{Union{Nothing, NTuple{2, Float64}}}
 
     function BaseThrusterModel(
         thrust::Vector{Float64},
@@ -97,7 +117,9 @@ struct BaseThrusterModel <: AbstractThrusterModel
                    Float64(pointing_frequency_rad_s), Float64(pointing_damping),
                    [Float64[] for _ in 1:n], fill((NaN, NaN, 0.0), n), fill(false, n),
                    [BurnPlanRejection[] for _ in 1:n], NTuple{4, Float64}[],
-                   Union{Nothing, NTuple{4, Float64}}[nothing for _ in 1:n])
+                   Union{Nothing, NTuple{4, Float64}}[nothing for _ in 1:n],
+                   Union{Nothing, Tuple{Float64, Float64, Int64}}[nothing for _ in 1:n],
+                   Union{Nothing, NTuple{2, Float64}}[nothing for _ in 1:n])
     end
 end
 

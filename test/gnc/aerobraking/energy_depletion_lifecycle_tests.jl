@@ -330,7 +330,7 @@ end
     @test x.u.sc[1].heat_loads==fill(7.0,3)
 end
 
-@testset "EDG outbound start and real t0 guidance preserve reentry invalidation" begin
+@testset "EDG outbound start and scheduled guidance preserve reentry invalidation" begin
     x=context()
     seed!(x.state); x.state.targeting_active[1]=false
     boundary=x.a.environment_model.planet.Rp_e+x.a.environment_model.EI*1e3
@@ -357,8 +357,12 @@ end
         CB.get_guidance_callbacks(1,a)...,record),1)
     integrator=init(ODEProblem(radial!,x.u,(0.,19.),p),Tsit5();callback=callbacks,
         dtmax=0.25,abstol=1e-8,reltol=1e-10)
-    @test x.state.selected_mode == [:max_energy_depletion] # Real thruster t0 guidance ran.
+    # Thruster initialization must not force guidance outside its defined clock.
+    @test x.state.selected_mode == [:targeting]
     x.state.targeting_switch_s[1]=42.0
+    step!(integrator, 1.0, true)
+    @test integrator.t == 1.0
+    @test x.state.selected_mode == [:max_energy_depletion]
     solve!(integrator)
     @test string(integrator.sol.retcode)=="Success" && integrator.t==19.0
     coast=filter(r->r.t<10.5,records)

@@ -198,9 +198,11 @@ them, only `active=true` finds windows. A window starts at the first step that h
 link and ends at the next step that does not, or at the last step of the
 history. Windows are sorted by start time, then key.
 
-The resolution is the scheduler's: the run's accepted steps. A history resumed
-from a checkpoint covers the resumed interval only, so a window that spans the
-resume is split at it.
+The resolution is the scheduler's: the run's accepted steps. A resumed run takes
+its history back from beside its checkpoint, retaining the earlier recorded
+samples and windows. Later adaptive solver steps can still differ. Without usable
+history the run warns and records only the resumed interval, where a window open
+there starts; a resume that solves nothing returns an empty schedule instead.
 """
 function contact_windows(history; active::Bool=false)
     return NamedTuple{(:key, :start_s, :end_s, :duration_s), Tuple{InterLinkKey, Float64, Float64, Float64}}[

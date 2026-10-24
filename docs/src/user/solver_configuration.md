@@ -257,7 +257,8 @@ satisfy approximately `λ * δt ≤ 2.785` for linear stability. In the selected
 OrdinaryDiffEqMultirate 3.0.3 method, the five stages have equal duration, so
 `δt = outer_step / (5 * multirate_fast_substeps)`. This scalar stability bound
 is not an accuracy target or a general stability test for a nonlinear coupled
-model; use a smaller step and verify convergence.
+model; use a smaller step and verify convergence. The dependency is constrained
+to the 3.0 patch series while this implementation is qualified.
 
 The `multirate_slow_solver` and `multirate_fast_solver` fields configure only the
 original `:multirate` Strang route. They do not change MRI's internal methods or
