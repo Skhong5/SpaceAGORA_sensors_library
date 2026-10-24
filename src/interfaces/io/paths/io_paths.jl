@@ -36,6 +36,7 @@ end
         data=joinpath(ckpt_dir, "simulation_checkpoint.bin"),
         manifest=joinpath(ckpt_dir, "simulation_checkpoint.manifest.toml"),
         rows=joinpath(ckpt_dir, "simulation_checkpoint.results.bin"),
+        interlinks=joinpath(ckpt_dir, "simulation_checkpoint.interlinks.bin"),
         # A long-layout run's streamed results tables (Arrow IPC streams).
         stream_spacecraft=joinpath(ckpt_dir, "simulation_checkpoint.results_spacecraft.arrows"),
         stream_run=joinpath(ckpt_dir, "simulation_checkpoint.results_run.arrows")

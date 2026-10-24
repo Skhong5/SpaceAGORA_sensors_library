@@ -724,7 +724,10 @@ window, in link order, with `link`, `kind`, `directed`, the spacecraft `a` and
 spans over which each link was selected, as `count`, `index` (0-based positions
 in `links`) and Float64 `start_s` and `end_s` on the clock of `frames.t_s`; and
 `contact`, the same for the spans over which a link was available, or `nothing`
-when the run did not record them. A link is drawn at playback time `t` when
+when the run did not record them. `history_start_s` and `history_end_s` give the recorded interval when known;
+times outside it are unknown, not evidence of no links. Valid checkpoint history
+preserves the earlier interval after resume.
+A link is drawn at playback time `t` when
 `start_s <= t < end_s`, and at `t == end_s` when that is its schedule's last time.
 Ground station ends retain their negative node number. Supply `ground_stations`
 from the scene to include their names and planet-fixed positions in meters.
@@ -754,8 +757,15 @@ function interlink_payload(schedule::DataFrame, spacecraft_count::Integer; groun
         "index" => Int[position[schedule.link[row]] for row in rows],
         "start_s" => _float64_base64(Float64[schedule.start_s[row] for row in rows]),
         "end_s" => _float64_base64(Float64[schedule.end_s[row] for row in rows])))
-    block = Dict{String, Any}("schema" => 1, "links" => links, "active" => windows("active"),
-        "contact" => any(==("contact"), schedule.window) ? windows("contact") : nothing)
+    recorded = metadata(schedule, "record_available", nothing)
+    contact = recorded === true ? windows("contact") : recorded === false ? nothing :
+        any(==("contact"), schedule.window) ? windows("contact") : nothing
+    finite_time(key) = begin
+        value = metadata(schedule, key, NaN)
+        value isa Real && isfinite(value) ? Float64(value) : nothing
+    end
+    block = Dict{String, Any}("schema" => 1, "links" => links, "active" => windows("active"), "contact" => contact,
+        "history_start_s" => finite_time("history_start_s"), "history_end_s" => finite_time("history_end_s"))
     isempty(ground_stations) || (block["stations"] = [_scene_dict(station) for station in ground_stations])
     return block
 end
@@ -1071,7 +1081,8 @@ function _saved_link_schedule(prefix::AbstractString, scene::VisualizationScene)
     scene.link_schedule === nothing && return nothing
     path = joinpath(dirname(String(prefix)), scene.link_schedule)
     manifest_path = String(prefix) * ".manifest.toml"
-    files = isfile(manifest_path) ? get(TOML.parsefile(manifest_path), "files", Dict()) : Dict()
+    manifest = isfile(manifest_path) ? TOML.parsefile(manifest_path) : Dict{String, Any}()
+    files = get(manifest, "files", Dict())
     trajectory_path = joinpath(dirname(String(prefix)), scene.results_feather)
     for (file, entry) in ((path, "link_schedule_feather"), (trajectory_path, _manifest_feather_key(scene)))
         recorded = get(get(files, entry, Dict()), "sha256", nothing)
@@ -1079,7 +1090,12 @@ function _saved_link_schedule(prefix::AbstractString, scene::VisualizationScene)
             throw(ArgumentError("The interlink input $(file) is missing or no longer matches its results manifest; export the " *
                 "matching saved bundle, or pass interlinks=false to leave the links out."))
     end
-    return DataFrame(Arrow.Table(path))
+    schedule = DataFrame(Arrow.Table(path))
+    entry = get(manifest, "interlinks", Dict{String, Any}())
+    for key in ("history_start_s", "history_end_s", "record_available")
+        haskey(entry, key) && metadata!(schedule, key, entry[key]; style=:note)
+    end
+    return schedule
 end
 
 function _check_viewer_output(path::AbstractString, protected)

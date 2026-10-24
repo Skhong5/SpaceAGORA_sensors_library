@@ -36,8 +36,18 @@ output/
 A run with interlinks also writes its link schedule,
 `simulation_results_link_schedule.csv` and
 `simulation_results_link_schedule.feather` (see
-[the link schedule's columns](output_columns.md#Link-schedule)); the manifest lists
-both and records the scheduling policy and its score unit under `[interlinks]`.
+[the link schedule's columns](output_columns.md#Link-schedule)). The manifest lists
+both under `[files]`, and describes the schedule under `[interlinks]`:
+
+- `policy` and `score_unit`: the scheduling policy's type and its score's unit;
+- `rows`: the schedule's number of rows;
+- `record_available` and `record_terms`: whether the history recorded the
+  available links (the contact rows) and a weighted policy's term scores;
+- `history_start_s` and `history_end_s`: the times of the interlink history's
+  first and last samples, the span the schedule covers (absent when it has no
+  samples);
+- `terms`, for a `WeightedPolicy`: each top-level term's `policy`, `score_unit`,
+  `weight` and `scale`, in the order of the `term<k>_start` columns.
 
 Set `simulation_settings.save_csv = false` to save the Feather file and manifest
 without writing a CSV. A CSV left by an earlier run is preserved, but is not
@@ -464,7 +474,18 @@ resumed run takes those rows back first. Its results files, its manifest
 checkpointed at the same times and never interrupted, including after a crash,
 whose partial results the resumed run completes. Rows written after the last
 checkpoint by a run that crashed are dropped, since the resumed run computes them
-again. A run extended from the end of a finished run takes the ticks due there
+again. The link schedule holds the whole run too: a checkpointed run with
+interlinks keeps its interlink history beside its checkpoint, in
+`simulation_checkpoint.interlinks.bin`, and a resumed run takes it back first,
+so its schedule retains the earlier recorded windows. Later scheduling samples
+can still differ when adaptive solver steps change. A checkpoint that
+holds no record of that history (written before SpaceAGORA kept it), or whose
+history file is missing or another run's, resumes with a warning: its schedule
+then covers the resumed interval only, and its `[interlinks].history_start_s` is
+the resume's time, `resumed_from_s`. If it solves nothing, its schedule is empty
+instead. Changing `record_available` or `record_terms` from the checkpoint's
+recording settings is refused before changing result streams, including when the
+history sidecar is missing. A run extended from the end of a finished run takes the ticks due there
 first (see above), and saves the row at that time again after them, as a run never
 interrupted saves it. A resume from a checkpoint at or past the mission's end
 solves nothing and writes no results files; its returned table holds the rows up

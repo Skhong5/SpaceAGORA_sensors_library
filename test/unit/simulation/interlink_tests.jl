@@ -455,8 +455,10 @@ withenv("SPACEAGORA_RHS_CALIBRATE" => "off", "SPACEAGORA_RHS_IDENTIFY" => "0",
                 mission_configuration=gve_sma_configuration(duration=30.0).mission_configuration);
                 resume_from_checkpoint=true)
             resumed = run_simulation(resumed_args; return_results=true, return_solution=true)
-            @test first(resumed.configuration.interlink_model.history).time == 20.0
-            @test last(resumed.configuration.interlink_model.history).time == 30.0
+            # The resumed run takes its history back from beside the checkpoint.
+            resumed_history = resumed.configuration.interlink_model.history
+            @test first(resumed_history).time == 0.0 && last(resumed_history).time == 30.0
+            @test [sample.time for sample in resumed_history if sample.time < 20.0] == filter(<(20.0), times)
             @test resumed.solution.prob.u0.sc[1].interlink_delta_sma ≈ segments.solution.u[end].sc[1].interlink_delta_sma
             full = run_simulation(gve_sma_configuration(duration=30.0); return_solution=true)
             @test isapprox(resumed.solution.u[end], full.u[end]; atol=1e-5, rtol=1e-9)
