@@ -8,7 +8,9 @@ Renamed and retired extension hooks have their own page,
 [Public API and Compatibility](../public_api_policy.md) describes the
 deprecation rules.
 
-## Unreleased history integrity correction
+## 0.7.1
+
+### Retained history integrity
 
 New checkpoints include a SHA-256 checksum for the owned prefix of
 `simulation_checkpoint.interlinks.bin`. Resume checks it before reading the
@@ -21,6 +23,44 @@ still restored with a warning; earlier corruption cannot be detected. The next
 checkpoint adds a checksum over the retained bytes and new history. This does
 not retroactively verify the older record. Checkpoint cleanup also removes the
 active history sidecar, while preserving archived diagnostic copies.
+
+### Maneuver corrections
+
+Version 0.7.1 includes these corrections; they are not present in v0.7.0.
+
+Flight-scaled campaign guidance keeps the accepted Δv and direction fixed for
+that maneuver's source orbit. Changes to the osculating apoapsis after acceptance
+do not request a second burn. This latch uses the scheduler's existing saved
+request history, including when resuming a checkpoint written by v0.7.0.
+This preserves an already accepted burn window; it cannot undo an extra burn
+that v0.7.0 already executed or scheduled before writing the checkpoint.
+Restart affected flight-scaled campaigns from their initial conditions to
+obtain a history without those earlier duplicate requests.
+Custom guidance can still issue a new request with a changed Δv or direction.
+
+The control period also sets solver stopping times for the burn scheduler,
+even while it is idle. Planning ticks do not add before/after solver-state saves;
+result rows retain their configured output schedule and burn edges keep their
+exact times. The changed stopping times mean that runs using the scheduler are
+not generally bitwise identical to runs made with the older scheduling policy.
+
+
+### Retained relay-scoring policy
+
+Version 0.7.1 retains the backlog policy's carried receiver-outflow rule introduced
+in 0.7.0. Its credit is evaluated separately for
+each incoming candidate and does not subtract the receiver's own production.
+In relay networks, a high-scoring link can displace locally produced data or
+leave a better direct path unused; it does not guarantee greater delivery to
+the final destination. Actual flow limits still apply. See the backlog scoring
+limits in [Interlinks](interlinks.md).
+
+### Documentation and installation guidance
+
+Companion installation instructions now identify the source revisions recorded
+by core rather than older companion tags. The upgrade guidance also explains
+directed terminal selection and control-period choices introduced in 0.7.0.
+The published 0.7.0 tag and release remain unchanged.
 
 ## 0.7.0
 
@@ -45,13 +85,6 @@ for incoming data, using the links already active when scheduling begins.
 Transfers remain subject to runtime flow limits: a full store accepts no more
 than it sends and cannot overfill. A full store with no carried outflow still
 has no room.
-
-Version 0.7.1 retains this scoring rule. Its credit is evaluated separately for
-each incoming candidate and does not subtract the receiver's own production.
-In relay networks, a high-scoring link can displace locally produced data or
-leave a better direct path unused; it does not guarantee greater delivery to
-the final destination. Actual flow limits still apply. See the backlog scoring
-limits in [Interlinks](interlinks.md).
 
 ### Automatic terminals respect directed hardware roles
 
@@ -96,27 +129,6 @@ earlier and no longer repeat because of the scheduler's own Δv write. Campaign
 requests for later orbits can execute even when the atmosphere model produces
 no exit events. A fixed configured Δv is one explicit request, not a request to
 repeat after each atmosphere pass; use guidance to request repeated maneuvers.
-
-### Unreleased maneuver corrections
-
-These corrections are not present in the published v0.7.0 release.
-
-Flight-scaled campaign guidance keeps the accepted Δv and direction fixed for
-that maneuver's source orbit. Changes to the osculating apoapsis after acceptance
-do not request a second burn. This latch uses the scheduler's existing saved
-request history, including when resuming a checkpoint written by v0.7.0.
-This preserves an already accepted burn window; it cannot undo an extra burn
-that v0.7.0 already executed or scheduled before writing the checkpoint.
-Restart affected flight-scaled campaigns from their initial conditions to
-obtain a history without those earlier duplicate requests.
-Custom guidance can still issue a new request with a changed Δv or direction.
-
-The control period also sets solver stopping times for the burn scheduler,
-even while it is idle. Planning ticks do not add before/after solver-state saves;
-result rows retain their configured output schedule and burn edges keep their
-exact times. The changed stopping times mean that runs using the scheduler are
-not generally bitwise identical to runs made with the older scheduling policy.
-
 
 ### A GNC model's hooks follow its spacecraft scope
 

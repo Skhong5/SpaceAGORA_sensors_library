@@ -26,7 +26,7 @@ to create a separate environment, then load `SpaceAGORA` and
 and Linux x86_64, using the pinned MuJoCo 3.11.0 artifact. Importing SpaceAGORA
 alone does not load the native library.
 
-For SpaceAGORA 0.7.0, use the companion source recorded by the core checkout:
+For SpaceAGORA 0.7.1, use the companion source recorded by the core checkout:
 `7b5a00318f6883d7cdc7c7e7c0c18830f96ce57f`. Its package version remains 0.5.0,
 but the existing companion version tag predates compatibility with this core.
 From the updated core checkout, prepare a separate environment:
