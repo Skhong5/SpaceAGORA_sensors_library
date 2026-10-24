@@ -30,12 +30,31 @@ Transfers remain subject to runtime flow limits: a full store accepts no more
 than it sends and cannot overfill. A full store with no carried outflow still
 has no room.
 
+### Automatic terminals respect directed hardware roles
+
+Automatic interlink registration now selects hardware that supports the requested
+link and its transmitter or receiver role. It skips virtual terminals when the
+link requires physical hardware. A configuration from the previous release with
+mixed directed hardware can therefore select different terminals: the previous
+selection could assign hardware to a role it could not perform. Check the
+registered endpoints when upgrading such a configuration.
+
+An interlink checkpoint whose saved terminal assignments differ from the new
+configuration is refused as a configuration mismatch. Resume it with the version
+that wrote it, or start a new run with the corrected assignments.
+
 ### Maneuver requests follow the control schedule
 
 `BaseThrusterModel` processes new maneuver requests at its configured
 `control_rates`, after guidance due at the same time. It no longer calls guidance
 or plans a new burn at solver startup or atmosphere exit. Set the control period
-to the request-processing interval your mission needs. An accepted burn keeps
+to the request-processing interval your mission needs: `control_rates` entries
+are periods in seconds. Choose a period no longer than the delay your mission
+can tolerate between a request becoming available and its next control tick.
+Reducing the solver step alone does not make requests run more often, and
+atmosphere exit does not force immediate acceptance. This period governs when
+a request is considered, not the ignition time of an already accepted burn.
+An accepted burn keeps
 its window through checkpoint segments and resume, and is consumed once.
 Explicit `BurnPlanFamily` plans retain their own ignition times, including times
 between control ticks.
