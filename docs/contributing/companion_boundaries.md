@@ -216,3 +216,31 @@ lifetime and numerical results, run the domain tests above.
 | GRAMSuite | `test/smoke/gram_package_readiness.jl` and `test/smoke/gram_dependency_integration_tests.jl` | The readiness matrix checks loading, identity and the installed hooks. The dependency suite runs the real boundary without the native library. Run a native atmosphere case before you report one as tested. |
 | PythonCall | `test/integration/interlink_python.jl` and both load orders in `julia-ci.yml` | Cover the refusal when the backend is missing, the meaning of edges and weights, and a successful match. |
 | Generated packages and companions | The starter smoke tests, the contributor-environment checks and the generated package's own tests | Test against the SpaceAGORA revision you selected. A demonstration package pinned to an older revision is evidence for that revision only. |
+
+
+## Shared companion support
+
+Standalone installers and the source-level boundary checker have canonical owners
+under `scripts/companion_support/`, listed in that directory's `manifest.toml`.
+Companions carry generated copies so installing or testing a companion does not
+require loading core first. Each generated file records its source hash.
+
+Edit the canonical file, then regenerate and check the affected checkouts:
+
+```sh
+julia --startup-file=no scripts/sync_companion_support.jl --write /path/to/companion
+julia --startup-file=no scripts/sync_companion_support.jl /path/to/companion
+```
+
+A companion's `SharedSupport.toml` records the immutable core commit containing
+those support sources. The generated Shared companion support workflow checks
+its copies against that exact owner, independently of its runtime core pin.
+When changing a shared file, update every listed consumer and its support pin.
+Keep companion-specific permitted names and scientific test expectations local.
+
+The common installer refuses unmanaged nonempty destinations and destinations
+inside either source checkout, including through symlinked parents. It records
+its source pair before acquisition so interrupted first installs can be retried;
+setup rechecks ownership before package-manager mutation. Existing MuJoCo
+environments without its ownership marker must use a new separate destination.
+This does not change previously published installer sources or release pins.
